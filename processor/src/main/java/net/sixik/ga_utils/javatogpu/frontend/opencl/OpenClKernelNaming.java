@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.frontend.opencl;
 
 import java.util.Set;
+import java.util.List;
 
 public final class OpenClKernelNaming {
 
@@ -21,8 +22,23 @@ public final class OpenClKernelNaming {
     }
 
     public static String toEntryPointName(String javaMethodName) {
+        return sanitizeName(javaMethodName, "jtg_kernel");
+    }
+
+    public static String toHelperFunctionName(String ownerSimpleName, String javaMethodName, List<String> argumentTypes) {
+        String suffix = argumentTypes.stream()
+                .map(OpenClKernelNaming::sanitizeTypeFragment)
+                .reduce((left, right) -> left + "_" + right)
+                .orElse("void");
+        String ownerPrefix = ownerSimpleName == null || ownerSimpleName.isBlank()
+                ? ""
+                : sanitizeTypeFragment(ownerSimpleName) + "_";
+        return sanitizeName("jtg_fn_" + ownerPrefix + javaMethodName + "_" + suffix, "jtg_helper");
+    }
+
+    private static String sanitizeName(String javaMethodName, String fallback) {
         if (javaMethodName == null || javaMethodName.isBlank()) {
-            return "jtg_kernel";
+            return fallback;
         }
 
         StringBuilder builder = new StringBuilder();
@@ -36,7 +52,7 @@ public final class OpenClKernelNaming {
 
         String candidate = builder.toString();
         if (candidate.isEmpty()) {
-            candidate = "jtg_kernel";
+            candidate = fallback;
         }
         if (!(Character.isLetter(candidate.charAt(0)) || candidate.charAt(0) == '_')) {
             candidate = "jtg_" + candidate;
@@ -46,5 +62,23 @@ public final class OpenClKernelNaming {
         }
 
         return candidate;
+    }
+
+    private static String sanitizeTypeFragment(String typeName) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < typeName.length(); i++) {
+            char current = typeName.charAt(i);
+            if (Character.isLetterOrDigit(current) || current == '_') {
+                builder.append(current);
+            } else if (current == '[' || current == ']') {
+                builder.append("arr");
+            } else {
+                builder.append('_');
+            }
+        }
+        if (builder.isEmpty()) {
+            return "arg";
+        }
+        return builder.toString();
     }
 }

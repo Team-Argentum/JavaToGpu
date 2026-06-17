@@ -2,9 +2,11 @@ package net.sixik.ga_utils.javatogpu.processors;
 
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPU;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendService;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelNaming;
 
 import javax.annotation.processing.AbstractProcessor;
@@ -28,7 +30,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@SupportedAnnotationTypes("net.sixik.ga_utils.javatogpu.api.anotations.GPU")
+@SupportedAnnotationTypes({
+        "net.sixik.ga_utils.javatogpu.api.anotations.GPU",
+        "net.sixik.ga_utils.javatogpu.api.anotations.CCode"
+})
 public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private final Set<String> writtenResources = new HashSet<>();
@@ -54,8 +59,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
             ExecutableElement method = (ExecutableElement) element;
             try {
-                String methodSource = extractMethodSource(method);
-                String kernelSource = frontendService.parseValidateLowerAndEmit(methodSource);
+                ParsedGpuMethod kernelMethod = parseMethod(method);
+                List<ParsedGpuMethod> helpers = collectHelpers(roundEnv, method);
+                String kernelSource = frontendService.validateLowerAndEmit(kernelMethod, helpers);
                 writeKernelResource(method, kernelSource);
                 writeLauncherSource(method, kernelSource);
             } catch (RuntimeException | IOException exception) {
@@ -81,6 +87,34 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             throw new IllegalStateException("Cannot resolve source tree for method " + method.getSimpleName());
         }
         return path.getLeaf().toString();
+    }
+
+    private List<String> collectHelperSources(ExecutableElement method) {
+        return method.getEnclosingElement().getEnclosedElements().stream()
+                .filter(element -> element.getKind() == ElementKind.METHOD)
+                .map(ExecutableElement.class::cast)
+                .filter(candidate -> candidate.getAnnotation(CCode.class) != null)
+                .filter(candidate -> !candidate.equals(method))
+                .map(this::extractMethodSource)
+                .toList();
+    }
+
+    private ParsedGpuMethod parseMethod(ExecutableElement method) {
+        TypeElement owner = (TypeElement) method.getEnclosingElement();
+        return new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser().parseMethod(
+                extractMethodSource(method),
+                owner.getSimpleName().toString(),
+                owner.getQualifiedName().toString()
+        );
+    }
+
+    private List<ParsedGpuMethod> collectHelpers(RoundEnvironment roundEnv, ExecutableElement kernelMethod) {
+        return roundEnv.getElementsAnnotatedWith(CCode.class).stream()
+                .filter(element -> element.getKind() == ElementKind.METHOD)
+                .map(ExecutableElement.class::cast)
+                .filter(candidate -> !candidate.equals(kernelMethod))
+                .map(this::parseMethod)
+                .toList();
     }
 
     private void writeKernelResource(ExecutableElement method, String kernelSource) throws IOException {

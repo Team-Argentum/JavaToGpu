@@ -26,10 +26,12 @@ import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.SwitchEntry;
 import com.github.javaparser.ast.stmt.SwitchStmt;
+import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
+import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelNaming;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import java.util.ArrayList;
@@ -71,28 +73,54 @@ public final class GpuSubsetValidator {
     }
 
     public void validate(ParsedGpuMethod method) {
-        List<GpuValidationIssue> issues = new ArrayList<>();
-        Deque<Map<String, String>> scopes = new ArrayDeque<>();
-        scopes.push(new HashMap<>());
-        method.parameters().forEach(parameter -> scopes.peek().put(parameter.name(), parameter.javaType()));
+        validateKernel(method, List.of());
+    }
 
-        validateReturnType(method, issues);
-        validateParameters(method, issues);
-        method.declaration().getBody().ifPresentOrElse(
-                body -> body.getStatements().forEach(statement -> validateStatement(statement, issues, scopes)),
-                () -> issues.add(issue(method.declaration(), "GPU method must have a body"))
-        );
+    public void validateKernel(ParsedGpuMethod kernelMethod, List<ParsedGpuMethod> helperMethods) {
+        List<GpuValidationIssue> issues = new ArrayList<>();
+        Map<HelperSignature, HelperDescriptor> helperRegistry = buildHelperRegistry(helperMethods, issues);
+
+        helperMethods.forEach(helperMethod -> validateMethod(helperMethod, helperRegistry, issues, false));
+        validateMethod(kernelMethod, helperRegistry, issues, true);
 
         if (!issues.isEmpty()) {
             throw new GpuValidationException(issues);
         }
     }
 
-    private void validateReturnType(ParsedGpuMethod method, List<GpuValidationIssue> issues) {
-        if (!"void".equals(method.returnType())) {
+    private void validateMethod(
+            ParsedGpuMethod method,
+            Map<HelperSignature, HelperDescriptor> helperRegistry,
+            List<GpuValidationIssue> issues,
+            boolean kernelEntry
+    ) {
+        Deque<Map<String, String>> scopes = new ArrayDeque<>();
+        scopes.push(new HashMap<>());
+        method.parameters().forEach(parameter -> scopes.peek().put(parameter.name(), parameter.javaType()));
+        ValidationContext context = new ValidationContext(kernelEntry, method.returnType(), helperRegistry);
+
+        validateReturnType(method, issues, kernelEntry);
+        validateParameters(method, issues);
+        method.declaration().getBody().ifPresentOrElse(
+                body -> body.getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context)),
+                () -> issues.add(issue(method.declaration(), "GPU method must have a body"))
+        );
+    }
+
+    private void validateReturnType(ParsedGpuMethod method, List<GpuValidationIssue> issues, boolean kernelEntry) {
+        if (kernelEntry && !"void".equals(method.returnType())) {
             issues.add(issue(
                     method.declaration().getType(),
                     "Non-void @GPU methods are not supported in the current pipeline; use a void method with output buffers"
+            ));
+        }
+
+        if (!kernelEntry
+                && !"void".equals(method.returnType())
+                && !GpuTypeSupport.isSupportedScalarType(method.returnType())) {
+            issues.add(issue(
+                    method.declaration().getType(),
+                    "Unsupported @CCode helper return type: " + method.returnType()
             ));
         }
     }
@@ -124,34 +152,44 @@ public final class GpuSubsetValidator {
         });
     }
 
-    private void validateStatement(Statement statement, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateStatement(
+            Statement statement,
+            List<GpuValidationIssue> issues,
+            Deque<Map<String, String>> scopes,
+            ValidationContext context
+    ) {
         if (statement instanceof ExpressionStmt expressionStmt) {
-            validateExpressionStatement(expressionStmt, issues, scopes);
+            validateExpressionStatement(expressionStmt, issues, scopes, context);
             return;
         }
 
         if (statement instanceof ForStmt forStmt) {
-            validateForLoop(forStmt, issues, scopes);
+            validateForLoop(forStmt, issues, scopes, context);
             return;
         }
 
         if (statement instanceof IfStmt ifStmt) {
-            validateIf(ifStmt, issues, scopes);
+            validateIf(ifStmt, issues, scopes, context);
             return;
         }
 
         if (statement instanceof WhileStmt whileStmt) {
-            validateWhileLoop(whileStmt, issues, scopes);
+            validateWhileLoop(whileStmt, issues, scopes, context);
             return;
         }
 
         if (statement instanceof DoStmt doStmt) {
-            validateDoWhileLoop(doStmt, issues, scopes);
+            validateDoWhileLoop(doStmt, issues, scopes, context);
             return;
         }
 
         if (statement instanceof SwitchStmt switchStmt) {
-            validateSwitch(switchStmt, issues, scopes);
+            validateSwitch(switchStmt, issues, scopes, context);
+            return;
+        }
+
+        if (statement instanceof ReturnStmt returnStmt) {
+            validateReturnStatement(returnStmt, issues, scopes, context);
             return;
         }
 
@@ -162,7 +200,12 @@ public final class GpuSubsetValidator {
         issues.add(issue(statement, "Unsupported statement in @GPU method: " + statement.getClass().getSimpleName()));
     }
 
-    private void validateExpressionStatement(ExpressionStmt statement, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateExpressionStatement(
+            ExpressionStmt statement,
+            List<GpuValidationIssue> issues,
+            Deque<Map<String, String>> scopes,
+            ValidationContext context
+    ) {
         Expression expression = statement.getExpression();
 
         if (expression instanceof VariableDeclarationExpr declarationExpr) {
@@ -177,42 +220,42 @@ public final class GpuSubsetValidator {
                 issues.add(issue(variable, "Variable declarations in @GPU methods must have an initializer"));
                 return;
             }
-            validateExpression(variable.getInitializer().orElseThrow(), issues, scopes);
+            validateExpression(variable.getInitializer().orElseThrow(), issues, scopes, context);
             scopes.peek().put(variable.getNameAsString(), variable.getTypeAsString());
             return;
         }
 
         if (expression instanceof AssignExpr assignExpr) {
-            validateAssignment(assignExpr, issues, scopes);
+            validateAssignment(assignExpr, issues, scopes, context);
             return;
         }
 
         if (expression instanceof UnaryExpr unaryExpr) {
-            validateUpdateExpression(unaryExpr, issues, scopes, "Unsupported expression statement in @GPU method: " + expression);
+            validateUpdateExpression(unaryExpr, issues, scopes, context, "Unsupported expression statement in @GPU method: " + expression);
             return;
         }
 
         issues.add(issue(statement, "Unsupported expression statement in @GPU method: " + expression));
     }
 
-    private void validateForLoop(ForStmt forStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateForLoop(ForStmt forStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         scopes.push(new HashMap<>());
         if (forStmt.getInitialization().size() != 1) {
             issues.add(issue(forStmt, "Only single-initializer for loops are supported in @GPU methods"));
         } else {
-            validateForInitializer(forStmt.getInitialization().get(0), issues, scopes);
+            validateForInitializer(forStmt.getInitialization().get(0), issues, scopes, context);
         }
 
         if (forStmt.getCompare().isEmpty()) {
             issues.add(issue(forStmt, "for loops must contain a compare expression"));
         } else {
-            validateExpression(forStmt.getCompare().orElseThrow(), issues, scopes);
+            validateExpression(forStmt.getCompare().orElseThrow(), issues, scopes, context);
         }
 
         if (forStmt.getUpdate().size() != 1) {
             issues.add(issue(forStmt, "Only single-update for loops are supported in @GPU methods"));
         } else {
-            validateForUpdate(forStmt.getUpdate().get(0), issues, scopes);
+            validateForUpdate(forStmt.getUpdate().get(0), issues, scopes, context);
         }
 
         if (!forStmt.getBody().isBlockStmt()) {
@@ -221,24 +264,24 @@ public final class GpuSubsetValidator {
             return;
         }
 
-        forStmt.getBody().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes));
+        forStmt.getBody().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context));
         scopes.pop();
     }
 
-    private void validateIf(IfStmt ifStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
-        validateExpression(ifStmt.getCondition(), issues, scopes);
+    private void validateIf(IfStmt ifStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
+        validateExpression(ifStmt.getCondition(), issues, scopes, context);
 
         if (!ifStmt.getThenStmt().isBlockStmt()) {
             issues.add(issue(ifStmt.getThenStmt(), "if branches must use braces in @GPU methods"));
         } else {
             scopes.push(new HashMap<>());
-            ifStmt.getThenStmt().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes));
+            ifStmt.getThenStmt().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context));
             scopes.pop();
         }
 
         ifStmt.getElseStmt().ifPresent(elseStmt -> {
             if (elseStmt.isIfStmt()) {
-                validateIf(elseStmt.asIfStmt(), issues, scopes);
+                validateIf(elseStmt.asIfStmt(), issues, scopes, context);
                 return;
             }
 
@@ -248,13 +291,13 @@ public final class GpuSubsetValidator {
             }
 
             scopes.push(new HashMap<>());
-            elseStmt.asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes));
+            elseStmt.asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context));
             scopes.pop();
         });
     }
 
-    private void validateWhileLoop(WhileStmt whileStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
-        validateExpression(whileStmt.getCondition(), issues, scopes);
+    private void validateWhileLoop(WhileStmt whileStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
+        validateExpression(whileStmt.getCondition(), issues, scopes, context);
 
         if (!whileStmt.getBody().isBlockStmt()) {
             issues.add(issue(whileStmt.getBody(), "while loop bodies must use braces in @GPU methods"));
@@ -262,24 +305,24 @@ public final class GpuSubsetValidator {
         }
 
         scopes.push(new HashMap<>());
-        whileStmt.getBody().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes));
+        whileStmt.getBody().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context));
         scopes.pop();
     }
 
-    private void validateDoWhileLoop(DoStmt doStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateDoWhileLoop(DoStmt doStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         if (!doStmt.getBody().isBlockStmt()) {
             issues.add(issue(doStmt.getBody(), "do-while loop bodies must use braces in @GPU methods"));
             return;
         }
 
         scopes.push(new HashMap<>());
-        doStmt.getBody().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes));
+        doStmt.getBody().asBlockStmt().getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context));
         scopes.pop();
-        validateExpression(doStmt.getCondition(), issues, scopes);
+        validateExpression(doStmt.getCondition(), issues, scopes, context);
     }
 
-    private void validateSwitch(SwitchStmt switchStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
-        validateExpression(switchStmt.getSelector(), issues, scopes);
+    private void validateSwitch(SwitchStmt switchStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
+        validateExpression(switchStmt.getSelector(), issues, scopes, context);
 
         scopes.push(new HashMap<>());
         for (SwitchEntry entry : switchStmt.getEntries()) {
@@ -288,13 +331,13 @@ public final class GpuSubsetValidator {
                 continue;
             }
 
-            entry.getLabels().forEach(label -> validateExpression(label, issues, scopes));
-            entryStatements(entry).forEach(statement -> validateStatement(statement, issues, scopes));
+            entry.getLabels().forEach(label -> validateExpression(label, issues, scopes, context));
+            entryStatements(entry).forEach(statement -> validateStatement(statement, issues, scopes, context));
         }
         scopes.pop();
     }
 
-    private void validateForInitializer(Expression expression, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateForInitializer(Expression expression, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         if (!(expression instanceof VariableDeclarationExpr declarationExpr)) {
             issues.add(issue(expression, "Unsupported for initializer in @GPU method: " + expression));
             return;
@@ -311,27 +354,27 @@ public final class GpuSubsetValidator {
             issues.add(issue(variable, "For initializer variables in @GPU methods must have an initializer"));
             return;
         }
-        validateExpression(variable.getInitializer().orElseThrow(), issues, scopes);
+        validateExpression(variable.getInitializer().orElseThrow(), issues, scopes, context);
         scopes.peek().put(variable.getNameAsString(), variable.getTypeAsString());
     }
 
-    private void validateForUpdate(Expression expression, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateForUpdate(Expression expression, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         if (expression instanceof UnaryExpr unaryExpr) {
-            validateUpdateExpression(unaryExpr, issues, scopes, "Unsupported for update in @GPU method: " + expression);
+            validateUpdateExpression(unaryExpr, issues, scopes, context, "Unsupported for update in @GPU method: " + expression);
             return;
         }
 
         if (expression instanceof AssignExpr assignExpr) {
-            validateAssignment(assignExpr, issues, scopes);
+            validateAssignment(assignExpr, issues, scopes, context);
             return;
         }
 
         issues.add(issue(expression, "Unsupported for update in @GPU method: " + expression));
     }
 
-    private void validateAssignment(AssignExpr assignExpr, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
-        validateExpression(assignExpr.getTarget(), issues, scopes);
-        validateExpression(assignExpr.getValue(), issues, scopes);
+    private void validateAssignment(AssignExpr assignExpr, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
+        validateExpression(assignExpr.getTarget(), issues, scopes, context);
+        validateExpression(assignExpr.getValue(), issues, scopes, context);
 
         if (assignExpr.getOperator() == AssignExpr.Operator.ASSIGN) {
             return;
@@ -344,8 +387,8 @@ public final class GpuSubsetValidator {
         }
 
         if (INTEGER_ONLY_BINARY_OPERATORS.contains(compoundBinaryOperator)) {
-            String targetType = inferExpressionType(assignExpr.getTarget(), scopes);
-            String valueType = inferExpressionType(assignExpr.getValue(), scopes);
+            String targetType = inferExpressionType(assignExpr.getTarget(), scopes, context);
+            String valueType = inferExpressionType(assignExpr.getValue(), scopes, context);
             if (!GpuTypeSupport.isIntegralScalarType(targetType) || !GpuTypeSupport.isIntegralScalarType(valueType)) {
                 issues.add(issue(
                         assignExpr,
@@ -355,7 +398,7 @@ public final class GpuSubsetValidator {
         }
     }
 
-    private void validateExpression(Expression expression, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateExpression(Expression expression, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         if (expression instanceof NameExpr
                 || expression instanceof IntegerLiteralExpr
                 || expression instanceof BooleanLiteralExpr
@@ -364,7 +407,7 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof EnclosedExpr enclosedExpr) {
-            validateExpression(enclosedExpr.getInner(), issues, scopes);
+            validateExpression(enclosedExpr.getInner(), issues, scopes, context);
             return;
         }
 
@@ -374,7 +417,7 @@ public final class GpuSubsetValidator {
                 return;
             }
 
-            validateExpression(arrayAccessExpr.getIndex(), issues, scopes);
+            validateExpression(arrayAccessExpr.getIndex(), issues, scopes, context);
             return;
         }
 
@@ -383,11 +426,11 @@ public final class GpuSubsetValidator {
                 issues.add(issue(binaryExpr, "Unsupported binary operator in @GPU method: " + binaryExpr.getOperator().asString()));
                 return;
             }
-            validateExpression(binaryExpr.getLeft(), issues, scopes);
-            validateExpression(binaryExpr.getRight(), issues, scopes);
+            validateExpression(binaryExpr.getLeft(), issues, scopes, context);
+            validateExpression(binaryExpr.getRight(), issues, scopes, context);
             if (INTEGER_ONLY_BINARY_OPERATORS.contains(binaryExpr.getOperator().asString())) {
-                String leftType = inferExpressionType(binaryExpr.getLeft(), scopes);
-                String rightType = inferExpressionType(binaryExpr.getRight(), scopes);
+                String leftType = inferExpressionType(binaryExpr.getLeft(), scopes, context);
+                String rightType = inferExpressionType(binaryExpr.getRight(), scopes, context);
                 if (!GpuTypeSupport.isIntegralScalarType(leftType) || !GpuTypeSupport.isIntegralScalarType(rightType)) {
                     issues.add(issue(
                             binaryExpr,
@@ -399,9 +442,9 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof ConditionalExpr conditionalExpr) {
-            validateExpression(conditionalExpr.getCondition(), issues, scopes);
-            validateExpression(conditionalExpr.getThenExpr(), issues, scopes);
-            validateExpression(conditionalExpr.getElseExpr(), issues, scopes);
+            validateExpression(conditionalExpr.getCondition(), issues, scopes, context);
+            validateExpression(conditionalExpr.getThenExpr(), issues, scopes, context);
+            validateExpression(conditionalExpr.getElseExpr(), issues, scopes, context);
             return;
         }
 
@@ -411,9 +454,9 @@ public final class GpuSubsetValidator {
                 return;
             }
 
-            validateExpression(unaryExpr.getExpression(), issues, scopes);
+            validateExpression(unaryExpr.getExpression(), issues, scopes, context);
             if ("~".equals(unaryExpr.getOperator().asString())) {
-                String operandType = inferExpressionType(unaryExpr.getExpression(), scopes);
+                String operandType = inferExpressionType(unaryExpr.getExpression(), scopes, context);
                 if (!GpuTypeSupport.isIntegralScalarType(operandType)) {
                     issues.add(issue(
                             unaryExpr,
@@ -425,12 +468,12 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof MethodCallExpr methodCallExpr) {
-            validateMethodCall(methodCallExpr, issues, scopes);
+            validateMethodCall(methodCallExpr, issues, scopes, context);
             return;
         }
 
         if (expression instanceof CastExpr castExpr) {
-            validateCast(castExpr, issues, scopes);
+            validateCast(castExpr, issues, scopes, context);
             return;
         }
 
@@ -452,20 +495,30 @@ public final class GpuSubsetValidator {
         issues.add(issue(creation, "Object creation is not allowed in @GPU methods: " + typeName));
     }
 
-    private void validateMethodCall(MethodCallExpr call, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateMethodCall(MethodCallExpr call, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         String owner = call.getScope().map(Node::toString).orElse("");
-        if (!"GPU".equals(owner)) {
-            issues.add(issue(call, "Only GPU.* calls are allowed in @GPU methods"));
+        call.getArguments().forEach(argument -> validateExpression(argument, issues, scopes, context));
+
+        if ("GPU".equals(owner)) {
+            try {
+                intrinsicDatabase.require(owner, call.getNameAsString(), inferArgumentTypes(call, scopes, context));
+            } catch (IllegalArgumentException exception) {
+                issues.add(issue(call, exception.getMessage()));
+            }
             return;
         }
 
-        call.getArguments().forEach(argument -> validateExpression(argument, issues, scopes));
-
-        try {
-            intrinsicDatabase.require(owner, call.getNameAsString(), inferArgumentTypes(call, scopes));
-        } catch (IllegalArgumentException exception) {
-            issues.add(issue(call, exception.getMessage()));
+        HelperDescriptor helper = context.helperRegistry().get(new HelperSignature(call.getNameAsString(), inferArgumentTypes(call, scopes, context)));
+        if (helper != null) {
+            return;
         }
+
+        if (owner.isEmpty()) {
+            issues.add(issue(call, "Unknown @CCode helper call in @GPU method: " + call.getNameAsString()));
+            return;
+        }
+
+        issues.add(issue(call, "Only GPU.* and @CCode helper calls are allowed in @GPU methods"));
     }
 
     private void validateVariableType(VariableDeclarator variable, List<GpuValidationIssue> issues) {
@@ -474,16 +527,16 @@ public final class GpuSubsetValidator {
         }
     }
 
-    private void validateCast(CastExpr castExpr, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+    private void validateCast(CastExpr castExpr, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         String targetType = castExpr.getTypeAsString();
         if (!GpuTypeSupport.isSupportedScalarType(targetType)) {
             issues.add(issue(castExpr, "Unsupported cast target type in @GPU method: " + targetType));
             return;
         }
 
-        validateExpression(castExpr.getExpression(), issues, scopes);
+        validateExpression(castExpr.getExpression(), issues, scopes, context);
 
-        String sourceType = inferExpressionType(castExpr.getExpression(), scopes);
+        String sourceType = inferExpressionType(castExpr.getExpression(), scopes, context);
         if (sourceType == null || !GpuTypeSupport.isSupportedScalarType(sourceType)) {
             issues.add(issue(castExpr, "Only primitive scalar casts are supported in @GPU methods"));
         }
@@ -493,6 +546,7 @@ public final class GpuSubsetValidator {
             UnaryExpr unaryExpr,
             List<GpuValidationIssue> issues,
             Deque<Map<String, String>> scopes,
+            ValidationContext context,
             String unsupportedMessage
     ) {
         if (!ALLOWED_UPDATE_OPERATORS.contains(unaryExpr.getOperator())) {
@@ -506,10 +560,36 @@ public final class GpuSubsetValidator {
             return;
         }
 
-        validateExpression(target, issues, scopes);
+        validateExpression(target, issues, scopes, context);
     }
 
-    private String inferExpressionType(Expression expression, Deque<Map<String, String>> scopes) {
+    private void validateReturnStatement(ReturnStmt returnStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
+        if (context.kernelEntry()) {
+            issues.add(issue(returnStmt, "Return statements are not supported in @GPU entry methods"));
+            return;
+        }
+
+        if ("void".equals(context.returnType())) {
+            if (returnStmt.getExpression().isPresent()) {
+                issues.add(issue(returnStmt, "Void @CCode helpers cannot return a value"));
+            }
+            return;
+        }
+
+        if (returnStmt.getExpression().isEmpty()) {
+            issues.add(issue(returnStmt, "Non-void @CCode helpers must return a value"));
+            return;
+        }
+
+        Expression expression = returnStmt.getExpression().orElseThrow();
+        validateExpression(expression, issues, scopes, context);
+        String expressionType = inferExpressionType(expression, scopes, context);
+        if (!isReturnTypeCompatible(context.returnType(), expressionType)) {
+            issues.add(issue(returnStmt, "Return type mismatch in @CCode helper: expected " + context.returnType() + " but got " + expressionType));
+        }
+    }
+
+    private String inferExpressionType(Expression expression, Deque<Map<String, String>> scopes, ValidationContext context) {
         if (expression instanceof NameExpr nameExpr) {
             return lookupType(scopes, nameExpr.getNameAsString());
         }
@@ -531,7 +611,7 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof EnclosedExpr enclosedExpr) {
-            return inferExpressionType(enclosedExpr.getInner(), scopes);
+            return inferExpressionType(enclosedExpr.getInner(), scopes, context);
         }
 
         if (expression instanceof CastExpr castExpr) {
@@ -539,7 +619,7 @@ public final class GpuSubsetValidator {
             if (!GpuTypeSupport.isSupportedScalarType(targetType)) {
                 return null;
             }
-            String sourceType = inferExpressionType(castExpr.getExpression(), scopes);
+            String sourceType = inferExpressionType(castExpr.getExpression(), scopes, context);
             if (sourceType == null || !GpuTypeSupport.isSupportedScalarType(sourceType)) {
                 return null;
             }
@@ -556,8 +636,8 @@ public final class GpuSubsetValidator {
 
         if (expression instanceof BinaryExpr binaryExpr) {
             String operator = binaryExpr.getOperator().asString();
-            String leftType = inferExpressionType(binaryExpr.getLeft(), scopes);
-            String rightType = inferExpressionType(binaryExpr.getRight(), scopes);
+            String leftType = inferExpressionType(binaryExpr.getLeft(), scopes, context);
+            String rightType = inferExpressionType(binaryExpr.getRight(), scopes, context);
 
             if ("&&".equals(operator) || "||".equals(operator)
                     || "<".equals(operator) || "<=".equals(operator)
@@ -581,8 +661,8 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof ConditionalExpr conditionalExpr) {
-            String whenTrueType = inferExpressionType(conditionalExpr.getThenExpr(), scopes);
-            String whenFalseType = inferExpressionType(conditionalExpr.getElseExpr(), scopes);
+            String whenTrueType = inferExpressionType(conditionalExpr.getThenExpr(), scopes, context);
+            String whenFalseType = inferExpressionType(conditionalExpr.getElseExpr(), scopes, context);
             if (whenTrueType == null || whenFalseType == null) {
                 return null;
             }
@@ -593,7 +673,7 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof UnaryExpr unaryExpr) {
-            String operandType = inferExpressionType(unaryExpr.getExpression(), scopes);
+            String operandType = inferExpressionType(unaryExpr.getExpression(), scopes, context);
             String operator = unaryExpr.getOperator().asString();
             if ("!".equals(operator)) {
                 return "boolean";
@@ -609,14 +689,17 @@ public final class GpuSubsetValidator {
 
         if (expression instanceof MethodCallExpr methodCallExpr) {
             String owner = methodCallExpr.getScope().map(Node::toString).orElse("");
-            if (!"GPU".equals(owner)) {
-                return null;
+            if ("GPU".equals(owner)) {
+                try {
+                    return intrinsicDatabase.require(owner, methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)).resultType();
+                } catch (IllegalArgumentException ignored) {
+                    return null;
+                }
             }
 
-            try {
-                return intrinsicDatabase.require(owner, methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes)).resultType();
-            } catch (IllegalArgumentException ignored) {
-                return null;
+            if (!owner.equals("GPU")) {
+                HelperDescriptor helper = context.helperRegistry().get(new HelperSignature(methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)));
+                return helper == null ? null : helper.returnType();
             }
         }
 
@@ -694,10 +777,70 @@ public final class GpuSubsetValidator {
         };
     }
 
-    private List<String> inferArgumentTypes(MethodCallExpr call, Deque<Map<String, String>> scopes) {
+    private List<String> inferArgumentTypes(MethodCallExpr call, Deque<Map<String, String>> scopes, ValidationContext context) {
         return call.getArguments().stream()
-                .map(argument -> inferExpressionType(argument, scopes))
+                .map(argument -> inferExpressionType(argument, scopes, context))
                 .toList();
+    }
+
+    private boolean isReturnTypeCompatible(String expectedType, String actualType) {
+        if (expectedType == null || actualType == null) {
+            return false;
+        }
+        if (expectedType.equals(actualType)) {
+            return true;
+        }
+        if ("boolean".equals(expectedType) || "boolean".equals(actualType)) {
+            return false;
+        }
+        return GpuTypeSupport.isSupportedScalarType(expectedType) && GpuTypeSupport.isSupportedScalarType(actualType);
+    }
+
+    private Map<HelperSignature, HelperDescriptor> buildHelperRegistry(List<ParsedGpuMethod> helperMethods, List<GpuValidationIssue> issues) {
+        Map<HelperSignature, HelperDescriptor> helperRegistry = new HashMap<>();
+        for (ParsedGpuMethod helperMethod : helperMethods) {
+            HelperSignature signature = new HelperSignature(
+                    helperMethod.name(),
+                    helperMethod.parameters().stream().map(parameter -> parameter.javaType()).toList()
+            );
+            HelperDescriptor previous = helperRegistry.putIfAbsent(
+                    signature,
+                    new HelperDescriptor(
+                            helperMethod.ownerSimpleName(),
+                            helperMethod.ownerQualifiedName(),
+                            helperMethod.name(),
+                            OpenClKernelNaming.toHelperFunctionName(helperMethod.ownerSimpleName(), helperMethod.name(), signature.argumentTypes()),
+                            helperMethod.returnType(),
+                            signature.argumentTypes(),
+                            helperMethod.inline()
+                    )
+            );
+            if (previous != null) {
+                issues.add(issue(helperMethod.declaration(), "Duplicate @CCode helper signature: " + helperMethod.name() + signature.argumentTypes()));
+            }
+        }
+        return helperRegistry;
+    }
+
+    private record ValidationContext(
+            boolean kernelEntry,
+            String returnType,
+            Map<HelperSignature, HelperDescriptor> helperRegistry
+    ) {
+    }
+
+    private record HelperSignature(String name, List<String> argumentTypes) {
+    }
+
+    private record HelperDescriptor(
+            String ownerSimpleName,
+            String ownerQualifiedName,
+            String javaName,
+            String emittedName,
+            String returnType,
+            List<String> argumentTypes,
+            boolean inline
+    ) {
     }
 
     private boolean isSupportedSwitchEntryType(SwitchEntry.Type type) {

@@ -33,5 +33,26 @@ class GpuMethodParserTest {
         assertEquals("float[]", method.parameters().get(0).javaType());
         assertEquals(GpuAddressSpace.GLOBAL, method.parameters().get(0).addressSpace());
         assertTrue(method.parameters().get(0).constant());
+        assertEquals("", method.ownerSimpleName());
+        assertEquals("", method.ownerQualifiedName());
+    }
+
+    @Test
+    void parsesCCodeInlineFlagAndOwnerMetadata() {
+        String methodSource = """
+                @CCode(inline = true)
+                float square(float value) {
+                    return value * value;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource, "Helpers", "sample.Helpers");
+
+        assertEquals("Helpers", method.ownerSimpleName());
+        assertEquals("sample.Helpers", method.ownerQualifiedName());
+        assertEquals("square", method.name());
+        assertEquals("float", method.returnType());
+        assertTrue(method.inline());
     }
 }

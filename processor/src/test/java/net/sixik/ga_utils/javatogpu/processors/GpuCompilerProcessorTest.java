@@ -618,6 +618,136 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithCCodeHelperMethod() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-ccode-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-ccode-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @CCode(inline = true)
+                    float square(float value) {
+                        return value * value;
+                    }
+
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = square(input[id]);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                inline float jtg_fn_Demo_square_float(float value);
+
+                inline float jtg_fn_Demo_square_float(float value) {
+                    return (value * value);
+                }
+                __kernel void jtg_kernel(__global float* input, __global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = jtg_fn_Demo_square_float(input[id]);
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithExternalInlineCCodeHelperMethod() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-external-ccode-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-external-ccode-generated");
+
+        String helperSource = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+
+                public class KernelMath {
+                    @CCode(inline = true)
+                    public static float square(float value) {
+                        return value * value;
+                    }
+                }
+                """;
+
+        String kernelSource = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = KernelMath.square(input[id]);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject helperFile = new StringJavaFileObject("sample.KernelMath", helperSource);
+            JavaFileObject kernelFile = new StringJavaFileObject("sample.Demo", kernelSource);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(helperFile, kernelFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                inline float jtg_fn_KernelMath_square_float(float value);
+
+                inline float jtg_fn_KernelMath_square_float(float value) {
+                    return (value * value);
+                }
+                __kernel void jtg_kernel(__global float* input, __global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = jtg_fn_KernelMath_square_float(input[id]);
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
     void generatesKernelWithBooleanLocal() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-boollocal-classes");

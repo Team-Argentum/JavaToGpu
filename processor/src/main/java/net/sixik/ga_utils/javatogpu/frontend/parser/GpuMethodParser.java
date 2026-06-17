@@ -12,6 +12,10 @@ import java.util.List;
 public final class GpuMethodParser {
 
     public ParsedGpuMethod parseMethod(String methodSource) {
+        return parseMethod(methodSource, "", "");
+    }
+
+    public ParsedGpuMethod parseMethod(String methodSource, String ownerSimpleName, String ownerQualifiedName) {
         MethodDeclaration declaration = StaticJavaParser.parseMethodDeclaration(methodSource);
 
         List<ParsedGpuParameter> parameters = declaration.getParameters().stream()
@@ -19,10 +23,13 @@ public final class GpuMethodParser {
                 .toList();
 
         return new ParsedGpuMethod(
+                ownerSimpleName,
+                ownerQualifiedName,
                 declaration.getNameAsString(),
                 declaration.getTypeAsString(),
                 parameters,
-                declaration
+                declaration,
+                parseInlineFlag(declaration)
         );
     }
 
@@ -43,5 +50,16 @@ public final class GpuMethodParser {
                 isGlobal ? GpuAddressSpace.GLOBAL : GpuAddressSpace.PRIVATE,
                 constant
         );
+    }
+
+    private boolean parseInlineFlag(MethodDeclaration declaration) {
+        return declaration.getAnnotationByName("CCode")
+                .filter(annotation -> annotation.isNormalAnnotationExpr())
+                .flatMap(annotation -> annotation.asNormalAnnotationExpr().getPairs().stream()
+                        .filter(pair -> pair.getNameAsString().equals("inline"))
+                        .findFirst()
+                        .map(pair -> pair.getValue().toString()))
+                .map(Boolean::parseBoolean)
+                .orElse(false);
     }
 }
