@@ -5,6 +5,10 @@ import java.util.Set;
 public final class GpuTypeSupport {
 
     private static final Set<String> SUPPORTED_SCALAR_TYPES = Set.of(
+            "byte", "short", "int", "long", "float", "double", "boolean"
+    );
+
+    private static final Set<String> SUPPORTED_PARAMETER_SCALAR_TYPES = Set.of(
             "byte", "short", "int", "long", "float", "double"
     );
 
@@ -27,11 +31,11 @@ public final class GpuTypeSupport {
     }
 
     public static boolean isSupportedArrayType(String javaType) {
-        return javaType.endsWith("[]") && isSupportedScalarType(componentType(javaType));
+        return javaType.endsWith("[]") && SUPPORTED_PARAMETER_SCALAR_TYPES.contains(componentType(javaType));
     }
 
     public static boolean isSupportedParameterType(String javaType) {
-        return isSupportedScalarType(javaType) || isSupportedArrayType(javaType);
+        return SUPPORTED_PARAMETER_SCALAR_TYPES.contains(javaType) || isSupportedArrayType(javaType);
     }
 
     public static boolean isSupportedLocalType(String javaType) {

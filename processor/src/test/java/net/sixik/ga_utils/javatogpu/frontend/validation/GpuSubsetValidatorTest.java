@@ -53,19 +53,55 @@ class GpuSubsetValidatorTest {
     }
 
     @Test
-    void rejectsWhileLoops() {
+    void acceptsWhileDoWhileAndSwitchStatements() {
         String methodSource = """
                 @GPU
-                void kernel(@GPUGlobal float[] output) {
+                void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                     int i = 0;
                     while (i < 4) {
-                        output[i] = 1.0f;
+                        if ((i % 2) == 0) {
+                            i++;
+                            continue;
+                        }
+                        output[i] = input[i];
                         i++;
+                    }
+                    do {
+                        i--;
+                    } while (i > 0);
+                    switch (input[0] & 3) {
+                        case 0:
+                            output[0] = 1;
+                            break;
+                        case 1:
+                        case 2:
+                            output[0] = 2;
+                            break;
+                        default:
+                            output[0] = 3;
                     }
                 }
                 """;
 
-        assertThrows(GpuValidationException.class, () -> validator.validate(parser.parseMethod(methodSource)));
+        assertDoesNotThrow(() -> validator.validate(parser.parseMethod(methodSource)));
+    }
+
+    @Test
+    void acceptsRuleStyleSwitchEntries() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                    switch (input[0] & 3) {
+                        case 0 -> output[0] = 1;
+                        case 1 -> {
+                            output[0] = 2;
+                        }
+                        default -> output[0] = 3;
+                    }
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validate(parser.parseMethod(methodSource)));
     }
 
     @Test
@@ -162,12 +198,57 @@ class GpuSubsetValidatorTest {
     }
 
     @Test
-    void rejectsCastExpressionsBeforeLowering() {
+    void acceptsCompoundAssignmentsAndDecrementUpdates() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                    int id = GPU.get_global_id(0);
+                    int value = input[id];
+                    value += 2;
+                    value <<= 1;
+                    output[id] = value;
+                    for (int i = 3; i > 0; i--) {
+                        output[id] += i;
+                    }
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validate(parser.parseMethod(methodSource)));
+    }
+
+    @Test
+    void acceptsPrimitiveScalarCasts() {
         String methodSource = """
                 @GPU
                 void kernel(@GPUGlobal float[] output) {
                     int i = 1;
                     output[0] = GPU.sin((float) i);
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validate(parser.parseMethod(methodSource)));
+    }
+
+    @Test
+    void acceptsDoubleMathIntrinsics() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal double[] input, @GPUGlobal double[] output) {
+                    int id = GPU.get_global_id(0);
+                    double value = GPU.sqrt(input[id]) + GPU.pow(input[id], 2.0);
+                    output[id] = GPU.max(value, GPU.log(input[id]));
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validate(parser.parseMethod(methodSource)));
+    }
+
+    @Test
+    void rejectsNonScalarCasts() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    output[0] = (float) input;
                 }
                 """;
 
@@ -247,18 +328,23 @@ class GpuSubsetValidatorTest {
     }
 
     @Test
-    void rejectsBooleanLocalsBecauseCurrentEmitterDoesNotModelThem() {
+    void acceptsBooleanLocalsAndLiterals() {
         String methodSource = """
                 @GPU
                 void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                     boolean enabled = input[0] > 0.0f;
                     if (enabled) {
                         output[0] = 1.0f;
+                    } else {
+                        boolean zero = false;
+                        if (!zero) {
+                            output[0] = 0.0f;
+                        }
                     }
                 }
                 """;
 
-        assertThrows(GpuValidationException.class, () -> validator.validate(parser.parseMethod(methodSource)));
+        assertDoesNotThrow(() -> validator.validate(parser.parseMethod(methodSource)));
     }
 
     @Test
@@ -281,6 +367,20 @@ class GpuSubsetValidatorTest {
                 void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                     int id = GPU.get_global_id(0);
                     output[id] = input[id] >>> 1;
+                }
+                """;
+
+        assertThrows(GpuValidationException.class, () -> validator.validate(parser.parseMethod(methodSource)));
+    }
+
+    @Test
+    void rejectsUnsignedRightShiftAssignmentOperator() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] output) {
+                    int value = 4;
+                    value >>>= 1;
+                    output[0] = value;
                 }
                 """;
 
