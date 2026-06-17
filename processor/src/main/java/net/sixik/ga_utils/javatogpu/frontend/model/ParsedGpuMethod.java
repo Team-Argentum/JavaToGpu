@@ -10,6 +10,7 @@ public record ParsedGpuMethod(
         String name,
         String returnType,
         List<ParsedGpuParameter> parameters,
+        List<ParsedGpuConstant> constants,
         MethodDeclaration declaration,
         boolean inline
 ) {

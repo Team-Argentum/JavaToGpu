@@ -1,14 +1,11 @@
 package net.sixik.ga_utils;
 
 import net.sixik.ga_utils.javatogpu.api.DoublePtr;
-import net.sixik.ga_utils.javatogpu.api.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend;
-
-import java.util.Arrays;
 
 public class Main {
     public static void main(String[] args) {

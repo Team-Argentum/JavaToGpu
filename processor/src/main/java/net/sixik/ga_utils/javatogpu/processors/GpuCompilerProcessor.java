@@ -1,13 +1,16 @@
 package net.sixik.ga_utils.javatogpu.processors;
 
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPU;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendService;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelNaming;
+import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Filer;
@@ -18,6 +21,7 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.tools.Diagnostic;
@@ -104,7 +108,8 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         return new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser().parseMethod(
                 extractMethodSource(method),
                 owner.getSimpleName().toString(),
-                owner.getQualifiedName().toString()
+                owner.getQualifiedName().toString(),
+                collectConstants(owner)
         );
     }
 
@@ -115,6 +120,46 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 .filter(candidate -> !candidate.equals(kernelMethod))
                 .map(this::parseMethod)
                 .toList();
+    }
+
+    private List<ParsedGpuConstant> collectConstants(TypeElement owner) {
+        return owner.getEnclosedElements().stream()
+                .filter(element -> element.getKind() == ElementKind.FIELD)
+                .map(VariableElement.class::cast)
+                .filter(this::isSupportedGpuConstantField)
+                .map(field -> new ParsedGpuConstant(
+                        owner.getSimpleName().toString(),
+                        owner.getQualifiedName().toString(),
+                        field.getSimpleName().toString(),
+                        field.asType().toString(),
+                        extractConstantSource(field)
+                ))
+                .toList();
+    }
+
+    private boolean isSupportedGpuConstantField(VariableElement field) {
+        return field.getModifiers().contains(Modifier.STATIC)
+                && field.getModifiers().contains(Modifier.FINAL)
+                && field.getConstantValue() != null
+                && GpuTypeSupport.isSupportedScalarType(field.asType().toString());
+    }
+
+    private String extractConstantSource(VariableElement field) {
+        TreePath path = trees.getPath(field);
+        if (path != null && path.getLeaf() instanceof VariableTree variableTree && variableTree.getInitializer() != null) {
+            return variableTree.getInitializer().toString();
+        }
+        return toConstantSource(field.asType().toString(), field.getConstantValue());
+    }
+
+    private String toConstantSource(String javaType, Object value) {
+        return switch (javaType) {
+            case "boolean" -> String.valueOf(value);
+            case "float" -> value + "f";
+            case "double" -> String.valueOf(value);
+            case "long" -> value + "L";
+            default -> String.valueOf(value);
+        };
     }
 
     private void writeKernelResource(ExecutableElement method, String kernelSource) throws IOException {

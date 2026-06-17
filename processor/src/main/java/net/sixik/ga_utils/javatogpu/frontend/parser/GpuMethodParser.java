@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.frontend.parser;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
@@ -12,10 +13,19 @@ import java.util.List;
 public final class GpuMethodParser {
 
     public ParsedGpuMethod parseMethod(String methodSource) {
-        return parseMethod(methodSource, "", "");
+        return parseMethod(methodSource, "", "", List.of());
     }
 
     public ParsedGpuMethod parseMethod(String methodSource, String ownerSimpleName, String ownerQualifiedName) {
+        return parseMethod(methodSource, ownerSimpleName, ownerQualifiedName, List.of());
+    }
+
+    public ParsedGpuMethod parseMethod(
+            String methodSource,
+            String ownerSimpleName,
+            String ownerQualifiedName,
+            List<ParsedGpuConstant> constants
+    ) {
         MethodDeclaration declaration = StaticJavaParser.parseMethodDeclaration(methodSource);
 
         List<ParsedGpuParameter> parameters = declaration.getParameters().stream()
@@ -28,6 +38,7 @@ public final class GpuMethodParser {
                 declaration.getNameAsString(),
                 declaration.getTypeAsString(),
                 parameters,
+                List.copyOf(constants),
                 declaration,
                 parseInlineFlag(declaration)
         );

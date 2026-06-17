@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.validation.GpuValidationException;
 import org.junit.jupiter.api.Test;
@@ -484,6 +485,114 @@ class GpuFrontendServiceTest {
     }
 
     @Test
+    void parsesValidatesLowersAndEmitsFloatPtrConstructorWithInitializer() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    FloatPtr ptr = new FloatPtr(input[id]);
+                    output[id] = GPU.tan(ptr.value);
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* input, __global float* output) {
+                    int id = get_global_id(0);
+                    float ptr = input[id];
+                    output[id] = tan(ptr);
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsDoublePtrConstructorWithInitializer() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal double[] input, @GPUGlobal double[] output) {
+                    int id = GPU.get_global_id(0);
+                    DoublePtr ptr = new DoublePtr(input[id] + 2.0);
+                    output[id] = GPU.sqrt(ptr.value);
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global double* input, __global double* output) {
+                    int id = get_global_id(0);
+                    double ptr = (input[id] + 2.0);
+                    output[id] = sqrt(ptr);
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsSameOwnerStaticFinalConstant() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = input[id] * SCALE;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        ParsedGpuMethod kernelMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(
+                        methodSource,
+                        "Demo",
+                        "sample.Demo",
+                        List.of(new ParsedGpuConstant("Demo", "sample.Demo", "SCALE", "float", "0.5f"))
+                );
+
+        String kernel = service.validateLowerAndEmit(kernelMethod, List.of());
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* input, __global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = (input[id] * 0.5f);
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsQualifiedExternalStaticFinalConstant() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = input[id] * GpuUtils.SCALE;
+                }
+                """;
+        String helperSource = """
+                @CCode
+                float noop(float value) {
+                    return value;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser parser =
+                new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser();
+        ParsedGpuMethod kernelMethod = parser.parseMethod(methodSource, "Demo", "sample.Demo");
+        ParsedGpuMethod helperMethod = parser.parseMethod(
+                helperSource,
+                "GpuUtils",
+                "sample.GpuUtils",
+                List.of(new ParsedGpuConstant("GpuUtils", "sample.GpuUtils", "SCALE", "float", "2.0f"))
+        );
+
+        String kernel = service.validateLowerAndEmit(kernelMethod, List.of(helperMethod));
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* input, __global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = (input[id] * 2.0f);
+                }""", kernel);
+    }
+
+    @Test
     void parsesValidatesLowersAndEmitsClassicSwitchCaseWithNestedBlock() {
         String methodSource = """
                 @GPU
@@ -515,6 +624,48 @@ class GpuFrontendServiceTest {
                             break;
                     }
                     output[0] = value;
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsRawLongLiterals() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal long[] input, @GPUGlobal long[] output) {
+                    long value = input[0] + 1L;
+                    output[0] = value * 17L;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global long* input, __global long* output) {
+                    long value = (input[0] + 1L);
+                    output[0] = (value * 17L);
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsByteShortAndCharLiteralArithmetic() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                    short step = 2;
+                    byte delta = 3;
+                    output[0] = input[0] + step + delta + 'A';
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    short step = 2;
+                    char delta = 3;
+                    output[0] = (((input[0] + step) + delta) + 65);
                 }""", kernel);
     }
 
