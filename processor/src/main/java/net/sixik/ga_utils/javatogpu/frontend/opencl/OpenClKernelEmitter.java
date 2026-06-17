@@ -15,6 +15,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrBreak;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrContinue;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrDoWhileLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrExpressionStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
@@ -26,6 +27,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrWhileLoop;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
+import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -42,7 +44,7 @@ public final class OpenClKernelEmitter {
         StringBuilder builder = new StringBuilder();
 
         for (GpuIrCompiledMethod helperMethod : helperMethods) {
-            emitFunctionPrototype(builder, helperMethod.parsedMethod(), helperMethodName(helperMethod.parsedMethod()));
+            emitFunctionPrototype(builder, helperMethod.parsedMethod(), helperMethod.emittedName());
         }
 
         if (!helperMethods.isEmpty()) {
@@ -50,7 +52,7 @@ public final class OpenClKernelEmitter {
         }
 
         for (GpuIrCompiledMethod helperMethod : helperMethods) {
-            emitFunction(builder, helperMethod.parsedMethod(), helperMethod.irMethod(), helperMethodName(helperMethod.parsedMethod()), false);
+            emitFunction(builder, helperMethod.parsedMethod(), helperMethod.irMethod(), helperMethod.emittedName(), false);
             builder.append("\n");
         }
 
@@ -58,7 +60,7 @@ public final class OpenClKernelEmitter {
                 builder,
                 kernelMethod.parsedMethod(),
                 kernelMethod.irMethod(),
-                OpenClKernelNaming.toEntryPointName(kernelMethod.irMethod().name()),
+                kernelMethod.emittedName(),
                 true
         );
 
@@ -67,6 +69,9 @@ public final class OpenClKernelEmitter {
 
     private String emitParameter(ParsedGpuParameter parameter) {
         String type = parameter.javaType();
+        if (GpuTypeSupport.isSupportedPointerType(type)) {
+            return emitType(GpuTypeSupport.pointerValueType(type)) + "* " + parameter.name();
+        }
         if (type.endsWith("[]")) {
             String elementType = type.substring(0, type.length() - 2);
             if (parameter.addressSpace() == GpuAddressSpace.GLOBAL) {
@@ -100,6 +105,13 @@ public final class OpenClKernelEmitter {
                     .append(emitExpression(assignment.target()))
                     .append(" = ")
                     .append(emitExpression(assignment.value()))
+                    .append(";\n");
+            return;
+        }
+
+        if (statement instanceof GpuIrExpressionStatement expressionStatement) {
+            builder.append(prefix)
+                    .append(emitExpression(expressionStatement.expression()))
                     .append(";\n");
             return;
         }
@@ -283,6 +295,9 @@ public final class OpenClKernelEmitter {
     }
 
     private String emitType(String javaType) {
+        if (GpuTypeSupport.isSupportedPointerType(javaType)) {
+            return emitType(GpuTypeSupport.pointerValueType(javaType));
+        }
         return switch (javaType) {
             case "byte" -> "char";
             case "boolean" -> "bool";
@@ -317,13 +332,5 @@ public final class OpenClKernelEmitter {
                 .append("(")
                 .append(parsedMethod.parameters().stream().map(this::emitParameter).collect(Collectors.joining(", ")))
                 .append(");\n");
-    }
-
-    private String helperMethodName(ParsedGpuMethod parsedMethod) {
-        return OpenClKernelNaming.toHelperFunctionName(
-                parsedMethod.ownerSimpleName(),
-                parsedMethod.name(),
-                parsedMethod.parameters().stream().map(ParsedGpuParameter::javaType).toList()
-        );
     }
 }

@@ -10,6 +10,7 @@ import com.github.javaparser.ast.expr.CastExpr;
 import com.github.javaparser.ast.expr.DoubleLiteralExpr;
 import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
@@ -21,6 +22,7 @@ import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.stmt.ForStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.BreakStmt;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ContinueStmt;
 import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.Statement;
@@ -78,7 +80,7 @@ public final class GpuSubsetValidator {
 
     public void validateKernel(ParsedGpuMethod kernelMethod, List<ParsedGpuMethod> helperMethods) {
         List<GpuValidationIssue> issues = new ArrayList<>();
-        Map<HelperSignature, HelperDescriptor> helperRegistry = buildHelperRegistry(helperMethods, issues);
+        Map<HelperSignature, List<HelperDescriptor>> helperRegistry = buildHelperRegistry(helperMethods, issues);
 
         helperMethods.forEach(helperMethod -> validateMethod(helperMethod, helperRegistry, issues, false));
         validateMethod(kernelMethod, helperRegistry, issues, true);
@@ -90,17 +92,23 @@ public final class GpuSubsetValidator {
 
     private void validateMethod(
             ParsedGpuMethod method,
-            Map<HelperSignature, HelperDescriptor> helperRegistry,
+            Map<HelperSignature, List<HelperDescriptor>> helperRegistry,
             List<GpuValidationIssue> issues,
             boolean kernelEntry
     ) {
         Deque<Map<String, String>> scopes = new ArrayDeque<>();
         scopes.push(new HashMap<>());
-        method.parameters().forEach(parameter -> scopes.peek().put(parameter.name(), parameter.javaType()));
-        ValidationContext context = new ValidationContext(kernelEntry, method.returnType(), helperRegistry);
+        method.parameters().forEach(parameter -> scopes.peek().put(parameter.name(), GpuTypeSupport.parameterStorageType(parameter.javaType())));
+        ValidationContext context = new ValidationContext(
+                kernelEntry,
+                method.returnType(),
+                method.ownerSimpleName(),
+                method.ownerQualifiedName(),
+                helperRegistry
+        );
 
         validateReturnType(method, issues, kernelEntry);
-        validateParameters(method, issues);
+        validateParameters(method, issues, kernelEntry);
         method.declaration().getBody().ifPresentOrElse(
                 body -> body.getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context)),
                 () -> issues.add(issue(method.declaration(), "GPU method must have a body"))
@@ -125,10 +133,13 @@ public final class GpuSubsetValidator {
         }
     }
 
-    private void validateParameters(ParsedGpuMethod method, List<GpuValidationIssue> issues) {
+    private void validateParameters(ParsedGpuMethod method, List<GpuValidationIssue> issues, boolean kernelEntry) {
         method.parameters().forEach(parameter -> {
             String type = parameter.javaType();
-            if (!GpuTypeSupport.isSupportedParameterType(type)) {
+            boolean supported = kernelEntry
+                    ? GpuTypeSupport.isSupportedKernelParameterType(type)
+                    : GpuTypeSupport.isSupportedHelperParameterType(type);
+            if (!supported) {
                 issues.add(new GpuValidationIssue(1, 1, "Unsupported GPU parameter type: " + type));
                 return;
             }
@@ -160,6 +171,11 @@ public final class GpuSubsetValidator {
     ) {
         if (statement instanceof ExpressionStmt expressionStmt) {
             validateExpressionStatement(expressionStmt, issues, scopes, context);
+            return;
+        }
+
+        if (statement instanceof BlockStmt blockStmt) {
+            validateBlock(blockStmt, issues, scopes, context);
             return;
         }
 
@@ -235,7 +251,27 @@ public final class GpuSubsetValidator {
             return;
         }
 
+        if (expression instanceof MethodCallExpr methodCallExpr) {
+            validateMethodCall(methodCallExpr, issues, scopes, context);
+            String resultType = inferExpressionType(methodCallExpr, scopes, context);
+            if (resultType != null && !"void".equals(resultType)) {
+                issues.add(issue(statement, "Only void @CCode helper calls can be used as standalone statements in @GPU methods"));
+            }
+            return;
+        }
+
         issues.add(issue(statement, "Unsupported expression statement in @GPU method: " + expression));
+    }
+
+    private void validateBlock(
+            BlockStmt blockStmt,
+            List<GpuValidationIssue> issues,
+            Deque<Map<String, String>> scopes,
+            ValidationContext context
+    ) {
+        scopes.push(new HashMap<>());
+        blockStmt.getStatements().forEach(statement -> validateStatement(statement, issues, scopes, context));
+        scopes.pop();
     }
 
     private void validateForLoop(ForStmt forStmt, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
@@ -421,6 +457,11 @@ public final class GpuSubsetValidator {
             return;
         }
 
+        if (expression instanceof FieldAccessExpr fieldAccessExpr) {
+            validateFieldAccess(fieldAccessExpr, issues, scopes);
+            return;
+        }
+
         if (expression instanceof BinaryExpr binaryExpr) {
             if (!ALLOWED_BINARY_OPERATORS.contains(binaryExpr.getOperator().asString())) {
                 issues.add(issue(binaryExpr, "Unsupported binary operator in @GPU method: " + binaryExpr.getOperator().asString()));
@@ -488,7 +529,13 @@ public final class GpuSubsetValidator {
     private void validateObjectCreation(ObjectCreationExpr creation, List<GpuValidationIssue> issues) {
         String typeName = creation.getTypeAsString();
         if (intrinsicDatabase.isAllowedAllocationType(typeName)) {
-            issues.add(issue(creation, "Pointer helper allocation is not supported in the current @GPU lowering pass: " + typeName));
+            if (!GpuTypeSupport.isSupportedPointerType(typeName)) {
+                issues.add(issue(creation, "Unsupported pointer helper type in @GPU methods: " + typeName));
+                return;
+            }
+            if (!creation.getArguments().isEmpty()) {
+                issues.add(issue(creation, "Pointer helper allocation does not accept constructor arguments in @GPU methods: " + typeName));
+            }
             return;
         }
 
@@ -508,22 +555,56 @@ public final class GpuSubsetValidator {
             return;
         }
 
-        HelperDescriptor helper = context.helperRegistry().get(new HelperSignature(call.getNameAsString(), inferArgumentTypes(call, scopes, context)));
-        if (helper != null) {
+        HelperResolution resolution = resolveHelperCall(owner, call.getNameAsString(), inferArgumentTypes(call, scopes, context), context);
+        if (resolution.descriptor() != null) {
+            validateHelperPointerArguments(call, resolution.descriptor(), issues, scopes);
             return;
         }
+        issues.add(issue(call, resolution.errorMessage()));
+    }
 
-        if (owner.isEmpty()) {
-            issues.add(issue(call, "Unknown @CCode helper call in @GPU method: " + call.getNameAsString()));
-            return;
+    private void validateHelperPointerArguments(
+            MethodCallExpr call,
+            HelperDescriptor helperDescriptor,
+            List<GpuValidationIssue> issues,
+            Deque<Map<String, String>> scopes
+    ) {
+        for (int i = 0; i < helperDescriptor.argumentTypes().size(); i++) {
+            String expectedType = helperDescriptor.argumentTypes().get(i);
+            if (!GpuTypeSupport.isSupportedPointerType(expectedType)) {
+                continue;
+            }
+            Expression argument = call.getArgument(i);
+            if (!(argument instanceof NameExpr nameExpr)) {
+                issues.add(issue(argument, "Pointer helper arguments must be pointer variables in @GPU methods"));
+                continue;
+            }
+            String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
+            if (storageType == null || !GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+                issues.add(issue(argument, "Pointer helper arguments must reference a supported pointer variable: " + argument));
+            }
         }
-
-        issues.add(issue(call, "Only GPU.* and @CCode helper calls are allowed in @GPU methods"));
     }
 
     private void validateVariableType(VariableDeclarator variable, List<GpuValidationIssue> issues) {
         if (!GpuTypeSupport.isSupportedLocalType(variable.getTypeAsString())) {
             issues.add(issue(variable, "Unsupported local type in @GPU method: " + variable.getTypeAsString()));
+        }
+    }
+
+    private void validateFieldAccess(FieldAccessExpr fieldAccessExpr, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes) {
+        if (!(fieldAccessExpr.getScope() instanceof NameExpr nameExpr)) {
+            issues.add(issue(fieldAccessExpr, "Only direct pointer field access is supported in @GPU methods"));
+            return;
+        }
+        if (!"value".equals(fieldAccessExpr.getNameAsString())) {
+            issues.add(issue(fieldAccessExpr, "Only the .value field is supported on pointer helpers in @GPU methods"));
+            return;
+        }
+
+        String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
+        if (storageType == null || !GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+            issues.add(issue(fieldAccessExpr, "The .value field is only supported on pointer helpers in @GPU methods"));
         }
     }
 
@@ -555,7 +636,7 @@ public final class GpuSubsetValidator {
         }
 
         Expression target = unaryExpr.getExpression();
-        if (!(target instanceof NameExpr) && !(target instanceof ArrayAccessExpr)) {
+        if (!(target instanceof NameExpr) && !(target instanceof ArrayAccessExpr) && !(target instanceof FieldAccessExpr)) {
             issues.add(issue(unaryExpr, "Update expressions in @GPU methods must target a variable or direct array access"));
             return;
         }
@@ -591,7 +672,7 @@ public final class GpuSubsetValidator {
 
     private String inferExpressionType(Expression expression, Deque<Map<String, String>> scopes, ValidationContext context) {
         if (expression instanceof NameExpr nameExpr) {
-            return lookupType(scopes, nameExpr.getNameAsString());
+            return GpuTypeSupport.declaredType(lookupStorageType(scopes, nameExpr.getNameAsString()));
         }
 
         if (expression instanceof IntegerLiteralExpr) {
@@ -627,11 +708,22 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof ArrayAccessExpr arrayAccessExpr) {
-            String arrayType = lookupType(scopes, arrayAccessExpr.getName().toString());
+            String arrayType = GpuTypeSupport.declaredType(lookupStorageType(scopes, arrayAccessExpr.getName().toString()));
             if (arrayType != null && GpuTypeSupport.isSupportedArrayType(arrayType)) {
                 return GpuTypeSupport.componentType(arrayType);
             }
             return null;
+        }
+
+        if (expression instanceof FieldAccessExpr fieldAccessExpr) {
+            if (!(fieldAccessExpr.getScope() instanceof NameExpr nameExpr) || !"value".equals(fieldAccessExpr.getNameAsString())) {
+                return null;
+            }
+            String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
+            if (storageType == null || !GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+                return null;
+            }
+            return GpuTypeSupport.pointerValueType(storageType);
         }
 
         if (expression instanceof BinaryExpr binaryExpr) {
@@ -698,15 +790,26 @@ public final class GpuSubsetValidator {
             }
 
             if (!owner.equals("GPU")) {
-                HelperDescriptor helper = context.helperRegistry().get(new HelperSignature(methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)));
+                HelperDescriptor helper = resolveHelperCall(
+                        owner,
+                        methodCallExpr.getNameAsString(),
+                        inferArgumentTypes(methodCallExpr, scopes, context),
+                        context
+                ).descriptor();
                 return helper == null ? null : helper.returnType();
             }
+        }
+
+        if (expression instanceof ObjectCreationExpr creationExpr
+                && intrinsicDatabase.isAllowedAllocationType(creationExpr.getTypeAsString())
+                && GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())) {
+            return creationExpr.getTypeAsString();
         }
 
         return null;
     }
 
-    private String lookupType(Deque<Map<String, String>> scopes, String name) {
+    private String lookupStorageType(Deque<Map<String, String>> scopes, String name) {
         for (Map<String, String> scope : scopes) {
             if (scope.containsKey(name)) {
                 return scope.get(name);
@@ -796,36 +899,185 @@ public final class GpuSubsetValidator {
         return GpuTypeSupport.isSupportedScalarType(expectedType) && GpuTypeSupport.isSupportedScalarType(actualType);
     }
 
-    private Map<HelperSignature, HelperDescriptor> buildHelperRegistry(List<ParsedGpuMethod> helperMethods, List<GpuValidationIssue> issues) {
-        Map<HelperSignature, HelperDescriptor> helperRegistry = new HashMap<>();
+    private HelperResolution resolveHelperCall(
+            String owner,
+            String methodName,
+            List<String> argumentTypes,
+            ValidationContext context
+    ) {
+        List<HelperDescriptor> compatibleCandidates = findCompatibleHelpers(methodName, argumentTypes, context.helperRegistry());
+        if (compatibleCandidates.isEmpty()) {
+            return new HelperResolution(null, unknownHelperMessage(owner, methodName));
+        }
+
+        if (!owner.isBlank()) {
+            List<HelperDescriptor> ownerMatches = compatibleCandidates.stream()
+                    .filter(candidate -> ownerMatches(owner, candidate))
+                    .toList();
+            HelperDescriptor resolved = selectBestHelper(ownerMatches, argumentTypes);
+            if (resolved != null) {
+                return new HelperResolution(resolved, null);
+            }
+            if (ownerMatches.isEmpty()) {
+                return new HelperResolution(null, unknownHelperMessage(owner, methodName));
+            }
+            return new HelperResolution(null, ambiguousHelperMessage(owner, methodName, argumentTypes, true));
+        }
+
+        List<HelperDescriptor> currentOwnerMatches = compatibleCandidates.stream()
+                .filter(candidate -> belongsToCurrentOwner(candidate, context))
+                .toList();
+        HelperDescriptor currentOwnerResolved = selectBestHelper(currentOwnerMatches, argumentTypes);
+        if (currentOwnerResolved != null) {
+            return new HelperResolution(currentOwnerResolved, null);
+        }
+        if (!currentOwnerMatches.isEmpty()) {
+            return new HelperResolution(null, ambiguousHelperMessage(owner, methodName, argumentTypes, false));
+        }
+        HelperDescriptor resolved = selectBestHelper(compatibleCandidates, argumentTypes);
+        if (resolved != null) {
+            return new HelperResolution(resolved, null);
+        }
+
+        return new HelperResolution(null, ambiguousHelperMessage(owner, methodName, argumentTypes, false));
+    }
+
+    private List<HelperDescriptor> findCompatibleHelpers(
+            String methodName,
+            List<String> argumentTypes,
+            Map<HelperSignature, List<HelperDescriptor>> helperRegistry
+    ) {
+        List<HelperDescriptor> compatible = new ArrayList<>();
+        for (Map.Entry<HelperSignature, List<HelperDescriptor>> entry : helperRegistry.entrySet()) {
+            if (!entry.getKey().name().equals(methodName)) {
+                continue;
+            }
+            if (!isCompatibleSignature(argumentTypes, entry.getKey().argumentTypes())) {
+                continue;
+            }
+            compatible.addAll(entry.getValue());
+        }
+        return compatible;
+    }
+
+    private boolean isCompatibleSignature(List<String> argumentTypes, List<String> parameterTypes) {
+        if (argumentTypes.size() != parameterTypes.size()) {
+            return false;
+        }
+        for (int i = 0; i < argumentTypes.size(); i++) {
+            if (!GpuTypeSupport.isHelperArgumentCompatible(argumentTypes.get(i), parameterTypes.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private HelperDescriptor selectBestHelper(List<HelperDescriptor> candidates, List<String> argumentTypes) {
+        HelperDescriptor best = null;
+        int bestScore = Integer.MAX_VALUE;
+        boolean ambiguous = false;
+        for (HelperDescriptor candidate : candidates) {
+            int score = helperCompatibilityScore(argumentTypes, candidate.argumentTypes());
+            if (score < bestScore) {
+                best = candidate;
+                bestScore = score;
+                ambiguous = false;
+            } else if (score == bestScore) {
+                ambiguous = true;
+            }
+        }
+        return ambiguous ? null : best;
+    }
+
+    private int helperCompatibilityScore(List<String> argumentTypes, List<String> parameterTypes) {
+        int score = 0;
+        for (int i = 0; i < argumentTypes.size(); i++) {
+            score += GpuTypeSupport.helperCompatibilityScore(argumentTypes.get(i), parameterTypes.get(i));
+        }
+        return score;
+    }
+
+    private boolean belongsToCurrentOwner(HelperDescriptor descriptor, ValidationContext context) {
+        if (context.ownerQualifiedName() != null && !context.ownerQualifiedName().isBlank()
+                && context.ownerQualifiedName().equals(descriptor.ownerQualifiedName())) {
+            return true;
+        }
+        return context.ownerSimpleName() != null
+                && !context.ownerSimpleName().isBlank()
+                && context.ownerSimpleName().equals(descriptor.ownerSimpleName());
+    }
+
+    private boolean ownerMatches(String owner, HelperDescriptor descriptor) {
+        if (owner.equals(descriptor.ownerSimpleName()) || owner.equals(descriptor.ownerQualifiedName())) {
+            return true;
+        }
+        return descriptor.ownerQualifiedName() != null
+                && !descriptor.ownerQualifiedName().isBlank()
+                && descriptor.ownerQualifiedName().endsWith("." + owner);
+    }
+
+    private String unknownHelperMessage(String owner, String methodName) {
+        return "Unknown @CCode helper call in @GPU method: "
+                + (owner.isBlank() ? methodName : owner + "." + methodName);
+    }
+
+    private String ambiguousHelperMessage(String owner, String methodName, List<String> argumentTypes, boolean ownerQualified) {
+        String callSite = owner.isBlank() ? methodName : owner + "." + methodName;
+        return "Ambiguous @CCode helper call in @GPU method: "
+                + callSite
+                + argumentTypes
+                + (ownerQualified
+                ? "; use a more specific helper owner"
+                : "; qualify it with the helper class name");
+    }
+
+    private Map<HelperSignature, List<HelperDescriptor>> buildHelperRegistry(List<ParsedGpuMethod> helperMethods, List<GpuValidationIssue> issues) {
+        Map<HelperSignature, List<HelperDescriptor>> helperRegistry = new HashMap<>();
         for (ParsedGpuMethod helperMethod : helperMethods) {
             HelperSignature signature = new HelperSignature(
                     helperMethod.name(),
                     helperMethod.parameters().stream().map(parameter -> parameter.javaType()).toList()
             );
-            HelperDescriptor previous = helperRegistry.putIfAbsent(
-                    signature,
-                    new HelperDescriptor(
-                            helperMethod.ownerSimpleName(),
-                            helperMethod.ownerQualifiedName(),
-                            helperMethod.name(),
-                            OpenClKernelNaming.toHelperFunctionName(helperMethod.ownerSimpleName(), helperMethod.name(), signature.argumentTypes()),
-                            helperMethod.returnType(),
-                            signature.argumentTypes(),
-                            helperMethod.inline()
-                    )
+            HelperDescriptor descriptor = new HelperDescriptor(
+                    helperMethod.ownerSimpleName(),
+                    helperMethod.ownerQualifiedName(),
+                    helperMethod.name(),
+                    OpenClKernelNaming.toHelperFunctionName(helperMethod.ownerSimpleName(), helperMethod.name(), signature.argumentTypes()),
+                    helperMethod.returnType(),
+                    signature.argumentTypes(),
+                    helperMethod.inline()
             );
-            if (previous != null) {
-                issues.add(issue(helperMethod.declaration(), "Duplicate @CCode helper signature: " + helperMethod.name() + signature.argumentTypes()));
+            List<HelperDescriptor> candidates = helperRegistry.computeIfAbsent(signature, ignored -> new ArrayList<>());
+            boolean duplicateOwner = candidates.stream().anyMatch(existing -> sameOwner(existing, descriptor));
+            if (duplicateOwner) {
+                issues.add(issue(helperMethod.declaration(), "Duplicate @CCode helper signature in owner: " + helperMethod.name() + signature.argumentTypes()));
+                continue;
             }
+            candidates.add(descriptor);
         }
         return helperRegistry;
+    }
+
+    private boolean sameOwner(HelperDescriptor left, HelperDescriptor right) {
+        if (left.ownerQualifiedName() != null && !left.ownerQualifiedName().isBlank()
+                && right.ownerQualifiedName() != null && !right.ownerQualifiedName().isBlank()) {
+            return left.ownerQualifiedName().equals(right.ownerQualifiedName());
+        }
+        return left.ownerSimpleName().equals(right.ownerSimpleName());
     }
 
     private record ValidationContext(
             boolean kernelEntry,
             String returnType,
-            Map<HelperSignature, HelperDescriptor> helperRegistry
+            String ownerSimpleName,
+            String ownerQualifiedName,
+            Map<HelperSignature, List<HelperDescriptor>> helperRegistry
+    ) {
+    }
+
+    private record HelperResolution(
+            HelperDescriptor descriptor,
+            String errorMessage
     ) {
     }
 

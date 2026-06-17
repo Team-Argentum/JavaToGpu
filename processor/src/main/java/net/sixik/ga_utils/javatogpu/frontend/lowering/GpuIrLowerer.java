@@ -10,12 +10,15 @@ import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.DoubleLiteralExpr;
 import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import com.github.javaparser.ast.stmt.BreakStmt;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ContinueStmt;
 import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
@@ -43,6 +46,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrBreak;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrContinue;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrDoWhileLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrExpressionStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
@@ -59,6 +63,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -93,22 +98,47 @@ public final class GpuIrLowerer {
     }
 
     public List<GpuIrCompiledMethod> lower(ParsedGpuMethod kernelMethod, List<ParsedGpuMethod> helperMethods) {
-        Map<HelperSignature, HelperDescriptor> helperRegistry = buildHelperRegistry(helperMethods);
+        Map<HelperSignature, List<HelperDescriptor>> helperRegistry = buildHelperRegistry(helperMethods);
         List<GpuIrCompiledMethod> loweredHelpers = helperMethods.stream()
-                .map(helperMethod -> new GpuIrCompiledMethod(helperMethod, lower(helperMethod, helperRegistry)))
+                .map(helperMethod -> compileMethod(helperMethod, helperRegistry, false))
                 .toList();
-        GpuIrCompiledMethod kernel = new GpuIrCompiledMethod(kernelMethod, lower(kernelMethod, helperRegistry));
+        GpuIrCompiledMethod kernel = compileMethod(kernelMethod, helperRegistry, true);
 
         List<GpuIrCompiledMethod> compiledMethods = new ArrayList<>(loweredHelpers);
         compiledMethods.add(kernel);
         return compiledMethods;
     }
 
-    private GpuIrMethod lower(ParsedGpuMethod method, Map<HelperSignature, HelperDescriptor> helperRegistry) {
+    private GpuIrCompiledMethod compileMethod(
+            ParsedGpuMethod method,
+            Map<HelperSignature, List<HelperDescriptor>> helperRegistry,
+            boolean kernelEntry
+    ) {
+        GpuIrMethod loweredMethod = lower(method, helperRegistry);
+        String emittedName = kernelEntry
+                ? OpenClKernelNaming.toEntryPointName(loweredMethod.name())
+                : OpenClKernelNaming.toHelperFunctionName(
+                method.ownerSimpleName(),
+                method.name(),
+                method.parameters().stream().map(parameter -> parameter.javaType()).toList()
+        );
+        return new GpuIrCompiledMethod(
+                method,
+                loweredMethod,
+                emittedName,
+                List.copyOf(collectHelperDependencies(loweredMethod))
+        );
+    }
+
+    private GpuIrMethod lower(ParsedGpuMethod method, Map<HelperSignature, List<HelperDescriptor>> helperRegistry) {
         Deque<Map<String, String>> scopes = new ArrayDeque<>();
         scopes.push(new HashMap<>());
-        method.parameters().forEach(parameter -> scopes.peek().put(parameter.name(), parameter.javaType()));
-        LoweringContext context = new LoweringContext(helperRegistry);
+        method.parameters().forEach(parameter -> scopes.peek().put(parameter.name(), GpuTypeSupport.parameterStorageType(parameter.javaType())));
+        LoweringContext context = new LoweringContext(
+                helperRegistry,
+                method.ownerSimpleName(),
+                method.ownerQualifiedName()
+        );
 
         List<GpuIrStatement> statements = new ArrayList<>();
         method.declaration().getBody()
@@ -180,6 +210,10 @@ public final class GpuIrLowerer {
 
             if (expression instanceof UnaryExpr unaryExpr) {
                 return lowerUpdateExpression(unaryExpr, scopes, context);
+            }
+
+            if (expression instanceof MethodCallExpr methodCallExpr) {
+                return new GpuIrExpressionStatement(lowerExpression(methodCallExpr, scopes, context));
             }
         }
 
@@ -267,7 +301,7 @@ public final class GpuIrLowerer {
         }
 
         List<GpuIrStatement> statements = entryStatements(entry).stream()
-                .map(statement -> lowerStatement(statement, scopes, context))
+                .flatMap(statement -> lowerSwitchEntryStatement(statement, scopes, context).stream())
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         if (entry.getType() != SwitchEntry.Type.STATEMENT_GROUP && !endsControlTransfer(statements)) {
             statements.add(new GpuIrBreak());
@@ -278,6 +312,22 @@ public final class GpuIrLowerer {
                 statements,
                 entry.getLabels().isEmpty()
         );
+    }
+
+    private List<GpuIrStatement> lowerSwitchEntryStatement(
+            com.github.javaparser.ast.stmt.Statement statement,
+            Deque<Map<String, String>> scopes,
+            LoweringContext context
+    ) {
+        if (statement instanceof BlockStmt blockStmt) {
+            scopes.push(new HashMap<>());
+            List<GpuIrStatement> lowered = blockStmt.getStatements().stream()
+                    .map(value -> lowerStatement(value, scopes, context))
+                    .toList();
+            scopes.pop();
+            return lowered;
+        }
+        return List.of(lowerStatement(statement, scopes, context));
     }
 
     private GpuIrForLoop lowerForLoop(ForStmt forStmt, Deque<Map<String, String>> scopes, LoweringContext context) {
@@ -405,6 +455,20 @@ public final class GpuIrLowerer {
             );
         }
 
+        if (expression instanceof FieldAccessExpr fieldAccessExpr) {
+            if (!(fieldAccessExpr.getScope() instanceof NameExpr nameExpr) || !"value".equals(fieldAccessExpr.getNameAsString())) {
+                throw new IllegalArgumentException("Unsupported pointer field access for lowering: " + fieldAccessExpr);
+            }
+            String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
+            if (GpuTypeSupport.isPointerReferenceStorage(storageType)) {
+                return new GpuIrUnary("*", new GpuIrVariableRef(nameExpr.getNameAsString()));
+            }
+            if (GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+                return new GpuIrVariableRef(nameExpr.getNameAsString());
+            }
+            throw new IllegalArgumentException("The .value field is only supported on pointer helpers for lowering: " + fieldAccessExpr);
+        }
+
         if (expression instanceof BinaryExpr binaryExpr) {
             if (!ALLOWED_BINARY_OPERATORS.contains(binaryExpr.getOperator().asString())) {
                 throw new IllegalArgumentException("Unsupported binary operator for lowering: " + binaryExpr.getOperator().asString());
@@ -435,25 +499,66 @@ public final class GpuIrLowerer {
 
         if (expression instanceof MethodCallExpr methodCallExpr) {
             String owner = methodCallExpr.getScope().map(Expression::toString).orElse("");
-            List<GpuIrExpression> arguments = methodCallExpr.getArguments().stream()
-                    .map(argument -> lowerExpression(argument, scopes, context))
-                    .toList();
             List<String> argumentTypes = inferArgumentTypes(methodCallExpr, scopes, context);
 
             if ("GPU".equals(owner)) {
+                List<GpuIrExpression> arguments = methodCallExpr.getArguments().stream()
+                        .map(argument -> lowerExpression(argument, scopes, context))
+                        .toList();
                 GpuIntrinsic intrinsic = intrinsicDatabase.require(owner, methodCallExpr.getNameAsString(), argumentTypes);
                 return new GpuIrIntrinsicCall(intrinsic.backendName(), intrinsic.resultType(), arguments);
             }
 
-            HelperDescriptor helper = context.helperRegistry().get(new HelperSignature(methodCallExpr.getNameAsString(), argumentTypes));
+            HelperDescriptor helper = resolveHelperCall(owner, methodCallExpr.getNameAsString(), argumentTypes, context);
             if (helper != null) {
+                List<GpuIrExpression> arguments = new ArrayList<>(methodCallExpr.getArguments().size());
+                for (int i = 0; i < methodCallExpr.getArguments().size(); i++) {
+                    arguments.add(lowerHelperArgument(
+                            methodCallExpr.getArgument(i),
+                            helper.argumentTypes().get(i),
+                            scopes,
+                            context
+                    ));
+                }
                 return new GpuIrHelperCall(helper.emittedName(), helper.returnType(), arguments);
             }
 
-            throw new IllegalArgumentException("Unknown @CCode helper call for lowering: " + methodCallExpr.getNameAsString());
+            throw new IllegalArgumentException("Unknown or ambiguous @CCode helper call for lowering: "
+                    + (owner.isBlank() ? methodCallExpr.getNameAsString() : owner + "." + methodCallExpr.getNameAsString()));
+        }
+
+        if (expression instanceof ObjectCreationExpr creationExpr
+                && intrinsicDatabase.isAllowedAllocationType(creationExpr.getTypeAsString())
+                && GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())) {
+            if (!creationExpr.getArguments().isEmpty()) {
+                throw new IllegalArgumentException("Pointer helper allocation does not accept constructor arguments: " + creationExpr.getTypeAsString());
+            }
+            return new GpuIrLiteral(zeroLiteralForType(GpuTypeSupport.pointerValueType(creationExpr.getTypeAsString())));
         }
 
         throw new IllegalArgumentException("Unsupported expression for first lowering pass: " + expression);
+    }
+
+    private GpuIrExpression lowerHelperArgument(
+            Expression argument,
+            String expectedType,
+            Deque<Map<String, String>> scopes,
+            LoweringContext context
+    ) {
+        if (!GpuTypeSupport.isSupportedPointerType(expectedType)) {
+            return lowerExpression(argument, scopes, context);
+        }
+        if (!(argument instanceof NameExpr nameExpr)) {
+            throw new IllegalArgumentException("Pointer helper arguments must be pointer variables for lowering: " + argument);
+        }
+        String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
+        if (GpuTypeSupport.isPointerReferenceStorage(storageType)) {
+            return new GpuIrVariableRef(nameExpr.getNameAsString());
+        }
+        if (GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+            return new GpuIrUnary("&", new GpuIrVariableRef(nameExpr.getNameAsString()));
+        }
+        throw new IllegalArgumentException("Pointer helper arguments must reference a supported pointer variable for lowering: " + argument);
     }
 
     private boolean isIncrement(UnaryExpr.Operator operator) {
@@ -484,7 +589,7 @@ public final class GpuIrLowerer {
 
     private String inferExpressionType(Expression expression, Deque<Map<String, String>> scopes, LoweringContext context) {
         if (expression instanceof NameExpr nameExpr) {
-            return lookupType(scopes, nameExpr.getNameAsString());
+            return GpuTypeSupport.declaredType(lookupStorageType(scopes, nameExpr.getNameAsString()));
         }
 
         if (expression instanceof IntegerLiteralExpr) {
@@ -520,11 +625,22 @@ public final class GpuIrLowerer {
         }
 
         if (expression instanceof ArrayAccessExpr arrayAccessExpr) {
-            String arrayType = lookupType(scopes, arrayAccessExpr.getName().toString());
+            String arrayType = GpuTypeSupport.declaredType(lookupStorageType(scopes, arrayAccessExpr.getName().toString()));
             if (arrayType != null && GpuTypeSupport.isSupportedArrayType(arrayType)) {
                 return GpuTypeSupport.componentType(arrayType);
             }
             return null;
+        }
+
+        if (expression instanceof FieldAccessExpr fieldAccessExpr) {
+            if (!(fieldAccessExpr.getScope() instanceof NameExpr nameExpr) || !"value".equals(fieldAccessExpr.getNameAsString())) {
+                return null;
+            }
+            String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
+            if (storageType == null || !GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+                return null;
+            }
+            return GpuTypeSupport.pointerValueType(storageType);
         }
 
         if (expression instanceof BinaryExpr binaryExpr) {
@@ -591,21 +707,40 @@ public final class GpuIrLowerer {
             }
 
             if (!owner.equals("GPU")) {
-                HelperDescriptor helper = context.helperRegistry().get(new HelperSignature(methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)));
+                HelperDescriptor helper = resolveHelperCall(
+                        owner,
+                        methodCallExpr.getNameAsString(),
+                        inferArgumentTypes(methodCallExpr, scopes, context),
+                        context
+                );
                 return helper == null ? null : helper.returnType();
             }
+        }
+
+        if (expression instanceof ObjectCreationExpr creationExpr
+                && intrinsicDatabase.isAllowedAllocationType(creationExpr.getTypeAsString())
+                && GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())) {
+            return creationExpr.getTypeAsString();
         }
 
         return null;
     }
 
-    private String lookupType(Deque<Map<String, String>> scopes, String name) {
+    private String lookupStorageType(Deque<Map<String, String>> scopes, String name) {
         for (Map<String, String> scope : scopes) {
             if (scope.containsKey(name)) {
                 return scope.get(name);
             }
         }
         return null;
+    }
+
+    private String zeroLiteralForType(String javaType) {
+        return switch (javaType) {
+            case "float" -> "0.0f";
+            case "double" -> "0.0";
+            default -> "0";
+        };
     }
 
     private String inferNumericResultType(String leftType, String rightType) {
@@ -677,13 +812,116 @@ public final class GpuIrLowerer {
         return last instanceof GpuIrBreak || last instanceof GpuIrContinue || last instanceof GpuIrReturn;
     }
 
-    private Map<HelperSignature, HelperDescriptor> buildHelperRegistry(List<ParsedGpuMethod> helperMethods) {
-        Map<HelperSignature, HelperDescriptor> helperRegistry = new HashMap<>();
+    private HelperDescriptor resolveHelperCall(
+            String owner,
+            String methodName,
+            List<String> argumentTypes,
+            LoweringContext context
+    ) {
+        List<HelperDescriptor> compatibleCandidates = findCompatibleHelpers(methodName, argumentTypes, context.helperRegistry());
+        if (compatibleCandidates.isEmpty()) {
+            return null;
+        }
+        if (!owner.isBlank()) {
+            List<HelperDescriptor> ownerMatches = compatibleCandidates.stream()
+                    .filter(candidate -> ownerMatches(owner, candidate))
+                    .toList();
+            return selectBestHelper(ownerMatches, argumentTypes);
+        }
+
+        List<HelperDescriptor> currentOwnerMatches = compatibleCandidates.stream()
+                .filter(candidate -> belongsToCurrentOwner(candidate, context))
+                .toList();
+        HelperDescriptor currentOwnerResolved = selectBestHelper(currentOwnerMatches, argumentTypes);
+        if (currentOwnerResolved != null) {
+            return currentOwnerResolved;
+        }
+        if (!currentOwnerMatches.isEmpty()) {
+            return null;
+        }
+        return selectBestHelper(compatibleCandidates, argumentTypes);
+    }
+
+    private List<HelperDescriptor> findCompatibleHelpers(
+            String methodName,
+            List<String> argumentTypes,
+            Map<HelperSignature, List<HelperDescriptor>> helperRegistry
+    ) {
+        List<HelperDescriptor> compatible = new ArrayList<>();
+        for (Map.Entry<HelperSignature, List<HelperDescriptor>> entry : helperRegistry.entrySet()) {
+            if (!entry.getKey().name().equals(methodName)) {
+                continue;
+            }
+            if (!isCompatibleSignature(argumentTypes, entry.getKey().argumentTypes())) {
+                continue;
+            }
+            compatible.addAll(entry.getValue());
+        }
+        return compatible;
+    }
+
+    private boolean isCompatibleSignature(List<String> argumentTypes, List<String> parameterTypes) {
+        if (argumentTypes.size() != parameterTypes.size()) {
+            return false;
+        }
+        for (int i = 0; i < argumentTypes.size(); i++) {
+            if (!GpuTypeSupport.isHelperArgumentCompatible(argumentTypes.get(i), parameterTypes.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private HelperDescriptor selectBestHelper(List<HelperDescriptor> candidates, List<String> argumentTypes) {
+        HelperDescriptor best = null;
+        int bestScore = Integer.MAX_VALUE;
+        boolean ambiguous = false;
+        for (HelperDescriptor candidate : candidates) {
+            int score = helperCompatibilityScore(argumentTypes, candidate.argumentTypes());
+            if (score < bestScore) {
+                best = candidate;
+                bestScore = score;
+                ambiguous = false;
+            } else if (score == bestScore) {
+                ambiguous = true;
+            }
+        }
+        return ambiguous ? null : best;
+    }
+
+    private int helperCompatibilityScore(List<String> argumentTypes, List<String> parameterTypes) {
+        int score = 0;
+        for (int i = 0; i < argumentTypes.size(); i++) {
+            score += GpuTypeSupport.helperCompatibilityScore(argumentTypes.get(i), parameterTypes.get(i));
+        }
+        return score;
+    }
+
+    private boolean belongsToCurrentOwner(HelperDescriptor descriptor, LoweringContext context) {
+        if (context.ownerQualifiedName() != null && !context.ownerQualifiedName().isBlank()
+                && context.ownerQualifiedName().equals(descriptor.ownerQualifiedName())) {
+            return true;
+        }
+        return context.ownerSimpleName() != null
+                && !context.ownerSimpleName().isBlank()
+                && context.ownerSimpleName().equals(descriptor.ownerSimpleName());
+    }
+
+    private boolean ownerMatches(String owner, HelperDescriptor descriptor) {
+        if (owner.equals(descriptor.ownerSimpleName()) || owner.equals(descriptor.ownerQualifiedName())) {
+            return true;
+        }
+        return descriptor.ownerQualifiedName() != null
+                && !descriptor.ownerQualifiedName().isBlank()
+                && descriptor.ownerQualifiedName().endsWith("." + owner);
+    }
+
+    private Map<HelperSignature, List<HelperDescriptor>> buildHelperRegistry(List<ParsedGpuMethod> helperMethods) {
+        Map<HelperSignature, List<HelperDescriptor>> helperRegistry = new HashMap<>();
         for (ParsedGpuMethod helperMethod : helperMethods) {
             List<String> argumentTypes = helperMethod.parameters().stream().map(parameter -> parameter.javaType()).toList();
-            helperRegistry.put(
-                    new HelperSignature(helperMethod.name(), argumentTypes),
-                    new HelperDescriptor(
+            helperRegistry.computeIfAbsent(new HelperSignature(helperMethod.name(), argumentTypes), ignored -> new ArrayList<>())
+                    .add(new HelperDescriptor(
                             helperMethod.ownerSimpleName(),
                             helperMethod.ownerQualifiedName(),
                             helperMethod.name(),
@@ -691,13 +929,108 @@ public final class GpuIrLowerer {
                             helperMethod.returnType(),
                             argumentTypes,
                             helperMethod.inline()
-                    )
-            );
+                    ));
         }
         return helperRegistry;
     }
 
-    private record LoweringContext(Map<HelperSignature, HelperDescriptor> helperRegistry) {
+    private Set<String> collectHelperDependencies(GpuIrMethod method) {
+        LinkedHashSet<String> dependencies = new LinkedHashSet<>();
+        for (GpuIrStatement statement : method.statements()) {
+            collectHelperDependencies(statement, dependencies);
+        }
+        return dependencies;
+    }
+
+    private void collectHelperDependencies(GpuIrStatement statement, Set<String> dependencies) {
+        if (statement instanceof GpuIrVariableDeclaration declaration) {
+            collectHelperDependencies(declaration.initializer(), dependencies);
+            return;
+        }
+        if (statement instanceof GpuIrAssignment assignment) {
+            collectHelperDependencies(assignment.target(), dependencies);
+            collectHelperDependencies(assignment.value(), dependencies);
+            return;
+        }
+        if (statement instanceof GpuIrExpressionStatement expressionStatement) {
+            collectHelperDependencies(expressionStatement.expression(), dependencies);
+            return;
+        }
+        if (statement instanceof GpuIrForLoop loop) {
+            collectHelperDependencies(loop.initializer(), dependencies);
+            collectHelperDependencies(loop.condition(), dependencies);
+            collectHelperDependencies(loop.update(), dependencies);
+            loop.body().forEach(bodyStatement -> collectHelperDependencies(bodyStatement, dependencies));
+            return;
+        }
+        if (statement instanceof GpuIrIf ifStatement) {
+            collectHelperDependencies(ifStatement.condition(), dependencies);
+            ifStatement.thenBranch().forEach(thenStatement -> collectHelperDependencies(thenStatement, dependencies));
+            ifStatement.elseBranch().forEach(elseStatement -> collectHelperDependencies(elseStatement, dependencies));
+            return;
+        }
+        if (statement instanceof GpuIrWhileLoop loop) {
+            collectHelperDependencies(loop.condition(), dependencies);
+            loop.body().forEach(bodyStatement -> collectHelperDependencies(bodyStatement, dependencies));
+            return;
+        }
+        if (statement instanceof GpuIrDoWhileLoop loop) {
+            loop.body().forEach(bodyStatement -> collectHelperDependencies(bodyStatement, dependencies));
+            collectHelperDependencies(loop.condition(), dependencies);
+            return;
+        }
+        if (statement instanceof GpuIrSwitch switchStatement) {
+            collectHelperDependencies(switchStatement.selector(), dependencies);
+            for (GpuIrSwitchCase switchCase : switchStatement.cases()) {
+                switchCase.labels().forEach(label -> collectHelperDependencies(label, dependencies));
+                switchCase.statements().forEach(caseStatement -> collectHelperDependencies(caseStatement, dependencies));
+            }
+            return;
+        }
+        if (statement instanceof GpuIrReturn gpuIrReturn && gpuIrReturn.value() != null) {
+            collectHelperDependencies(gpuIrReturn.value(), dependencies);
+        }
+    }
+
+    private void collectHelperDependencies(GpuIrExpression expression, Set<String> dependencies) {
+        if (expression instanceof GpuIrHelperCall helperCall) {
+            dependencies.add(helperCall.helperName());
+            helperCall.arguments().forEach(argument -> collectHelperDependencies(argument, dependencies));
+            return;
+        }
+        if (expression instanceof GpuIrArrayAccess arrayAccess) {
+            collectHelperDependencies(arrayAccess.index(), dependencies);
+            return;
+        }
+        if (expression instanceof GpuIrBinary binary) {
+            collectHelperDependencies(binary.left(), dependencies);
+            collectHelperDependencies(binary.right(), dependencies);
+            return;
+        }
+        if (expression instanceof GpuIrCast cast) {
+            collectHelperDependencies(cast.expression(), dependencies);
+            return;
+        }
+        if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
+            intrinsicCall.arguments().forEach(argument -> collectHelperDependencies(argument, dependencies));
+            return;
+        }
+        if (expression instanceof GpuIrTernary ternary) {
+            collectHelperDependencies(ternary.condition(), dependencies);
+            collectHelperDependencies(ternary.whenTrue(), dependencies);
+            collectHelperDependencies(ternary.whenFalse(), dependencies);
+            return;
+        }
+        if (expression instanceof GpuIrUnary unary) {
+            collectHelperDependencies(unary.operand(), dependencies);
+        }
+    }
+
+    private record LoweringContext(
+            Map<HelperSignature, List<HelperDescriptor>> helperRegistry,
+            String ownerSimpleName,
+            String ownerQualifiedName
+    ) {
     }
 
     private record HelperSignature(String name, List<String> argumentTypes) {
