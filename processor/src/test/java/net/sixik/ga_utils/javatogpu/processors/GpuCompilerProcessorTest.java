@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.tools.JavaCompiler;
 import javax.tools.DiagnosticCollector;
+import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -1295,6 +1296,286 @@ class GpuCompilerProcessorTest {
                     char delta = 3;
                     output[0] = (((input[0] + step) + delta) + 65);
                 }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelUsingReusableCCodeHelperFromSeparateCompilation() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path helperClassOutputDir = Files.createTempDirectory("javatogpu-helperlib-classes");
+        Path helperGeneratedOutputDir = Files.createTempDirectory("javatogpu-helperlib-generated");
+        Path consumerClassOutputDir = Files.createTempDirectory("javatogpu-consumer-classes");
+        Path consumerGeneratedOutputDir = Files.createTempDirectory("javatogpu-consumer-generated");
+
+        String helperSource = """
+                package lib;
+
+                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary;
+
+                @CCodeLibrary
+                public class ReusableMath {
+                    static final float SCALE = 0.5f;
+
+                    @CCode(inline = true)
+                    public static float square(float value) {
+                        return (value * value) * SCALE;
+                    }
+
+                    @CCode
+                    public static float norm(float value) {
+                        return square(value) + 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", helperClassOutputDir.toString(),
+                    "-s", helperGeneratedOutputDir.toString()
+            );
+            JavaFileObject helperFile = new StringJavaFileObject("lib.ReusableMath", helperSource);
+            JavaCompiler.CompilationTask helperTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(helperFile)
+            );
+            helperTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(helperTask.call());
+        }
+
+        String consumerSource = """
+                package sample;
+
+                import lib.ReusableMath;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = ReusableMath.norm(input[id]);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", helperClassOutputDir + java.io.File.pathSeparator + System.getProperty("java.class.path"),
+                    "-d", consumerClassOutputDir.toString(),
+                    "-s", consumerGeneratedOutputDir.toString()
+            );
+            JavaFileObject consumerFile = new StringJavaFileObject("sample.Demo", consumerSource);
+            JavaCompiler.CompilationTask consumerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(consumerFile)
+            );
+            consumerTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(consumerTask.call());
+        }
+
+        Path kernelPath = consumerGeneratedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        String kernel = Files.readString(kernelPath);
+        assertTrue(kernel.contains("float jtg_fn_ReusableMath_norm_float(float value);"));
+        assertTrue(kernel.contains("inline float jtg_fn_ReusableMath_square_float(float value);"));
+        assertTrue(kernel.contains("return (jtg_fn_ReusableMath_square_float(value) + 1.0F);"));
+        assertTrue(kernel.contains("value * value"));
+        assertTrue(kernel.contains("0.5"));
+        assertTrue(kernel.contains("output[id] = jtg_fn_ReusableMath_norm_float(input[id]);"));
+    }
+
+    @Test
+    void generatesKernelUsingQualifiedReusableHelpersWithSameSimpleNameFromSeparateCompilation() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path helperClassOutputDir = Files.createTempDirectory("javatogpu-qualified-helperlib-classes");
+        Path helperGeneratedOutputDir = Files.createTempDirectory("javatogpu-qualified-helperlib-generated");
+        Path consumerClassOutputDir = Files.createTempDirectory("javatogpu-qualified-consumer-classes");
+        Path consumerGeneratedOutputDir = Files.createTempDirectory("javatogpu-qualified-consumer-generated");
+
+        String helperOneSource = """
+                package lib.one;
+
+                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+
+                @net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary
+                public class ReusableMath {
+                    @CCode
+                    public static float norm(float value) {
+                        return value + 1.0f;
+                    }
+                }
+                """;
+
+        String helperTwoSource = """
+                package lib.two;
+
+                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+
+                @net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary
+                public class ReusableMath {
+                    @CCode
+                    public static float norm(float value) {
+                        return value + 2.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", helperClassOutputDir.toString(),
+                    "-s", helperGeneratedOutputDir.toString()
+            );
+            JavaFileObject helperOneFile = new StringJavaFileObject("lib.one.ReusableMath", helperOneSource);
+            JavaFileObject helperTwoFile = new StringJavaFileObject("lib.two.ReusableMath", helperTwoSource);
+            JavaCompiler.CompilationTask helperTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(helperOneFile, helperTwoFile)
+            );
+            helperTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(helperTask.call());
+        }
+
+        String consumerSource = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = lib.two.ReusableMath.norm(input[id]);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", helperClassOutputDir + java.io.File.pathSeparator + System.getProperty("java.class.path"),
+                    "-d", consumerClassOutputDir.toString(),
+                    "-s", consumerGeneratedOutputDir.toString()
+            );
+            JavaFileObject consumerFile = new StringJavaFileObject("sample.Demo", consumerSource);
+            JavaCompiler.CompilationTask consumerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(consumerFile)
+            );
+            consumerTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(consumerTask.call());
+        }
+
+        Path kernelPath = consumerGeneratedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        String kernel = Files.readString(kernelPath);
+        assertTrue(kernel.contains("float jtg_fn_ReusableMath_norm_float(float value);"));
+        assertTrue(kernel.contains("return (value + 2.0F);"));
+        assertTrue(kernel.contains("output[id] = jtg_fn_ReusableMath_norm_float(input[id]);"));
+    }
+
+    @Test
+    void rejectsReusableHelperFromSeparateCompilationWhenOwnerIsNotAnnotatedAsCCodeLibrary() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path helperClassOutputDir = Files.createTempDirectory("javatogpu-missinglib-classes");
+        Path helperGeneratedOutputDir = Files.createTempDirectory("javatogpu-missinglib-generated");
+        Path consumerClassOutputDir = Files.createTempDirectory("javatogpu-missinglib-consumer-classes");
+        Path consumerGeneratedOutputDir = Files.createTempDirectory("javatogpu-missinglib-consumer-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String helperSource = """
+                package lib;
+
+                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+
+                public class ReusableMath {
+                    @CCode
+                    public static float norm(float value) {
+                        return value + 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", helperClassOutputDir.toString(),
+                    "-s", helperGeneratedOutputDir.toString()
+            );
+            JavaFileObject helperFile = new StringJavaFileObject("lib.ReusableMath", helperSource);
+            JavaCompiler.CompilationTask helperTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(helperFile)
+            );
+            helperTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(helperTask.call());
+        }
+
+        String consumerSource = """
+                package sample;
+
+                import lib.ReusableMath;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = ReusableMath.norm(input[id]);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", helperClassOutputDir + java.io.File.pathSeparator + System.getProperty("java.class.path"),
+                    "-d", consumerClassOutputDir.toString(),
+                    "-s", consumerGeneratedOutputDir.toString()
+            );
+            JavaFileObject consumerFile = new StringJavaFileObject("sample.Demo", consumerSource);
+            JavaCompiler.CompilationTask consumerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(consumerFile)
+            );
+            consumerTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertFalse(consumerTask.call());
+        }
+
+        assertTrue(diagnostics.getDiagnostics().stream().map(diagnostic -> diagnostic.getMessage(null)).anyMatch(message ->
+                String.valueOf(message).contains("must be annotated with @CCodeLibrary")
+        ));
     }
 
     @Test
