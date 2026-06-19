@@ -2113,6 +2113,128 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void rejectsOpenClAttributesWhenValuesAreNotStringLiterals() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-struct-attr-error-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-struct-attr-error-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+
+                class Attrs {
+                    static final String PACKED = "packed";
+                }
+
+                @GPUStruct
+                @OpenCLAttributes(Attrs.PACKED)
+                class Vec2 {
+                    float x;
+                    float y;
+                }
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(Vec2 point, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = point.x + point.y;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertFalse(task.call());
+        }
+
+        assertTrue(diagnostics.getDiagnostics().stream().anyMatch(diagnostic ->
+                String.valueOf(diagnostic.getMessage(null)).contains("OpenCLAttributes values must be string literals")
+        ));
+    }
+
+    @Test
+    void rejectsAmbiguousGpuStructTypeAliases() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-struct-alias-error-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-struct-alias-error-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+
+                public class Demo {
+                    static class Left {
+                        @GPUStruct
+                        static class Point {
+                            float x;
+                        }
+                    }
+
+                    static class Right {
+                        @GPUStruct
+                        static class Point {
+                            float y;
+                        }
+                    }
+
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(Left.Point point, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = point.x + id;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertFalse(task.call());
+        }
+
+        assertTrue(diagnostics.getDiagnostics().stream().anyMatch(diagnostic ->
+                String.valueOf(diagnostic.getMessage(null)).contains("Ambiguous GPU struct type alias: Point")
+        ));
+    }
+
+    @Test
     void generatesKernelWithVectorHelpers() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-vector-classes");
@@ -2427,6 +2549,66 @@ class GpuCompilerProcessorTest {
         assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"input\", \"sample.Sample[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
         assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"output\", \"sample.Sample[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
         assertTrue(launcherSource.contains("public static void invoke(java.lang.Object[] input, java.lang.Object[] output)"));
+    }
+
+    @Test
+    void generatesKernelWithVectorArrayKernelParameter() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-vector-array-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-vector-array-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(@GPUGlobal Float2[] input, @GPUGlobal Float2[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id].x = input[id].x + 1.0f;
+                        output[id].y = input[id].y + 2.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global float2* input, __global float2* output) {
+                    int id = get_global_id(0);
+                    output[id].x = (input[id].x + 1.0F);
+                    output[id].y = (input[id].y + 2.0F);
+                }""", Files.readString(kernelPath));
+
+        Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
+        assertTrue(Files.exists(launcherSourcePath));
+        String launcherSource = Files.readString(launcherSourcePath);
+        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"input\", \"net.sixik.ga_utils.javatogpu.api.Float2[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
+        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"output\", \"net.sixik.ga_utils.javatogpu.api.Float2[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
+        assertTrue(launcherSource.contains("public static void invoke(net.sixik.ga_utils.javatogpu.api.Float2[] input, net.sixik.ga_utils.javatogpu.api.Float2[] output)"));
     }
 
     @Test
@@ -3065,6 +3247,67 @@ class GpuCompilerProcessorTest {
 
         assertTrue(diagnostics.getDiagnostics().stream().map(diagnostic -> diagnostic.getMessage(null)).anyMatch(message ->
                 String.valueOf(message).contains("does not target backend OPENCL")
+        ));
+    }
+
+    @Test
+    void emitsAbiHintNotesWhenDebugAbiProcessorOptionIsEnabled() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-debugabi-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-debugabi-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+
+                public class Demo {
+                    @GPUStruct
+                    static class Point {
+                        float x;
+                        float y;
+                    }
+
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(Point point, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = point.x + point.y;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-Ajavatogpu.debugAbi=true",
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        assertTrue(diagnostics.getDiagnostics().stream().anyMatch(diagnostic ->
+                diagnostic.getKind() == Diagnostic.Kind.NOTE
+                        && String.valueOf(diagnostic.getMessage(null)).contains("OpenCL ABI hints for sample.Demo#kernel:")
+        ));
+        assertTrue(diagnostics.getDiagnostics().stream().anyMatch(diagnostic ->
+                diagnostic.getKind() == Diagnostic.Kind.NOTE
+                        && String.valueOf(diagnostic.getMessage(null)).contains("point :")
+                        && String.valueOf(diagnostic.getMessage(null)).contains("[PRIVATE]")
         ));
     }
 

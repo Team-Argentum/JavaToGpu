@@ -52,6 +52,7 @@ Implemented and working:
 - `@GPUStruct`
 - struct kernel parameters
 - struct array buffers
+- vector array buffers
 - OpenCL attributes via `@OpenCLAttributes`
 - OpenCL address spaces: `@GPUGlobal`, `@GPUConstant`, `@GPULocal`
 
@@ -222,6 +223,7 @@ Notes:
 - vector locals are supported
 - vector helper params and returns are supported
 - vector kernel parameters are supported
+- `@GPUGlobal Float2[]` style vector buffers are supported
 
 ## `@GPUStruct`
 
@@ -368,6 +370,61 @@ Run only the sample app:
 ```
 
 On Unix-like systems, use `./gradlew` instead of `./gradlew.bat`.
+
+## Troubleshooting
+
+### `OpenCL program build failed`
+
+This means JavaToGpu successfully generated kernel source, but the OpenCL compiler rejected it.
+
+What to check:
+
+- inspect the generated `.cl` resource under `build/generated/sources/annotationProcessor/java/main/javatogpu/...`
+- compare the emitted code with the supported patterns shown in `test-app` and `processor/src/test`
+- verify that the Java method stays inside the current GPU subset and does not rely on unsupported object semantics
+
+### `Failed to compile @GPU method`
+
+This is a compile-time frontend validation error.
+
+What to do:
+
+- read the full compiler diagnostic first, because the processor is intentionally fail-fast
+- if the issue looks layout-related, enable processor ABI notes with `-Ajavatogpu.debugAbi=true`
+- check helper calls, struct fields, vector types and address-space annotations against the examples in this README and the tests
+
+With ABI debug enabled, the annotation processor prints extra notes describing how kernel parameters and struct fields are interpreted.
+
+### `GPU execution failed`
+
+This usually means runtime setup or argument marshalling failed after compilation.
+
+What to check:
+
+- make sure your application configures a real backend such as `new OpenClGpuRuntimeBackend()` through `GpuRuntime.setBackend(...)`
+- enable runtime ABI diagnostics with `-Djavatogpu.opencl.debugAbi=true`
+- if the failure involves `@GPUStruct`, vectors or packed data, compare the Java-side layout with the emitted ABI dump
+
+With runtime ABI debug enabled, the backend prints parameter layout and marshalling details to `stderr` before launch.
+
+### `rewriteGpuMethods` fails after `clean`
+
+The sample app already wires this correctly:
+
+- `rewriteGpuMethods` depends on `:processor:classes`
+- `classes` depends on `rewriteGpuMethods`
+
+If you copy the setup into another module, keep that dependency order. See [`test-app/build.gradle`](test-app/build.gradle).
+
+### Windows file-lock issues during Gradle runs
+
+On Windows, `clean test` can fail intermittently if Gradle or the OpenCL toolchain still holds files such as test result binaries or jars open.
+
+Practical workarounds:
+
+- avoid running multiple Gradle commands in parallel against the same workspace
+- rerun with `./gradlew.bat --no-daemon test --rerun-tasks --console=plain`
+- if `clean` is the only failing part, retry without it first to confirm the code itself is fine
 
 ## Sample Code
 

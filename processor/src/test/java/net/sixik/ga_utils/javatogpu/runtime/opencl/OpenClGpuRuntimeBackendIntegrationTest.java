@@ -238,6 +238,40 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         assertArrayEquals(new float[]{4.0f, 6.0f}, new float[]{output[0].y, output[1].y});
     }
 
+    @Test
+    void runsVectorArrayKernelOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_vector_array_entry",
+                "inline://integration/vector-array-kernel.cl",
+                """
+                        __kernel void gpu_vector_array_entry(__global float2* input, __global float2* output) {
+                            int id = get_global_id(0);
+                            output[id].x = input[id].x + 1.0f;
+                            output[id].y = input[id].y + 2.0f;
+                        }""",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("input", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        assumeKernelCompiles(descriptor, "Skipping vector array integration smoke test");
+
+        Float2[] input = new Float2[]{
+                new Float2(1.0f, 2.0f),
+                new Float2(3.0f, 4.0f)
+        };
+        Float2[] output = new Float2[]{new Float2(), new Float2()};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{input, output}));
+        }
+
+        assertArrayEquals(new float[]{2.0f, 4.0f}, new float[]{output[0].x, output[1].x});
+        assertArrayEquals(new float[]{4.0f, 6.0f}, new float[]{output[0].y, output[1].y});
+    }
+
     @GPUStruct
     @OpenCLAttributes({"packed"})
     static final class Sample {

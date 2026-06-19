@@ -220,20 +220,20 @@ public final class GpuSubsetValidator {
                     ? GpuTypeSupport.isSupportedKernelParameterType(type)
                     || GpuTypeSupport.isSupportedVectorType(type)
                     || isStructType(type, structRegistry)
-                    || isStructArrayType(type, structRegistry)
+                    || isPackedArrayType(type, structRegistry)
                     : GpuTypeSupport.isSupportedHelperParameterType(type) || isStructType(type, structRegistry);
             if (!supported) {
                 issues.add(new GpuValidationIssue(1, 1, "Unsupported GPU parameter type: " + type));
                 return;
             }
             if (parameter.addressSpace() == GpuAddressSpace.GLOBAL && !GpuTypeSupport.isGlobalParameterCompatible(type)) {
-                if (isStructArrayType(type, structRegistry)) {
+                if (isPackedArrayType(type, structRegistry)) {
                     return;
                 }
                 issues.add(new GpuValidationIssue(
                         1,
                         1,
-                        "@GPUGlobal is only supported on primitive or @GPUStruct array parameters in the current pipeline: " + type
+                        "@GPUGlobal is only supported on primitive, vector, or @GPUStruct array parameters in the current pipeline: " + type
                 ));
                 return;
             }
@@ -242,7 +242,7 @@ public final class GpuSubsetValidator {
                 issues.add(new GpuValidationIssue(
                         1,
                         1,
-                        "@GPUConstant is only supported on primitive or @GPUStruct array parameters in the current pipeline: " + type
+                        "@GPUConstant is only supported on primitive, vector, or @GPUStruct array parameters in the current pipeline: " + type
                 ));
                 return;
             }
@@ -251,7 +251,7 @@ public final class GpuSubsetValidator {
                 issues.add(new GpuValidationIssue(
                         1,
                         1,
-                        "@GPULocal is only supported on primitive or @GPUStruct array parameters in the current pipeline: " + type
+                        "@GPULocal is only supported on primitive, vector, or @GPUStruct array parameters in the current pipeline: " + type
                 ));
                 return;
             }
@@ -1471,8 +1471,17 @@ public final class GpuSubsetValidator {
                 && isStructType(GpuTypeSupport.componentType(GpuTypeSupport.declaredType(typeName)), structRegistry);
     }
 
+    private boolean isVectorArrayType(String typeName) {
+        return GpuTypeSupport.isArrayType(typeName)
+                && GpuTypeSupport.isSupportedVectorType(GpuTypeSupport.componentType(GpuTypeSupport.declaredType(typeName)));
+    }
+
+    private boolean isPackedArrayType(String typeName, Map<String, StructDescriptor> structRegistry) {
+        return isStructArrayType(typeName, structRegistry) || isVectorArrayType(typeName);
+    }
+
     private boolean isSupportedArrayParameterType(String typeName, Map<String, StructDescriptor> structRegistry) {
-        return GpuTypeSupport.isSupportedArrayType(typeName) || isStructArrayType(typeName, structRegistry);
+        return GpuTypeSupport.isSupportedArrayType(typeName) || isPackedArrayType(typeName, structRegistry);
     }
 
     private boolean isInferableArrayType(String typeName, Map<String, StructDescriptor> structRegistry) {

@@ -174,6 +174,26 @@ class OpenClExecutionPlannerTest {
         assertEquals(GpuKernelParameterAccess.READ_WRITE, plan.bufferBindings().get(0).access());
     }
 
+    @Test
+    void buildsExecutionPlanForVectorArrayArguments() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("vectors", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+
+        OpenClExecutionPlan plan = OpenClExecutionPlanner.plan(
+                OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new net.sixik.ga_utils.javatogpu.api.Float2[]{new net.sixik.ga_utils.javatogpu.api.Float2(2.0f, 3.0f)}})
+        );
+
+        assertEquals(1, plan.bufferBindings().size());
+        assertEquals(OpenClArgumentKind.VECTOR_ARRAY, plan.bufferBindings().get(0).kind());
+        assertEquals(GpuKernelParameterAccess.READ_WRITE, plan.bufferBindings().get(0).access());
+    }
+
     @GPUStruct
     static final class Sample {
         float x;

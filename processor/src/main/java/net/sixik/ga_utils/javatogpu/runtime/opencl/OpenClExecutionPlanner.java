@@ -75,6 +75,7 @@ public final class OpenClExecutionPlanner {
             case FLOAT_ARRAY -> (long) length * Float.BYTES;
             case DOUBLE_ARRAY -> (long) length * Double.BYTES;
             case STRUCT_ARRAY -> OpenClValuePacker.structArrayByteSize(sourceArray);
+            case VECTOR_ARRAY -> OpenClValuePacker.vectorArrayByteSize(sourceArray);
             default -> throw new IllegalArgumentException("Unsupported OpenCL local argument kind: " + kind);
         };
     }

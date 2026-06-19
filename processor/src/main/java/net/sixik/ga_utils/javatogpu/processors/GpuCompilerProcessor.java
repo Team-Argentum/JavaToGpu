@@ -89,6 +89,11 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private Trees trees;
 
     @Override
+    public Set<String> getSupportedOptions() {
+        return Set.of("javatogpu.debugAbi");
+    }
+
+    @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
         trees = Trees.instance(processingEnv);
@@ -147,6 +152,13 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 List<ParsedGpuMethod> helpers = collectHelpers(roundEnv, kernelMethod, method);
                 List<ParsedGpuMethod> intrinsics = collectIntrinsics(roundEnv, kernelMethod, helpers, method);
                 List<ParsedGpuStruct> structs = collectStructs(roundEnv);
+                if (debugAbiEnabled()) {
+                    processingEnv.getMessager().printMessage(
+                            Diagnostic.Kind.NOTE,
+                            buildAbiHintMessage(kernelMethod, structs),
+                            method
+                    );
+                }
                 GpuFrontendService frontendService = GpuFrontendService.create(
                         GpuIntrinsicDatabase.createDefault(intrinsics, TARGET_BACKEND)
                 );
@@ -1090,5 +1102,109 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         }
         builder.append("\"");
         return builder.toString();
+    }
+
+    private boolean debugAbiEnabled() {
+        return Boolean.parseBoolean(processingEnv.getOptions().getOrDefault("javatogpu.debugAbi", "false"));
+    }
+
+    private String buildAbiHintMessage(ParsedGpuMethod kernelMethod, List<ParsedGpuStruct> structs) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("OpenCL ABI hints for ")
+                .append(kernelMethod.ownerQualifiedName())
+                .append("#")
+                .append(kernelMethod.name())
+                .append(":\n");
+
+        Map<String, ParsedGpuStruct> structRegistry = new LinkedHashMap<>();
+        for (ParsedGpuStruct struct : structs) {
+            structRegistry.put(struct.ownerQualifiedName(), struct);
+            structRegistry.put(struct.ownerSimpleName(), struct);
+            structRegistry.put(GpuTypeSupport.simpleTypeName(struct.ownerSimpleName()), struct);
+        }
+
+        for (var parameter : kernelMethod.parameters()) {
+            builder.append("- ")
+                    .append(parameter.name())
+                    .append(" : ")
+                    .append(parameter.javaType())
+                    .append(" [")
+                    .append(parameter.addressSpace())
+                    .append("]\n");
+            appendSourceAbiHint(builder, parameter.javaType(), structRegistry, 1, new HashSet<>());
+        }
+        return builder.toString();
+    }
+
+    private void appendSourceAbiHint(
+            StringBuilder builder,
+            String javaType,
+            Map<String, ParsedGpuStruct> structRegistry,
+            int indent,
+            Set<String> activeTypes
+    ) {
+        String prefix = "  ".repeat(indent);
+        String declaredType = GpuTypeSupport.declaredType(javaType);
+
+        if (GpuTypeSupport.isArrayType(declaredType)) {
+            String componentType = GpuTypeSupport.componentType(declaredType);
+            builder.append(prefix)
+                    .append("array of ")
+                    .append(componentType)
+                    .append("\n");
+            appendSourceAbiHint(builder, componentType, structRegistry, indent + 1, activeTypes);
+            return;
+        }
+        if (GpuTypeSupport.isSupportedVectorType(declaredType)) {
+            builder.append(prefix)
+                    .append("vector ")
+                    .append(GpuTypeSupport.openClVectorTypeName(declaredType))
+                    .append(" size=")
+                    .append(GpuTypeSupport.vectorByteSize(declaredType))
+                    .append("\n");
+            return;
+        }
+
+        ParsedGpuStruct struct = resolveParsedStruct(declaredType, structRegistry);
+        if (struct == null) {
+            builder.append(prefix)
+                    .append("scalar/pointer-like ")
+                    .append(declaredType)
+                    .append("\n");
+            return;
+        }
+
+        if (!activeTypes.add(struct.ownerQualifiedName())) {
+            builder.append(prefix)
+                    .append(struct.ownerQualifiedName())
+                    .append(" (recursive reference)\n");
+            return;
+        }
+
+        builder.append(prefix)
+                .append("struct ")
+                .append(struct.ownerQualifiedName())
+                .append("\n");
+        for (var field : struct.fields()) {
+            builder.append(prefix)
+                    .append("  ")
+                    .append(field.name())
+                    .append(" : ")
+                    .append(field.javaType())
+                    .append("\n");
+            appendSourceAbiHint(builder, field.javaType(), structRegistry, indent + 2, activeTypes);
+        }
+        activeTypes.remove(struct.ownerQualifiedName());
+    }
+
+    private ParsedGpuStruct resolveParsedStruct(String typeName, Map<String, ParsedGpuStruct> structRegistry) {
+        if (typeName == null) {
+            return null;
+        }
+        ParsedGpuStruct direct = structRegistry.get(typeName);
+        if (direct != null) {
+            return direct;
+        }
+        return structRegistry.get(GpuTypeSupport.simpleTypeName(typeName));
     }
 }

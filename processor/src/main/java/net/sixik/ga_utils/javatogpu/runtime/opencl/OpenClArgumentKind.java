@@ -8,6 +8,7 @@ public enum OpenClArgumentKind {
     FLOAT_ARRAY,
     DOUBLE_ARRAY,
     STRUCT_ARRAY,
+    VECTOR_ARRAY,
     INT8,
     INT16,
     INT32,

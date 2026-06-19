@@ -26,6 +26,9 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     @Override
     public final void invoke(GpuKernelInvocation invocation) {
+        if (OpenClAbiDebug.enabled()) {
+            System.err.println(OpenClAbiDebug.describeInvocation(invocation.descriptor(), invocation.arguments()));
+        }
         OpenClCompiledKernel compiledKernel = compiledKernels.computeIfAbsent(
                 invocation.descriptor(),
                 this::compileKernel
@@ -127,6 +130,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         }
         if (binding.kind() == OpenClArgumentKind.STRUCT_ARRAY) {
             writeBufferDirect((OpenClBuffer) nativeBuffer, OpenClValuePacker.packStructArray(binding.sourceArray()));
+            return;
+        }
+        if (binding.kind() == OpenClArgumentKind.VECTOR_ARRAY) {
+            writeBufferDirect((OpenClBuffer) nativeBuffer, OpenClValuePacker.packVectorArray(binding.sourceArray()));
             return;
         }
 
@@ -239,6 +246,12 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             OpenClValuePacker.unpackStructArray(buffer, binding.sourceArray());
             return;
         }
+        if (binding.kind() == OpenClArgumentKind.VECTOR_ARRAY) {
+            ByteBuffer buffer = allocateByteBuffer(OpenClValuePacker.vectorArrayByteSize(binding.sourceArray()));
+            readBufferDirect((OpenClBuffer) nativeBuffer, buffer);
+            OpenClValuePacker.unpackVectorArray(buffer, binding.sourceArray());
+            return;
+        }
 
         throw new IllegalArgumentException("Unsupported OpenCL readback target type: " + binding.sourceArray().getClass().getName());
     }
@@ -332,6 +345,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             case FLOAT_ARRAY -> (long) binding.length() * Float.BYTES;
             case DOUBLE_ARRAY -> (long) binding.length() * Double.BYTES;
             case STRUCT_ARRAY -> OpenClValuePacker.structArrayByteSize(binding.sourceArray());
+            case VECTOR_ARRAY -> OpenClValuePacker.vectorArrayByteSize(binding.sourceArray());
             default -> throw new IllegalArgumentException("Unsupported OpenCL buffer kind: " + binding.kind());
         };
     }

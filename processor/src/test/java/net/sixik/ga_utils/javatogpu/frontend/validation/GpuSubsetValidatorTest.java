@@ -6,6 +6,7 @@ import net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GpuSubsetValidatorTest {
@@ -447,6 +448,128 @@ class GpuSubsetValidatorTest {
                 java.util.List.of(),
                 java.util.List.of(structParser.parseStruct(structSource, "Sample", "sample.Sample"))
         ));
+    }
+
+    @Test
+    void rejectsStructConstructorArgumentCountMismatch() {
+        String structSource = """
+                @GPUStruct
+                class Sample {
+                    float x;
+                    float y;
+                }
+                """;
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    Sample sample = new Sample(input[0]);
+                    output[0] = sample.x;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validateKernel(
+                        parser.parseMethod(methodSource, "Demo", "sample.Demo"),
+                        java.util.List.of(),
+                        java.util.List.of(structParser.parseStruct(structSource, "Sample", "sample.Sample"))
+                )
+        );
+
+        assertEquals(
+                "Struct constructor argument count mismatch in @GPU methods: expected 0 or 2 but got 1",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsStructConstructorArgumentTypeMismatch() {
+        String structSource = """
+                @GPUStruct
+                class Sample {
+                    float x;
+                    float y;
+                }
+                """;
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    boolean enabled = true;
+                    Sample sample = new Sample(enabled, 1.0f);
+                    output[0] = sample.y;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validateKernel(
+                        parser.parseMethod(methodSource, "Demo", "sample.Demo"),
+                        java.util.List.of(),
+                        java.util.List.of(structParser.parseStruct(structSource, "Sample", "sample.Sample"))
+                )
+        );
+
+        assertEquals(
+                "Struct constructor argument type mismatch: expected float but got boolean",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void acceptsVectorArrayKernelParameters() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal Float2[] input, @GPUGlobal Float2[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id].x = input[id].x + 1.0f;
+                    output[id].y = input[id].y + 2.0f;
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validate(parser.parseMethod(methodSource)));
+    }
+
+    @Test
+    void rejectsVectorConstructorArgumentCountMismatch() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    Float2 value = new Float2(1.0f, 2.0f, 3.0f);
+                    output[0] = value.x;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "Vector constructor argument count mismatch in @GPU methods: expected 0, 1 or 2 but got 3",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsVectorConstructorScalarArgumentTypeMismatch() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    boolean enabled = true;
+                    Float2 value = new Float2(enabled);
+                    output[0] = value.x;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "Vector constructor scalar argument type mismatch: expected float but got boolean",
+                exception.getMessage()
+        );
     }
 
     @Test

@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OpenClGpuRuntimeBackendTest {
 
@@ -175,6 +176,71 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals(3.5f, output[0]);
         assertEquals(4.5f, output[1]);
         assertEquals(5.5f, output[2]);
+    }
+
+    @Test
+    void rejectsMismatchedBufferLengthsBeforeKernelLaunch() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+
+        AtomicInteger executeCalls = new AtomicInteger();
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClCompiledKernel compileKernel(GpuKernelDescriptor kernelDescriptor) {
+                return new OpenClCompiledKernel(kernelDescriptor, "compiled:test");
+            }
+
+            @Override
+            protected Object createDeviceBuffer(OpenClBufferBinding binding) {
+                return new Object();
+            }
+
+            @Override
+            protected void uploadToDeviceBuffer(Object nativeBuffer, OpenClBufferBinding binding) {
+                // no-op for length validation path
+            }
+
+            @Override
+            protected void bindBufferArgument(OpenClCompiledKernel compiledKernel, int parameterIndex, Object nativeBuffer) {
+                // no-op for length validation path
+            }
+
+            @Override
+            protected void bindScalarArgument(OpenClCompiledKernel compiledKernel, int parameterIndex, OpenClScalarBinding binding) {
+                // no-op for length validation path
+            }
+
+            @Override
+            protected void enqueueKernel(OpenClCompiledKernel compiledKernel, long globalWorkSize) {
+                executeCalls.incrementAndGet();
+            }
+
+            @Override
+            protected void readBackFromDeviceBuffer(Object nativeBuffer, OpenClBufferBinding binding) {
+                // no-op for length validation path
+            }
+        };
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> backend.invoke(new GpuKernelInvocation(
+                        descriptor,
+                        new Object[]{new float[]{1.0f, 2.0f}, new float[]{0.0f}}
+                ))
+        );
+
+        assertEquals(
+                "Mismatched GPU array lengths for kernel kernel: expected 2 but found 1",
+                exception.getMessage()
+        );
+        assertEquals(0, executeCalls.get());
     }
 
     @Test
