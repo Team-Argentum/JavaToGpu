@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.Float3;
+import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
@@ -256,6 +257,62 @@ class OpenClArgumentMarshallerTest {
     }
 
     @Test
+    void marshalsAndUnmarshalsAlignedStructArrayWithVectorFields() {
+        AlignedVectorSample[] samples = new AlignedVectorSample[]{
+                new AlignedVectorSample(new Float3(1.0f, 2.0f, 3.0f), 4.5d),
+                null
+        };
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("samples", "sample.AlignedVectorSample[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(descriptor, new Object[]{samples});
+
+        OpenClArrayArgument argument = assertInstanceOf(OpenClArrayArgument.class, marshalled.values().get(0));
+        assertEquals(OpenClArgumentKind.STRUCT_ARRAY, argument.kind());
+        assertEquals(2, argument.length());
+
+        ByteBuffer bytes = OpenClValuePacker.packStructArray(samples).duplicate().order(ByteOrder.nativeOrder());
+        assertEquals(64, bytes.remaining());
+        assertEquals(1.0f, bytes.getFloat(0));
+        assertEquals(2.0f, bytes.getFloat(4));
+        assertEquals(3.0f, bytes.getFloat(8));
+        assertEquals(0.0f, bytes.getFloat(12));
+        assertEquals(4.5d, bytes.getDouble(16));
+        assertEquals(0.0f, bytes.getFloat(32));
+        assertEquals(0.0f, bytes.getFloat(36));
+        assertEquals(0.0f, bytes.getFloat(40));
+        assertEquals(0.0f, bytes.getFloat(44));
+        assertEquals(0.0d, bytes.getDouble(48));
+
+        bytes.putFloat(0, 5.0f);
+        bytes.putFloat(4, 6.0f);
+        bytes.putFloat(8, 7.0f);
+        bytes.putFloat(12, 0.0f);
+        bytes.putDouble(16, 8.5d);
+        bytes.putFloat(32, 9.0f);
+        bytes.putFloat(36, 10.0f);
+        bytes.putFloat(40, 11.0f);
+        bytes.putFloat(44, 0.0f);
+        bytes.putDouble(48, 12.5d);
+        OpenClValuePacker.unpackStructArray(bytes, samples);
+
+        assertEquals(5.0f, samples[0].normal.x);
+        assertEquals(6.0f, samples[0].normal.y);
+        assertEquals(7.0f, samples[0].normal.z);
+        assertEquals(8.5d, samples[0].weight);
+        assertEquals(9.0f, samples[1].normal.x);
+        assertEquals(10.0f, samples[1].normal.y);
+        assertEquals(11.0f, samples[1].normal.z);
+        assertEquals(12.5d, samples[1].weight);
+    }
+
+    @Test
     void rejectsKernelArgumentCountMismatch() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
@@ -292,6 +349,28 @@ class OpenClArgumentMarshallerTest {
 
         assertEquals(
                 "Unsupported OpenCL argument type: null for parameter input",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsImageArgumentsUntilRuntimeSupportExists() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DReadOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new Image2DReadOnly()})
+        );
+
+        assertEquals(
+                "Failed to marshall parameter 'inputImage': OpenCL image/sampler runtime arguments are not implemented yet: Image2DReadOnly",
                 exception.getMessage()
         );
     }
@@ -387,6 +466,22 @@ class OpenClArgumentMarshallerTest {
         Sample(float x, float y) {
             this.x = x;
             this.y = y;
+        }
+    }
+
+    @GPUStruct
+    @OpenCLAttributes({"aligned(32)"})
+    static final class AlignedVectorSample {
+        Float3 normal;
+        @OpenCLAttributes({"aligned(16)"})
+        double weight;
+
+        AlignedVectorSample() {
+        }
+
+        AlignedVectorSample(Float3 normal, double weight) {
+            this.normal = normal;
+            this.weight = weight;
         }
     }
 }

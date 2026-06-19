@@ -31,6 +31,11 @@ public final class OpenClArgumentMarshaller {
 
         try {
             GpuKernelParameterAccess access = parameterDescriptor.access();
+            if (GpuTypeSupport.isSupportedImageOrSamplerType(parameterDescriptor.javaType())) {
+                throw new IllegalArgumentException(
+                        "OpenCL image/sampler runtime arguments are not implemented yet: " + parameterDescriptor.javaType()
+                );
+            }
             if (GpuTypeSupport.isSupportedVectorType(parameterDescriptor.javaType())) {
                 return new OpenClScalarArgument(
                         OpenClArgumentKind.PACKED_VALUE,

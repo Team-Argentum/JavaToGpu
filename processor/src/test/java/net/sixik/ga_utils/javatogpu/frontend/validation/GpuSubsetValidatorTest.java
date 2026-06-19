@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.frontend.validation;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.parser.GpuStructParser;
 import net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser;
+import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -451,6 +452,68 @@ class GpuSubsetValidatorTest {
     }
 
     @Test
+    void rejectsPackedOpenClAttributeOnStructField() {
+        String structSource = """
+                @GPUStruct
+                class Sample {
+                    @OpenCLAttributes({"packed"})
+                    float x;
+                }
+                """;
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validateKernel(
+                        parser.parseMethod(methodSource, "Demo", "sample.Demo"),
+                        java.util.List.of(),
+                        java.util.List.of(structParser.parseStruct(structSource, "Sample", "sample.Sample"))
+                )
+        );
+
+        assertEquals(
+                "OpenCL attribute 'packed' is not valid on @GPUStruct fields",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsMalformedAlignedAttributeOnStructField() {
+        String structSource = """
+                @GPUStruct
+                class Sample {
+                    @OpenCLAttributes({"aligned(0)"})
+                    float x;
+                }
+                """;
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validateKernel(
+                        parser.parseMethod(methodSource, "Demo", "sample.Demo"),
+                        java.util.List.of(),
+                        java.util.List.of(structParser.parseStruct(structSource, "Sample", "sample.Sample"))
+                )
+        );
+
+        assertEquals(
+                "@GPUStruct field aligned(...) requires a single positive integer",
+                exception.getMessage()
+        );
+    }
+
+    @Test
     void rejectsStructConstructorArgumentCountMismatch() {
         String structSource = """
                 @GPUStruct
@@ -511,6 +574,99 @@ class GpuSubsetValidatorTest {
 
         assertEquals(
                 "Struct constructor argument type mismatch: expected float but got boolean",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsKernelOnlyOpenClAttributeOnHelperMethod() {
+        String kernelSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    helper(output);
+                }
+                """;
+        String helperSource = """
+                @OpenCLAttributes({"reqd_work_group_size(16, 1, 1)"})
+                @CCode
+                void helper(float[] output) {
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validateKernel(
+                        parser.parseMethod(kernelSource, "Demo", "sample.Demo"),
+                        java.util.List.of(parser.parseMethod(helperSource, "Helpers", "sample.Helpers")),
+                        java.util.List.of()
+                )
+        );
+
+        assertEquals(
+                "OpenCLAttributes on @CCode helpers are not supported in the current pipeline: reqd_work_group_size(16, 1, 1)",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsStructOnlyOpenClAttributeOnKernelMethod() {
+        String methodSource = """
+                @OpenCLAttributes({"packed"})
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "OpenCL attribute 'packed' is not valid on @GPU methods",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsMalformedRequiredWorkGroupSizeAttributeOnKernelMethod() {
+        String methodSource = """
+                @OpenCLAttributes({"reqd_work_group_size(16, 0, 1)"})
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "reqd_work_group_size(...) requires exactly three positive integer arguments",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsDuplicateKernelMethodAttributes() {
+        String methodSource = """
+                @OpenCLAttributes({"vec_type_hint(float4)", "vec_type_hint(int4)"})
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "Duplicate OpenCL attribute: vec_type_hint",
                 exception.getMessage()
         );
     }

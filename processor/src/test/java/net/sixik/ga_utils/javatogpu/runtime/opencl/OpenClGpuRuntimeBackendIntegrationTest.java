@@ -239,6 +239,58 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     }
 
     @Test
+    void runsNestedAlignedStructArrayKernelOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_nested_struct_array_entry",
+                "inline://integration/nested-struct-array-kernel.cl",
+                """
+                        typedef struct{
+                            float x;
+                            float y;
+                        } InnerPoint;
+
+                        typedef struct __attribute__((aligned(16))) {
+                            InnerPoint point;
+                            float bias __attribute__((aligned(8)));
+                            int count;
+                        } ComplexStructArraySample;
+
+                        __kernel void gpu_nested_struct_array_entry(__global ComplexStructArraySample* input, __global ComplexStructArraySample* output) {
+                            int id = get_global_id(0);
+                            output[id].point.x = input[id].point.x + 1.0f;
+                            output[id].point.y = input[id].point.y + 2.0f;
+                            output[id].bias = input[id].bias + 3.0f;
+                            output[id].count = input[id].count + 4;
+                        }""",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("input", "sample.ComplexStructArraySample[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "sample.ComplexStructArraySample[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        assumeKernelCompiles(descriptor, "Skipping nested aligned struct array integration smoke test");
+
+        ComplexStructArraySample[] input = new ComplexStructArraySample[]{
+                new ComplexStructArraySample(new InnerPoint(1.0f, 2.0f), 3.0f, 4),
+                new ComplexStructArraySample(new InnerPoint(5.0f, 6.0f), 7.0f, 8)
+        };
+        ComplexStructArraySample[] output = new ComplexStructArraySample[]{
+                new ComplexStructArraySample(new InnerPoint(), 0.0f, 0),
+                new ComplexStructArraySample(new InnerPoint(), 0.0f, 0)
+        };
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{input, output}));
+        }
+
+        assertArrayEquals(new float[]{2.0f, 6.0f}, new float[]{output[0].point.x, output[1].point.x});
+        assertArrayEquals(new float[]{4.0f, 8.0f}, new float[]{output[0].point.y, output[1].point.y});
+        assertArrayEquals(new float[]{6.0f, 10.0f}, new float[]{output[0].bias, output[1].bias});
+        assertArrayEquals(new int[]{8, 12}, new int[]{output[0].count, output[1].count});
+    }
+
+    @Test
     void runsVectorArrayKernelOnAvailableOpenClDevice() {
         assumeOpenClAvailable();
 
@@ -298,6 +350,38 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         StructArraySample(float x, float y) {
             this.x = x;
             this.y = y;
+        }
+    }
+
+    @GPUStruct
+    static final class InnerPoint {
+        float x;
+        float y;
+
+        InnerPoint() {
+        }
+
+        InnerPoint(float x, float y) {
+            this.x = x;
+            this.y = y;
+        }
+    }
+
+    @GPUStruct
+    @OpenCLAttributes({"aligned(16)"})
+    static final class ComplexStructArraySample {
+        InnerPoint point;
+        @OpenCLAttributes({"aligned(8)"})
+        float bias;
+        int count;
+
+        ComplexStructArraySample() {
+        }
+
+        ComplexStructArraySample(InnerPoint point, float bias, int count) {
+            this.point = point;
+            this.bias = bias;
+            this.count = count;
         }
     }
 

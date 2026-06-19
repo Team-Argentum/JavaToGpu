@@ -40,6 +40,12 @@ public final class GpuTypeSupport {
             Map.entry("Double4", new VectorDescriptor("double4", "double", List.of("x", "y", "z", "w")))
     );
 
+    private static final Map<String, String> SUPPORTED_IMAGE_AND_SAMPLER_TYPES = Map.of(
+            "Image2DReadOnly", "read_only image2d_t",
+            "Image2DWriteOnly", "write_only image2d_t",
+            "Sampler", "sampler_t"
+    );
+
     private GpuTypeSupport() {
     }
 
@@ -71,11 +77,15 @@ public final class GpuTypeSupport {
     public static boolean isSupportedKernelParameterType(String javaType) {
         return SUPPORTED_PARAMETER_SCALAR_TYPES.contains(javaType)
                 || isSupportedArrayType(javaType)
-                || isSupportedVectorType(javaType);
+                || isSupportedVectorType(javaType)
+                || isSupportedImageOrSamplerType(javaType);
     }
 
     public static boolean isSupportedHelperParameterType(String javaType) {
-        return isSupportedKernelParameterType(javaType) || isSupportedPointerType(javaType) || isSupportedVectorType(javaType);
+        return isSupportedKernelParameterType(javaType)
+                || isSupportedPointerType(javaType)
+                || isSupportedVectorType(javaType)
+                || isSupportedImageOrSamplerType(javaType);
     }
 
     public static boolean isHelperArgumentCompatible(String actualType, String parameterType) {
@@ -128,6 +138,18 @@ public final class GpuTypeSupport {
 
     public static boolean isGlobalParameterCompatible(String javaType) {
         return isSupportedArrayType(javaType);
+    }
+
+    public static boolean isSupportedImageOrSamplerType(String javaType) {
+        return SUPPORTED_IMAGE_AND_SAMPLER_TYPES.containsKey(simpleTypeName(declaredType(javaType)));
+    }
+
+    public static String openClImageOrSamplerTypeName(String javaType) {
+        String openClType = SUPPORTED_IMAGE_AND_SAMPLER_TYPES.get(simpleTypeName(declaredType(javaType)));
+        if (openClType == null) {
+            throw new IllegalArgumentException("Unsupported image/sampler type: " + javaType);
+        }
+        return openClType;
     }
 
     public static boolean isSupportedPointerType(String javaType) {

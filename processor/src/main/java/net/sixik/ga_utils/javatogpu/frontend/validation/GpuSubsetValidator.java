@@ -49,8 +49,26 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class GpuSubsetValidator {
+
+    private static final Pattern ATTRIBUTE_CALL_PATTERN = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]*)\\((.*)\\)$");
+    private static final Pattern POSITIVE_INTEGER_PATTERN = Pattern.compile("^[1-9][0-9]*$");
+    private static final Set<String> KERNEL_METHOD_ATTRIBUTES = Set.of(
+            "reqd_work_group_size",
+            "work_group_size_hint",
+            "vec_type_hint"
+    );
+    private static final Set<String> STRUCT_ATTRIBUTES = Set.of(
+            "packed",
+            "aligned"
+    );
+    private static final Set<String> FIELD_ATTRIBUTES = Set.of(
+            "aligned"
+    );
 
     private static final Set<String> ALLOWED_BINARY_OPERATORS = Set.of(
             "+", "-", "*", "/", "%",
@@ -94,6 +112,7 @@ public final class GpuSubsetValidator {
             List<ParsedGpuStruct> structs
     ) {
         List<GpuValidationIssue> issues = new ArrayList<>();
+        validateOpenClAttributes(kernelMethod, helperMethods, structs, issues);
         Map<HelperSignature, List<HelperDescriptor>> helperRegistry = buildHelperRegistry(helperMethods, issues);
         Map<String, List<ConstantDescriptor>> constantRegistry = buildConstantRegistry(kernelMethod, helperMethods, structs, issues);
         Map<String, StructDescriptor> structRegistry = buildStructRegistry(structs, issues);
@@ -264,6 +283,141 @@ public final class GpuSubsetValidator {
                 ));
             }
         });
+    }
+
+    private void validateOpenClAttributes(
+            ParsedGpuMethod kernelMethod,
+            List<ParsedGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            List<GpuValidationIssue> issues
+    ) {
+        validateMethodAttributes(kernelMethod, true, issues);
+        helperMethods.forEach(method -> validateMethodAttributes(method, false, issues));
+        structs.forEach(struct -> validateStructAttributes(struct, issues));
+    }
+
+    private void validateMethodAttributes(ParsedGpuMethod method, boolean kernelEntry, List<GpuValidationIssue> issues) {
+        Set<String> seenUniqueAttributes = new HashSet<>();
+        for (String rawAttribute : method.openClAttributes()) {
+            AttributeSpec attribute = parseAttribute(rawAttribute);
+            if (!kernelEntry) {
+                issues.add(issue(
+                        method.declaration(),
+                        "OpenCLAttributes on @CCode helpers are not supported in the current pipeline: " + attribute.raw()
+                ));
+                continue;
+            }
+            if (!KERNEL_METHOD_ATTRIBUTES.contains(attribute.name())) {
+                if (STRUCT_ATTRIBUTES.contains(attribute.name()) || FIELD_ATTRIBUTES.contains(attribute.name())) {
+                    issues.add(issue(method.declaration(), "OpenCL attribute '" + attribute.name() + "' is not valid on @GPU methods"));
+                }
+                continue;
+            }
+            validateUniqueAttribute(method.declaration(), attribute, seenUniqueAttributes, issues);
+            switch (attribute.name()) {
+                case "reqd_work_group_size", "work_group_size_hint" ->
+                        validateTriplePositiveIntegersAttribute(method.declaration(), attribute, issues);
+                case "vec_type_hint" -> validateNonEmptySingleArgumentAttribute(method.declaration(), attribute, issues);
+                default -> {
+                }
+            }
+        }
+    }
+
+    private void validateStructAttributes(ParsedGpuStruct struct, List<GpuValidationIssue> issues) {
+        Set<String> seenUniqueAttributes = new HashSet<>();
+        for (String rawAttribute : struct.openClAttributes()) {
+            AttributeSpec attribute = parseAttribute(rawAttribute);
+            if (!STRUCT_ATTRIBUTES.contains(attribute.name())) {
+                if (KERNEL_METHOD_ATTRIBUTES.contains(attribute.name())) {
+                    issues.add(new GpuValidationIssue(1, 1, "OpenCL attribute '" + attribute.name() + "' is not valid on @GPUStruct types"));
+                }
+                continue;
+            }
+            validateUniqueAttribute(null, attribute, seenUniqueAttributes, issues, "Duplicate OpenCL attribute on @GPUStruct: " + attribute.name());
+            if ("aligned".equals(attribute.name())) {
+                validateSinglePositiveIntegerAttribute(null, attribute, issues, "@GPUStruct aligned(...) requires a single positive integer");
+            }
+        }
+
+        for (ParsedGpuStructField field : struct.fields()) {
+            Set<String> seenFieldAttributes = new HashSet<>();
+            for (String rawAttribute : field.openClAttributes()) {
+                AttributeSpec attribute = parseAttribute(rawAttribute);
+                if (!FIELD_ATTRIBUTES.contains(attribute.name())) {
+                    issues.add(new GpuValidationIssue(
+                            1,
+                            1,
+                            "OpenCL attribute '" + attribute.name() + "' is not valid on @GPUStruct fields"
+                    ));
+                    continue;
+                }
+                validateUniqueAttribute(null, attribute, seenFieldAttributes, issues, "Duplicate OpenCL attribute on @GPUStruct field: " + attribute.name());
+                validateSinglePositiveIntegerAttribute(null, attribute, issues, "@GPUStruct field aligned(...) requires a single positive integer");
+            }
+        }
+    }
+
+    private void validateUniqueAttribute(Node node, AttributeSpec attribute, Set<String> seenUniqueAttributes, List<GpuValidationIssue> issues) {
+        validateUniqueAttribute(node, attribute, seenUniqueAttributes, issues, "Duplicate OpenCL attribute: " + attribute.name());
+    }
+
+    private void validateUniqueAttribute(
+            Node node,
+            AttributeSpec attribute,
+            Set<String> seenUniqueAttributes,
+            List<GpuValidationIssue> issues,
+            String message
+    ) {
+        if (!seenUniqueAttributes.add(attribute.name())) {
+            if (node != null) {
+                issues.add(issue(node, message));
+            } else {
+                issues.add(new GpuValidationIssue(1, 1, message));
+            }
+        }
+    }
+
+    private void validateTriplePositiveIntegersAttribute(Node node, AttributeSpec attribute, List<GpuValidationIssue> issues) {
+        if (attribute.arguments().size() != 3 || attribute.arguments().stream().anyMatch(argument -> !POSITIVE_INTEGER_PATTERN.matcher(argument).matches())) {
+            issues.add(issue(node, attribute.name() + "(...) requires exactly three positive integer arguments"));
+        }
+    }
+
+    private void validateNonEmptySingleArgumentAttribute(Node node, AttributeSpec attribute, List<GpuValidationIssue> issues) {
+        if (attribute.arguments().size() != 1 || attribute.arguments().get(0).isBlank()) {
+            issues.add(issue(node, attribute.name() + "(...) requires exactly one non-empty argument"));
+        }
+    }
+
+    private void validateSinglePositiveIntegerAttribute(
+            Node node,
+            AttributeSpec attribute,
+            List<GpuValidationIssue> issues,
+            String message
+    ) {
+        if (attribute.arguments().size() != 1 || !POSITIVE_INTEGER_PATTERN.matcher(attribute.arguments().get(0)).matches()) {
+            if (node != null) {
+                issues.add(issue(node, message));
+            } else {
+                issues.add(new GpuValidationIssue(1, 1, message));
+            }
+        }
+    }
+
+    private AttributeSpec parseAttribute(String rawAttribute) {
+        String trimmed = rawAttribute == null ? "" : rawAttribute.strip();
+        Matcher matcher = ATTRIBUTE_CALL_PATTERN.matcher(trimmed);
+        if (!matcher.matches()) {
+            return new AttributeSpec(trimmed, trimmed, List.of());
+        }
+        String arguments = matcher.group(2).strip();
+        List<String> values = arguments.isBlank()
+                ? List.of()
+                : java.util.Arrays.stream(arguments.split(","))
+                .map(String::strip)
+                .toList();
+        return new AttributeSpec(trimmed, matcher.group(1), values);
     }
 
     private void validateStatement(
@@ -1591,6 +1745,13 @@ public final class GpuSubsetValidator {
             String name,
             String javaType,
             String sourceText
+    ) {
+    }
+
+    private record AttributeSpec(
+            String raw,
+            String name,
+            List<String> arguments
     ) {
     }
 

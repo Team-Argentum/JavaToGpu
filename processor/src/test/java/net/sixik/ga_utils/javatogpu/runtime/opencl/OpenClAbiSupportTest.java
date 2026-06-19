@@ -1,5 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.api.Float3;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
@@ -83,6 +84,26 @@ class OpenClAbiSupportTest {
         ));
     }
 
+    @Test
+    void describesAlignedStructWithVectorFieldLayout() {
+        OpenClAbiDescriptor descriptor = OpenClAbiSupport.describeStructType(AlignedVectorSample.class);
+        String debug = OpenClAbiSupport.debugDescriptor(descriptor);
+
+        assertEquals(OpenClAbiKind.STRUCT, descriptor.kind());
+        assertEquals(32, descriptor.size());
+        assertEquals(32, descriptor.alignment());
+        assertEquals(2, descriptor.fields().size());
+        assertEquals("normal", descriptor.fields().get(0).name());
+        assertEquals(0, descriptor.fields().get(0).offset());
+        assertEquals(16, descriptor.fields().get(0).size());
+        assertEquals("weight", descriptor.fields().get(1).name());
+        assertEquals(16, descriptor.fields().get(1).offset());
+        assertEquals(8, descriptor.fields().get(1).size());
+        assertTrue(debug.contains("AlignedVectorSample [STRUCT] size=32, align=32"));
+        assertTrue(debug.contains("normal @0 size=16, align=16, type=" + Float3.class.getName()));
+        assertTrue(debug.contains("weight @16 size=8, align=16"));
+    }
+
     @GPUStruct
     static final class InnerSample {
         int x;
@@ -110,6 +131,17 @@ class OpenClAbiSupportTest {
 
         NoDefaultConstructorSample(float value) {
             this.value = value;
+        }
+    }
+
+    @GPUStruct
+    @OpenCLAttributes({"aligned(32)"})
+    static final class AlignedVectorSample {
+        Float3 normal;
+        @OpenCLAttributes({"aligned(16)"})
+        double weight;
+
+        AlignedVectorSample() {
         }
     }
 }

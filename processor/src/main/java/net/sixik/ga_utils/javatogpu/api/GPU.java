@@ -52,6 +52,45 @@ public final class GPU {
         return 1;
     }
 
+    @GPUIntrinsic(name = "get_global_offset")
+    public static int get_global_offset(int dimension) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image2DReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image2DReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
+    public static void write_imagef(Image2DWriteOnly image, Int2 coordinates, Float4 value) {
+    }
+
     @GPUIntrinsic(name = "sin")
     public static float sin(float value) {
         return (float) Math.sin(value);
@@ -80,6 +119,46 @@ public final class GPU {
     @GPUIntrinsic(name = "tan")
     public static double tan(double value) {
         return Math.tan(value);
+    }
+
+    @GPUIntrinsic(name = "asin")
+    public static float asin(float value) {
+        return (float) Math.asin(value);
+    }
+
+    @GPUIntrinsic(name = "asin")
+    public static double asin(double value) {
+        return Math.asin(value);
+    }
+
+    @GPUIntrinsic(name = "acos")
+    public static float acos(float value) {
+        return (float) Math.acos(value);
+    }
+
+    @GPUIntrinsic(name = "acos")
+    public static double acos(double value) {
+        return Math.acos(value);
+    }
+
+    @GPUIntrinsic(name = "atan")
+    public static float atan(float value) {
+        return (float) Math.atan(value);
+    }
+
+    @GPUIntrinsic(name = "atan")
+    public static double atan(double value) {
+        return Math.atan(value);
+    }
+
+    @GPUIntrinsic(name = "atan2")
+    public static float atan2(float y, float x) {
+        return (float) Math.atan2(y, x);
+    }
+
+    @GPUIntrinsic(name = "atan2")
+    public static double atan2(double y, double x) {
+        return Math.atan2(y, x);
     }
 
     @GPUIntrinsic(name = "sqrt")
@@ -142,6 +221,16 @@ public final class GPU {
         return Math.abs(value);
     }
 
+    @GPUIntrinsic(code = "((({0}) < 0) ? -({0}) : ({0}))")
+    public static int abs(int value) {
+        return Math.abs(value);
+    }
+
+    @GPUIntrinsic(code = "((({0}) < 0L) ? -({0}) : ({0}))")
+    public static long abs(long value) {
+        return Math.abs(value);
+    }
+
     @GPUIntrinsic(name = "floor")
     public static float floor(float value) {
         return (float) Math.floor(value);
@@ -160,6 +249,26 @@ public final class GPU {
     @GPUIntrinsic(name = "ceil")
     public static double ceil(double value) {
         return Math.ceil(value);
+    }
+
+    @GPUIntrinsic(name = "trunc")
+    public static float trunc(float value) {
+        return truncFloat(value);
+    }
+
+    @GPUIntrinsic(name = "trunc")
+    public static double trunc(double value) {
+        return truncDouble(value);
+    }
+
+    @GPUIntrinsic(name = "round")
+    public static float round(float value) {
+        return roundFloat(value);
+    }
+
+    @GPUIntrinsic(name = "round")
+    public static double round(double value) {
+        return roundDouble(value);
     }
 
     @GPUIntrinsic(name = "pow")
@@ -182,6 +291,16 @@ public final class GPU {
         return Math.min(left, right);
     }
 
+    @GPUIntrinsic(name = "min")
+    public static int min(int left, int right) {
+        return Math.min(left, right);
+    }
+
+    @GPUIntrinsic(name = "min")
+    public static long min(long left, long right) {
+        return Math.min(left, right);
+    }
+
     @GPUIntrinsic(name = "max")
     public static float max(float left, float right) {
         return Math.max(left, right);
@@ -189,6 +308,16 @@ public final class GPU {
 
     @GPUIntrinsic(name = "max")
     public static double max(double left, double right) {
+        return Math.max(left, right);
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static int max(int left, int right) {
+        return Math.max(left, right);
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static long max(long left, long right) {
         return Math.max(left, right);
     }
 
@@ -242,6 +371,16 @@ public final class GPU {
         return Math.max(minValue, Math.min(value, maxValue));
     }
 
+    @GPUIntrinsic(name = "clamp")
+    public static int clamp(int value, int minValue, int maxValue) {
+        return Math.max(minValue, Math.min(value, maxValue));
+    }
+
+    @GPUIntrinsic(name = "clamp")
+    public static long clamp(long value, long minValue, long maxValue) {
+        return Math.max(minValue, Math.min(value, maxValue));
+    }
+
     @GPUIntrinsic(name = "mix")
     public static float mix(float left, float right, float amount) {
         return left + (right - left) * amount;
@@ -250,6 +389,36 @@ public final class GPU {
     @GPUIntrinsic(name = "mix")
     public static double mix(double left, double right, double amount) {
         return left + (right - left) * amount;
+    }
+
+    @GPUIntrinsic(name = "degrees")
+    public static float degrees(float radians) {
+        return (float) Math.toDegrees(radians);
+    }
+
+    @GPUIntrinsic(name = "degrees")
+    public static double degrees(double radians) {
+        return Math.toDegrees(radians);
+    }
+
+    @GPUIntrinsic(name = "radians")
+    public static float radians(float degrees) {
+        return (float) Math.toRadians(degrees);
+    }
+
+    @GPUIntrinsic(name = "radians")
+    public static double radians(double degrees) {
+        return Math.toRadians(degrees);
+    }
+
+    @GPUIntrinsic(name = "copysign")
+    public static float copysign(float magnitude, float sign) {
+        return Math.copySign(magnitude, sign);
+    }
+
+    @GPUIntrinsic(name = "copysign")
+    public static double copysign(double magnitude, double sign) {
+        return Math.copySign(magnitude, sign);
     }
 
     @GPUIntrinsic(name = "step")
@@ -294,6 +463,121 @@ public final class GPU {
         return value - Math.floor(value);
     }
 
+    @GPUIntrinsic(code = "((({0}) > 0.0f) ? 1.0f : ((({0}) < 0.0f) ? -1.0f : 0.0f))")
+    public static float sign(float value) {
+        return value > 0.0f ? 1.0f : (value < 0.0f ? -1.0f : 0.0f);
+    }
+
+    @GPUIntrinsic(code = "((({0}) > 0.0) ? 1.0 : ((({0}) < 0.0) ? -1.0 : 0.0))")
+    public static double sign(double value) {
+        return value > 0.0 ? 1.0 : (value < 0.0 ? -1.0 : 0.0);
+    }
+
+    @GPUIntrinsic(code = "((({0}) > 0) ? 1 : ((({0}) < 0) ? -1 : 0))")
+    public static int sign(int value) {
+        return Integer.compare(value, 0);
+    }
+
+    @GPUIntrinsic(code = "((({0}) > 0L) ? 1L : ((({0}) < 0L) ? -1L : 0L))")
+    public static long sign(long value) {
+        return Long.compare(value, 0L);
+    }
+
+    @GPUIntrinsic(name = "convert_int")
+    public static int convert_int(float value) {
+        return (int) value;
+    }
+
+    @GPUIntrinsic(name = "convert_int")
+    public static int convert_int(double value) {
+        return (int) value;
+    }
+
+    @GPUIntrinsic(name = "convert_int")
+    public static int convert_int(long value) {
+        return (int) value;
+    }
+
+    @GPUIntrinsic(name = "convert_long")
+    public static long convert_long(float value) {
+        return (long) value;
+    }
+
+    @GPUIntrinsic(name = "convert_long")
+    public static long convert_long(double value) {
+        return (long) value;
+    }
+
+    @GPUIntrinsic(name = "convert_long")
+    public static long convert_long(int value) {
+        return value;
+    }
+
+    @GPUIntrinsic(name = "convert_float")
+    public static float convert_float(int value) {
+        return value;
+    }
+
+    @GPUIntrinsic(name = "convert_float")
+    public static float convert_float(long value) {
+        return value;
+    }
+
+    @GPUIntrinsic(name = "convert_float")
+    public static float convert_float(double value) {
+        return (float) value;
+    }
+
+    @GPUIntrinsic(name = "convert_double")
+    public static double convert_double(int value) {
+        return value;
+    }
+
+    @GPUIntrinsic(name = "convert_double")
+    public static double convert_double(long value) {
+        return value;
+    }
+
+    @GPUIntrinsic(name = "convert_double")
+    public static double convert_double(float value) {
+        return value;
+    }
+
+    @GPUIntrinsic(name = "as_int")
+    public static int as_int(float value) {
+        return Float.floatToRawIntBits(value);
+    }
+
+    @GPUIntrinsic(name = "as_float")
+    public static float as_float(int value) {
+        return Float.intBitsToFloat(value);
+    }
+
+    @GPUIntrinsic(name = "as_long")
+    public static long as_long(double value) {
+        return Double.doubleToRawLongBits(value);
+    }
+
+    @GPUIntrinsic(name = "as_double")
+    public static double as_double(long value) {
+        return Double.longBitsToDouble(value);
+    }
+
+    @GPUIntrinsic(name = "clz")
+    public static int clz(int value) {
+        return Integer.numberOfLeadingZeros(value);
+    }
+
+    @GPUIntrinsic(name = "popcount")
+    public static int popcount(int value) {
+        return Integer.bitCount(value);
+    }
+
+    @GPUIntrinsic(name = "rotate")
+    public static int rotate(int value, int amount) {
+        return Integer.rotateLeft(value, amount);
+    }
+
     @GPUIntrinsic(name = "get_global_id")
     public static int get_global_id(int dimension) {
         return 0;
@@ -321,5 +605,128 @@ public final class GPU {
 
     @GPUIntrinsic(name = "barrier")
     public static void barrier(int flags) {
+    }
+
+    @GPUIntrinsic(code = "barrier(1)")
+    public static void local_barrier() {
+    }
+
+    @GPUIntrinsic(code = "barrier(2)")
+    public static void global_barrier() {
+    }
+
+    @GPUIntrinsic(code = "barrier((1 | 2))")
+    public static void all_barrier() {
+    }
+
+    @GPUIntrinsic(name = "mem_fence")
+    public static void mem_fence(int flags) {
+    }
+
+    @GPUIntrinsic(code = "mem_fence(1)")
+    public static void local_mem_fence() {
+    }
+
+    @GPUIntrinsic(code = "mem_fence(2)")
+    public static void global_mem_fence() {
+    }
+
+    @GPUIntrinsic(code = "mem_fence((1 | 2))")
+    public static void all_mem_fence() {
+    }
+
+    @GPUIntrinsic(code = "atomic_add(&(({0})[{1}]), {2})")
+    public static int atomic_add(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] += value;
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_sub(&(({0})[{1}]), {2})")
+    public static int atomic_sub(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] -= value;
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_xchg(&(({0})[{1}]), {2})")
+    public static int atomic_xchg(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] = value;
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_inc(&(({0})[{1}]))")
+    public static int atomic_inc(int[] values, int index) {
+        return values[index]++;
+    }
+
+    @GPUIntrinsic(code = "atomic_dec(&(({0})[{1}]))")
+    public static int atomic_dec(int[] values, int index) {
+        return values[index]--;
+    }
+
+    @GPUIntrinsic(code = "atomic_cmpxchg(&(({0})[{1}]), {2}, {3})")
+    public static int atomic_cmpxchg(int[] values, int index, int expected, int replacement) {
+        int previous = values[index];
+        if (previous == expected) {
+            values[index] = replacement;
+        }
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_min(&(({0})[{1}]), {2})")
+    public static int atomic_min(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] = Math.min(previous, value);
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_max(&(({0})[{1}]), {2})")
+    public static int atomic_max(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] = Math.max(previous, value);
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_and(&(({0})[{1}]), {2})")
+    public static int atomic_and(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] &= value;
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_or(&(({0})[{1}]), {2})")
+    public static int atomic_or(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] |= value;
+        return previous;
+    }
+
+    @GPUIntrinsic(code = "atomic_xor(&(({0})[{1}]), {2})")
+    public static int atomic_xor(int[] values, int index, int value) {
+        int previous = values[index];
+        values[index] ^= value;
+        return previous;
+    }
+
+    private static float roundFloat(float value) {
+        return value >= 0.0f
+                ? (float) Math.floor(value + 0.5f)
+                : (float) Math.ceil(value - 0.5f);
+    }
+
+    private static double roundDouble(double value) {
+        return value >= 0.0
+                ? Math.floor(value + 0.5)
+                : Math.ceil(value - 0.5);
+    }
+
+    private static float truncFloat(float value) {
+        return value >= 0.0f ? (float) Math.floor(value) : (float) Math.ceil(value);
+    }
+
+    private static double truncDouble(double value) {
+        return value >= 0.0 ? Math.floor(value) : Math.ceil(value);
     }
 }

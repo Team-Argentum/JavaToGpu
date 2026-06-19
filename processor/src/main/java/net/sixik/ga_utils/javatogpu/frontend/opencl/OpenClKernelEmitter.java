@@ -89,6 +89,9 @@ public final class OpenClKernelEmitter {
 
     private String emitParameter(ParsedGpuParameter parameter) {
         String type = parameter.javaType();
+        if (GpuTypeSupport.isSupportedImageOrSamplerType(type)) {
+            return emitType(type) + " " + parameter.name();
+        }
         if (GpuTypeSupport.isSupportedPointerType(type)) {
             return emitType(GpuTypeSupport.pointerValueType(type)) + "* " + parameter.name();
         }
@@ -364,6 +367,9 @@ public final class OpenClKernelEmitter {
     private String emitType(String javaType) {
         if (GpuTypeSupport.isSupportedPointerType(javaType)) {
             return emitType(GpuTypeSupport.pointerValueType(javaType));
+        }
+        if (GpuTypeSupport.isSupportedImageOrSamplerType(javaType)) {
+            return GpuTypeSupport.openClImageOrSamplerTypeName(javaType);
         }
         if (GpuTypeSupport.isSupportedVectorType(javaType)) {
             return GpuTypeSupport.openClVectorTypeName(javaType);

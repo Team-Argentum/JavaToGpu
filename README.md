@@ -18,9 +18,12 @@ Right now the main backend is OpenCL. CUDA is planned, but not the current focus
 - Write kernels in Java instead of hand-writing OpenCL C.
 - Built-in `GPU.*` intrinsics for indexing, math and barriers.
 - `@CCode` helpers for reusable GPU-side functions.
+- Atomic `GPU.*` helpers for integer buffers.
+- Local memory fence / barrier helpers.
 - Pointer wrappers like `FloatPtr` and `DoublePtr` for helper mutation patterns.
 - Vector wrappers like `Float2`, `Float4`, `Int2`, `Double4`.
 - `@GPUStruct` support for user-defined OpenCL structs.
+- Basic image / sampler kernel API surface.
 - Kernel launcher generation and runtime dispatch through `GpuRuntime`.
 
 ## Project Layout
@@ -53,6 +56,9 @@ Implemented and working:
 - struct kernel parameters
 - struct array buffers
 - vector array buffers
+- integer atomics
+- local memory helper intrinsics
+- image / sampler kernel code generation
 - OpenCL attributes via `@OpenCLAttributes`
 - OpenCL address spaces: `@GPUGlobal`, `@GPUConstant`, `@GPULocal`
 
@@ -61,6 +67,7 @@ Still intentionally limited:
 - non-`void` `@GPU` entry methods are not supported
 - arbitrary Java object allocation is not supported
 - arbitrary Java method calls are not supported
+- runtime marshalling for real OpenCL image / sampler objects is not implemented yet
 - CUDA backend is not implemented yet
 
 ## Quick Start
@@ -331,6 +338,71 @@ static void kernel(@GPUGlobal float[] output) {
 }
 ```
 
+Validation notes:
+
+- `reqd_work_group_size(...)`, `work_group_size_hint(...)` and `vec_type_hint(...)` are treated as kernel-method attributes
+- `packed` and `aligned(...)` are treated as struct / struct-field attributes
+- malformed or obviously misplaced known attributes now fail fast during validation
+
+## Atomics
+
+Integer atomics are available through `GPU.*` helpers over `int[]` buffers:
+
+```java
+@net.sixik.ga_utils.javatogpu.api.anotations.GPU
+static void kernel(@GPUGlobal int[] data, @GPUGlobal int[] output) {
+    int id = GPU.get_global_id(0);
+    int previous = GPU.atomic_add(data, id, 2);
+    previous = previous + GPU.atomic_cmpxchg(data, id, 5, 9);
+    output[id] = previous + GPU.atomic_xor(data, id, 31);
+}
+```
+
+## Local Memory Helpers
+
+If you already use `@GPULocal` buffers, the `GPU` facade also exposes compact helpers for fences and barriers:
+
+```java
+@net.sixik.ga_utils.javatogpu.api.anotations.GPU
+static void kernel(
+        @GPUConstant float[] lookup,
+        @GPULocal float[] scratch,
+        @GPUGlobal float[] output
+) {
+    int gid = GPU.get_global_id(0);
+    int lid = GPU.get_local_id(0);
+    scratch[lid] = lookup[lid];
+    GPU.local_mem_fence();
+    GPU.local_barrier();
+    output[gid] = scratch[lid];
+}
+```
+
+## Image And Sampler API
+
+JavaToGpu now understands basic image / sampler kernel parameters and OpenCL image intrinsics:
+
+```java
+@net.sixik.ga_utils.javatogpu.api.anotations.GPU
+static void kernel(
+        Image2DReadOnly inputImage,
+        Image2DWriteOnly outputImage,
+        Sampler sampler,
+        @GPUGlobal int[] output
+) {
+    int id = GPU.get_global_id(0);
+    Int2 coords = new Int2(id, 0);
+    Int4 pixel = GPU.read_imagei(inputImage, sampler, coords);
+    output[id] = pixel.x + GPU.get_image_width(inputImage);
+    GPU.write_imagef(outputImage, coords, new Float4(1.0f, 0.0f, 0.0f, 1.0f));
+}
+```
+
+Current limitation:
+
+- code generation is implemented
+- runtime marshalling for real OpenCL image / sampler objects is still pending
+
 ## Reusable Libraries
 
 When helpers or intrinsics should be reused across compilations, annotate their owner classes:
@@ -481,6 +553,7 @@ The best real project examples live here:
 - [Main.java](test-app/src/main/java/net/sixik/ga_utils/Main.java)
 - `test-app/src/main/java/net/sixik/ga_utils/*`
 - `processor/src/test/java/net/sixik/ga_utils/javatogpu/*`
+- [docs/cookbook.md](docs/cookbook.md)
 
 The test suite is especially useful because it documents exactly what the current frontend supports.
 
