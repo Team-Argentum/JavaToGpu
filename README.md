@@ -371,6 +371,54 @@ Run only the sample app:
 
 On Unix-like systems, use `./gradlew` instead of `./gradlew.bat`.
 
+## ABI Debug
+
+JavaToGpu has two separate ABI debug switches:
+
+- compile-time processor notes: `-Ajavatogpu.debugAbi=true`
+- runtime OpenCL marshalling dump: `-Djavatogpu.opencl.debugAbi=true`
+
+Use the processor flag when you want to see how kernel parameters and `@GPUStruct` fields are interpreted during annotation processing.
+
+Use the runtime flag when you want to inspect the final OpenCL-side layout before kernel launch, especially for:
+
+- `@GPUStruct`
+- vector values and vector arrays
+- packed / aligned data
+- argument marshalling failures
+
+In Gradle, the processor-side flag is usually added to `JavaCompile` tasks:
+
+```gradle
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['-Ajavatogpu.debugAbi=true']
+}
+```
+
+If you compile outside Gradle, the same processor flag is a standard `javac` annotation-processor option:
+
+```text
+javac -Ajavatogpu.debugAbi=true ...
+```
+
+The runtime flag is a normal JVM system property, so enable it on the task that launches your app or tests:
+
+```gradle
+tasks.withType(Test).configureEach {
+    jvmArgs '-Djavatogpu.opencl.debugAbi=true'
+}
+
+tasks.withType(JavaExec).configureEach {
+    jvmArgs '-Djavatogpu.opencl.debugAbi=true'
+}
+```
+
+If you only need a one-off run, you can also pass it directly:
+
+```powershell
+./gradlew.bat :test-app:run --console=plain -Djavatogpu.opencl.debugAbi=true
+```
+
 ## Troubleshooting
 
 ### `OpenCL program build failed`
