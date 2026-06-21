@@ -20,6 +20,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrDoWhileLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrExpressionStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrLoopBreak;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
@@ -33,7 +34,11 @@ import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStructField;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public final class OpenClKernelEmitter {
@@ -131,7 +136,7 @@ public final class OpenClKernelEmitter {
                 .append(";");
     }
 
-    private void emitStatement(StringBuilder builder, GpuIrStatement statement, int indent) {
+    private void emitStatement(StringBuilder builder, GpuIrStatement statement, int indent, EmissionContext context) {
         String prefix = "    ".repeat(indent);
 
         if (statement instanceof GpuIrVariableDeclaration declaration) {
@@ -162,6 +167,7 @@ public final class OpenClKernelEmitter {
         }
 
         if (statement instanceof GpuIrForLoop loop) {
+            String loopBreakLabel = context.nextLoopBreakLabel();
             builder.append(prefix)
                     .append("for (")
                     .append(emitForHeaderStatement(loop.initializer()))
@@ -171,11 +177,16 @@ public final class OpenClKernelEmitter {
                     .append(emitForHeaderStatement(loop.update()))
                     .append(") {\n");
 
+            context.pushLoopBreakLabel(loopBreakLabel);
             for (GpuIrStatement bodyStatement : loop.body()) {
-                emitStatement(builder, bodyStatement, indent + 1);
+                emitStatement(builder, bodyStatement, indent + 1, context);
             }
+            context.popLoopBreakLabel();
 
             builder.append(prefix).append("}\n");
+            if (context.isLoopBreakLabelUsed(loopBreakLabel)) {
+                builder.append(prefix).append(loopBreakLabel).append(": ;\n");
+            }
             return;
         }
 
@@ -186,13 +197,13 @@ public final class OpenClKernelEmitter {
                     .append(") {\n");
 
             for (GpuIrStatement thenStatement : ifStatement.thenBranch()) {
-                emitStatement(builder, thenStatement, indent + 1);
+                emitStatement(builder, thenStatement, indent + 1, context);
             }
 
             if (!ifStatement.elseBranch().isEmpty()) {
                 builder.append(prefix).append("} else {\n");
                 for (GpuIrStatement elseStatement : ifStatement.elseBranch()) {
-                    emitStatement(builder, elseStatement, indent + 1);
+                    emitStatement(builder, elseStatement, indent + 1, context);
                 }
             }
 
@@ -201,43 +212,70 @@ public final class OpenClKernelEmitter {
         }
 
         if (statement instanceof GpuIrWhileLoop loop) {
+            String loopBreakLabel = context.nextLoopBreakLabel();
             builder.append(prefix)
                     .append("while (")
                     .append(emitExpression(loop.condition()))
                     .append(") {\n");
+            context.pushLoopBreakLabel(loopBreakLabel);
             for (GpuIrStatement bodyStatement : loop.body()) {
-                emitStatement(builder, bodyStatement, indent + 1);
+                emitStatement(builder, bodyStatement, indent + 1, context);
             }
+            context.popLoopBreakLabel();
             builder.append(prefix).append("}\n");
+            if (context.isLoopBreakLabelUsed(loopBreakLabel)) {
+                builder.append(prefix).append(loopBreakLabel).append(": ;\n");
+            }
             return;
         }
 
         if (statement instanceof GpuIrDoWhileLoop loop) {
+            String loopBreakLabel = context.nextLoopBreakLabel();
             builder.append(prefix).append("do {\n");
+            context.pushLoopBreakLabel(loopBreakLabel);
             for (GpuIrStatement bodyStatement : loop.body()) {
-                emitStatement(builder, bodyStatement, indent + 1);
+                emitStatement(builder, bodyStatement, indent + 1, context);
             }
+            context.popLoopBreakLabel();
             builder.append(prefix)
                     .append("} while (")
                     .append(emitExpression(loop.condition()))
                     .append(");\n");
+            if (context.isLoopBreakLabelUsed(loopBreakLabel)) {
+                builder.append(prefix).append(loopBreakLabel).append(": ;\n");
+            }
             return;
         }
 
         if (statement instanceof GpuIrSwitch switchStatement) {
+            context.pushSwitch();
             builder.append(prefix)
                     .append("switch (")
                     .append(emitExpression(switchStatement.selector()))
                     .append(") {\n");
             for (GpuIrSwitchCase switchCase : switchStatement.cases()) {
-                emitSwitchCase(builder, switchCase, indent + 1);
+                emitSwitchCase(builder, switchCase, indent + 1, context);
             }
             builder.append(prefix).append("}\n");
+            context.popSwitch();
             return;
         }
 
         if (statement instanceof GpuIrBreak) {
             builder.append(prefix).append("break;\n");
+            return;
+        }
+
+        if (statement instanceof GpuIrLoopBreak) {
+            if (context.insideSwitch()) {
+                context.markCurrentLoopBreakUsed();
+                builder.append(prefix)
+                        .append("goto ")
+                        .append(context.currentLoopBreakLabel())
+                        .append(";\n");
+            } else {
+                builder.append(prefix).append("break;\n");
+            }
             return;
         }
 
@@ -259,7 +297,7 @@ public final class OpenClKernelEmitter {
         throw new IllegalArgumentException("Unsupported IR statement: " + statement);
     }
 
-    private void emitSwitchCase(StringBuilder builder, GpuIrSwitchCase switchCase, int indent) {
+    private void emitSwitchCase(StringBuilder builder, GpuIrSwitchCase switchCase, int indent, EmissionContext context) {
         String prefix = "    ".repeat(indent);
         if (switchCase.defaultCase()) {
             builder.append(prefix).append("default:\n");
@@ -273,7 +311,7 @@ public final class OpenClKernelEmitter {
         }
 
         for (GpuIrStatement statement : switchCase.statements()) {
-            emitStatement(builder, statement, indent + 1);
+            emitStatement(builder, statement, indent + 1, context);
         }
     }
 
@@ -395,12 +433,59 @@ public final class OpenClKernelEmitter {
         if (!kernel && !parsedMethod.nativeCode().isBlank()) {
             emitNativeCode(builder, parsedMethod.nativeCode(), 1);
         } else {
+            EmissionContext context = new EmissionContext();
             for (GpuIrStatement statement : irMethod.statements()) {
-                emitStatement(builder, statement, 1);
+                emitStatement(builder, statement, 1, context);
             }
         }
 
         builder.append("}");
+    }
+
+    private static final class EmissionContext {
+        private final Deque<String> loopBreakLabels = new ArrayDeque<>();
+        private final Set<String> usedLoopBreakLabels = new LinkedHashSet<>();
+        private int switchDepth;
+        private int nextLoopLabelId;
+
+        private String nextLoopBreakLabel() {
+            return "__jtg_loop_break_" + nextLoopLabelId++;
+        }
+
+        private void pushLoopBreakLabel(String loopBreakLabel) {
+            loopBreakLabels.addLast(loopBreakLabel);
+        }
+
+        private void popLoopBreakLabel() {
+            loopBreakLabels.removeLast();
+        }
+
+        private String currentLoopBreakLabel() {
+            if (loopBreakLabels.isEmpty()) {
+                throw new IllegalStateException("Loop-break label requested outside of a loop");
+            }
+            return loopBreakLabels.getLast();
+        }
+
+        private void markCurrentLoopBreakUsed() {
+            usedLoopBreakLabels.add(currentLoopBreakLabel());
+        }
+
+        private boolean isLoopBreakLabelUsed(String loopBreakLabel) {
+            return usedLoopBreakLabels.contains(loopBreakLabel);
+        }
+
+        private void pushSwitch() {
+            switchDepth++;
+        }
+
+        private void popSwitch() {
+            switchDepth--;
+        }
+
+        private boolean insideSwitch() {
+            return switchDepth > 0;
+        }
     }
 
     private void emitNativeCode(StringBuilder builder, String nativeCode, int indent) {

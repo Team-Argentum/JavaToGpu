@@ -1,6 +1,6 @@
 # JavaToGpu
 
-JavaToGpu is a source-first Java-to-OpenCL pipeline.
+JavaToGpu is a source-first Java-to-OpenCL pipeline with an additional structured ASM frontend for advanced integrations.
 
 You write a restricted Java method, mark it with `@GPU`, and during compilation the project:
 
@@ -25,6 +25,7 @@ Right now the main backend is OpenCL. CUDA is planned, but not the current focus
 - `@GPUStruct` support for user-defined OpenCL structs.
 - Basic image / sampler kernel API surface.
 - Kernel launcher generation and runtime dispatch through `GpuRuntime`.
+- A public `GpuProgramCompiler` facade for both source and structured ASM inputs.
 
 ## Project Layout
 
@@ -69,6 +70,7 @@ Still intentionally limited:
 - arbitrary Java method calls are not supported
 - runtime marshalling for real OpenCL image / sampler objects is not implemented yet
 - CUDA backend is not implemented yet
+- ASM frontend currently expects a strict GPU-friendly JVM subset rather than arbitrary bytecode
 
 ## Quick Start
 
@@ -94,6 +96,30 @@ try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
     GpuRuntime.setBackend(GpuRuntime.defaultBackend());
 }
 ```
+
+## Programmatic Frontends
+
+If you want to use JavaToGpu as a backend from another compiler, use [`GpuProgramCompiler`](processor/src/main/java/net/sixik/ga_utils/javatogpu/frontend/GpuProgramCompiler.java).
+
+Source entry:
+
+```java
+GpuProgramCompiler compiler = GpuProgramCompiler.createDefault();
+String opencl = compiler.compileSource(methodSource, helperSources);
+```
+
+Structured ASM entry:
+
+```java
+GpuProgramCompiler compiler = GpuProgramCompiler.createDefault();
+String opencl = compiler.compileStructuredAsm(kernelAsmMethod, helperAsmMethods, structs);
+```
+
+Important note:
+
+- the ASM path is for GPU-friendly bytecode generated on purpose
+- it is not meant to decompile arbitrary JVM methods back into kernels
+- the recommended architecture is `your AST -> GPU-friendly ASM -> JavaToGpu ASM frontend -> IR -> OpenCL`
 
 ## Basic Kernel Example
 
@@ -557,6 +583,16 @@ The best real project examples live here:
 
 The test suite is especially useful because it documents exactly what the current frontend supports.
 
+For the ASM path, the most practical backend-facing references are:
+
+- [docs/gpu-friendly-asm-contract.md](docs/gpu-friendly-asm-contract.md)
+- [docs/asm-to-ir-mapping.md](docs/asm-to-ir-mapping.md)
+- [docs/asm-frontend-support-matrix.md](docs/asm-frontend-support-matrix.md)
+- [docs/ast-lowering-reference.md](docs/ast-lowering-reference.md)
+
+Optional generator-author helpers also exist in `frontend/asm/experimental`.
+They are convenience layers, not required API for regular JavaToGpu users.
+
 ## Limitations And Design Notes
 
 JavaToGpu is intentionally not a "run any Java on GPU" system.
@@ -568,6 +604,8 @@ That means:
 - explicit support is better than implicit magic
 - unsupported constructs should fail fast at compile time
 - correctness and understandable diagnostics matter more than pretending the whole language is available
+
+For the ASM path, the same philosophy applies even more strictly: generate a canonical subset that is easy to validate and lift, instead of trying to support arbitrary JVM patterns.
 
 ## Roadmap
 
