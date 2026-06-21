@@ -6,7 +6,7 @@ You write a restricted Java method, mark it with `@GPU`, and JavaToGpu validates
 
 ## Documentation
 
-- Public user documentation: [github-wiki/Home.md](github-wiki/Home.md)
+- Public user documentation: [github-wiki/Home.md](wiki)
 
 ## What You Get
 
