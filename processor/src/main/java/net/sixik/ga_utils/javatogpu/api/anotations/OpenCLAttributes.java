@@ -11,7 +11,7 @@ import java.lang.annotation.Target;
  * <p>This is intentionally low-level and forwards the provided strings almost directly into generated source.
  *
  * <pre>{@code
- * @OpenCLAttributes({"reqd_work_group_size(16, 1, 1)"})
+ * @OpenCLAttributes("reqd_work_group_size(16, 1, 1)")
  * @GPU
  * static void kernel(@GPUGlobal float[] output) {
  *     output[0] = 1.0f;
