@@ -1,5 +1,22 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.UByte;
+import net.sixik.ga_utils.javatogpu.api.UInt;
+import net.sixik.ga_utils.javatogpu.api.ULong;
+import net.sixik.ga_utils.javatogpu.api.UShort;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
@@ -32,9 +49,7 @@ public final class OpenClArgumentMarshaller {
         try {
             GpuKernelParameterAccess access = parameterDescriptor.access();
             if (GpuTypeSupport.isSupportedImageOrSamplerType(parameterDescriptor.javaType())) {
-                throw new IllegalArgumentException(
-                        "OpenCL image/sampler runtime arguments are not implemented yet: " + parameterDescriptor.javaType()
-                );
+                return marshallImageOrSamplerArgument(parameterDescriptor, access, argument);
             }
             if (GpuTypeSupport.isSupportedVectorType(parameterDescriptor.javaType())) {
                 return new OpenClScalarArgument(
@@ -114,11 +129,26 @@ public final class OpenClArgumentMarshaller {
                         values.length
                 );
             }
+            if (argument instanceof UByte value) {
+                return new OpenClScalarArgument(OpenClArgumentKind.INT8, parameterDescriptor.access(), value.value);
+            }
+            if (argument instanceof UShort value) {
+                return new OpenClScalarArgument(OpenClArgumentKind.INT16, parameterDescriptor.access(), value.value);
+            }
+            if (argument instanceof UInt value) {
+                return new OpenClScalarArgument(OpenClArgumentKind.INT32, parameterDescriptor.access(), value.value);
+            }
+            if (argument instanceof ULong value) {
+                return new OpenClScalarArgument(OpenClArgumentKind.INT64, parameterDescriptor.access(), value.value);
+            }
             if (argument instanceof Byte value) {
                 return new OpenClScalarArgument(OpenClArgumentKind.INT8, parameterDescriptor.access(), value);
             }
             if (argument instanceof Short value) {
                 return new OpenClScalarArgument(OpenClArgumentKind.INT16, parameterDescriptor.access(), value);
+            }
+            if (argument instanceof Character value) {
+                return new OpenClScalarArgument(OpenClArgumentKind.INT16, parameterDescriptor.access(), (short) value.charValue());
             }
             if (argument instanceof Integer value) {
                 return new OpenClScalarArgument(OpenClArgumentKind.INT32, parameterDescriptor.access(), value);
@@ -142,6 +172,79 @@ public final class OpenClArgumentMarshaller {
                             ? "\n" + OpenClAbiDebug.describeParameterFailure(parameterDescriptor, argument)
                             : ""),
                     exception
+            );
+        }
+    }
+
+    private static OpenClKernelArgument marshallImageOrSamplerArgument(
+            GpuKernelParameterDescriptor parameterDescriptor,
+            GpuKernelParameterAccess access,
+            Object argument
+    ) {
+        if (argument instanceof Image1DReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image1DReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE1D, access, image.handle());
+        }
+        if (argument instanceof Image1DWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image1DWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE1D, access, image.handle());
+        }
+        if (argument instanceof Image1DArrayReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image1DArrayReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE1D_ARRAY, access, image.handle());
+        }
+        if (argument instanceof Image1DArrayWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image1DArrayWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE1D_ARRAY, access, image.handle());
+        }
+        if (argument instanceof Image1DBufferReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image1DBufferReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE1D_BUFFER, access, image.handle());
+        }
+        if (argument instanceof Image1DBufferWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image1DBufferWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE1D_BUFFER, access, image.handle());
+        }
+        if (argument instanceof Image2DReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D, access, image.handle());
+        }
+        if (argument instanceof Image2DWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D, access, image.handle());
+        }
+        if (argument instanceof Image2DArrayReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DArrayReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D_ARRAY, access, image.handle());
+        }
+        if (argument instanceof Image2DArrayWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DArrayWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D_ARRAY, access, image.handle());
+        }
+        if (argument instanceof Image3DReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image3DReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE3D, access, image.handle());
+        }
+        if (argument instanceof Image3DWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image3DWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE3D, access, image.handle());
+        }
+        if (argument instanceof Sampler sampler) {
+            requireValidHandle(parameterDescriptor, "Sampler", sampler.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.SAMPLER, access, sampler.handle());
+        }
+        throw new IllegalArgumentException(
+                "Unsupported OpenCL image/sampler runtime argument type for "
+                        + parameterDescriptor.javaType()
+                        + ": "
+                        + argument.getClass().getName()
+        );
+    }
+
+    private static void requireValidHandle(GpuKernelParameterDescriptor parameterDescriptor, String typeName, boolean valid) {
+        if (!valid) {
+            throw new IllegalArgumentException(
+                    typeName + " runtime argument for parameter '" + parameterDescriptor.name() + "' does not carry a valid native handle"
             );
         }
     }

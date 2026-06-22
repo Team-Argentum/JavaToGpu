@@ -52,6 +52,11 @@ Implemented and working:
 - integer atomics
 - local memory helper intrinsics
 - image / sampler kernel code generation
+- runtime image / sampler marshalling for real OpenCL handles
+- `image1d_t`, `image1d_array_t`, `image1d_buffer_t`, `image2d_t`, `image2d_array_t`, `image3d_t` kernel parameters
+- samplerless image reads and image metadata intrinsics
+- host-side image upload / readback helpers for RGBA float/int/uint and RGBA8
+- read/write coverage for float, int and uint image builtins across the supported image object families
 - OpenCL attributes via `@OpenCLAttributes`
 - OpenCL address spaces: `@GPUGlobal`, `@GPUConstant`, `@GPULocal`
 - structured ASM frontend for canonical GPU-friendly bytecode
@@ -61,7 +66,6 @@ Still intentionally limited:
 - non-`void` `@GPU` entry methods are not supported
 - arbitrary Java object allocation is not supported
 - arbitrary Java method calls are not supported
-- runtime marshalling for real OpenCL image / sampler objects is not implemented yet
 - CUDA backend is not implemented yet
 - ASM frontend currently expects a strict GPU-friendly JVM subset rather than arbitrary bytecode
 
@@ -118,7 +122,7 @@ __kernel void jtg_kernel(__global float* input, __global float* output) {
 }
 ```
 
-More complete examples, troubleshooting, ASM notes, and feature pages now live in the public wiki: [github-wiki/Home.md](github-wiki/Home.md).
+More complete examples, troubleshooting, ASM notes, and feature pages now live in the public wiki: [github-wiki](https://github.com/DeusSixik/JavaToGpu/wiki).
 
 ## Programmatic Frontends
 

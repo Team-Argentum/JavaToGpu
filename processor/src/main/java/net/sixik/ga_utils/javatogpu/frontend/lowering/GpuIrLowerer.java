@@ -502,13 +502,14 @@ public final class GpuIrLowerer {
         if (expression instanceof FieldAccessExpr fieldAccessExpr) {
             if (fieldAccessExpr.getScope() instanceof NameExpr nameExpr && "value".equals(fieldAccessExpr.getNameAsString())) {
                 String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
+                String declaredType = GpuTypeSupport.declaredType(storageType);
                 if (GpuTypeSupport.isPointerReferenceStorage(storageType)) {
                     return new GpuIrUnary("*", new GpuIrVariableRef(nameExpr.getNameAsString()));
                 }
-                if (GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+                if (GpuTypeSupport.isSupportedPointerType(declaredType) || GpuTypeSupport.isSupportedScalarAliasType(declaredType)) {
                     return new GpuIrVariableRef(nameExpr.getNameAsString());
                 }
-                throw new IllegalArgumentException("The .value field is only supported on pointer helpers for lowering: " + fieldAccessExpr);
+                throw new IllegalArgumentException("The .value field is only supported on pointer helpers and unsigned scalar aliases for lowering: " + fieldAccessExpr);
             }
             String scopeType = inferExpressionType(fieldAccessExpr.getScope(), scopes, context);
             StructDescriptor struct = resolveStruct(scopeType, context.structRegistry());
@@ -596,14 +597,30 @@ public final class GpuIrLowerer {
 
         if (expression instanceof ObjectCreationExpr creationExpr
                 && intrinsicDatabase.isAllowedAllocationType(creationExpr.getTypeAsString())
-                && GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())) {
+                && (GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())
+                || GpuTypeSupport.isSupportedScalarAliasType(creationExpr.getTypeAsString()))) {
             if (creationExpr.getArguments().size() > 1) {
-                throw new IllegalArgumentException("Pointer helper allocation supports at most one constructor argument: " + creationExpr.getTypeAsString());
+                throw new IllegalArgumentException("Intrinsic allocation supports at most one constructor argument: " + creationExpr.getTypeAsString());
+            }
+            if (GpuTypeSupport.isSupportedScalarAliasType(creationExpr.getTypeAsString())) {
+                if (creationExpr.getArguments().size() == 1) {
+                    return new GpuIrCast(
+                            creationExpr.getTypeAsString(),
+                            lowerExpression(creationExpr.getArgument(0), scopes, context)
+                    );
+                }
+                return new GpuIrCast(
+                        creationExpr.getTypeAsString(),
+                        new GpuIrLiteral(zeroLiteralForType(GpuTypeSupport.scalarAliasValueType(creationExpr.getTypeAsString())))
+                );
             }
             if (creationExpr.getArguments().size() == 1) {
                 return lowerExpression(creationExpr.getArgument(0), scopes, context);
             }
-            return new GpuIrLiteral(zeroLiteralForType(GpuTypeSupport.pointerValueType(creationExpr.getTypeAsString())));
+            String zeroType = GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())
+                    ? GpuTypeSupport.pointerValueType(creationExpr.getTypeAsString())
+                    : GpuTypeSupport.scalarAliasValueType(creationExpr.getTypeAsString());
+            return new GpuIrLiteral(zeroLiteralForType(zeroType));
         }
 
         if (expression instanceof ObjectCreationExpr creationExpr) {
@@ -698,7 +715,7 @@ public final class GpuIrLowerer {
         }
 
         if (expression instanceof CharLiteralExpr) {
-            return "int";
+            return "char";
         }
 
         if (expression instanceof DoubleLiteralExpr literalExpr) {
@@ -736,10 +753,17 @@ public final class GpuIrLowerer {
         if (expression instanceof FieldAccessExpr fieldAccessExpr) {
             if (fieldAccessExpr.getScope() instanceof NameExpr nameExpr && "value".equals(fieldAccessExpr.getNameAsString())) {
                 String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
-                if (storageType == null || !GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+                if (storageType == null) {
                     return null;
                 }
-                return GpuTypeSupport.pointerValueType(storageType);
+                String declaredType = GpuTypeSupport.declaredType(storageType);
+                if (GpuTypeSupport.isSupportedPointerType(declaredType)) {
+                    return GpuTypeSupport.pointerValueType(storageType);
+                }
+                if (GpuTypeSupport.isSupportedScalarAliasType(declaredType)) {
+                    return GpuTypeSupport.scalarAliasValueType(declaredType);
+                }
+                return null;
             }
             String scopeType = inferExpressionType(fieldAccessExpr.getScope(), scopes, context);
             StructDescriptor struct = resolveStruct(scopeType, context.structRegistry());
@@ -837,7 +861,8 @@ public final class GpuIrLowerer {
 
         if (expression instanceof ObjectCreationExpr creationExpr
                 && intrinsicDatabase.isAllowedAllocationType(creationExpr.getTypeAsString())
-                && GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())) {
+                && (GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())
+                || GpuTypeSupport.isSupportedScalarAliasType(creationExpr.getTypeAsString()))) {
             return creationExpr.getTypeAsString();
         }
 

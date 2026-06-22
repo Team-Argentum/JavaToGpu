@@ -37,6 +37,7 @@ import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuBuiltinConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStructField;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelNaming;
@@ -62,12 +63,21 @@ public final class GpuSubsetValidator {
             "work_group_size_hint",
             "vec_type_hint"
     );
+    private static final Set<String> HELPER_METHOD_ATTRIBUTES = Set.of(
+            "always_inline",
+            "noinline"
+    );
     private static final Set<String> STRUCT_ATTRIBUTES = Set.of(
             "packed",
             "aligned"
     );
     private static final Set<String> FIELD_ATTRIBUTES = Set.of(
             "aligned"
+    );
+    private static final Set<String> PARAMETER_QUALIFIERS = Set.of(
+            "const",
+            "restrict",
+            "volatile"
     );
 
     private static final Set<String> ALLOWED_BINARY_OPERATORS = Set.of(
@@ -282,7 +292,42 @@ public final class GpuSubsetValidator {
                         "Array parameters must be annotated with @GPUGlobal, @GPUConstant, or @GPULocal in the current pipeline: " + type
                 ));
             }
+
+            validateParameterQualifiers(parameter, issues);
         });
+    }
+
+    private void validateParameterQualifiers(ParsedGpuParameter parameter, List<GpuValidationIssue> issues) {
+        if (parameter.openClQualifiers().isEmpty()) {
+            return;
+        }
+        boolean pointerLike = GpuTypeSupport.isSupportedPointerType(parameter.javaType()) || GpuTypeSupport.isArrayType(parameter.javaType());
+        if (!pointerLike) {
+            issues.add(new GpuValidationIssue(
+                    1,
+                    1,
+                    "OpenCLQualifiers are only supported on pointer-like GPU parameters in the current pipeline: " + parameter.javaType()
+            ));
+            return;
+        }
+        Set<String> seen = new HashSet<>();
+        for (String qualifier : parameter.openClQualifiers()) {
+            if (!PARAMETER_QUALIFIERS.contains(qualifier)) {
+                issues.add(new GpuValidationIssue(
+                        1,
+                        1,
+                        "Unsupported OpenCL parameter qualifier: " + qualifier
+                ));
+                continue;
+            }
+            if (!seen.add(qualifier)) {
+                issues.add(new GpuValidationIssue(
+                        1,
+                        1,
+                        "Duplicate OpenCL parameter qualifier: " + qualifier
+                ));
+            }
+        }
     }
 
     private void validateOpenClAttributes(
@@ -301,10 +346,15 @@ public final class GpuSubsetValidator {
         for (String rawAttribute : method.openClAttributes()) {
             AttributeSpec attribute = parseAttribute(rawAttribute);
             if (!kernelEntry) {
-                issues.add(issue(
-                        method.declaration(),
-                        "OpenCLAttributes on @CCode helpers are not supported in the current pipeline: " + attribute.raw()
-                ));
+                if (!HELPER_METHOD_ATTRIBUTES.contains(attribute.name())) {
+                    issues.add(issue(
+                            method.declaration(),
+                            "OpenCL attribute '" + attribute.name() + "' is not valid on @CCode helpers"
+                    ));
+                    continue;
+                }
+                validateUniqueAttribute(method.declaration(), attribute, seenUniqueAttributes, issues);
+                validateNoArgumentAttribute(method.declaration(), attribute, issues);
                 continue;
             }
             if (!KERNEL_METHOD_ATTRIBUTES.contains(attribute.name())) {
@@ -402,6 +452,12 @@ public final class GpuSubsetValidator {
             } else {
                 issues.add(new GpuValidationIssue(1, 1, message));
             }
+        }
+    }
+
+    private void validateNoArgumentAttribute(Node node, AttributeSpec attribute, List<GpuValidationIssue> issues) {
+        if (!attribute.arguments().isEmpty()) {
+            issues.add(issue(node, attribute.name() + " does not accept arguments"));
         }
     }
 
@@ -796,24 +852,28 @@ public final class GpuSubsetValidator {
     ) {
         String typeName = creation.getTypeAsString();
         if (intrinsicDatabase.isAllowedAllocationType(typeName)) {
-            if (!GpuTypeSupport.isSupportedPointerType(typeName)) {
-                issues.add(issue(creation, "Unsupported pointer helper type in @GPU methods: " + typeName));
+            boolean pointerType = GpuTypeSupport.isSupportedPointerType(typeName);
+            boolean scalarAliasType = GpuTypeSupport.isSupportedScalarAliasType(typeName);
+            if (!pointerType && !scalarAliasType) {
+                issues.add(issue(creation, "Unsupported intrinsic allocation type in @GPU methods: " + typeName));
                 return;
             }
             if (creation.getArguments().size() > 1) {
-                issues.add(issue(creation, "Pointer helper allocation supports at most one constructor argument in @GPU methods: " + typeName));
+                issues.add(issue(creation, "Intrinsic allocation supports at most one constructor argument in @GPU methods: " + typeName));
                 return;
             }
             if (creation.getArguments().size() == 1) {
                 Expression argument = creation.getArgument(0);
                 validateExpression(argument, issues, scopes, context);
                 String argumentType = inferExpressionType(argument, scopes, context);
-                String pointerValueType = GpuTypeSupport.pointerValueType(typeName);
-                if (!GpuTypeSupport.isHelperArgumentCompatible(argumentType, pointerValueType)) {
+                String expectedType = pointerType
+                        ? GpuTypeSupport.pointerValueType(typeName)
+                        : GpuTypeSupport.scalarAliasValueType(typeName);
+                if (!GpuTypeSupport.isHelperArgumentCompatible(argumentType, expectedType)) {
                     issues.add(issue(
                             argument,
-                            "Pointer helper constructor argument type mismatch in @GPU methods: expected "
-                                    + pointerValueType + " but got " + argumentType
+                            "Intrinsic allocation constructor argument type mismatch in @GPU methods: expected "
+                                    + expectedType + " but got " + argumentType
                     ));
                 }
             }
@@ -960,8 +1020,9 @@ public final class GpuSubsetValidator {
     private void validateFieldAccess(FieldAccessExpr fieldAccessExpr, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         if (fieldAccessExpr.getScope() instanceof NameExpr nameExpr && "value".equals(fieldAccessExpr.getNameAsString())) {
             String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
-            if (storageType == null || !GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
-                issues.add(issue(fieldAccessExpr, "The .value field is only supported on pointer helpers in @GPU methods"));
+            String declaredType = GpuTypeSupport.declaredType(storageType);
+            if (storageType == null || (!GpuTypeSupport.isSupportedPointerType(declaredType) && !GpuTypeSupport.isSupportedScalarAliasType(declaredType))) {
+                issues.add(issue(fieldAccessExpr, "The .value field is only supported on pointer helpers and unsigned scalar aliases in @GPU methods"));
             }
             return;
         }
@@ -1075,7 +1136,7 @@ public final class GpuSubsetValidator {
         }
 
         if (expression instanceof CharLiteralExpr) {
-            return "int";
+            return "char";
         }
 
         if (expression instanceof DoubleLiteralExpr literalExpr) {
@@ -1113,10 +1174,17 @@ public final class GpuSubsetValidator {
         if (expression instanceof FieldAccessExpr fieldAccessExpr) {
             if (fieldAccessExpr.getScope() instanceof NameExpr nameExpr && "value".equals(fieldAccessExpr.getNameAsString())) {
                 String storageType = lookupStorageType(scopes, nameExpr.getNameAsString());
-                if (storageType == null || !GpuTypeSupport.isSupportedPointerType(GpuTypeSupport.declaredType(storageType))) {
+                if (storageType == null) {
                     return null;
                 }
-                return GpuTypeSupport.pointerValueType(storageType);
+                String declaredType = GpuTypeSupport.declaredType(storageType);
+                if (GpuTypeSupport.isSupportedPointerType(declaredType)) {
+                    return GpuTypeSupport.pointerValueType(storageType);
+                }
+                if (GpuTypeSupport.isSupportedScalarAliasType(declaredType)) {
+                    return GpuTypeSupport.scalarAliasValueType(declaredType);
+                }
+                return null;
             }
             String scopeType = inferExpressionType(fieldAccessExpr.getScope(), scopes, context);
             StructDescriptor struct = resolveStruct(scopeType, context.structRegistry());
@@ -1214,7 +1282,8 @@ public final class GpuSubsetValidator {
 
         if (expression instanceof ObjectCreationExpr creationExpr
                 && intrinsicDatabase.isAllowedAllocationType(creationExpr.getTypeAsString())
-                && GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())) {
+                && (GpuTypeSupport.isSupportedPointerType(creationExpr.getTypeAsString())
+                || GpuTypeSupport.isSupportedScalarAliasType(creationExpr.getTypeAsString()))) {
             return creationExpr.getTypeAsString();
         }
 

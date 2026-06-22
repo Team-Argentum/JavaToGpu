@@ -9,15 +9,25 @@ public final class GpuTypeSupport {
     private static final String POINTER_REFERENCE_SUFFIX = "&";
 
     private static final Set<String> SUPPORTED_SCALAR_TYPES = Set.of(
-            "byte", "short", "int", "long", "float", "double", "boolean"
+            "byte", "short", "int", "long", "float", "double", "boolean", "char",
+            "UByte", "UShort", "UInt", "ULong"
     );
 
     private static final Set<String> SUPPORTED_PARAMETER_SCALAR_TYPES = Set.of(
-            "byte", "short", "int", "long", "float", "double"
+            "byte", "short", "int", "long", "float", "double", "char",
+            "UByte", "UShort", "UInt", "ULong"
+    );
+
+    private static final Map<String, ScalarAliasDescriptor> SUPPORTED_SCALAR_ALIASES = Map.of(
+            "UByte", new ScalarAliasDescriptor("uchar", "byte"),
+            "UShort", new ScalarAliasDescriptor("ushort", "short"),
+            "UInt", new ScalarAliasDescriptor("uint", "int"),
+            "ULong", new ScalarAliasDescriptor("ulong", "long")
     );
 
     private static final Map<String, String> SUPPORTED_POINTER_TYPES = Map.of(
             "BytePtr", "byte",
+            "CharPtr", "char",
             "ShortPtr", "short",
             "IntPtr", "int",
             "LongPtr", "long",
@@ -32,6 +42,7 @@ public final class GpuTypeSupport {
             Map.entry("Int2", new VectorDescriptor("int2", "int", List.of("x", "y"))),
             Map.entry("Int3", new VectorDescriptor("int3", "int", List.of("x", "y", "z"))),
             Map.entry("Int4", new VectorDescriptor("int4", "int", List.of("x", "y", "z", "w"))),
+            Map.entry("UInt4", new VectorDescriptor("uint4", "int", List.of("x", "y", "z", "w"))),
             Map.entry("Long2", new VectorDescriptor("long2", "long", List.of("x", "y"))),
             Map.entry("Long3", new VectorDescriptor("long3", "long", List.of("x", "y", "z"))),
             Map.entry("Long4", new VectorDescriptor("long4", "long", List.of("x", "y", "z", "w"))),
@@ -40,10 +51,20 @@ public final class GpuTypeSupport {
             Map.entry("Double4", new VectorDescriptor("double4", "double", List.of("x", "y", "z", "w")))
     );
 
-    private static final Map<String, String> SUPPORTED_IMAGE_AND_SAMPLER_TYPES = Map.of(
-            "Image2DReadOnly", "read_only image2d_t",
-            "Image2DWriteOnly", "write_only image2d_t",
-            "Sampler", "sampler_t"
+    private static final Map<String, String> SUPPORTED_IMAGE_AND_SAMPLER_TYPES = Map.ofEntries(
+            Map.entry("Image1DReadOnly", "read_only image1d_t"),
+            Map.entry("Image1DWriteOnly", "write_only image1d_t"),
+            Map.entry("Image1DArrayReadOnly", "read_only image1d_array_t"),
+            Map.entry("Image1DArrayWriteOnly", "write_only image1d_array_t"),
+            Map.entry("Image1DBufferReadOnly", "read_only image1d_buffer_t"),
+            Map.entry("Image1DBufferWriteOnly", "write_only image1d_buffer_t"),
+            Map.entry("Image2DReadOnly", "read_only image2d_t"),
+            Map.entry("Image2DWriteOnly", "write_only image2d_t"),
+            Map.entry("Image2DArrayReadOnly", "read_only image2d_array_t"),
+            Map.entry("Image2DArrayWriteOnly", "write_only image2d_array_t"),
+            Map.entry("Image3DReadOnly", "read_only image3d_t"),
+            Map.entry("Image3DWriteOnly", "write_only image3d_t"),
+            Map.entry("Sampler", "sampler_t")
     );
 
     private GpuTypeSupport() {
@@ -55,9 +76,30 @@ public final class GpuTypeSupport {
 
     public static boolean isIntegralScalarType(String javaType) {
         return "byte".equals(javaType)
+                || "char".equals(javaType)
                 || "short".equals(javaType)
                 || "int".equals(javaType)
                 || "long".equals(javaType);
+    }
+
+    public static boolean isSupportedScalarAliasType(String javaType) {
+        return SUPPORTED_SCALAR_ALIASES.containsKey(simpleTypeName(declaredType(javaType)));
+    }
+
+    public static String scalarAliasValueType(String javaType) {
+        ScalarAliasDescriptor descriptor = SUPPORTED_SCALAR_ALIASES.get(simpleTypeName(declaredType(javaType)));
+        if (descriptor == null) {
+            throw new IllegalArgumentException("Unsupported scalar alias type: " + javaType);
+        }
+        return descriptor.valueType();
+    }
+
+    public static String openClScalarAliasTypeName(String javaType) {
+        ScalarAliasDescriptor descriptor = SUPPORTED_SCALAR_ALIASES.get(simpleTypeName(declaredType(javaType)));
+        if (descriptor == null) {
+            throw new IllegalArgumentException("Unsupported scalar alias type: " + javaType);
+        }
+        return descriptor.openClTypeName();
     }
 
     public static boolean isFloatingScalarType(String javaType) {
@@ -97,6 +139,9 @@ public final class GpuTypeSupport {
         }
         if (actualType.equals(parameterType) || sameVectorType(actualType, parameterType)) {
             return true;
+        }
+        if (isSupportedScalarAliasType(actualType) || isSupportedScalarAliasType(parameterType)) {
+            return false;
         }
         if (isSupportedVectorType(actualType) || isSupportedVectorType(parameterType)) {
             return false;
@@ -247,9 +292,13 @@ public final class GpuTypeSupport {
     public static int scalarByteSize(String javaType) {
         return switch (declaredType(javaType)) {
             case "byte", "boolean" -> Byte.BYTES;
-            case "short" -> Short.BYTES;
+            case "short", "char" -> Short.BYTES;
             case "int", "float" -> Integer.BYTES;
             case "long", "double" -> Long.BYTES;
+            case "UByte" -> Byte.BYTES;
+            case "UShort" -> Short.BYTES;
+            case "UInt" -> Integer.BYTES;
+            case "ULong" -> Long.BYTES;
             default -> throw new IllegalArgumentException("Unsupported scalar type size lookup: " + javaType);
         };
     }
@@ -276,7 +325,7 @@ public final class GpuTypeSupport {
     private static int helperWideningRank(String javaType) {
         return switch (javaType) {
             case "byte" -> 0;
-            case "short" -> 1;
+            case "char", "short" -> 1;
             case "int" -> 2;
             case "long" -> 3;
             case "float" -> 4;
@@ -289,6 +338,12 @@ public final class GpuTypeSupport {
             String openClTypeName,
             String componentType,
             List<String> fieldNames
+    ) {
+    }
+
+    private record ScalarAliasDescriptor(
+            String openClTypeName,
+            String valueType
     ) {
     }
 }

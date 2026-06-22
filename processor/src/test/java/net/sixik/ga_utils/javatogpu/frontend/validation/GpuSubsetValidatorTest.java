@@ -603,9 +603,57 @@ class GpuSubsetValidatorTest {
         );
 
         assertEquals(
-                "OpenCLAttributes on @CCode helpers are not supported in the current pipeline: reqd_work_group_size(16, 1, 1)",
+                "OpenCL attribute 'reqd_work_group_size' is not valid on @CCode helpers",
                 exception.getMessage()
         );
+    }
+
+    @Test
+    void acceptsAlwaysInlineOpenClAttributeOnHelperMethod() {
+        String kernelSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = helper(input[id]);
+                }
+                """;
+        String helperSource = """
+                @OpenCLAttributes({"always_inline"})
+                @CCode
+                float helper(float value) {
+                    return value * 2.0f;
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validateKernel(
+                parser.parseMethod(kernelSource, "Demo", "sample.Demo"),
+                java.util.List.of(parser.parseMethod(helperSource, "Helpers", "sample.Helpers")),
+                java.util.List.of()
+        ));
+    }
+
+    @Test
+    void acceptsConstOpenClQualifierOnHelperPointerParameter() {
+        String kernelSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    FloatPtr ptr = new FloatPtr(input[id]);
+                    output[id] = Helpers.read(ptr);
+                }
+                """;
+        String helperSource = """
+                @CCode
+                float read(@OpenCLQualifiers({"const"}) FloatPtr ptr) {
+                    return ptr.value;
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validateKernel(
+                parser.parseMethod(kernelSource, "Demo", "sample.Demo"),
+                java.util.List.of(parser.parseMethod(helperSource, "Helpers", "sample.Helpers")),
+                java.util.List.of()
+        ));
     }
 
     @Test

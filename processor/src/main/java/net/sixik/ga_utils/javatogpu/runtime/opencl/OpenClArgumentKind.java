@@ -15,5 +15,12 @@ public enum OpenClArgumentKind {
     INT64,
     FLOAT32,
     FLOAT64,
-    PACKED_VALUE
+    PACKED_VALUE,
+    IMAGE1D,
+    IMAGE1D_ARRAY,
+    IMAGE1D_BUFFER,
+    IMAGE2D,
+    IMAGE2D_ARRAY,
+    IMAGE3D,
+    SAMPLER
 }

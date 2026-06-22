@@ -98,15 +98,20 @@ public final class OpenClKernelEmitter {
             return emitType(type) + " " + parameter.name();
         }
         if (GpuTypeSupport.isSupportedPointerType(type)) {
-            return emitType(GpuTypeSupport.pointerValueType(type)) + "* " + parameter.name();
+            return emitQualifiedPointerParameter(
+                    "",
+                    emitType(GpuTypeSupport.pointerValueType(type)),
+                    parameter,
+                    false
+            );
         }
         if (type.endsWith("[]")) {
             String elementType = type.substring(0, type.length() - 2);
             return switch (parameter.addressSpace()) {
-                case GLOBAL -> "__global " + (parameter.constant() ? "const " : "") + emitType(elementType) + "* " + parameter.name();
-                case CONSTANT -> "__constant " + emitType(elementType) + "* " + parameter.name();
-                case LOCAL -> "__local " + emitType(elementType) + "* " + parameter.name();
-                case PRIVATE -> emitType(elementType) + "* " + parameter.name();
+                case GLOBAL -> emitQualifiedPointerParameter("__global ", emitType(elementType), parameter, parameter.constant());
+                case CONSTANT -> emitQualifiedPointerParameter("__constant ", emitType(elementType), parameter, false);
+                case LOCAL -> emitQualifiedPointerParameter("__local ", emitType(elementType), parameter, false);
+                case PRIVATE -> emitQualifiedPointerParameter("", emitType(elementType), parameter, false);
             };
         }
 
@@ -114,6 +119,44 @@ public final class OpenClKernelEmitter {
             return "__global " + emitType(type) + "* " + parameter.name();
         }
         return emitType(type) + " " + parameter.name();
+    }
+
+    private String emitQualifiedPointerParameter(
+            String storagePrefix,
+            String baseType,
+            ParsedGpuParameter parameter,
+            boolean implicitConst
+    ) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(storagePrefix);
+        String prefixQualifiers = emitParameterPrefixQualifiers(parameter, implicitConst);
+        if (!prefixQualifiers.isEmpty()) {
+            builder.append(prefixQualifiers).append(" ");
+        }
+        builder.append(baseType).append("*");
+        String postfixQualifiers = emitParameterPostfixQualifiers(parameter);
+        if (!postfixQualifiers.isEmpty()) {
+            builder.append(" ").append(postfixQualifiers);
+        }
+        builder.append(" ").append(parameter.name());
+        return builder.toString();
+    }
+
+    private String emitParameterPrefixQualifiers(ParsedGpuParameter parameter, boolean implicitConst) {
+        java.util.LinkedHashSet<String> qualifiers = new java.util.LinkedHashSet<>();
+        if (implicitConst) {
+            qualifiers.add("const");
+        }
+        parameter.openClQualifiers().stream()
+                .filter(qualifier -> !"restrict".equals(qualifier))
+                .forEach(qualifiers::add);
+        return String.join(" ", qualifiers);
+    }
+
+    private String emitParameterPostfixQualifiers(ParsedGpuParameter parameter) {
+        return parameter.openClQualifiers().stream()
+                .filter("restrict"::equals)
+                .collect(Collectors.joining(" "));
     }
 
     private void emitStruct(StringBuilder builder, ParsedGpuStruct struct) {
@@ -406,6 +449,9 @@ public final class OpenClKernelEmitter {
         if (GpuTypeSupport.isSupportedPointerType(javaType)) {
             return emitType(GpuTypeSupport.pointerValueType(javaType));
         }
+        if (GpuTypeSupport.isSupportedScalarAliasType(javaType)) {
+            return GpuTypeSupport.openClScalarAliasTypeName(javaType);
+        }
         if (GpuTypeSupport.isSupportedImageOrSamplerType(javaType)) {
             return GpuTypeSupport.openClImageOrSamplerTypeName(javaType);
         }
@@ -414,6 +460,7 @@ public final class OpenClKernelEmitter {
         }
         return switch (javaType) {
             case "byte" -> "char";
+            case "char" -> "ushort";
             case "boolean" -> "bool";
             default -> GpuTypeSupport.simpleTypeName(javaType);
         };

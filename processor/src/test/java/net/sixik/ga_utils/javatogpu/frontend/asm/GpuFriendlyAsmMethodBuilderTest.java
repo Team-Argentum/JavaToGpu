@@ -153,6 +153,6 @@ class GpuFriendlyAsmMethodBuilderTest {
     }
 
     private ParsedGpuParameter globalArrayParameter(String name, String javaType) {
-        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.GLOBAL, false);
+        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.GLOBAL, false, List.of());
     }
 }

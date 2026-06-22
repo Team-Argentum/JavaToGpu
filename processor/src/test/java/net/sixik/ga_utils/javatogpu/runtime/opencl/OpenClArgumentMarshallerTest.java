@@ -2,7 +2,23 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.Float3;
+import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.UInt;
+import net.sixik.ga_utils.javatogpu.api.ULong;
+import net.sixik.ga_utils.javatogpu.api.UShort;
+import net.sixik.ga_utils.javatogpu.api.UByte;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
@@ -96,6 +112,35 @@ class OpenClArgumentMarshallerTest {
         assertEquals(OpenClArgumentKind.INT16, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(6)).kind());
         assertEquals(OpenClArgumentKind.INT64, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(7)).kind());
         assertEquals(OpenClArgumentKind.FLOAT64, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(8)).kind());
+    }
+
+    @Test
+    void marshalsUnsignedScalarAliasArgumentsAsRawPrimitiveBits() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("byteValue", "UByte", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("shortValue", "UShort", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("intValue", "UInt", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("longValue", "ULong", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(
+                descriptor,
+                new Object[]{new UByte((byte) 0x7F), new UShort((short) 0x7FFF), new UInt(123456789), new ULong(1234567890123L)}
+        );
+
+        assertEquals(OpenClArgumentKind.INT8, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).kind());
+        assertEquals((byte) 0x7F, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).value());
+        assertEquals(OpenClArgumentKind.INT16, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).kind());
+        assertEquals((short) 0x7FFF, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).value());
+        assertEquals(OpenClArgumentKind.INT32, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(2)).kind());
+        assertEquals(123456789, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(2)).value());
+        assertEquals(OpenClArgumentKind.INT64, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(3)).kind());
+        assertEquals(1234567890123L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(3)).value());
     }
 
     @Test
@@ -354,7 +399,37 @@ class OpenClArgumentMarshallerTest {
     }
 
     @Test
-    void rejectsImageArgumentsUntilRuntimeSupportExists() {
+    void marshalsImageAndSamplerArgumentsAsNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("sampler", "Sampler", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(
+                descriptor,
+                new Object[]{
+                        Image2DReadOnly.borrowed(101L, 64, 32),
+                        Image2DWriteOnly.borrowed(202L, 64, 32),
+                        Sampler.borrowed(303L)
+                }
+        );
+
+        assertEquals(OpenClArgumentKind.IMAGE2D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).kind());
+        assertEquals(101L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).value());
+        assertEquals(OpenClArgumentKind.IMAGE2D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).kind());
+        assertEquals(202L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).value());
+        assertEquals(OpenClArgumentKind.SAMPLER, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(2)).kind());
+        assertEquals(303L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(2)).value());
+    }
+
+    @Test
+    void rejectsImageArgumentsWithoutValidNativeHandles() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
                 "javatogpu/sample/Demo/kernel.cl",
@@ -370,9 +445,122 @@ class OpenClArgumentMarshallerTest {
         );
 
         assertEquals(
-                "Failed to marshall parameter 'inputImage': OpenCL image/sampler runtime arguments are not implemented yet: Image2DReadOnly",
+                "Failed to marshall parameter 'inputImage': Image2DReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle",
                 exception.getMessage()
         );
+    }
+
+    @Test
+    void marshalsImage3dArgumentsAsNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image3DReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image3DWriteOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(
+                descriptor,
+                new Object[]{
+                        Image3DReadOnly.borrowed(111L, 8, 4, 2),
+                        Image3DWriteOnly.borrowed(222L, 8, 4, 2)
+                }
+        );
+
+        assertEquals(OpenClArgumentKind.IMAGE3D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).kind());
+        assertEquals(111L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).value());
+        assertEquals(OpenClArgumentKind.IMAGE3D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).kind());
+        assertEquals(222L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).value());
+    }
+
+    @Test
+    void rejectsImage3dArgumentsWithoutValidNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image3DReadOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new Image3DReadOnly()})
+        );
+
+        assertEquals(
+                "Failed to marshall parameter 'inputImage': Image3DReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void marshalsImage1dArgumentsAsNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image1DReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image1DWriteOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(
+                descriptor,
+                new Object[]{Image1DReadOnly.borrowed(91L, 8), Image1DWriteOnly.borrowed(92L, 8)}
+        );
+
+        assertEquals(OpenClArgumentKind.IMAGE1D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).kind());
+        assertEquals(91L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).value());
+        assertEquals(OpenClArgumentKind.IMAGE1D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).kind());
+        assertEquals(92L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).value());
+    }
+
+    @Test
+    void marshalsAdditionalImageArgumentsAsNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("input1dArray", "Image1DArrayReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output1dArray", "Image1DArrayWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("input1dBuffer", "Image1DBufferReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output1dBuffer", "Image1DBufferWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("input2dArray", "Image2DArrayReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output2dArray", "Image2DArrayWriteOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(
+                descriptor,
+                new Object[]{
+                        Image1DArrayReadOnly.borrowed(101L, 8, 2),
+                        Image1DArrayWriteOnly.borrowed(102L, 8, 2),
+                        Image1DBufferReadOnly.borrowed(103L, 8),
+                        Image1DBufferWriteOnly.borrowed(104L, 8),
+                        Image2DArrayReadOnly.borrowed(105L, 2, 1, 2),
+                        Image2DArrayWriteOnly.borrowed(106L, 2, 1, 2)
+                }
+        );
+
+        assertEquals(OpenClArgumentKind.IMAGE1D_ARRAY, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).kind());
+        assertEquals(101L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).value());
+        assertEquals(OpenClArgumentKind.IMAGE1D_ARRAY, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).kind());
+        assertEquals(102L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).value());
+        assertEquals(OpenClArgumentKind.IMAGE1D_BUFFER, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(2)).kind());
+        assertEquals(103L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(2)).value());
+        assertEquals(OpenClArgumentKind.IMAGE1D_BUFFER, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(3)).kind());
+        assertEquals(104L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(3)).value());
+        assertEquals(OpenClArgumentKind.IMAGE2D_ARRAY, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(4)).kind());
+        assertEquals(105L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(4)).value());
+        assertEquals(OpenClArgumentKind.IMAGE2D_ARRAY, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(5)).kind());
+        assertEquals(106L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(5)).value());
     }
 
     @Test

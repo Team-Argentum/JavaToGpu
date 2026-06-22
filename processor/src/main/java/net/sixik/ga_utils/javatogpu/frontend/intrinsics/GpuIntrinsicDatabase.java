@@ -65,7 +65,7 @@ public final class GpuIntrinsicDatabase {
                         entry -> List.copyOf(entry.getValue())
                 )),
                 List.copyOf(builtinConstants),
-                Set.of("BytePtr", "CharPtr", "ShortPtr", "IntPtr", "LongPtr", "FloatPtr", "DoublePtr")
+                Set.of("BytePtr", "CharPtr", "ShortPtr", "IntPtr", "LongPtr", "FloatPtr", "DoublePtr", "UByte", "UShort", "UInt", "ULong")
         );
     }
 

@@ -290,10 +290,10 @@ class GpuAsmToMethodNodeLowererTest {
     }
 
     private ParsedGpuParameter globalArrayParameter(String name, String javaType) {
-        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.GLOBAL, false);
+        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.GLOBAL, false, List.of());
     }
 
     private ParsedGpuParameter parameter(String name, String javaType) {
-        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.PRIVATE, false);
+        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.PRIVATE, false, List.of());
     }
 }

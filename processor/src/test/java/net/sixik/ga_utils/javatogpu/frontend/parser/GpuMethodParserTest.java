@@ -109,6 +109,21 @@ class GpuMethodParserTest {
     }
 
     @Test
+    void parsesOpenClParameterQualifiers() {
+        String methodSource = """
+                @GPU
+                void kernel(@OpenCLQualifiers({"const", "restrict", "volatile"}) @GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(java.util.List.of("const", "restrict", "volatile"), method.parameters().get(0).openClQualifiers());
+    }
+
+    @Test
     void rejectsMultipleAddressSpaceAnnotationsOnSingleParameter() {
         String methodSource = """
                 @GPU

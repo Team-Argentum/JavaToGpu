@@ -3,37 +3,35 @@ package net.sixik.ga_utils.javatogpu.api;
 import org.lwjgl.opencl.CL10;
 
 /**
- * Java-side marker for an OpenCL {@code write_only image2d_t} kernel parameter.
+ * Java-side marker for an OpenCL {@code read_only image1d_t} kernel parameter.
  */
-public final class Image2DWriteOnly implements AutoCloseable {
+public final class Image1DReadOnly implements AutoCloseable {
 
     private final long handle;
     private final int width;
-    private final int height;
     private final boolean owned;
     private boolean closed;
 
-    public Image2DWriteOnly() {
-        this(0L, 0, 0, false);
+    public Image1DReadOnly() {
+        this(0L, 0, false);
     }
 
-    public Image2DWriteOnly(long handle, int width, int height) {
-        this(handle, width, height, false);
+    public Image1DReadOnly(long handle, int width) {
+        this(handle, width, false);
     }
 
-    private Image2DWriteOnly(long handle, int width, int height, boolean owned) {
+    private Image1DReadOnly(long handle, int width, boolean owned) {
         this.handle = handle;
         this.width = width;
-        this.height = height;
         this.owned = owned;
     }
 
-    public static Image2DWriteOnly borrowed(long handle, int width, int height) {
-        return new Image2DWriteOnly(handle, width, height, false);
+    public static Image1DReadOnly borrowed(long handle, int width) {
+        return new Image1DReadOnly(handle, width, false);
     }
 
-    public static Image2DWriteOnly owned(long handle, int width, int height) {
-        return new Image2DWriteOnly(handle, width, height, true);
+    public static Image1DReadOnly owned(long handle, int width) {
+        return new Image1DReadOnly(handle, width, true);
     }
 
     public long handle() {
@@ -42,10 +40,6 @@ public final class Image2DWriteOnly implements AutoCloseable {
 
     public int width() {
         return width;
-    }
-
-    public int height() {
-        return height;
     }
 
     public boolean owned() {

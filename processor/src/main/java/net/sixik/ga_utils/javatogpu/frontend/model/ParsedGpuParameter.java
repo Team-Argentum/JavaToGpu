@@ -4,6 +4,7 @@ public record ParsedGpuParameter(
         String name,
         String javaType,
         GpuAddressSpace addressSpace,
-        boolean constant
+        boolean constant,
+        java.util.List<String> openClQualifiers
 ) {
 }

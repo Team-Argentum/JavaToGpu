@@ -72,37 +72,45 @@ public final class GpuStructParser {
     }
 
     static List<String> parseOpenClAttributes(NodeList<AnnotationExpr> annotations) {
+        return parseStringListAnnotation(annotations, "OpenCLAttributes", "OpenCLAttributes");
+    }
+
+    static List<String> parseStringListAnnotation(
+            NodeList<AnnotationExpr> annotations,
+            String annotationName,
+            String errorLabel
+    ) {
         return annotations.stream()
-                .filter(annotation -> annotation.getNameAsString().equals("OpenCLAttributes"))
+                .filter(annotation -> annotation.getNameAsString().equals(annotationName))
                 .findFirst()
-                .map(GpuStructParser::attributeValues)
+                .map(annotation -> attributeValues(annotation, errorLabel))
                 .orElse(List.of());
     }
 
-    private static List<String> attributeValues(AnnotationExpr annotation) {
+    private static List<String> attributeValues(AnnotationExpr annotation, String errorLabel) {
         if (annotation.isSingleMemberAnnotationExpr()) {
-            return stringValues(annotation.asSingleMemberAnnotationExpr().getMemberValue());
+            return stringValues(annotation.asSingleMemberAnnotationExpr().getMemberValue(), errorLabel);
         }
         if (annotation.isNormalAnnotationExpr()) {
             return annotation.asNormalAnnotationExpr().getPairs().stream()
                     .filter(pair -> pair.getNameAsString().equals("value"))
                     .findFirst()
-                    .map(pair -> stringValues(pair.getValue()))
+                    .map(pair -> stringValues(pair.getValue(), errorLabel))
                     .orElse(List.of());
         }
         return List.of();
     }
 
-    private static List<String> stringValues(Expression expression) {
+    private static List<String> stringValues(Expression expression, String errorLabel) {
         if (expression instanceof ArrayInitializerExpr arrayInitializerExpr) {
             return arrayInitializerExpr.getValues().stream()
-                    .map(GpuStructParser::stringValue)
+                    .map(value -> stringValue(value, errorLabel))
                     .toList();
         }
-        return List.of(stringValue(expression));
+        return List.of(stringValue(expression, errorLabel));
     }
 
-    private static String stringValue(Expression expression) {
+    private static String stringValue(Expression expression, String errorLabel) {
         if (expression instanceof StringLiteralExpr stringLiteralExpr) {
             return stringLiteralExpr.asString();
         }
@@ -112,6 +120,6 @@ public final class GpuStructParser {
         if (expression instanceof LiteralStringValueExpr literalStringValueExpr) {
             return literalStringValueExpr.getValue();
         }
-        throw new IllegalArgumentException("OpenCLAttributes values must be string literals: " + expression);
+        throw new IllegalArgumentException(errorLabel + " values must be string literals: " + expression);
     }
 }

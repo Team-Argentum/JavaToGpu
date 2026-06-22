@@ -93,10 +93,10 @@ public final class AsmExamples {
     }
 
     private static ParsedGpuParameter parameter(String name, String javaType) {
-        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.PRIVATE, false);
+        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.PRIVATE, false, List.of());
     }
 
     private static ParsedGpuParameter globalArrayParameter(String name, String javaType) {
-        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.GLOBAL, false);
+        return new ParsedGpuParameter(name, javaType, GpuAddressSpace.GLOBAL, false, List.of());
     }
 }

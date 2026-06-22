@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.api;
 
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
+import org.lwjgl.opencl.CL10;
 
 /**
  * Java facade for GPU built-ins available inside {@code @GPU} kernels.
@@ -37,6 +38,41 @@ public final class GPU {
      */
     public static final int CLK_GLOBAL_MEM_FENCE = 2;
 
+    /**
+     * OpenCL image channel order constant for {@code CL_R}.
+     */
+    public static final int CL_R = CL10.CL_R;
+
+    /**
+     * OpenCL image channel order constant for {@code CL_RG}.
+     */
+    public static final int CL_RG = CL10.CL_RG;
+
+    /**
+     * OpenCL image channel order constant for {@code CL_RGBA}.
+     */
+    public static final int CL_RGBA = CL10.CL_RGBA;
+
+    /**
+     * OpenCL image channel data type constant for {@code CL_FLOAT}.
+     */
+    public static final int CL_FLOAT = CL10.CL_FLOAT;
+
+    /**
+     * OpenCL image channel data type constant for {@code CL_SIGNED_INT32}.
+     */
+    public static final int CL_SIGNED_INT32 = CL10.CL_SIGNED_INT32;
+
+    /**
+     * OpenCL image channel data type constant for {@code CL_UNSIGNED_INT32}.
+     */
+    public static final int CL_UNSIGNED_INT32 = CL10.CL_UNSIGNED_INT32;
+
+    /**
+     * OpenCL image channel data type constant for {@code CL_UNORM_INT8}.
+     */
+    public static final int CL_UNORM_INT8 = CL10.CL_UNORM_INT8;
+
     private static final double LOG_2 = Math.log(2.0);
 
     private GPU() {
@@ -58,12 +94,62 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image1DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image1DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image1DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image1DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image1DBufferReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image1DBufferWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
     public static int get_image_width(Image2DReadOnly image) {
         return 0;
     }
 
     @GPUIntrinsic(name = "get_image_width")
     public static int get_image_width(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image3DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image3DWriteOnly image) {
         return 0;
     }
 
@@ -77,9 +163,254 @@ public final class GPU {
         return 0;
     }
 
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image3DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image3DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_depth")
+    public static int get_image_depth(Image3DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_depth")
+    public static int get_image_depth(Image3DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_array_size")
+    public static int get_image_array_size(Image1DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_array_size")
+    public static int get_image_array_size(Image1DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_array_size")
+    public static int get_image_array_size(Image2DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_array_size")
+    public static int get_image_array_size(Image2DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image1DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image1DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image1DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image1DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image1DBufferReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image1DBufferWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image3DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image3DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image1DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image1DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image1DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image1DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image1DBufferReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image1DBufferWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image3DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image3DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image1DReadOnly image, Sampler sampler, int coordinate) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image1DReadOnly image, int coordinate) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image1DArrayReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image1DArrayReadOnly image, Int2 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image1DBufferReadOnly image, int coordinate) {
+        return new Float4();
+    }
+
     @GPUIntrinsic(name = "read_imagef")
     public static Float4 read_imagef(Image2DReadOnly image, Sampler sampler, Int2 coordinates) {
         return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image2DReadOnly image, Int2 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image2DArrayReadOnly image, Sampler sampler, Int4 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image2DArrayReadOnly image, Int4 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image3DReadOnly image, Sampler sampler, Int4 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image3DReadOnly image, Int4 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image1DReadOnly image, Sampler sampler, int coordinate) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image1DReadOnly image, int coordinate) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image1DArrayReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image1DArrayReadOnly image, Int2 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image1DBufferReadOnly image, int coordinate) {
+        return new Int4();
     }
 
     @GPUIntrinsic(name = "read_imagei")
@@ -87,8 +418,156 @@ public final class GPU {
         return new Int4();
     }
 
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image2DReadOnly image, Int2 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image2DArrayReadOnly image, Sampler sampler, Int4 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image2DArrayReadOnly image, Int4 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image3DReadOnly image, Sampler sampler, Int4 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image3DReadOnly image, Int4 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image1DReadOnly image, Sampler sampler, int coordinate) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image1DReadOnly image, int coordinate) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image1DArrayReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image1DArrayReadOnly image, Int2 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image1DBufferReadOnly image, int coordinate) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image2DReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image2DReadOnly image, Int2 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image2DArrayReadOnly image, Sampler sampler, Int4 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image2DArrayReadOnly image, Int4 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image3DReadOnly image, Sampler sampler, Int4 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image3DReadOnly image, Int4 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
+    public static void write_imagef(Image1DWriteOnly image, int coordinate, Float4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
+    public static void write_imagef(Image1DArrayWriteOnly image, Int2 coordinates, Float4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
+    public static void write_imagef(Image1DBufferWriteOnly image, int coordinate, Float4 value) {
+    }
+
     @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
     public static void write_imagef(Image2DWriteOnly image, Int2 coordinates, Float4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
+    public static void write_imagef(Image2DArrayWriteOnly image, Int4 coordinates, Float4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
+    public static void write_imagef(Image3DWriteOnly image, Int4 coordinates, Float4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
+    public static void write_imagei(Image1DWriteOnly image, int coordinate, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
+    public static void write_imagei(Image1DArrayWriteOnly image, Int2 coordinates, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
+    public static void write_imagei(Image1DBufferWriteOnly image, int coordinate, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
+    public static void write_imagei(Image2DWriteOnly image, Int2 coordinates, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
+    public static void write_imagei(Image2DArrayWriteOnly image, Int4 coordinates, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
+    public static void write_imagei(Image3DWriteOnly image, Int4 coordinates, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
+    public static void write_imageui(Image1DWriteOnly image, int coordinate, UInt4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
+    public static void write_imageui(Image1DArrayWriteOnly image, Int2 coordinates, UInt4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
+    public static void write_imageui(Image1DBufferWriteOnly image, int coordinate, UInt4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
+    public static void write_imageui(Image2DWriteOnly image, Int2 coordinates, UInt4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
+    public static void write_imageui(Image2DArrayWriteOnly image, Int4 coordinates, UInt4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
+    public static void write_imageui(Image3DWriteOnly image, Int4 coordinates, UInt4 value) {
     }
 
     @GPUIntrinsic(name = "sin")
@@ -297,8 +776,43 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "min")
+    public static byte min(byte left, byte right) {
+        return (byte) Math.min(left, right);
+    }
+
+    @GPUIntrinsic(name = "min")
+    public static short min(short left, short right) {
+        return (short) Math.min(left, right);
+    }
+
+    @GPUIntrinsic(name = "min")
+    public static char min(char left, char right) {
+        return (char) Math.min(left, right);
+    }
+
+    @GPUIntrinsic(name = "min")
     public static long min(long left, long right) {
         return Math.min(left, right);
+    }
+
+    @GPUIntrinsic(name = "min")
+    public static UByte min(UByte left, UByte right) {
+        return new UByte(minUnsignedByte(left.value, right.value));
+    }
+
+    @GPUIntrinsic(name = "min")
+    public static UShort min(UShort left, UShort right) {
+        return new UShort(minUnsignedShort(left.value, right.value));
+    }
+
+    @GPUIntrinsic(name = "min")
+    public static UInt min(UInt left, UInt right) {
+        return new UInt(minUnsignedInt(left.value, right.value));
+    }
+
+    @GPUIntrinsic(name = "min")
+    public static ULong min(ULong left, ULong right) {
+        return new ULong(minUnsignedLong(left.value, right.value));
     }
 
     @GPUIntrinsic(name = "max")
@@ -317,8 +831,43 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "max")
+    public static byte max(byte left, byte right) {
+        return (byte) Math.max(left, right);
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static short max(short left, short right) {
+        return (short) Math.max(left, right);
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static char max(char left, char right) {
+        return (char) Math.max(left, right);
+    }
+
+    @GPUIntrinsic(name = "max")
     public static long max(long left, long right) {
         return Math.max(left, right);
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static UByte max(UByte left, UByte right) {
+        return new UByte(maxUnsignedByte(left.value, right.value));
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static UShort max(UShort left, UShort right) {
+        return new UShort(maxUnsignedShort(left.value, right.value));
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static UInt max(UInt left, UInt right) {
+        return new UInt(maxUnsignedInt(left.value, right.value));
+    }
+
+    @GPUIntrinsic(name = "max")
+    public static ULong max(ULong left, ULong right) {
+        return new ULong(maxUnsignedLong(left.value, right.value));
     }
 
     @GPUIntrinsic(name = "rsqrt")
@@ -377,8 +926,43 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "clamp")
+    public static byte clamp(byte value, byte minValue, byte maxValue) {
+        return max(minValue, min(value, maxValue));
+    }
+
+    @GPUIntrinsic(name = "clamp")
+    public static short clamp(short value, short minValue, short maxValue) {
+        return max(minValue, min(value, maxValue));
+    }
+
+    @GPUIntrinsic(name = "clamp")
+    public static char clamp(char value, char minValue, char maxValue) {
+        return max(minValue, min(value, maxValue));
+    }
+
+    @GPUIntrinsic(name = "clamp")
     public static long clamp(long value, long minValue, long maxValue) {
         return Math.max(minValue, Math.min(value, maxValue));
+    }
+
+    @GPUIntrinsic(name = "clamp")
+    public static UByte clamp(UByte value, UByte minValue, UByte maxValue) {
+        return new UByte(clampUnsignedByte(value.value, minValue.value, maxValue.value));
+    }
+
+    @GPUIntrinsic(name = "clamp")
+    public static UShort clamp(UShort value, UShort minValue, UShort maxValue) {
+        return new UShort(clampUnsignedShort(value.value, minValue.value, maxValue.value));
+    }
+
+    @GPUIntrinsic(name = "clamp")
+    public static UInt clamp(UInt value, UInt minValue, UInt maxValue) {
+        return new UInt(clampUnsignedInt(value.value, minValue.value, maxValue.value));
+    }
+
+    @GPUIntrinsic(name = "clamp")
+    public static ULong clamp(ULong value, ULong minValue, ULong maxValue) {
+        return new ULong(clampUnsignedLong(value.value, minValue.value, maxValue.value));
     }
 
     @GPUIntrinsic(name = "mix")
@@ -714,6 +1298,54 @@ public final class GPU {
         return value >= 0.0f
                 ? (float) Math.floor(value + 0.5f)
                 : (float) Math.ceil(value - 0.5f);
+    }
+
+    private static byte minUnsignedByte(byte left, byte right) {
+        return Integer.compare(Byte.toUnsignedInt(left), Byte.toUnsignedInt(right)) <= 0 ? left : right;
+    }
+
+    private static short minUnsignedShort(short left, short right) {
+        return Integer.compare(Short.toUnsignedInt(left), Short.toUnsignedInt(right)) <= 0 ? left : right;
+    }
+
+    private static int minUnsignedInt(int left, int right) {
+        return Integer.compareUnsigned(left, right) <= 0 ? left : right;
+    }
+
+    private static long minUnsignedLong(long left, long right) {
+        return Long.compareUnsigned(left, right) <= 0 ? left : right;
+    }
+
+    private static byte maxUnsignedByte(byte left, byte right) {
+        return Integer.compare(Byte.toUnsignedInt(left), Byte.toUnsignedInt(right)) >= 0 ? left : right;
+    }
+
+    private static short maxUnsignedShort(short left, short right) {
+        return Integer.compare(Short.toUnsignedInt(left), Short.toUnsignedInt(right)) >= 0 ? left : right;
+    }
+
+    private static int maxUnsignedInt(int left, int right) {
+        return Integer.compareUnsigned(left, right) >= 0 ? left : right;
+    }
+
+    private static long maxUnsignedLong(long left, long right) {
+        return Long.compareUnsigned(left, right) >= 0 ? left : right;
+    }
+
+    private static byte clampUnsignedByte(byte value, byte minValue, byte maxValue) {
+        return maxUnsignedByte(minValue, minUnsignedByte(value, maxValue));
+    }
+
+    private static short clampUnsignedShort(short value, short minValue, short maxValue) {
+        return maxUnsignedShort(minValue, minUnsignedShort(value, maxValue));
+    }
+
+    private static int clampUnsignedInt(int value, int minValue, int maxValue) {
+        return maxUnsignedInt(minValue, minUnsignedInt(value, maxValue));
+    }
+
+    private static long clampUnsignedLong(long value, long minValue, long maxValue) {
+        return maxUnsignedLong(minValue, minUnsignedLong(value, maxValue));
     }
 
     private static double roundDouble(double value) {

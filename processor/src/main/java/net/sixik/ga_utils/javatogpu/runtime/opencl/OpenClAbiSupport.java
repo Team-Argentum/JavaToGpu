@@ -305,6 +305,7 @@ final class OpenClAbiSupport {
     static void writeScalar(ByteBuffer buffer, int offset, String scalarType, Object value) {
         switch (scalarType) {
             case "byte" -> buffer.put(offset, ((Number) value).byteValue());
+            case "char" -> buffer.putChar(offset, value instanceof Character character ? character : (char) ((Number) value).intValue());
             case "short" -> buffer.putShort(offset, ((Number) value).shortValue());
             case "int" -> buffer.putInt(offset, ((Number) value).intValue());
             case "long" -> buffer.putLong(offset, ((Number) value).longValue());
@@ -318,6 +319,7 @@ final class OpenClAbiSupport {
     static void writeZeroScalar(ByteBuffer buffer, int offset, String scalarType) {
         switch (scalarType) {
             case "byte", "boolean" -> buffer.put(offset, (byte) 0);
+            case "char" -> buffer.putChar(offset, (char) 0);
             case "short" -> buffer.putShort(offset, (short) 0);
             case "int" -> buffer.putInt(offset, 0);
             case "long" -> buffer.putLong(offset, 0L);
@@ -330,6 +332,7 @@ final class OpenClAbiSupport {
     static Object readScalar(ByteBuffer buffer, int offset, String scalarType) {
         return switch (scalarType) {
             case "byte" -> buffer.get(offset);
+            case "char" -> buffer.getChar(offset);
             case "short" -> buffer.getShort(offset);
             case "int" -> buffer.getInt(offset);
             case "long" -> buffer.getLong(offset);

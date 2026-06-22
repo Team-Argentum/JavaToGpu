@@ -3,37 +3,39 @@ package net.sixik.ga_utils.javatogpu.api;
 import org.lwjgl.opencl.CL10;
 
 /**
- * Java-side marker for an OpenCL {@code write_only image2d_t} kernel parameter.
+ * Java-side marker for an OpenCL {@code read_only image2d_array_t} kernel parameter.
  */
-public final class Image2DWriteOnly implements AutoCloseable {
+public final class Image2DArrayReadOnly implements AutoCloseable {
 
     private final long handle;
     private final int width;
     private final int height;
+    private final int layers;
     private final boolean owned;
     private boolean closed;
 
-    public Image2DWriteOnly() {
-        this(0L, 0, 0, false);
+    public Image2DArrayReadOnly() {
+        this(0L, 0, 0, 0, false);
     }
 
-    public Image2DWriteOnly(long handle, int width, int height) {
-        this(handle, width, height, false);
+    public Image2DArrayReadOnly(long handle, int width, int height, int layers) {
+        this(handle, width, height, layers, false);
     }
 
-    private Image2DWriteOnly(long handle, int width, int height, boolean owned) {
+    private Image2DArrayReadOnly(long handle, int width, int height, int layers, boolean owned) {
         this.handle = handle;
         this.width = width;
         this.height = height;
+        this.layers = layers;
         this.owned = owned;
     }
 
-    public static Image2DWriteOnly borrowed(long handle, int width, int height) {
-        return new Image2DWriteOnly(handle, width, height, false);
+    public static Image2DArrayReadOnly borrowed(long handle, int width, int height, int layers) {
+        return new Image2DArrayReadOnly(handle, width, height, layers, false);
     }
 
-    public static Image2DWriteOnly owned(long handle, int width, int height) {
-        return new Image2DWriteOnly(handle, width, height, true);
+    public static Image2DArrayReadOnly owned(long handle, int width, int height, int layers) {
+        return new Image2DArrayReadOnly(handle, width, height, layers, true);
     }
 
     public long handle() {
@@ -46,6 +48,10 @@ public final class Image2DWriteOnly implements AutoCloseable {
 
     public int height() {
         return height;
+    }
+
+    public int layers() {
+        return layers;
     }
 
     public boolean owned() {

@@ -1,5 +1,18 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Sampler;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
@@ -65,6 +78,70 @@ final class OpenClAbiDebug {
 
         if (GpuTypeSupport.isSupportedVectorType(parameter.javaType())) {
             appendIndented(builder, OpenClAbiSupport.debugVectorType(parameter.javaType()), 1);
+            return;
+        }
+        if (argument instanceof Image2DReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("\n");
+            return;
+        }
+        if (argument instanceof Image1DReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("\n");
+            return;
+        }
+        if (argument instanceof Image1DWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("\n");
+            return;
+        }
+        if (argument instanceof Image1DArrayReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append(" x ").append(image.layers()).append(" layers\n");
+            return;
+        }
+        if (argument instanceof Image1DArrayWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append(" x ").append(image.layers()).append(" layers\n");
+            return;
+        }
+        if (argument instanceof Image1DBufferReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append(" (buffer-backed)\n");
+            return;
+        }
+        if (argument instanceof Image1DBufferWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append(" (buffer-backed)\n");
+            return;
+        }
+        if (argument instanceof Image2DWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("\n");
+            return;
+        }
+        if (argument instanceof Image2DArrayReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append(" x ").append(image.layers()).append(" layers\n");
+            return;
+        }
+        if (argument instanceof Image2DArrayWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append(" x ").append(image.layers()).append(" layers\n");
+            return;
+        }
+        if (argument instanceof Image3DReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("x").append(image.depth()).append("\n");
+            return;
+        }
+        if (argument instanceof Image3DWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("x").append(image.depth()).append("\n");
+            return;
+        }
+        if (argument instanceof Sampler sampler) {
+            builder.append("  native sampler handle: ").append(sampler.handle()).append("\n");
             return;
         }
         if (OpenClAbiSupport.isStructInstance(argument)) {

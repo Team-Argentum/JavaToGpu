@@ -64,5 +64,10 @@ class GpuIntrinsicDatabaseTest {
                         && constant.javaType().equals("int")
                         && constant.sourceText().equals("1")
         ));
+        assertTrue(database.builtinConstants().stream().anyMatch(constant ->
+                constant.ownerSimpleName().equals("GPU")
+                        && constant.name().equals("CL_RGBA")
+                        && constant.javaType().equals("int")
+        ));
     }
 }

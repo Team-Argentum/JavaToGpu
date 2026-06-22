@@ -3,37 +3,39 @@ package net.sixik.ga_utils.javatogpu.api;
 import org.lwjgl.opencl.CL10;
 
 /**
- * Java-side marker for an OpenCL {@code write_only image2d_t} kernel parameter.
+ * Java-side marker for an OpenCL {@code read_only image3d_t} kernel parameter.
  */
-public final class Image2DWriteOnly implements AutoCloseable {
+public final class Image3DReadOnly implements AutoCloseable {
 
     private final long handle;
     private final int width;
     private final int height;
+    private final int depth;
     private final boolean owned;
     private boolean closed;
 
-    public Image2DWriteOnly() {
-        this(0L, 0, 0, false);
+    public Image3DReadOnly() {
+        this(0L, 0, 0, 0, false);
     }
 
-    public Image2DWriteOnly(long handle, int width, int height) {
-        this(handle, width, height, false);
+    public Image3DReadOnly(long handle, int width, int height, int depth) {
+        this(handle, width, height, depth, false);
     }
 
-    private Image2DWriteOnly(long handle, int width, int height, boolean owned) {
+    private Image3DReadOnly(long handle, int width, int height, int depth, boolean owned) {
         this.handle = handle;
         this.width = width;
         this.height = height;
+        this.depth = depth;
         this.owned = owned;
     }
 
-    public static Image2DWriteOnly borrowed(long handle, int width, int height) {
-        return new Image2DWriteOnly(handle, width, height, false);
+    public static Image3DReadOnly borrowed(long handle, int width, int height, int depth) {
+        return new Image3DReadOnly(handle, width, height, depth, false);
     }
 
-    public static Image2DWriteOnly owned(long handle, int width, int height) {
-        return new Image2DWriteOnly(handle, width, height, true);
+    public static Image3DReadOnly owned(long handle, int width, int height, int depth) {
+        return new Image3DReadOnly(handle, width, height, depth, true);
     }
 
     public long handle() {
@@ -46,6 +48,10 @@ public final class Image2DWriteOnly implements AutoCloseable {
 
     public int height() {
         return height;
+    }
+
+    public int depth() {
+        return depth;
     }
 
     public boolean owned() {

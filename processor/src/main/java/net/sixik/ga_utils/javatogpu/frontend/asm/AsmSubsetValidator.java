@@ -11,8 +11,18 @@ import net.sixik.ga_utils.javatogpu.api.Float3;
 import net.sixik.ga_utils.javatogpu.api.Float4;
 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Int2;
 import net.sixik.ga_utils.javatogpu.api.Int3;
 import net.sixik.ga_utils.javatogpu.api.Int4;
@@ -23,6 +33,7 @@ import net.sixik.ga_utils.javatogpu.api.Long4;
 import net.sixik.ga_utils.javatogpu.api.LongPtr;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
 import net.sixik.ga_utils.javatogpu.api.ShortPtr;
+import net.sixik.ga_utils.javatogpu.api.UInt4;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -65,6 +76,7 @@ public final class AsmSubsetValidator {
             Type.getInternalName(Int2.class),
             Type.getInternalName(Int3.class),
             Type.getInternalName(Int4.class),
+            Type.getInternalName(UInt4.class),
             Type.getInternalName(Long2.class),
             Type.getInternalName(Long3.class),
             Type.getInternalName(Long4.class),
@@ -87,14 +99,25 @@ public final class AsmSubsetValidator {
             Type.getInternalName(Int2.class),
             Type.getInternalName(Int3.class),
             Type.getInternalName(Int4.class),
+            Type.getInternalName(UInt4.class),
             Type.getInternalName(Long2.class),
             Type.getInternalName(Long3.class),
             Type.getInternalName(Long4.class),
             Type.getInternalName(Double2.class),
             Type.getInternalName(Double3.class),
             Type.getInternalName(Double4.class),
+            Type.getInternalName(Image1DReadOnly.class),
+            Type.getInternalName(Image1DWriteOnly.class),
+            Type.getInternalName(Image1DArrayReadOnly.class),
+            Type.getInternalName(Image1DArrayWriteOnly.class),
+            Type.getInternalName(Image1DBufferReadOnly.class),
+            Type.getInternalName(Image1DBufferWriteOnly.class),
             Type.getInternalName(Image2DReadOnly.class),
             Type.getInternalName(Image2DWriteOnly.class),
+            Type.getInternalName(Image2DArrayReadOnly.class),
+            Type.getInternalName(Image2DArrayWriteOnly.class),
+            Type.getInternalName(Image3DReadOnly.class),
+            Type.getInternalName(Image3DWriteOnly.class),
             Type.getInternalName(Sampler.class)
     );
 

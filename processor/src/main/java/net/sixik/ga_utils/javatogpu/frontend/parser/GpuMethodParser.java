@@ -76,7 +76,8 @@ public final class GpuMethodParser {
                 parameter.getNameAsString(),
                 parameter.getTypeAsString(),
                 resolveAddressSpace(isGlobal, isConstantAddressSpace, isLocal),
-                constant
+                constant,
+                GpuStructParser.parseStringListAnnotation(parameter.getAnnotations(), "OpenCLQualifiers", "OpenCLQualifiers")
         );
     }
 
