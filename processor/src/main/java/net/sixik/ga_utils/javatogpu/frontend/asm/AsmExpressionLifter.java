@@ -1205,6 +1205,7 @@ public final class AsmExpressionLifter {
         if (isGpuOwner(instruction.owner)) {
             GpuIntrinsic intrinsic = requireIntrinsic(instruction.owner, instruction.name, argumentTypeNames);
             GpuIrIntrinsicCall call = new GpuIrIntrinsicCall(
+                    null,
                     intrinsic.backendName(),
                     intrinsic.codeTemplate(),
                     intrinsic.resultType(),

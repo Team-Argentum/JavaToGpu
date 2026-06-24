@@ -1,5 +1,6 @@
 package net.sixik.ga_utils.javatogpu.api;
 
+import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
 import net.sixik.ga_utils.javatogpu.api.anotations.GPUVectorType;
 
 /**
@@ -50,4 +51,16 @@ public class UInt4 {
         this.z = z;
         this.w = w;
     }
+
+    @GPUIntrinsic(operator = "+")
+    public UInt4 add(UInt4 other) { return new UInt4(x + other.x, y + other.y, z + other.z, w + other.w); }
+
+    @GPUIntrinsic(operator = "-")
+    public UInt4 sub(UInt4 other) { return new UInt4(x - other.x, y - other.y, z - other.z, w - other.w); }
+
+    @GPUIntrinsic(operator = "*")
+    public UInt4 mul(UInt4 other) { return new UInt4(x * other.x, y * other.y, z * other.z, w * other.w); }
+
+    @GPUIntrinsic(operator = "/")
+    public UInt4 div(UInt4 other) { return new UInt4(x / other.x, y / other.y, z / other.z, w / other.w); }
 }

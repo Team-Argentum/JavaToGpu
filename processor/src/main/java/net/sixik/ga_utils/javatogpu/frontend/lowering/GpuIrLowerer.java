@@ -575,6 +575,9 @@ public final class GpuIrLowerer {
         if (expression instanceof MethodCallExpr methodCallExpr) {
             String owner = methodCallExpr.getScope().map(Expression::toString).orElse("");
             List<String> argumentTypes = inferArgumentTypes(methodCallExpr, scopes, context);
+            String receiverType = methodCallExpr.getScope()
+                    .map(scope -> inferExpressionType(scope, scopes, context))
+                    .orElse(null);
 
             if (intrinsicDatabase.isAllowedOwner(owner)) {
                 List<GpuIrExpression> arguments = methodCallExpr.getArguments().stream()
@@ -582,11 +585,30 @@ public final class GpuIrLowerer {
                         .toList();
                 GpuIntrinsic intrinsic = intrinsicDatabase.require(owner, methodCallExpr.getNameAsString(), argumentTypes);
                 return new GpuIrIntrinsicCall(
+                        null,
                         intrinsic.backendName(),
                         intrinsic.codeTemplate(),
                         intrinsic.resultType(),
                         arguments
                 );
+            }
+
+            if (receiverType != null) {
+                try {
+                    List<GpuIrExpression> arguments = methodCallExpr.getArguments().stream()
+                            .map(argument -> lowerExpression(argument, scopes, context))
+                            .toList();
+                    GpuIntrinsic intrinsic = intrinsicDatabase.requireInstance(receiverType, methodCallExpr.getNameAsString(), argumentTypes);
+                    return new GpuIrIntrinsicCall(
+                            lowerExpression(methodCallExpr.getScope().orElseThrow(), scopes, context),
+                            intrinsic.backendName(),
+                            intrinsic.codeTemplate(),
+                            intrinsic.resultType(),
+                            arguments
+                    );
+                } catch (IllegalArgumentException ignored) {
+                    // Fall through to helper resolution.
+                }
             }
 
             HelperDescriptor helper = resolveHelperCall(owner, methodCallExpr.getNameAsString(), argumentTypes, context);
@@ -852,11 +874,22 @@ public final class GpuIrLowerer {
 
         if (expression instanceof MethodCallExpr methodCallExpr) {
             String owner = methodCallExpr.getScope().map(Expression::toString).orElse("");
+            String receiverType = methodCallExpr.getScope()
+                    .map(scope -> inferExpressionType(scope, scopes, context))
+                    .orElse(null);
             if (intrinsicDatabase.isAllowedOwner(owner)) {
                 try {
                     return intrinsicDatabase.require(owner, methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)).resultType();
                 } catch (IllegalArgumentException ignored) {
                     return null;
+                }
+            }
+
+            if (receiverType != null) {
+                try {
+                    return intrinsicDatabase.requireInstance(receiverType, methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)).resultType();
+                } catch (IllegalArgumentException ignored) {
+                    // Fall through to helper resolution.
                 }
             }
 

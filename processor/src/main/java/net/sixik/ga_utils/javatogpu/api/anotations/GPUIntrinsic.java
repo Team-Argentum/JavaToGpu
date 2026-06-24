@@ -25,6 +25,11 @@ import java.lang.annotation.Target;
  * public static float fract(float value) {
  *     return value - (float) Math.floor(value);
  * }
+ *
+ * @GPUIntrinsic(operator = "+")
+ * public Float4 add(Float4 other) {
+ *     return new Float4(x + other.x, y + other.y, z + other.z, w + other.w);
+ * }
  * }</pre>
  */
 @Retention(RetentionPolicy.RUNTIME)
@@ -42,6 +47,15 @@ public @interface GPUIntrinsic {
      * <p>Arguments may be referenced as {@code {0}}, {@code {1}}, and so on.
      */
     String code() default "";
+
+    /**
+     * Operator form for concise intrinsic mappings.
+     *
+     * <p>Examples: {@code +}, {@code -}, {@code *}, {@code /}, {@code %}, {@code &}, {@code |}, {@code ^}.
+     * Instance methods map to expressions such as {@code ({this} + {0})}; static binary methods map to
+     * {@code ({0} + {1})}.
+     */
+    String operator() default "";
 
     /**
      * Backends for which this intrinsic mapping is valid.

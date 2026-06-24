@@ -15,7 +15,7 @@ final class OpenClVectorLayout implements OpenClValueLayout {
 
     OpenClVectorLayout(String javaType) {
         this.javaType = javaType;
-        this.componentType = GpuTypeSupport.vectorComponentType(javaType, "x");
+        this.componentType = GpuTypeSupport.vectorComponentType(javaType);
         this.fieldNames = GpuTypeSupport.vectorFieldNames(javaType);
         this.componentSize = GpuTypeSupport.scalarByteSize(componentType);
         this.size = GpuTypeSupport.vectorByteSize(javaType);

@@ -977,10 +977,10 @@ public final class GpuSubsetValidator {
             ObjectCreationExpr creation,
             List<GpuValidationIssue> issues,
             Deque<Map<String, String>> scopes,
-            ValidationContext context
+        ValidationContext context
     ) {
         String typeName = creation.getTypeAsString();
-        String componentType = GpuTypeSupport.vectorComponentType(typeName, "x");
+        String componentType = GpuTypeSupport.vectorComponentType(typeName);
         int width = GpuTypeSupport.vectorWidth(typeName);
         int argumentCount = creation.getArguments().size();
         if (argumentCount != 0 && argumentCount != 1 && argumentCount != width) {
@@ -1023,6 +1023,9 @@ public final class GpuSubsetValidator {
 
     private void validateMethodCall(MethodCallExpr call, List<GpuValidationIssue> issues, Deque<Map<String, String>> scopes, ValidationContext context) {
         String owner = call.getScope().map(Node::toString).orElse("");
+        String receiverType = call.getScope()
+                .map(scope -> inferExpressionType((Expression) scope, scopes, context))
+                .orElse(null);
         call.getArguments().forEach(argument -> validateExpression(argument, issues, scopes, context));
 
         if (intrinsicDatabase.isAllowedOwner(owner)) {
@@ -1032,6 +1035,15 @@ public final class GpuSubsetValidator {
                 issues.add(issue(call, exception.getMessage()));
             }
             return;
+        }
+
+        if (receiverType != null) {
+            try {
+                intrinsicDatabase.requireInstance(receiverType, call.getNameAsString(), inferArgumentTypes(call, scopes, context));
+                return;
+            } catch (IllegalArgumentException ignored) {
+                // Fall through to helper resolution.
+            }
         }
 
         HelperResolution resolution = resolveHelperCall(owner, call.getNameAsString(), inferArgumentTypes(call, scopes, context), context);
@@ -1324,11 +1336,22 @@ public final class GpuSubsetValidator {
 
         if (expression instanceof MethodCallExpr methodCallExpr) {
             String owner = methodCallExpr.getScope().map(Node::toString).orElse("");
+            String receiverType = methodCallExpr.getScope()
+                    .map(scope -> inferExpressionType((Expression) scope, scopes, context))
+                    .orElse(null);
             if (intrinsicDatabase.isAllowedOwner(owner)) {
                 try {
                     return intrinsicDatabase.require(owner, methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)).resultType();
                 } catch (IllegalArgumentException ignored) {
                     return null;
+                }
+            }
+
+            if (receiverType != null) {
+                try {
+                    return intrinsicDatabase.requireInstance(receiverType, methodCallExpr.getNameAsString(), inferArgumentTypes(methodCallExpr, scopes, context)).resultType();
+                } catch (IllegalArgumentException ignored) {
+                    // Fall through to helper resolution.
                 }
             }
 

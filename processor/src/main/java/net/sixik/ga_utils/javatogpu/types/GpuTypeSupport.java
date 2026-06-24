@@ -285,6 +285,14 @@ public final class GpuTypeSupport {
         return descriptor.componentType();
     }
 
+    public static String vectorComponentType(String javaType) {
+        VectorDescriptor descriptor = vectorDescriptor(javaType);
+        if (descriptor == null) {
+            throw new IllegalArgumentException("Unsupported vector type: " + javaType);
+        }
+        return descriptor.componentType();
+    }
+
     public static int vectorWidth(String javaType) {
         VectorDescriptor descriptor = vectorDescriptor(javaType);
         if (descriptor == null) {
@@ -318,7 +326,7 @@ public final class GpuTypeSupport {
     }
 
     public static int vectorByteSize(String javaType) {
-        return vectorStorageWidth(javaType) * scalarByteSize(vectorComponentType(javaType, "x"));
+        return vectorStorageWidth(javaType) * scalarByteSize(vectorComponentType(javaType));
     }
 
     public static String pointerValueType(String javaType) {

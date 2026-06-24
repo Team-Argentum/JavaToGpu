@@ -443,6 +443,9 @@ public final class OpenClKernelEmitter {
 
     private String emitIntrinsicTemplate(GpuIrIntrinsicCall intrinsicCall) {
         String rendered = intrinsicCall.codeTemplate();
+        if (intrinsicCall.receiver() != null) {
+            rendered = rendered.replace("{this}", emitExpression(intrinsicCall.receiver()));
+        }
         for (int i = 0; i < intrinsicCall.arguments().size(); i++) {
             rendered = rendered.replace("{" + i + "}", emitExpression(intrinsicCall.arguments().get(i)));
         }

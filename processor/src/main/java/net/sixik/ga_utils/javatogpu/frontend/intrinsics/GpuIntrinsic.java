@@ -7,6 +7,7 @@ public record GpuIntrinsic(
         String ownerQualifiedName,
         String javaName,
         int arity,
+        boolean instanceMethod,
         GpuIntrinsicKind kind,
         String backendName,
         String codeTemplate,

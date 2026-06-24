@@ -27,16 +27,21 @@ import java.util.regex.Pattern;
 public final class GpuIntrinsicDatabase {
 
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{(\\d+)}");
+    private static final Pattern THIS_PLACEHOLDER_PATTERN = Pattern.compile("\\{this}");
+    private static final String API_PACKAGE_PREFIX = "net.sixik.ga_utils.javatogpu.api.";
 
     private final Map<String, List<GpuIntrinsic>> intrinsics;
     private final List<GpuBuiltinConstant> builtinConstants;
+    private final GpuBackendTarget backendTarget;
 
     private GpuIntrinsicDatabase(
             Map<String, List<GpuIntrinsic>> intrinsics,
-            List<GpuBuiltinConstant> builtinConstants
+            List<GpuBuiltinConstant> builtinConstants,
+            GpuBackendTarget backendTarget
     ) {
         this.intrinsics = intrinsics;
         this.builtinConstants = builtinConstants;
+        this.backendTarget = backendTarget;
     }
 
     public static GpuIntrinsicDatabase createDefault() {
@@ -57,18 +62,26 @@ public final class GpuIntrinsicDatabase {
         List<GpuBuiltinConstant> builtinConstants = new ArrayList<>(readBuiltinConstants(GPU.class));
         registerParsedIntrinsicMethods(values, builtinConstants, additionalIntrinsicMethods, backendTarget);
 
+        Map<String, List<GpuIntrinsic>> mutableIntrinsics = new HashMap<>();
+        for (Map.Entry<String, List<GpuIntrinsic>> entry : values.entrySet()) {
+            mutableIntrinsics.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+
         return new GpuIntrinsicDatabase(
-                values.entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
-                        Map.Entry::getKey,
-                        entry -> List.copyOf(entry.getValue())
-                )),
-                List.copyOf(builtinConstants)
+                mutableIntrinsics,
+                List.copyOf(builtinConstants),
+                backendTarget
         );
     }
 
     public GpuIntrinsic require(String owner, String javaName, int arity) {
+        ensureIntrinsicOwnerLoaded(owner);
         List<GpuIntrinsic> matches = intrinsics.get(key(owner, javaName, arity));
         if (matches == null || matches.isEmpty()) {
+            throw new IllegalArgumentException("Unknown GPU intrinsic: " + owner + "." + javaName + "/" + arity);
+        }
+        matches = matches.stream().filter(intrinsic -> !intrinsic.instanceMethod()).toList();
+        if (matches.isEmpty()) {
             throw new IllegalArgumentException("Unknown GPU intrinsic: " + owner + "." + javaName + "/" + arity);
         }
         if (matches.size() != 1) {
@@ -78,12 +91,14 @@ public final class GpuIntrinsicDatabase {
     }
 
     public GpuIntrinsic require(String owner, String javaName, List<String> argumentTypes) {
+        ensureIntrinsicOwnerLoaded(owner);
         List<GpuIntrinsic> matches = intrinsics.get(key(owner, javaName, argumentTypes.size()));
         if (matches == null || matches.isEmpty()) {
             throw new IllegalArgumentException("Unknown GPU intrinsic: " + owner + "." + javaName + "/" + argumentTypes.size());
         }
 
         return matches.stream()
+                .filter(intrinsic -> !intrinsic.instanceMethod())
                 .filter(intrinsic -> intrinsic.argumentTypes().equals(argumentTypes))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
@@ -92,7 +107,30 @@ public final class GpuIntrinsicDatabase {
     }
 
     public boolean isAllowedOwner(String owner) {
-        return intrinsics.keySet().stream().anyMatch(key -> key.startsWith(owner + "#"));
+        ensureIntrinsicOwnerLoaded(owner);
+        return intrinsics.values().stream().flatMap(List::stream).anyMatch(intrinsic -> !intrinsic.instanceMethod()
+                && (owner.equals(intrinsic.ownerSimpleName()) || owner.equals(intrinsic.ownerQualifiedName())));
+    }
+
+    public boolean hasAnyOwner(String owner) {
+        ensureIntrinsicOwnerLoaded(owner);
+        return intrinsics.values().stream().flatMap(List::stream).anyMatch(intrinsic ->
+                owner.equals(intrinsic.ownerSimpleName()) || owner.equals(intrinsic.ownerQualifiedName()));
+    }
+
+    public GpuIntrinsic requireInstance(String ownerType, String javaName, List<String> argumentTypes) {
+        ensureIntrinsicOwnerLoaded(ownerType);
+        List<GpuIntrinsic> matches = intrinsics.get(key(ownerType, javaName, argumentTypes.size()));
+        if (matches == null || matches.isEmpty()) {
+            throw new IllegalArgumentException("Unknown GPU intrinsic: " + ownerType + "." + javaName + "/" + argumentTypes.size());
+        }
+        return matches.stream()
+                .filter(GpuIntrinsic::instanceMethod)
+                .filter(intrinsic -> intrinsic.argumentTypes().equals(argumentTypes))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Unknown GPU intrinsic overload: " + ownerType + "." + javaName + argumentTypes
+                ));
     }
 
     public boolean isAllowedAllocationType(String typeName) {
@@ -119,7 +157,7 @@ public final class GpuIntrinsicDatabase {
         }
         List<GpuIntrinsic> existing = values.computeIfAbsent(key(ownerAlias, intrinsic.javaName(), intrinsic.arity()), ignored -> new ArrayList<>());
         boolean duplicate = existing.stream().anyMatch(candidate ->
-                sameOwner(candidate, intrinsic) && candidate.argumentTypes().equals(intrinsic.argumentTypes()));
+                sameOwner(candidate, intrinsic) && candidate.instanceMethod() == intrinsic.instanceMethod() && candidate.argumentTypes().equals(intrinsic.argumentTypes()));
         if (!duplicate) {
             existing.add(intrinsic);
         }
@@ -134,10 +172,6 @@ public final class GpuIntrinsicDatabase {
             if (!GpuBackendSupport.supportsBackend(annotation.backends(), backendTarget)) {
                 continue;
             }
-            if (!Modifier.isStatic(method.getModifiers())) {
-                throw new IllegalStateException("@GPUIntrinsic method must be static: "
-                        + ownerType.getName() + "." + method.getName());
-            }
             register(values, toIntrinsic(ownerType, method, annotation));
         }
     }
@@ -145,17 +179,52 @@ public final class GpuIntrinsicDatabase {
     private static GpuIntrinsic toIntrinsic(Class<?> ownerType, Method method, GPUIntrinsic annotation) {
         List<String> argumentTypes = javaTypeNames(method.getParameterTypes());
         String backendName = annotation.name().isBlank() ? method.getName() : annotation.name();
+        boolean instanceMethod = !Modifier.isStatic(method.getModifiers());
+        String codeTemplate = deriveCodeTemplate(annotation, method, instanceMethod);
         return new GpuIntrinsic(
                 ownerType.getSimpleName(),
                 ownerType.getName(),
                 method.getName(),
                 method.getParameterCount(),
+                instanceMethod,
                 inferKind(backendName),
                 backendName,
-                validateCodeTemplate(annotation.code(), method),
+                validateCodeTemplate(codeTemplate, method, instanceMethod),
                 javaTypeName(method.getReturnType()),
                 argumentTypes
         );
+    }
+
+    private static String deriveCodeTemplate(GPUIntrinsic annotation, Method method, boolean instanceMethod) {
+        if (!annotation.code().isBlank()) {
+            if (!annotation.operator().isBlank()) {
+                throw new IllegalStateException("@GPUIntrinsic cannot declare both code and operator: "
+                        + method.getDeclaringClass().getName() + "." + method.getName());
+            }
+            return annotation.code();
+        }
+        if (annotation.operator().isBlank()) {
+            return "";
+        }
+        String operator = annotation.operator().trim();
+        if (instanceMethod) {
+            if (method.getParameterCount() == 0) {
+                return "(" + operator + "{this})";
+            }
+            if (method.getParameterCount() == 1) {
+                return "({this} " + operator + " {0})";
+            }
+            throw new IllegalStateException("Instance @GPUIntrinsic operator methods must take zero or one explicit argument: "
+                    + method.getDeclaringClass().getName() + "." + method.getName());
+        }
+        if (method.getParameterCount() == 1) {
+            return "(" + operator + "{0})";
+        }
+        if (method.getParameterCount() == 2) {
+            return "({0} " + operator + " {1})";
+        }
+        throw new IllegalStateException("Static @GPUIntrinsic operator methods must take one or two arguments: "
+                + method.getDeclaringClass().getName() + "." + method.getName());
     }
 
     private static GpuIntrinsicKind inferKind(String backendName) {
@@ -218,7 +287,7 @@ public final class GpuIntrinsicDatabase {
         };
     }
 
-    private static String validateCodeTemplate(String codeTemplate, Method method) {
+    private static String validateCodeTemplate(String codeTemplate, Method method, boolean instanceMethod) {
         if (codeTemplate.isBlank()) {
             return "";
         }
@@ -254,14 +323,17 @@ public final class GpuIntrinsicDatabase {
                 continue;
             }
             List<String> argumentTypes = method.parameters().stream().map(parameter -> parameter.javaType()).toList();
+            boolean instanceMethod = isParsedInstanceIntrinsic(method, annotation);
+            String codeTemplate = deriveCodeTemplate(annotation, method, instanceMethod);
             register(values, new GpuIntrinsic(
                     method.ownerSimpleName(),
                     method.ownerQualifiedName(),
                     method.name(),
                     method.parameters().size(),
+                    instanceMethod,
                     inferKind(annotation.backendName()),
                     annotation.backendName(),
-                    validateCodeTemplate(annotation.codeTemplate(), method.ownerQualifiedName(), method.name(), method.parameters().size()),
+                    validateCodeTemplate(codeTemplate, method.ownerQualifiedName(), method.name(), method.parameters().size(), instanceMethod),
                     method.returnType(),
                     argumentTypes
             ));
@@ -286,7 +358,7 @@ public final class GpuIntrinsicDatabase {
         return method.declaration().getAnnotationByName("GPUIntrinsic")
                 .map(annotation -> {
                     if (!annotation.isNormalAnnotationExpr()) {
-                        return new GPUIntrinsicAnnotation(method.name(), "", EnumSet.of(GpuBackendTarget.OPENCL));
+                        return new GPUIntrinsicAnnotation(method.name(), "", "", EnumSet.of(GpuBackendTarget.OPENCL));
                     }
                     String backendName = annotation.asNormalAnnotationExpr().getPairs().stream()
                             .filter(pair -> pair.getNameAsString().equals("name"))
@@ -299,12 +371,20 @@ public final class GpuIntrinsicDatabase {
                             .findFirst()
                             .map(pair -> literalStringValue(pair.getValue() instanceof LiteralStringValueExpr literal ? literal : null))
                             .orElse("");
+                    String operator = annotation.asNormalAnnotationExpr().getPairs().stream()
+                            .filter(pair -> pair.getNameAsString().equals("operator"))
+                            .findFirst()
+                            .map(pair -> literalStringValue(pair.getValue() instanceof LiteralStringValueExpr literal ? literal : null))
+                            .orElse("");
                     EnumSet<GpuBackendTarget> backends = annotation.asNormalAnnotationExpr().getPairs().stream()
                             .filter(pair -> pair.getNameAsString().equals("backends"))
                             .findFirst()
                             .map(pair -> GpuBackendSupport.parseBackendTargets(pair.getValue()))
                             .orElse(EnumSet.of(GpuBackendTarget.OPENCL));
-                    return new GPUIntrinsicAnnotation(backendName, codeTemplate, backends);
+                    if (!codeTemplate.isBlank() && !operator.isBlank()) {
+                        throw new IllegalStateException("@GPUIntrinsic cannot declare both code and operator: " + method.ownerQualifiedName() + "." + method.name());
+                    }
+                    return new GPUIntrinsicAnnotation(backendName, codeTemplate, operator, backends);
                 })
                 .orElse(null);
     }
@@ -322,9 +402,12 @@ public final class GpuIntrinsicDatabase {
         return literal.getValue();
     }
 
-    private static String validateCodeTemplate(String codeTemplate, String ownerQualifiedName, String methodName, int parameterCount) {
+    private static String validateCodeTemplate(String codeTemplate, String ownerQualifiedName, String methodName, int parameterCount, boolean instanceMethod) {
         if (codeTemplate.isBlank()) {
             return "";
+        }
+        if (instanceMethod && !THIS_PLACEHOLDER_PATTERN.matcher(codeTemplate).find() && parameterCount == 0) {
+            return codeTemplate;
         }
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(codeTemplate);
         while (matcher.find()) {
@@ -335,6 +418,70 @@ public final class GpuIntrinsicDatabase {
             }
         }
         return codeTemplate;
+    }
+
+    private static String deriveCodeTemplate(GPUIntrinsicAnnotation annotation, ParsedGpuMethod method, boolean instanceMethod) {
+        if (!annotation.codeTemplate().isBlank()) {
+            return annotation.codeTemplate();
+        }
+        if (annotation.operator().isBlank()) {
+            return "";
+        }
+        String operator = annotation.operator().trim();
+        if (instanceMethod) {
+            if (method.parameters().isEmpty()) {
+                return "(" + operator + "{this})";
+            }
+            if (method.parameters().size() == 1) {
+                return "({this} " + operator + " {0})";
+            }
+            throw new IllegalStateException("Instance @GPUIntrinsic operator methods must take zero or one explicit argument: "
+                    + method.ownerQualifiedName() + "." + method.name());
+        }
+        if (method.parameters().size() == 1) {
+            return "(" + operator + "{0})";
+        }
+        if (method.parameters().size() == 2) {
+            return "({0} " + operator + " {1})";
+        }
+        throw new IllegalStateException("Static @GPUIntrinsic operator methods must take one or two arguments: "
+                + method.ownerQualifiedName() + "." + method.name());
+    }
+
+    private static boolean isParsedInstanceIntrinsic(ParsedGpuMethod method, GPUIntrinsicAnnotation annotation) {
+        if (method.declaration().isStatic()) {
+            return false;
+        }
+        return !annotation.operator().isBlank() || annotation.codeTemplate().contains("{this}");
+    }
+
+    private void ensureIntrinsicOwnerLoaded(String owner) {
+        if (owner == null || owner.isBlank()) {
+            return;
+        }
+        if (intrinsics.keySet().stream().anyMatch(key -> key.startsWith(owner + "#"))) {
+            return;
+        }
+        for (String candidate : candidateIntrinsicOwnerClassNames(owner)) {
+            try {
+                Class<?> type = Class.forName(candidate, false, GpuIntrinsicDatabase.class.getClassLoader());
+                registerIntrinsicOwner(intrinsics, type, backendTarget);
+                if (intrinsics.keySet().stream().anyMatch(key -> key.startsWith(owner + "#"))) {
+                    return;
+                }
+            } catch (ClassNotFoundException ignored) {
+                // Best effort lookup for optional vector operator owners.
+            }
+        }
+    }
+
+    private static List<String> candidateIntrinsicOwnerClassNames(String owner) {
+        List<String> candidates = new ArrayList<>();
+        candidates.add(owner);
+        if (!owner.contains(".")) {
+            candidates.add(API_PACKAGE_PREFIX + owner);
+        }
+        return candidates;
     }
 
     private static List<String> javaTypeNames(Class<?>[] javaTypes) {
@@ -401,6 +548,7 @@ public final class GpuIntrinsicDatabase {
     private record GPUIntrinsicAnnotation(
             String backendName,
             String codeTemplate,
+            String operator,
             EnumSet<GpuBackendTarget> backends
     ) {
     }

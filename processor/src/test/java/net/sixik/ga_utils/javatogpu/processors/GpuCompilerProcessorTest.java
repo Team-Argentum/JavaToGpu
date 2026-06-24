@@ -3818,6 +3818,112 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithAnnotatedUInt16VectorType() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-uint16-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-uint16-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.UInt16;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(UInt16 bias, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        UInt16 local = new UInt16(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+                        output[id] = bias.sa + bias.sf + local.s0 + local.sf;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+
+        String kernelSource = Files.readString(kernelPath);
+        assertTrue(kernelSource.contains("__kernel void jtg_kernel(uint16 bias, __global int* output)"));
+        assertTrue(kernelSource.contains("uint16 local = (uint16)(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);"));
+        assertTrue(kernelSource.contains("bias.sa"));
+        assertTrue(kernelSource.contains("bias.sf"));
+        assertTrue(kernelSource.contains("local.s0"));
+        assertTrue(kernelSource.contains("local.sf"));
+    }
+
+    @Test
+    void generatesKernelWithInstanceVectorOperatorIntrinsic() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-vector-operator-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-vector-operator-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.Int4;
+                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    static void kernel(Int4 left, Int4 right, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        Int4 sum = left.add(right);
+                        output[id] = sum.x + sum.y + sum.z + sum.w;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+
+        String kernelSource = Files.readString(kernelPath);
+        assertTrue(kernelSource.contains("int4 sum = (left + right);"));
+        assertFalse(kernelSource.contains(".add("));
+    }
+
+    @Test
     void generatesKernelWithGuardedCCodeCallbackFallback() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-ccode-guard-classes");
