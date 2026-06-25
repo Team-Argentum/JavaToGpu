@@ -54,4 +54,18 @@ jobs:
         run: ./gradlew.bat :processor:performanceStressTest --console=plain
 
       - name: Optional integration smoke
-        run: ./gradlew.bat :processor:test --tests "net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest" --console=plain
+        run: ./gradlew.bat :processor:integrationOpenClSmokeTest --console=plain
+
+      - name: Generate validation report
+        if: always()
+        run: ./gradlew.bat :processor:openClValidationReport --console=plain
+        env:
+          JTG_VALIDATION_VENDOR: ${{ matrix.vendor }}
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencl-validation-${{ matrix.vendor }}
+          path: processor/build/reports/opencl/validation-report.md
+          if-no-files-found: warn

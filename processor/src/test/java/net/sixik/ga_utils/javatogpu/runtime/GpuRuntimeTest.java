@@ -28,12 +28,34 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void setBackendRejectsNullAndResetBackendRestoresDefault() {
+        NullPointerException exception = assertThrows(
+                NullPointerException.class,
+                () -> GpuRuntime.setBackend(null)
+        );
+
+        assertEquals("newBackend", exception.getMessage());
+
+        GpuRuntimeBackend backend = invocation -> {
+        };
+        GpuRuntime.setBackend(backend);
+        assertSame(backend, GpuRuntime.backend());
+
+        GpuRuntime.resetBackend();
+        assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+    }
+
+    @Test
     void scopedBackendRestoresPreviousBackendOnClose() {
         GpuRuntimeBackend previousBackend = GpuRuntime.backend();
         GpuRuntimeBackend scopedBackend = invocation -> {
         };
 
         try (GpuRuntimeScope ignored = GpuRuntime.useBackend(scopedBackend)) {
+            assertSame(previousBackend, ignored.previousBackend());
+            assertSame(scopedBackend, ignored.installedBackend());
+            assertTrue(!ignored.ownsInstalledBackend());
+            assertTrue(!ignored.closed());
             assertSame(scopedBackend, GpuRuntime.backend());
         }
 
@@ -60,11 +82,37 @@ class GpuRuntimeTest {
         CloseableBackend backend = new CloseableBackend();
 
         try (GpuRuntimeScope ignored = GpuRuntime.useOwnedBackend(backend)) {
+            assertTrue(ignored.ownsInstalledBackend());
             assertSame(backend, GpuRuntime.backend());
         }
 
         assertSame(previousBackend, GpuRuntime.backend());
         assertEquals(1, backend.closeCalls);
+    }
+
+    @Test
+    void nestedScopesMustCloseInLifoOrder() {
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntimeBackend outerBackend = invocation -> {
+        };
+        GpuRuntimeBackend innerBackend = invocation -> {
+        };
+
+        GpuRuntimeScope outer = GpuRuntime.useBackend(outerBackend);
+        GpuRuntimeScope inner = GpuRuntime.useBackend(innerBackend);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, outer::close);
+        assertTrue(exception.getMessage().contains("cannot close out of order"));
+        assertSame(innerBackend, GpuRuntime.backend());
+        assertTrue(!outer.closed());
+
+        inner.close();
+        assertSame(outerBackend, GpuRuntime.backend());
+        assertTrue(inner.closed());
+
+        outer.close();
+        assertSame(previousBackend, GpuRuntime.backend());
+        assertTrue(outer.closed());
     }
 
     @Test
@@ -113,6 +161,8 @@ class GpuRuntimeTest {
         assertSame(openClBackend, selection.backend());
         assertEquals(GpuBackendTarget.OPENCL, selection.report().backendTarget());
         assertEquals("Fake GPU", selection.report().deviceLabel());
+        assertEquals(GpuRuntimeBackendOwnership.BORROWED, selection.ownership());
+        assertTrue(!selection.ownsBackend());
     }
 
     @Test
@@ -246,6 +296,33 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void trySelectFirstMatchingWithoutCandidatesExplainsTheMiss() {
+        GpuRuntimeSelectionResult result = GpuRuntime.trySelectFirstMatching(java.util.List.of());
+
+        assertTrue(!result.matched());
+        assertEquals("no backend candidates were provided", result.failureSummary());
+
+        UnsupportedOperationException exception = assertThrows(
+                UnsupportedOperationException.class,
+                result::requireSelection
+        );
+        assertTrue(exception.getMessage().contains("no backend candidates were provided"));
+    }
+
+    @Test
+    void useFirstMatchingWithoutCandidatesFailsWithHelpfulMessage() {
+        UnsupportedOperationException exception = assertThrows(
+                UnsupportedOperationException.class,
+                () -> GpuRuntime.useFirstMatching(java.util.List.of())
+        );
+
+        assertEquals(
+                "No GPU runtime backend satisfies the requested requirements: no backend candidates were provided",
+                exception.getMessage()
+        );
+    }
+
+    @Test
     void useFirstMatchingExplainsFactoryCreationFailures() {
         UnsupportedOperationException exception = assertThrows(
                 UnsupportedOperationException.class,
@@ -300,14 +377,59 @@ class GpuRuntimeTest {
         GpuRuntimeBackendSelection selection = GpuRuntimeBackendPolicy.builder()
                 .minimumApiVersion(GpuBackendTarget.OPENCL, 3, 0)
                 .requireFeature(GpuBackendTarget.OPENCL, GpuRuntimeFeature.IMAGES)
-                .preferBackend(cudaBackend)
-                .preferBackend(openClBackend)
+                .preferOwnedBackend(cudaBackend)
+                .preferOwnedBackend(openClBackend)
                 .build()
                 .select();
 
         assertSame(openClBackend, selection.backend());
         assertEquals(GpuBackendTarget.OPENCL, selection.report().backendTarget());
         assertEquals("Policy GPU", selection.report().deviceLabel());
+        assertEquals(GpuRuntimeBackendOwnership.OWNED, selection.ownership());
+        assertTrue(selection.ownsBackend());
+    }
+
+    @Test
+    void backendSelectionInstallHonorsBorrowedOwnership() {
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+
+        final class CloseableBackend implements GpuRuntimeBackend, AutoCloseable {
+            private int closeCalls;
+
+            @Override
+            public void invoke(GpuKernelInvocation invocation) {
+            }
+
+            @Override
+            public void close() {
+                closeCalls++;
+            }
+        }
+
+        CloseableBackend backend = new CloseableBackend();
+        GpuRuntimeBackendSelection selection = new GpuRuntimeBackendSelection(
+                backend,
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Borrowed GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 Borrowed GPU",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        1L,
+                        1L,
+                        null
+                ),
+                GpuRuntimeBackendOwnership.BORROWED
+        );
+
+        try (GpuRuntimeScope ignored = selection.install()) {
+            assertSame(backend, GpuRuntime.backend());
+            assertTrue(!ignored.ownsInstalledBackend());
+        }
+
+        assertSame(previousBackend, GpuRuntime.backend());
+        assertEquals(0, backend.closeCalls);
     }
 
     @Test
@@ -361,8 +483,8 @@ class GpuRuntimeTest {
 
         GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
                 .minimumApiVersion(GpuBackendTarget.OPENCL, 3, 0)
-                .preferBackend(unavailableCuda)
-                .preferBackend(openCl)
+                .preferOwnedBackend(unavailableCuda)
+                .preferOwnedBackend(openCl)
                 .build();
 
         try (GpuRuntimeScope ignored = GpuRuntime.use(policy)) {
@@ -396,14 +518,139 @@ class GpuRuntimeTest {
         GpuRuntimeSelectionResult result = GpuRuntimeBackendPolicy.builder()
                 .minimumApiVersion(GpuBackendTarget.OPENCL, 3, 0)
                 .requireFeature(GpuBackendTarget.OPENCL, GpuRuntimeFeature.IMAGES)
-                .preferBackend(cudaBackend)
-                .preferBackend(openClBackend)
+                .preferOwnedBackend(cudaBackend)
+                .preferOwnedBackend(openClBackend)
                 .build()
                 .trySelect();
 
         assertTrue(result.matched());
         assertSame(openClBackend, result.requireSelection().backend());
         assertEquals(GpuBackendTarget.OPENCL, result.requireSelection().report().backendTarget());
+    }
+
+    @Test
+    void backendPolicySupportsBorrowedBackendInstancesWithoutAutoClose() {
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+
+        final class CloseableReportingBackend implements GpuRuntimeBackend, AutoCloseable {
+            private final GpuRuntimeBackendReport report;
+            private int closeCalls;
+
+            private CloseableReportingBackend(GpuRuntimeBackendReport report) {
+                this.report = report;
+            }
+
+            @Override
+            public GpuBackendTarget backendTarget() {
+                return report.backendTarget();
+            }
+
+            @Override
+            public GpuRuntimeBackendReport describeCapabilities() {
+                return report;
+            }
+
+            @Override
+            public void invoke(GpuKernelInvocation invocation) {
+            }
+
+            @Override
+            public void close() {
+                closeCalls++;
+            }
+        }
+
+        CloseableReportingBackend sharedBackend = new CloseableReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Borrowed Policy GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 Borrowed Policy GPU",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+
+        GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+                .preferBorrowedBackend(sharedBackend)
+                .build();
+
+        try (GpuRuntimeScope ignored = GpuRuntime.use(policy)) {
+            assertSame(sharedBackend, GpuRuntime.backend());
+            assertTrue(!ignored.ownsInstalledBackend());
+        }
+
+        assertSame(previousBackend, GpuRuntime.backend());
+        assertEquals(0, sharedBackend.closeCalls);
+
+        GpuRuntimeBackendSelection selection = policy.select();
+        assertEquals(GpuRuntimeBackendOwnership.BORROWED, selection.ownership());
+        assertTrue(!selection.ownsBackend());
+        assertSame(sharedBackend, selection.backend());
+        assertEquals(0, sharedBackend.closeCalls);
+    }
+
+    @Test
+    void selectionResultInstallUsesSelectionOwnershipSemantics() {
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+
+        final class CloseableReportingBackend implements GpuRuntimeBackend, AutoCloseable {
+            private final GpuRuntimeBackendReport report;
+            private int closeCalls;
+
+            private CloseableReportingBackend(GpuRuntimeBackendReport report) {
+                this.report = report;
+            }
+
+            @Override
+            public GpuBackendTarget backendTarget() {
+                return report.backendTarget();
+            }
+
+            @Override
+            public GpuRuntimeBackendReport describeCapabilities() {
+                return report;
+            }
+
+            @Override
+            public void invoke(GpuKernelInvocation invocation) {
+            }
+
+            @Override
+            public void close() {
+                closeCalls++;
+            }
+        }
+
+        CloseableReportingBackend backend = new CloseableReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Result Install GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 Result Install GPU",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+
+        GpuRuntimeSelectionResult result = GpuRuntimeBackendPolicy.builder()
+                .preferBorrowedBackend(backend)
+                .build()
+                .trySelect();
+
+        try (GpuRuntimeScope ignored = result.install()) {
+            assertSame(backend, GpuRuntime.backend());
+            assertTrue(!ignored.ownsInstalledBackend());
+        }
+
+        assertSame(previousBackend, GpuRuntime.backend());
+        assertEquals(0, backend.closeCalls);
     }
 
     @Test

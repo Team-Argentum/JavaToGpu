@@ -200,6 +200,30 @@ class AsmSubsetValidatorTest {
         );
 
         assertTrue(exception.getMessage().contains("Unsupported static call owner"));
+        assertTrue(exception.getMessage().contains("GPU builtins"));
+        assertTrue(exception.getMessage().contains("whitelisted helper owner"));
+    }
+
+    @Test
+    void rejectsUnsupportedConstructorOwnersWithQuickFixHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "badConstructor", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitTypeInsn(Opcodes.NEW, "java/lang/Object");
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Unsupported constructor owner for ASM GPU frontend"));
+        assertTrue(exception.getMessage().contains("pointer/vector/scalar-alias wrappers"));
     }
 
     @Test
@@ -271,6 +295,27 @@ class AsmSubsetValidatorTest {
         );
 
         assertTrue(exception.getMessage().contains("Object arrays are not supported"));
+        assertTrue(exception.getMessage().contains("primitive arrays, vector arrays, or struct arrays"));
+    }
+
+    @Test
+    void rejectsUnsupportedLdcConstantWithQuickFixHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "stringConstantKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitLdcInsn("hello");
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Unsupported LDC constant for ASM GPU frontend"));
+        assertTrue(exception.getMessage().contains("integer/long/float/double LDC constants"));
     }
 
     private MethodNode methodNode(

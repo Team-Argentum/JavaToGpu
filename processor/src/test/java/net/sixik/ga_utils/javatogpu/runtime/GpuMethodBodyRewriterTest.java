@@ -25,23 +25,30 @@ class GpuMethodBodyRewriterTest {
 
     @Test
     void rewritesAnnotatedMethodToGeneratedLauncherInvocation() throws IOException {
+        assertRewrittenKernelInvocation(
+                "net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal",
+                "net.sixik.ga_utils.javatogpu.api.annotations.GPU"
+        );
+    }
+
+    private static void assertRewrittenKernelInvocation(String globalAnnotationImport, String gpuAnnotationName) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-rewriter-classes");
         Path generatedOutputDir = Files.createTempDirectory("javatogpu-rewriter-generated");
 
-        String source = """
+        String source = String.format("""
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import %s;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @%s
                     public static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         output[0] = 123.0f;
                     }
                 }
-                """;
+                """, globalAnnotationImport, gpuAnnotationName);
 
         try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
             List<String> options = List.of(
@@ -70,7 +77,10 @@ class GpuMethodBodyRewriterTest {
         GpuRuntimeBackend previousBackend = GpuRuntime.backend();
         GpuRuntime.setBackend(capturedInvocation::set);
 
-        try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classOutputDir.toUri().toURL()}, getClass().getClassLoader())) {
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new URL[]{classOutputDir.toUri().toURL()},
+                GpuMethodBodyRewriterTest.class.getClassLoader()
+        )) {
             Class<?> ownerClass = Class.forName("sample.Demo", true, classLoader);
             float[] input = new float[]{1.0f, 2.0f};
             float[] output = new float[]{0.0f, 0.0f};

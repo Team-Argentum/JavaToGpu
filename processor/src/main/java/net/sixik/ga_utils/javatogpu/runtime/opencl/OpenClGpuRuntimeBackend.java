@@ -12,6 +12,8 @@ import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
@@ -213,6 +215,30 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     /**
+     * Returns a vendor-validation snapshot suitable for CI artifacts and local device comparisons.
+     */
+    public final OpenClValidationReport validationReport() {
+        OpenClValidationDeviceInfo deviceInfo = runtimeValidationDeviceInfo();
+        return new OpenClValidationReport(
+                java.time.Instant.now(),
+                cacheMode == CacheMode.SHARED ? "OpenCL (shared cache)" : "OpenCL",
+                cacheMode.name(),
+                deviceInfo.deviceLabel(),
+                deviceInfo.vendor(),
+                deviceInfo.driverVersion(),
+                deviceInfo.deviceVersion(),
+                deviceInfo.platformName(),
+                deviceInfo.platformVersion(),
+                deviceInfo.supportsDoublePrecision(),
+                deviceInfo.supportsImages(),
+                deviceInfo.supportsImage3dWrites(),
+                deviceInfo.localMemoryBytes(),
+                deviceInfo.maxWorkGroupSize(),
+                statistics()
+        );
+    }
+
+    /**
      * Resets lightweight runtime counters collected by this backend instance.
      *
      * <p>This does not clear compiled kernels, native buffers, or shared caches. It only resets diagnostic counters so
@@ -248,6 +274,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     public final Image2DWriteOnly createWriteOnlyRgFloatImage(int width, int height) {
         return createWriteOnlyRgFloatImageInternal(width, height);
+    }
+
+    public final Image2DReadOnly createReadOnlyDepthImage(int width, int height, float[] values) {
+        return createReadOnlyDepthImageInternal(width, height, values);
+    }
+
+    public final Image2DWriteOnly createWriteOnlyDepthImage(int width, int height) {
+        return createWriteOnlyDepthImageInternal(width, height);
     }
 
     public final Image2DReadOnly createReadOnlyRIntImage(int width, int height, int[] values) {
@@ -304,6 +338,22 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     public final Image2DWriteOnly createWriteOnlyRgba8Image(int width, int height) {
         return createWriteOnlyRgba8ImageInternal(width, height);
+    }
+
+    public final Image2DMipmappedReadOnly createReadOnlyRgbaFloatImageMipmapped(int width, int height, int mipLevels, float[] rgba) {
+        return createReadOnlyRgbaFloatImageMipmappedInternal(width, height, mipLevels, rgba);
+    }
+
+    public final Image2DMipmappedWriteOnly createWriteOnlyRgbaFloatImageMipmapped(int width, int height, int mipLevels) {
+        return createWriteOnlyRgbaFloatImageMipmappedInternal(width, height, mipLevels);
+    }
+
+    public final Image2DMipmappedReadOnly createReadOnlyRgbaUIntImageMipmapped(int width, int height, int mipLevels, int[] rgba) {
+        return createReadOnlyRgbaUIntImageMipmappedInternal(width, height, mipLevels, rgba);
+    }
+
+    public final Image2DMipmappedWriteOnly createWriteOnlyRgbaUIntImageMipmapped(int width, int height, int mipLevels) {
+        return createWriteOnlyRgbaUIntImageMipmappedInternal(width, height, mipLevels);
     }
 
     public final Image1DReadOnly createReadOnlyRgbaFloatImage1D(int width, float[] rgba) {
@@ -450,6 +500,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return readRgFloatImageInternal(image);
     }
 
+    public final float[] readDepthImage(Image2DReadOnly image) {
+        return readDepthImageInternal(image);
+    }
+
+    public final float[] readDepthImage(Image2DWriteOnly image) {
+        return readDepthImageInternal(image);
+    }
+
     public final int[] readRIntImage(Image2DReadOnly image) {
         return readRIntImageInternal(image);
     }
@@ -504,6 +562,22 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     public final byte[] readRgba8Image(Image2DWriteOnly image) {
         return readRgba8ImageInternal(image);
+    }
+
+    public final float[] readRgbaFloatImageMipmapped(Image2DMipmappedReadOnly image, int mipLevel) {
+        return readRgbaFloatImageMipmappedInternal(image, mipLevel);
+    }
+
+    public final float[] readRgbaFloatImageMipmapped(Image2DMipmappedWriteOnly image, int mipLevel) {
+        return readRgbaFloatImageMipmappedInternal(image, mipLevel);
+    }
+
+    public final int[] readRgbaUIntImageMipmapped(Image2DMipmappedReadOnly image, int mipLevel) {
+        return readRgbaUIntImageMipmappedInternal(image, mipLevel);
+    }
+
+    public final int[] readRgbaUIntImageMipmapped(Image2DMipmappedWriteOnly image, int mipLevel) {
+        return readRgbaUIntImageMipmappedInternal(image, mipLevel);
     }
 
     public final float[] readRgbaFloatImage1D(Image1DReadOnly image) {
@@ -685,6 +759,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return OpenClRuntimeSession.createDefault();
     }
 
+    protected OpenClValidationDeviceInfo runtimeValidationDeviceInfo() {
+        return session().validationDeviceInfo();
+    }
+
     protected OpenClRuntimeCapabilities runtimeCapabilities() {
         if (cacheMode == CacheMode.SHARED) {
             OpenClRuntimeCapabilities current = sharedCapabilities;
@@ -743,6 +821,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return session().createWriteOnlyRgFloatImage(width, height);
     }
 
+    protected Image2DReadOnly createReadOnlyDepthImageInternal(int width, int height, float[] values) {
+        return session().createReadOnlyDepthImage(width, height, values);
+    }
+
+    protected Image2DWriteOnly createWriteOnlyDepthImageInternal(int width, int height) {
+        return session().createWriteOnlyDepthImage(width, height);
+    }
+
     protected Image2DReadOnly createReadOnlyRIntImageInternal(int width, int height, int[] values) {
         return session().createReadOnlyRIntImage(width, height, values);
     }
@@ -797,6 +883,22 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     protected Image2DWriteOnly createWriteOnlyRgba8ImageInternal(int width, int height) {
         return session().createWriteOnlyRgba8Image(width, height);
+    }
+
+    protected Image2DMipmappedReadOnly createReadOnlyRgbaFloatImageMipmappedInternal(int width, int height, int mipLevels, float[] rgba) {
+        return session().createReadOnlyRgbaFloatImageMipmapped(width, height, mipLevels, rgba);
+    }
+
+    protected Image2DMipmappedWriteOnly createWriteOnlyRgbaFloatImageMipmappedInternal(int width, int height, int mipLevels) {
+        return session().createWriteOnlyRgbaFloatImageMipmapped(width, height, mipLevels);
+    }
+
+    protected Image2DMipmappedReadOnly createReadOnlyRgbaUIntImageMipmappedInternal(int width, int height, int mipLevels, int[] rgba) {
+        return session().createReadOnlyRgbaUIntImageMipmapped(width, height, mipLevels, rgba);
+    }
+
+    protected Image2DMipmappedWriteOnly createWriteOnlyRgbaUIntImageMipmappedInternal(int width, int height, int mipLevels) {
+        return session().createWriteOnlyRgbaUIntImageMipmapped(width, height, mipLevels);
     }
 
     protected Image1DReadOnly createReadOnlyRgbaFloatImage1DInternal(int width, float[] rgba) {
@@ -943,6 +1045,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return session().readRgFloatImage(image);
     }
 
+    protected float[] readDepthImageInternal(Image2DReadOnly image) {
+        return session().readDepthImage(image);
+    }
+
+    protected float[] readDepthImageInternal(Image2DWriteOnly image) {
+        return session().readDepthImage(image);
+    }
+
     protected int[] readRIntImageInternal(Image2DReadOnly image) {
         return session().readRIntImage(image);
     }
@@ -997,6 +1107,22 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     protected byte[] readRgba8ImageInternal(Image2DWriteOnly image) {
         return session().readRgba8Image(image);
+    }
+
+    protected float[] readRgbaFloatImageMipmappedInternal(Image2DMipmappedReadOnly image, int mipLevel) {
+        return session().readRgbaFloatImageMipmapped(image, mipLevel);
+    }
+
+    protected float[] readRgbaFloatImageMipmappedInternal(Image2DMipmappedWriteOnly image, int mipLevel) {
+        return session().readRgbaFloatImageMipmapped(image, mipLevel);
+    }
+
+    protected int[] readRgbaUIntImageMipmappedInternal(Image2DMipmappedReadOnly image, int mipLevel) {
+        return session().readRgbaUIntImageMipmapped(image, mipLevel);
+    }
+
+    protected int[] readRgbaUIntImageMipmappedInternal(Image2DMipmappedWriteOnly image, int mipLevel) {
+        return session().readRgbaUIntImageMipmapped(image, mipLevel);
     }
 
     protected float[] readRgbaFloatImage1DInternal(Image1DReadOnly image) {
@@ -1225,7 +1351,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                         "clSetKernelArg"
                 );
             }
-            case IMAGE1D, IMAGE1D_ARRAY, IMAGE1D_BUFFER, IMAGE2D, IMAGE2D_ARRAY, IMAGE3D, SAMPLER ->
+            case IMAGE1D, IMAGE1D_ARRAY, IMAGE1D_BUFFER, IMAGE2D, IMAGE2D_MSAA, IMAGE2D_ARRAY, IMAGE3D, SAMPLER ->
                     compiledKernel.kernel().setArgPointer(parameterIndex, (Long) binding.value());
             default -> throw new IllegalArgumentException("Unsupported OpenCL scalar binding kind: " + binding.kind());
         }
@@ -1441,6 +1567,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + ": device "
                             + capabilities.deviceLabel()
                             + " does not advertise fp64 support, but the kernel uses double precision"
+                            + "; gate this kernel behind a capability check or provide a float/fallback path"
             );
         }
         if (usesImages && !capabilities.supportsImages()) {
@@ -1450,6 +1577,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + ": device "
                             + capabilities.deviceLabel()
                             + " does not support OpenCL images, but the kernel requires image/sampler parameters"
+                            + "; use buffer-backed kernels on this device or switch to a backend/device with image support"
             );
         }
         if (usesImage3dWrites && !capabilities.supportsImage3dWrites()) {
@@ -1459,6 +1587,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + ": device "
                             + capabilities.deviceLabel()
                             + " does not support 3D image writes required by the kernel"
+                            + "; fall back to 2D/buffer workflows or select a device with 3D image write support"
             );
         }
         if (requestedLocalMemoryBytes > capabilities.localMemoryBytes()) {
@@ -1472,6 +1601,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + " exposes only "
                             + capabilities.localMemoryBytes()
                             + " bytes"
+                            + "; reduce the local scratch size or split the kernel into smaller work-group memory slices"
             );
         }
     }

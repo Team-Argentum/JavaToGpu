@@ -36,6 +36,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AsmExpressionLifterTest {
 
@@ -261,6 +262,45 @@ class AsmExpressionLifterTest {
 
         assertEquals(true, exception.getMessage().contains("only linear ASM blocks"));
         assertEquals(true, exception.getMessage().contains("structured ASM lifting"));
+    }
+
+    @Test
+    void rejectsUnknownBuiltinConstantWithQuickFixHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "unknownBuiltin", "()I", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitFieldInsn(Opcodes.GETSTATIC, GPU_OWNER, "UNKNOWN_CONST", "I");
+            mv.visitInsn(Opcodes.IRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> lifter.liftLinearMethod(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Unknown builtin constant in AsmExpressionLifter"));
+        assertTrue(exception.getMessage().contains("register the constant through the intrinsic database"));
+    }
+
+    @Test
+    void rejectsUnsupportedLdcConstantWithQuickFixHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "stringLiteral", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitLdcInsn("hello");
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> lifter.liftLinearMethod(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Unsupported LDC constant for ASM GPU frontend"));
+        assertTrue(exception.getMessage().contains("integer/long/float/double LDC constants"));
     }
 
     @Test

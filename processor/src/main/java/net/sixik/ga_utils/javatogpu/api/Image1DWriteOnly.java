@@ -46,16 +46,23 @@ public final class Image1DWriteOnly implements AutoCloseable {
         return owned;
     }
 
+    public boolean closed() {
+        return closed;
+    }
+
     public boolean isValid() {
         return handle != 0L && !closed;
     }
 
     @Override
     public void close() {
-        if (!owned || handle == 0L || closed) {
+        if (closed) {
             return;
         }
         closed = true;
+        if (!owned || handle == 0L) {
+            return;
+        }
         int errorCode = CL10.clReleaseMemObject(handle);
         if (errorCode != CL10.CL_SUCCESS) {
             throw new IllegalStateException("Failed to release OpenCL image handle: " + errorCode);

@@ -2,8 +2,8 @@ package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary;
 
 @CCodeLibrary
 public final class GpuSupport {

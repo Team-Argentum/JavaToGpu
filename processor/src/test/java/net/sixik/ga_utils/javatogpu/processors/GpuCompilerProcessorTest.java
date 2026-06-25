@@ -41,10 +41,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal(constant = true) float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         float value = input[id];
@@ -129,6 +129,54 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesOpenClKernelFileDuringCompilationWithCanonicalAnnotations() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-processor-classes-canonical");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-processor-generated-canonical");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal(constant = true) float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        float value = input[id];
+                        output[id] = GPU.sin(value) * GPU.cos(value);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelFile = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelFile));
+        String kernelSource = Files.readString(kernelFile);
+        assertTrue(kernelSource.contains("sin(value) * cos(value)"));
+    }
+
+    @Test
     void generatesLauncherForNestedGpuOwnerWithoutInvalidPackage() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-nested-classes");
@@ -138,11 +186,11 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Outer {
                     static class Inner {
-                        @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                        @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                         static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                             output[0] = GPU.sin(input[0]);
                         }
@@ -197,10 +245,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     float kernel(@GPUGlobal float[] input) {
                         return input[0];
                     }
@@ -246,10 +294,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         if (input[id] > 0.0f) {
@@ -304,10 +352,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         if ((input[id] > 0.0f && input[id] < 10.0f) || !(input[id] > 100.0f)) {
@@ -362,10 +410,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         if (input[id] > 10.0f) {
@@ -426,10 +474,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = input[id] > 0.0f ? GPU.sin(input[id]) : GPU.cos(input[id]);
@@ -476,10 +524,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         int value = -input[id];
@@ -528,10 +576,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = ((~input[id]) << 1) ^ ((input[id] >> 1) | (input[id] & 7));
@@ -578,10 +626,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] output) {
                         int i = 1;
                         output[0] = GPU.sin((float) i);
@@ -628,8 +676,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
                     @CCode(inline = true)
@@ -637,7 +685,7 @@ class GpuCompilerProcessorTest {
                         return value * value;
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = square(input[id]);
@@ -688,7 +736,7 @@ class GpuCompilerProcessorTest {
         String helperSource = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 
                 public class KernelMath {
                     @CCode(inline = true)
@@ -702,10 +750,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = KernelMath.square(input[id]);
@@ -757,7 +805,7 @@ class GpuCompilerProcessorTest {
         String kernelMathSource = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 
                 public class KernelMath {
                     @CCode(inline = true)
@@ -770,7 +818,7 @@ class GpuCompilerProcessorTest {
         String fastMathSource = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 
                 public class FastMath {
                     @CCode(inline = true)
@@ -784,10 +832,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = KernelMath.square(input[id]);
@@ -834,7 +882,7 @@ class GpuCompilerProcessorTest {
         String helperSource = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 
                 public class KernelMath {
                     @CCode(inline = true)
@@ -858,10 +906,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = KernelMath.cube(input[id]);
@@ -911,8 +959,8 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
                     @CCode
@@ -920,7 +968,7 @@ class GpuCompilerProcessorTest {
                         ptr.value = 50.0f;
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         FloatPtr ptr = new FloatPtr();
@@ -978,8 +1026,8 @@ class GpuCompilerProcessorTest {
                 + "\n"
                 + "import net.sixik.ga_utils.javatogpu.api.FloatPtr;\n"
                 + "import net.sixik.ga_utils.javatogpu.api.GPU;\n"
-                + "import net.sixik.ga_utils.javatogpu.api.anotations.CCode;\n"
-                + "import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;\n"
+                + "import net.sixik.ga_utils.javatogpu.api.annotations.CCode;\n"
+                + "import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;\n"
                 + "\n"
                 + "public class Demo {\n"
                 + "    @CCode(code = \"\"\"\n"
@@ -992,7 +1040,7 @@ class GpuCompilerProcessorTest {
                 + "            \"\"\")\n"
                 + "    static native float myMathPtr(FloatPtr a, FloatPtr b);\n"
                 + "\n"
-                + "    @net.sixik.ga_utils.javatogpu.api.anotations.GPU\n"
+                + "    @net.sixik.ga_utils.javatogpu.api.annotations.GPU\n"
                 + "    static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {\n"
                 + "        int id = GPU.get_global_id(0);\n"
                 + "        FloatPtr ptr = new FloatPtr();\n"
@@ -1051,8 +1099,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
                     @CCode
@@ -1060,7 +1108,7 @@ class GpuCompilerProcessorTest {
                         return a - (b + a) * t;
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = c_code(id * 0.75f, 10, id);
@@ -1111,10 +1159,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal double[] input, @GPUGlobal double[] output) {
                         int index = input[0] < 20.0 ? 1 : 0;
                         double value = input[0];
@@ -1177,10 +1225,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         FloatPtr ptr = new FloatPtr(input[id]);
@@ -1229,12 +1277,12 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
                     static final float SCALE = 0.5f;
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = input[id] * SCALE;
@@ -1280,10 +1328,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal long[] input, @GPUGlobal long[] output) {
                         long value = input[0] + 1L;
                         output[0] = value * 17L;
@@ -1329,10 +1377,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                         short step = 2;
                         byte delta = 3;
@@ -1382,8 +1430,8 @@ class GpuCompilerProcessorTest {
         String helperSource = """
                 package lib;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary;
 
                 @CCodeLibrary
                 public class ReusableMath {
@@ -1427,10 +1475,10 @@ class GpuCompilerProcessorTest {
 
                 import lib.ReusableMath;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = ReusableMath.norm(input[id]);
@@ -1484,9 +1532,9 @@ class GpuCompilerProcessorTest {
         String helperOneSource = """
                 package lib.one;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 
-                @net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary
+                @net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary
                 public class ReusableMath {
                     @CCode
                     public static float norm(float value) {
@@ -1498,9 +1546,9 @@ class GpuCompilerProcessorTest {
         String helperTwoSource = """
                 package lib.two;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 
-                @net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary
+                @net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary
                 public class ReusableMath {
                     @CCode
                     public static float norm(float value) {
@@ -1535,10 +1583,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = lib.two.ReusableMath.norm(input[id]);
@@ -1590,7 +1638,7 @@ class GpuCompilerProcessorTest {
         String helperSource = """
                 package lib;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 
                 public class ReusableMath {
                     @CCode
@@ -1626,10 +1674,10 @@ class GpuCompilerProcessorTest {
 
                 import lib.ReusableMath;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = ReusableMath.norm(input[id]);
@@ -1678,9 +1726,9 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 @CCodeLibrary(backends = {GpuBackendTarget.CUDA})
                 class MyCudaHelpers {
@@ -1691,7 +1739,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = MyCudaHelpers.norm(input[id]);
@@ -1733,10 +1781,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         boolean enabled = input[0] > 0.0f;
                         if (enabled) {
@@ -1787,10 +1835,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         int value = input[id];
@@ -1851,10 +1899,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal double[] input, @GPUGlobal double[] output) {
                         int id = GPU.get_global_id(0);
                         double value = GPU.sqrt(input[id]) + GPU.pow(input[id], 2.0);
@@ -1903,10 +1951,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] output) {
                         int gid = GPU.get_global_id(0);
                         int lid = GPU.get_local_id(0);
@@ -1961,10 +2009,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         int offset = GPU.get_global_offset(0);
@@ -2021,10 +2069,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         float value = GPU.round(input[id]) + GPU.sign(input[id] - 1.0f);
@@ -2073,10 +2121,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal float[] input, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         float angle = GPU.degrees(GPU.atan2(input[id], 1.0f));
@@ -2129,10 +2177,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal double[] input, @GPUGlobal double[] output) {
                         int id = GPU.get_global_id(0);
                         double angle = GPU.acos(input[id]) + GPU.asin(input[id]) + GPU.atan(input[id]);
@@ -2174,6 +2222,537 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithLongBitBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-longbits-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-longbits-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal long[] input, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        long rotated = GPU.rotate(input[id], 3L);
+                        output[id] = GPU.popcount(rotated) + GPU.clz(rotated);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global long* input, __global int* output) {
+                    int id = get_global_id(0);
+                    long rotated = rotate(input[id], 3L);
+                    output[id] = (popcount(rotated) + clz(rotated));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithUnsignedConversionAndBitcastBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-unsignedconvert-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-unsignedconvert-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.UInt;
+                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal double[] input2, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        UInt bits = GPU.as_uint(input[id]);
+                        ULong wide = GPU.as_ulong(input2[id]);
+                        UInt narrowed = GPU.convert_uint(input2[id]);
+                        ULong converted = GPU.convert_ulong(input[id]);
+                        float restoredFloat = GPU.as_float(bits);
+                        double restoredDouble = GPU.as_double(wide);
+                        output[id] = GPU.convert_int(restoredFloat + (float) restoredDouble) + narrowed.value + GPU.convert_int((double) converted.value);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* input, __global double* input2, __global int* output) {
+                    int id = get_global_id(0);
+                    uint bits = as_uint(input[id]);
+                    ulong wide = as_ulong(input2[id]);
+                    uint narrowed = ((uint) (input2[id]));
+                    ulong converted = ((ulong) (input[id]));
+                    float restoredFloat = as_float(bits.value);
+                    double restoredDouble = as_double(wide.value);
+                    output[id] = ((convert_int((restoredFloat + ((float) restoredDouble))) + narrowed) + convert_int(((double) converted)));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithVectorGeometricBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-vectorgeo-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-vectorgeo-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        Float3 a = new Float3(1.0f, 2.0f, 3.0f);
+                        Float3 b = new Float3(4.0f, 5.0f, 6.0f);
+                        Float3 normal = GPU.normalize(a);
+                        Float3 c = GPU.cross(a, b);
+                        output[id] = GPU.dot(a, b) + GPU.distance(a, b) + GPU.length(c) + normal.x;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* output) {
+                    int id = get_global_id(0);
+                    float3 a = (float3)(1.0F, 2.0F, 3.0F);
+                    float3 b = (float3)(4.0F, 5.0F, 6.0F);
+                    float3 normal = normalize(a);
+                    float3 c = cross(a, b);
+                    output[id] = (((dot(a, b) + length((a) - (b))) + sqrt(dot(c, c))) + normal.x);
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithDoubleVectorGeometricBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-doublevectorgeo-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-doublevectorgeo-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Double2;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal double[] output) {
+                        int id = GPU.get_global_id(0);
+                        Double2 a = new Double2(1.0, 2.0);
+                        Double2 b = new Double2(3.0, 4.0);
+                        Double2 n = GPU.normalize(a);
+                        output[id] = GPU.dot(a, b) + GPU.distance(a, b) + GPU.length(n);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global double* output) {
+                    int id = get_global_id(0);
+                    double2 a = (double2)(1.0, 2.0);
+                    double2 b = (double2)(3.0, 4.0);
+                    double2 n = normalize(a);
+                    output[id] = ((dot(a, b) + length((a) - (b))) + sqrt(dot(n, n)));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithAdditionalIntegerCommonBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-intcommon-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-intcommon-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        int mul = GPU.mul24(input[id], 3);
+                        int madd = GPU.mad24(mul, 2, 7);
+                        int bits = GPU.bitselect(madd, 255, 15);
+                        int packed = GPU.upsample((short) 1, (short) bits);
+                        output[id] = GPU.select(bits, packed, bits > 0);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    int id = get_global_id(0);
+                    int mul = mul24(input[id], 3);
+                    int madd = mad24(mul, 2, 7);
+                    int bits = bitselect(madd, 255, 15);
+                    int packed = upsample(((short) 1), ((short) bits));
+                    output[id] = (((bits > 0)) ? (packed) : (bits));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithVectorCommonBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-vectorcommon-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-vectorcommon-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        Float4 a = new Float4(1.0f, 2.0f, 3.0f, 4.0f);
+                        Float4 b = new Float4(5.0f, 6.0f, 7.0f, 8.0f);
+                        Float4 mixed = GPU.mix(a, b, 0.25f);
+                        Float4 clipped = GPU.clamp(mixed, new Float4(0.0f), new Float4(6.0f));
+                        Float4 stepped = GPU.step(new Float4(2.0f), clipped);
+                        Float4 smoothed = GPU.smoothstep(new Float4(0.0f), new Float4(6.0f), clipped);
+                        output[id] = stepped.x + smoothed.y;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* output) {
+                    int id = get_global_id(0);
+                    float4 a = (float4)(1.0F, 2.0F, 3.0F, 4.0F);
+                    float4 b = (float4)(5.0F, 6.0F, 7.0F, 8.0F);
+                    float4 mixed = mix(a, b, 0.25F);
+                    float4 clipped = clamp(mixed, (float4)(0.0F), (float4)(6.0F));
+                    float4 stepped = step((float4)(2.0F), clipped);
+                    float4 smoothed = smoothstep((float4)(0.0F), (float4)(6.0F), clipped);
+                    output[id] = (stepped.x + smoothed.y);
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithDoubleVectorCommonBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-doublevectorcommon-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-doublevectorcommon-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Double3;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal double[] output) {
+                        int id = GPU.get_global_id(0);
+                        Double3 a = new Double3(1.0, 2.0, 3.0);
+                        Double3 b = new Double3(4.0, 5.0, 6.0);
+                        Double3 mixed = GPU.mix(a, b, 0.5);
+                        Double3 clipped = GPU.clamp(mixed, new Double3(1.5), new Double3(5.0));
+                        Double3 stepped = GPU.step(new Double3(2.0), clipped);
+                        Double3 smoothed = GPU.smoothstep(new Double3(1.5), new Double3(5.0), clipped);
+                        output[id] = stepped.x + smoothed.z;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global double* output) {
+                    int id = get_global_id(0);
+                    double3 a = (double3)(1.0, 2.0, 3.0);
+                    double3 b = (double3)(4.0, 5.0, 6.0);
+                    double3 mixed = mix(a, b, 0.5);
+                    double3 clipped = clamp(mixed, (double3)(1.5), (double3)(5.0));
+                    double3 stepped = step((double3)(2.0), clipped);
+                    double3 smoothed = smoothstep((double3)(1.5), (double3)(5.0), clipped);
+                    output[id] = (stepped.x + smoothed.z);
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithAdditionalScalarCommonBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-scalarcommonplus-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-scalarcommonplus-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        float a = GPU.minmag(input[id], -2.0f);
+                        float b = GPU.maxmag(input[id], 0.5f);
+                        float c = GPU.saturate(a + b);
+                        output[id] = GPU.abs_diff((int) (a * 10.0f), (int) (b * 10.0f)) + GPU.convert_int(c * 5.0f);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* input, __global int* output) {
+                    int id = get_global_id(0);
+                    float a = minmag(input[id], (-2.0F));
+                    float b = maxmag(input[id], 0.5F);
+                    float c = saturate((a + b));
+                    output[id] = (abs_diff(((int) (a * 10.0F)), ((int) (b * 10.0F))) + convert_int((c * 5.0F)));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithAdditionalVectorCommonBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-vectorcommonplus-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-vectorcommonplus-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        Float3 value = new Float3(-0.25f, 0.5f, 1.75f);
+                        Float3 s = GPU.sign(value);
+                        Float3 f = GPU.fract(value);
+                        Float3 sat = GPU.saturate(value);
+                        output[id] = s.x + f.y + sat.z;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(__global float* output) {
+                    int id = get_global_id(0);
+                    float3 value = (float3)((-0.25F), 0.5F, 1.75F);
+                    float3 s = sign(value);
+                    float3 f = fract(value);
+                    float3 sat = saturate(value);
+                    output[id] = ((s.x + f.y) + sat.z);
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
     void generatesKernelWithAtomicBuiltins() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-atomics-classes");
@@ -2183,10 +2762,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] data, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         int previous = GPU.atomic_add(data, id, 2);
@@ -2251,12 +2830,12 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUConstant;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPULocal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUConstant float[] lookup, @GPULocal float[] scratch, @GPUGlobal float[] output) {
                         int gid = GPU.get_global_id(0);
                         int lid = GPU.get_local_id(0);
@@ -2325,10 +2904,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Int2;
                 import net.sixik.ga_utils.javatogpu.api.Int4;
                 import net.sixik.ga_utils.javatogpu.api.Sampler;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image2DReadOnly inputImage, Image2DWriteOnly outputImage, Sampler sampler, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int2 coords = new Int2(id, 0);
@@ -2386,10 +2965,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Int2;
                 import net.sixik.ga_utils.javatogpu.api.Sampler;
                 import net.sixik.ga_utils.javatogpu.api.UInt4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image2DReadOnly inputImage, Image2DWriteOnly outputImage, Sampler sampler, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int2 coords = new Int2(id, 0);
@@ -2447,10 +3026,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
                 import net.sixik.ga_utils.javatogpu.api.Int4;
                 import net.sixik.ga_utils.javatogpu.api.Sampler;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image3DReadOnly inputImage, Image3DWriteOnly outputImage, Sampler sampler, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         Int4 coords = new Int4(id, 0, 0, 0);
@@ -2508,10 +3087,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Int4;
                 import net.sixik.ga_utils.javatogpu.api.Sampler;
                 import net.sixik.ga_utils.javatogpu.api.UInt4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image3DReadOnly inputImage, Image3DWriteOnly outputImage, Sampler sampler, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int4 coords = new Int4(id, 0, 0, 0);
@@ -2567,10 +3146,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.Int2;
                 import net.sixik.ga_utils.javatogpu.api.UInt4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image2DReadOnly inputImage, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int2 coords = new Int2(id, 0);
@@ -2624,10 +3203,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.Int4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image3DReadOnly inputImage, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         Int4 coords = new Int4(id, 0, 0, 0);
@@ -2679,10 +3258,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image2DReadOnly inputImage, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         int channelOrder = GPU.get_image_channel_order(inputImage);
@@ -2734,10 +3313,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image3DReadOnly inputImage, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         int channelOrder = GPU.get_image_channel_order(inputImage);
@@ -2779,6 +3358,302 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithExtendedImageMetadataBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-image-meta-extended-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-image-meta-extended-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(Image2DReadOnly inputImage, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        int mipLevels = GPU.get_image_num_mip_levels(inputImage);
+                        int sampleCount = GPU.get_image_num_samples(inputImage);
+                        output[id] = mipLevels + sampleCount + GPU.get_image_width(inputImage);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(read_only image2d_t inputImage, __global int* output) {
+                    int id = get_global_id(0);
+                    int mipLevels = get_image_num_mip_levels(inputImage);
+                    int sampleCount = get_image_num_samples(inputImage);
+                    output[id] = ((mipLevels + sampleCount) + get_image_width(inputImage));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithMipmappedImageMetadataBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-image-meta-mipmapped-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-image-meta-mipmapped-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(Image2DMipmappedReadOnly inputImage, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        int mipLevels = GPU.get_image_num_mip_levels(inputImage);
+                        int sampleCount = GPU.get_image_num_samples(inputImage);
+                        output[id] = mipLevels + sampleCount + GPU.get_image_width(inputImage) + GPU.get_image_height(inputImage);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(read_only image2d_t inputImage, __global int* output) {
+                    int id = get_global_id(0);
+                    int mipLevels = get_image_num_mip_levels(inputImage);
+                    int sampleCount = get_image_num_samples(inputImage);
+                    output[id] = (((mipLevels + sampleCount) + get_image_width(inputImage)) + get_image_height(inputImage));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithMipmappedFloatImageBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-image-mipmapped-float-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-image-mipmapped-float-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.Int2;
+                import net.sixik.ga_utils.javatogpu.api.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(Image2DMipmappedReadOnly inputImage, Image2DMipmappedWriteOnly outputImage, Sampler sampler, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        Int2 coords = new Int2(id, 0);
+                        Float4 pixel = GPU.read_imagef(inputImage, sampler, coords);
+                        output[id] = (int) (pixel.x + pixel.y + pixel.z + pixel.w);
+                        GPU.write_imagef(outputImage, coords, new Float4(1.0f, 0.5f, 0.25f, 1.0f));
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(read_only image2d_t inputImage, write_only image2d_t outputImage, sampler_t sampler, __global int* output) {
+                    int id = get_global_id(0);
+                    int2 coords = (int2)(id, 0);
+                    float4 pixel = read_imagef(inputImage, sampler, coords);
+                    output[id] = ((int) (((pixel.x + pixel.y) + pixel.z) + pixel.w));
+                    write_imagef(outputImage, coords, (float4)(1.0F, 0.5F, 0.25F, 1.0F));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithMsaaFloatImageBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-image-msaa-float-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-image-msaa-float-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.Int2;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(Image2DMsaaReadOnly inputImage, Image2DMsaaWriteOnly outputImage, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        Int2 coords = new Int2(id, 0);
+                        int sampleCount = GPU.get_image_num_samples(inputImage);
+                        int sampleIndex = sampleCount > 1 ? 1 : 0;
+                        Float4 pixel = GPU.read_imagef(inputImage, coords, sampleIndex);
+                        output[id] = (int) (pixel.x + pixel.y + pixel.z + pixel.w + GPU.get_image_width(inputImage) + GPU.get_image_height(inputImage));
+                        GPU.write_imagef(outputImage, coords, sampleIndex, new Float4(1.0f, 0.5f, 0.25f, 1.0f));
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(read_only image2d_msaa_t inputImage, write_only image2d_msaa_t outputImage, __global int* output) {
+                    int id = get_global_id(0);
+                    int2 coords = (int2)(id, 0);
+                    int sampleCount = get_image_num_samples(inputImage);
+                    int sampleIndex = ((sampleCount > 1) ? 1 : 0);
+                    float4 pixel = read_imagef(inputImage, coords, sampleIndex);
+                    output[id] = ((int) (((((pixel.x + pixel.y) + pixel.z) + pixel.w) + get_image_width(inputImage)) + get_image_height(inputImage)));
+                    write_imagef(outputImage, coords, sampleIndex, (float4)(1.0F, 0.5F, 0.25F, 1.0F));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithMipmappedUIntImageBuiltins() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-image-mipmapped-uint-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-image-mipmapped-uint-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.Int2;
+                import net.sixik.ga_utils.javatogpu.api.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.UInt4;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(Image2DMipmappedReadOnly inputImage, Image2DMipmappedWriteOnly outputImage, Sampler sampler, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        Int2 coords = new Int2(id, 0);
+                        UInt4 pixel = GPU.read_imageui(inputImage, sampler, coords);
+                        output[id] = pixel.x + pixel.y + pixel.z + pixel.w;
+                        GPU.write_imageui(outputImage, coords, new UInt4(9, 10, 11, 12));
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __kernel void jtg_kernel(read_only image2d_t inputImage, write_only image2d_t outputImage, sampler_t sampler, __global int* output) {
+                    int id = get_global_id(0);
+                    int2 coords = (int2)(id, 0);
+                    uint4 pixel = read_imageui(inputImage, sampler, coords);
+                    output[id] = (((pixel.x + pixel.y) + pixel.z) + pixel.w);
+                    write_imageui(outputImage, coords, (uint4)(9, 10, 11, 12));
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
     void generatesKernelWithUnsignedScalarAliasValues() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-uint-classes");
@@ -2789,10 +3664,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(UInt bias, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         UInt limited = GPU.clamp(GPU.max(bias, new UInt(4)), new UInt(4), new UInt(32));
@@ -2847,10 +3722,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
                 import net.sixik.ga_utils.javatogpu.api.Sampler;
                 import net.sixik.ga_utils.javatogpu.api.UInt4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image1DReadOnly inputImage, Image1DWriteOnly outputImage, Sampler sampler, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         UInt4 pixel = GPU.read_imageui(inputImage, sampler, id);
@@ -2905,10 +3780,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
                 import net.sixik.ga_utils.javatogpu.api.Int2;
                 import net.sixik.ga_utils.javatogpu.api.UInt4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image1DArrayReadOnly inputImage, Image1DArrayWriteOnly outputImage, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int2 coords = new Int2(id, 0);
@@ -2964,10 +3839,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
                 import net.sixik.ga_utils.javatogpu.api.Int4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image1DBufferReadOnly inputImage, Image1DBufferWriteOnly outputImage, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int4 pixel = GPU.read_imagei(inputImage, id);
@@ -3022,10 +3897,10 @@ class GpuCompilerProcessorTest {
                 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
                 import net.sixik.ga_utils.javatogpu.api.Int4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(Image2DArrayReadOnly inputImage, Image2DArrayWriteOnly outputImage, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int4 coords = new Int4(id, 0, 0, 0);
@@ -3078,9 +3953,9 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-                import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
                 @GPUStruct
                 @OpenCLAttributes({"packed"})
@@ -3097,7 +3972,7 @@ class GpuCompilerProcessorTest {
 
                 public class Demo {
                     @OpenCLAttributes({"reqd_work_group_size(16, 1, 1)"})
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         Vec2 point = new Vec2(input[id], input[id] * 2.0f);
@@ -3151,8 +4026,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
                 @GPUStruct
                 class Vec2 {
@@ -3179,7 +4054,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         Vec2 base = new Vec2(input[id], input[id] + Vec2.BIAS);
@@ -3240,9 +4115,9 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-                import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
                 class Attrs {
                     static final String PACKED = "packed";
@@ -3256,7 +4131,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(Vec2 point, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = point.x + point.y;
@@ -3299,12 +4174,12 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
                 public class Demo {
                     @OpenCLAttributes({"reqd_work_group_size(16, 0, 1)", "vec_type_hint(float4)", "vec_type_hint(int4)"})
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] output) {
                         output[0] = 1.0f;
                     }
@@ -3347,11 +4222,11 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLQualifiers;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLQualifiers;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(
                             @OpenCLQualifiers({"restrict"}) @GPUGlobal(constant = true) float[] input,
                             @OpenCLQualifiers({"restrict"}) @GPUGlobal float[] output
@@ -3402,9 +4277,9 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLQualifiers;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLQualifiers;
 
                 public class Demo {
                     @CCode
@@ -3412,7 +4287,7 @@ class GpuCompilerProcessorTest {
                         return ptr.value;
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         FloatPtr ptr = new FloatPtr(input[id]);
@@ -3466,12 +4341,12 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = Helpers.doubleValue(input[id]);
@@ -3532,8 +4407,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
                 public class Demo {
                     static class Left {
@@ -3550,7 +4425,7 @@ class GpuCompilerProcessorTest {
                         }
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(Left.Point point, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = point.x + id;
@@ -3597,8 +4472,8 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
                     @CCode
@@ -3606,7 +4481,7 @@ class GpuCompilerProcessorTest {
                         return new Float2(left.x + right.x, left.y + right.y);
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         Float2 base = new Float2(input[id], input[id] * 2.0f);
@@ -3687,10 +4562,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(Float2 bias, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = bias.x + bias.y + id;
@@ -3775,10 +4650,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.UInt3;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(UInt3 bias, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         UInt3 local = new UInt3(1, 2, 3);
@@ -3828,10 +4703,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.UInt16;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(UInt16 bias, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         UInt16 local = new UInt16(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
@@ -3883,10 +4758,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.Int4;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(Int4 left, Int4 right, @GPUGlobal int[] output) {
                         int id = GPU.get_global_id(0);
                         Int4 sum = left.add(right);
@@ -3933,8 +4808,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
                     @CCode(support = "OpenCL_3", callback = "fallbackAdd")
@@ -3947,7 +4822,7 @@ class GpuCompilerProcessorTest {
                         return a + b;
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = preferredAdd(input[id], 2.0f);
@@ -3994,8 +4869,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
                 @GPUStruct
                 class Sample {
@@ -4004,7 +4879,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(Sample sample, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = sample.x + sample.y + id;
@@ -4062,8 +4937,8 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
                 @GPUStruct
                 class Child {
@@ -4077,7 +4952,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(Parent parent, @GPUGlobal double[] output) {
                         output[0] = 1.0;
                     }
@@ -4121,8 +4996,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
                 @GPUStruct
                 class Sample {
@@ -4131,7 +5006,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal Sample[] input, @GPUGlobal Sample[] output) {
                         int id = GPU.get_global_id(0);
                         output[id].x = input[id].x + 1.0f;
@@ -4193,10 +5068,10 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal Float2[] input, @GPUGlobal Float2[] output) {
                         int id = GPU.get_global_id(0);
                         output[id].x = input[id].x + 1.0f;
@@ -4251,10 +5126,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                         int i = 0;
                         while (i < 4) {
@@ -4342,10 +5217,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
                         switch (input[0] & 3) {
                             case 0 -> output[0] = 1;
@@ -4406,10 +5281,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(boolean enabled, @GPUGlobal float[] output) {
                         output[0] = 1.0f;
                     }
@@ -4454,10 +5329,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     void kernel(float[] input, @GPUGlobal float[] output) {
                         output[0] = input[0];
                     }
@@ -4505,12 +5380,12 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUConstant;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPULocal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUConstant float[] lookup, @GPULocal float[] scratch, @GPUGlobal float[] output) {
                         int lid = GPU.get_local_id(0);
                         scratch[lid] = lookup[lid] * 2.0f;
@@ -4591,9 +5466,9 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsicLibrary;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsicLibrary;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 @GPUIntrinsicLibrary
                 class MyIntrinsics {
@@ -4606,7 +5481,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = MyIntrinsics.twice(input[id]) + MyIntrinsics.SCALE;
@@ -4654,8 +5529,8 @@ class GpuCompilerProcessorTest {
         String intrinsicSource = """
                 package lib;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsicLibrary;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsicLibrary;
 
                 @GPUIntrinsicLibrary
                 public class ReusableIntrinsics {
@@ -4694,10 +5569,10 @@ class GpuCompilerProcessorTest {
 
                 import lib.ReusableIntrinsics;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = ReusableIntrinsics.twice(input[id]) + ReusableIntrinsics.SCALE;
@@ -4750,7 +5625,7 @@ class GpuCompilerProcessorTest {
         String intrinsicSource = """
                 package lib;
 
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
 
                 public class ReusableIntrinsics {
                     @GPUIntrinsic(code = "(({0}) * 2.0f)")
@@ -4786,10 +5661,10 @@ class GpuCompilerProcessorTest {
 
                 import lib.ReusableIntrinsics;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = ReusableIntrinsics.twice(input[id]);
@@ -4838,9 +5713,9 @@ class GpuCompilerProcessorTest {
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsicLibrary;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsicLibrary;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 @GPUIntrinsicLibrary(backends = {GpuBackendTarget.CUDA})
                 class MyCudaIntrinsics {
@@ -4851,7 +5726,7 @@ class GpuCompilerProcessorTest {
                 }
 
                 public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = MyCudaIntrinsics.twice(input[id]);
@@ -4895,8 +5770,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-                import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
                 public class Demo {
                     @GPUStruct
@@ -4905,7 +5780,7 @@ class GpuCompilerProcessorTest {
                         float y;
                     }
 
-                    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
                     static void kernel(Point point, @GPUGlobal float[] output) {
                         int id = GPU.get_global_id(0);
                         output[id] = point.x + point.y;

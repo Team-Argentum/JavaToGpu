@@ -10,6 +10,10 @@ import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
@@ -118,6 +122,30 @@ final class OpenClAbiDebug {
         if (argument instanceof Image2DWriteOnly image) {
             builder.append("  native image handle: ").append(image.handle()).append("\n");
             builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("\n");
+            return;
+        }
+        if (argument instanceof Image2DMipmappedReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("\n");
+            builder.append("  mip levels: ").append(image.mipLevels()).append("\n");
+            return;
+        }
+        if (argument instanceof Image2DMipmappedWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("\n");
+            builder.append("  mip levels: ").append(image.mipLevels()).append("\n");
+            return;
+        }
+        if (argument instanceof Image2DMsaaReadOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("\n");
+            builder.append("  sample count: ").append(image.sampleCount()).append("\n");
+            return;
+        }
+        if (argument instanceof Image2DMsaaWriteOnly image) {
+            builder.append("  native image handle: ").append(image.handle()).append("\n");
+            builder.append("  image size: ").append(image.width()).append("x").append(image.height()).append("\n");
+            builder.append("  sample count: ").append(image.sampleCount()).append("\n");
             return;
         }
         if (argument instanceof Image2DArrayReadOnly image) {

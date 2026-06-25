@@ -1,7 +1,7 @@
 package net.sixik.ga_utils.javatogpu.api;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUVectorType;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUVectorType;
 
 /**
  * Java-side representation of the OpenCL {@code double4} vector type.

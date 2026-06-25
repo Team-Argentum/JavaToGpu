@@ -1,4 +1,4 @@
-package net.sixik.ga_utils.javatogpu.api.anotations;
+package net.sixik.ga_utils.javatogpu.api.annotations;
 
 /**
  * Declares that an array kernel parameter lives in the OpenCL {@code __global} address space.

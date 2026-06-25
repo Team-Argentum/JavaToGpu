@@ -20,7 +20,7 @@ import java.util.Objects;
  *     DemoKernel.invoke(input, output);
  * } finally {
  *     net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend.shutdownSharedCache();
- *     GpuRuntime.setBackend(GpuRuntime.defaultBackend());
+ *     GpuRuntime.resetBackend();
  * }
  * }</pre>
  *
@@ -62,7 +62,14 @@ public final class GpuRuntime {
      * @param newBackend backend that should handle subsequent GPU kernel invocations
      */
     public static void setBackend(GpuRuntimeBackend newBackend) {
-        backend = newBackend;
+        backend = Objects.requireNonNull(newBackend, "newBackend");
+    }
+
+    /**
+     * Restores the default fail-fast backend.
+     */
+    public static void resetBackend() {
+        backend = DEFAULT_BACKEND;
     }
 
     /**
@@ -145,12 +152,21 @@ public final class GpuRuntime {
             List<GpuRuntimeRequirement> requirements,
             GpuRuntimeBackend... candidates
     ) {
+        Objects.requireNonNull(requirements, "requirements");
+        Objects.requireNonNull(candidates, "candidates");
+        if (candidates.length == 0) {
+            return new GpuRuntimeSelectionResult(null, List.of("no backend candidates were provided"));
+        }
         List<String> failures = new ArrayList<>();
-        for (GpuRuntimeBackend candidate : candidates) {
+        for (int index = 0; index < candidates.length; index++) {
+            GpuRuntimeBackend candidate = Objects.requireNonNull(candidates[index], "candidates[" + index + "]");
             GpuRuntimeBackendReport report = describeBackend(candidate);
             List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
             if (reasons.isEmpty()) {
-                return new GpuRuntimeSelectionResult(new GpuRuntimeBackendSelection(candidate, report), failures);
+                return new GpuRuntimeSelectionResult(
+                        new GpuRuntimeBackendSelection(candidate, report, GpuRuntimeBackendOwnership.BORROWED),
+                        failures
+                );
             }
             failures.add(report.backendName() + ": " + String.join("; ", reasons));
         }
@@ -195,8 +211,19 @@ public final class GpuRuntime {
             List<GpuRuntimeRequirement> requirements,
             GpuRuntimeBackendFactory... candidateFactories
     ) {
+        Objects.requireNonNull(requirements, "requirements");
+        Objects.requireNonNull(candidateFactories, "candidateFactories");
+        if (candidateFactories.length == 0) {
+            throw new UnsupportedOperationException(
+                    "No GPU runtime backend satisfies the requested requirements: no backend candidates were provided"
+            );
+        }
         List<String> failures = new ArrayList<>();
-        for (GpuRuntimeBackendFactory factory : candidateFactories) {
+        for (int index = 0; index < candidateFactories.length; index++) {
+            GpuRuntimeBackendFactory factory = Objects.requireNonNull(
+                    candidateFactories[index],
+                    "candidateFactories[" + index + "]"
+            );
             GpuRuntimeBackend candidate;
             try {
                 candidate = factory.create();
@@ -244,6 +271,7 @@ public final class GpuRuntime {
     }
 
     private static GpuRuntimeScope installScopedBackend(GpuRuntimeBackend newBackend, boolean closeInstalledBackend) {
+        Objects.requireNonNull(newBackend, "newBackend");
         GpuRuntimeBackend previousBackend = backend();
         setBackend(newBackend);
         return new GpuRuntimeScope(previousBackend, newBackend, closeInstalledBackend);

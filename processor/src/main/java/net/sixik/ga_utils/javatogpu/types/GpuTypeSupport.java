@@ -1,8 +1,9 @@
 package net.sixik.ga_utils.javatogpu.types;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUPointerType;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUScalarAliasType;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUVectorType;
+import net.sixik.ga_utils.javatogpu.api.GpuAnnotationSupport;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUPointerType;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUScalarAliasType;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUVectorType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +40,10 @@ public final class GpuTypeSupport {
             Map.entry("Image1DBufferWriteOnly", "write_only image1d_buffer_t"),
             Map.entry("Image2DReadOnly", "read_only image2d_t"),
             Map.entry("Image2DWriteOnly", "write_only image2d_t"),
+            Map.entry("Image2DMipmappedReadOnly", "read_only image2d_t"),
+            Map.entry("Image2DMipmappedWriteOnly", "write_only image2d_t"),
+            Map.entry("Image2DMsaaReadOnly", "read_only image2d_msaa_t"),
+            Map.entry("Image2DMsaaWriteOnly", "write_only image2d_msaa_t"),
             Map.entry("Image2DArrayReadOnly", "read_only image2d_array_t"),
             Map.entry("Image2DArrayWriteOnly", "write_only image2d_array_t"),
             Map.entry("Image3DReadOnly", "read_only image3d_t"),
@@ -489,7 +494,7 @@ public final class GpuTypeSupport {
         for (String candidate : candidateAnnotatedTypeClassNames(declaredType)) {
             try {
                 Class<?> type = Class.forName(candidate, false, GpuTypeSupport.class.getClassLoader());
-                if (type.isAnnotationPresent(GPUVectorType.class)) {
+                if (GpuAnnotationSupport.hasAnnotation(type, GpuAnnotationSupport.GPU_VECTOR_TYPE_ANNOTATION_TYPES)) {
                     registerAnnotatedVectorType(type);
                 }
             } catch (ClassNotFoundException ignored) {
@@ -502,7 +507,7 @@ public final class GpuTypeSupport {
         for (String candidate : candidateAnnotatedTypeClassNames(declaredType)) {
             try {
                 Class<?> type = Class.forName(candidate, false, GpuTypeSupport.class.getClassLoader());
-                if (type.isAnnotationPresent(GPUPointerType.class)) {
+                if (GpuAnnotationSupport.hasAnnotation(type, GpuAnnotationSupport.GPU_POINTER_TYPE_ANNOTATION_TYPES)) {
                     registerAnnotatedPointerType(type);
                 }
             } catch (ClassNotFoundException ignored) {
@@ -515,7 +520,7 @@ public final class GpuTypeSupport {
         for (String candidate : candidateAnnotatedTypeClassNames(declaredType)) {
             try {
                 Class<?> type = Class.forName(candidate, false, GpuTypeSupport.class.getClassLoader());
-                if (type.isAnnotationPresent(GPUScalarAliasType.class)) {
+                if (GpuAnnotationSupport.hasAnnotation(type, GpuAnnotationSupport.GPU_SCALAR_ALIAS_TYPE_ANNOTATION_TYPES)) {
                     registerAnnotatedScalarAliasType(type);
                 }
             } catch (ClassNotFoundException ignored) {

@@ -38,9 +38,19 @@ public record GpuRuntimeSelectionResult(
     }
 
     /**
+     * Installs the selected backend using its recorded ownership semantics or throws when no backend matched.
+     */
+    public GpuRuntimeScope install() {
+        return requireSelection().install();
+    }
+
+    /**
      * Returns all recorded rejection reasons as one human-readable summary.
      */
     public String failureSummary() {
+        if (failureReasons.isEmpty()) {
+            return "no backend candidates were provided";
+        }
         return String.join(" | ", failureReasons);
     }
 }

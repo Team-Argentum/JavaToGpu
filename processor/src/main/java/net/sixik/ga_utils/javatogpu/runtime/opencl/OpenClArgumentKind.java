@@ -20,6 +20,7 @@ public enum OpenClArgumentKind {
     IMAGE1D_ARRAY,
     IMAGE1D_BUFFER,
     IMAGE2D,
+    IMAGE2D_MSAA,
     IMAGE2D_ARRAY,
     IMAGE3D,
     SAMPLER

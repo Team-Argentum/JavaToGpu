@@ -6,7 +6,14 @@ You write a restricted Java method, mark it with `@GPU`, and JavaToGpu validates
 
 ## Documentation
 
-- Public user documentation: [github-wiki](https://github.com/DeusSixik/JavaToGpu/wiki)
+- Supported subset: [docs/supported-subset-contract.md](docs/supported-subset-contract.md)
+- Runtime configuration: [docs/runtime-configuration.md](docs/runtime-configuration.md)
+- Device requirements: [docs/device-requirements.md](docs/device-requirements.md)
+- OpenCL validation matrix: [docs/opencl-validation-matrix.md](docs/opencl-validation-matrix.md)
+- Fallback mode: [docs/fallback-mode.md](docs/fallback-mode.md)
+- Known limitations: [docs/known-limitations.md](docs/known-limitations.md)
+- OpenCL build debugging: [docs/debugging-opencl-build-failures.md](docs/debugging-opencl-build-failures.md)
+- Diagnostics glossary: [docs/gpu-diagnostics-guide.md](docs/gpu-diagnostics-guide.md)
 
 ## What You Get
 
@@ -18,6 +25,8 @@ You write a restricted Java method, mark it with `@GPU`, and JavaToGpu validates
 - `@GPUStruct` support for user-defined OpenCL structs.
 - Kernel launcher generation and runtime dispatch through `GpuRuntime`.
 - A public `GpuProgramCompiler` facade for both source and structured ASM inputs.
+
+The public annotation package is `net.sixik.ga_utils.javatogpu.api.annotations`.
 
 ## Project Layout
 
@@ -53,7 +62,7 @@ Implemented and working:
 - local memory helper intrinsics
 - image / sampler kernel code generation
 - runtime image / sampler marshalling for real OpenCL handles
-- `image1d_t`, `image1d_array_t`, `image1d_buffer_t`, `image2d_t`, `image2d_array_t`, `image3d_t` kernel parameters
+- `image1d_t`, `image1d_array_t`, `image1d_buffer_t`, `image2d_t`, `image2d_msaa_t`, `image2d_array_t`, `image3d_t` kernel parameters
 - samplerless image reads and image metadata intrinsics
 - host-side image upload / readback helpers for RGBA float/int/uint and RGBA8
 - read/write coverage for float, int and uint image builtins across the supported image object families
@@ -149,7 +158,7 @@ Fallback chain:
 GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
         .minimumApiVersion(GpuBackendTarget.OPENCL, 3, 0)
         .preferOpenClSharedCache()
-        .prefer(() -> new MyCpuFallbackBackend())
+        .preferFactory(MyCpuFallbackBackend::new)
         .build();
 
 try (GpuRuntimeScope ignored = GpuRuntime.use(policy)) {
@@ -169,7 +178,7 @@ GpuRuntimeSelectionResult result = GpuRuntime.trySelect(policy);
 if (!result.matched()) {
     System.out.println("GPU path skipped: " + result.failureSummary());
 } else {
-    try (GpuRuntimeScope ignored = GpuRuntime.useOwnedBackend(result.requireSelection().backend())) {
+    try (GpuRuntimeScope ignored = result.install()) {
         Demo.kernel(input, output);
     }
 }
@@ -179,11 +188,11 @@ if (!result.matched()) {
 
 ```java
 import net.sixik.ga_utils.javatogpu.api.GPU;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
 public final class Demo {
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void saxpy(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
@@ -203,7 +212,7 @@ __kernel void jtg_kernel(__global float* input, __global float* output) {
 }
 ```
 
-More complete examples, troubleshooting, ASM notes, and feature pages now live in the public wiki: [github-wiki](https://github.com/DeusSixik/JavaToGpu/wiki).
+More complete production notes now live in the local docs set listed above, with the subset contract, runtime configuration, fallback guidance, limitations, and OpenCL debugging notes split into dedicated pages.
 
 ## Programmatic Frontends
 

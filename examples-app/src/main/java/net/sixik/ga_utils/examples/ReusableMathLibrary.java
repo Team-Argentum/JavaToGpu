@@ -1,8 +1,8 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
 @CCodeLibrary
 public final class ReusableMathLibrary {

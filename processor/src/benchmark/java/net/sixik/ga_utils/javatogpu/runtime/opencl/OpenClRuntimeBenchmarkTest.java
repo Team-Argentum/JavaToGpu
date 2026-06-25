@@ -4,8 +4,8 @@ import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.benchmark.BenchmarkHarness;
 import net.sixik.ga_utils.javatogpu.benchmark.BenchmarkResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
@@ -46,6 +46,38 @@ class OpenClRuntimeBenchmarkTest {
                 "runtime.struct-buffer.marshalling",
                 5,
                 25,
+                () -> checksum(OpenClExecutionPlanner.plan(OpenClArgumentMarshaller.marshall(descriptor, new Object[]{input, output})))
+        );
+
+        assertTrue(result.averageNanos() > 0L);
+        assertTrue(result.checksum() > 0L);
+    }
+
+    @Test
+    void benchmarksLargeStructBufferMarshalling() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "inline://benchmark/large-struct-buffer.cl",
+                "__kernel void kernel(__global BenchmarkStruct* input, __global BenchmarkStruct* output) { }",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "sample.BenchmarkStruct[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "sample.BenchmarkStruct[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        BenchmarkStruct[] input = new BenchmarkStruct[4096];
+        BenchmarkStruct[] output = new BenchmarkStruct[4096];
+        for (int i = 0; i < input.length; i++) {
+            input[i] = new BenchmarkStruct(new BenchmarkInner(i, i + 0.25f), i * 0.5f, i);
+            output[i] = new BenchmarkStruct(new BenchmarkInner(), 0.0f, 0);
+        }
+
+        OpenClExecutionPlan sample = OpenClExecutionPlanner.plan(OpenClArgumentMarshaller.marshall(descriptor, new Object[]{input, output}));
+        assertEquals(2, sample.bufferBindings().size());
+
+        BenchmarkResult result = BenchmarkHarness.measure(
+                "runtime.large-struct-buffer.marshalling",
+                3,
+                10,
                 () -> checksum(OpenClExecutionPlanner.plan(OpenClArgumentMarshaller.marshall(descriptor, new Object[]{input, output})))
         );
 
@@ -150,6 +182,58 @@ class OpenClRuntimeBenchmarkTest {
         assertEquals(0L, statistics.deviceBufferCreationCount());
         assertTrue(result.averageNanos() > 0L);
         assertTrue(result.checksum() > 0L);
+    }
+
+    @Test
+    void benchmarksColdCompileVersusWarmInvokePath() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "inline://benchmark/cold-vs-warm.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+
+        BenchmarkResult coldResult = BenchmarkHarness.measure(
+                "runtime.cold-invoke.fake-opencl",
+                3,
+                20,
+                () -> {
+                    OpenClGpuRuntimeBackend backend = fakeBackend();
+                    int[] output = new int[]{0};
+                    try {
+                        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{output}));
+                        OpenClRuntimeStatistics statistics = backend.statistics();
+                        return statistics.compileCount() + statistics.deviceBufferCreationCount();
+                    } finally {
+                        backend.close();
+                    }
+                }
+        );
+
+        OpenClGpuRuntimeBackend warmBackend = fakeBackend();
+        int[] warmOutput = new int[]{0};
+        warmBackend.invoke(new GpuKernelInvocation(descriptor, new Object[]{warmOutput}));
+        warmBackend.resetStatistics();
+
+        BenchmarkResult warmResult = BenchmarkHarness.measure(
+                "runtime.warm-invoke.fake-opencl.after-cold-compile",
+                5,
+                50,
+                () -> {
+                    warmBackend.invoke(new GpuKernelInvocation(descriptor, new Object[]{warmOutput}));
+                    OpenClRuntimeStatistics statistics = warmBackend.statistics();
+                    return statistics.compileCacheHitCount() + warmBackend.cacheSize();
+                }
+        );
+
+        OpenClRuntimeStatistics warmStatistics = warmBackend.statistics();
+        assertEquals(55L, warmStatistics.invocationCount());
+        assertEquals(0L, warmStatistics.compileCount());
+        assertEquals(55L, warmStatistics.compileCacheHitCount());
+        assertTrue(coldResult.averageNanos() > 0L);
+        assertTrue(coldResult.checksum() > 0L);
+        assertTrue(warmResult.averageNanos() > 0L);
+        assertTrue(warmResult.checksum() > 0L);
     }
 
     private static long checksum(OpenClExecutionPlan plan) {

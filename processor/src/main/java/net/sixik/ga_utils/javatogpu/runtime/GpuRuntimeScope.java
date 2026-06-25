@@ -39,6 +39,27 @@ public final class GpuRuntimeScope implements AutoCloseable {
     }
 
     /**
+     * Returns the backend that was active before this scope installed its backend.
+     */
+    public GpuRuntimeBackend previousBackend() {
+        return previousBackend;
+    }
+
+    /**
+     * Returns whether closing this scope will also close the installed backend instance.
+     */
+    public boolean ownsInstalledBackend() {
+        return closeInstalledBackend;
+    }
+
+    /**
+     * Returns whether this scope has already been closed successfully.
+     */
+    public boolean closed() {
+        return closed;
+    }
+
+    /**
      * Restores the previous backend and optionally closes the installed backend.
      *
      * <p>This method is idempotent.
@@ -48,6 +69,14 @@ public final class GpuRuntimeScope implements AutoCloseable {
         if (closed) {
             return;
         }
+
+        GpuRuntimeBackend currentBackend = GpuRuntime.backend();
+        if (currentBackend != installedBackend) {
+            throw new IllegalStateException(
+                    "GpuRuntimeScope cannot close out of order: the active backend changed before this scope was closed"
+            );
+        }
+
         closed = true;
 
         Throwable failure = null;

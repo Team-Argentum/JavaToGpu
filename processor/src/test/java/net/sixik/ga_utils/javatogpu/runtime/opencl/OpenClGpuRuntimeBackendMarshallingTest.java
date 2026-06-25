@@ -2,11 +2,15 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
@@ -210,6 +214,94 @@ class OpenClGpuRuntimeBackendMarshallingTest {
         assertEquals(202L, execution.scalarBindings().get(1).value());
         assertEquals(OpenClArgumentKind.SAMPLER, execution.scalarBindings().get(2).kind());
         assertEquals(303L, execution.scalarBindings().get(2).value());
+    }
+
+    @Test
+    void backendCarriesMipmappedImageArgumentsIntoPreparedExecution() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMipmappedReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DMipmappedWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        AtomicReference<OpenClPreparedExecution> capturedExecution = new AtomicReference<>();
+
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClCompiledKernel compileKernel(GpuKernelDescriptor kernelDescriptor) {
+                return new OpenClCompiledKernel(kernelDescriptor, "compiled:test");
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                capturedExecution.set(execution);
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(
+                descriptor,
+                new Object[]{
+                        Image2DMipmappedReadOnly.borrowed(701L, 64, 32, 4),
+                        Image2DMipmappedWriteOnly.borrowed(702L, 64, 32, 4),
+                        new float[4]
+                }
+        ));
+
+        OpenClPreparedExecution execution = capturedExecution.get();
+        assertEquals(1, execution.bufferBindings().size());
+        assertEquals(2, execution.scalarBindings().size());
+        assertEquals(OpenClArgumentKind.IMAGE2D, execution.scalarBindings().get(0).kind());
+        assertEquals(701L, execution.scalarBindings().get(0).value());
+        assertEquals(OpenClArgumentKind.IMAGE2D, execution.scalarBindings().get(1).kind());
+        assertEquals(702L, execution.scalarBindings().get(1).value());
+    }
+
+    @Test
+    void backendCarriesMsaaImageArgumentsIntoPreparedExecution() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMsaaReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DMsaaWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        AtomicReference<OpenClPreparedExecution> capturedExecution = new AtomicReference<>();
+
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClCompiledKernel compileKernel(GpuKernelDescriptor kernelDescriptor) {
+                return new OpenClCompiledKernel(kernelDescriptor, "compiled:test");
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                capturedExecution.set(execution);
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(
+                descriptor,
+                new Object[]{
+                        Image2DMsaaReadOnly.borrowed(751L, 64, 32, 4),
+                        Image2DMsaaWriteOnly.borrowed(752L, 64, 32, 4),
+                        new float[4]
+                }
+        ));
+
+        OpenClPreparedExecution execution = capturedExecution.get();
+        assertEquals(1, execution.bufferBindings().size());
+        assertEquals(2, execution.scalarBindings().size());
+        assertEquals(OpenClArgumentKind.IMAGE2D_MSAA, execution.scalarBindings().get(0).kind());
+        assertEquals(751L, execution.scalarBindings().get(0).value());
+        assertEquals(OpenClArgumentKind.IMAGE2D_MSAA, execution.scalarBindings().get(1).kind());
+        assertEquals(752L, execution.scalarBindings().get(1).value());
     }
 
     @Test

@@ -21,18 +21,18 @@ import net.sixik.ga_utils.javatogpu.api.Int4;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
 import net.sixik.ga_utils.javatogpu.api.UInt;
 import net.sixik.ga_utils.javatogpu.api.UInt4;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPULocal;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUConstant;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLQualifiers;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLQualifiers;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
 public final class GpuShowcase {
 
     private GpuShowcase() {
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void basicMath(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
@@ -44,7 +44,7 @@ public final class GpuShowcase {
         output[id] = GpuSupport.lerp(ptr.value, GPU.sin(input[id]), 0.25f);
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void controlFlowExample(
             @GPUGlobal int[] input,
             @GPUGlobal int[] output
@@ -71,7 +71,7 @@ public final class GpuShowcase {
         output[id] = value;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void doWhileExample(
             @GPUGlobal int[] input,
             @GPUGlobal int[] output
@@ -88,7 +88,7 @@ public final class GpuShowcase {
         output[id] = value;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void vectorExample(
             Float2 bias,
             @GPUGlobal float[] input,
@@ -102,7 +102,7 @@ public final class GpuShowcase {
         output[id] = sum.x + sum.y;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void nativeHelperExample(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
@@ -111,7 +111,7 @@ public final class GpuShowcase {
         output[id] = GpuSupport.rawBlend(input[id], 0.1f);
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void libraryHelperExample(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
@@ -121,7 +121,7 @@ public final class GpuShowcase {
     }
 
     @OpenCLAttributes({"work_group_size_hint(4, 1, 1)"})
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void attributeExample(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
@@ -130,7 +130,7 @@ public final class GpuShowcase {
         output[id] = GPU.max(input[id], 1.0f) + 1.0f;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void structExample(
             SampleData sample,
             @GPUGlobal double[] input,
@@ -145,7 +145,7 @@ public final class GpuShowcase {
                 + localSample.bias + localSample.index;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void structBufferExample(
             @GPUGlobal Vec2[] input,
             @GPUGlobal Vec2[] output
@@ -155,7 +155,7 @@ public final class GpuShowcase {
         output[id].y = input[id].y + 2.0;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void atomicExample(
             @GPUGlobal int[] state,
             @GPUGlobal int[] output
@@ -165,7 +165,7 @@ public final class GpuShowcase {
         output[id] = previous + GPU.atomic_xor(state, id, 31);
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void localMemoryExample(
             @GPUConstant float[] lookup,
             @GPULocal float[] scratch,
@@ -180,7 +180,7 @@ public final class GpuShowcase {
         output[gid] = scratch[lid];
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void qualifierExample(
             @OpenCLQualifiers({"const", "restrict"}) @GPUGlobal(constant = true) float[] input,
             @OpenCLQualifiers({"restrict"}) @GPUGlobal float[] output
@@ -189,7 +189,7 @@ public final class GpuShowcase {
         output[id] = input[id] * 2.0f;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void pointerQualifierExample(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
@@ -199,7 +199,7 @@ public final class GpuShowcase {
         output[id] = PointerQualifierExample.read(ptr);
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void unsignedScalarExample(
             UInt bias,
             @GPUGlobal int[] output
@@ -210,7 +210,7 @@ public final class GpuShowcase {
         output[id] = result.value;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void imageExample(
             Image2DReadOnly inputImage,
             Image2DWriteOnly outputImage,
@@ -224,7 +224,7 @@ public final class GpuShowcase {
         GPU.write_imagef(outputImage, coords, new Float4(1.0f, 0.5f, 0.25f, 1.0f));
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void samplerlessImageExample(
             Image2DReadOnly inputImage,
             @GPUGlobal int[] output
@@ -235,7 +235,7 @@ public final class GpuShowcase {
         output[id] = pixel.x + pixel.y + pixel.z + pixel.w + GPU.get_image_width(inputImage);
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void imageMetadataExample(
             Image2DReadOnly inputImage,
             @GPUGlobal int[] output
@@ -246,7 +246,7 @@ public final class GpuShowcase {
         output[id] = channelOrder == GPU.CL_RGBA && channelType == GPU.CL_UNSIGNED_INT32 ? 1 : 0;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void image1dExample(
             Image1DReadOnly inputImage,
             Image1DWriteOnly outputImage,
@@ -259,7 +259,7 @@ public final class GpuShowcase {
         GPU.write_imageui(outputImage, id, new UInt4(9, 10, 11, 12));
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void image1dArrayExample(
             Image1DArrayReadOnly inputImage,
             Image1DArrayWriteOnly outputImage,
@@ -272,7 +272,7 @@ public final class GpuShowcase {
         GPU.write_imageui(outputImage, coords, new UInt4(9, 10, 11, 12));
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void image1dBufferExample(
             Image1DBufferReadOnly inputImage,
             Image1DBufferWriteOnly outputImage,
@@ -284,7 +284,7 @@ public final class GpuShowcase {
         GPU.write_imagei(outputImage, id, new Int4(9, 10, 11, 12));
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void image2dArrayExample(
             Image2DArrayReadOnly inputImage,
             Image2DArrayWriteOnly outputImage,
@@ -297,7 +297,7 @@ public final class GpuShowcase {
         GPU.write_imageui(outputImage, coords, new UInt4(9, 10, 11, 12));
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void unsignedImageExample(
             Image2DReadOnly inputImage,
             Image2DWriteOnly outputImage,
@@ -311,7 +311,7 @@ public final class GpuShowcase {
         GPU.write_imageui(outputImage, coords, new UInt4(9, 10, 11, 12));
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void image3dExample(
             Image3DReadOnly inputImage,
             Image3DWriteOnly outputImage,
@@ -325,7 +325,7 @@ public final class GpuShowcase {
         GPU.write_imagef(outputImage, coords, new Float4(0.25f, 0.5f, 0.75f, 1.0f));
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void samplerlessImage3dExample(
             Image3DReadOnly inputImage,
             @GPUGlobal float[] output
@@ -336,7 +336,7 @@ public final class GpuShowcase {
         output[id] = pixel.x + pixel.y + pixel.z + pixel.w + GPU.get_image_depth(inputImage);
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void image3dMetadataExample(
             Image3DReadOnly inputImage,
             @GPUGlobal int[] output
@@ -347,7 +347,7 @@ public final class GpuShowcase {
         output[id] = channelOrder == GPU.CL_RGBA && channelType == GPU.CL_FLOAT ? GPU.get_image_depth(inputImage) : 0;
     }
 
-    @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void unsignedImage3dExample(
             Image3DReadOnly inputImage,
             Image3DWriteOnly outputImage,

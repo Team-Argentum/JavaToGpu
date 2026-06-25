@@ -12,6 +12,10 @@ import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
@@ -19,8 +23,8 @@ import net.sixik.ga_utils.javatogpu.api.UInt;
 import net.sixik.ga_utils.javatogpu.api.ULong;
 import net.sixik.ga_utils.javatogpu.api.UShort;
 import net.sixik.ga_utils.javatogpu.api.UByte;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
@@ -484,6 +488,58 @@ class OpenClArgumentMarshallerTest {
     }
 
     @Test
+    void marshalsMipmappedImageArgumentsAsNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMipmappedReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DMipmappedWriteOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(
+                descriptor,
+                new Object[]{
+                        Image2DMipmappedReadOnly.borrowed(401L, 64, 32, 4),
+                        Image2DMipmappedWriteOnly.borrowed(402L, 64, 32, 4)
+                }
+        );
+
+        assertEquals(OpenClArgumentKind.IMAGE2D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).kind());
+        assertEquals(401L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).value());
+        assertEquals(OpenClArgumentKind.IMAGE2D, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).kind());
+        assertEquals(402L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).value());
+    }
+
+    @Test
+    void marshalsMsaaImageArgumentsAsNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMsaaReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DMsaaWriteOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        OpenClKernelArguments marshalled = OpenClArgumentMarshaller.marshall(
+                descriptor,
+                new Object[]{
+                        Image2DMsaaReadOnly.borrowed(451L, 64, 32, 4),
+                        Image2DMsaaWriteOnly.borrowed(452L, 64, 32, 4)
+                }
+        );
+
+        assertEquals(OpenClArgumentKind.IMAGE2D_MSAA, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).kind());
+        assertEquals(451L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(0)).value());
+        assertEquals(OpenClArgumentKind.IMAGE2D_MSAA, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).kind());
+        assertEquals(452L, assertInstanceOf(OpenClScalarArgument.class, marshalled.values().get(1)).value());
+    }
+
+    @Test
     void repeatedImageAndSamplerMarshallingRoundsRemainStable() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
@@ -532,10 +588,54 @@ class OpenClArgumentMarshallerTest {
                 () -> OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new Image2DReadOnly()})
         );
 
-        assertEquals(
-                "Failed to marshall parameter 'inputImage': Image2DReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle",
-                exception.getMessage()
+        assertTrue(exception.getMessage().contains(
+                "Failed to marshall parameter 'inputImage': Image2DReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle"
+        ));
+        assertTrue(exception.getMessage().contains("create it through OpenClGpuRuntimeBackend"));
+    }
+
+    @Test
+    void rejectsMipmappedImageArgumentsWithoutValidNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMipmappedReadOnly", GpuKernelParameterAccess.VALUE)
+                )
         );
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new Image2DMipmappedReadOnly()})
+        );
+
+        assertTrue(exception.getMessage().contains(
+                "Failed to marshall parameter 'inputImage': Image2DMipmappedReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle"
+        ));
+        assertTrue(exception.getMessage().contains("borrowed/owned wrapper with a live handle"));
+    }
+
+    @Test
+    void rejectsMsaaImageArgumentsWithoutValidNativeHandles() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMsaaReadOnly", GpuKernelParameterAccess.VALUE)
+                )
+        );
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new Image2DMsaaReadOnly()})
+        );
+
+        assertTrue(exception.getMessage().contains(
+                "Failed to marshall parameter 'inputImage': Image2DMsaaReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle"
+        ));
+        assertTrue(exception.getMessage().contains("borrowed/owned wrapper with a live handle"));
     }
 
     @Test
@@ -580,10 +680,10 @@ class OpenClArgumentMarshallerTest {
                 () -> OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new Image3DReadOnly()})
         );
 
-        assertEquals(
-                "Failed to marshall parameter 'inputImage': Image3DReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle",
-                exception.getMessage()
-        );
+        assertTrue(exception.getMessage().contains(
+                "Failed to marshall parameter 'inputImage': Image3DReadOnly runtime argument for parameter 'inputImage' does not carry a valid native handle"
+        ));
+        assertTrue(exception.getMessage().contains("borrowed/owned wrapper with a live handle"));
     }
 
     @Test

@@ -16,6 +16,8 @@ import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
@@ -36,6 +38,7 @@ import org.lwjgl.system.MemoryStack;
 public final class OpenClRuntimeSession implements AutoCloseable {
 
     private static final Pattern OPENCL_VERSION_PATTERN = Pattern.compile("OpenCL\\s+(\\d+)\\.(\\d+)");
+    private static final int CL_DEPTH = 0x10BD;
 
     private final OpenClDevice device;
     private final OpenClContext context;
@@ -65,12 +68,30 @@ public final class OpenClRuntimeSession implements AutoCloseable {
     }
 
     public OpenClRuntimeCapabilities capabilities() {
+        OpenClValidationDeviceInfo deviceInfo = validationDeviceInfo();
+        return new OpenClRuntimeCapabilities(
+                deviceInfo.deviceLabel(),
+                deviceInfo.deviceVersion(),
+                deviceInfo.supportsDoublePrecision(),
+                deviceInfo.supportsImages(),
+                deviceInfo.supportsImage3dWrites(),
+                deviceInfo.localMemoryBytes(),
+                deviceInfo.maxWorkGroupSize()
+        );
+    }
+
+    public OpenClValidationDeviceInfo validationDeviceInfo() {
         long deviceHandle = device.device();
         String extensions = queryStringDeviceInfo(deviceHandle, CL10.CL_DEVICE_EXTENSIONS);
         String deviceVersion = queryStringDeviceInfo(deviceHandle, CL10.CL_DEVICE_VERSION);
-        return new OpenClRuntimeCapabilities(
+        long platformHandle = queryLongDeviceInfo(deviceHandle, CL10.CL_DEVICE_PLATFORM);
+        return new OpenClValidationDeviceInfo(
                 device.label(),
+                queryStringDeviceInfo(deviceHandle, CL10.CL_DEVICE_VENDOR),
+                queryStringDeviceInfo(deviceHandle, CL10.CL_DRIVER_VERSION),
                 deviceVersion,
+                platformHandle == 0L ? "unknown" : queryStringPlatformInfo(platformHandle, CL10.CL_PLATFORM_NAME),
+                platformHandle == 0L ? "unknown" : queryStringPlatformInfo(platformHandle, CL10.CL_PLATFORM_VERSION),
                 supportsDoublePrecision(extensions),
                 queryIntDeviceInfo(deviceHandle, CL10.CL_DEVICE_IMAGE_SUPPORT) != 0,
                 supportsImage3dWrites(extensions, deviceVersion),
@@ -113,6 +134,14 @@ public final class OpenClRuntimeSession implements AutoCloseable {
 
     public Image2DWriteOnly createWriteOnlyRgFloatImage(int width, int height) {
         return createWriteOnlyFloatImage(width, height, CL10.CL_RG);
+    }
+
+    public Image2DReadOnly createReadOnlyDepthImage(int width, int height, float[] values) {
+        return createReadOnlyFloatImage(width, height, CL_DEPTH, 1, values, "depth");
+    }
+
+    public Image2DWriteOnly createWriteOnlyDepthImage(int width, int height) {
+        return createWriteOnlyFloatImage(width, height, CL_DEPTH);
     }
 
     public Image2DReadOnly createReadOnlyRIntImage(int width, int height, int[] values) {
@@ -400,6 +429,22 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
+    public Image2DMipmappedReadOnly createReadOnlyRgbaFloatImageMipmapped(int width, int height, int mipLevels, float[] rgba) {
+        return createReadOnlyFloatImageMipmapped(width, height, mipLevels, CL10.CL_RGBA, 4, rgba, "RGBA");
+    }
+
+    public Image2DMipmappedWriteOnly createWriteOnlyRgbaFloatImageMipmapped(int width, int height, int mipLevels) {
+        return createWriteOnlyFloatImageMipmapped(width, height, mipLevels, CL10.CL_RGBA);
+    }
+
+    public Image2DMipmappedReadOnly createReadOnlyRgbaUIntImageMipmapped(int width, int height, int mipLevels, int[] rgba) {
+        return createReadOnlyIntImageMipmapped(width, height, mipLevels, CL10.CL_RGBA, 4, CL10.CL_UNSIGNED_INT32, rgba, "RGBA uint");
+    }
+
+    public Image2DMipmappedWriteOnly createWriteOnlyRgbaUIntImageMipmapped(int width, int height, int mipLevels) {
+        return createWriteOnlyIntImageMipmapped(width, height, mipLevels, CL10.CL_RGBA, CL10.CL_UNSIGNED_INT32);
+    }
+
     public Image3DReadOnly createReadOnlyRgbaFloatImage3D(int width, int height, int depth, float[] rgba) {
         return createReadOnlyFloatImage3D(width, height, depth, CL10.CL_RGBA, 4, rgba, "RGBA");
     }
@@ -446,6 +491,14 @@ public final class OpenClRuntimeSession implements AutoCloseable {
 
     public float[] readRgFloatImage(Image2DWriteOnly image) {
         return readFloatImage(image.handle(), image.width(), image.height(), 2);
+    }
+
+    public float[] readDepthImage(Image2DReadOnly image) {
+        return readFloatImage(image.handle(), image.width(), image.height(), 1);
+    }
+
+    public float[] readDepthImage(Image2DWriteOnly image) {
+        return readFloatImage(image.handle(), image.width(), image.height(), 1);
     }
 
     public int[] readRIntImage(Image2DReadOnly image) {
@@ -502,6 +555,22 @@ public final class OpenClRuntimeSession implements AutoCloseable {
 
     public byte[] readRgba8Image(Image2DWriteOnly image) {
         return readRgba8Image(image.handle(), image.width(), image.height());
+    }
+
+    public float[] readRgbaFloatImageMipmapped(Image2DMipmappedReadOnly image, int mipLevel) {
+        return readFloatImageMipmapped(image.handle(), image.width(), image.height(), image.mipLevels(), mipLevel, 4);
+    }
+
+    public float[] readRgbaFloatImageMipmapped(Image2DMipmappedWriteOnly image, int mipLevel) {
+        return readFloatImageMipmapped(image.handle(), image.width(), image.height(), image.mipLevels(), mipLevel, 4);
+    }
+
+    public int[] readRgbaUIntImageMipmapped(Image2DMipmappedReadOnly image, int mipLevel) {
+        return readIntImageMipmapped(image.handle(), image.width(), image.height(), image.mipLevels(), mipLevel, 4);
+    }
+
+    public int[] readRgbaUIntImageMipmapped(Image2DMipmappedWriteOnly image, int mipLevel) {
+        return readIntImageMipmapped(image.handle(), image.width(), image.height(), image.mipLevels(), mipLevel, 4);
     }
 
     public float[] readRgbaFloatImage1D(Image1DReadOnly image) {
@@ -652,6 +721,17 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
+    private long queryLongDeviceInfo(long deviceHandle, int paramName) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer buffer = stack.mallocPointer(1);
+            OpenClException.check(
+                    CL10.clGetDeviceInfo(deviceHandle, paramName, buffer, null),
+                    "clGetDeviceInfo"
+            );
+            return buffer.get(0);
+        }
+    }
+
     private String queryStringDeviceInfo(long deviceHandle, int paramName) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             PointerBuffer sizeBuffer = stack.mallocPointer(1);
@@ -664,6 +744,30 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             OpenClException.check(
                     CL10.clGetDeviceInfo(deviceHandle, paramName, buffer, null),
                     "clGetDeviceInfo"
+            );
+
+            int length = size;
+            while (length > 0 && buffer.get(length - 1) == 0) {
+                length--;
+            }
+            byte[] bytes = new byte[length];
+            buffer.get(0, bytes);
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+    }
+
+    private String queryStringPlatformInfo(long platformHandle, int paramName) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer sizeBuffer = stack.mallocPointer(1);
+            OpenClException.check(
+                    CL10.clGetPlatformInfo(platformHandle, paramName, (ByteBuffer) null, sizeBuffer),
+                    "clGetPlatformInfo"
+            );
+            int size = Math.toIntExact(sizeBuffer.get(0));
+            ByteBuffer buffer = stack.malloc(size);
+            OpenClException.check(
+                    CL10.clGetPlatformInfo(platformHandle, paramName, buffer, null),
+                    "clGetPlatformInfo"
             );
 
             int length = size;
@@ -782,6 +886,58 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             );
             OpenClException.check(errorCode[0], "clCreateImage2D");
             return Image2DWriteOnly.owned(handle, width, height);
+        }
+    }
+
+    private Image2DMipmappedReadOnly createReadOnlyFloatImageMipmapped(
+            int width,
+            int height,
+            int mipLevels,
+            int channelOrder,
+            int componentCount,
+            float[] values,
+            String formatName
+    ) {
+        validateMipmappedImageDimensions(width, height, mipLevels);
+        validateMipmappedPixelArrayLength(width, height, mipLevels, componentCount, values.length, formatName + " float mip chain");
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            CLImageFormat format = CLImageFormat.calloc(stack)
+                    .image_channel_order(channelOrder)
+                    .image_channel_data_type(CL10.CL_FLOAT);
+            CLImageDesc desc = initMipmappedImage2DDesc(CLImageDesc.calloc(stack), width, height, mipLevels);
+            int[] errorCode = new int[1];
+            long handle = CL12.clCreateImage(
+                    context.handle(),
+                    CL10.CL_MEM_READ_ONLY,
+                    format,
+                    desc,
+                    (java.nio.ByteBuffer) null,
+                    errorCode
+            );
+            OpenClException.check(errorCode[0], "clCreateImage");
+            uploadFloatMipmappedImage(handle, width, height, mipLevels, componentCount, values);
+            return Image2DMipmappedReadOnly.owned(handle, width, height, mipLevels);
+        }
+    }
+
+    private Image2DMipmappedWriteOnly createWriteOnlyFloatImageMipmapped(int width, int height, int mipLevels, int channelOrder) {
+        validateMipmappedImageDimensions(width, height, mipLevels);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            CLImageFormat format = CLImageFormat.calloc(stack)
+                    .image_channel_order(channelOrder)
+                    .image_channel_data_type(CL10.CL_FLOAT);
+            CLImageDesc desc = initMipmappedImage2DDesc(CLImageDesc.calloc(stack), width, height, mipLevels);
+            int[] errorCode = new int[1];
+            long handle = CL12.clCreateImage(
+                    context.handle(),
+                    CL10.CL_MEM_WRITE_ONLY,
+                    format,
+                    desc,
+                    (java.nio.ByteBuffer) null,
+                    errorCode
+            );
+            OpenClException.check(errorCode[0], "clCreateImage");
+            return Image2DMipmappedWriteOnly.owned(handle, width, height, mipLevels);
         }
     }
 
@@ -1068,6 +1224,59 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             );
             OpenClException.check(errorCode[0], "clCreateImage2D");
             return Image2DWriteOnly.owned(handle, width, height);
+        }
+    }
+
+    private Image2DMipmappedReadOnly createReadOnlyIntImageMipmapped(
+            int width,
+            int height,
+            int mipLevels,
+            int channelOrder,
+            int componentCount,
+            int channelDataType,
+            int[] values,
+            String formatName
+    ) {
+        validateMipmappedImageDimensions(width, height, mipLevels);
+        validateMipmappedPixelArrayLength(width, height, mipLevels, componentCount, values.length, formatName + " mip chain");
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            CLImageFormat format = CLImageFormat.calloc(stack)
+                    .image_channel_order(channelOrder)
+                    .image_channel_data_type(channelDataType);
+            CLImageDesc desc = initMipmappedImage2DDesc(CLImageDesc.calloc(stack), width, height, mipLevels);
+            int[] errorCode = new int[1];
+            long handle = CL12.clCreateImage(
+                    context.handle(),
+                    CL10.CL_MEM_READ_ONLY,
+                    format,
+                    desc,
+                    (java.nio.ByteBuffer) null,
+                    errorCode
+            );
+            OpenClException.check(errorCode[0], "clCreateImage");
+            uploadIntMipmappedImage(handle, width, height, mipLevels, componentCount, values);
+            return Image2DMipmappedReadOnly.owned(handle, width, height, mipLevels);
+        }
+    }
+
+    private Image2DMipmappedWriteOnly createWriteOnlyIntImageMipmapped(int width, int height, int mipLevels, int channelOrder, int channelDataType) {
+        validateMipmappedImageDimensions(width, height, mipLevels);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            CLImageFormat format = CLImageFormat.calloc(stack)
+                    .image_channel_order(channelOrder)
+                    .image_channel_data_type(channelDataType);
+            CLImageDesc desc = initMipmappedImage2DDesc(CLImageDesc.calloc(stack), width, height, mipLevels);
+            int[] errorCode = new int[1];
+            long handle = CL12.clCreateImage(
+                    context.handle(),
+                    CL10.CL_MEM_WRITE_ONLY,
+                    format,
+                    desc,
+                    (java.nio.ByteBuffer) null,
+                    errorCode
+            );
+            OpenClException.check(errorCode[0], "clCreateImage");
+            return Image2DMipmappedWriteOnly.owned(handle, width, height, mipLevels);
         }
     }
 
@@ -1508,6 +1717,25 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
+    private float[] readFloatImageMipmapped(long handle, int width, int height, int mipLevels, int mipLevel, int componentCount) {
+        validateMipmappedImageHandle(handle, width, height, mipLevels, mipLevel);
+        int mipWidth = mipExtent(width, mipLevel);
+        int mipHeight = mipExtent(height, mipLevel);
+        float[] values = new float[mipWidth * mipHeight * componentCount];
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer origin = stack.mallocPointer(3);
+            origin.put(0, 0L).put(1, 0L).put(2, mipLevel);
+            PointerBuffer region = stack.mallocPointer(3);
+            region.put(0, mipWidth).put(1, mipHeight).put(2, 1L);
+            OpenClException.check(
+                    CL10.clEnqueueReadImage(queue.handle(), handle, true, origin, region, 0L, 0L, values, null, null),
+                    "clEnqueueReadImage"
+            );
+            queue.finish();
+            return values;
+        }
+    }
+
     private int[] readRgbaIntImage(long handle, int width, int height) {
         validateImageHandle(handle, width, height);
         int[] rgba = new int[width * height * 4];
@@ -1627,6 +1855,25 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
+    private int[] readIntImageMipmapped(long handle, int width, int height, int mipLevels, int mipLevel, int componentCount) {
+        validateMipmappedImageHandle(handle, width, height, mipLevels, mipLevel);
+        int mipWidth = mipExtent(width, mipLevel);
+        int mipHeight = mipExtent(height, mipLevel);
+        int[] values = new int[mipWidth * mipHeight * componentCount];
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer origin = stack.mallocPointer(3);
+            origin.put(0, 0L).put(1, 0L).put(2, mipLevel);
+            PointerBuffer region = stack.mallocPointer(3);
+            region.put(0, mipWidth).put(1, mipHeight).put(2, 1L);
+            OpenClException.check(
+                    CL10.clEnqueueReadImage(queue.handle(), handle, true, origin, region, 0L, 0L, values, null, null),
+                    "clEnqueueReadImage"
+            );
+            queue.finish();
+            return values;
+        }
+    }
+
     private byte[] readRgba8Image(long handle, int width, int height) {
         validateImageHandle(handle, width, height);
         ByteBuffer rgba = ByteBuffer.allocateDirect(width * height * 4);
@@ -1659,6 +1906,72 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 .num_samples(0)
                 .buffer(memObject)
                 .mem_object(memObject);
+    }
+
+    private CLImageDesc initMipmappedImage2DDesc(CLImageDesc desc, int width, int height, int mipLevels) {
+        return desc.image_type(CL12.CL_MEM_OBJECT_IMAGE2D)
+                .image_width(width)
+                .image_height(height)
+                .image_depth(1)
+                .image_array_size(1)
+                .image_row_pitch(0L)
+                .image_slice_pitch(0L)
+                .num_mip_levels(mipLevels)
+                .num_samples(0)
+                .buffer(0L)
+                .mem_object(0L);
+    }
+
+    private void uploadFloatMipmappedImage(long handle, int width, int height, int mipLevels, int componentCount, float[] values) {
+        int offset = 0;
+        for (int mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
+            int mipWidth = mipExtent(width, mipLevel);
+            int mipHeight = mipExtent(height, mipLevel);
+            int length = mipWidth * mipHeight * componentCount;
+            float[] mipValues = java.util.Arrays.copyOfRange(values, offset, offset + length);
+            writeFloatMipLevel(handle, mipWidth, mipHeight, mipLevel, mipValues);
+            offset += length;
+        }
+    }
+
+    private void uploadIntMipmappedImage(long handle, int width, int height, int mipLevels, int componentCount, int[] values) {
+        int offset = 0;
+        for (int mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
+            int mipWidth = mipExtent(width, mipLevel);
+            int mipHeight = mipExtent(height, mipLevel);
+            int length = mipWidth * mipHeight * componentCount;
+            int[] mipValues = java.util.Arrays.copyOfRange(values, offset, offset + length);
+            writeIntMipLevel(handle, mipWidth, mipHeight, mipLevel, mipValues);
+            offset += length;
+        }
+    }
+
+    private void writeFloatMipLevel(long handle, int width, int height, int mipLevel, float[] values) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer origin = stack.mallocPointer(3);
+            origin.put(0, 0L).put(1, 0L).put(2, mipLevel);
+            PointerBuffer region = stack.mallocPointer(3);
+            region.put(0, width).put(1, height).put(2, 1L);
+            OpenClException.check(
+                    CL10.clEnqueueWriteImage(queue.handle(), handle, true, origin, region, 0L, 0L, values, null, null),
+                    "clEnqueueWriteImage"
+            );
+            queue.finish();
+        }
+    }
+
+    private void writeIntMipLevel(long handle, int width, int height, int mipLevel, int[] values) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer origin = stack.mallocPointer(3);
+            origin.put(0, 0L).put(1, 0L).put(2, mipLevel);
+            PointerBuffer region = stack.mallocPointer(3);
+            region.put(0, width).put(1, height).put(2, 1L);
+            OpenClException.check(
+                    CL10.clEnqueueWriteImage(queue.handle(), handle, true, origin, region, 0L, 0L, values, null, null),
+                    "clEnqueueWriteImage"
+            );
+            queue.finish();
+        }
     }
 
     private long createBackingBuffer(float[] values) {
@@ -1717,6 +2030,22 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
+    private void validateMipmappedImageDimensions(int width, int height, int mipLevels) {
+        validateImageDimensions(width, height);
+        if (mipLevels <= 0) {
+            throw new IllegalArgumentException("OpenCL mip level count must be positive: " + mipLevels);
+        }
+        int maxMipLevels = 1 + Math.max(
+                Integer.numberOfTrailingZeros(Integer.highestOneBit(width)),
+                Integer.numberOfTrailingZeros(Integer.highestOneBit(height))
+        );
+        if (mipLevels > maxMipLevels) {
+            throw new IllegalArgumentException(
+                    "OpenCL mip level count " + mipLevels + " exceeds maximum " + maxMipLevels + " for base image " + width + "x" + height
+            );
+        }
+    }
+
     private void validatePixelArrayLength(int width, int height, int componentCount, int actualLength, String componentType) {
         int expectedLength = width * height * componentCount;
         if (actualLength != expectedLength) {
@@ -1724,6 +2053,32 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                     "Expected " + componentType + " image payload length " + expectedLength + " but got " + actualLength
             );
         }
+    }
+
+    private void validateMipmappedPixelArrayLength(int width, int height, int mipLevels, int componentCount, int actualLength, String componentType) {
+        int expectedLength = 0;
+        for (int mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
+            expectedLength += mipExtent(width, mipLevel) * mipExtent(height, mipLevel) * componentCount;
+        }
+        if (actualLength != expectedLength) {
+            throw new IllegalArgumentException(
+                    "Expected " + componentType + " payload length " + expectedLength + " but got " + actualLength
+            );
+        }
+    }
+
+    private void validateMipmappedImageHandle(long handle, int width, int height, int mipLevels, int mipLevel) {
+        validateMipmappedImageDimensions(width, height, mipLevels);
+        if (handle == 0L) {
+            throw new IllegalArgumentException("OpenCL image handle must be non-zero for mipmapped image readback");
+        }
+        if (mipLevel < 0 || mipLevel >= mipLevels) {
+            throw new IllegalArgumentException("Requested mip level " + mipLevel + " is out of range for image with " + mipLevels + " mip levels");
+        }
+    }
+
+    private int mipExtent(int baseExtent, int mipLevel) {
+        return Math.max(1, baseExtent >> mipLevel);
     }
 
     private void validatePixelArrayLength(int width, int componentCount, int actualLength, String componentType) {

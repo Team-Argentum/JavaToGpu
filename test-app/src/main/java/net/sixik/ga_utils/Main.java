@@ -3,9 +3,9 @@ package net.sixik.ga_utils;
 import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope;
 
@@ -60,7 +60,7 @@ public final class Main {
         private Examples() {
         }
 
-        @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+        @net.sixik.ga_utils.javatogpu.api.annotations.GPU
         public static void basicMath(
                 @GPUGlobal float[] input,
                 @GPUGlobal float[] output
@@ -72,7 +72,7 @@ public final class Main {
             output[id] = KernelMath.lerp(ptr.value, GPU.sin(input[id]), 0.25f);
         }
 
-        @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+        @net.sixik.ga_utils.javatogpu.api.annotations.GPU
         public static void structExample(
                 SampleData sample,
                 @GPUGlobal double[] input,
@@ -87,7 +87,7 @@ public final class Main {
                     + localSample.point.x + localSample.point.y + localSample.bias + localSample.index;
         }
 
-        @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+        @net.sixik.ga_utils.javatogpu.api.annotations.GPU
         public static void vectorExample(
                 Float2 bias,
                 @GPUGlobal float[] input,
@@ -101,7 +101,7 @@ public final class Main {
             output[id] = sum.x + sum.y;
         }
 
-        @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+        @net.sixik.ga_utils.javatogpu.api.annotations.GPU
         public static void structBufferExample(
                 @GPUGlobal SamplePoint[] input,
                 @GPUGlobal SamplePoint[] output

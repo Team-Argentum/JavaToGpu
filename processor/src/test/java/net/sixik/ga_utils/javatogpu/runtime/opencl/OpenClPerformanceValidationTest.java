@@ -91,11 +91,59 @@ class OpenClPerformanceValidationTest {
         assertEquals(1L, statistics.deviceBufferCreationCount());
     }
 
+    @Test
+    void repeatedLargeArrayInvocationsStillReuseCompileAndBufferCaches() {
+        OpenClGpuRuntimeBackend backend = fakeBackend(OpenClGpuRuntimeBackend.CacheMode.INSTANCE);
+        int[] output = new int[4096];
+
+        for (int iteration = 0; iteration < 250; iteration++) {
+            backend.invoke(new GpuKernelInvocation(sampleDescriptor(), new Object[]{output}));
+        }
+
+        OpenClRuntimeStatistics statistics = backend.statistics();
+        assertEquals(250L, statistics.invocationCount());
+        assertEquals(1L, statistics.compileCount());
+        assertEquals(249L, statistics.compileCacheHitCount());
+        assertEquals(1L, statistics.deviceBufferCreationCount());
+    }
+
+    @Test
+    void multipleKernelDescriptorsTrackColdAndWarmPathsIndependently() {
+        OpenClGpuRuntimeBackend backend = fakeBackend(OpenClGpuRuntimeBackend.CacheMode.INSTANCE);
+        int[] firstOutput = new int[]{0};
+        int[] secondOutput = new int[]{0};
+
+        backend.invoke(new GpuKernelInvocation(sampleDescriptor(), new Object[]{firstOutput}));
+        backend.invoke(new GpuKernelInvocation(alternativeDescriptor(), new Object[]{secondOutput}));
+
+        for (int iteration = 0; iteration < 50; iteration++) {
+            backend.invoke(new GpuKernelInvocation(sampleDescriptor(), new Object[]{firstOutput}));
+            backend.invoke(new GpuKernelInvocation(alternativeDescriptor(), new Object[]{secondOutput}));
+        }
+
+        OpenClRuntimeStatistics statistics = backend.statistics();
+        assertEquals(102L, statistics.invocationCount());
+        assertEquals(2L, statistics.compileCount());
+        assertEquals(100L, statistics.compileCacheHitCount());
+        assertEquals(2L, statistics.deviceBufferCreationCount());
+    }
+
     private static GpuKernelDescriptor sampleDescriptor() {
         return new GpuKernelDescriptor(
                 "kernel",
                 "javatogpu/performance/Demo/kernel.cl",
                 "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+    }
+
+    private static GpuKernelDescriptor alternativeDescriptor() {
+        return new GpuKernelDescriptor(
+                "kernel_alt",
+                "javatogpu/performance/Demo/kernel-alt.cl",
+                "__kernel void kernel_alt(__global int* output) { output[0] = 2; }",
                 java.util.List.of(
                         new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
                 )

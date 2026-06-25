@@ -45,3 +45,4 @@ bin/
 /docs
 *.args
 /github-wiki
+/.metadata/

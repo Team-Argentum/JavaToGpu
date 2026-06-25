@@ -10,14 +10,15 @@ import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
-import net.sixik.ga_utils.javatogpu.api.UInt4;
 import net.sixik.ga_utils.javatogpu.api.UInt;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
@@ -424,6 +425,66 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     }
 
     @Test
+    void roundTripsDepthImagesOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        float[] source = new float[]{0.125f, 0.875f};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DReadOnly inputImage = backend.createReadOnlyDepthImage(2, 1, source)) {
+            assertArrayEquals(source, backend.readDepthImage(inputImage));
+        }
+    }
+
+    @Test
+    void roundTripsMipmappedRgbaFloatImagesOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        float[] source = new float[]{
+                1.0f, 0.0f, 0.0f, 1.0f,
+                0.0f, 1.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, 1.0f, 1.0f, 1.0f,
+                1.0f, 0.0f, 1.0f, 1.0f,
+                0.0f, 1.0f, 1.0f, 1.0f,
+                1.0f, 1.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 0.0f, 1.0f,
+                0.5f, 0.5f, 0.5f, 1.0f,
+                0.25f, 0.25f, 0.25f, 1.0f
+        };
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DMipmappedReadOnly inputImage = backend.createReadOnlyRgbaFloatImageMipmapped(4, 2, 2, source)) {
+            assertArrayEquals(java.util.Arrays.copyOfRange(source, 0, 32), backend.readRgbaFloatImageMipmapped(inputImage, 0));
+            assertArrayEquals(java.util.Arrays.copyOfRange(source, 32, 40), backend.readRgbaFloatImageMipmapped(inputImage, 1));
+        }
+    }
+
+    @Test
+    void roundTripsMipmappedRgbaUIntImagesOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        int[] source = new int[]{
+                1, 2, 3, 4,
+                5, 6, 7, 8,
+                9, 10, 11, 12,
+                13, 14, 15, 16,
+                17, 18, 19, 20,
+                21, 22, 23, 24,
+                25, 26, 27, 28,
+                29, 30, 31, 32,
+                33, 34, 35, 36,
+                37, 38, 39, 40
+        };
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DMipmappedReadOnly inputImage = backend.createReadOnlyRgbaUIntImageMipmapped(4, 2, 2, source)) {
+            assertArrayEquals(java.util.Arrays.copyOfRange(source, 0, 32), backend.readRgbaUIntImageMipmapped(inputImage, 0));
+            assertArrayEquals(java.util.Arrays.copyOfRange(source, 32, 40), backend.readRgbaUIntImageMipmapped(inputImage, 1));
+        }
+    }
+
+    @Test
     void roundTripsRIntImagesOnAvailableOpenClDevice() {
         assumeOpenClAvailable();
 
@@ -514,6 +575,44 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             assertArrayEquals(new int[]{10, 26}, output);
             assertArrayEquals(new int[]{9, 10, 11, 12}, new int[]{written[0], written[1], written[2], written[3]});
             assertArrayEquals(new int[]{9, 10, 11, 12}, new int[]{written[4], written[5], written[6], written[7]});
+        }
+    }
+
+    @Test
+    void runsDepthImageKernelOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_image_depth_entry",
+                "inline://integration/image-depth-kernel.cl",
+                """
+                        __kernel void gpu_image_depth_entry(read_only image2d_t inputImage, write_only image2d_t outputImage, sampler_t sampler, __global float* output) {
+                            int id = get_global_id(0);
+                            int2 coords = (int2)(id, 0);
+                            float4 pixel = read_imagef(inputImage, sampler, coords);
+                            output[id] = pixel.x + (float) get_image_width(inputImage);
+                            write_imagef(outputImage, coords, (float4)(pixel.x * 0.5f, 0.0f, 0.0f, 1.0f));
+                        }""",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("sampler", "Sampler", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        assumeKernelCompiles(descriptor, "Skipping depth image integration smoke test");
+
+        float[] output = new float[]{0.0f, 0.0f};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DReadOnly inputImage = backend.createReadOnlyDepthImage(2, 1, new float[]{0.25f, 0.75f});
+             Image2DWriteOnly outputImage = backend.createWriteOnlyDepthImage(2, 1);
+             Sampler sampler = backend.createNearestClampToEdgeSampler()) {
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{inputImage, outputImage, sampler, output}));
+            float[] written = backend.readDepthImage(outputImage);
+
+            assertArrayEquals(new float[]{2.25f, 2.75f}, output);
+            assertArrayEquals(new float[]{0.125f, 0.375f}, written);
         }
     }
 
@@ -992,6 +1091,185 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{inputImage, output}));
 
             assertArrayEquals(new int[]{2, 2}, output);
+        }
+    }
+
+    @Test
+    void runsExtendedImageMetadataKernelOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_image_meta_extended_entry",
+                "inline://integration/image-meta-extended-kernel.cl",
+                """
+                        __kernel void gpu_image_meta_extended_entry(read_only image2d_t inputImage, __global int* output) {
+                            int id = get_global_id(0);
+                            int mipLevels = get_image_num_mip_levels(inputImage);
+                            int sampleCount = get_image_num_samples(inputImage);
+                            output[id] = mipLevels + sampleCount + get_image_width(inputImage);
+                        }""",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        assumeKernelCompiles(descriptor, "Skipping extended image metadata integration smoke test");
+
+        int[] output = new int[]{0, 0};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DReadOnly inputImage = backend.createReadOnlyRgbaUIntImage(
+                     2,
+                     1,
+                     new int[]{
+                             1, 2, 3, 4,
+                             5, 6, 7, 8
+                     }
+             )) {
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{inputImage, output}));
+
+            assertArrayEquals(new int[]{3, 3}, output);
+        }
+    }
+
+    @Test
+    void runsMipmappedImageMetadataKernelOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_image_meta_mipmapped_entry",
+                "inline://integration/image-meta-mipmapped-kernel.cl",
+                """
+                        __kernel void gpu_image_meta_mipmapped_entry(read_only image2d_t inputImage, __global int* output) {
+                            int id = get_global_id(0);
+                            int mipLevels = get_image_num_mip_levels(inputImage);
+                            int sampleCount = get_image_num_samples(inputImage);
+                            output[id] = mipLevels + sampleCount + get_image_width(inputImage) + get_image_height(inputImage);
+                        }""",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMipmappedReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        assumeKernelCompiles(descriptor, "Skipping mipmapped image metadata integration smoke test");
+
+        int[] output = new int[]{0, 0};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DMipmappedReadOnly inputImage = backend.createReadOnlyRgbaUIntImageMipmapped(
+                     4,
+                     2,
+                     2,
+                     new int[]{
+                             1, 2, 3, 4,
+                             5, 6, 7, 8,
+                             9, 10, 11, 12,
+                             13, 14, 15, 16,
+                             17, 18, 19, 20,
+                             21, 22, 23, 24,
+                             25, 26, 27, 28,
+                             29, 30, 31, 32,
+                             33, 34, 35, 36,
+                             37, 38, 39, 40
+                     }
+             )) {
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{inputImage, output}));
+
+            assertArrayEquals(new int[]{9, 9}, output);
+        }
+    }
+
+    @Test
+    void runsMipmappedFloatImageKernelOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_image_mipmapped_float_entry",
+                "inline://integration/image-mipmapped-float-kernel.cl",
+                """
+                        __kernel void gpu_image_mipmapped_float_entry(read_only image2d_t inputImage, write_only image2d_t outputImage, sampler_t sampler, __global int* output) {
+                            int id = get_global_id(0);
+                            int2 coords = (int2)(id, 0);
+                            float4 pixel = read_imagef(inputImage, sampler, coords);
+                            output[id] = (int) (pixel.x + pixel.y + pixel.z + pixel.w);
+                            write_imagef(outputImage, coords, (float4)(1.0f, 0.5f, 0.25f, 1.0f));
+                        }""",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMipmappedReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DMipmappedWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("sampler", "Sampler", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        assumeKernelCompiles(descriptor, "Skipping mipmapped float image integration smoke test");
+
+        int[] output = new int[]{0, 0};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DMipmappedReadOnly inputImage = backend.createReadOnlyRgbaFloatImageMipmapped(
+                     2,
+                     1,
+                     1,
+                     new float[]{
+                             1.0f, 0.5f, 0.25f, 1.0f,
+                             0.25f, 0.25f, 0.25f, 1.0f
+                     }
+             );
+             Image2DMipmappedWriteOnly outputImage = backend.createWriteOnlyRgbaFloatImageMipmapped(2, 1, 1);
+             Sampler sampler = backend.createNearestClampToEdgeSampler()) {
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{inputImage, outputImage, sampler, output}));
+            float[] written = backend.readRgbaFloatImageMipmapped(outputImage, 0);
+
+            assertArrayEquals(new int[]{2, 1}, output);
+            assertArrayEquals(new float[]{1.0f, 0.5f, 0.25f, 1.0f}, new float[]{written[0], written[1], written[2], written[3]});
+            assertArrayEquals(new float[]{1.0f, 0.5f, 0.25f, 1.0f}, new float[]{written[4], written[5], written[6], written[7]});
+        }
+    }
+
+    @Test
+    void runsMipmappedUIntImageKernelOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_image_mipmapped_uint_entry",
+                "inline://integration/image-mipmapped-uint-kernel.cl",
+                """
+                        __kernel void gpu_image_mipmapped_uint_entry(read_only image2d_t inputImage, write_only image2d_t outputImage, sampler_t sampler, __global int* output) {
+                            int id = get_global_id(0);
+                            int2 coords = (int2)(id, 0);
+                            uint4 pixel = read_imageui(inputImage, sampler, coords);
+                            output[id] = (int) (pixel.x + pixel.y + pixel.z + pixel.w);
+                            write_imageui(outputImage, coords, (uint4)(9, 10, 11, 12));
+                        }""",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("inputImage", "Image2DMipmappedReadOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("outputImage", "Image2DMipmappedWriteOnly", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("sampler", "Sampler", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        assumeKernelCompiles(descriptor, "Skipping mipmapped uint image integration smoke test");
+
+        int[] output = new int[]{0, 0};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
+             Image2DMipmappedReadOnly inputImage = backend.createReadOnlyRgbaUIntImageMipmapped(
+                     2,
+                     1,
+                     1,
+                     new int[]{
+                             1, 2, 3, 4,
+                             5, 6, 7, 8
+                     }
+             );
+             Image2DMipmappedWriteOnly outputImage = backend.createWriteOnlyRgbaUIntImageMipmapped(2, 1, 1);
+             Sampler sampler = backend.createNearestClampToEdgeSampler()) {
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{inputImage, outputImage, sampler, output}));
+            int[] written = backend.readRgbaUIntImageMipmapped(outputImage, 0);
+
+            assertArrayEquals(new int[]{10, 26}, output);
+            assertArrayEquals(new int[]{9, 10, 11, 12}, new int[]{written[0], written[1], written[2], written[3]});
+            assertArrayEquals(new int[]{9, 10, 11, 12}, new int[]{written[4], written[5], written[6], written[7]});
         }
     }
 

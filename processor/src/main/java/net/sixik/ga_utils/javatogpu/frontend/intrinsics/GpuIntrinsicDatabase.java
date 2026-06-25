@@ -1,13 +1,12 @@
 package net.sixik.ga_utils.javatogpu.frontend.intrinsics;
 
-import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LiteralStringValueExpr;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.expr.TextBlockLiteralExpr;
 import net.sixik.ga_utils.javatogpu.backend.GpuBackendSupport;
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;

@@ -1,9 +1,9 @@
 package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLQualifiers;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLQualifiers;
 
 @CCodeLibrary
 public final class PointerQualifierExample {

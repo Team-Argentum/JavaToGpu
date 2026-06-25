@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
 @GPUStruct
 public final class Vec2 {

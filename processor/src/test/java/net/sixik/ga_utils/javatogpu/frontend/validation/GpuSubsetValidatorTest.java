@@ -3,7 +3,6 @@ package net.sixik.ga_utils.javatogpu.frontend.validation;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.parser.GpuStructParser;
 import net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;

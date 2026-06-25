@@ -29,13 +29,16 @@ public final class GpuRuntimeBackendPolicy {
 
     private final List<GpuRuntimeRequirement> requirements;
     private final List<GpuRuntimeBackendFactory> candidateFactories;
+    private final List<GpuRuntimeBackendOwnership> candidateOwnerships;
 
     private GpuRuntimeBackendPolicy(
             List<GpuRuntimeRequirement> requirements,
-            List<GpuRuntimeBackendFactory> candidateFactories
+            List<GpuRuntimeBackendFactory> candidateFactories,
+            List<GpuRuntimeBackendOwnership> candidateOwnerships
     ) {
         this.requirements = List.copyOf(requirements);
         this.candidateFactories = List.copyOf(candidateFactories);
+        this.candidateOwnerships = List.copyOf(candidateOwnerships);
     }
 
     /**
@@ -60,6 +63,13 @@ public final class GpuRuntimeBackendPolicy {
     }
 
     /**
+     * Returns the ownership policy applied to the ordered fallback chain.
+     */
+    public List<GpuRuntimeBackendOwnership> candidateOwnerships() {
+        return candidateOwnerships;
+    }
+
+    /**
      * Creates backend candidates, returns the first matching backend, and leaves ownership of that backend to the
      * caller.
      *
@@ -78,7 +88,9 @@ public final class GpuRuntimeBackendPolicy {
      */
     public GpuRuntimeSelectionResult trySelect() {
         List<String> failures = new ArrayList<>();
-        for (GpuRuntimeBackendFactory factory : candidateFactories) {
+        for (int index = 0; index < candidateFactories.size(); index++) {
+            GpuRuntimeBackendFactory factory = candidateFactories.get(index);
+            GpuRuntimeBackendOwnership ownership = candidateOwnerships.get(index);
             GpuRuntimeBackend candidate;
             try {
                 candidate = factory.create();
@@ -90,11 +102,13 @@ public final class GpuRuntimeBackendPolicy {
             GpuRuntimeBackendReport report = GpuRuntime.describeBackend(candidate);
             List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
             if (reasons.isEmpty()) {
-                return new GpuRuntimeSelectionResult(new GpuRuntimeBackendSelection(candidate, report), failures);
+                return new GpuRuntimeSelectionResult(new GpuRuntimeBackendSelection(candidate, report, ownership), failures);
             }
 
             failures.add(report.backendName() + ": " + String.join("; ", reasons));
-            closeCandidateQuietly(candidate);
+            if (ownership == GpuRuntimeBackendOwnership.OWNED) {
+                closeCandidateQuietly(candidate);
+            }
         }
 
         return new GpuRuntimeSelectionResult(null, failures);
@@ -105,10 +119,7 @@ public final class GpuRuntimeBackendPolicy {
      * candidates automatically when possible.
      */
     public GpuRuntimeScope use() {
-        return GpuRuntime.useFirstMatching(
-                requirements,
-                candidateFactories.toArray(GpuRuntimeBackendFactory[]::new)
-        );
+        return select().install();
     }
 
     private static void closeCandidateQuietly(GpuRuntimeBackend candidate) {
@@ -128,6 +139,7 @@ public final class GpuRuntimeBackendPolicy {
 
         private final List<GpuRuntimeRequirement> requirements = new ArrayList<>();
         private final List<GpuRuntimeBackendFactory> candidateFactories = new ArrayList<>();
+        private final List<GpuRuntimeBackendOwnership> candidateOwnerships = new ArrayList<>();
 
         private Builder() {
         }
@@ -190,19 +202,37 @@ public final class GpuRuntimeBackendPolicy {
         }
 
         /**
-         * Appends one backend factory to the fallback chain.
+         * Appends one managed backend factory to the fallback chain.
+         *
+         * <p>Each selection attempt creates a fresh backend instance. Rejected candidates may be auto-closed, and a
+         * selected candidate may be auto-closed when installed through owned-scope helpers.
          */
-        public Builder prefer(GpuRuntimeBackendFactory factory) {
+        public Builder preferFactory(GpuRuntimeBackendFactory factory) {
             candidateFactories.add(Objects.requireNonNull(factory, "factory"));
+            candidateOwnerships.add(GpuRuntimeBackendOwnership.OWNED);
             return this;
         }
 
         /**
-         * Appends one already-constructed backend to the fallback chain.
+         * Appends one explicitly owned backend instance to the fallback chain.
          */
-        public Builder preferBackend(GpuRuntimeBackend backend) {
+        public Builder preferOwnedBackend(GpuRuntimeBackend backend) {
             Objects.requireNonNull(backend, "backend");
             candidateFactories.add(() -> backend);
+            candidateOwnerships.add(GpuRuntimeBackendOwnership.OWNED);
+            return this;
+        }
+
+        /**
+         * Appends one caller-owned backend instance to the fallback chain.
+         *
+         * <p>Rejected candidates are not auto-closed, and a selected candidate installed through
+         * {@link GpuRuntime#use(GpuRuntimeBackendPolicy)} remains caller-managed.
+         */
+        public Builder preferBorrowedBackend(GpuRuntimeBackend backend) {
+            Objects.requireNonNull(backend, "backend");
+            candidateFactories.add(() -> backend);
+            candidateOwnerships.add(GpuRuntimeBackendOwnership.BORROWED);
             return this;
         }
 
@@ -210,16 +240,14 @@ public final class GpuRuntimeBackendPolicy {
          * Appends an instance-local OpenCL backend to the fallback chain.
          */
         public Builder preferOpenCl() {
-            candidateFactories.add(OpenClGpuRuntimeBackend::new);
-            return this;
+            return preferFactory(OpenClGpuRuntimeBackend::new);
         }
 
         /**
          * Appends a shared-cache OpenCL backend to the fallback chain.
          */
         public Builder preferOpenClSharedCache() {
-            candidateFactories.add(OpenClGpuRuntimeBackend::sharedCache);
-            return this;
+            return preferFactory(OpenClGpuRuntimeBackend::sharedCache);
         }
 
         /**
@@ -229,7 +257,7 @@ public final class GpuRuntimeBackendPolicy {
             if (candidateFactories.isEmpty()) {
                 throw new IllegalStateException("GPU runtime backend policy requires at least one candidate backend");
             }
-            return new GpuRuntimeBackendPolicy(requirements, candidateFactories);
+            return new GpuRuntimeBackendPolicy(requirements, candidateFactories, candidateOwnerships);
         }
     }
 }

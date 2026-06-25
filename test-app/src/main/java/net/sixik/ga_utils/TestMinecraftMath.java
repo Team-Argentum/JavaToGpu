@@ -3,9 +3,9 @@ package net.sixik.ga_utils;
 import net.sixik.ga_utils.javatogpu.api.Double3;
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.Int3;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope;
 
@@ -37,7 +37,7 @@ public final class TestMinecraftMath {
 
     private static class GPUCode {
 
-        @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+        @net.sixik.ga_utils.javatogpu.api.annotations.GPU
         public static void kernel(PerlinNoiseInfo noise,
                                   @GPUGlobal byte[] permutation0,
                                   @GPUGlobal byte[] permutation1,

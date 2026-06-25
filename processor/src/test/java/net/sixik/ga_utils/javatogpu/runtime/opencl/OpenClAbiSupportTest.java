@@ -1,8 +1,8 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import net.sixik.ga_utils.javatogpu.api.Float3;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
+import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
@@ -82,6 +82,51 @@ class OpenClAbiSupportTest {
                 "Type requires an accessible no-arg constructor for OpenCL readback: "
                         + NoDefaultConstructorSample.class.getName()
         ));
+        assertTrue(exception.getMessage().contains("add a default constructor"));
+    }
+
+    @Test
+    void rejectsNonStructAbiTypeWithQuickFixHint() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClAbiSupport.describeStructType(String.class)
+        );
+
+        assertTrue(exception.getMessage().contains("Unsupported OpenCL struct argument type: java.lang.String"));
+        assertTrue(exception.getMessage().contains("mark the type with @GPUStruct"));
+    }
+
+    @Test
+    void rejectsUnsupportedStructFieldTypeWithQuickFixHint() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClAbiSupport.describeStructType(UnsupportedFieldSample.class)
+        );
+
+        assertTrue(exception.getMessage().contains("Unsupported OpenCL field type for ABI marshalling: java.lang.String"));
+        assertTrue(exception.getMessage().contains("primitive fields, supported vector fields, or nested @GPUStruct values"));
+    }
+
+    @Test
+    void rejectsUnsupportedStructArrayTypeWithQuickFixHint() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClAbiSupport.structArrayByteSize(new String[]{"bad"})
+        );
+
+        assertTrue(exception.getMessage().contains("Unsupported OpenCL struct array type"));
+        assertTrue(exception.getMessage().contains("use @GPUStruct[] arrays"));
+    }
+
+    @Test
+    void rejectsUnsupportedVectorArrayTypeWithQuickFixHint() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClAbiSupport.vectorArrayByteSize(new String[]{"bad"})
+        );
+
+        assertTrue(exception.getMessage().contains("Unsupported OpenCL vector array type"));
+        assertTrue(exception.getMessage().contains("Float2, Int4, or UInt16"));
     }
 
     @Test
@@ -102,6 +147,15 @@ class OpenClAbiSupportTest {
         assertTrue(debug.contains("AlignedVectorSample [STRUCT] size=32, align=32"));
         assertTrue(debug.contains("normal @0 size=16, align=16, type=" + Float3.class.getName()));
         assertTrue(debug.contains("weight @16 size=8, align=16"));
+    }
+
+    @Test
+    void describesCanonicalStructAnnotationPackageForAbiCompatibility() {
+        OpenClAbiDescriptor descriptor = OpenClAbiSupport.describeStructType(CanonicalStructSample.class);
+
+        assertEquals(OpenClAbiKind.STRUCT, descriptor.kind());
+        assertEquals(8, descriptor.size());
+        assertEquals(4, descriptor.alignment());
     }
 
     @GPUStruct
@@ -142,6 +196,23 @@ class OpenClAbiSupportTest {
         double weight;
 
         AlignedVectorSample() {
+        }
+    }
+
+    @GPUStruct
+    static final class UnsupportedFieldSample {
+        String label;
+
+        UnsupportedFieldSample() {
+        }
+    }
+
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct
+    static final class CanonicalStructSample {
+        int x;
+        float y;
+
+        CanonicalStructSample() {
         }
     }
 }

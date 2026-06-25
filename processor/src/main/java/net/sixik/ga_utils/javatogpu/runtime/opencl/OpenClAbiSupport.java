@@ -1,9 +1,9 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-import net.sixik.ga_utils.javatogpu.api.anotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.GpuAnnotationSupport;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -26,14 +26,14 @@ final class OpenClAbiSupport {
     }
 
     static boolean isStructInstance(Object value) {
-        return value.getClass().isAnnotationPresent(GPUStruct.class);
+        return GpuAnnotationSupport.hasAnnotation(value.getClass(), GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES);
     }
 
     static boolean isStructArrayInstance(Object value) {
         Class<?> type = value.getClass();
         return type.isArray()
                 && type.getComponentType() != null
-                && type.getComponentType().isAnnotationPresent(GPUStruct.class);
+                && GpuAnnotationSupport.hasAnnotation(type.getComponentType(), GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES);
     }
 
     static boolean isVectorArrayInstance(Object value) {
@@ -119,11 +119,16 @@ final class OpenClAbiSupport {
     }
 
     private static OpenClStructLayout createStructLayout(Class<?> type) {
-        if (!type.isAnnotationPresent(GPUStruct.class)) {
-            throw new IllegalArgumentException("Unsupported OpenCL struct argument type: " + type.getName());
+        if (!GpuAnnotationSupport.hasAnnotation(type, GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES)) {
+            throw new IllegalArgumentException(
+                    "Unsupported OpenCL struct argument type: "
+                            + type.getName()
+                            + "; mark the type with @GPUStruct before using it in packed OpenCL ABI marshalling"
+            );
         }
 
-        boolean packed = hasPacked(type.getAnnotation(OpenCLAttributes.class));
+        List<String> structAttributes = openClAttributes(type);
+        boolean packed = hasPacked(structAttributes);
         int structAlignment = 1;
         int offset = 0;
         List<OpenClFieldLayout> fields = new ArrayList<>();
@@ -136,7 +141,7 @@ final class OpenClAbiSupport {
             field.setAccessible(true);
             OpenClValueLayout valueLayout = resolveLayoutForType(field.getType());
             int fieldAlignment = packed ? 1 : valueLayout.alignment();
-            int explicitFieldAlignment = explicitAlignment(field.getAnnotation(OpenCLAttributes.class));
+            int explicitFieldAlignment = explicitAlignment(openClAttributes(field));
             if (explicitFieldAlignment > 0) {
                 fieldAlignment = Math.max(fieldAlignment, explicitFieldAlignment);
             }
@@ -147,7 +152,7 @@ final class OpenClAbiSupport {
             structAlignment = Math.max(structAlignment, fieldAlignment);
         }
 
-        int explicitStructAlignment = explicitAlignment(type.getAnnotation(OpenCLAttributes.class));
+        int explicitStructAlignment = explicitAlignment(structAttributes);
         if (explicitStructAlignment > 0) {
             structAlignment = Math.max(structAlignment, explicitStructAlignment);
         }
@@ -163,15 +168,20 @@ final class OpenClAbiSupport {
             throw new IllegalArgumentException(
                     "Unsupported OpenCL field type for ABI marshalling: " + type.getName()
                             + "; array fields inside @GPUStruct are not supported in the current OpenCL ABI"
+                            + "; move the array to a kernel parameter or flatten it into scalar/vector fields"
             );
         }
         if (GpuTypeSupport.isSupportedVectorType(type.getName())) {
             return new OpenClVectorLayout(type.getName());
         }
-        if (type.isAnnotationPresent(GPUStruct.class)) {
+        if (GpuAnnotationSupport.hasAnnotation(type, GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES)) {
             return resolveStructLayout(type);
         }
-        throw new IllegalArgumentException("Unsupported OpenCL field type for ABI marshalling: " + type.getName());
+        throw new IllegalArgumentException(
+                "Unsupported OpenCL field type for ABI marshalling: "
+                        + type.getName()
+                        + "; use primitive fields, supported vector fields, or nested @GPUStruct values"
+        );
     }
 
     private static ByteBuffer packPackedArray(Object array, PackedArrayKind kind) {
@@ -213,8 +223,12 @@ final class OpenClAbiSupport {
 
     private static Class<?> requireStructArrayComponentType(Class<?> arrayType) {
         Class<?> componentType = arrayType.getComponentType();
-        if (componentType == null || !componentType.isAnnotationPresent(GPUStruct.class)) {
-            throw new IllegalArgumentException("Unsupported OpenCL struct array type: " + arrayType.getName());
+        if (componentType == null || !GpuAnnotationSupport.hasAnnotation(componentType, GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES)) {
+            throw new IllegalArgumentException(
+                    "Unsupported OpenCL struct array type: "
+                            + arrayType.getName()
+                            + "; use @GPUStruct[] arrays when marshalling packed struct buffers"
+            );
         }
         return componentType;
     }
@@ -222,7 +236,11 @@ final class OpenClAbiSupport {
     private static Class<?> requireVectorArrayComponentType(Class<?> arrayType) {
         Class<?> componentType = arrayType.getComponentType();
         if (componentType == null || !GpuTypeSupport.isSupportedVectorType(componentType.getName())) {
-            throw new IllegalArgumentException("Unsupported OpenCL vector array type: " + arrayType.getName());
+            throw new IllegalArgumentException(
+                    "Unsupported OpenCL vector array type: "
+                            + arrayType.getName()
+                            + "; use arrays of supported GPU vector wrappers such as Float2, Int4, or UInt16"
+            );
         }
         return componentType;
     }
@@ -234,11 +252,8 @@ final class OpenClAbiSupport {
         };
     }
 
-    private static boolean hasPacked(OpenCLAttributes attributes) {
-        if (attributes == null) {
-            return false;
-        }
-        for (String attribute : attributes.value()) {
+    private static boolean hasPacked(List<String> attributes) {
+        for (String attribute : attributes) {
             if ("packed".equals(attribute.strip())) {
                 return true;
             }
@@ -246,19 +261,32 @@ final class OpenClAbiSupport {
         return false;
     }
 
-    private static int explicitAlignment(OpenCLAttributes attributes) {
-        if (attributes == null) {
-            return 0;
-        }
-
+    private static int explicitAlignment(List<String> attributes) {
         int alignment = 0;
-        for (String attribute : attributes.value()) {
+        for (String attribute : attributes) {
             Matcher matcher = ALIGNED_PATTERN.matcher(attribute.strip());
             if (matcher.matches()) {
                 alignment = Math.max(alignment, Integer.parseInt(matcher.group(1)));
             }
         }
         return alignment;
+    }
+
+    private static List<String> openClAttributes(java.lang.reflect.AnnotatedElement element) {
+        for (Annotation annotation : element.getAnnotations()) {
+            if (!GpuAnnotationSupport.OPENCL_ATTRIBUTES_ANNOTATION_TYPES.contains(annotation.annotationType().getName())) {
+                continue;
+            }
+            try {
+                Object value = annotation.annotationType().getMethod("value").invoke(annotation);
+                if (value instanceof String[] array) {
+                    return List.of(array);
+                }
+            } catch (ReflectiveOperationException exception) {
+                throw new IllegalStateException("Failed to read OpenCL attribute metadata from " + element, exception);
+            }
+        }
+        return List.of();
     }
 
     static int align(int value, int alignment) {
@@ -355,7 +383,12 @@ final class OpenClAbiSupport {
             constructor.setAccessible(true);
             return constructor.newInstance();
         } catch (ReflectiveOperationException exception) {
-            throw new IllegalArgumentException("Type requires an accessible no-arg constructor for OpenCL readback: " + type.getName(), exception);
+            throw new IllegalArgumentException(
+                    "Type requires an accessible no-arg constructor for OpenCL readback: "
+                            + type.getName()
+                            + "; add a default constructor so packed struct/vector values can be reconstructed during readback",
+                    exception
+            );
         }
     }
 

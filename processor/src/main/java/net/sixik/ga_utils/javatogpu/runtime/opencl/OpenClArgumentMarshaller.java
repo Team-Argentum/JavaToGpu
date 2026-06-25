@@ -10,6 +10,10 @@ import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
@@ -213,6 +217,22 @@ public final class OpenClArgumentMarshaller {
             requireValidHandle(parameterDescriptor, "Image2DWriteOnly", image.isValid());
             return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D, access, image.handle());
         }
+        if (argument instanceof Image2DMipmappedReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DMipmappedReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D, access, image.handle());
+        }
+        if (argument instanceof Image2DMipmappedWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DMipmappedWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D, access, image.handle());
+        }
+        if (argument instanceof Image2DMsaaReadOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DMsaaReadOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D_MSAA, access, image.handle());
+        }
+        if (argument instanceof Image2DMsaaWriteOnly image) {
+            requireValidHandle(parameterDescriptor, "Image2DMsaaWriteOnly", image.isValid());
+            return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D_MSAA, access, image.handle());
+        }
         if (argument instanceof Image2DArrayReadOnly image) {
             requireValidHandle(parameterDescriptor, "Image2DArrayReadOnly", image.isValid());
             return new OpenClScalarArgument(OpenClArgumentKind.IMAGE2D_ARRAY, access, image.handle());
@@ -244,7 +264,11 @@ public final class OpenClArgumentMarshaller {
     private static void requireValidHandle(GpuKernelParameterDescriptor parameterDescriptor, String typeName, boolean valid) {
         if (!valid) {
             throw new IllegalArgumentException(
-                    typeName + " runtime argument for parameter '" + parameterDescriptor.name() + "' does not carry a valid native handle"
+                    typeName
+                            + " runtime argument for parameter '"
+                            + parameterDescriptor.name()
+                            + "' does not carry a valid native handle"
+                            + "; create it through OpenClGpuRuntimeBackend or pass a borrowed/owned wrapper with a live handle"
             );
         }
     }

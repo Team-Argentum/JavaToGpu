@@ -10,6 +10,8 @@ import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
@@ -293,10 +295,10 @@ class OpenClGpuRuntimeBackendTest {
                 ))
         );
 
-        assertEquals(
-                "OpenCL capability precheck failed for kernel kernel: device Fake GPU does not advertise fp64 support, but the kernel uses double precision",
-                exception.getMessage()
-        );
+        assertTrue(exception.getMessage().contains(
+                "OpenCL capability precheck failed for kernel kernel: device Fake GPU does not advertise fp64 support, but the kernel uses double precision"
+        ));
+        assertTrue(exception.getMessage().contains("float/fallback path"));
         assertEquals(0, compileCalls.get());
         assertEquals(0, backend.cacheSize());
     }
@@ -336,10 +338,10 @@ class OpenClGpuRuntimeBackendTest {
                 ))
         );
 
-        assertEquals(
-                "OpenCL capability precheck failed for kernel kernel: device Fake GPU does not support OpenCL images, but the kernel requires image/sampler parameters",
-                exception.getMessage()
-        );
+        assertTrue(exception.getMessage().contains(
+                "OpenCL capability precheck failed for kernel kernel: device Fake GPU does not support OpenCL images, but the kernel requires image/sampler parameters"
+        ));
+        assertTrue(exception.getMessage().contains("buffer-backed kernels"));
         assertEquals(0, compileCalls.get());
     }
 
@@ -379,10 +381,10 @@ class OpenClGpuRuntimeBackendTest {
                 ))
         );
 
-        assertEquals(
-                "OpenCL capability precheck failed for kernel kernel: device Fake GPU does not support 3D image writes required by the kernel",
-                exception.getMessage()
-        );
+        assertTrue(exception.getMessage().contains(
+                "OpenCL capability precheck failed for kernel kernel: device Fake GPU does not support 3D image writes required by the kernel"
+        ));
+        assertTrue(exception.getMessage().contains("2D/buffer workflows"));
         assertEquals(0, compileCalls.get());
     }
 
@@ -420,10 +422,10 @@ class OpenClGpuRuntimeBackendTest {
                 ))
         );
 
-        assertEquals(
-                "OpenCL capability precheck failed for kernel kernel: requested 12 bytes of local memory, but device Fake GPU exposes only 8 bytes",
-                exception.getMessage()
-        );
+        assertTrue(exception.getMessage().contains(
+                "OpenCL capability precheck failed for kernel kernel: requested 12 bytes of local memory, but device Fake GPU exposes only 8 bytes"
+        ));
+        assertTrue(exception.getMessage().contains("reduce the local scratch size"));
         assertEquals(0, compileCalls.get());
     }
 
@@ -855,6 +857,26 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void createsHighLevelDepthImageThroughProtectedHook() {
+        AtomicReference<float[]> captured = new AtomicReference<>();
+
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected Image2DReadOnly createReadOnlyDepthImageInternal(int width, int height, float[] values) {
+                assertEquals(2, width);
+                assertEquals(1, height);
+                captured.set(values);
+                return Image2DReadOnly.borrowed(7791L, width, height);
+            }
+        };
+
+        Image2DReadOnly image = backend.createReadOnlyDepthImage(2, 1, new float[]{0.25f, 0.75f});
+
+        assertEquals(7791L, image.handle());
+        assertEquals(2, captured.get().length);
+    }
+
+    @Test
     void createsHighLevelRIntImageThroughProtectedHook() {
         AtomicReference<int[]> captured = new AtomicReference<>();
 
@@ -1181,6 +1203,58 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void createsHighLevelMipmappedFloatImageThroughProtectedHook() {
+        AtomicReference<float[]> captured = new AtomicReference<>();
+
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected Image2DMipmappedReadOnly createReadOnlyRgbaFloatImageMipmappedInternal(int width, int height, int mipLevels, float[] rgba) {
+                assertEquals(4, width);
+                assertEquals(2, height);
+                assertEquals(2, mipLevels);
+                captured.set(rgba);
+                return Image2DMipmappedReadOnly.borrowed(10121L, width, height, mipLevels);
+            }
+        };
+
+        Image2DMipmappedReadOnly image = backend.createReadOnlyRgbaFloatImageMipmapped(4, 2, 2, new float[]{
+                1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1,
+                1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1,
+                0.5f, 0.5f, 0.5f, 1.0f, 0.25f, 0.25f, 0.25f, 1.0f
+        });
+
+        assertEquals(10121L, image.handle());
+        assertEquals(40, captured.get().length);
+    }
+
+    @Test
+    void createsHighLevelMipmappedUIntImageThroughProtectedHook() {
+        AtomicReference<int[]> captured = new AtomicReference<>();
+
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected Image2DMipmappedReadOnly createReadOnlyRgbaUIntImageMipmappedInternal(int width, int height, int mipLevels, int[] rgba) {
+                assertEquals(4, width);
+                assertEquals(2, height);
+                assertEquals(2, mipLevels);
+                captured.set(rgba);
+                return Image2DMipmappedReadOnly.borrowed(10122L, width, height, mipLevels);
+            }
+        };
+
+        Image2DMipmappedReadOnly image = backend.createReadOnlyRgbaUIntImageMipmapped(4, 2, 2, new int[]{
+                1, 2, 3, 4, 5, 6, 7, 8,
+                9, 10, 11, 12, 13, 14, 15, 16,
+                17, 18, 19, 20, 21, 22, 23, 24,
+                25, 26, 27, 28, 29, 30, 31, 32,
+                33, 34, 35, 36, 37, 38, 39, 40
+        });
+
+        assertEquals(10122L, image.handle());
+        assertEquals(40, captured.get().length);
+    }
+
+    @Test
     void readsHighLevelFloatImageThroughProtectedHook() {
         OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
             @Override
@@ -1223,6 +1297,21 @@ class OpenClGpuRuntimeBackendTest {
         float[] values = backend.readRgFloatImage(Image2DWriteOnly.borrowed(125L, 2, 1));
 
         assertArrayEquals(new float[]{1.0f, 2.0f, 3.0f, 4.0f}, values);
+    }
+
+    @Test
+    void readsHighLevelDepthImageThroughProtectedHook() {
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected float[] readDepthImageInternal(Image2DWriteOnly image) {
+                assertEquals(1251L, image.handle());
+                return new float[]{0.25f, 0.75f};
+            }
+        };
+
+        float[] values = backend.readDepthImage(Image2DWriteOnly.borrowed(1251L, 2, 1));
+
+        assertArrayEquals(new float[]{0.25f, 0.75f}, values);
     }
 
     @Test
@@ -1453,5 +1542,39 @@ class OpenClGpuRuntimeBackendTest {
         float[] rgba = backend.readRgbaFloatImage2DArray(Image2DArrayWriteOnly.borrowed(912L, 1, 1, 2));
 
         assertArrayEquals(new float[]{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f}, rgba);
+    }
+
+    @Test
+    void readsHighLevelMipmappedFloatImageThroughProtectedHook() {
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected float[] readRgbaFloatImageMipmappedInternal(Image2DMipmappedWriteOnly image, int mipLevel) {
+                assertEquals(10123L, image.handle());
+                assertEquals(2, image.mipLevels());
+                assertEquals(1, mipLevel);
+                return new float[]{1.0f, 2.0f, 3.0f, 4.0f};
+            }
+        };
+
+        float[] rgba = backend.readRgbaFloatImageMipmapped(Image2DMipmappedWriteOnly.borrowed(10123L, 4, 2, 2), 1);
+
+        assertArrayEquals(new float[]{1.0f, 2.0f, 3.0f, 4.0f}, rgba);
+    }
+
+    @Test
+    void readsHighLevelMipmappedUIntImageThroughProtectedHook() {
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected int[] readRgbaUIntImageMipmappedInternal(Image2DMipmappedWriteOnly image, int mipLevel) {
+                assertEquals(10124L, image.handle());
+                assertEquals(2, image.mipLevels());
+                assertEquals(1, mipLevel);
+                return new int[]{9, 10, 11, 12};
+            }
+        };
+
+        int[] rgba = backend.readRgbaUIntImageMipmapped(Image2DMipmappedWriteOnly.borrowed(10124L, 4, 2, 2), 1);
+
+        assertArrayEquals(new int[]{9, 10, 11, 12}, rgba);
     }
 }

@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.api;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUPointerType;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUPointerType;
 
 /**
  * Mutable byte-by-reference wrapper for GPU helper calls.

@@ -7,16 +7,8 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import net.sixik.ga_utils.javatogpu.api.GpuAnnotationSupport;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCode;
-import net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPU;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUConstant;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsicLibrary;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal;
-import net.sixik.ga_utils.javatogpu.api.anotations.GPULocal;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendService;
 import net.sixik.ga_utils.javatogpu.frontend.GpuStructAliasRegistry;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
@@ -53,7 +45,6 @@ import java.io.Writer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -64,14 +55,14 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @SupportedAnnotationTypes({
-        "net.sixik.ga_utils.javatogpu.api.anotations.GPU",
-        "net.sixik.ga_utils.javatogpu.api.anotations.CCode",
-        "net.sixik.ga_utils.javatogpu.api.anotations.CCodeLibrary",
-        "net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic",
-        "net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsicLibrary",
-        "net.sixik.ga_utils.javatogpu.api.anotations.GPUConstant",
-        "net.sixik.ga_utils.javatogpu.api.anotations.GPULocal",
-        "net.sixik.ga_utils.javatogpu.api.anotations.GPUStruct"
+        "net.sixik.ga_utils.javatogpu.api.annotations.GPU",
+        "net.sixik.ga_utils.javatogpu.api.annotations.CCode",
+        "net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary",
+        "net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic",
+        "net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsicLibrary",
+        "net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant",
+        "net.sixik.ga_utils.javatogpu.api.annotations.GPULocal",
+        "net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct"
 })
 public final class GpuCompilerProcessor extends AbstractProcessor {
 
@@ -89,6 +80,16 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private final Map<String, String> exportedIntrinsicLibraries = new LinkedHashMap<>();
 
     private Trees trees;
+
+    private static final List<String> GPU_ANNOTATIONS = GpuAnnotationSupport.GPU_ANNOTATION_TYPES;
+    private static final List<String> CCODE_ANNOTATIONS = GpuAnnotationSupport.CCODE_ANNOTATION_TYPES;
+    private static final List<String> CCODE_LIBRARY_ANNOTATIONS = GpuAnnotationSupport.CCODE_LIBRARY_ANNOTATION_TYPES;
+    private static final List<String> GPU_INTRINSIC_ANNOTATIONS = GpuAnnotationSupport.GPU_INTRINSIC_ANNOTATION_TYPES;
+    private static final List<String> GPU_INTRINSIC_LIBRARY_ANNOTATIONS = GpuAnnotationSupport.GPU_INTRINSIC_LIBRARY_ANNOTATION_TYPES;
+    private static final List<String> GPU_CONSTANT_ANNOTATIONS = GpuAnnotationSupport.GPU_CONSTANT_ANNOTATION_TYPES;
+    private static final List<String> GPU_GLOBAL_ANNOTATIONS = GpuAnnotationSupport.GPU_GLOBAL_ANNOTATION_TYPES;
+    private static final List<String> GPU_LOCAL_ANNOTATIONS = GpuAnnotationSupport.GPU_LOCAL_ANNOTATION_TYPES;
+    private static final List<String> GPU_STRUCT_ANNOTATIONS = GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES;
 
     @Override
     public Set<String> getSupportedOptions() {
@@ -142,7 +143,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             }
         }
 
-        for (Element element : roundEnv.getElementsAnnotatedWith(GPU.class)) {
+        for (Element element : elementsAnnotatedWithAny(roundEnv, GPU_ANNOTATIONS)) {
             if (element.getKind() != ElementKind.METHOD) {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "@GPU can only be used on methods", element);
                 continue;
@@ -198,7 +199,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         return method.getEnclosingElement().getEnclosedElements().stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
-                .filter(candidate -> candidate.getAnnotation(CCode.class) != null)
+                .filter(candidate -> hasAnyAnnotation(candidate, CCODE_ANNOTATIONS))
                 .filter(candidate -> !candidate.equals(method))
                 .map(this::extractMethodSource)
                 .toList();
@@ -231,7 +232,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     }
 
     private List<ParsedGpuStruct> collectStructs(RoundEnvironment roundEnv) {
-        return roundEnv.getElementsAnnotatedWith(GPUStruct.class).stream()
+        return elementsAnnotatedWithAny(roundEnv, GPU_STRUCT_ANNOTATIONS).stream()
                 .filter(element -> element.getKind().isClass() || element.getKind().isInterface())
                 .map(TypeElement.class::cast)
                 .map(this::parseStruct)
@@ -244,7 +245,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             ExecutableElement kernelElement
     ) {
         Set<String> reachableOwners = new LinkedHashSet<>(extractScopedHelperOwners(kernelMethod));
-        List<ParsedGpuMethod> currentHelpers = roundEnv.getElementsAnnotatedWith(CCode.class).stream()
+        List<ParsedGpuMethod> currentHelpers = elementsAnnotatedWithAny(roundEnv, CCODE_ANNOTATIONS).stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
                 .filter(candidate -> !candidate.equals(kernelElement))
@@ -266,7 +267,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             List<ParsedGpuMethod> helperMethods,
             ExecutableElement kernelElement
     ) {
-        List<ParsedGpuMethod> currentIntrinsics = roundEnv.getElementsAnnotatedWith(GPUIntrinsic.class).stream()
+        List<ParsedGpuMethod> currentIntrinsics = elementsAnnotatedWithAny(roundEnv, GPU_INTRINSIC_ANNOTATIONS).stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
                 .filter(this::isSupportedIntrinsicMethod)
@@ -362,7 +363,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     }
 
     private void writeHelperMetadata(RoundEnvironment roundEnv) throws IOException {
-        Map<TypeElement, List<ExecutableElement>> helpersByOwner = roundEnv.getElementsAnnotatedWith(CCode.class).stream()
+        Map<TypeElement, List<ExecutableElement>> helpersByOwner = elementsAnnotatedWithAny(roundEnv, CCODE_ANNOTATIONS).stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
                 .collect(Collectors.groupingBy(
@@ -408,7 +409,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     }
 
     private void writeIntrinsicMetadata(RoundEnvironment roundEnv) throws IOException {
-        Map<TypeElement, List<ExecutableElement>> intrinsicsByOwner = roundEnv.getElementsAnnotatedWith(GPUIntrinsic.class).stream()
+        Map<TypeElement, List<ExecutableElement>> intrinsicsByOwner = elementsAnnotatedWithAny(roundEnv, GPU_INTRINSIC_ANNOTATIONS).stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
                 .collect(Collectors.groupingBy(
@@ -453,14 +454,14 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     }
 
     private void collectExportedHelperLibraries(RoundEnvironment roundEnv) {
-        roundEnv.getElementsAnnotatedWith(CCodeLibrary.class).stream()
+        elementsAnnotatedWithAny(roundEnv, CCODE_LIBRARY_ANNOTATIONS).stream()
                 .filter(element -> element.getKind().isClass() || element.getKind().isInterface())
                 .map(TypeElement.class::cast)
                 .forEach(owner -> exportedHelperLibraries.put(owner.getQualifiedName().toString(), owner.getSimpleName().toString()));
     }
 
     private void collectExportedIntrinsicLibraries(RoundEnvironment roundEnv) {
-        roundEnv.getElementsAnnotatedWith(GPUIntrinsicLibrary.class).stream()
+        elementsAnnotatedWithAny(roundEnv, GPU_INTRINSIC_LIBRARY_ANNOTATIONS).stream()
                 .filter(element -> element.getKind().isClass() || element.getKind().isInterface())
                 .map(TypeElement.class::cast)
                 .forEach(owner -> exportedIntrinsicLibraries.put(owner.getQualifiedName().toString(), owner.getSimpleName().toString()));
@@ -586,7 +587,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                                 + " does not target backend " + TARGET_BACKEND
                 );
             }
-            if (!hasAnnotation(ownerType, CCodeLibrary.class.getName())) {
+            if (!hasAnyAnnotation(ownerType, CCODE_LIBRARY_ANNOTATIONS)) {
                 throw new IllegalStateException(
                         "Reusable @CCode helper owner "
                                 + ownerType.getQualifiedName()
@@ -637,7 +638,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                                 + " does not target backend " + TARGET_BACKEND
                 );
             }
-            if (!hasAnnotation(ownerType, GPUIntrinsicLibrary.class.getName())) {
+            if (!hasAnyAnnotation(ownerType, GPU_INTRINSIC_LIBRARY_ANNOTATIONS)) {
                 throw new IllegalStateException(
                         "Reusable @GPUIntrinsic owner "
                                 + ownerType.getQualifiedName()
@@ -696,29 +697,29 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private boolean hasCCodeMethods(TypeElement ownerType) {
         return ownerType.getEnclosedElements().stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
-                .anyMatch(method -> hasAnnotation(method, CCode.class.getName()));
+                .anyMatch(method -> hasAnyAnnotation(method, CCODE_ANNOTATIONS));
     }
 
     private boolean hasCCodeMethodsForBackend(TypeElement ownerType, GpuBackendTarget backendTarget) {
         return ownerType.getEnclosedElements().stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
-                .filter(method -> method.getAnnotation(CCode.class) != null)
-                .anyMatch(method -> GpuBackendSupport.supportsBackend(method.getAnnotation(CCode.class).backends(), backendTarget));
+                .filter(method -> hasAnyAnnotation(method, CCODE_ANNOTATIONS))
+                .anyMatch(method -> GpuBackendSupport.supportsBackend(readBackendsAnnotationValue(method, CCODE_ANNOTATIONS), backendTarget));
     }
 
     private boolean hasGpuIntrinsicMethods(TypeElement ownerType) {
         return ownerType.getEnclosedElements().stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
-                .anyMatch(method -> hasAnnotation(method, GPUIntrinsic.class.getName()));
+                .anyMatch(method -> hasAnyAnnotation(method, GPU_INTRINSIC_ANNOTATIONS));
     }
 
     private boolean hasGpuIntrinsicMethodsForBackend(TypeElement ownerType, GpuBackendTarget backendTarget) {
         return ownerType.getEnclosedElements().stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
-                .filter(method -> method.getAnnotation(GPUIntrinsic.class) != null)
-                .anyMatch(method -> GpuBackendSupport.supportsBackend(method.getAnnotation(GPUIntrinsic.class).backends(), backendTarget));
+                .filter(method -> hasAnyAnnotation(method, GPU_INTRINSIC_ANNOTATIONS))
+                .anyMatch(method -> GpuBackendSupport.supportsBackend(readBackendsAnnotationValue(method, GPU_INTRINSIC_ANNOTATIONS), backendTarget));
     }
 
     private boolean hasAnnotation(Element element, String annotationQualifiedName) {
@@ -728,6 +729,21 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             }
         }
         return false;
+    }
+
+    private boolean hasAnyAnnotation(Element element, List<String> annotationQualifiedNames) {
+        return annotationQualifiedNames.stream().anyMatch(name -> hasAnnotation(element, name));
+    }
+
+    private Set<? extends Element> elementsAnnotatedWithAny(RoundEnvironment roundEnv, List<String> annotationQualifiedNames) {
+        LinkedHashSet<Element> elements = new LinkedHashSet<>();
+        for (String annotationQualifiedName : annotationQualifiedNames) {
+            TypeElement annotationType = processingEnv.getElementUtils().getTypeElement(annotationQualifiedName);
+            if (annotationType != null) {
+                elements.addAll(roundEnv.getElementsAnnotatedWith(annotationType));
+            }
+        }
+        return elements;
     }
 
     private List<String> resolveIndexedOwners(String ownerReference) {
@@ -919,39 +935,64 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     }
 
     private boolean isSupportedHelperMethod(ExecutableElement method) {
-        CCode annotation = method.getAnnotation(CCode.class);
-        if (annotation == null || !GpuBackendSupport.supportsBackend(annotation.backends(), TARGET_BACKEND)) {
+        if (!hasAnyAnnotation(method, CCODE_ANNOTATIONS)
+                || !GpuBackendSupport.supportsBackend(readBackendsAnnotationValue(method, CCODE_ANNOTATIONS), TARGET_BACKEND)) {
             return false;
         }
         return supportsHelperOwner((TypeElement) method.getEnclosingElement(), TARGET_BACKEND);
     }
 
     private boolean isSupportedIntrinsicMethod(ExecutableElement method) {
-        GPUIntrinsic annotation = method.getAnnotation(GPUIntrinsic.class);
-        if (annotation == null || !GpuBackendSupport.supportsBackend(annotation.backends(), TARGET_BACKEND)) {
+        if (!hasAnyAnnotation(method, GPU_INTRINSIC_ANNOTATIONS)
+                || !GpuBackendSupport.supportsBackend(readBackendsAnnotationValue(method, GPU_INTRINSIC_ANNOTATIONS), TARGET_BACKEND)) {
             return false;
         }
         return supportsIntrinsicOwner((TypeElement) method.getEnclosingElement(), TARGET_BACKEND);
     }
 
     private boolean supportsHelperOwner(TypeElement owner, GpuBackendTarget backendTarget) {
-        CCodeLibrary annotation = owner.getAnnotation(CCodeLibrary.class);
-        return annotation == null || GpuBackendSupport.supportsBackend(annotation.backends(), backendTarget);
+        return !hasAnyAnnotation(owner, CCODE_LIBRARY_ANNOTATIONS)
+                || GpuBackendSupport.supportsBackend(readBackendsAnnotationValue(owner, CCODE_LIBRARY_ANNOTATIONS), backendTarget);
     }
 
     private boolean supportsIntrinsicOwner(TypeElement owner, GpuBackendTarget backendTarget) {
-        GPUIntrinsicLibrary annotation = owner.getAnnotation(GPUIntrinsicLibrary.class);
-        return annotation == null || GpuBackendSupport.supportsBackend(annotation.backends(), backendTarget);
+        return !hasAnyAnnotation(owner, GPU_INTRINSIC_LIBRARY_ANNOTATIONS)
+                || GpuBackendSupport.supportsBackend(readBackendsAnnotationValue(owner, GPU_INTRINSIC_LIBRARY_ANNOTATIONS), backendTarget);
     }
 
     private GpuBackendTarget[] helperOwnerBackends(TypeElement owner) {
-        CCodeLibrary annotation = owner.getAnnotation(CCodeLibrary.class);
-        return annotation == null ? new GpuBackendTarget[]{TARGET_BACKEND} : annotation.backends();
+        return hasAnyAnnotation(owner, CCODE_LIBRARY_ANNOTATIONS)
+                ? readBackendsAnnotationValue(owner, CCODE_LIBRARY_ANNOTATIONS)
+                : new GpuBackendTarget[]{TARGET_BACKEND};
     }
 
     private GpuBackendTarget[] ownerBackends(TypeElement owner) {
-        GPUIntrinsicLibrary annotation = owner.getAnnotation(GPUIntrinsicLibrary.class);
-        return annotation == null ? new GpuBackendTarget[]{TARGET_BACKEND} : annotation.backends();
+        return hasAnyAnnotation(owner, GPU_INTRINSIC_LIBRARY_ANNOTATIONS)
+                ? readBackendsAnnotationValue(owner, GPU_INTRINSIC_LIBRARY_ANNOTATIONS)
+                : new GpuBackendTarget[]{TARGET_BACKEND};
+    }
+
+    private GpuBackendTarget[] readBackendsAnnotationValue(Element element, List<String> annotationQualifiedNames) {
+        for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
+            if (!annotationQualifiedNames.contains(mirror.getAnnotationType().toString())) {
+                continue;
+            }
+            for (Map.Entry<? extends ExecutableElement, ? extends javax.lang.model.element.AnnotationValue> entry
+                    : processingEnv.getElementUtils().getElementValuesWithDefaults(mirror).entrySet()) {
+                if (!"backends".equals(entry.getKey().getSimpleName().toString())) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                List<? extends javax.lang.model.element.AnnotationValue> values =
+                        (List<? extends javax.lang.model.element.AnnotationValue>) entry.getValue().getValue();
+                return values.stream()
+                        .map(value -> value.getValue().toString())
+                        .map(name -> name.substring(name.lastIndexOf('.') + 1))
+                        .map(GpuBackendTarget::valueOf)
+                        .toArray(GpuBackendTarget[]::new);
+            }
+        }
+        return new GpuBackendTarget[]{TARGET_BACKEND};
     }
 
     private List<ParsedGpuMethod> filterMethodsForBackend(List<ParsedGpuMethod> methods, String annotationName) {
@@ -1068,17 +1109,31 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     }
 
     private String resolveParameterAccess(VariableElement parameter) {
-        if (parameter.getAnnotation(GPULocal.class) != null) {
+        if (hasAnyAnnotation(parameter, GPU_LOCAL_ANNOTATIONS)) {
             return "LOCAL";
         }
-        if (parameter.getAnnotation(GPUConstant.class) != null) {
+        if (hasAnyAnnotation(parameter, GPU_CONSTANT_ANNOTATIONS)) {
             return "READ_ONLY";
         }
-        GPUGlobal global = parameter.getAnnotation(GPUGlobal.class);
-        if (global != null) {
-            return global.constant() ? "READ_ONLY" : "READ_WRITE";
+        if (hasAnyAnnotation(parameter, GPU_GLOBAL_ANNOTATIONS)) {
+            return readGlobalConstantFlag(parameter) ? "READ_ONLY" : "READ_WRITE";
         }
         return "VALUE";
+    }
+
+    private boolean readGlobalConstantFlag(VariableElement parameter) {
+        for (AnnotationMirror mirror : parameter.getAnnotationMirrors()) {
+            if (!GPU_GLOBAL_ANNOTATIONS.contains(mirror.getAnnotationType().toString())) {
+                continue;
+            }
+            for (Map.Entry<? extends ExecutableElement, ? extends javax.lang.model.element.AnnotationValue> entry
+                    : processingEnv.getElementUtils().getElementValuesWithDefaults(mirror).entrySet()) {
+                if ("constant".equals(entry.getKey().getSimpleName().toString())) {
+                    return Boolean.parseBoolean(entry.getValue().getValue().toString());
+                }
+            }
+        }
+        return false;
     }
 
     private String buildResourcePath(ExecutableElement method) {

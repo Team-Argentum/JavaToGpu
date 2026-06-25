@@ -40,16 +40,23 @@ public final class Sampler implements AutoCloseable {
         return owned;
     }
 
+    public boolean closed() {
+        return closed;
+    }
+
     public boolean isValid() {
         return handle != 0L && !closed;
     }
 
     @Override
     public void close() {
-        if (!owned || handle == 0L || closed) {
+        if (closed) {
             return;
         }
         closed = true;
+        if (!owned || handle == 0L) {
+            return;
+        }
         int errorCode = CL10.clReleaseSampler(handle);
         if (errorCode != CL10.CL_SUCCESS) {
             throw new IllegalStateException("Failed to release OpenCL sampler handle: " + errorCode);

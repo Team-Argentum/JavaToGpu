@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.api;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUScalarAliasType;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUScalarAliasType;
 
 /**
  * Java-side wrapper for the OpenCL {@code ushort} scalar type.

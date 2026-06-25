@@ -56,16 +56,23 @@ public final class Image1DBufferWriteOnly implements AutoCloseable {
         return owned;
     }
 
+    public boolean closed() {
+        return closed;
+    }
+
     public boolean isValid() {
         return handle != 0L && !closed;
     }
 
     @Override
     public void close() {
-        if (!owned || handle == 0L || closed) {
+        if (closed) {
             return;
         }
         closed = true;
+        if (!owned || handle == 0L) {
+            return;
+        }
         int imageError = CL10.clReleaseMemObject(handle);
         int bufferError = backingBufferHandle != 0L ? CL10.clReleaseMemObject(backingBufferHandle) : CL10.CL_SUCCESS;
         if (imageError != CL10.CL_SUCCESS) {

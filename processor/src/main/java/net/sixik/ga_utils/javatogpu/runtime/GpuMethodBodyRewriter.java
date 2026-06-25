@@ -19,7 +19,8 @@ import java.util.stream.Stream;
 
 public final class GpuMethodBodyRewriter {
 
-    private static final String GPU_ANNOTATION_DESCRIPTOR = "Lnet/sixik/ga_utils/javatogpu/api/anotations/GPU;";
+    private static final String LEGACY_GPU_ANNOTATION_DESCRIPTOR = "Lnet/sixik/ga_utils/javatogpu/api/anotations/GPU;";
+    private static final String CANONICAL_GPU_ANNOTATION_DESCRIPTOR = "Lnet/sixik/ga_utils/javatogpu/api/annotations/GPU;";
     private static final String CLINIT_NAME = "<clinit>";
     private static final String INIT_NAME = "<init>";
 
@@ -154,7 +155,8 @@ public final class GpuMethodBodyRewriter {
 
         @Override
         public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-            if (GPU_ANNOTATION_DESCRIPTOR.equals(descriptor)) {
+            if (LEGACY_GPU_ANNOTATION_DESCRIPTOR.equals(descriptor)
+                    || CANONICAL_GPU_ANNOTATION_DESCRIPTOR.equals(descriptor)) {
                 gpuAnnotated = true;
             }
             return super.visitAnnotation(descriptor, visible);

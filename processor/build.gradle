@@ -150,6 +150,38 @@ tasks.register('performanceStressTest', Test) {
     }
 }
 
+tasks.register('integrationOpenClSmokeTest', Test) {
+    group = 'verification'
+    description = 'Runs the real-device OpenCL integration smoke suite.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest'
+    }
+}
+
+tasks.register('openClValidationReport', JavaExec) {
+    group = 'verification'
+    description = 'Generates a Markdown OpenCL device/runtime validation report under build/reports/opencl.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClValidationReporter'
+    systemProperty 'javatogpu.opencl.validationReportFile', layout.buildDirectory.file('reports/opencl/validation-report.md').get().asFile.absolutePath
+}
+
+tasks.register('openClVendorValidation') {
+    group = 'verification'
+    description = 'Runs the full OpenCL cross-device validation bucket set and writes a validation report artifact.'
+    dependsOn 'compileOnlyTest'
+    dependsOn 'runtimeOpenClTest'
+    dependsOn 'imageOpenClTest'
+    dependsOn 'structAbiTest'
+    dependsOn 'atomicsCompileTest'
+    dependsOn 'localMemoryTest'
+    dependsOn 'performanceStressTest'
+    finalizedBy 'openClValidationReport'
+}
+
 tasks.register('benchmarkTest', Test) {
     group = 'verification'
     description = 'Runs manual benchmark scenarios for frontend and runtime performance baselines.'

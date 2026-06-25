@@ -21,6 +21,10 @@ import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Int2;
@@ -89,6 +93,10 @@ public final class AsmSubsetValidator {
             Type.getInternalName(Image1DBufferWriteOnly.class),
             Type.getInternalName(Image2DReadOnly.class),
             Type.getInternalName(Image2DWriteOnly.class),
+            Type.getInternalName(Image2DMipmappedReadOnly.class),
+            Type.getInternalName(Image2DMipmappedWriteOnly.class),
+            Type.getInternalName(Image2DMsaaReadOnly.class),
+            Type.getInternalName(Image2DMsaaWriteOnly.class),
             Type.getInternalName(Image2DArrayReadOnly.class),
             Type.getInternalName(Image2DArrayWriteOnly.class),
             Type.getInternalName(Image3DReadOnly.class),
@@ -428,7 +436,9 @@ public final class AsmSubsetValidator {
             return;
         }
         fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                "Unsupported LDC constant for ASM GPU frontend: " + constant.getClass().getSimpleName());
+                "Unsupported LDC constant for ASM GPU frontend: "
+                        + constant.getClass().getSimpleName()
+                        + "; only integer/long/float/double LDC constants are supported in the current GPU-friendly ASM subset");
     }
 
     private void validateIincInsnNode(
@@ -530,11 +540,13 @@ public final class AsmSubsetValidator {
             case Opcodes.NEW -> {
                 if (!isAllowedConstructorOwner(instruction.desc, config)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                            "Unsupported constructor owner for ASM GPU frontend: " + instruction.desc);
+                            "Unsupported constructor owner for ASM GPU frontend: "
+                                    + instruction.desc
+                                    + "; instantiate only supported pointer/vector/scalar-alias wrappers or whitelisted struct values");
                 }
             }
             case Opcodes.ANEWARRAY -> fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                    "Object arrays are not supported by ASM GPU frontend");
+                    "Object arrays are not supported by ASM GPU frontend; use primitive arrays, vector arrays, or struct arrays instead");
             case Opcodes.CHECKCAST, Opcodes.INSTANCEOF -> fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                     "General object casting is not supported by ASM GPU frontend: " + opcodeName(instruction.getOpcode()));
             default -> fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
@@ -558,7 +570,9 @@ public final class AsmSubsetValidator {
                         && !config.allowedHelperOwners().contains(instruction.owner)
                         && !ownerInternalName.equals(instruction.owner)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                            "Unsupported static call owner for ASM GPU frontend: " + instruction.owner);
+                            "Unsupported static call owner for ASM GPU frontend: "
+                                    + instruction.owner
+                                    + "; use GPU builtins, a whitelisted helper owner, or a static method on the current owner");
                 }
             }
             case Opcodes.INVOKESPECIAL -> {
@@ -568,7 +582,9 @@ public final class AsmSubsetValidator {
                 }
                 if (!isAllowedConstructorOwner(instruction.owner, config)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                            "Unsupported constructor owner for ASM GPU frontend: " + instruction.owner);
+                            "Unsupported constructor owner for ASM GPU frontend: "
+                                    + instruction.owner
+                                    + "; instantiate only supported pointer/vector/scalar-alias wrappers or whitelisted struct values");
                 }
             }
             case Opcodes.INVOKEVIRTUAL, Opcodes.INVOKEINTERFACE -> fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
@@ -590,13 +606,17 @@ public final class AsmSubsetValidator {
         for (Type argumentType : methodType.getArgumentTypes()) {
             if (!isSupportedValueType(argumentType, config, true)) {
                 fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                        "Unsupported call argument type for ASM GPU frontend: " + argumentType.getDescriptor());
+                        "Unsupported call argument type for ASM GPU frontend: "
+                                + argumentType.getDescriptor()
+                                + "; use primitive scalars, single-dimension arrays, supported vectors, pointers, images/samplers, or whitelisted struct values");
             }
         }
         Type returnType = methodType.getReturnType();
         if (returnType.getSort() != Type.VOID && !isSupportedValueType(returnType, config, false)) {
             fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                    "Unsupported call return type for ASM GPU frontend: " + returnType.getDescriptor());
+                    "Unsupported call return type for ASM GPU frontend: "
+                            + returnType.getDescriptor()
+                            + "; use void, primitive scalars, supported vectors, or whitelisted struct values");
         }
     }
 

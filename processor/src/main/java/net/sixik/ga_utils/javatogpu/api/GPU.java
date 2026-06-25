@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.api;
 
-import net.sixik.ga_utils.javatogpu.api.anotations.GPUIntrinsic;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
 import org.lwjgl.opencl.CL10;
 
 /**
@@ -13,10 +13,10 @@ import org.lwjgl.opencl.CL10;
  * <p>Example:
  *
  * <pre>{@code
- * @net.sixik.ga_utils.javatogpu.api.anotations.GPU
+ * @net.sixik.ga_utils.javatogpu.api.annotations.GPU
  * static void kernel(
- *         @net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal float[] input,
- *         @net.sixik.ga_utils.javatogpu.api.anotations.GPUGlobal float[] output
+ *         @net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal float[] input,
+ *         @net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal float[] output
  * ) {
  *     int id = GPU.get_global_id(0);
  *     output[id] = GPU.sin(input[id]) + GPU.cos(input[id]);
@@ -52,6 +52,11 @@ public final class GPU {
      * OpenCL image channel order constant for {@code CL_RGBA}.
      */
     public static final int CL_RGBA = CL10.CL_RGBA;
+
+    /**
+     * OpenCL image channel order constant for {@code CL_DEPTH}.
+     */
+    public static final int CL_DEPTH = 0x10BD;
 
     /**
      * OpenCL image channel data type constant for {@code CL_FLOAT}.
@@ -134,6 +139,26 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DMipmappedReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DMipmappedWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DMsaaReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
+    public static int get_image_width(Image2DMsaaWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_width")
     public static int get_image_width(Image2DArrayReadOnly image) {
         return 0;
     }
@@ -160,6 +185,26 @@ public final class GPU {
 
     @GPUIntrinsic(name = "get_image_height")
     public static int get_image_height(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DMipmappedReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DMipmappedWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DMsaaReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_height")
+    public static int get_image_height(Image2DMsaaWriteOnly image) {
         return 0;
     }
 
@@ -254,6 +299,26 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DMipmappedReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DMipmappedWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DMsaaReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
+    public static int get_image_channel_order(Image2DMsaaWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_order")
     public static int get_image_channel_order(Image2DArrayReadOnly image) {
         return 0;
     }
@@ -314,6 +379,26 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DMipmappedReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DMipmappedWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DMsaaReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
+    public static int get_image_channel_data_type(Image2DMsaaWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_channel_data_type")
     public static int get_image_channel_data_type(Image2DArrayReadOnly image) {
         return 0;
     }
@@ -330,6 +415,156 @@ public final class GPU {
 
     @GPUIntrinsic(name = "get_image_channel_data_type")
     public static int get_image_channel_data_type(Image3DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image1DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image1DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image1DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image1DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image1DBufferReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image1DBufferWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image2DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image2DMipmappedReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image2DMipmappedWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image2DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image2DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image3DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_mip_levels")
+    public static int get_image_num_mip_levels(Image3DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image1DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image1DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image1DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image1DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image1DBufferReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image1DBufferWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DMipmappedReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DMipmappedWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DMsaaReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DMsaaWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DArrayReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image2DArrayWriteOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image3DReadOnly image) {
+        return 0;
+    }
+
+    @GPUIntrinsic(name = "get_image_num_samples")
+    public static int get_image_num_samples(Image3DWriteOnly image) {
         return 0;
     }
 
@@ -365,6 +600,21 @@ public final class GPU {
 
     @GPUIntrinsic(name = "read_imagef")
     public static Float4 read_imagef(Image2DReadOnly image, Int2 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image2DMipmappedReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(name = "read_imagef")
+    public static Float4 read_imagef(Image2DMipmappedReadOnly image, Int2 coordinates) {
+        return new Float4();
+    }
+
+    @GPUIntrinsic(code = "read_imagef({0}, {1}, {2})")
+    public static Float4 read_imagef(Image2DMsaaReadOnly image, Int2 coordinates, int sampleIndex) {
         return new Float4();
     }
 
@@ -424,6 +674,21 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image2DMipmappedReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
+    public static Int4 read_imagei(Image2DMipmappedReadOnly image, Int2 coordinates) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(code = "read_imagei({0}, {1}, {2})")
+    public static Int4 read_imagei(Image2DMsaaReadOnly image, Int2 coordinates, int sampleIndex) {
+        return new Int4();
+    }
+
+    @GPUIntrinsic(name = "read_imagei")
     public static Int4 read_imagei(Image2DArrayReadOnly image, Sampler sampler, Int4 coordinates) {
         return new Int4();
     }
@@ -479,6 +744,21 @@ public final class GPU {
     }
 
     @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image2DMipmappedReadOnly image, Sampler sampler, Int2 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
+    public static UInt4 read_imageui(Image2DMipmappedReadOnly image, Int2 coordinates) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(code = "read_imageui({0}, {1}, {2})")
+    public static UInt4 read_imageui(Image2DMsaaReadOnly image, Int2 coordinates, int sampleIndex) {
+        return new UInt4();
+    }
+
+    @GPUIntrinsic(name = "read_imageui")
     public static UInt4 read_imageui(Image2DArrayReadOnly image, Sampler sampler, Int4 coordinates) {
         return new UInt4();
     }
@@ -515,6 +795,14 @@ public final class GPU {
     }
 
     @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
+    public static void write_imagef(Image2DMipmappedWriteOnly image, Int2 coordinates, Float4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2}, {3})")
+    public static void write_imagef(Image2DMsaaWriteOnly image, Int2 coordinates, int sampleIndex, Float4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagef({0}, {1}, {2})")
     public static void write_imagef(Image2DArrayWriteOnly image, Int4 coordinates, Float4 value) {
     }
 
@@ -539,6 +827,14 @@ public final class GPU {
     }
 
     @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
+    public static void write_imagei(Image2DMipmappedWriteOnly image, Int2 coordinates, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2}, {3})")
+    public static void write_imagei(Image2DMsaaWriteOnly image, Int2 coordinates, int sampleIndex, Int4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imagei({0}, {1}, {2})")
     public static void write_imagei(Image2DArrayWriteOnly image, Int4 coordinates, Int4 value) {
     }
 
@@ -560,6 +856,14 @@ public final class GPU {
 
     @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
     public static void write_imageui(Image2DWriteOnly image, Int2 coordinates, UInt4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
+    public static void write_imageui(Image2DMipmappedWriteOnly image, Int2 coordinates, UInt4 value) {
+    }
+
+    @GPUIntrinsic(code = "write_imageui({0}, {1}, {2}, {3})")
+    public static void write_imageui(Image2DMsaaWriteOnly image, Int2 coordinates, int sampleIndex, UInt4 value) {
     }
 
     @GPUIntrinsic(code = "write_imageui({0}, {1}, {2})")
@@ -900,6 +1204,34 @@ public final class GPU {
         return Math.max(left, right);
     }
 
+    @GPUIntrinsic(code = "minmag({0}, {1})")
+    public static float minmag(float left, float right) {
+        float absLeft = Math.abs(left);
+        float absRight = Math.abs(right);
+        return absLeft < absRight ? left : (absLeft > absRight ? right : min(left, right));
+    }
+
+    @GPUIntrinsic(code = "minmag({0}, {1})")
+    public static double minmag(double left, double right) {
+        double absLeft = Math.abs(left);
+        double absRight = Math.abs(right);
+        return absLeft < absRight ? left : (absLeft > absRight ? right : min(left, right));
+    }
+
+    @GPUIntrinsic(code = "maxmag({0}, {1})")
+    public static float maxmag(float left, float right) {
+        float absLeft = Math.abs(left);
+        float absRight = Math.abs(right);
+        return absLeft > absRight ? left : (absLeft < absRight ? right : max(left, right));
+    }
+
+    @GPUIntrinsic(code = "maxmag({0}, {1})")
+    public static double maxmag(double left, double right) {
+        double absLeft = Math.abs(left);
+        double absRight = Math.abs(right);
+        return absLeft > absRight ? left : (absLeft < absRight ? right : max(left, right));
+    }
+
     @GPUIntrinsic(name = "mad")
     public static float mad(float a, float b, float c) {
         return a * b + c;
@@ -908,6 +1240,16 @@ public final class GPU {
     @GPUIntrinsic(name = "mad")
     public static double mad(double a, double b, double c) {
         return a * b + c;
+    }
+
+    @GPUIntrinsic(name = "mul24")
+    public static int mul24(int left, int right) {
+        return left * right;
+    }
+
+    @GPUIntrinsic(name = "mad24")
+    public static int mad24(int left, int right, int addend) {
+        return left * right + addend;
     }
 
     @GPUIntrinsic(name = "clamp")
@@ -965,6 +1307,36 @@ public final class GPU {
         return new ULong(clampUnsignedLong(value.value, minValue.value, maxValue.value));
     }
 
+    @GPUIntrinsic(code = "clamp({0}, {1}, {2})")
+    public static Float2 clamp(Float2 value, Float2 minValue, Float2 maxValue) {
+        return new Float2(clamp(value.x, minValue.x, maxValue.x), clamp(value.y, minValue.y, maxValue.y));
+    }
+
+    @GPUIntrinsic(code = "clamp({0}, {1}, {2})")
+    public static Float3 clamp(Float3 value, Float3 minValue, Float3 maxValue) {
+        return new Float3(clamp(value.x, minValue.x, maxValue.x), clamp(value.y, minValue.y, maxValue.y), clamp(value.z, minValue.z, maxValue.z));
+    }
+
+    @GPUIntrinsic(code = "clamp({0}, {1}, {2})")
+    public static Float4 clamp(Float4 value, Float4 minValue, Float4 maxValue) {
+        return new Float4(clamp(value.x, minValue.x, maxValue.x), clamp(value.y, minValue.y, maxValue.y), clamp(value.z, minValue.z, maxValue.z), clamp(value.w, minValue.w, maxValue.w));
+    }
+
+    @GPUIntrinsic(code = "clamp({0}, {1}, {2})")
+    public static Double2 clamp(Double2 value, Double2 minValue, Double2 maxValue) {
+        return new Double2(clamp(value.x, minValue.x, maxValue.x), clamp(value.y, minValue.y, maxValue.y));
+    }
+
+    @GPUIntrinsic(code = "clamp({0}, {1}, {2})")
+    public static Double3 clamp(Double3 value, Double3 minValue, Double3 maxValue) {
+        return new Double3(clamp(value.x, minValue.x, maxValue.x), clamp(value.y, minValue.y, maxValue.y), clamp(value.z, minValue.z, maxValue.z));
+    }
+
+    @GPUIntrinsic(code = "clamp({0}, {1}, {2})")
+    public static Double4 clamp(Double4 value, Double4 minValue, Double4 maxValue) {
+        return new Double4(clamp(value.x, minValue.x, maxValue.x), clamp(value.y, minValue.y, maxValue.y), clamp(value.z, minValue.z, maxValue.z), clamp(value.w, minValue.w, maxValue.w));
+    }
+
     @GPUIntrinsic(name = "mix")
     public static float mix(float left, float right, float amount) {
         return left + (right - left) * amount;
@@ -973,6 +1345,76 @@ public final class GPU {
     @GPUIntrinsic(name = "mix")
     public static double mix(double left, double right, double amount) {
         return left + (right - left) * amount;
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static float saturate(float value) {
+        return clamp(value, 0.0f, 1.0f);
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static double saturate(double value) {
+        return clamp(value, 0.0, 1.0);
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static Float2 saturate(Float2 value) {
+        return clamp(value, new Float2(0.0f), new Float2(1.0f));
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static Float3 saturate(Float3 value) {
+        return clamp(value, new Float3(0.0f), new Float3(1.0f));
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static Float4 saturate(Float4 value) {
+        return clamp(value, new Float4(0.0f), new Float4(1.0f));
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static Double2 saturate(Double2 value) {
+        return clamp(value, new Double2(0.0), new Double2(1.0));
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static Double3 saturate(Double3 value) {
+        return clamp(value, new Double3(0.0), new Double3(1.0));
+    }
+
+    @GPUIntrinsic(code = "saturate({0})")
+    public static Double4 saturate(Double4 value) {
+        return clamp(value, new Double4(0.0), new Double4(1.0));
+    }
+
+    @GPUIntrinsic(code = "mix({0}, {1}, {2})")
+    public static Float2 mix(Float2 left, Float2 right, float amount) {
+        return new Float2(mix(left.x, right.x, amount), mix(left.y, right.y, amount));
+    }
+
+    @GPUIntrinsic(code = "mix({0}, {1}, {2})")
+    public static Float3 mix(Float3 left, Float3 right, float amount) {
+        return new Float3(mix(left.x, right.x, amount), mix(left.y, right.y, amount), mix(left.z, right.z, amount));
+    }
+
+    @GPUIntrinsic(code = "mix({0}, {1}, {2})")
+    public static Float4 mix(Float4 left, Float4 right, float amount) {
+        return new Float4(mix(left.x, right.x, amount), mix(left.y, right.y, amount), mix(left.z, right.z, amount), mix(left.w, right.w, amount));
+    }
+
+    @GPUIntrinsic(code = "mix({0}, {1}, {2})")
+    public static Double2 mix(Double2 left, Double2 right, double amount) {
+        return new Double2(mix(left.x, right.x, amount), mix(left.y, right.y, amount));
+    }
+
+    @GPUIntrinsic(code = "mix({0}, {1}, {2})")
+    public static Double3 mix(Double3 left, Double3 right, double amount) {
+        return new Double3(mix(left.x, right.x, amount), mix(left.y, right.y, amount), mix(left.z, right.z, amount));
+    }
+
+    @GPUIntrinsic(code = "mix({0}, {1}, {2})")
+    public static Double4 mix(Double4 left, Double4 right, double amount) {
+        return new Double4(mix(left.x, right.x, amount), mix(left.y, right.y, amount), mix(left.z, right.z, amount), mix(left.w, right.w, amount));
     }
 
     @GPUIntrinsic(name = "degrees")
@@ -1015,6 +1457,36 @@ public final class GPU {
         return value < edge ? 0.0 : 1.0;
     }
 
+    @GPUIntrinsic(code = "step({0}, {1})")
+    public static Float2 step(Float2 edge, Float2 value) {
+        return new Float2(step(edge.x, value.x), step(edge.y, value.y));
+    }
+
+    @GPUIntrinsic(code = "step({0}, {1})")
+    public static Float3 step(Float3 edge, Float3 value) {
+        return new Float3(step(edge.x, value.x), step(edge.y, value.y), step(edge.z, value.z));
+    }
+
+    @GPUIntrinsic(code = "step({0}, {1})")
+    public static Float4 step(Float4 edge, Float4 value) {
+        return new Float4(step(edge.x, value.x), step(edge.y, value.y), step(edge.z, value.z), step(edge.w, value.w));
+    }
+
+    @GPUIntrinsic(code = "step({0}, {1})")
+    public static Double2 step(Double2 edge, Double2 value) {
+        return new Double2(step(edge.x, value.x), step(edge.y, value.y));
+    }
+
+    @GPUIntrinsic(code = "step({0}, {1})")
+    public static Double3 step(Double3 edge, Double3 value) {
+        return new Double3(step(edge.x, value.x), step(edge.y, value.y), step(edge.z, value.z));
+    }
+
+    @GPUIntrinsic(code = "step({0}, {1})")
+    public static Double4 step(Double4 edge, Double4 value) {
+        return new Double4(step(edge.x, value.x), step(edge.y, value.y), step(edge.z, value.z), step(edge.w, value.w));
+    }
+
     @GPUIntrinsic(name = "smoothstep")
     public static float smoothstep(float edge0, float edge1, float value) {
         float t = clamp((value - edge0) / (edge1 - edge0), 0.0f, 1.0f);
@@ -1027,6 +1499,36 @@ public final class GPU {
         return t * t * (3.0 - 2.0 * t);
     }
 
+    @GPUIntrinsic(code = "smoothstep({0}, {1}, {2})")
+    public static Float2 smoothstep(Float2 edge0, Float2 edge1, Float2 value) {
+        return new Float2(smoothstep(edge0.x, edge1.x, value.x), smoothstep(edge0.y, edge1.y, value.y));
+    }
+
+    @GPUIntrinsic(code = "smoothstep({0}, {1}, {2})")
+    public static Float3 smoothstep(Float3 edge0, Float3 edge1, Float3 value) {
+        return new Float3(smoothstep(edge0.x, edge1.x, value.x), smoothstep(edge0.y, edge1.y, value.y), smoothstep(edge0.z, edge1.z, value.z));
+    }
+
+    @GPUIntrinsic(code = "smoothstep({0}, {1}, {2})")
+    public static Float4 smoothstep(Float4 edge0, Float4 edge1, Float4 value) {
+        return new Float4(smoothstep(edge0.x, edge1.x, value.x), smoothstep(edge0.y, edge1.y, value.y), smoothstep(edge0.z, edge1.z, value.z), smoothstep(edge0.w, edge1.w, value.w));
+    }
+
+    @GPUIntrinsic(code = "smoothstep({0}, {1}, {2})")
+    public static Double2 smoothstep(Double2 edge0, Double2 edge1, Double2 value) {
+        return new Double2(smoothstep(edge0.x, edge1.x, value.x), smoothstep(edge0.y, edge1.y, value.y));
+    }
+
+    @GPUIntrinsic(code = "smoothstep({0}, {1}, {2})")
+    public static Double3 smoothstep(Double3 edge0, Double3 edge1, Double3 value) {
+        return new Double3(smoothstep(edge0.x, edge1.x, value.x), smoothstep(edge0.y, edge1.y, value.y), smoothstep(edge0.z, edge1.z, value.z));
+    }
+
+    @GPUIntrinsic(code = "smoothstep({0}, {1}, {2})")
+    public static Double4 smoothstep(Double4 edge0, Double4 edge1, Double4 value) {
+        return new Double4(smoothstep(edge0.x, edge1.x, value.x), smoothstep(edge0.y, edge1.y, value.y), smoothstep(edge0.z, edge1.z, value.z), smoothstep(edge0.w, edge1.w, value.w));
+    }
+
     @GPUIntrinsic(name = "hypot")
     public static float length(float x, float y) {
         return (float) Math.hypot(x, y);
@@ -1037,6 +1539,150 @@ public final class GPU {
         return Math.hypot(x, y);
     }
 
+    @GPUIntrinsic(code = "sqrt(dot({0}, {0}))")
+    public static float length(Float2 value) {
+        return (float) Math.sqrt(value.x * value.x + value.y * value.y);
+    }
+
+    @GPUIntrinsic(code = "sqrt(dot({0}, {0}))")
+    public static float length(Float3 value) {
+        return (float) Math.sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    }
+
+    @GPUIntrinsic(code = "sqrt(dot({0}, {0}))")
+    public static float length(Float4 value) {
+        return (float) Math.sqrt(value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w);
+    }
+
+    @GPUIntrinsic(code = "sqrt(dot({0}, {0}))")
+    public static double length(Double2 value) {
+        return Math.sqrt(value.x * value.x + value.y * value.y);
+    }
+
+    @GPUIntrinsic(code = "sqrt(dot({0}, {0}))")
+    public static double length(Double3 value) {
+        return Math.sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    }
+
+    @GPUIntrinsic(code = "sqrt(dot({0}, {0}))")
+    public static double length(Double4 value) {
+        return Math.sqrt(value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w);
+    }
+
+    @GPUIntrinsic(name = "dot")
+    public static float dot(Float2 left, Float2 right) {
+        return left.x * right.x + left.y * right.y;
+    }
+
+    @GPUIntrinsic(name = "dot")
+    public static float dot(Float3 left, Float3 right) {
+        return left.x * right.x + left.y * right.y + left.z * right.z;
+    }
+
+    @GPUIntrinsic(name = "dot")
+    public static float dot(Float4 left, Float4 right) {
+        return left.x * right.x + left.y * right.y + left.z * right.z + left.w * right.w;
+    }
+
+    @GPUIntrinsic(name = "dot")
+    public static double dot(Double2 left, Double2 right) {
+        return left.x * right.x + left.y * right.y;
+    }
+
+    @GPUIntrinsic(name = "dot")
+    public static double dot(Double3 left, Double3 right) {
+        return left.x * right.x + left.y * right.y + left.z * right.z;
+    }
+
+    @GPUIntrinsic(name = "dot")
+    public static double dot(Double4 left, Double4 right) {
+        return left.x * right.x + left.y * right.y + left.z * right.z + left.w * right.w;
+    }
+
+    @GPUIntrinsic(code = "length(({0}) - ({1}))")
+    public static float distance(Float2 left, Float2 right) {
+        return length(new Float2(left.x - right.x, left.y - right.y));
+    }
+
+    @GPUIntrinsic(code = "length(({0}) - ({1}))")
+    public static float distance(Float3 left, Float3 right) {
+        return length(new Float3(left.x - right.x, left.y - right.y, left.z - right.z));
+    }
+
+    @GPUIntrinsic(code = "length(({0}) - ({1}))")
+    public static float distance(Float4 left, Float4 right) {
+        return length(new Float4(left.x - right.x, left.y - right.y, left.z - right.z, left.w - right.w));
+    }
+
+    @GPUIntrinsic(code = "length(({0}) - ({1}))")
+    public static double distance(Double2 left, Double2 right) {
+        return length(new Double2(left.x - right.x, left.y - right.y));
+    }
+
+    @GPUIntrinsic(code = "length(({0}) - ({1}))")
+    public static double distance(Double3 left, Double3 right) {
+        return length(new Double3(left.x - right.x, left.y - right.y, left.z - right.z));
+    }
+
+    @GPUIntrinsic(code = "length(({0}) - ({1}))")
+    public static double distance(Double4 left, Double4 right) {
+        return length(new Double4(left.x - right.x, left.y - right.y, left.z - right.z, left.w - right.w));
+    }
+
+    @GPUIntrinsic(code = "normalize({0})")
+    public static Float2 normalize(Float2 value) {
+        float length = length(value);
+        return new Float2(value.x / length, value.y / length);
+    }
+
+    @GPUIntrinsic(code = "normalize({0})")
+    public static Float3 normalize(Float3 value) {
+        float length = length(value);
+        return new Float3(value.x / length, value.y / length, value.z / length);
+    }
+
+    @GPUIntrinsic(code = "normalize({0})")
+    public static Float4 normalize(Float4 value) {
+        float length = length(value);
+        return new Float4(value.x / length, value.y / length, value.z / length, value.w / length);
+    }
+
+    @GPUIntrinsic(code = "normalize({0})")
+    public static Double2 normalize(Double2 value) {
+        double length = length(value);
+        return new Double2(value.x / length, value.y / length);
+    }
+
+    @GPUIntrinsic(code = "normalize({0})")
+    public static Double3 normalize(Double3 value) {
+        double length = length(value);
+        return new Double3(value.x / length, value.y / length, value.z / length);
+    }
+
+    @GPUIntrinsic(code = "normalize({0})")
+    public static Double4 normalize(Double4 value) {
+        double length = length(value);
+        return new Double4(value.x / length, value.y / length, value.z / length, value.w / length);
+    }
+
+    @GPUIntrinsic(name = "cross")
+    public static Float3 cross(Float3 left, Float3 right) {
+        return new Float3(
+                left.y * right.z - left.z * right.y,
+                left.z * right.x - left.x * right.z,
+                left.x * right.y - left.y * right.x
+        );
+    }
+
+    @GPUIntrinsic(name = "cross")
+    public static Double3 cross(Double3 left, Double3 right) {
+        return new Double3(
+                left.y * right.z - left.z * right.y,
+                left.z * right.x - left.x * right.z,
+                left.x * right.y - left.y * right.x
+        );
+    }
+
     @GPUIntrinsic(code = "(({0}) - floor({0}))")
     public static float fract(float value) {
         return value - (float) Math.floor(value);
@@ -1045,6 +1691,36 @@ public final class GPU {
     @GPUIntrinsic(code = "(({0}) - floor({0}))")
     public static double fract(double value) {
         return value - Math.floor(value);
+    }
+
+    @GPUIntrinsic(code = "fract({0})")
+    public static Float2 fract(Float2 value) {
+        return new Float2(fract(value.x), fract(value.y));
+    }
+
+    @GPUIntrinsic(code = "fract({0})")
+    public static Float3 fract(Float3 value) {
+        return new Float3(fract(value.x), fract(value.y), fract(value.z));
+    }
+
+    @GPUIntrinsic(code = "fract({0})")
+    public static Float4 fract(Float4 value) {
+        return new Float4(fract(value.x), fract(value.y), fract(value.z), fract(value.w));
+    }
+
+    @GPUIntrinsic(code = "fract({0})")
+    public static Double2 fract(Double2 value) {
+        return new Double2(fract(value.x), fract(value.y));
+    }
+
+    @GPUIntrinsic(code = "fract({0})")
+    public static Double3 fract(Double3 value) {
+        return new Double3(fract(value.x), fract(value.y), fract(value.z));
+    }
+
+    @GPUIntrinsic(code = "fract({0})")
+    public static Double4 fract(Double4 value) {
+        return new Double4(fract(value.x), fract(value.y), fract(value.z), fract(value.w));
     }
 
     @GPUIntrinsic(code = "((({0}) > 0.0f) ? 1.0f : ((({0}) < 0.0f) ? -1.0f : 0.0f))")
@@ -1065,6 +1741,86 @@ public final class GPU {
     @GPUIntrinsic(code = "((({0}) > 0L) ? 1L : ((({0}) < 0L) ? -1L : 0L))")
     public static long sign(long value) {
         return Long.compare(value, 0L);
+    }
+
+    @GPUIntrinsic(code = "sign({0})")
+    public static Float2 sign(Float2 value) {
+        return new Float2(sign(value.x), sign(value.y));
+    }
+
+    @GPUIntrinsic(code = "sign({0})")
+    public static Float3 sign(Float3 value) {
+        return new Float3(sign(value.x), sign(value.y), sign(value.z));
+    }
+
+    @GPUIntrinsic(code = "sign({0})")
+    public static Float4 sign(Float4 value) {
+        return new Float4(sign(value.x), sign(value.y), sign(value.z), sign(value.w));
+    }
+
+    @GPUIntrinsic(code = "sign({0})")
+    public static Double2 sign(Double2 value) {
+        return new Double2(sign(value.x), sign(value.y));
+    }
+
+    @GPUIntrinsic(code = "sign({0})")
+    public static Double3 sign(Double3 value) {
+        return new Double3(sign(value.x), sign(value.y), sign(value.z));
+    }
+
+    @GPUIntrinsic(code = "sign({0})")
+    public static Double4 sign(Double4 value) {
+        return new Double4(sign(value.x), sign(value.y), sign(value.z), sign(value.w));
+    }
+
+    @GPUIntrinsic(code = "abs_diff({0}, {1})")
+    public static int abs_diff(int left, int right) {
+        return Math.abs(left - right);
+    }
+
+    @GPUIntrinsic(code = "abs_diff({0}, {1})")
+    public static long abs_diff(long left, long right) {
+        return Math.abs(left - right);
+    }
+
+    @GPUIntrinsic(name = "upsample")
+    public static int upsample(short high, short low) {
+        return ((high & 0xFFFF) << 16) | (low & 0xFFFF);
+    }
+
+    @GPUIntrinsic(name = "upsample")
+    public static long upsample(int high, int low) {
+        return ((high & 0xFFFFFFFFL) << 32) | (low & 0xFFFFFFFFL);
+    }
+
+    @GPUIntrinsic(code = "(({2}) ? ({1}) : ({0}))")
+    public static int select(int left, int right, boolean condition) {
+        return condition ? right : left;
+    }
+
+    @GPUIntrinsic(code = "(({2}) ? ({1}) : ({0}))")
+    public static long select(long left, long right, boolean condition) {
+        return condition ? right : left;
+    }
+
+    @GPUIntrinsic(code = "(({2}) ? ({1}) : ({0}))")
+    public static float select(float left, float right, boolean condition) {
+        return condition ? right : left;
+    }
+
+    @GPUIntrinsic(code = "(({2}) ? ({1}) : ({0}))")
+    public static double select(double left, double right, boolean condition) {
+        return condition ? right : left;
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static int bitselect(int left, int right, int mask) {
+        return (left & ~mask) | (right & mask);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static long bitselect(long left, long right, long mask) {
+        return (left & ~mask) | (right & mask);
     }
 
     @GPUIntrinsic(name = "convert_int")
@@ -1127,9 +1883,54 @@ public final class GPU {
         return value;
     }
 
+    @GPUIntrinsic(code = "((uint) ({0}))")
+    public static UInt convert_uint(int value) {
+        return new UInt(value);
+    }
+
+    @GPUIntrinsic(code = "((uint) ({0}))")
+    public static UInt convert_uint(long value) {
+        return new UInt((int) value);
+    }
+
+    @GPUIntrinsic(code = "((uint) ({0}))")
+    public static UInt convert_uint(float value) {
+        return new UInt((int) value);
+    }
+
+    @GPUIntrinsic(code = "((uint) ({0}))")
+    public static UInt convert_uint(double value) {
+        return new UInt((int) value);
+    }
+
+    @GPUIntrinsic(code = "((ulong) ({0}))")
+    public static ULong convert_ulong(int value) {
+        return new ULong(value);
+    }
+
+    @GPUIntrinsic(code = "((ulong) ({0}))")
+    public static ULong convert_ulong(long value) {
+        return new ULong(value);
+    }
+
+    @GPUIntrinsic(code = "((ulong) ({0}))")
+    public static ULong convert_ulong(float value) {
+        return new ULong((long) value);
+    }
+
+    @GPUIntrinsic(code = "((ulong) ({0}))")
+    public static ULong convert_ulong(double value) {
+        return new ULong((long) value);
+    }
+
     @GPUIntrinsic(name = "as_int")
     public static int as_int(float value) {
         return Float.floatToRawIntBits(value);
+    }
+
+    @GPUIntrinsic(code = "as_uint({0})")
+    public static UInt as_uint(float value) {
+        return new UInt(Float.floatToRawIntBits(value));
     }
 
     @GPUIntrinsic(name = "as_float")
@@ -1137,9 +1938,19 @@ public final class GPU {
         return Float.intBitsToFloat(value);
     }
 
+    @GPUIntrinsic(code = "as_float({0}.value)")
+    public static float as_float(UInt value) {
+        return Float.intBitsToFloat(value.value);
+    }
+
     @GPUIntrinsic(name = "as_long")
     public static long as_long(double value) {
         return Double.doubleToRawLongBits(value);
+    }
+
+    @GPUIntrinsic(code = "as_ulong({0})")
+    public static ULong as_ulong(double value) {
+        return new ULong(Double.doubleToRawLongBits(value));
     }
 
     @GPUIntrinsic(name = "as_double")
@@ -1147,9 +1958,19 @@ public final class GPU {
         return Double.longBitsToDouble(value);
     }
 
+    @GPUIntrinsic(code = "as_double({0}.value)")
+    public static double as_double(ULong value) {
+        return Double.longBitsToDouble(value.value);
+    }
+
     @GPUIntrinsic(name = "clz")
     public static int clz(int value) {
         return Integer.numberOfLeadingZeros(value);
+    }
+
+    @GPUIntrinsic(name = "clz")
+    public static int clz(long value) {
+        return Long.numberOfLeadingZeros(value);
     }
 
     @GPUIntrinsic(name = "popcount")
@@ -1157,9 +1978,19 @@ public final class GPU {
         return Integer.bitCount(value);
     }
 
+    @GPUIntrinsic(name = "popcount")
+    public static int popcount(long value) {
+        return Long.bitCount(value);
+    }
+
     @GPUIntrinsic(name = "rotate")
     public static int rotate(int value, int amount) {
         return Integer.rotateLeft(value, amount);
+    }
+
+    @GPUIntrinsic(name = "rotate")
+    public static long rotate(long value, long amount) {
+        return Long.rotateLeft(value, (int) amount);
     }
 
     @GPUIntrinsic(name = "get_global_id")

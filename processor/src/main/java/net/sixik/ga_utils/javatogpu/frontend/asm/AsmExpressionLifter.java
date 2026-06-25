@@ -1423,7 +1423,13 @@ public final class AsmExpressionLifter {
                 return constant;
             }
         }
-        throw new AsmFrontendException("Unknown builtin constant in AsmExpressionLifter: " + ownerInternalName + "." + fieldName);
+        throw new AsmFrontendException(
+                "Unknown builtin constant in AsmExpressionLifter: "
+                        + ownerInternalName
+                        + "."
+                        + fieldName
+                        + "; use a known GPU builtin constant or register the constant through the intrinsic database"
+        );
     }
 
     private boolean isGpuOwner(String ownerInternalName) {
@@ -1444,7 +1450,11 @@ public final class AsmExpressionLifter {
         if (constant instanceof Double value) {
             return Double.toString(value);
         }
-        throw new AsmFrontendException("Unsupported LDC constant in AsmExpressionLifter: " + constant);
+        throw new AsmFrontendException(
+                "Unsupported LDC constant in AsmExpressionLifter: "
+                        + constant
+                        + "; only integer/long/float/double constants are supported in the current GPU-friendly ASM subset"
+        );
     }
 
     private String literalType(Object constant) {
@@ -1460,7 +1470,11 @@ public final class AsmExpressionLifter {
         if (constant instanceof Double) {
             return "double";
         }
-        throw new AsmFrontendException("Unsupported LDC constant in AsmExpressionLifter: " + constant);
+        throw new AsmFrontendException(
+                "Unsupported LDC constant in AsmExpressionLifter: "
+                        + constant
+                        + "; only integer/long/float/double constants are supported in the current GPU-friendly ASM subset"
+        );
     }
 
     private String toJavaTypeName(Type type) {

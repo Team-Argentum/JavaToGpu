@@ -1,4 +1,4 @@
-package net.sixik.ga_utils.javatogpu.api.anotations;
+package net.sixik.ga_utils.javatogpu.api.annotations;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

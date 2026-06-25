@@ -1,4 +1,4 @@
-package net.sixik.ga_utils.javatogpu.api.anotations;
+package net.sixik.ga_utils.javatogpu.api.annotations;
 
 /**
  * Marks a Java method as a GPU kernel entry point.
