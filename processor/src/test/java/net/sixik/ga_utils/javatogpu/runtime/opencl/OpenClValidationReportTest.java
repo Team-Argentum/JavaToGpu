@@ -169,6 +169,44 @@ class OpenClValidationReportTest {
     }
 
     @Test
+    void validationHistoryMarkdownKeepsNvidiaOperationalEvidenceTogether() throws Exception {
+        java.nio.file.Path historyMarkdownFile = java.nio.file.Files.createTempFile("javatogpu-opencl-nvidia-operational", ".md");
+        String bucketSummary = String.join(", ",
+                "openClVendorValidation=passed",
+                "integrationOpenClSmokeTest=passed",
+                "openClWorkloadValidationTest=passed",
+                "openClLongRunningStabilityTest=passed",
+                "benchmarkTest=passed"
+        );
+        String workloadSummary = "passed (perlin=passed, packedBlob=passed, packedNumeric=passed, packedGrid3d=passed, image=passed)";
+        java.util.List<OpenClValidationHistoryEntry> entries = java.util.List.of(
+                new OpenClValidationHistoryEntry(
+                        Instant.parse("2026-07-03T10:00:00Z"),
+                        "NVIDIA",
+                        "OpenCL",
+                        "Mock RTX",
+                        "NVIDIA Corporation",
+                        "595.97",
+                        "OpenCL 3.0 CUDA",
+                        bucketSummary,
+                        "passed",
+                        workloadSummary
+                )
+        );
+
+        OpenClValidationHistoryIO.writeMarkdown(historyMarkdownFile, entries);
+        String markdown = java.nio.file.Files.readString(historyMarkdownFile);
+
+        assertTrue(markdown.contains("openClVendorValidation=passed"));
+        assertTrue(markdown.contains("integrationOpenClSmokeTest=passed"));
+        assertTrue(markdown.contains("openClWorkloadValidationTest=passed"));
+        assertTrue(markdown.contains("openClLongRunningStabilityTest=passed"));
+        assertTrue(markdown.contains("benchmarkTest=passed"));
+        assertTrue(markdown.contains("| passed | " + workloadSummary + " |"));
+        assertTrue(!markdown.toLowerCase(java.util.Locale.ROOT).contains("c2" + "me"));
+    }
+
+    @Test
     void workloadSummaryRoundTripsThroughPropertiesFormat() throws Exception {
         java.nio.file.Path summaryFile = java.nio.file.Files.createTempFile("javatogpu-opencl-workloads", ".properties");
         OpenClWorkloadValidationSummary summary = new OpenClWorkloadValidationSummary(
