@@ -143,7 +143,7 @@ class OpenClValidationReportTest {
     void validationHistoryMarkdownKeepsRuntimeEquivalenceAndStressArtifactsVisible() throws Exception {
         java.nio.file.Path historyMarkdownFile = java.nio.file.Files.createTempFile("javatogpu-opencl-history-artifacts", ".md");
         String bucketSummary = "openClWorkloadValidationTest=passed, openClLongRunningStabilityTest=passed, benchmarkTest=passed";
-        String workloadSummary = "passed (perlin=passed, packedBlob=passed, packedNumeric=passed, image=passed)";
+        String workloadSummary = "passed (perlin=passed, packedBlob=passed, packedNumeric=passed, c2me3dPackedRootBlob=passed, image=passed)";
         java.util.List<OpenClValidationHistoryEntry> entries = java.util.List.of(
                 new OpenClValidationHistoryEntry(
                         Instant.parse("2026-07-01T12:20:00Z"),
@@ -173,6 +173,7 @@ class OpenClValidationReportTest {
         java.nio.file.Path summaryFile = java.nio.file.Files.createTempFile("javatogpu-opencl-workloads", ".properties");
         OpenClWorkloadValidationSummary summary = new OpenClWorkloadValidationSummary(
                 Instant.parse("2026-07-01T12:00:00Z"),
+                "passed",
                 "passed",
                 "passed",
                 "passed",

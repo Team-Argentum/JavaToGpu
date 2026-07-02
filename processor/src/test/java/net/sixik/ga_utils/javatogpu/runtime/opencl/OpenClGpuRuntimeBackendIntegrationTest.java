@@ -885,6 +885,136 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     }
 
     @Test
+    void comparesGeneratedLauncherC2meStyle3DPackedRootBlobWorkloadAgainstCpuReferenceOnAvailableOpenClDevice() throws Exception {
+        assumeOpenClAvailable();
+
+        CompiledGpuSource compiled = compileGpuSource(
+                "sample.C2meStyle3DPackedRootBlobWorkload",
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.GPU;
+                        import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                        import net.sixik.ga_utils.javatogpu.api.GlobalIntPtr;
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
+                        import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
+
+                        import java.nio.ByteBuffer;
+                        import java.nio.ByteOrder;
+
+                        public class C2meStyle3DPackedRootBlobWorkload {
+                            @OpenCLAttributes({"reqd_work_group_size(8, 8, 1)"})
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            public static void kernel(@GPUGlobal byte[] blob, RootBlobView view, @GPUGlobal int[] output) {
+                                int relX = GPU.get_global_id(0);
+                                int relZ = GPU.get_global_id(1);
+                                int relY = GPU.get_global_id(2);
+                                int idx = (relY * view.sizeZ + relZ) * view.sizeX + relX;
+                                GlobalBytePtr root = GPU.global(blob);
+                                int sampler = root.intPtrAt(view.samplerOffset + idx * 4).value;
+                                int density = root.readIntAt(view.densityOffset + idx * 4);
+                                GlobalIntPtr bias = root.intPtrAt(view.biasOffset);
+                                output[idx] = sampler + density + bias.value + relX - relZ + relY;
+                            }
+
+                            public static void cpuKernel(byte[] blob, RootBlobView view, int[] output) {
+                                ByteBuffer buffer = ByteBuffer.wrap(blob).order(ByteOrder.LITTLE_ENDIAN);
+                                for (int relY = 0; relY < view.sizeY; relY++) {
+                                    for (int relZ = 0; relZ < view.sizeZ; relZ++) {
+                                        for (int relX = 0; relX < view.sizeX; relX++) {
+                                            int idx = (relY * view.sizeZ + relZ) * view.sizeX + relX;
+                                            int sampler = buffer.getInt(view.samplerOffset + idx * 4);
+                                            int density = buffer.getInt(view.densityOffset + idx * 4);
+                                            int bias = buffer.getInt(view.biasOffset);
+                                            output[idx] = sampler + density + bias + relX - relZ + relY;
+                                        }
+                                    }
+                                }
+                            }
+
+                            @GPUStruct
+                            public static class RootBlobView {
+                                public int samplerOffset;
+                                public int densityOffset;
+                                public int biasOffset;
+                                public int sizeX;
+                                public int sizeZ;
+                                public int sizeY;
+
+                                public RootBlobView() {
+                                }
+
+                                public RootBlobView(int samplerOffset, int densityOffset, int biasOffset, int sizeX, int sizeZ, int sizeY) {
+                                    this.samplerOffset = samplerOffset;
+                                    this.densityOffset = densityOffset;
+                                    this.biasOffset = biasOffset;
+                                    this.sizeX = sizeX;
+                                    this.sizeZ = sizeZ;
+                                    this.sizeY = sizeY;
+                                }
+                            }
+
+                            public static final class Fixture {
+                                public final byte[] blob;
+                                public final RootBlobView view;
+
+                                public Fixture(byte[] blob, RootBlobView view) {
+                                    this.blob = blob;
+                                    this.view = view;
+                                }
+                            }
+
+                            public static Fixture createFixture() {
+                                int sizeX = 8;
+                                int sizeZ = 8;
+                                int sizeY = 2;
+                                int count = sizeX * sizeZ * sizeY;
+                                int samplerOffset = 0;
+                                int densityOffset = samplerOffset + count * 4;
+                                int biasOffset = densityOffset + count * 4;
+                                byte[] blob = new byte[biasOffset + 4];
+                                ByteBuffer buffer = ByteBuffer.wrap(blob).order(ByteOrder.LITTLE_ENDIAN);
+                                for (int i = 0; i < count; i++) {
+                                    buffer.putInt(samplerOffset + i * 4, i * 3 + 7);
+                                    buffer.putInt(densityOffset + i * 4, 1000 - i * 5);
+                                }
+                                buffer.putInt(biasOffset, 13);
+                                return new Fixture(blob, new RootBlobView(samplerOffset, densityOffset, biasOffset, sizeX, sizeZ, sizeY));
+                            }
+                        }
+                        """
+        );
+
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[]{compiled.classOutputDir().toUri().toURL()}, getClass().getClassLoader());
+             GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
+            Class<?> ownerClass = Class.forName("sample.C2meStyle3DPackedRootBlobWorkload", true, classLoader);
+            Class<?> fixtureClass = Class.forName("sample.C2meStyle3DPackedRootBlobWorkload$Fixture", true, classLoader);
+
+            Object fixture = ownerClass.getMethod("createFixture").invoke(null);
+            byte[] blob = (byte[]) fixtureClass.getField("blob").get(fixture);
+            Object view = fixtureClass.getField("view").get(fixture);
+
+            int[] cpuOutput = new int[8 * 8 * 2];
+            int[] gpuOutput = new int[8 * 8 * 2];
+
+            ownerClass.getMethod("cpuKernel", byte[].class, view.getClass(), int[].class)
+                    .invoke(null, blob, view, cpuOutput);
+
+            GpuGeneratedLauncherInvoker.invokeWithConfig(
+                    ownerClass,
+                    "kernel",
+                    net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(8L, 8L, 2L, 8L, 8L, 1L),
+                    blob,
+                    view,
+                    gpuOutput
+            );
+
+            assertArrayEquals(cpuOutput, gpuOutput);
+        }
+    }
+
+    @Test
     void comparesImageSamplerWorkloadAgainstCpuReferenceOnAvailableOpenClDevice() throws Exception {
         assumeOpenClAvailable();
 
@@ -940,6 +1070,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         String perlinStatus = "not run";
         String packedBlobStatus = "not run";
         String packedNumericStatus = "not run";
+        String c2me3dPackedRootBlobStatus = "not run";
         String imageStatus = "not run";
 
         try {
@@ -964,6 +1095,13 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         }
 
         try {
+            runC2me3dPackedRootBlobWorkloadComparison();
+            c2me3dPackedRootBlobStatus = "passed";
+        } catch (org.opentest4j.TestAbortedException aborted) {
+            c2me3dPackedRootBlobStatus = "skipped";
+        }
+
+        try {
             runImageWorkloadComparison();
             imageStatus = "passed";
         } catch (org.opentest4j.TestAbortedException aborted) {
@@ -973,6 +1111,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         String overallStatus = ("passed".equals(perlinStatus) || "skipped".equals(perlinStatus))
                 && ("passed".equals(packedBlobStatus) || "skipped".equals(packedBlobStatus))
                 && ("passed".equals(packedNumericStatus) || "skipped".equals(packedNumericStatus))
+                && ("passed".equals(c2me3dPackedRootBlobStatus) || "skipped".equals(c2me3dPackedRootBlobStatus))
                 && ("passed".equals(imageStatus) || "skipped".equals(imageStatus))
                 ? "passed"
                 : "failed";
@@ -982,6 +1121,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 perlinStatus,
                 packedBlobStatus,
                 packedNumericStatus,
+                c2me3dPackedRootBlobStatus,
                 imageStatus
         ));
         assertTrue(!"failed".equals(overallStatus));
@@ -2732,6 +2872,10 @@ class OpenClGpuRuntimeBackendIntegrationTest {
 
     private void runPackedNumericWorkloadComparison() throws Exception {
         comparesGeneratedLauncherPackedNumericWorkloadAgainstCpuReferenceOnAvailableOpenClDevice();
+    }
+
+    private void runC2me3dPackedRootBlobWorkloadComparison() throws Exception {
+        comparesGeneratedLauncherC2meStyle3DPackedRootBlobWorkloadAgainstCpuReferenceOnAvailableOpenClDevice();
     }
 
     private void runImageWorkloadComparison() throws Exception {

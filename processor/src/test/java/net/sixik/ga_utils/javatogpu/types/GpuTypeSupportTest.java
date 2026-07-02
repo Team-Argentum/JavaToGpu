@@ -138,6 +138,65 @@ class GpuTypeSupportTest {
     }
 
     @Test
+    void addressSpaceByteViewsExposeConsistentOffsetReadHelpers() throws ReflectiveOperationException {
+        Map<String, Class<?>> expectations = Map.of(
+                "readByteAt", byte.class,
+                "readShortAt", short.class,
+                "readIntAt", int.class,
+                "readLongAt", long.class,
+                "readFloatAt", float.class,
+                "readDoubleAt", double.class
+        );
+
+        for (Class<?> owner : List.of(GlobalBytePtr.class, ConstantBytePtr.class, LocalBytePtr.class)) {
+            for (Map.Entry<String, Class<?>> methodExpectation : expectations.entrySet()) {
+                Method method = owner.getMethod(methodExpectation.getKey(), int.class);
+                assertEquals(methodExpectation.getValue(), method.getReturnType());
+            }
+        }
+    }
+
+    @Test
+    void addressSpaceByteViewsExposeConsistentOffsetPointerHelpers() throws ReflectiveOperationException {
+        Map<Class<?>, Map<String, Class<?>>> expectations = Map.of(
+                GlobalBytePtr.class, Map.of(
+                        "bytePtrAt", GlobalBytePtr.class,
+                        "charPtrAt", GlobalCharPtr.class,
+                        "shortPtrAt", GlobalShortPtr.class,
+                        "intPtrAt", GlobalIntPtr.class,
+                        "longPtrAt", GlobalLongPtr.class,
+                        "floatPtrAt", GlobalFloatPtr.class,
+                        "doublePtrAt", GlobalDoublePtr.class
+                ),
+                ConstantBytePtr.class, Map.of(
+                        "bytePtrAt", ConstantBytePtr.class,
+                        "charPtrAt", ConstantCharPtr.class,
+                        "shortPtrAt", ConstantShortPtr.class,
+                        "intPtrAt", ConstantIntPtr.class,
+                        "longPtrAt", ConstantLongPtr.class,
+                        "floatPtrAt", ConstantFloatPtr.class,
+                        "doublePtrAt", ConstantDoublePtr.class
+                ),
+                LocalBytePtr.class, Map.of(
+                        "bytePtrAt", LocalBytePtr.class,
+                        "charPtrAt", LocalCharPtr.class,
+                        "shortPtrAt", LocalShortPtr.class,
+                        "intPtrAt", LocalIntPtr.class,
+                        "longPtrAt", LocalLongPtr.class,
+                        "floatPtrAt", LocalFloatPtr.class,
+                        "doublePtrAt", LocalDoublePtr.class
+                )
+        );
+
+        for (Map.Entry<Class<?>, Map<String, Class<?>>> owner : expectations.entrySet()) {
+            for (Map.Entry<String, Class<?>> methodExpectation : owner.getValue().entrySet()) {
+                Method method = owner.getKey().getMethod(methodExpectation.getKey(), int.class);
+                assertEquals(methodExpectation.getValue(), method.getReturnType());
+            }
+        }
+    }
+
+    @Test
     void addressSpacePointersExposeSymmetricBridgeHelpersOnGpuFacade() throws ReflectiveOperationException {
         assertEquals(GlobalBytePtr.class, GPU.class.getMethod("global", byte[].class).getReturnType());
         assertEquals(GlobalCharPtr.class, GPU.class.getMethod("global", char[].class).getReturnType());

@@ -9,6 +9,7 @@ public record OpenClWorkloadValidationSummary(
         String perlinStatus,
         String packedBlobStatus,
         String packedNumericStatus,
+        String c2me3dPackedRootBlobStatus,
         String imageStatus
 ) {
 
@@ -18,6 +19,7 @@ public record OpenClWorkloadValidationSummary(
         perlinStatus = normalize(perlinStatus);
         packedBlobStatus = normalize(packedBlobStatus);
         packedNumericStatus = normalize(packedNumericStatus);
+        c2me3dPackedRootBlobStatus = normalize(c2me3dPackedRootBlobStatus);
         imageStatus = normalize(imageStatus);
     }
 

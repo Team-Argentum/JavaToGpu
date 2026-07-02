@@ -7465,6 +7465,24 @@ public final class GPU {
     public static void all_barrier() {
     }
 
+    /**
+     * Emits an OpenCL/C trap for source-level fail-fast paths.
+     *
+     * <p>This is the supported Java-side replacement for low-level kernels that use {@code __builtin_trap()} behind
+     * debug or configuration guards. Preprocessor feature gates remain a build/configuration concern rather than a Java
+     * frontend construct.
+     */
+    @GPUIntrinsic(code = "__builtin_trap()")
+    public static void trap() {
+    }
+
+    /**
+     * Emits an OpenCL/C unreachable marker after a trap or equivalent terminating path.
+     */
+    @GPUIntrinsic(code = "__builtin_unreachable()")
+    public static void unreachable() {
+    }
+
     @GPUIntrinsic(name = "mem_fence")
     public static void mem_fence(int flags) {
     }
