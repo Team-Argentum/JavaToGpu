@@ -7830,6 +7830,102 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithAnnotatedScalarAliasTypeFromCompilerMetadata() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path aliasClassOutputDir = Files.createTempDirectory("javatogpu-annotated-alias-classes");
+        Path aliasGeneratedOutputDir = Files.createTempDirectory("javatogpu-annotated-alias-generated");
+        Path consumerClassOutputDir = Files.createTempDirectory("javatogpu-annotated-alias-consumer-classes");
+        Path consumerGeneratedOutputDir = Files.createTempDirectory("javatogpu-annotated-alias-consumer-generated");
+
+        String aliasSource = """
+                package custom;
+
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUScalarAliasType;
+
+                @GPUScalarAliasType(backendType = "uint", valueType = "int")
+                public final class MyUInt {
+                    public int value;
+
+                    public MyUInt() {
+                    }
+
+                    public MyUInt(int value) {
+                        this.value = value;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", aliasClassOutputDir.toString(),
+                    "-s", aliasGeneratedOutputDir.toString()
+            );
+            JavaFileObject aliasFile = new StringJavaFileObject("custom.MyUInt", aliasSource);
+            JavaCompiler.CompilationTask aliasTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(aliasFile)
+            );
+
+            assertTrue(aliasTask.call());
+        }
+        Path aliasJar = createClasspathJar(aliasClassOutputDir, "javatogpu-annotated-alias");
+
+        String consumerSource = """
+                package sample;
+
+                import custom.MyUInt;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(MyUInt bias, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        MyUInt local = new MyUInt(17);
+                        output[id] = bias.value + local.value;
+                    }
+                }
+                """;
+
+        StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
+        try {
+            configureCompilationClasspath(fileManager, aliasClassOutputDir, aliasJar);
+            List<String> options = List.of(
+                    "-classpath", buildCompilationClasspath(aliasClassOutputDir, aliasJar),
+                    "-d", consumerClassOutputDir.toString(),
+                    "-s", consumerGeneratedOutputDir.toString()
+            );
+            JavaFileObject consumerFile = new StringJavaFileObject("sample.Demo", consumerSource);
+            JavaCompiler.CompilationTask consumerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(consumerFile)
+            );
+            consumerTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(consumerTask.call());
+        } finally {
+            closeFileManager(fileManager);
+        }
+
+        Path kernelPath = consumerGeneratedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+
+        String kernelSource = Files.readString(kernelPath);
+        assertTrue(kernelSource.contains("__kernel void jtg_kernel(uint bias, __global int* output)"));
+        assertTrue(kernelSource.contains("uint local = ((uint) 17);"));
+        assertTrue(kernelSource.contains("output[id] = (bias + local);"));
+    }
+
+    @Test
     void generatesKernelWithReinterpretedConstantByteView() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-constantbyteview-classes");
@@ -8575,6 +8671,63 @@ class GpuCompilerProcessorTest {
         assertTrue(kernelSource.contains("bias.sf"));
         assertTrue(kernelSource.contains("local.s0"));
         assertTrue(kernelSource.contains("local.sf"));
+    }
+
+    @Test
+    void generatesKernelWithSourceReachableBroadIntrinsicFamilies() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-broad-family-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-broad-family-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.Int8;
+                import net.sixik.ga_utils.javatogpu.api.UInt16;
+                import net.sixik.ga_utils.javatogpu.api.ULong8;
+                import net.sixik.ga_utils.javatogpu.api.UShort16;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(UInt16 value, ULong8 bits, UShort16 amount, @GPUGlobal int[] output) {
+                        int id = GPU.get_global_id(0);
+                        UInt16 clipped = GPU.clamp(value, new UInt16(1), new UInt16(255));
+                        Int8 counts = GPU.popcount(bits);
+                        UShort16 rotated = GPU.rotate(amount, new UShort16((short) 3));
+                        output[id] = clipped.s0 + clipped.sf + counts.s0 + counts.s7 + rotated.s0 + rotated.sf;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+
+        String kernelSource = Files.readString(kernelPath);
+        assertTrue(kernelSource.contains("uint16 clipped = clamp(value, (uint16)(1), (uint16)(255));"));
+        assertTrue(kernelSource.contains("int8 counts = popcount(bits);"));
+        assertTrue(kernelSource.contains("ushort16 rotated = rotate(amount, (ushort16)(((short) 3)));"));
     }
 
     @Test

@@ -104,6 +104,27 @@ public final class GpuTypeSupport {
         registerScalarAlias(scalarAliasType.getName(), descriptor);
     }
 
+    public static void registerScalarAliasType(
+            String simpleName,
+            String qualifiedName,
+            String backendType,
+            String valueType
+    ) {
+        if (simpleName == null || simpleName.isBlank()) {
+            throw new IllegalArgumentException("simpleName cannot be blank");
+        }
+        if (backendType == null || backendType.isBlank()) {
+            throw new IllegalArgumentException("backendType cannot be blank");
+        }
+        if (valueType == null || valueType.isBlank()) {
+            throw new IllegalArgumentException("valueType cannot be blank");
+        }
+
+        ScalarAliasDescriptor descriptor = new ScalarAliasDescriptor(backendType, valueType);
+        registerScalarAlias(simpleName, descriptor);
+        registerScalarAlias(qualifiedName, descriptor);
+    }
+
     public static void registerAnnotatedVectorType(Class<?> vectorType) {
         if (vectorType == null) {
             throw new IllegalArgumentException("vectorType cannot be null");

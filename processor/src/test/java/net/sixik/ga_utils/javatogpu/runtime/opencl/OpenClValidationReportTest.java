@@ -67,6 +67,10 @@ class OpenClValidationReportTest {
                 "openClLongRunningStabilityTest",
                 new OpenClValidationBucketStatus("openClLongRunningStabilityTest", "passed", Instant.parse("2026-07-01T12:05:00Z"))
         );
+        statuses.put(
+                "performanceStressTest",
+                new OpenClValidationBucketStatus("performanceStressTest", "failed", Instant.parse("2026-07-01T12:06:00Z"))
+        );
 
         OpenClValidationBucketStatusIO.writeAll(registryFile, statuses);
         java.util.Map<String, OpenClValidationBucketStatus> loaded = OpenClValidationBucketStatusIO.readAll(registryFile);
@@ -108,6 +112,60 @@ class OpenClValidationReportTest {
         java.util.List<OpenClValidationHistoryEntry> loaded = OpenClValidationHistoryIO.readAll(historyFile);
 
         assertEquals(entries, loaded);
+    }
+
+    @Test
+    void validationHistoryMarkdownKeepsFailedBucketStatusVisible() throws Exception {
+        java.nio.file.Path historyMarkdownFile = java.nio.file.Files.createTempFile("javatogpu-opencl-history", ".md");
+        java.util.List<OpenClValidationHistoryEntry> entries = java.util.List.of(
+                new OpenClValidationHistoryEntry(
+                        Instant.parse("2026-07-01T12:10:00Z"),
+                        "nvidia",
+                        "OpenCL",
+                        "Mock GPU",
+                        "Mock Vendor",
+                        "1.2.3",
+                        "OpenCL 3.0 Mock",
+                        "compileOnlyTest=passed, performanceStressTest=failed",
+                        "passed",
+                        "not recorded"
+                )
+        );
+
+        OpenClValidationHistoryIO.writeMarkdown(historyMarkdownFile, entries);
+        String markdown = java.nio.file.Files.readString(historyMarkdownFile);
+
+        assertTrue(markdown.contains("compileOnlyTest=passed, performanceStressTest=failed"));
+        assertTrue(markdown.contains("| nvidia |"));
+    }
+
+    @Test
+    void validationHistoryMarkdownKeepsRuntimeEquivalenceAndStressArtifactsVisible() throws Exception {
+        java.nio.file.Path historyMarkdownFile = java.nio.file.Files.createTempFile("javatogpu-opencl-history-artifacts", ".md");
+        String bucketSummary = "openClWorkloadValidationTest=passed, openClLongRunningStabilityTest=passed, benchmarkTest=passed";
+        String workloadSummary = "passed (perlin=passed, packedBlob=passed, packedNumeric=passed, image=passed)";
+        java.util.List<OpenClValidationHistoryEntry> entries = java.util.List.of(
+                new OpenClValidationHistoryEntry(
+                        Instant.parse("2026-07-01T12:20:00Z"),
+                        "nvidia",
+                        "OpenCL",
+                        "Mock GPU",
+                        "Mock Vendor",
+                        "1.2.3",
+                        "OpenCL 3.0 Mock",
+                        bucketSummary,
+                        "passed",
+                        workloadSummary
+                )
+        );
+
+        OpenClValidationHistoryIO.writeMarkdown(historyMarkdownFile, entries);
+        String markdown = java.nio.file.Files.readString(historyMarkdownFile);
+
+        assertTrue(markdown.contains(bucketSummary));
+        assertTrue(markdown.contains("| passed | " + workloadSummary + " |"));
+        assertTrue(markdown.contains("openClLongRunningStabilityTest=passed"));
+        assertTrue(markdown.contains("benchmarkTest=passed"));
     }
 
     @Test

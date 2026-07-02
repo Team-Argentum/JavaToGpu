@@ -8,6 +8,7 @@ import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.benchmark.BenchmarkHarness;
 import net.sixik.ga_utils.javatogpu.benchmark.BenchmarkResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
@@ -279,7 +280,7 @@ class OpenClRuntimeBenchmarkTest {
             }
 
             @Override
-            protected void enqueueKernel(OpenClCompiledKernel compiledKernel, long globalWorkSize) {
+            protected void enqueueKernel(OpenClCompiledKernel compiledKernel, GpuExecutionConfig executionConfig) {
                 // no-op for warm invoke benchmark
             }
 

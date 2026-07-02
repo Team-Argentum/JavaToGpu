@@ -97,6 +97,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private static final List<String> GPU_LOCAL_ANNOTATIONS = GpuAnnotationSupport.GPU_LOCAL_ANNOTATION_TYPES;
     private static final List<String> GPU_STRUCT_ANNOTATIONS = GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES;
     private static final List<String> GPU_POINTER_TYPE_ANNOTATIONS = GpuAnnotationSupport.GPU_POINTER_TYPE_ANNOTATION_TYPES;
+    private static final List<String> GPU_SCALAR_ALIAS_TYPE_ANNOTATIONS = GpuAnnotationSupport.GPU_SCALAR_ALIAS_TYPE_ANNOTATION_TYPES;
     private static final List<String> GPU_VECTOR_TYPE_ANNOTATIONS = GpuAnnotationSupport.GPU_VECTOR_TYPE_ANNOTATION_TYPES;
 
     @Override
@@ -212,6 +213,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         if (hasAnyAnnotation(typeElement, GPU_POINTER_TYPE_ANNOTATIONS)) {
             registerAnnotatedPointerType(typeElement);
         }
+        if (hasAnyAnnotation(typeElement, GPU_SCALAR_ALIAS_TYPE_ANNOTATIONS)) {
+            registerAnnotatedScalarAliasType(typeElement);
+        }
         if (hasAnyAnnotation(typeElement, GPU_VECTOR_TYPE_ANNOTATIONS)) {
             registerAnnotatedVectorType(typeElement);
         }
@@ -227,6 +231,18 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 typeElement.getQualifiedName().toString(),
                 valueType,
                 addressSpace
+        );
+    }
+
+    private void registerAnnotatedScalarAliasType(TypeElement typeElement) {
+        String backendType = readStringAnnotationValue(typeElement, GPU_SCALAR_ALIAS_TYPE_ANNOTATIONS, "backendType", "");
+        String valueType = readStringAnnotationValue(typeElement, GPU_SCALAR_ALIAS_TYPE_ANNOTATIONS, "valueType", "");
+
+        GpuTypeSupport.registerScalarAliasType(
+                typeElement.getSimpleName().toString(),
+                typeElement.getQualifiedName().toString(),
+                backendType,
+                valueType
         );
     }
 

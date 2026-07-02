@@ -62,6 +62,7 @@ public final class GpuIntrinsicDatabase {
     public static GpuIntrinsicDatabase createDefault(List<ParsedGpuMethod> additionalIntrinsicMethods, GpuBackendTarget backendTarget) {
         Map<String, List<GpuIntrinsic>> values = new HashMap<>();
         registerIntrinsicOwner(values, GPU.class, backendTarget);
+        GpuIntrinsicFamilyRegistry.registerGeneratedFamilies(values, backendTarget);
         List<GpuBuiltinConstant> builtinConstants = new ArrayList<>(readBuiltinConstants(GPU.class));
         registerParsedIntrinsicMethods(values, builtinConstants, additionalIntrinsicMethods, backendTarget);
 
@@ -229,6 +230,10 @@ public final class GpuIntrinsicDatabase {
                 && !intrinsic.ownerQualifiedName().equals(intrinsic.ownerSimpleName())) {
             registerAlias(values, intrinsic.ownerQualifiedName(), intrinsic);
         }
+    }
+
+    static void registerGenerated(Map<String, List<GpuIntrinsic>> values, GpuIntrinsic intrinsic) {
+        register(values, intrinsic);
     }
 
     private static void registerAlias(Map<String, List<GpuIntrinsic>> values, String ownerAlias, GpuIntrinsic intrinsic) {

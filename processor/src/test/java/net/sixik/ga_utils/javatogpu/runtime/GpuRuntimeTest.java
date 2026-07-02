@@ -34,6 +34,28 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void generatedLauncherInvokerWithConfigUsesGeneratedDescriptor() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            int[] output = new int[4];
+            GpuExecutionConfig config = GpuExecutionConfig.oneDimensional(3L);
+
+            GpuGeneratedLauncherInvoker.invokeWithConfig(FixtureOwner.class, "kernel", config, output);
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertEquals("javatogpu/runtime/FixtureOwner/kernel.cl", invocation.descriptor().kernelResource());
+            assertSame(config, invocation.executionConfig());
+            assertSame(output, invocation.arguments()[0]);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
     void executionConfigSupportsTwoDimensionalLaunches() {
         GpuExecutionConfig config = GpuExecutionConfig.twoDimensional(16L, 8L, 4L, 2L);
 
@@ -753,6 +775,14 @@ class GpuRuntimeTest {
 
         @Override
         public void invoke(GpuKernelInvocation invocation) {
+        }
+    }
+
+    static final class FixtureOwner {
+        private FixtureOwner() {
+        }
+
+        static void kernel(int[] output) {
         }
     }
 }

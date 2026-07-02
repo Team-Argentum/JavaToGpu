@@ -175,4 +175,57 @@ class GpuIntrinsicDatabaseTest {
                         && constant.javaType().equals("int")
         ));
     }
+
+    @Test
+    void resolvesGeneratedConversionFamiliesForBroadVectorWidths() {
+        GpuIntrinsicDatabase database = GpuIntrinsicDatabase.createDefault();
+
+        GpuIntrinsic wideIntToUInt = database.require("GPU", "convert_uint", List.of("Int16"));
+        GpuIntrinsic wideUIntToInt = database.require("GPU", "convert_int", List.of("UInt16"));
+        GpuIntrinsic wideUByteToUShort = database.require("GPU", "convert_ushort_sat", List.of("UByte16"));
+        GpuIntrinsic wideULongToUInt = database.require("GPU", "convert_uint", List.of("ULong8"));
+        GpuIntrinsic floatVectorToUShort = database.require("GPU", "convert_ushort_sat", List.of("Float4"));
+        GpuIntrinsic doubleVectorToChar = database.require("GPU", "convert_char", List.of("Double3"));
+
+        assertEquals("UInt16", wideIntToUInt.resultType());
+        assertEquals("convert_uint({0})", wideIntToUInt.codeTemplate());
+        assertEquals("Int16", wideUIntToInt.resultType());
+        assertEquals("UShort16", wideUByteToUShort.resultType());
+        assertEquals("UInt8", wideULongToUInt.resultType());
+        assertEquals("UShort4", floatVectorToUShort.resultType());
+        assertEquals("Byte3", doubleVectorToChar.resultType());
+    }
+
+    @Test
+    void generatedFamiliesFillRegistryGapsWithoutReplacingFacadeSpecialCases() {
+        GpuIntrinsicDatabase database = GpuIntrinsicDatabase.createDefault();
+
+        GpuIntrinsic handWrittenUnsignedConvert = database.require("GPU", "convert_int", List.of("ULong16"));
+        GpuIntrinsic generatedUnsignedConvert = database.require("GPU", "convert_uint", List.of("ULong16"));
+
+        assertEquals("Int16", handWrittenUnsignedConvert.resultType());
+        assertEquals("convert_int", handWrittenUnsignedConvert.backendName());
+        assertEquals("", handWrittenUnsignedConvert.codeTemplate());
+        assertEquals("UInt16", generatedUnsignedConvert.resultType());
+        assertEquals("convert_uint({0})", generatedUnsignedConvert.codeTemplate());
+    }
+
+    @Test
+    void resolvesGeneratedIntegerCommonFamiliesForBroadVectorWidths() {
+        GpuIntrinsicDatabase database = GpuIntrinsicDatabase.createDefault();
+
+        GpuIntrinsic clamp = database.require("GPU", "clamp", List.of("UInt16", "UInt16", "UInt16"));
+        GpuIntrinsic addSat = database.require("GPU", "add_sat", List.of("UByte16", "UByte16"));
+        GpuIntrinsic madHi = database.require("GPU", "mad_hi", List.of("Int16", "Int16", "Int16"));
+        GpuIntrinsic popcount = database.require("GPU", "popcount", List.of("ULong8"));
+        GpuIntrinsic rotate = database.require("GPU", "rotate", List.of("UShort16", "UShort16"));
+
+        assertEquals(GpuIntrinsicKind.COMMON, clamp.kind());
+        assertEquals("UInt16", clamp.resultType());
+        assertEquals("clamp({0}, {1}, {2})", clamp.codeTemplate());
+        assertEquals("UByte16", addSat.resultType());
+        assertEquals("mad_hi({0}, {1}, {2})", madHi.codeTemplate());
+        assertEquals("Int8", popcount.resultType());
+        assertEquals("UShort16", rotate.resultType());
+    }
 }

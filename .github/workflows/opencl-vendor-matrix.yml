@@ -33,18 +33,28 @@ jobs:
           java-version: '17'
 
       - name: Vendor validation suite
+        id: vendor_validation
+        continue-on-error: true
         run: ./gradlew.bat :processor:openClVendorValidation --console=plain
 
       - name: Integration smoke
+        id: integration_smoke
+        continue-on-error: true
         run: ./gradlew.bat :processor:integrationOpenClSmokeTest --console=plain
 
       - name: Serious workload validation
+        id: workload_validation
+        continue-on-error: true
         run: ./gradlew.bat :processor:openClWorkloadValidationTest --console=plain
 
       - name: Long-running stability validation
+        id: long_running_validation
+        continue-on-error: true
         run: ./gradlew.bat :processor:openClLongRunningStabilityTest --console=plain
 
       - name: Benchmark companion
+        id: benchmark_companion
+        continue-on-error: true
         run: ./gradlew.bat :processor:benchmarkTest --console=plain
 
       - name: Generate validation report
@@ -60,3 +70,32 @@ jobs:
           name: opencl-validation-${{ matrix.vendor }}
           path: processor/build/reports/opencl/
           if-no-files-found: warn
+
+      - name: Fail lane after artifact capture if validation failed
+        if: always()
+        shell: powershell
+        env:
+          VENDOR_VALIDATION_OUTCOME: ${{ steps.vendor_validation.outcome }}
+          INTEGRATION_SMOKE_OUTCOME: ${{ steps.integration_smoke.outcome }}
+          WORKLOAD_VALIDATION_OUTCOME: ${{ steps.workload_validation.outcome }}
+          LONG_RUNNING_VALIDATION_OUTCOME: ${{ steps.long_running_validation.outcome }}
+          BENCHMARK_COMPANION_OUTCOME: ${{ steps.benchmark_companion.outcome }}
+        run: |
+          $outcomes = [ordered]@{
+            vendorValidation = $env:VENDOR_VALIDATION_OUTCOME
+            integrationSmoke = $env:INTEGRATION_SMOKE_OUTCOME
+            workloadValidation = $env:WORKLOAD_VALIDATION_OUTCOME
+            longRunningValidation = $env:LONG_RUNNING_VALIDATION_OUTCOME
+            benchmarkCompanion = $env:BENCHMARK_COMPANION_OUTCOME
+          }
+          $failed = @()
+          foreach ($entry in $outcomes.GetEnumerator()) {
+            if ($entry.Value -ne 'success') {
+              $failed += "$($entry.Key)=$($entry.Value)"
+            }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "OpenCL validation lane failed after artifact capture: $($failed -join ', ')"
+            exit 1
+          }
+          Write-Host 'OpenCL validation lane passed after artifact capture.'
