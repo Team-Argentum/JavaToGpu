@@ -238,6 +238,43 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void explicitThreeDimensionalExecutionConfigReachesKernelEnqueuePath() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel() {}",
+                java.util.List.of()
+        );
+
+        AtomicReference<net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig> executedConfig = new AtomicReference<>();
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClCompiledKernel compileKernel(GpuKernelDescriptor kernelDescriptor) {
+                return new OpenClCompiledKernel(kernelDescriptor, "compiled:test");
+            }
+
+            @Override
+            protected void enqueueKernel(OpenClCompiledKernel compiledKernel, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig) {
+                executedConfig.set(executionConfig);
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(
+                descriptor,
+                new Object[0],
+                net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(16L, 8L, 4L, 4L, 2L, 1L)
+        ));
+
+        assertEquals(3, executedConfig.get().dimensions());
+        assertEquals(16L, executedConfig.get().globalX());
+        assertEquals(8L, executedConfig.get().globalY());
+        assertEquals(4L, executedConfig.get().globalZ());
+        assertEquals(4L, executedConfig.get().localX());
+        assertEquals(2L, executedConfig.get().localY());
+        assertEquals(1L, executedConfig.get().localZ());
+    }
+
+    @Test
     void executesPreparedArgumentsInKernelOrderAndReadsBackOutputs() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",

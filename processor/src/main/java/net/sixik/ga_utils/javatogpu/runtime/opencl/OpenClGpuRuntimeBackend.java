@@ -36,7 +36,9 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.DoubleBuffer;
 import java.nio.IntBuffer;
+import org.lwjgl.PointerBuffer;
 import org.lwjgl.opencl.CL10;
+import org.lwjgl.system.MemoryStack;
 
 /**
  * OpenCL implementation of {@link GpuRuntimeBackend}.
@@ -1436,7 +1438,9 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     protected void enqueueKernel(OpenClCompiledKernel compiledKernel, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig) {
         long event;
-        if (executionConfig.dimensions() == 2) {
+        if (executionConfig.dimensions() == 3) {
+            event = enqueue3D(compiledKernel, executionConfig);
+        } else if (executionConfig.dimensions() == 2) {
             event = compiledKernel.kernel().enqueue2D(
                     session().queue(),
                     executionConfig.globalX(),
@@ -1459,6 +1463,39 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             OpenClEvents.release(event);
         }
         session().queue().finish();
+    }
+
+    private long enqueue3D(OpenClCompiledKernel compiledKernel, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer globalWorkSize = stack.mallocPointer(3);
+            globalWorkSize.put(0, executionConfig.globalX());
+            globalWorkSize.put(1, executionConfig.globalY());
+            globalWorkSize.put(2, executionConfig.globalZ());
+
+            PointerBuffer localWorkSize = null;
+            if (executionConfig.localX() > 0L || executionConfig.localY() > 0L || executionConfig.localZ() > 0L) {
+                localWorkSize = stack.mallocPointer(3);
+                localWorkSize.put(0, executionConfig.localX());
+                localWorkSize.put(1, executionConfig.localY());
+                localWorkSize.put(2, executionConfig.localZ());
+            }
+
+            PointerBuffer event = stack.mallocPointer(1);
+            checkCl(
+                    CL10.clEnqueueNDRangeKernel(
+                            session().queue().handle(),
+                            compiledKernel.kernel().handle(),
+                            3,
+                            null,
+                            globalWorkSize,
+                            localWorkSize,
+                            null,
+                            event
+                    ),
+                    "clEnqueueNDRangeKernel"
+            );
+            return event.get(0);
+        }
     }
 
     protected void readBackFromDeviceBuffer(Object nativeBuffer, OpenClBufferBinding binding) {

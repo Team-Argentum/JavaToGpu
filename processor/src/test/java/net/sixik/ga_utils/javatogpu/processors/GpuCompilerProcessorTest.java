@@ -92,6 +92,8 @@ class GpuCompilerProcessorTest {
         assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"output\", \"float[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
         assertTrue(launcherSource.contains("public static void invoke(float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWithGlobalWorkSize(long globalWorkSize, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithConfig(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWith3DWorkSize(long globalX, long globalY, long globalZ, float[] input, float[] output)"));
 
         Path launcherClassPath = classOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.class");
         assertTrue(Files.exists(launcherClassPath));
@@ -124,6 +126,31 @@ class GpuCompilerProcessorTest {
             GpuKernelInvocation explicitInvocation = capturedInvocation.get();
             assertEquals(7L, explicitInvocation.globalWorkSize());
             assertTrue(Arrays.equals(new Object[]{input, output}, explicitInvocation.arguments()));
+
+            capturedInvocation.set(null);
+            launcherClass.getMethod(
+                            "invokeWithConfig",
+                            net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.class,
+                            float[].class,
+                            float[].class
+                    )
+                    .invoke(null, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(4L, 3L, 2L), input, output);
+            GpuKernelInvocation explicitConfigInvocation = capturedInvocation.get();
+            assertEquals(3, explicitConfigInvocation.executionConfig().dimensions());
+            assertEquals(4L, explicitConfigInvocation.executionConfig().globalX());
+            assertEquals(3L, explicitConfigInvocation.executionConfig().globalY());
+            assertEquals(2L, explicitConfigInvocation.executionConfig().globalZ());
+            assertTrue(Arrays.equals(new Object[]{input, output}, explicitConfigInvocation.arguments()));
+
+            capturedInvocation.set(null);
+            launcherClass.getMethod("invokeWith3DWorkSize", long.class, long.class, long.class, float[].class, float[].class)
+                    .invoke(null, 5L, 4L, 3L, input, output);
+            GpuKernelInvocation explicit3DInvocation = capturedInvocation.get();
+            assertEquals(3, explicit3DInvocation.executionConfig().dimensions());
+            assertEquals(5L, explicit3DInvocation.executionConfig().globalX());
+            assertEquals(4L, explicit3DInvocation.executionConfig().globalY());
+            assertEquals(3L, explicit3DInvocation.executionConfig().globalZ());
+            assertTrue(Arrays.equals(new Object[]{input, output}, explicit3DInvocation.arguments()));
 
             capturedInvocation.set(null);
             GpuGeneratedLauncherInvoker.invoke(ownerClass, "kernel", input, output);

@@ -21,6 +21,17 @@ public final class GpuGeneratedLauncherInvoker {
         return invokeLauncherMethod(ownerClass, methodName, "invokeWithGlobalWorkSize", fullArguments);
     }
 
+    public static Object invokeWith3DWorkSize(
+            Class<?> ownerClass,
+            String methodName,
+            long globalX,
+            long globalY,
+            long globalZ,
+            Object... arguments
+    ) {
+        return invokeWithConfig(ownerClass, methodName, GpuExecutionConfig.threeDimensional(globalX, globalY, globalZ), arguments);
+    }
+
     public static Object invokeWithConfig(Class<?> ownerClass, String methodName, GpuExecutionConfig executionConfig, Object... arguments) {
         GpuRuntime.invoke(executionConfig, descriptor(ownerClass, methodName), arguments);
         return null;

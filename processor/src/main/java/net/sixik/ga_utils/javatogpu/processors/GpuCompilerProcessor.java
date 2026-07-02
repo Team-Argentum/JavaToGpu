@@ -1311,6 +1311,8 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + emitLauncherInvokeBody(method)
                 + "    }\n"
                 + emitExplicitWorkSizeLauncher(method, parameterSignature)
+                + emitExplicitExecutionConfigLauncher(method, parameterSignature)
+                + emitExplicit3DWorkSizeLauncher(method, parameterSignature)
                 + "}\n";
     }
 
@@ -1325,6 +1327,38 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         return "\n"
                 + "    public static void invokeWithGlobalWorkSize(" + signature + ") {\n"
                 + emitLauncherInvokeBodyWithExplicitWorkSize(method)
+                + "    }\n";
+    }
+
+    private String emitExplicitExecutionConfigLauncher(ExecutableElement method, String parameterSignature) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return "";
+        }
+
+        String signature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, " + parameterSignature;
+        return "\n"
+                + "    public static void invokeWithConfig(" + signature + ") {\n"
+                + emitLauncherInvokeBodyWithExecutionConfig(method)
+                + "    }\n";
+    }
+
+    private String emitExplicit3DWorkSizeLauncher(ExecutableElement method, String parameterSignature) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return "";
+        }
+
+        String signature = parameterSignature.isEmpty()
+                ? "long globalX, long globalY, long globalZ"
+                : "long globalX, long globalY, long globalZ, " + parameterSignature;
+        return "\n"
+                + "    public static void invokeWith3DWorkSize(" + signature + ") {\n"
+                + "        invokeWithConfig(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(globalX, globalY, globalZ)"
+                + (method.getParameters().isEmpty() ? "" : ", " + method.getParameters().stream()
+                        .map(parameter -> parameter.getSimpleName().toString())
+                        .collect(Collectors.joining(", ")))
+                + ");\n"
                 + "    }\n";
     }
 
@@ -1347,6 +1381,15 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
         return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(globalWorkSize, KERNEL_DESCRIPTOR"
+                + (arguments.isEmpty() ? "" : ", " + arguments)
+                + ");\n";
+    }
+
+    private String emitLauncherInvokeBodyWithExecutionConfig(ExecutableElement method) {
+        String arguments = method.getParameters().stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(executionConfig, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }

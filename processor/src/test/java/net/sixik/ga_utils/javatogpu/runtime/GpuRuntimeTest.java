@@ -56,6 +56,30 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void generatedLauncherInvokerWith3DWorkSizeUsesGeneratedDescriptor() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            int[] output = new int[4];
+
+            GpuGeneratedLauncherInvoker.invokeWith3DWorkSize(FixtureOwner.class, "kernel", 16L, 8L, 4L, output);
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertEquals("javatogpu/runtime/FixtureOwner/kernel.cl", invocation.descriptor().kernelResource());
+            assertEquals(3, invocation.executionConfig().dimensions());
+            assertEquals(16L, invocation.executionConfig().globalX());
+            assertEquals(8L, invocation.executionConfig().globalY());
+            assertEquals(4L, invocation.executionConfig().globalZ());
+            assertSame(output, invocation.arguments()[0]);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
     void executionConfigSupportsTwoDimensionalLaunches() {
         GpuExecutionConfig config = GpuExecutionConfig.twoDimensional(16L, 8L, 4L, 2L);
 
@@ -64,6 +88,20 @@ class GpuRuntimeTest {
         assertEquals(8L, config.globalY());
         assertEquals(4L, config.localX());
         assertEquals(2L, config.localY());
+    }
+
+    @Test
+    void executionConfigSupportsThreeDimensionalLaunches() {
+        GpuExecutionConfig config = GpuExecutionConfig.threeDimensional(16L, 8L, 4L, 4L, 2L, 1L);
+
+        assertEquals(3, config.dimensions());
+        assertEquals(16L, config.globalX());
+        assertEquals(8L, config.globalY());
+        assertEquals(4L, config.globalZ());
+        assertEquals(4L, config.localX());
+        assertEquals(2L, config.localY());
+        assertEquals(1L, config.localZ());
+        assertEquals(16L, config.globalWorkSize());
     }
 
     @Test
@@ -84,6 +122,26 @@ class GpuRuntimeTest {
         );
 
         assertEquals("localX/localY must both be zero or both be > 0 for 2D execution", exception.getMessage());
+    }
+
+    @Test
+    void executionConfigRejectsNonPositiveThreeDimensionalGlobalZ() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuExecutionConfig.threeDimensional(16L, 8L, 0L)
+        );
+
+        assertEquals("globalZ must be positive for 3D execution: 0", exception.getMessage());
+    }
+
+    @Test
+    void executionConfigRejectsInvalidThreeDimensionalLocalShape() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuExecutionConfig.threeDimensional(16L, 8L, 4L, 4L, 2L, 0L)
+        );
+
+        assertEquals("localX/localY/localZ must all be zero or all be > 0 for 3D execution", exception.getMessage());
     }
 
     @Test
