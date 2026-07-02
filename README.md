@@ -1,233 +1,72 @@
 # JavaToGpu
 
-JavaToGpu is a source-first Java-to-OpenCL pipeline with an additional structured ASM frontend for advanced integrations.
+JavaToGpu is an experimental Java-to-OpenCL compiler and runtime for writing GPU kernels in a restricted Java subset.
 
-You write a restricted Java method, mark it with `@GPU`, and JavaToGpu validates it, lowers it into IR, emits OpenCL C, generates a launcher, and rewrites direct calls to execute through the runtime backend.
+You mark GPU entry points with `@GPU`, JavaToGpu validates the supported subset, lowers it to an internal IR, emits OpenCL C, generates launchers, and dispatches through the runtime backend.
 
-## Documentation
+## Status
 
-- Wiki home: [docs/Home.md](docs/Home.md)
-- Getting started: [docs/Getting-Started.md](docs/Getting-Started.md)
-- API overview: [docs/API-Overview.md](docs/API-Overview.md)
-- Language contract: [docs/Language-Contract.md](docs/Language-Contract.md)
-- ASM contract: [docs/ASM-Contract.md](docs/ASM-Contract.md)
-- Runtime guide: [docs/Runtime-Guide.md](docs/Runtime-Guide.md)
-- OpenCL data model: [docs/OpenCL-Data-Model.md](docs/OpenCL-Data-Model.md)
-- Validation and operations: [docs/Validation-and-Operations.md](docs/Validation-and-Operations.md)
-- Device quirks: [docs/Device-Quirks.md](docs/Device-Quirks.md)
-- Troubleshooting: [docs/Troubleshooting.md](docs/Troubleshooting.md)
-- Known limitations: [docs/Known-Limitations.md](docs/Known-Limitations.md)
-- Cookbook: [docs/Cookbook.md](docs/Cookbook.md)
-- FAQ: [docs/FAQ.md](docs/FAQ.md)
+JavaToGpu is ready for a public alpha / developer-preview release.
 
-Maintainer planning, roadmaps, and historical design notes now live in `docs-project-plan/`.
+Use it when you want to experiment with GPU-safe Java kernels, OpenCL code generation, runtime validation, and compiler integration. Do not treat the API or generated-code shape as stable yet.
 
-## What You Get
+Current validation baseline:
 
-- Write kernels in Java instead of hand-writing OpenCL C.
-- Built-in `GPU.*` intrinsics for indexing, math, atomics, barriers, images, and samplers.
-- `@CCode` helpers for reusable GPU-side functions.
-- `@CCodeLibrary` for reusable helper modules across compilation units.
-- Pointer wrappers like `FloatPtr` and `DoublePtr` for helper mutation patterns.
-- Vector wrappers like `Float2`, `Float4`, `Int2`, `Double4`.
-- `@GPUStruct` support for user-defined OpenCL structs.
-- Kernel launcher generation and runtime dispatch through `GpuRuntime`.
-- Repo-local validation buckets for compile-only, runtime, ABI, image, stress, and real-device smoke coverage.
-- A public `GpuProgramCompiler` facade for both source and structured ASM inputs.
+- Backend: OpenCL
+- Proven local device: NVIDIA GeForce RTX 5070 through the NVIDIA CUDA OpenCL stack
+- Current confidence signal: repeated NVIDIA `:processor:openClOperationalRoutine --rerun-tasks` runs
+- Future promotion gates: Intel and AMD OpenCL validation on real hardware
+- CUDA backend: planned, not implemented
 
-The public annotation package is `net.sixik.ga_utils.javatogpu.api.annotations`.
+## What Works Today
 
-## Project Layout
+- Java source kernels with `@GPU` entry methods.
+- OpenCL-style `GPU.*` intrinsics for indexing, math, conversion, atomics, barriers, images, samplers, and low-level helpers.
+- Helper functions through `@CCode`, reusable helper libraries through `@CCodeLibrary`, and explicit backend intrinsic bindings through `@GPUIntrinsic`.
+- Primitive arrays, scalars, vector wrappers, unsigned aliases, pointer wrappers, address-space pointer views, and `@GPUStruct` values.
+- OpenCL address spaces through `@GPUGlobal`, `@GPUConstant`, and `@GPULocal`.
+- OpenCL attributes and low-level qualifiers for explicit kernel/data-model work.
+- Runtime dispatch through `GpuRuntime`, shared OpenCL cache scopes, fallback selection, capability prechecks, and explicit 1D/2D/3D launch configuration.
+- Image and sampler kernel APIs with practical host-side OpenCL image workflows.
+- Structured ASM compiler entry point for intentionally generated canonical bytecode.
+- Repo-local validation buckets for compile-only, runtime, ABI, image, workload-equivalence, stress, benchmark, and real-device operational checks.
 
-- `processor`
-  Compiler frontend, OpenCL emitter, runtime support, launcher generation, and bytecode rewriting.
-- `test-app`
-  Small sample application wired like a real consumer module.
-- `examples-app`
-  Showcase module with multiple focused example kernels.
+## What Is Intentionally Limited
 
-## Current Status
+JavaToGpu is not a "run any Java on the GPU" system.
 
-Implemented and working:
+Current alpha limitations include:
 
-- arithmetic, comparisons, logical operators
-- casts
-- `if / else`
-- `for`, `while`, `do-while`
-- `switch / case`
-- compound assignments
-- `++ / --`
-- primitive arrays and scalars
-- helper methods via `@CCode`
-- inline helpers
-- native helper bodies via `@CCode(code = "...")`
-- reusable helper libraries via `@CCodeLibrary`
-- pointer helpers
-- vector local values, helper params / returns and kernel parameters
-- `@GPUStruct`
-- struct kernel parameters
-- struct array buffers
-- vector array buffers
-- integer atomics
-- broad practical `GPU.*` math/common coverage for scalar and vector forms, including trig, inverse trig, hyperbolic math, and the conversion helpers needed by the current C2ME-style workload
-- local memory helper intrinsics
-- image / sampler kernel code generation
-- runtime image / sampler marshalling for real OpenCL handles
-- `image1d_t`, `image1d_array_t`, `image1d_buffer_t`, `image2d_t`, `image2d_msaa_t`, `image2d_array_t`, `image3d_t` kernel parameters
-- samplerless image reads and image metadata intrinsics
-- host-side image upload / readback helpers for RGBA float/int/uint and RGBA8
-- read/write coverage for float, int and uint image builtins across the supported image object families
-- OpenCL attributes via `@OpenCLAttributes`
-- OpenCL parameter qualifiers via `@OpenCLQualifiers` for low-level pointer-like cases
-- OpenCL address spaces: `@GPUGlobal`, `@GPUConstant`, `@GPULocal`
-- structured ASM frontend for canonical GPU-friendly bytecode
-- repeated warm-session real-device stability coverage for scalar buffers, struct arrays, vector arrays, and image workflows
+- `@GPU` entry methods must return `void`; use output buffers for results.
+- Arbitrary Java object allocation, virtual dispatch, exceptions, monitors, recursion, and heap/object-graph semantics are not supported inside GPU code.
+- Arrays inside `@GPUStruct` fields are not supported by the current ABI.
+- The structured ASM frontend expects a canonical GPU-safe subset, not arbitrary JVM bytecode.
+- Intel and AMD OpenCL devices are not yet validated in the current local evidence set.
+- API and generated launcher details may change before beta.
 
-Still intentionally limited:
-
-- non-`void` `@GPU` entry methods are not supported
-- arbitrary Java object allocation is not supported
-- arbitrary Java method calls are not supported
-- `@CCode(inline = true)` emits inline backend helper functions, but is not a call-site macro system
-- standalone host-side `image2d_msaa_t` create/upload/readback is intentionally not part of the normal runtime API
-- CUDA backend is not implemented yet
-- ASM frontend currently expects a strict GPU-friendly JVM subset rather than arbitrary bytecode
+See [Known Limitations](docs/Known-Limitations.md) for the longer contract.
 
 ## Quick Start
 
-Add the processor both as a dependency and as an annotation processor:
+Add the processor as both a dependency and an annotation processor:
 
 ```groovy
 dependencies {
-    implementation project(':processor')
-    annotationProcessor project(':processor')
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
 }
 ```
 
-To execute direct `@GPU` calls on the GPU at runtime, configure a backend:
-
-```java
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope;
-
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
-    Demo.kernel(input, output);
-} finally {
-    GpuRuntime.shutdownOpenClSharedCache();
-}
-```
-
-## Runtime Scopes
-
-Choose the runtime scope based on how often you call GPU kernels:
-
-- `GpuRuntime.useOpenCl()`
-  Good default for simple applications, short-lived tools, tests, or cases where you want an isolated backend instance.
-- `GpuRuntime.useOpenClSharedCache()`
-  Best choice for hot paths and repeated kernel calls. Compiled kernels and the OpenCL session stay warm across backend instances, so repeated launches avoid paying compile/setup cost again.
-
-Simple isolated scope:
-
-```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
-    Demo.kernel(input, output);
-}
-```
-
-Hot repeated-call scope with explicit shared-cache shutdown:
-
-```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
-    Demo.kernel(input, output);
-    Demo.kernel(input, output);
-    Demo.kernel(input, output);
-} finally {
-    GpuRuntime.shutdownOpenClSharedCache();
-}
-```
-
-For packed/blob-style kernels where logical item count does not match raw buffer lengths, use the generated launcher overload with explicit work size:
-
-```java
-GpuGeneratedLauncherInvoker.invokeWithGlobalWorkSize(
-        PackedBlobWorkload.class,
-        "kernel",
-        itemCount,
-        blob,
-        view,
-        output
-);
-```
-
-Programmatic runtime code can also use `GpuExecutionConfig.oneDimensional(...)` with `GpuRuntime.invoke(...)` when calling through descriptors directly.
-
-For 2D dispatch, use `GpuExecutionConfig.twoDimensional(...)` through `GpuRuntime.invoke(...)` or `GpuGeneratedLauncherInvoker.invokeWithConfig(...)`.
-
-The explicit runtime execution model currently supports 1D and 2D launch configs.
-
-## Runtime Failure Modes
-
-JavaToGpu now supports three practical runtime modes:
-
-- `strict fail`
-  Install one concrete backend and let unsupported environments fail immediately with a clear exception.
-- `fallback chain`
-  Build an ordered backend policy and let runtime pick the first compatible candidate.
-- `capability precheck + skip`
-  Probe a policy first, inspect the miss reason, and skip GPU execution without exception-driven control flow.
-
-Strict fail:
-
-```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
-    Demo.kernel(input, output);
-} finally {
-    GpuRuntime.shutdownOpenClSharedCache();
-}
-```
-
-Fallback chain:
-
-```java
-GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
-        .minimumApiVersion(GpuBackendTarget.OPENCL, 3, 0)
-        .preferOpenClSharedCache()
-        .preferFactory(MyCpuFallbackBackend::new)
-        .build();
-
-try (GpuRuntimeScope ignored = GpuRuntime.use(policy)) {
-    Demo.kernel(input, output);
-}
-```
-
-Capability precheck + skip:
-
-```java
-GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
-        .requireFeature(GpuBackendTarget.OPENCL, GpuRuntimeFeature.IMAGES)
-        .preferOpenClSharedCache()
-        .build();
-
-GpuRuntimeSelectionResult result = GpuRuntime.trySelect(policy);
-if (!result.matched()) {
-    System.out.println("GPU path skipped: " + result.failureSummary());
-} else {
-    try (GpuRuntimeScope ignored = result.install()) {
-        Demo.kernel(input, output);
-    }
-}
-```
-
-## Basic Kernel Example
+Write a restricted Java kernel:
 
 ```java
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
-public final class Demo {
+public final class DemoKernel {
 
     @net.sixik.ga_utils.javatogpu.api.annotations.GPU
-    public static void saxpy(
+    public static void transform(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
     ) {
@@ -237,20 +76,82 @@ public final class Demo {
 }
 ```
 
-Conceptually this becomes something like:
+Run generated calls through the OpenCL runtime:
 
-```c
-__kernel void jtg_kernel(__global float* input, __global float* output) {
-    int id = get_global_id(0);
-    output[id] = sin(input[id]) + 2.0f;
+```java
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope;
+
+try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+    DemoKernel.transform(input, output);
+} finally {
+    GpuRuntime.shutdownOpenClSharedCache();
 }
 ```
 
-More complete production notes now live in the local docs set listed above, with the subset contract, runtime configuration, fallback guidance, limitations, and OpenCL debugging notes split into dedicated pages.
+For one-off usage, `GpuRuntime.useOpenCl()` is simpler. For repeated calls, `GpuRuntime.useOpenClSharedCache()` keeps the OpenCL session and compile cache warm.
 
-## Programmatic Frontends
+## Documentation
 
-If you want to use JavaToGpu as a backend from another compiler, use `GpuProgramCompiler`.
+- [Docs home](docs/Home.md)
+- [Getting started](docs/Getting-Started.md)
+- [Alpha release checklist](docs/Alpha-Release-Checklist.md)
+- [Publishing guide](docs/Publishing.md)
+- [API overview](docs/API-Overview.md)
+- [Language contract](docs/Language-Contract.md)
+- [Runtime guide](docs/Runtime-Guide.md)
+- [OpenCL data model](docs/OpenCL-Data-Model.md)
+- [Validation and operations](docs/Validation-and-Operations.md)
+- [ASM contract](docs/ASM-Contract.md)
+- [Troubleshooting](docs/Troubleshooting.md)
+- [Known limitations](docs/Known-Limitations.md)
+- [FAQ](docs/FAQ.md)
+
+Maintainer planning, backlog notes, and historical design docs live in `docs-project-plan/` and are not the public user manual.
+
+## Build And Validate
+
+Run the normal test suite:
+
+```powershell
+.\gradlew.bat :processor:test --console=plain
+```
+
+Run the current OpenCL operational routine on a machine with a working OpenCL stack:
+
+```powershell
+.\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
+```
+
+The OpenCL report bundle is generated under:
+
+```text
+processor/build/reports/opencl/
+```
+
+Important artifacts include `validation-report.md`, `validation-history.md`, `bucket-status.properties`, `workload-summary.properties`, and `long-running-summary.properties`.
+
+## Publishing
+
+The publishable Maven artifact is:
+
+```text
+io.github.deussixik:javatogpu
+```
+
+Publishing is configured on the `processor` module. Secrets must live outside the repository in `~/.gradle/gradle.properties` or environment variables. See [Publishing Guide](docs/Publishing.md).
+
+## Project Layout
+
+- `processor`: compiler frontend, OpenCL emitter, runtime support, launchers, tests, and benchmark buckets.
+- `examples-app`: small example kernels and usage patterns.
+- `test-app`: consumer-style sample application.
+- `docs`: public documentation.
+- `docs-project-plan`: maintainer roadmap and planning notes.
+
+## Programmatic Compiler API
+
+Compiler integrations can use `GpuProgramCompiler` directly:
 
 ```java
 GpuProgramCompiler compiler = GpuProgramCompiler.createDefault();
@@ -258,41 +159,13 @@ String sourceOpencl = compiler.compileSource(methodSource, helperSources);
 String asmOpencl = compiler.compileStructuredAsm(kernelAsmMethod, helperAsmMethods, structs);
 ```
 
-Important note:
+Use the Java source frontend for normal kernels. Use the structured ASM frontend only when you already own an AST/IR and can emit the supported canonical bytecode subset intentionally.
 
-- the ASM path is for GPU-friendly bytecode generated on purpose
-- it is not meant to decompile arbitrary JVM methods back into kernels
-- the recommended architecture is `your AST -> GPU-friendly ASM -> JavaToGpu ASM frontend -> IR -> OpenCL`
+## Release Guidance
 
-## Build
+Recommended first public version name: `v0.1.0-alpha.1`.
 
-```powershell
-./gradlew.bat clean test --console=plain
-./gradlew.bat :test-app:run --console=plain
-```
-
-## Limitations And Design Notes
-
-JavaToGpu is intentionally not a "run any Java on GPU" system.
-
-It is a restricted Java DSL for GPU-safe code generation.
-
-That means:
-
-- explicit support is better than implicit magic
-- unsupported constructs should fail fast at compile time
-- correctness and understandable diagnostics matter more than pretending the whole language is available
-
-For the ASM path, the same philosophy applies even more strictly: generate a canonical subset that is easy to validate and lift, instead of trying to support arbitrary JVM patterns.
-
-## Roadmap
-
-High-value next areas:
-
-- richer complex-type marshalling and ABI formalization
-- broader OpenCL surface area
-- continued reusable-library hardening
-- CUDA backend later
+Recommended positioning: public alpha / developer preview. The project has real runtime validation evidence on NVIDIA OpenCL, but it should not be marketed as stable or cross-vendor production-ready until Intel and AMD validation are also proven.
 
 ## License
 

@@ -2,13 +2,15 @@ plugins {
     id 'java'
 }
 
-group = 'net.sixik.ga_utils'
-version = '1.0-SNAPSHOT'
+group = 'io.github.deussixik'
+version = findProperty('javatogpu.version') ?: '0.1.0-alpha.1'
 
 allprojects {
+    group = rootProject.group
+    version = rootProject.version
+
     repositories {
         mavenCentral()
-        maven { url 'https://jitpack.io' }
     }
 }
 

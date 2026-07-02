@@ -1,18 +1,18 @@
 # Getting Started
 
-## What JavaToGpu Does
+This guide shows the shortest path from a Java method to an OpenCL-backed GPU call.
 
-JavaToGpu lets you write GPU kernels in a restricted Java subset and compile them to OpenCL C.
+## Requirements
 
-The pipeline handles:
+- JDK compatible with this Gradle build.
+- A working OpenCL runtime for GPU execution.
+- For the current alpha evidence path, an NVIDIA OpenCL stack is the locally validated target.
 
-- frontend validation
-- helper resolution
-- OpenCL source generation
-- launcher generation
-- runtime execution through `GpuRuntime`
+JavaToGpu can still compile and run many tests without a real GPU, but runtime validation requires OpenCL hardware and drivers.
 
-## Add the Processor
+## Add The Processor
+
+Add the processor as both a dependency and an annotation processor:
 
 ```groovy
 dependencies {
@@ -21,16 +21,16 @@ dependencies {
 }
 ```
 
-## Minimal Kernel
+## Write A Kernel
 
 ```java
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
-public final class Demo {
+public final class DemoKernel {
 
     @net.sixik.ga_utils.javatogpu.api.annotations.GPU
-    public static void kernel(
+    public static void transform(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
     ) {
@@ -40,30 +40,60 @@ public final class Demo {
 }
 ```
 
-## Execute a Kernel
+Important rules:
+
+- `@GPU` entry methods currently return `void`.
+- Results should be written into output arrays or other supported output parameters.
+- Kernel parameters need explicit GPU-facing shapes such as `@GPUGlobal float[]`.
+- Use `GPU.*` for OpenCL-style builtins instead of arbitrary Java library calls.
+
+## Run A Kernel
+
+Use a runtime scope around calls that should execute through the generated launcher:
 
 ```java
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope;
 
 try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
-    Demo.kernel(input, output);
+    DemoKernel.transform(input, output);
 }
 ```
 
-For repeated calls, prefer shared cache:
+For hot paths and repeated calls, prefer the shared cache:
 
 ```java
 try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
-    Demo.kernel(input, output);
+    DemoKernel.transform(input, output);
+    DemoKernel.transform(input, output);
 } finally {
     GpuRuntime.shutdownOpenClSharedCache();
 }
 ```
 
-## Next Documents
+## Validate Locally
+
+Run the normal processor tests:
+
+```powershell
+.\gradlew.bat :processor:test --console=plain
+```
+
+Run the full OpenCL operational routine on a GPU machine:
+
+```powershell
+.\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
+```
+
+OpenCL reports are written to:
+
+```text
+processor/build/reports/opencl/
+```
+
+## Read Next
 
 - [API Overview](API-Overview.md)
 - [Language Contract](Language-Contract.md)
 - [Runtime Guide](Runtime-Guide.md)
-- [Cookbook](Cookbook.md)
+- [Validation and Operations](Validation-and-Operations.md)

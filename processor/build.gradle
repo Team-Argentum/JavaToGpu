@@ -1,12 +1,25 @@
 plugins {
     id 'java'
+    id 'maven-publish'
+    id 'signing'
 }
 
 import java.time.Instant
+import groovy.xml.XmlSlurper
 import org.gradle.api.tasks.testing.Test
 
-group = 'net.sixik.ga_utils'
-version = '1.0-SNAPSHOT'
+description = 'Experimental Java-to-OpenCL compiler and runtime for GPU-safe Java kernels.'
+group = rootProject.group
+version = rootProject.version
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:none', '-quiet')
+}
 
 sourceSets {
     benchmark {
@@ -21,6 +34,17 @@ configurations {
     benchmarkImplementation.extendsFrom testImplementation
     benchmarkRuntimeOnly.extendsFrom testRuntimeOnly
 }
+
+def secretValue = { String gradlePropertyName, String environmentVariableName ->
+    providers.gradleProperty(gradlePropertyName)
+            .orElse(providers.environmentVariable(environmentVariableName))
+}
+
+def centralUsernameProvider = secretValue('mavenCentralUsername', 'MAVEN_CENTRAL_USERNAME')
+def centralPasswordProvider = secretValue('mavenCentralPassword', 'MAVEN_CENTRAL_PASSWORD')
+def signingKeyProvider = secretValue('signingInMemoryKey', 'SIGNING_IN_MEMORY_KEY')
+def signingPasswordProvider = secretValue('signingInMemoryKeyPassword', 'SIGNING_IN_MEMORY_KEY_PASSWORD')
+def publicationArtifactId = findProperty('javatogpu.artifactId') ?: 'javatogpu'
 
 def osName = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT)
 def lwjglNatives = osName.contains("win")
@@ -70,7 +94,149 @@ dependencies {
     implementation 'org.lwjgl:lwjgl-opencl'
     runtimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
 
-    implementation 'com.github.DenisMasterHerobrine:Packager:master-SNAPSHOT'
+    implementation 'io.github.deussixik:packager:1.0.0-alpha.1'
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = publicationArtifactId
+
+            pom {
+                name = 'JavaToGpu'
+                description = project.description
+                url = 'https://github.com/Team-Argentum/JavaToGpu'
+
+                licenses {
+                    license {
+                        name = 'GNU Lesser General Public License v3.0'
+                        url = 'https://www.gnu.org/licenses/lgpl-3.0.en.html'
+                        distribution = 'repo'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'Team-Argentum'
+                        name = 'Team Argentum'
+                        organization = 'Team Argentum'
+                        organizationUrl = 'https://github.com/Team-Argentum'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:https://github.com/Team-Argentum/JavaToGpu.git'
+                    developerConnection = 'scm:git:https://github.com/Team-Argentum/JavaToGpu.git'
+                    url = 'https://github.com/Team-Argentum/JavaToGpu'
+                }
+
+                withXml {
+                    // The library needs LWJGL natives at runtime, but Maven POMs cannot model
+                    // platform-specific native classifiers safely. Consumers should choose their
+                    // own native classifier; tests keep using the local OS classifier below.
+                    def dependenciesNode = asNode().dependencies
+                    if (dependenciesNode) {
+                        dependenciesNode[0].dependency.findAll { dependency ->
+                            dependency.groupId.text() == 'org.lwjgl'
+                                    && dependency.artifactId.text() == 'lwjgl'
+                                    && dependency.classifier
+                                    && dependency.classifier.text().startsWith('natives-')
+                        }.each { dependency ->
+                            dependency.parent().remove(dependency)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'localStaging'
+            url = layout.buildDirectory.dir('maven-staging')
+        }
+        maven {
+            name = 'centralSnapshots'
+            url = uri('https://central.sonatype.com/repository/maven-snapshots/')
+            credentials {
+                username = centralUsernameProvider.getOrElse('')
+                password = centralPasswordProvider.getOrElse('')
+            }
+        }
+        maven {
+            name = 'centralReleases'
+            url = uri('https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/')
+            credentials {
+                username = centralUsernameProvider.getOrElse('')
+                password = centralPasswordProvider.getOrElse('')
+            }
+        }
+    }
+}
+
+tasks.withType(GenerateModuleMetadata).configureEach {
+    // Avoid publishing Gradle metadata with a build-host-specific LWJGL native classifier.
+    enabled = false
+}
+
+tasks.register('validateMavenCentralReleaseReadiness') {
+    group = 'publishing'
+    description = 'Fails release publishing if the generated Maven POM contains dependencies Maven Central should not release.'
+    dependsOn tasks.named('generatePomFileForMavenJavaPublication')
+    doLast {
+        if (version.toString().endsWith('-SNAPSHOT')) {
+            return
+        }
+        File pomFile = layout.buildDirectory.file('publications/mavenJava/pom-default.xml').get().asFile
+        if (!pomFile.isFile()) {
+            throw new GradleException('Maven Central release is not ready: generated POM is missing at ' + pomFile)
+        }
+
+        def pom = new XmlSlurper(false, false).parse(pomFile)
+        java.util.List<String> unsafeDependencies = []
+        pom.dependencies.dependency.each { dependency ->
+            String groupId = dependency.groupId.text()
+            String artifactId = dependency.artifactId.text()
+            String versionText = dependency.version.text()
+            String coordinates = groupId + ':' + artifactId + ':' + (versionText.isBlank() ? '<managed>' : versionText)
+            String normalizedVersion = versionText.toLowerCase(Locale.ROOT)
+
+            if (normalizedVersion.contains('snapshot')) {
+                unsafeDependencies.add(coordinates + ' (snapshot dependency)')
+            } else if (groupId.startsWith('com.github.') && normalizedVersion.contains('master')) {
+                unsafeDependencies.add(coordinates + ' (JitPack branch dependency)')
+            }
+        }
+
+        if (!unsafeDependencies.isEmpty()) {
+            throw new GradleException('Maven Central release is not ready: generated POM contains non-release-safe dependencies: '
+                    + unsafeDependencies.join(', ')
+                    + '. Replace them with Maven Central releases, publish an internal fork with stable coordinates, or split/shade the OpenCL runtime dependency before running a release publish.')
+        }
+    }
+}
+
+tasks.matching { task ->
+    task.name == 'publishMavenJavaPublicationToCentralReleasesRepository'
+            || task.name == 'publishAllPublicationsToCentralReleasesRepository'
+}.configureEach {
+    dependsOn tasks.named('validateMavenCentralReleaseReadiness')
+}
+
+signing {
+    def signingKey = signingKeyProvider.orNull
+    def signingPassword = signingPasswordProvider.orNull
+    required {
+        !version.toString().endsWith('-SNAPSHOT') && gradle.taskGraph.allTasks.any { task ->
+            task.name.toLowerCase(Locale.ROOT).contains('central')
+                    || task.name == 'publish'
+        }
+    }
+    if (signingKey != null && !signingKey.isBlank()) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+    }
+    sign publishing.publications.mavenJava
 }
 
 test {
