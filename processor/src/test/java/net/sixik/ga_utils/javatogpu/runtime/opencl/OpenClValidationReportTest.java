@@ -143,7 +143,7 @@ class OpenClValidationReportTest {
     void validationHistoryMarkdownKeepsRuntimeEquivalenceAndStressArtifactsVisible() throws Exception {
         java.nio.file.Path historyMarkdownFile = java.nio.file.Files.createTempFile("javatogpu-opencl-history-artifacts", ".md");
         String bucketSummary = "openClWorkloadValidationTest=passed, openClLongRunningStabilityTest=passed, benchmarkTest=passed";
-        String workloadSummary = "passed (perlin=passed, packedBlob=passed, packedNumeric=passed, c2me3dPackedRootBlob=passed, image=passed)";
+        String workloadSummary = "passed (perlin=passed, packedBlob=passed, packedNumeric=passed, packedGrid3d=passed, image=passed)";
         java.util.List<OpenClValidationHistoryEntry> entries = java.util.List.of(
                 new OpenClValidationHistoryEntry(
                         Instant.parse("2026-07-01T12:20:00Z"),
@@ -185,6 +185,26 @@ class OpenClValidationReportTest {
         OpenClWorkloadValidationSummary loaded = OpenClWorkloadValidationSummaryIO.readIfExists(summaryFile).orElseThrow();
 
         assertEquals(summary, loaded);
+    }
+
+    @Test
+    void workloadSummaryPropertiesExposeSyntheticPackedGridArtifact() throws Exception {
+        java.nio.file.Path summaryFile = java.nio.file.Files.createTempFile("javatogpu-opencl-workloads-packed-grid", ".properties");
+        OpenClWorkloadValidationSummary summary = new OpenClWorkloadValidationSummary(
+                Instant.parse("2026-07-01T12:30:00Z"),
+                "passed",
+                "passed",
+                "passed",
+                "passed",
+                "passed",
+                "passed"
+        );
+
+        OpenClWorkloadValidationSummaryIO.write(summaryFile, summary);
+        String properties = java.nio.file.Files.readString(summaryFile);
+
+        assertTrue(properties.contains("packedGrid3dStatus=passed"));
+        assertTrue(!properties.toLowerCase(java.util.Locale.ROOT).contains("c2" + "me"));
     }
 
     @Test

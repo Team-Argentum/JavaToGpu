@@ -143,7 +143,7 @@ public final class OpenClValidationReporter {
             markdown.append("- Perlin workload: `").append(sanitizeInline(value.perlinStatus())).append("`\n");
             markdown.append("- Packed/blob workload: `").append(sanitizeInline(value.packedBlobStatus())).append("`\n");
             markdown.append("- Packed numeric workload: `").append(sanitizeInline(value.packedNumericStatus())).append("`\n");
-            markdown.append("- C2ME 3D packed/root-blob workload: `").append(sanitizeInline(value.c2me3dPackedRootBlobStatus())).append("`\n");
+            markdown.append("- Synthetic 3D packed-grid workload: `").append(sanitizeInline(value.packedGrid3dStatus())).append("`\n");
             markdown.append("- Image workload: `").append(sanitizeInline(value.imageStatus())).append("`\n");
             markdown.append("- Summary file: `").append(summaryPath).append("`\n\n");
         } catch (Throwable failure) {
@@ -301,7 +301,7 @@ public final class OpenClValidationReporter {
                             + " (perlin=" + value.perlinStatus()
                             + ", packedBlob=" + value.packedBlobStatus()
                             + ", packedNumeric=" + value.packedNumericStatus()
-                            + ", c2me3dPackedRootBlob=" + value.c2me3dPackedRootBlobStatus()
+                            + ", packedGrid3d=" + value.packedGrid3dStatus()
                             + ", image=" + value.imageStatus()
                             + ")")
                     .orElse("not recorded");

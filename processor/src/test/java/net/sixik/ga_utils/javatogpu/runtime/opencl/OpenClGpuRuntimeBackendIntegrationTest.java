@@ -885,11 +885,11 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     }
 
     @Test
-    void comparesGeneratedLauncherC2meStyle3DPackedRootBlobWorkloadAgainstCpuReferenceOnAvailableOpenClDevice() throws Exception {
+    void comparesGeneratedLauncherSynthetic3DPackedGridWorkloadAgainstCpuReferenceOnAvailableOpenClDevice() throws Exception {
         assumeOpenClAvailable();
 
         CompiledGpuSource compiled = compileGpuSource(
-                "sample.C2meStyle3DPackedRootBlobWorkload",
+                "sample.Synthetic3DPackedGridWorkload",
                 """
                         package sample;
 
@@ -903,84 +903,84 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         import java.nio.ByteBuffer;
                         import java.nio.ByteOrder;
 
-                        public class C2meStyle3DPackedRootBlobWorkload {
+                        public class Synthetic3DPackedGridWorkload {
                             @OpenCLAttributes({"reqd_work_group_size(8, 8, 1)"})
                             @net.sixik.ga_utils.javatogpu.api.annotations.GPU
-                            public static void kernel(@GPUGlobal byte[] blob, RootBlobView view, @GPUGlobal int[] output) {
+                            public static void kernel(@GPUGlobal byte[] blob, PackedGridLayout layout, @GPUGlobal int[] output) {
                                 int relX = GPU.get_global_id(0);
                                 int relZ = GPU.get_global_id(1);
                                 int relY = GPU.get_global_id(2);
-                                int idx = (relY * view.sizeZ + relZ) * view.sizeX + relX;
+                                int idx = (relY * layout.depth + relZ) * layout.width + relX;
                                 GlobalBytePtr root = GPU.global(blob);
-                                int sampler = root.intPtrAt(view.samplerOffset + idx * 4).value;
-                                int density = root.readIntAt(view.densityOffset + idx * 4);
-                                GlobalIntPtr bias = root.intPtrAt(view.biasOffset);
-                                output[idx] = sampler + density + bias.value + relX - relZ + relY;
+                                int primary = root.intPtrAt(layout.primaryOffset + idx * 4).value;
+                                int secondary = root.readIntAt(layout.secondaryOffset + idx * 4);
+                                GlobalIntPtr adjustment = root.intPtrAt(layout.adjustmentOffset);
+                                output[idx] = primary + secondary + adjustment.value + relX - relZ + relY;
                             }
 
-                            public static void cpuKernel(byte[] blob, RootBlobView view, int[] output) {
+                            public static void cpuKernel(byte[] blob, PackedGridLayout layout, int[] output) {
                                 ByteBuffer buffer = ByteBuffer.wrap(blob).order(ByteOrder.LITTLE_ENDIAN);
-                                for (int relY = 0; relY < view.sizeY; relY++) {
-                                    for (int relZ = 0; relZ < view.sizeZ; relZ++) {
-                                        for (int relX = 0; relX < view.sizeX; relX++) {
-                                            int idx = (relY * view.sizeZ + relZ) * view.sizeX + relX;
-                                            int sampler = buffer.getInt(view.samplerOffset + idx * 4);
-                                            int density = buffer.getInt(view.densityOffset + idx * 4);
-                                            int bias = buffer.getInt(view.biasOffset);
-                                            output[idx] = sampler + density + bias + relX - relZ + relY;
+                                for (int relY = 0; relY < layout.height; relY++) {
+                                    for (int relZ = 0; relZ < layout.depth; relZ++) {
+                                        for (int relX = 0; relX < layout.width; relX++) {
+                                            int idx = (relY * layout.depth + relZ) * layout.width + relX;
+                                            int primary = buffer.getInt(layout.primaryOffset + idx * 4);
+                                            int secondary = buffer.getInt(layout.secondaryOffset + idx * 4);
+                                            int adjustment = buffer.getInt(layout.adjustmentOffset);
+                                            output[idx] = primary + secondary + adjustment + relX - relZ + relY;
                                         }
                                     }
                                 }
                             }
 
                             @GPUStruct
-                            public static class RootBlobView {
-                                public int samplerOffset;
-                                public int densityOffset;
-                                public int biasOffset;
-                                public int sizeX;
-                                public int sizeZ;
-                                public int sizeY;
+                            public static class PackedGridLayout {
+                                public int primaryOffset;
+                                public int secondaryOffset;
+                                public int adjustmentOffset;
+                                public int width;
+                                public int depth;
+                                public int height;
 
-                                public RootBlobView() {
+                                public PackedGridLayout() {
                                 }
 
-                                public RootBlobView(int samplerOffset, int densityOffset, int biasOffset, int sizeX, int sizeZ, int sizeY) {
-                                    this.samplerOffset = samplerOffset;
-                                    this.densityOffset = densityOffset;
-                                    this.biasOffset = biasOffset;
-                                    this.sizeX = sizeX;
-                                    this.sizeZ = sizeZ;
-                                    this.sizeY = sizeY;
+                                public PackedGridLayout(int primaryOffset, int secondaryOffset, int adjustmentOffset, int width, int depth, int height) {
+                                    this.primaryOffset = primaryOffset;
+                                    this.secondaryOffset = secondaryOffset;
+                                    this.adjustmentOffset = adjustmentOffset;
+                                    this.width = width;
+                                    this.depth = depth;
+                                    this.height = height;
                                 }
                             }
 
                             public static final class Fixture {
                                 public final byte[] blob;
-                                public final RootBlobView view;
+                                public final PackedGridLayout layout;
 
-                                public Fixture(byte[] blob, RootBlobView view) {
+                                public Fixture(byte[] blob, PackedGridLayout layout) {
                                     this.blob = blob;
-                                    this.view = view;
+                                    this.layout = layout;
                                 }
                             }
 
                             public static Fixture createFixture() {
-                                int sizeX = 8;
-                                int sizeZ = 8;
-                                int sizeY = 2;
-                                int count = sizeX * sizeZ * sizeY;
-                                int samplerOffset = 0;
-                                int densityOffset = samplerOffset + count * 4;
-                                int biasOffset = densityOffset + count * 4;
-                                byte[] blob = new byte[biasOffset + 4];
+                                int width = 8;
+                                int depth = 8;
+                                int height = 2;
+                                int count = width * depth * height;
+                                int primaryOffset = 0;
+                                int secondaryOffset = primaryOffset + count * 4;
+                                int adjustmentOffset = secondaryOffset + count * 4;
+                                byte[] blob = new byte[adjustmentOffset + 4];
                                 ByteBuffer buffer = ByteBuffer.wrap(blob).order(ByteOrder.LITTLE_ENDIAN);
                                 for (int i = 0; i < count; i++) {
-                                    buffer.putInt(samplerOffset + i * 4, i * 3 + 7);
-                                    buffer.putInt(densityOffset + i * 4, 1000 - i * 5);
+                                    buffer.putInt(primaryOffset + i * 4, i * 3 + 7);
+                                    buffer.putInt(secondaryOffset + i * 4, 1000 - i * 5);
                                 }
-                                buffer.putInt(biasOffset, 13);
-                                return new Fixture(blob, new RootBlobView(samplerOffset, densityOffset, biasOffset, sizeX, sizeZ, sizeY));
+                                buffer.putInt(adjustmentOffset, 13);
+                                return new Fixture(blob, new PackedGridLayout(primaryOffset, secondaryOffset, adjustmentOffset, width, depth, height));
                             }
                         }
                         """
@@ -988,25 +988,25 @@ class OpenClGpuRuntimeBackendIntegrationTest {
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[]{compiled.classOutputDir().toUri().toURL()}, getClass().getClassLoader());
              GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
-            Class<?> ownerClass = Class.forName("sample.C2meStyle3DPackedRootBlobWorkload", true, classLoader);
-            Class<?> fixtureClass = Class.forName("sample.C2meStyle3DPackedRootBlobWorkload$Fixture", true, classLoader);
+            Class<?> ownerClass = Class.forName("sample.Synthetic3DPackedGridWorkload", true, classLoader);
+            Class<?> fixtureClass = Class.forName("sample.Synthetic3DPackedGridWorkload$Fixture", true, classLoader);
 
             Object fixture = ownerClass.getMethod("createFixture").invoke(null);
             byte[] blob = (byte[]) fixtureClass.getField("blob").get(fixture);
-            Object view = fixtureClass.getField("view").get(fixture);
+            Object layout = fixtureClass.getField("layout").get(fixture);
 
             int[] cpuOutput = new int[8 * 8 * 2];
             int[] gpuOutput = new int[8 * 8 * 2];
 
-            ownerClass.getMethod("cpuKernel", byte[].class, view.getClass(), int[].class)
-                    .invoke(null, blob, view, cpuOutput);
+            ownerClass.getMethod("cpuKernel", byte[].class, layout.getClass(), int[].class)
+                    .invoke(null, blob, layout, cpuOutput);
 
             GpuGeneratedLauncherInvoker.invokeWithConfig(
                     ownerClass,
                     "kernel",
                     net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(8L, 8L, 2L, 8L, 8L, 1L),
                     blob,
-                    view,
+                    layout,
                     gpuOutput
             );
 
@@ -1070,7 +1070,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         String perlinStatus = "not run";
         String packedBlobStatus = "not run";
         String packedNumericStatus = "not run";
-        String c2me3dPackedRootBlobStatus = "not run";
+        String packedGrid3dStatus = "not run";
         String imageStatus = "not run";
 
         try {
@@ -1095,10 +1095,10 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         }
 
         try {
-            runC2me3dPackedRootBlobWorkloadComparison();
-            c2me3dPackedRootBlobStatus = "passed";
+            runPackedGrid3dWorkloadComparison();
+            packedGrid3dStatus = "passed";
         } catch (org.opentest4j.TestAbortedException aborted) {
-            c2me3dPackedRootBlobStatus = "skipped";
+            packedGrid3dStatus = "skipped";
         }
 
         try {
@@ -1111,7 +1111,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         String overallStatus = ("passed".equals(perlinStatus) || "skipped".equals(perlinStatus))
                 && ("passed".equals(packedBlobStatus) || "skipped".equals(packedBlobStatus))
                 && ("passed".equals(packedNumericStatus) || "skipped".equals(packedNumericStatus))
-                && ("passed".equals(c2me3dPackedRootBlobStatus) || "skipped".equals(c2me3dPackedRootBlobStatus))
+                && ("passed".equals(packedGrid3dStatus) || "skipped".equals(packedGrid3dStatus))
                 && ("passed".equals(imageStatus) || "skipped".equals(imageStatus))
                 ? "passed"
                 : "failed";
@@ -1121,7 +1121,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 perlinStatus,
                 packedBlobStatus,
                 packedNumericStatus,
-                c2me3dPackedRootBlobStatus,
+                packedGrid3dStatus,
                 imageStatus
         ));
         assertTrue(!"failed".equals(overallStatus));
@@ -2874,8 +2874,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         comparesGeneratedLauncherPackedNumericWorkloadAgainstCpuReferenceOnAvailableOpenClDevice();
     }
 
-    private void runC2me3dPackedRootBlobWorkloadComparison() throws Exception {
-        comparesGeneratedLauncherC2meStyle3DPackedRootBlobWorkloadAgainstCpuReferenceOnAvailableOpenClDevice();
+    private void runPackedGrid3dWorkloadComparison() throws Exception {
+        comparesGeneratedLauncherSynthetic3DPackedGridWorkloadAgainstCpuReferenceOnAvailableOpenClDevice();
     }
 
     private void runImageWorkloadComparison() throws Exception {

@@ -21,7 +21,7 @@ final class OpenClWorkloadValidationSummaryIO {
         properties.setProperty("perlinStatus", summary.perlinStatus());
         properties.setProperty("packedBlobStatus", summary.packedBlobStatus());
         properties.setProperty("packedNumericStatus", summary.packedNumericStatus());
-        properties.setProperty("c2me3dPackedRootBlobStatus", summary.c2me3dPackedRootBlobStatus());
+        properties.setProperty("packedGrid3dStatus", summary.packedGrid3dStatus());
         properties.setProperty("imageStatus", summary.imageStatus());
         Path parent = path.getParent();
         if (parent != null) {
@@ -46,7 +46,7 @@ final class OpenClWorkloadValidationSummaryIO {
                 properties.getProperty("perlinStatus", "unknown"),
                 properties.getProperty("packedBlobStatus", "unknown"),
                 properties.getProperty("packedNumericStatus", "unknown"),
-                properties.getProperty("c2me3dPackedRootBlobStatus", "unknown"),
+                properties.getProperty("packedGrid3dStatus", "unknown"),
                 properties.getProperty("imageStatus", "unknown")
         ));
     }

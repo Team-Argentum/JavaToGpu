@@ -186,6 +186,55 @@ class OpenClRuntimeBenchmarkTest {
     }
 
     @Test
+    void benchmarksWarmInvokePathWithSynthetic3DPackedGridWorkload() {
+        OpenClGpuRuntimeBackend backend = fakeBackend();
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "inline://benchmark/synthetic-3d-packed-grid.cl",
+                "__attribute__((reqd_work_group_size(8, 8, 1))) "
+                        + "__kernel void kernel(__global char* packedGrid, PackedGridLayout layout, __global int* output) { }",
+                List.of(
+                        new GpuKernelParameterDescriptor("packedGrid", "byte[]", GpuKernelParameterAccess.READ_WRITE),
+                        new GpuKernelParameterDescriptor("layout", "net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClRuntimeBenchmarkTest.PackedGridLayout", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        int width = 8;
+        int depth = 8;
+        int height = 2;
+        int elementCount = width * depth * height;
+        int primaryOffset = 0;
+        int secondaryOffset = primaryOffset + elementCount * Integer.BYTES;
+        int adjustmentOffset = secondaryOffset + elementCount * Integer.BYTES;
+        byte[] packedGrid = new byte[adjustmentOffset + Integer.BYTES];
+        PackedGridLayout layout = new PackedGridLayout(primaryOffset, secondaryOffset, adjustmentOffset, width, depth, height);
+        int[] output = new int[elementCount];
+        GpuExecutionConfig executionConfig = GpuExecutionConfig.threeDimensional(8L, 8L, 2L, 8L, 8L, 1L);
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{packedGrid, layout, output}, executionConfig));
+        backend.resetStatistics();
+
+        BenchmarkResult result = BenchmarkHarness.measure(
+                "runtime.synthetic-3d-packed-grid.warm-invoke.fake-opencl",
+                10,
+                100,
+                () -> {
+                    backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{packedGrid, layout, output}, executionConfig));
+                    OpenClRuntimeStatistics statistics = backend.statistics();
+                    return statistics.compileCacheHitCount() + statistics.deviceBufferCreationCount() + backend.cacheSize();
+                }
+        );
+
+        OpenClRuntimeStatistics statistics = backend.statistics();
+        assertEquals(110L, statistics.invocationCount());
+        assertEquals(0L, statistics.compileCount());
+        assertEquals(110L, statistics.compileCacheHitCount());
+        assertEquals(0L, statistics.sessionCreationCount());
+        assertTrue(result.averageNanos() > 0L);
+        assertTrue(result.checksum() > 0L);
+    }
+
+    @Test
     void benchmarksColdCompileVersusWarmInvokePath() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
@@ -317,6 +366,28 @@ class OpenClRuntimeBenchmarkTest {
             this.inner = inner;
             this.bias = bias;
             this.count = count;
+        }
+    }
+
+    @GPUStruct
+    static final class PackedGridLayout {
+        int primaryOffset;
+        int secondaryOffset;
+        int adjustmentOffset;
+        int width;
+        int depth;
+        int height;
+
+        PackedGridLayout() {
+        }
+
+        PackedGridLayout(int primaryOffset, int secondaryOffset, int adjustmentOffset, int width, int depth, int height) {
+            this.primaryOffset = primaryOffset;
+            this.secondaryOffset = secondaryOffset;
+            this.adjustmentOffset = adjustmentOffset;
+            this.width = width;
+            this.depth = depth;
+            this.height = height;
         }
     }
 }
