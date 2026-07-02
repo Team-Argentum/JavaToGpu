@@ -7725,6 +7725,111 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithAnnotatedPointerTypeOperatorWithoutMethodIntrinsicAnnotations() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path pointerClassOutputDir = Files.createTempDirectory("javatogpu-annotated-pointer-classes");
+        Path pointerGeneratedOutputDir = Files.createTempDirectory("javatogpu-annotated-pointer-generated");
+        Path consumerClassOutputDir = Files.createTempDirectory("javatogpu-annotated-pointer-consumer-classes");
+        Path consumerGeneratedOutputDir = Files.createTempDirectory("javatogpu-annotated-pointer-consumer-generated");
+
+        String pointerSource = """
+                package custom;
+
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUPointerType;
+
+                @GPUPointerType(valueType = "float")
+                public final class MyFloatPtr {
+                    public float value;
+
+                    public MyFloatPtr() {
+                    }
+
+                    public MyFloatPtr(float value) {
+                        this.value = value;
+                    }
+
+                    public MyFloatPtr add(int elements) {
+                        return this;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", pointerClassOutputDir.toString(),
+                    "-s", pointerGeneratedOutputDir.toString()
+            );
+            JavaFileObject pointerFile = new StringJavaFileObject("custom.MyFloatPtr", pointerSource);
+            JavaCompiler.CompilationTask pointerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(pointerFile)
+            );
+
+            assertTrue(pointerTask.call());
+        }
+        Path pointerJar = createClasspathJar(pointerClassOutputDir, "javatogpu-annotated-pointer");
+
+        String consumerSource = """
+                package sample;
+
+                import custom.MyFloatPtr;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @CCode
+                    static float read(MyFloatPtr ptr, int index) {
+                        return ptr.add(index).value;
+                    }
+
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(@GPUGlobal float[] output) {
+                        MyFloatPtr ptr = new MyFloatPtr(3.0f);
+                        output[0] = read(ptr, 0);
+                    }
+                }
+                """;
+
+        StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
+        try {
+            configureCompilationClasspath(fileManager, pointerClassOutputDir, pointerJar);
+            List<String> options = List.of(
+                    "-classpath", buildCompilationClasspath(pointerClassOutputDir, pointerJar),
+                    "-d", consumerClassOutputDir.toString(),
+                    "-s", consumerGeneratedOutputDir.toString()
+            );
+            JavaFileObject consumerFile = new StringJavaFileObject("sample.Demo", consumerSource);
+            JavaCompiler.CompilationTask consumerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(consumerFile)
+            );
+            consumerTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(consumerTask.call());
+        } finally {
+            closeFileManager(fileManager);
+        }
+
+        Path kernelPath = consumerGeneratedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+
+        String kernelSource = Files.readString(kernelPath);
+        assertTrue(kernelSource.contains("float jtg_fn_Demo_read_MyFloatPtr_int(float* ptr, int index)"));
+        assertTrue(kernelSource.contains("return (*((ptr) + (index)));"));
+        assertFalse(kernelSource.contains(".add("));
+    }
+
+    @Test
     void generatesKernelWithReinterpretedConstantByteView() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-constantbyteview-classes");
@@ -8520,6 +8625,108 @@ class GpuCompilerProcessorTest {
 
         String kernelSource = Files.readString(kernelPath);
         assertTrue(kernelSource.contains("int4 sum = (left + right);"));
+        assertFalse(kernelSource.contains(".add("));
+    }
+
+    @Test
+    void generatesKernelWithAnnotatedVectorTypeOperatorWithoutMethodIntrinsicAnnotations() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path vectorClassOutputDir = Files.createTempDirectory("javatogpu-annotated-vector-classes");
+        Path vectorGeneratedOutputDir = Files.createTempDirectory("javatogpu-annotated-vector-generated");
+        Path consumerClassOutputDir = Files.createTempDirectory("javatogpu-annotated-vector-consumer-classes");
+        Path consumerGeneratedOutputDir = Files.createTempDirectory("javatogpu-annotated-vector-consumer-generated");
+
+        String vectorSource = """
+                package custom;
+
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUVectorType;
+
+                @GPUVectorType(openClType = "float2", componentType = "float", fields = {"x", "y"})
+                public class MyFloat2 {
+                    public float x;
+                    public float y;
+
+                    public MyFloat2() {
+                    }
+
+                    public MyFloat2(float x, float y) {
+                        this.x = x;
+                        this.y = y;
+                    }
+
+                    public MyFloat2 add(MyFloat2 other) {
+                        return new MyFloat2(x + other.x, y + other.y);
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", vectorClassOutputDir.toString(),
+                    "-s", vectorGeneratedOutputDir.toString()
+            );
+            JavaFileObject vectorFile = new StringJavaFileObject("custom.MyFloat2", vectorSource);
+            JavaCompiler.CompilationTask vectorTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(vectorFile)
+            );
+
+            assertTrue(vectorTask.call());
+        }
+        Path vectorJar = createClasspathJar(vectorClassOutputDir, "javatogpu-annotated-vector");
+
+        String consumerSource = """
+                package sample;
+
+                import custom.MyFloat2;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(MyFloat2 left, MyFloat2 right, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        MyFloat2 sum = left.add(right);
+                        output[id] = sum.x + sum.y;
+                    }
+                }
+                """;
+
+        StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
+        try {
+            configureCompilationClasspath(fileManager, vectorClassOutputDir, vectorJar);
+            List<String> options = List.of(
+                    "-classpath", buildCompilationClasspath(vectorClassOutputDir, vectorJar),
+                    "-d", consumerClassOutputDir.toString(),
+                    "-s", consumerGeneratedOutputDir.toString()
+            );
+            JavaFileObject consumerFile = new StringJavaFileObject("sample.Demo", consumerSource);
+            JavaCompiler.CompilationTask consumerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(consumerFile)
+            );
+            consumerTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(consumerTask.call());
+        } finally {
+            closeFileManager(fileManager);
+        }
+
+        Path kernelPath = consumerGeneratedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+
+        String kernelSource = Files.readString(kernelPath);
+        assertTrue(kernelSource.contains("__kernel void jtg_kernel(float2 left, float2 right, __global float* output)"));
+        assertTrue(kernelSource.contains("float2 sum = (left + right);"));
         assertFalse(kernelSource.contains(".add("));
     }
 
@@ -9646,6 +9853,97 @@ class GpuCompilerProcessorTest {
             task.setProcessors(List.of(new GpuCompilerProcessor()));
 
             assertFalse(task.call());
+        }
+
+        assertTrue(diagnostics.getDiagnostics().stream().map(diagnostic -> diagnostic.getMessage(null)).anyMatch(message ->
+                String.valueOf(message).contains("does not target backend OPENCL")
+        ));
+    }
+
+    @Test
+    void rejectsSeparateCompilationIntrinsicLibraryWhenItTargetsDifferentBackend() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path intrinsicClassOutputDir = Files.createTempDirectory("javatogpu-cudaintrinsiclib-classes");
+        Path intrinsicGeneratedOutputDir = Files.createTempDirectory("javatogpu-cudaintrinsiclib-generated");
+        Path consumerClassOutputDir = Files.createTempDirectory("javatogpu-cudaintrinsiclib-consumer-classes");
+        Path consumerGeneratedOutputDir = Files.createTempDirectory("javatogpu-cudaintrinsiclib-consumer-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String intrinsicSource = """
+                package lib;
+
+                import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsicLibrary;
+
+                @GPUIntrinsicLibrary(backends = {GpuBackendTarget.CUDA})
+                public class ReusableCudaIntrinsics {
+                    @GPUIntrinsic(code = "(({0}) * 2.0f)", backends = {GpuBackendTarget.CUDA})
+                    public static float twice(float value) {
+                        return value * 2.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", intrinsicClassOutputDir.toString(),
+                    "-s", intrinsicGeneratedOutputDir.toString()
+            );
+            JavaFileObject intrinsicFile = new StringJavaFileObject("lib.ReusableCudaIntrinsics", intrinsicSource);
+            JavaCompiler.CompilationTask intrinsicTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(intrinsicFile)
+            );
+            intrinsicTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(intrinsicTask.call());
+        }
+        Path intrinsicJar = createClasspathJar(intrinsicClassOutputDir, "javatogpu-cudaonlyintrinsiclib");
+
+        String consumerSource = """
+                package sample;
+
+                import lib.ReusableCudaIntrinsics;
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = ReusableCudaIntrinsics.twice(input[id]);
+                    }
+                }
+                """;
+
+        StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null);
+        try {
+            configureCompilationClasspath(fileManager, intrinsicClassOutputDir, intrinsicJar);
+            List<String> options = List.of(
+                    "-classpath", buildCompilationClasspath(intrinsicClassOutputDir, intrinsicJar),
+                    "-d", consumerClassOutputDir.toString(),
+                    "-s", consumerGeneratedOutputDir.toString()
+            );
+            JavaFileObject consumerFile = new StringJavaFileObject("sample.Demo", consumerSource);
+            JavaCompiler.CompilationTask consumerTask = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(consumerFile)
+            );
+            consumerTask.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertFalse(consumerTask.call());
+        } finally {
+            closeFileManager(fileManager);
         }
 
         assertTrue(diagnostics.getDiagnostics().stream().map(diagnostic -> diagnostic.getMessage(null)).anyMatch(message ->

@@ -96,6 +96,8 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private static final List<String> GPU_GLOBAL_ANNOTATIONS = GpuAnnotationSupport.GPU_GLOBAL_ANNOTATION_TYPES;
     private static final List<String> GPU_LOCAL_ANNOTATIONS = GpuAnnotationSupport.GPU_LOCAL_ANNOTATION_TYPES;
     private static final List<String> GPU_STRUCT_ANNOTATIONS = GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES;
+    private static final List<String> GPU_POINTER_TYPE_ANNOTATIONS = GpuAnnotationSupport.GPU_POINTER_TYPE_ANNOTATION_TYPES;
+    private static final List<String> GPU_VECTOR_TYPE_ANNOTATIONS = GpuAnnotationSupport.GPU_VECTOR_TYPE_ANNOTATION_TYPES;
 
     @Override
     public Set<String> getSupportedOptions() {
@@ -157,6 +159,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
             ExecutableElement method = (ExecutableElement) element;
             try {
+                registerAnnotatedTypes(method);
                 ParsedGpuMethod kernelMethod = parseMethod(method);
                 List<ParsedGpuMethod> helpers = collectHelpers(roundEnv, kernelMethod, method);
                 List<ParsedGpuMethod> intrinsics = collectIntrinsics(roundEnv, kernelMethod, helpers, method);
@@ -186,6 +189,61 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         }
 
         return true;
+    }
+
+    private void registerAnnotatedTypes(ExecutableElement method) {
+        method.getParameters().forEach(parameter -> registerAnnotatedType(parameter.asType()));
+        registerAnnotatedType(method.getReturnType());
+    }
+
+    private void registerAnnotatedType(TypeMirror typeMirror) {
+        if (typeMirror.getKind() == TypeKind.ARRAY) {
+            registerAnnotatedType(((ArrayType) typeMirror).getComponentType());
+            return;
+        }
+        if (typeMirror.getKind() != TypeKind.DECLARED) {
+            return;
+        }
+
+        DeclaredType declaredType = (DeclaredType) typeMirror;
+        if (!(declaredType.asElement() instanceof TypeElement typeElement)) {
+            return;
+        }
+        if (hasAnyAnnotation(typeElement, GPU_POINTER_TYPE_ANNOTATIONS)) {
+            registerAnnotatedPointerType(typeElement);
+        }
+        if (hasAnyAnnotation(typeElement, GPU_VECTOR_TYPE_ANNOTATIONS)) {
+            registerAnnotatedVectorType(typeElement);
+        }
+    }
+
+    private void registerAnnotatedPointerType(TypeElement typeElement) {
+        String valueType = readStringAnnotationValue(typeElement, GPU_POINTER_TYPE_ANNOTATIONS, "valueType", "");
+        String addressSpace = readStringAnnotationValue(typeElement, GPU_POINTER_TYPE_ANNOTATIONS, "addressSpace", "PRIVATE");
+        addressSpace = addressSpace.substring(addressSpace.lastIndexOf('.') + 1);
+
+        GpuTypeSupport.registerPointerType(
+                typeElement.getSimpleName().toString(),
+                typeElement.getQualifiedName().toString(),
+                valueType,
+                addressSpace
+        );
+    }
+
+    private void registerAnnotatedVectorType(TypeElement typeElement) {
+        String openClType = readStringAnnotationValue(typeElement, GPU_VECTOR_TYPE_ANNOTATIONS, "openClType", "");
+        String componentType = readStringAnnotationValue(typeElement, GPU_VECTOR_TYPE_ANNOTATIONS, "componentType", "");
+        List<String> fields = readStringArrayAnnotationValue(typeElement, GPU_VECTOR_TYPE_ANNOTATIONS, "fields");
+        int storageWidth = readIntAnnotationValue(typeElement, GPU_VECTOR_TYPE_ANNOTATIONS, "storageWidth", 0);
+
+        GpuTypeSupport.registerVectorType(
+                typeElement.getSimpleName().toString(),
+                typeElement.getQualifiedName().toString(),
+                openClType,
+                componentType,
+                fields,
+                storageWidth
+        );
     }
 
     @Override
@@ -255,6 +313,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         List<ParsedGpuMethod> currentHelpers = elementsAnnotatedWithAny(roundEnv, CCODE_ANNOTATIONS).stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
+                .peek(this::registerAnnotatedTypes)
                 .filter(candidate -> !candidate.equals(kernelElement))
                 .filter(this::isSupportedHelperMethod)
                 .map(this::parseMethod)
@@ -277,6 +336,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         List<ParsedGpuMethod> currentIntrinsics = elementsAnnotatedWithAny(roundEnv, GPU_INTRINSIC_ANNOTATIONS).stream()
                 .filter(element -> element.getKind() == ElementKind.METHOD)
                 .map(ExecutableElement.class::cast)
+                .peek(this::registerAnnotatedTypes)
                 .filter(this::isSupportedIntrinsicMethod)
                 .map(this::parseMethod)
                 .toList();
@@ -483,6 +543,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             Properties properties = new Properties();
             properties.setProperty("ownerSimpleName", owner.getSimpleName().toString());
             properties.setProperty("ownerQualifiedName", owner.getQualifiedName().toString());
+            GpuBackendSupport.storeBackends(properties, "owner.backends", ownerBackends(owner));
 
             List<ParsedGpuConstant> constants = collectConstants(owner);
             properties.setProperty("constants.count", Integer.toString(constants.size()));
@@ -1100,6 +1161,71 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             }
         }
         return new GpuBackendTarget[]{TARGET_BACKEND};
+    }
+
+    private String readStringAnnotationValue(
+            Element element,
+            List<String> annotationQualifiedNames,
+            String propertyName,
+            String defaultValue
+    ) {
+        Object value = readAnnotationValue(element, annotationQualifiedNames, propertyName);
+        return value == null ? defaultValue : value.toString();
+    }
+
+    private int readIntAnnotationValue(
+            Element element,
+            List<String> annotationQualifiedNames,
+            String propertyName,
+            int defaultValue
+    ) {
+        Object value = readAnnotationValue(element, annotationQualifiedNames, propertyName);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return Integer.parseInt(value.toString());
+    }
+
+    private List<String> readStringArrayAnnotationValue(
+            Element element,
+            List<String> annotationQualifiedNames,
+            String propertyName
+    ) {
+        Object value = readAnnotationValue(element, annotationQualifiedNames, propertyName);
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> values) {
+            return values.stream()
+                    .map(item -> item instanceof javax.lang.model.element.AnnotationValue annotationValue
+                            ? annotationValue.getValue()
+                            : item)
+                    .map(Object::toString)
+                    .toList();
+        }
+        return List.of(value.toString());
+    }
+
+    private Object readAnnotationValue(
+            Element element,
+            List<String> annotationQualifiedNames,
+            String propertyName
+    ) {
+        for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
+            if (!annotationQualifiedNames.contains(mirror.getAnnotationType().toString())) {
+                continue;
+            }
+            for (Map.Entry<? extends ExecutableElement, ? extends javax.lang.model.element.AnnotationValue> entry
+                    : processingEnv.getElementUtils().getElementValuesWithDefaults(mirror).entrySet()) {
+                if (propertyName.equals(entry.getKey().getSimpleName().toString())) {
+                    return entry.getValue().getValue();
+                }
+            }
+        }
+        return null;
     }
 
     private List<ParsedGpuMethod> filterMethodsForBackend(List<ParsedGpuMethod> methods, String annotationName) {

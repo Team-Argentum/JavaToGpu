@@ -37,4 +37,17 @@ public @interface GPUVectorType {
      * <p>Leave this as {@code 0} for the default OpenCL behavior where {@code *3} vectors occupy four scalar lanes.
      */
     int storageWidth() default 0;
+
+    /**
+     * Java instance methods that should be treated as vector operators.
+     *
+     * <p>The defaults cover the normal arithmetic surface exposed by the built-in vector wrappers. Custom vector
+     * wrappers can override this list when they want a smaller or different source-level API.
+     */
+    GPUVectorOperator[] operators() default {
+            @GPUVectorOperator(method = "add", operator = "+"),
+            @GPUVectorOperator(method = "sub", operator = "-"),
+            @GPUVectorOperator(method = "mul", operator = "*"),
+            @GPUVectorOperator(method = "div", operator = "/")
+    };
 }

@@ -210,4 +210,17 @@ class GpuTypeSupportTest {
         assertEquals(4 * Short.BYTES, GpuTypeSupport.vectorByteSize("Short4"));
     }
 
+    @Test
+    void discoversAnnotatedWideSignedIntVectorTypes() {
+        assertTrue(GpuTypeSupport.isSupportedVectorType("Int8"));
+        assertTrue(GpuTypeSupport.isSupportedVectorType("Int16"));
+        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.Int8"));
+
+        assertEquals("int8", GpuTypeSupport.openClVectorTypeName("Int8"));
+        assertEquals("int16", GpuTypeSupport.openClVectorTypeName("Int16"));
+        assertEquals("int", GpuTypeSupport.vectorComponentType("Int16", "sf"));
+        assertEquals(8 * Integer.BYTES, GpuTypeSupport.vectorByteSize("Int8"));
+        assertEquals(16 * Integer.BYTES, GpuTypeSupport.vectorByteSize("Int16"));
+    }
+
 }

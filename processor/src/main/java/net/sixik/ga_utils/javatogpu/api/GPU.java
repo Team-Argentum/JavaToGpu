@@ -4619,9 +4619,29 @@ public final class GPU {
         return ((high & 0xFFFF) << 16) | (low & 0xFFFF);
     }
 
+    @GPUIntrinsic(code = "upsample({0}, {1})")
+    public static int upsample(short high, UShort low) {
+        return ((high & 0xFFFF) << 16) | Short.toUnsignedInt(low.value);
+    }
+
+    @GPUIntrinsic(code = "upsample({0}, {1})")
+    public static UInt upsample(UShort high, UShort low) {
+        return new UInt((Short.toUnsignedInt(high.value) << 16) | Short.toUnsignedInt(low.value));
+    }
+
     @GPUIntrinsic(name = "upsample")
     public static long upsample(int high, int low) {
         return ((high & 0xFFFFFFFFL) << 32) | (low & 0xFFFFFFFFL);
+    }
+
+    @GPUIntrinsic(code = "upsample({0}, {1})")
+    public static long upsample(int high, UInt low) {
+        return ((high & 0xFFFFFFFFL) << 32) | Integer.toUnsignedLong(low.value);
+    }
+
+    @GPUIntrinsic(code = "upsample({0}, {1})")
+    public static ULong upsample(UInt high, UInt low) {
+        return new ULong((Integer.toUnsignedLong(high.value) << 32) | Integer.toUnsignedLong(low.value));
     }
 
     @GPUIntrinsic(code = "(({2}) ? ({1}) : ({0}))")
@@ -4644,6 +4664,284 @@ public final class GPU {
         return condition ? right : left;
     }
 
+    @GPUIntrinsic(name = "select")
+    public static int select(int left, int right, int mask) {
+        return mask < 0 ? right : left;
+    }
+
+    @GPUIntrinsic(name = "select")
+    public static long select(long left, long right, long mask) {
+        return mask < 0L ? right : left;
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UInt select(UInt left, UInt right, UInt mask) {
+        return Integer.compareUnsigned(mask.value, 0x80000000) >= 0 ? right : left;
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static ULong select(ULong left, ULong right, ULong mask) {
+        return Long.compareUnsigned(mask.value, 0x8000000000000000L) >= 0 ? right : left;
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static Int2 select(Int2 left, Int2 right, Int2 mask) {
+        return new Int2(select(left.x, right.x, mask.x), select(left.y, right.y, mask.y));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static Int3 select(Int3 left, Int3 right, Int3 mask) {
+        return new Int3(select(left.x, right.x, mask.x), select(left.y, right.y, mask.y), select(left.z, right.z, mask.z));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static Int4 select(Int4 left, Int4 right, Int4 mask) {
+        return new Int4(select(left.x, right.x, mask.x), select(left.y, right.y, mask.y), select(left.z, right.z, mask.z), select(left.w, right.w, mask.w));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static Long2 select(Long2 left, Long2 right, Long2 mask) {
+        return new Long2(select(left.x, right.x, mask.x), select(left.y, right.y, mask.y));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static Long3 select(Long3 left, Long3 right, Long3 mask) {
+        return new Long3(select(left.x, right.x, mask.x), select(left.y, right.y, mask.y), select(left.z, right.z, mask.z));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static Long4 select(Long4 left, Long4 right, Long4 mask) {
+        return new Long4(select(left.x, right.x, mask.x), select(left.y, right.y, mask.y), select(left.z, right.z, mask.z), select(left.w, right.w, mask.w));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UInt2 select(UInt2 left, UInt2 right, UInt2 mask) {
+        return new UInt2(select(new UInt(left.x), new UInt(right.x), new UInt(mask.x)).value,
+                select(new UInt(left.y), new UInt(right.y), new UInt(mask.y)).value);
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UInt3 select(UInt3 left, UInt3 right, UInt3 mask) {
+        return new UInt3(select(new UInt(left.x), new UInt(right.x), new UInt(mask.x)).value,
+                select(new UInt(left.y), new UInt(right.y), new UInt(mask.y)).value,
+                select(new UInt(left.z), new UInt(right.z), new UInt(mask.z)).value);
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UInt4 select(UInt4 left, UInt4 right, UInt4 mask) {
+        return new UInt4(select(new UInt(left.x), new UInt(right.x), new UInt(mask.x)).value,
+                select(new UInt(left.y), new UInt(right.y), new UInt(mask.y)).value,
+                select(new UInt(left.z), new UInt(right.z), new UInt(mask.z)).value,
+                select(new UInt(left.w), new UInt(right.w), new UInt(mask.w)).value);
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static ULong2 select(ULong2 left, ULong2 right, ULong2 mask) {
+        return new ULong2(select(new ULong(left.x), new ULong(right.x), new ULong(mask.x)).value,
+                select(new ULong(left.y), new ULong(right.y), new ULong(mask.y)).value);
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static ULong3 select(ULong3 left, ULong3 right, ULong3 mask) {
+        return new ULong3(select(new ULong(left.x), new ULong(right.x), new ULong(mask.x)).value,
+                select(new ULong(left.y), new ULong(right.y), new ULong(mask.y)).value,
+                select(new ULong(left.z), new ULong(right.z), new ULong(mask.z)).value);
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static ULong4 select(ULong4 left, ULong4 right, ULong4 mask) {
+        return new ULong4(select(new ULong(left.x), new ULong(right.x), new ULong(mask.x)).value,
+                select(new ULong(left.y), new ULong(right.y), new ULong(mask.y)).value,
+                select(new ULong(left.z), new ULong(right.z), new ULong(mask.z)).value,
+                select(new ULong(left.w), new ULong(right.w), new ULong(mask.w)).value);
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UByte2 select(UByte2 left, UByte2 right, UByte2 mask) {
+        return new UByte2((byte) select(Byte.toUnsignedInt(left.x), Byte.toUnsignedInt(right.x), Byte.toUnsignedInt(mask.x)),
+                (byte) select(Byte.toUnsignedInt(left.y), Byte.toUnsignedInt(right.y), Byte.toUnsignedInt(mask.y)));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UByte3 select(UByte3 left, UByte3 right, UByte3 mask) {
+        return new UByte3((byte) select(Byte.toUnsignedInt(left.x), Byte.toUnsignedInt(right.x), Byte.toUnsignedInt(mask.x)),
+                (byte) select(Byte.toUnsignedInt(left.y), Byte.toUnsignedInt(right.y), Byte.toUnsignedInt(mask.y)),
+                (byte) select(Byte.toUnsignedInt(left.z), Byte.toUnsignedInt(right.z), Byte.toUnsignedInt(mask.z)));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UByte4 select(UByte4 left, UByte4 right, UByte4 mask) {
+        return new UByte4((byte) select(Byte.toUnsignedInt(left.x), Byte.toUnsignedInt(right.x), Byte.toUnsignedInt(mask.x)),
+                (byte) select(Byte.toUnsignedInt(left.y), Byte.toUnsignedInt(right.y), Byte.toUnsignedInt(mask.y)),
+                (byte) select(Byte.toUnsignedInt(left.z), Byte.toUnsignedInt(right.z), Byte.toUnsignedInt(mask.z)),
+                (byte) select(Byte.toUnsignedInt(left.w), Byte.toUnsignedInt(right.w), Byte.toUnsignedInt(mask.w)));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UShort2 select(UShort2 left, UShort2 right, UShort2 mask) {
+        return new UShort2((short) select(Short.toUnsignedInt(left.x), Short.toUnsignedInt(right.x), Short.toUnsignedInt(mask.x)),
+                (short) select(Short.toUnsignedInt(left.y), Short.toUnsignedInt(right.y), Short.toUnsignedInt(mask.y)));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UShort3 select(UShort3 left, UShort3 right, UShort3 mask) {
+        return new UShort3((short) select(Short.toUnsignedInt(left.x), Short.toUnsignedInt(right.x), Short.toUnsignedInt(mask.x)),
+                (short) select(Short.toUnsignedInt(left.y), Short.toUnsignedInt(right.y), Short.toUnsignedInt(mask.y)),
+                (short) select(Short.toUnsignedInt(left.z), Short.toUnsignedInt(right.z), Short.toUnsignedInt(mask.z)));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UShort4 select(UShort4 left, UShort4 right, UShort4 mask) {
+        return new UShort4((short) select(Short.toUnsignedInt(left.x), Short.toUnsignedInt(right.x), Short.toUnsignedInt(mask.x)),
+                (short) select(Short.toUnsignedInt(left.y), Short.toUnsignedInt(right.y), Short.toUnsignedInt(mask.y)),
+                (short) select(Short.toUnsignedInt(left.z), Short.toUnsignedInt(right.z), Short.toUnsignedInt(mask.z)),
+                (short) select(Short.toUnsignedInt(left.w), Short.toUnsignedInt(right.w), Short.toUnsignedInt(mask.w)));
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UInt8 select(UInt8 left, UInt8 right, UInt8 mask) {
+        return new UInt8(
+                select(new UInt(left.s0), new UInt(right.s0), new UInt(mask.s0)).value,
+                select(new UInt(left.s1), new UInt(right.s1), new UInt(mask.s1)).value,
+                select(new UInt(left.s2), new UInt(right.s2), new UInt(mask.s2)).value,
+                select(new UInt(left.s3), new UInt(right.s3), new UInt(mask.s3)).value,
+                select(new UInt(left.s4), new UInt(right.s4), new UInt(mask.s4)).value,
+                select(new UInt(left.s5), new UInt(right.s5), new UInt(mask.s5)).value,
+                select(new UInt(left.s6), new UInt(right.s6), new UInt(mask.s6)).value,
+                select(new UInt(left.s7), new UInt(right.s7), new UInt(mask.s7)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UInt16 select(UInt16 left, UInt16 right, UInt16 mask) {
+        return new UInt16(
+                select(new UInt(left.s0), new UInt(right.s0), new UInt(mask.s0)).value,
+                select(new UInt(left.s1), new UInt(right.s1), new UInt(mask.s1)).value,
+                select(new UInt(left.s2), new UInt(right.s2), new UInt(mask.s2)).value,
+                select(new UInt(left.s3), new UInt(right.s3), new UInt(mask.s3)).value,
+                select(new UInt(left.s4), new UInt(right.s4), new UInt(mask.s4)).value,
+                select(new UInt(left.s5), new UInt(right.s5), new UInt(mask.s5)).value,
+                select(new UInt(left.s6), new UInt(right.s6), new UInt(mask.s6)).value,
+                select(new UInt(left.s7), new UInt(right.s7), new UInt(mask.s7)).value,
+                select(new UInt(left.s8), new UInt(right.s8), new UInt(mask.s8)).value,
+                select(new UInt(left.s9), new UInt(right.s9), new UInt(mask.s9)).value,
+                select(new UInt(left.sa), new UInt(right.sa), new UInt(mask.sa)).value,
+                select(new UInt(left.sb), new UInt(right.sb), new UInt(mask.sb)).value,
+                select(new UInt(left.sc), new UInt(right.sc), new UInt(mask.sc)).value,
+                select(new UInt(left.sd), new UInt(right.sd), new UInt(mask.sd)).value,
+                select(new UInt(left.se), new UInt(right.se), new UInt(mask.se)).value,
+                select(new UInt(left.sf), new UInt(right.sf), new UInt(mask.sf)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static ULong8 select(ULong8 left, ULong8 right, ULong8 mask) {
+        return new ULong8(
+                select(new ULong(left.s0), new ULong(right.s0), new ULong(mask.s0)).value,
+                select(new ULong(left.s1), new ULong(right.s1), new ULong(mask.s1)).value,
+                select(new ULong(left.s2), new ULong(right.s2), new ULong(mask.s2)).value,
+                select(new ULong(left.s3), new ULong(right.s3), new ULong(mask.s3)).value,
+                select(new ULong(left.s4), new ULong(right.s4), new ULong(mask.s4)).value,
+                select(new ULong(left.s5), new ULong(right.s5), new ULong(mask.s5)).value,
+                select(new ULong(left.s6), new ULong(right.s6), new ULong(mask.s6)).value,
+                select(new ULong(left.s7), new ULong(right.s7), new ULong(mask.s7)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static ULong16 select(ULong16 left, ULong16 right, ULong16 mask) {
+        return new ULong16(
+                select(new ULong(left.s0), new ULong(right.s0), new ULong(mask.s0)).value,
+                select(new ULong(left.s1), new ULong(right.s1), new ULong(mask.s1)).value,
+                select(new ULong(left.s2), new ULong(right.s2), new ULong(mask.s2)).value,
+                select(new ULong(left.s3), new ULong(right.s3), new ULong(mask.s3)).value,
+                select(new ULong(left.s4), new ULong(right.s4), new ULong(mask.s4)).value,
+                select(new ULong(left.s5), new ULong(right.s5), new ULong(mask.s5)).value,
+                select(new ULong(left.s6), new ULong(right.s6), new ULong(mask.s6)).value,
+                select(new ULong(left.s7), new ULong(right.s7), new ULong(mask.s7)).value,
+                select(new ULong(left.s8), new ULong(right.s8), new ULong(mask.s8)).value,
+                select(new ULong(left.s9), new ULong(right.s9), new ULong(mask.s9)).value,
+                select(new ULong(left.sa), new ULong(right.sa), new ULong(mask.sa)).value,
+                select(new ULong(left.sb), new ULong(right.sb), new ULong(mask.sb)).value,
+                select(new ULong(left.sc), new ULong(right.sc), new ULong(mask.sc)).value,
+                select(new ULong(left.sd), new ULong(right.sd), new ULong(mask.sd)).value,
+                select(new ULong(left.se), new ULong(right.se), new ULong(mask.se)).value,
+                select(new ULong(left.sf), new ULong(right.sf), new ULong(mask.sf)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UByte8 select(UByte8 left, UByte8 right, UByte8 mask) {
+        return new UByte8(
+                (byte) select(Byte.toUnsignedInt(left.s0), Byte.toUnsignedInt(right.s0), Byte.toUnsignedInt(mask.s0)),
+                (byte) select(Byte.toUnsignedInt(left.s1), Byte.toUnsignedInt(right.s1), Byte.toUnsignedInt(mask.s1)),
+                (byte) select(Byte.toUnsignedInt(left.s2), Byte.toUnsignedInt(right.s2), Byte.toUnsignedInt(mask.s2)),
+                (byte) select(Byte.toUnsignedInt(left.s3), Byte.toUnsignedInt(right.s3), Byte.toUnsignedInt(mask.s3)),
+                (byte) select(Byte.toUnsignedInt(left.s4), Byte.toUnsignedInt(right.s4), Byte.toUnsignedInt(mask.s4)),
+                (byte) select(Byte.toUnsignedInt(left.s5), Byte.toUnsignedInt(right.s5), Byte.toUnsignedInt(mask.s5)),
+                (byte) select(Byte.toUnsignedInt(left.s6), Byte.toUnsignedInt(right.s6), Byte.toUnsignedInt(mask.s6)),
+                (byte) select(Byte.toUnsignedInt(left.s7), Byte.toUnsignedInt(right.s7), Byte.toUnsignedInt(mask.s7))
+        );
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UByte16 select(UByte16 left, UByte16 right, UByte16 mask) {
+        return new UByte16(
+                (byte) select(Byte.toUnsignedInt(left.s0), Byte.toUnsignedInt(right.s0), Byte.toUnsignedInt(mask.s0)),
+                (byte) select(Byte.toUnsignedInt(left.s1), Byte.toUnsignedInt(right.s1), Byte.toUnsignedInt(mask.s1)),
+                (byte) select(Byte.toUnsignedInt(left.s2), Byte.toUnsignedInt(right.s2), Byte.toUnsignedInt(mask.s2)),
+                (byte) select(Byte.toUnsignedInt(left.s3), Byte.toUnsignedInt(right.s3), Byte.toUnsignedInt(mask.s3)),
+                (byte) select(Byte.toUnsignedInt(left.s4), Byte.toUnsignedInt(right.s4), Byte.toUnsignedInt(mask.s4)),
+                (byte) select(Byte.toUnsignedInt(left.s5), Byte.toUnsignedInt(right.s5), Byte.toUnsignedInt(mask.s5)),
+                (byte) select(Byte.toUnsignedInt(left.s6), Byte.toUnsignedInt(right.s6), Byte.toUnsignedInt(mask.s6)),
+                (byte) select(Byte.toUnsignedInt(left.s7), Byte.toUnsignedInt(right.s7), Byte.toUnsignedInt(mask.s7)),
+                (byte) select(Byte.toUnsignedInt(left.s8), Byte.toUnsignedInt(right.s8), Byte.toUnsignedInt(mask.s8)),
+                (byte) select(Byte.toUnsignedInt(left.s9), Byte.toUnsignedInt(right.s9), Byte.toUnsignedInt(mask.s9)),
+                (byte) select(Byte.toUnsignedInt(left.sa), Byte.toUnsignedInt(right.sa), Byte.toUnsignedInt(mask.sa)),
+                (byte) select(Byte.toUnsignedInt(left.sb), Byte.toUnsignedInt(right.sb), Byte.toUnsignedInt(mask.sb)),
+                (byte) select(Byte.toUnsignedInt(left.sc), Byte.toUnsignedInt(right.sc), Byte.toUnsignedInt(mask.sc)),
+                (byte) select(Byte.toUnsignedInt(left.sd), Byte.toUnsignedInt(right.sd), Byte.toUnsignedInt(mask.sd)),
+                (byte) select(Byte.toUnsignedInt(left.se), Byte.toUnsignedInt(right.se), Byte.toUnsignedInt(mask.se)),
+                (byte) select(Byte.toUnsignedInt(left.sf), Byte.toUnsignedInt(right.sf), Byte.toUnsignedInt(mask.sf))
+        );
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UShort8 select(UShort8 left, UShort8 right, UShort8 mask) {
+        return new UShort8(
+                (short) select(Short.toUnsignedInt(left.s0), Short.toUnsignedInt(right.s0), Short.toUnsignedInt(mask.s0)),
+                (short) select(Short.toUnsignedInt(left.s1), Short.toUnsignedInt(right.s1), Short.toUnsignedInt(mask.s1)),
+                (short) select(Short.toUnsignedInt(left.s2), Short.toUnsignedInt(right.s2), Short.toUnsignedInt(mask.s2)),
+                (short) select(Short.toUnsignedInt(left.s3), Short.toUnsignedInt(right.s3), Short.toUnsignedInt(mask.s3)),
+                (short) select(Short.toUnsignedInt(left.s4), Short.toUnsignedInt(right.s4), Short.toUnsignedInt(mask.s4)),
+                (short) select(Short.toUnsignedInt(left.s5), Short.toUnsignedInt(right.s5), Short.toUnsignedInt(mask.s5)),
+                (short) select(Short.toUnsignedInt(left.s6), Short.toUnsignedInt(right.s6), Short.toUnsignedInt(mask.s6)),
+                (short) select(Short.toUnsignedInt(left.s7), Short.toUnsignedInt(right.s7), Short.toUnsignedInt(mask.s7))
+        );
+    }
+
+    @GPUIntrinsic(code = "select({0}, {1}, {2})")
+    public static UShort16 select(UShort16 left, UShort16 right, UShort16 mask) {
+        return new UShort16(
+                (short) select(Short.toUnsignedInt(left.s0), Short.toUnsignedInt(right.s0), Short.toUnsignedInt(mask.s0)),
+                (short) select(Short.toUnsignedInt(left.s1), Short.toUnsignedInt(right.s1), Short.toUnsignedInt(mask.s1)),
+                (short) select(Short.toUnsignedInt(left.s2), Short.toUnsignedInt(right.s2), Short.toUnsignedInt(mask.s2)),
+                (short) select(Short.toUnsignedInt(left.s3), Short.toUnsignedInt(right.s3), Short.toUnsignedInt(mask.s3)),
+                (short) select(Short.toUnsignedInt(left.s4), Short.toUnsignedInt(right.s4), Short.toUnsignedInt(mask.s4)),
+                (short) select(Short.toUnsignedInt(left.s5), Short.toUnsignedInt(right.s5), Short.toUnsignedInt(mask.s5)),
+                (short) select(Short.toUnsignedInt(left.s6), Short.toUnsignedInt(right.s6), Short.toUnsignedInt(mask.s6)),
+                (short) select(Short.toUnsignedInt(left.s7), Short.toUnsignedInt(right.s7), Short.toUnsignedInt(mask.s7)),
+                (short) select(Short.toUnsignedInt(left.s8), Short.toUnsignedInt(right.s8), Short.toUnsignedInt(mask.s8)),
+                (short) select(Short.toUnsignedInt(left.s9), Short.toUnsignedInt(right.s9), Short.toUnsignedInt(mask.s9)),
+                (short) select(Short.toUnsignedInt(left.sa), Short.toUnsignedInt(right.sa), Short.toUnsignedInt(mask.sa)),
+                (short) select(Short.toUnsignedInt(left.sb), Short.toUnsignedInt(right.sb), Short.toUnsignedInt(mask.sb)),
+                (short) select(Short.toUnsignedInt(left.sc), Short.toUnsignedInt(right.sc), Short.toUnsignedInt(mask.sc)),
+                (short) select(Short.toUnsignedInt(left.sd), Short.toUnsignedInt(right.sd), Short.toUnsignedInt(mask.sd)),
+                (short) select(Short.toUnsignedInt(left.se), Short.toUnsignedInt(right.se), Short.toUnsignedInt(mask.se)),
+                (short) select(Short.toUnsignedInt(left.sf), Short.toUnsignedInt(right.sf), Short.toUnsignedInt(mask.sf))
+        );
+    }
+
     @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
     public static int bitselect(int left, int right, int mask) {
         return (left & ~mask) | (right & mask);
@@ -4652,6 +4950,244 @@ public final class GPU {
     @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
     public static long bitselect(long left, long right, long mask) {
         return (left & ~mask) | (right & mask);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UInt bitselect(UInt left, UInt right, UInt mask) {
+        return new UInt(bitselect(left.value, right.value, mask.value));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static ULong bitselect(ULong left, ULong right, ULong mask) {
+        return new ULong(bitselect(left.value, right.value, mask.value));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UInt2 bitselect(UInt2 left, UInt2 right, UInt2 mask) {
+        return new UInt2(bitselect(new UInt(left.x), new UInt(right.x), new UInt(mask.x)).value,
+                bitselect(new UInt(left.y), new UInt(right.y), new UInt(mask.y)).value);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UInt3 bitselect(UInt3 left, UInt3 right, UInt3 mask) {
+        return new UInt3(bitselect(new UInt(left.x), new UInt(right.x), new UInt(mask.x)).value,
+                bitselect(new UInt(left.y), new UInt(right.y), new UInt(mask.y)).value,
+                bitselect(new UInt(left.z), new UInt(right.z), new UInt(mask.z)).value);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UInt4 bitselect(UInt4 left, UInt4 right, UInt4 mask) {
+        return new UInt4(bitselect(new UInt(left.x), new UInt(right.x), new UInt(mask.x)).value,
+                bitselect(new UInt(left.y), new UInt(right.y), new UInt(mask.y)).value,
+                bitselect(new UInt(left.z), new UInt(right.z), new UInt(mask.z)).value,
+                bitselect(new UInt(left.w), new UInt(right.w), new UInt(mask.w)).value);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static ULong2 bitselect(ULong2 left, ULong2 right, ULong2 mask) {
+        return new ULong2(bitselect(new ULong(left.x), new ULong(right.x), new ULong(mask.x)).value,
+                bitselect(new ULong(left.y), new ULong(right.y), new ULong(mask.y)).value);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static ULong3 bitselect(ULong3 left, ULong3 right, ULong3 mask) {
+        return new ULong3(bitselect(new ULong(left.x), new ULong(right.x), new ULong(mask.x)).value,
+                bitselect(new ULong(left.y), new ULong(right.y), new ULong(mask.y)).value,
+                bitselect(new ULong(left.z), new ULong(right.z), new ULong(mask.z)).value);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static ULong4 bitselect(ULong4 left, ULong4 right, ULong4 mask) {
+        return new ULong4(bitselect(new ULong(left.x), new ULong(right.x), new ULong(mask.x)).value,
+                bitselect(new ULong(left.y), new ULong(right.y), new ULong(mask.y)).value,
+                bitselect(new ULong(left.z), new ULong(right.z), new ULong(mask.z)).value,
+                bitselect(new ULong(left.w), new ULong(right.w), new ULong(mask.w)).value);
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UByte2 bitselect(UByte2 left, UByte2 right, UByte2 mask) {
+        return new UByte2((byte) bitselect(Byte.toUnsignedInt(left.x), Byte.toUnsignedInt(right.x), Byte.toUnsignedInt(mask.x)),
+                (byte) bitselect(Byte.toUnsignedInt(left.y), Byte.toUnsignedInt(right.y), Byte.toUnsignedInt(mask.y)));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UByte3 bitselect(UByte3 left, UByte3 right, UByte3 mask) {
+        return new UByte3((byte) bitselect(Byte.toUnsignedInt(left.x), Byte.toUnsignedInt(right.x), Byte.toUnsignedInt(mask.x)),
+                (byte) bitselect(Byte.toUnsignedInt(left.y), Byte.toUnsignedInt(right.y), Byte.toUnsignedInt(mask.y)),
+                (byte) bitselect(Byte.toUnsignedInt(left.z), Byte.toUnsignedInt(right.z), Byte.toUnsignedInt(mask.z)));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UByte4 bitselect(UByte4 left, UByte4 right, UByte4 mask) {
+        return new UByte4((byte) bitselect(Byte.toUnsignedInt(left.x), Byte.toUnsignedInt(right.x), Byte.toUnsignedInt(mask.x)),
+                (byte) bitselect(Byte.toUnsignedInt(left.y), Byte.toUnsignedInt(right.y), Byte.toUnsignedInt(mask.y)),
+                (byte) bitselect(Byte.toUnsignedInt(left.z), Byte.toUnsignedInt(right.z), Byte.toUnsignedInt(mask.z)),
+                (byte) bitselect(Byte.toUnsignedInt(left.w), Byte.toUnsignedInt(right.w), Byte.toUnsignedInt(mask.w)));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UShort2 bitselect(UShort2 left, UShort2 right, UShort2 mask) {
+        return new UShort2((short) bitselect(Short.toUnsignedInt(left.x), Short.toUnsignedInt(right.x), Short.toUnsignedInt(mask.x)),
+                (short) bitselect(Short.toUnsignedInt(left.y), Short.toUnsignedInt(right.y), Short.toUnsignedInt(mask.y)));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UShort3 bitselect(UShort3 left, UShort3 right, UShort3 mask) {
+        return new UShort3((short) bitselect(Short.toUnsignedInt(left.x), Short.toUnsignedInt(right.x), Short.toUnsignedInt(mask.x)),
+                (short) bitselect(Short.toUnsignedInt(left.y), Short.toUnsignedInt(right.y), Short.toUnsignedInt(mask.y)),
+                (short) bitselect(Short.toUnsignedInt(left.z), Short.toUnsignedInt(right.z), Short.toUnsignedInt(mask.z)));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UShort4 bitselect(UShort4 left, UShort4 right, UShort4 mask) {
+        return new UShort4((short) bitselect(Short.toUnsignedInt(left.x), Short.toUnsignedInt(right.x), Short.toUnsignedInt(mask.x)),
+                (short) bitselect(Short.toUnsignedInt(left.y), Short.toUnsignedInt(right.y), Short.toUnsignedInt(mask.y)),
+                (short) bitselect(Short.toUnsignedInt(left.z), Short.toUnsignedInt(right.z), Short.toUnsignedInt(mask.z)),
+                (short) bitselect(Short.toUnsignedInt(left.w), Short.toUnsignedInt(right.w), Short.toUnsignedInt(mask.w)));
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UInt8 bitselect(UInt8 left, UInt8 right, UInt8 mask) {
+        return new UInt8(
+                bitselect(new UInt(left.s0), new UInt(right.s0), new UInt(mask.s0)).value,
+                bitselect(new UInt(left.s1), new UInt(right.s1), new UInt(mask.s1)).value,
+                bitselect(new UInt(left.s2), new UInt(right.s2), new UInt(mask.s2)).value,
+                bitselect(new UInt(left.s3), new UInt(right.s3), new UInt(mask.s3)).value,
+                bitselect(new UInt(left.s4), new UInt(right.s4), new UInt(mask.s4)).value,
+                bitselect(new UInt(left.s5), new UInt(right.s5), new UInt(mask.s5)).value,
+                bitselect(new UInt(left.s6), new UInt(right.s6), new UInt(mask.s6)).value,
+                bitselect(new UInt(left.s7), new UInt(right.s7), new UInt(mask.s7)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UInt16 bitselect(UInt16 left, UInt16 right, UInt16 mask) {
+        return new UInt16(
+                bitselect(new UInt(left.s0), new UInt(right.s0), new UInt(mask.s0)).value,
+                bitselect(new UInt(left.s1), new UInt(right.s1), new UInt(mask.s1)).value,
+                bitselect(new UInt(left.s2), new UInt(right.s2), new UInt(mask.s2)).value,
+                bitselect(new UInt(left.s3), new UInt(right.s3), new UInt(mask.s3)).value,
+                bitselect(new UInt(left.s4), new UInt(right.s4), new UInt(mask.s4)).value,
+                bitselect(new UInt(left.s5), new UInt(right.s5), new UInt(mask.s5)).value,
+                bitselect(new UInt(left.s6), new UInt(right.s6), new UInt(mask.s6)).value,
+                bitselect(new UInt(left.s7), new UInt(right.s7), new UInt(mask.s7)).value,
+                bitselect(new UInt(left.s8), new UInt(right.s8), new UInt(mask.s8)).value,
+                bitselect(new UInt(left.s9), new UInt(right.s9), new UInt(mask.s9)).value,
+                bitselect(new UInt(left.sa), new UInt(right.sa), new UInt(mask.sa)).value,
+                bitselect(new UInt(left.sb), new UInt(right.sb), new UInt(mask.sb)).value,
+                bitselect(new UInt(left.sc), new UInt(right.sc), new UInt(mask.sc)).value,
+                bitselect(new UInt(left.sd), new UInt(right.sd), new UInt(mask.sd)).value,
+                bitselect(new UInt(left.se), new UInt(right.se), new UInt(mask.se)).value,
+                bitselect(new UInt(left.sf), new UInt(right.sf), new UInt(mask.sf)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static ULong8 bitselect(ULong8 left, ULong8 right, ULong8 mask) {
+        return new ULong8(
+                bitselect(new ULong(left.s0), new ULong(right.s0), new ULong(mask.s0)).value,
+                bitselect(new ULong(left.s1), new ULong(right.s1), new ULong(mask.s1)).value,
+                bitselect(new ULong(left.s2), new ULong(right.s2), new ULong(mask.s2)).value,
+                bitselect(new ULong(left.s3), new ULong(right.s3), new ULong(mask.s3)).value,
+                bitselect(new ULong(left.s4), new ULong(right.s4), new ULong(mask.s4)).value,
+                bitselect(new ULong(left.s5), new ULong(right.s5), new ULong(mask.s5)).value,
+                bitselect(new ULong(left.s6), new ULong(right.s6), new ULong(mask.s6)).value,
+                bitselect(new ULong(left.s7), new ULong(right.s7), new ULong(mask.s7)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static ULong16 bitselect(ULong16 left, ULong16 right, ULong16 mask) {
+        return new ULong16(
+                bitselect(new ULong(left.s0), new ULong(right.s0), new ULong(mask.s0)).value,
+                bitselect(new ULong(left.s1), new ULong(right.s1), new ULong(mask.s1)).value,
+                bitselect(new ULong(left.s2), new ULong(right.s2), new ULong(mask.s2)).value,
+                bitselect(new ULong(left.s3), new ULong(right.s3), new ULong(mask.s3)).value,
+                bitselect(new ULong(left.s4), new ULong(right.s4), new ULong(mask.s4)).value,
+                bitselect(new ULong(left.s5), new ULong(right.s5), new ULong(mask.s5)).value,
+                bitselect(new ULong(left.s6), new ULong(right.s6), new ULong(mask.s6)).value,
+                bitselect(new ULong(left.s7), new ULong(right.s7), new ULong(mask.s7)).value,
+                bitselect(new ULong(left.s8), new ULong(right.s8), new ULong(mask.s8)).value,
+                bitselect(new ULong(left.s9), new ULong(right.s9), new ULong(mask.s9)).value,
+                bitselect(new ULong(left.sa), new ULong(right.sa), new ULong(mask.sa)).value,
+                bitselect(new ULong(left.sb), new ULong(right.sb), new ULong(mask.sb)).value,
+                bitselect(new ULong(left.sc), new ULong(right.sc), new ULong(mask.sc)).value,
+                bitselect(new ULong(left.sd), new ULong(right.sd), new ULong(mask.sd)).value,
+                bitselect(new ULong(left.se), new ULong(right.se), new ULong(mask.se)).value,
+                bitselect(new ULong(left.sf), new ULong(right.sf), new ULong(mask.sf)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UByte8 bitselect(UByte8 left, UByte8 right, UByte8 mask) {
+        return new UByte8(
+                (byte) bitselect(Byte.toUnsignedInt(left.s0), Byte.toUnsignedInt(right.s0), Byte.toUnsignedInt(mask.s0)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s1), Byte.toUnsignedInt(right.s1), Byte.toUnsignedInt(mask.s1)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s2), Byte.toUnsignedInt(right.s2), Byte.toUnsignedInt(mask.s2)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s3), Byte.toUnsignedInt(right.s3), Byte.toUnsignedInt(mask.s3)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s4), Byte.toUnsignedInt(right.s4), Byte.toUnsignedInt(mask.s4)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s5), Byte.toUnsignedInt(right.s5), Byte.toUnsignedInt(mask.s5)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s6), Byte.toUnsignedInt(right.s6), Byte.toUnsignedInt(mask.s6)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s7), Byte.toUnsignedInt(right.s7), Byte.toUnsignedInt(mask.s7))
+        );
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UByte16 bitselect(UByte16 left, UByte16 right, UByte16 mask) {
+        return new UByte16(
+                (byte) bitselect(Byte.toUnsignedInt(left.s0), Byte.toUnsignedInt(right.s0), Byte.toUnsignedInt(mask.s0)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s1), Byte.toUnsignedInt(right.s1), Byte.toUnsignedInt(mask.s1)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s2), Byte.toUnsignedInt(right.s2), Byte.toUnsignedInt(mask.s2)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s3), Byte.toUnsignedInt(right.s3), Byte.toUnsignedInt(mask.s3)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s4), Byte.toUnsignedInt(right.s4), Byte.toUnsignedInt(mask.s4)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s5), Byte.toUnsignedInt(right.s5), Byte.toUnsignedInt(mask.s5)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s6), Byte.toUnsignedInt(right.s6), Byte.toUnsignedInt(mask.s6)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s7), Byte.toUnsignedInt(right.s7), Byte.toUnsignedInt(mask.s7)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s8), Byte.toUnsignedInt(right.s8), Byte.toUnsignedInt(mask.s8)),
+                (byte) bitselect(Byte.toUnsignedInt(left.s9), Byte.toUnsignedInt(right.s9), Byte.toUnsignedInt(mask.s9)),
+                (byte) bitselect(Byte.toUnsignedInt(left.sa), Byte.toUnsignedInt(right.sa), Byte.toUnsignedInt(mask.sa)),
+                (byte) bitselect(Byte.toUnsignedInt(left.sb), Byte.toUnsignedInt(right.sb), Byte.toUnsignedInt(mask.sb)),
+                (byte) bitselect(Byte.toUnsignedInt(left.sc), Byte.toUnsignedInt(right.sc), Byte.toUnsignedInt(mask.sc)),
+                (byte) bitselect(Byte.toUnsignedInt(left.sd), Byte.toUnsignedInt(right.sd), Byte.toUnsignedInt(mask.sd)),
+                (byte) bitselect(Byte.toUnsignedInt(left.se), Byte.toUnsignedInt(right.se), Byte.toUnsignedInt(mask.se)),
+                (byte) bitselect(Byte.toUnsignedInt(left.sf), Byte.toUnsignedInt(right.sf), Byte.toUnsignedInt(mask.sf))
+        );
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UShort8 bitselect(UShort8 left, UShort8 right, UShort8 mask) {
+        return new UShort8(
+                (short) bitselect(Short.toUnsignedInt(left.s0), Short.toUnsignedInt(right.s0), Short.toUnsignedInt(mask.s0)),
+                (short) bitselect(Short.toUnsignedInt(left.s1), Short.toUnsignedInt(right.s1), Short.toUnsignedInt(mask.s1)),
+                (short) bitselect(Short.toUnsignedInt(left.s2), Short.toUnsignedInt(right.s2), Short.toUnsignedInt(mask.s2)),
+                (short) bitselect(Short.toUnsignedInt(left.s3), Short.toUnsignedInt(right.s3), Short.toUnsignedInt(mask.s3)),
+                (short) bitselect(Short.toUnsignedInt(left.s4), Short.toUnsignedInt(right.s4), Short.toUnsignedInt(mask.s4)),
+                (short) bitselect(Short.toUnsignedInt(left.s5), Short.toUnsignedInt(right.s5), Short.toUnsignedInt(mask.s5)),
+                (short) bitselect(Short.toUnsignedInt(left.s6), Short.toUnsignedInt(right.s6), Short.toUnsignedInt(mask.s6)),
+                (short) bitselect(Short.toUnsignedInt(left.s7), Short.toUnsignedInt(right.s7), Short.toUnsignedInt(mask.s7))
+        );
+    }
+
+    @GPUIntrinsic(code = "bitselect({0}, {1}, {2})")
+    public static UShort16 bitselect(UShort16 left, UShort16 right, UShort16 mask) {
+        return new UShort16(
+                (short) bitselect(Short.toUnsignedInt(left.s0), Short.toUnsignedInt(right.s0), Short.toUnsignedInt(mask.s0)),
+                (short) bitselect(Short.toUnsignedInt(left.s1), Short.toUnsignedInt(right.s1), Short.toUnsignedInt(mask.s1)),
+                (short) bitselect(Short.toUnsignedInt(left.s2), Short.toUnsignedInt(right.s2), Short.toUnsignedInt(mask.s2)),
+                (short) bitselect(Short.toUnsignedInt(left.s3), Short.toUnsignedInt(right.s3), Short.toUnsignedInt(mask.s3)),
+                (short) bitselect(Short.toUnsignedInt(left.s4), Short.toUnsignedInt(right.s4), Short.toUnsignedInt(mask.s4)),
+                (short) bitselect(Short.toUnsignedInt(left.s5), Short.toUnsignedInt(right.s5), Short.toUnsignedInt(mask.s5)),
+                (short) bitselect(Short.toUnsignedInt(left.s6), Short.toUnsignedInt(right.s6), Short.toUnsignedInt(mask.s6)),
+                (short) bitselect(Short.toUnsignedInt(left.s7), Short.toUnsignedInt(right.s7), Short.toUnsignedInt(mask.s7)),
+                (short) bitselect(Short.toUnsignedInt(left.s8), Short.toUnsignedInt(right.s8), Short.toUnsignedInt(mask.s8)),
+                (short) bitselect(Short.toUnsignedInt(left.s9), Short.toUnsignedInt(right.s9), Short.toUnsignedInt(mask.s9)),
+                (short) bitselect(Short.toUnsignedInt(left.sa), Short.toUnsignedInt(right.sa), Short.toUnsignedInt(mask.sa)),
+                (short) bitselect(Short.toUnsignedInt(left.sb), Short.toUnsignedInt(right.sb), Short.toUnsignedInt(mask.sb)),
+                (short) bitselect(Short.toUnsignedInt(left.sc), Short.toUnsignedInt(right.sc), Short.toUnsignedInt(mask.sc)),
+                (short) bitselect(Short.toUnsignedInt(left.sd), Short.toUnsignedInt(right.sd), Short.toUnsignedInt(mask.sd)),
+                (short) bitselect(Short.toUnsignedInt(left.se), Short.toUnsignedInt(right.se), Short.toUnsignedInt(mask.se)),
+                (short) bitselect(Short.toUnsignedInt(left.sf), Short.toUnsignedInt(right.sf), Short.toUnsignedInt(mask.sf))
+        );
     }
 
     @GPUIntrinsic(code = "nan(((uint) ({0})))")
@@ -5154,6 +5690,34 @@ public final class GPU {
         return new Int4(convert_int(value.x), convert_int(value.y), convert_int(value.z), convert_int(value.w));
     }
 
+    @GPUIntrinsic(name = "convert_int")
+    public static Int8 convert_int(UInt8 value) {
+        return new Int8(convert_int(new UInt(value.s0)), convert_int(new UInt(value.s1)), convert_int(new UInt(value.s2)), convert_int(new UInt(value.s3)),
+                convert_int(new UInt(value.s4)), convert_int(new UInt(value.s5)), convert_int(new UInt(value.s6)), convert_int(new UInt(value.s7)));
+    }
+
+    @GPUIntrinsic(name = "convert_int")
+    public static Int16 convert_int(UInt16 value) {
+        return new Int16(convert_int(new UInt(value.s0)), convert_int(new UInt(value.s1)), convert_int(new UInt(value.s2)), convert_int(new UInt(value.s3)),
+                convert_int(new UInt(value.s4)), convert_int(new UInt(value.s5)), convert_int(new UInt(value.s6)), convert_int(new UInt(value.s7)),
+                convert_int(new UInt(value.s8)), convert_int(new UInt(value.s9)), convert_int(new UInt(value.sa)), convert_int(new UInt(value.sb)),
+                convert_int(new UInt(value.sc)), convert_int(new UInt(value.sd)), convert_int(new UInt(value.se)), convert_int(new UInt(value.sf)));
+    }
+
+    @GPUIntrinsic(name = "convert_int")
+    public static Int8 convert_int(ULong8 value) {
+        return new Int8(convert_int(new ULong(value.s0)), convert_int(new ULong(value.s1)), convert_int(new ULong(value.s2)), convert_int(new ULong(value.s3)),
+                convert_int(new ULong(value.s4)), convert_int(new ULong(value.s5)), convert_int(new ULong(value.s6)), convert_int(new ULong(value.s7)));
+    }
+
+    @GPUIntrinsic(name = "convert_int")
+    public static Int16 convert_int(ULong16 value) {
+        return new Int16(convert_int(new ULong(value.s0)), convert_int(new ULong(value.s1)), convert_int(new ULong(value.s2)), convert_int(new ULong(value.s3)),
+                convert_int(new ULong(value.s4)), convert_int(new ULong(value.s5)), convert_int(new ULong(value.s6)), convert_int(new ULong(value.s7)),
+                convert_int(new ULong(value.s8)), convert_int(new ULong(value.s9)), convert_int(new ULong(value.sa)), convert_int(new ULong(value.sb)),
+                convert_int(new ULong(value.sc)), convert_int(new ULong(value.sd)), convert_int(new ULong(value.se)), convert_int(new ULong(value.sf)));
+    }
+
     @GPUIntrinsic(name = "convert_long")
     public static Long2 convert_long(Float2 value) {
         return new Long2(convert_long(value.x), convert_long(value.y));
@@ -5212,6 +5776,20 @@ public final class GPU {
     @GPUIntrinsic(code = "convert_uint({0})")
     public static UInt4 convert_uint(Double4 value) {
         return new UInt4(convert_uint(value.x).value, convert_uint(value.y).value, convert_uint(value.z).value, convert_uint(value.w).value);
+    }
+
+    @GPUIntrinsic(code = "convert_uint({0})")
+    public static UInt8 convert_uint(Int8 value) {
+        return new UInt8(convert_uint(value.s0).value, convert_uint(value.s1).value, convert_uint(value.s2).value, convert_uint(value.s3).value,
+                convert_uint(value.s4).value, convert_uint(value.s5).value, convert_uint(value.s6).value, convert_uint(value.s7).value);
+    }
+
+    @GPUIntrinsic(code = "convert_uint({0})")
+    public static UInt16 convert_uint(Int16 value) {
+        return new UInt16(convert_uint(value.s0).value, convert_uint(value.s1).value, convert_uint(value.s2).value, convert_uint(value.s3).value,
+                convert_uint(value.s4).value, convert_uint(value.s5).value, convert_uint(value.s6).value, convert_uint(value.s7).value,
+                convert_uint(value.s8).value, convert_uint(value.s9).value, convert_uint(value.sa).value, convert_uint(value.sb).value,
+                convert_uint(value.sc).value, convert_uint(value.sd).value, convert_uint(value.se).value, convert_uint(value.sf).value);
     }
 
     @GPUIntrinsic(code = "convert_ulong({0})")
@@ -6174,6 +6752,34 @@ public final class GPU {
         return new Int4(convert_int_sat(value.x), convert_int_sat(value.y), convert_int_sat(value.z), convert_int_sat(value.w));
     }
 
+    @GPUIntrinsic(name = "convert_int_sat")
+    public static Int8 convert_int_sat(UInt8 value) {
+        return new Int8(convert_int_sat(new UInt(value.s0)), convert_int_sat(new UInt(value.s1)), convert_int_sat(new UInt(value.s2)), convert_int_sat(new UInt(value.s3)),
+                convert_int_sat(new UInt(value.s4)), convert_int_sat(new UInt(value.s5)), convert_int_sat(new UInt(value.s6)), convert_int_sat(new UInt(value.s7)));
+    }
+
+    @GPUIntrinsic(name = "convert_int_sat")
+    public static Int16 convert_int_sat(UInt16 value) {
+        return new Int16(convert_int_sat(new UInt(value.s0)), convert_int_sat(new UInt(value.s1)), convert_int_sat(new UInt(value.s2)), convert_int_sat(new UInt(value.s3)),
+                convert_int_sat(new UInt(value.s4)), convert_int_sat(new UInt(value.s5)), convert_int_sat(new UInt(value.s6)), convert_int_sat(new UInt(value.s7)),
+                convert_int_sat(new UInt(value.s8)), convert_int_sat(new UInt(value.s9)), convert_int_sat(new UInt(value.sa)), convert_int_sat(new UInt(value.sb)),
+                convert_int_sat(new UInt(value.sc)), convert_int_sat(new UInt(value.sd)), convert_int_sat(new UInt(value.se)), convert_int_sat(new UInt(value.sf)));
+    }
+
+    @GPUIntrinsic(name = "convert_int_sat")
+    public static Int8 convert_int_sat(ULong8 value) {
+        return new Int8(convert_int_sat(new ULong(value.s0)), convert_int_sat(new ULong(value.s1)), convert_int_sat(new ULong(value.s2)), convert_int_sat(new ULong(value.s3)),
+                convert_int_sat(new ULong(value.s4)), convert_int_sat(new ULong(value.s5)), convert_int_sat(new ULong(value.s6)), convert_int_sat(new ULong(value.s7)));
+    }
+
+    @GPUIntrinsic(name = "convert_int_sat")
+    public static Int16 convert_int_sat(ULong16 value) {
+        return new Int16(convert_int_sat(new ULong(value.s0)), convert_int_sat(new ULong(value.s1)), convert_int_sat(new ULong(value.s2)), convert_int_sat(new ULong(value.s3)),
+                convert_int_sat(new ULong(value.s4)), convert_int_sat(new ULong(value.s5)), convert_int_sat(new ULong(value.s6)), convert_int_sat(new ULong(value.s7)),
+                convert_int_sat(new ULong(value.s8)), convert_int_sat(new ULong(value.s9)), convert_int_sat(new ULong(value.sa)), convert_int_sat(new ULong(value.sb)),
+                convert_int_sat(new ULong(value.sc)), convert_int_sat(new ULong(value.sd)), convert_int_sat(new ULong(value.se)), convert_int_sat(new ULong(value.sf)));
+    }
+
     @GPUIntrinsic(name = "convert_long_sat")
     public static Long2 convert_long_sat(Float2 value) {
         return new Long2(convert_long_sat(value.x), convert_long_sat(value.y));
@@ -6424,6 +7030,74 @@ public final class GPU {
         return Long.numberOfLeadingZeros(value);
     }
 
+    @GPUIntrinsic(code = "clz({0})")
+    public static int clz(UInt value) {
+        return Integer.numberOfLeadingZeros(value.value);
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static int clz(ULong value) {
+        return Long.numberOfLeadingZeros(value.value);
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int2 clz(UInt2 value) {
+        return new Int2(clz(new UInt(value.x)), clz(new UInt(value.y)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int3 clz(UInt3 value) {
+        return new Int3(clz(new UInt(value.x)), clz(new UInt(value.y)), clz(new UInt(value.z)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int4 clz(UInt4 value) {
+        return new Int4(clz(new UInt(value.x)), clz(new UInt(value.y)), clz(new UInt(value.z)), clz(new UInt(value.w)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int2 clz(ULong2 value) {
+        return new Int2(clz(new ULong(value.x)), clz(new ULong(value.y)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int3 clz(ULong3 value) {
+        return new Int3(clz(new ULong(value.x)), clz(new ULong(value.y)), clz(new ULong(value.z)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int4 clz(ULong4 value) {
+        return new Int4(clz(new ULong(value.x)), clz(new ULong(value.y)), clz(new ULong(value.z)), clz(new ULong(value.w)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int8 clz(UInt8 value) {
+        return new Int8(clz(new UInt(value.s0)), clz(new UInt(value.s1)), clz(new UInt(value.s2)), clz(new UInt(value.s3)),
+                clz(new UInt(value.s4)), clz(new UInt(value.s5)), clz(new UInt(value.s6)), clz(new UInt(value.s7)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int16 clz(UInt16 value) {
+        return new Int16(clz(new UInt(value.s0)), clz(new UInt(value.s1)), clz(new UInt(value.s2)), clz(new UInt(value.s3)),
+                clz(new UInt(value.s4)), clz(new UInt(value.s5)), clz(new UInt(value.s6)), clz(new UInt(value.s7)),
+                clz(new UInt(value.s8)), clz(new UInt(value.s9)), clz(new UInt(value.sa)), clz(new UInt(value.sb)),
+                clz(new UInt(value.sc)), clz(new UInt(value.sd)), clz(new UInt(value.se)), clz(new UInt(value.sf)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int8 clz(ULong8 value) {
+        return new Int8(clz(new ULong(value.s0)), clz(new ULong(value.s1)), clz(new ULong(value.s2)), clz(new ULong(value.s3)),
+                clz(new ULong(value.s4)), clz(new ULong(value.s5)), clz(new ULong(value.s6)), clz(new ULong(value.s7)));
+    }
+
+    @GPUIntrinsic(code = "clz({0})")
+    public static Int16 clz(ULong16 value) {
+        return new Int16(clz(new ULong(value.s0)), clz(new ULong(value.s1)), clz(new ULong(value.s2)), clz(new ULong(value.s3)),
+                clz(new ULong(value.s4)), clz(new ULong(value.s5)), clz(new ULong(value.s6)), clz(new ULong(value.s7)),
+                clz(new ULong(value.s8)), clz(new ULong(value.s9)), clz(new ULong(value.sa)), clz(new ULong(value.sb)),
+                clz(new ULong(value.sc)), clz(new ULong(value.sd)), clz(new ULong(value.se)), clz(new ULong(value.sf)));
+    }
+
     @GPUIntrinsic(name = "popcount")
     public static int popcount(int value) {
         return Integer.bitCount(value);
@@ -6434,6 +7108,74 @@ public final class GPU {
         return Long.bitCount(value);
     }
 
+    @GPUIntrinsic(code = "popcount({0})")
+    public static int popcount(UInt value) {
+        return Integer.bitCount(value.value);
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static int popcount(ULong value) {
+        return Long.bitCount(value.value);
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int2 popcount(UInt2 value) {
+        return new Int2(popcount(new UInt(value.x)), popcount(new UInt(value.y)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int3 popcount(UInt3 value) {
+        return new Int3(popcount(new UInt(value.x)), popcount(new UInt(value.y)), popcount(new UInt(value.z)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int4 popcount(UInt4 value) {
+        return new Int4(popcount(new UInt(value.x)), popcount(new UInt(value.y)), popcount(new UInt(value.z)), popcount(new UInt(value.w)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int2 popcount(ULong2 value) {
+        return new Int2(popcount(new ULong(value.x)), popcount(new ULong(value.y)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int3 popcount(ULong3 value) {
+        return new Int3(popcount(new ULong(value.x)), popcount(new ULong(value.y)), popcount(new ULong(value.z)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int4 popcount(ULong4 value) {
+        return new Int4(popcount(new ULong(value.x)), popcount(new ULong(value.y)), popcount(new ULong(value.z)), popcount(new ULong(value.w)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int8 popcount(UInt8 value) {
+        return new Int8(popcount(new UInt(value.s0)), popcount(new UInt(value.s1)), popcount(new UInt(value.s2)), popcount(new UInt(value.s3)),
+                popcount(new UInt(value.s4)), popcount(new UInt(value.s5)), popcount(new UInt(value.s6)), popcount(new UInt(value.s7)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int16 popcount(UInt16 value) {
+        return new Int16(popcount(new UInt(value.s0)), popcount(new UInt(value.s1)), popcount(new UInt(value.s2)), popcount(new UInt(value.s3)),
+                popcount(new UInt(value.s4)), popcount(new UInt(value.s5)), popcount(new UInt(value.s6)), popcount(new UInt(value.s7)),
+                popcount(new UInt(value.s8)), popcount(new UInt(value.s9)), popcount(new UInt(value.sa)), popcount(new UInt(value.sb)),
+                popcount(new UInt(value.sc)), popcount(new UInt(value.sd)), popcount(new UInt(value.se)), popcount(new UInt(value.sf)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int8 popcount(ULong8 value) {
+        return new Int8(popcount(new ULong(value.s0)), popcount(new ULong(value.s1)), popcount(new ULong(value.s2)), popcount(new ULong(value.s3)),
+                popcount(new ULong(value.s4)), popcount(new ULong(value.s5)), popcount(new ULong(value.s6)), popcount(new ULong(value.s7)));
+    }
+
+    @GPUIntrinsic(code = "popcount({0})")
+    public static Int16 popcount(ULong16 value) {
+        return new Int16(popcount(new ULong(value.s0)), popcount(new ULong(value.s1)), popcount(new ULong(value.s2)), popcount(new ULong(value.s3)),
+                popcount(new ULong(value.s4)), popcount(new ULong(value.s5)), popcount(new ULong(value.s6)), popcount(new ULong(value.s7)),
+                popcount(new ULong(value.s8)), popcount(new ULong(value.s9)), popcount(new ULong(value.sa)), popcount(new ULong(value.sb)),
+                popcount(new ULong(value.sc)), popcount(new ULong(value.sd)), popcount(new ULong(value.se)), popcount(new ULong(value.sf)));
+    }
+
     @GPUIntrinsic(name = "rotate")
     public static int rotate(int value, int amount) {
         return Integer.rotateLeft(value, amount);
@@ -6442,6 +7184,244 @@ public final class GPU {
     @GPUIntrinsic(name = "rotate")
     public static long rotate(long value, long amount) {
         return Long.rotateLeft(value, (int) amount);
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UInt rotate(UInt value, UInt amount) {
+        return new UInt(Integer.rotateLeft(value.value, amount.value));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static ULong rotate(ULong value, ULong amount) {
+        return new ULong(Long.rotateLeft(value.value, (int) amount.value));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UInt2 rotate(UInt2 value, UInt2 amount) {
+        return new UInt2(rotate(new UInt(value.x), new UInt(amount.x)).value,
+                rotate(new UInt(value.y), new UInt(amount.y)).value);
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UInt3 rotate(UInt3 value, UInt3 amount) {
+        return new UInt3(rotate(new UInt(value.x), new UInt(amount.x)).value,
+                rotate(new UInt(value.y), new UInt(amount.y)).value,
+                rotate(new UInt(value.z), new UInt(amount.z)).value);
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UInt4 rotate(UInt4 value, UInt4 amount) {
+        return new UInt4(rotate(new UInt(value.x), new UInt(amount.x)).value,
+                rotate(new UInt(value.y), new UInt(amount.y)).value,
+                rotate(new UInt(value.z), new UInt(amount.z)).value,
+                rotate(new UInt(value.w), new UInt(amount.w)).value);
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static ULong2 rotate(ULong2 value, ULong2 amount) {
+        return new ULong2(rotate(new ULong(value.x), new ULong(amount.x)).value,
+                rotate(new ULong(value.y), new ULong(amount.y)).value);
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static ULong3 rotate(ULong3 value, ULong3 amount) {
+        return new ULong3(rotate(new ULong(value.x), new ULong(amount.x)).value,
+                rotate(new ULong(value.y), new ULong(amount.y)).value,
+                rotate(new ULong(value.z), new ULong(amount.z)).value);
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static ULong4 rotate(ULong4 value, ULong4 amount) {
+        return new ULong4(rotate(new ULong(value.x), new ULong(amount.x)).value,
+                rotate(new ULong(value.y), new ULong(amount.y)).value,
+                rotate(new ULong(value.z), new ULong(amount.z)).value,
+                rotate(new ULong(value.w), new ULong(amount.w)).value);
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UByte2 rotate(UByte2 value, UByte2 amount) {
+        return new UByte2((byte) rotate(Byte.toUnsignedInt(value.x), Byte.toUnsignedInt(amount.x)),
+                (byte) rotate(Byte.toUnsignedInt(value.y), Byte.toUnsignedInt(amount.y)));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UByte3 rotate(UByte3 value, UByte3 amount) {
+        return new UByte3((byte) rotate(Byte.toUnsignedInt(value.x), Byte.toUnsignedInt(amount.x)),
+                (byte) rotate(Byte.toUnsignedInt(value.y), Byte.toUnsignedInt(amount.y)),
+                (byte) rotate(Byte.toUnsignedInt(value.z), Byte.toUnsignedInt(amount.z)));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UByte4 rotate(UByte4 value, UByte4 amount) {
+        return new UByte4((byte) rotate(Byte.toUnsignedInt(value.x), Byte.toUnsignedInt(amount.x)),
+                (byte) rotate(Byte.toUnsignedInt(value.y), Byte.toUnsignedInt(amount.y)),
+                (byte) rotate(Byte.toUnsignedInt(value.z), Byte.toUnsignedInt(amount.z)),
+                (byte) rotate(Byte.toUnsignedInt(value.w), Byte.toUnsignedInt(amount.w)));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UShort2 rotate(UShort2 value, UShort2 amount) {
+        return new UShort2((short) rotate(Short.toUnsignedInt(value.x), Short.toUnsignedInt(amount.x)),
+                (short) rotate(Short.toUnsignedInt(value.y), Short.toUnsignedInt(amount.y)));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UShort3 rotate(UShort3 value, UShort3 amount) {
+        return new UShort3((short) rotate(Short.toUnsignedInt(value.x), Short.toUnsignedInt(amount.x)),
+                (short) rotate(Short.toUnsignedInt(value.y), Short.toUnsignedInt(amount.y)),
+                (short) rotate(Short.toUnsignedInt(value.z), Short.toUnsignedInt(amount.z)));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UShort4 rotate(UShort4 value, UShort4 amount) {
+        return new UShort4((short) rotate(Short.toUnsignedInt(value.x), Short.toUnsignedInt(amount.x)),
+                (short) rotate(Short.toUnsignedInt(value.y), Short.toUnsignedInt(amount.y)),
+                (short) rotate(Short.toUnsignedInt(value.z), Short.toUnsignedInt(amount.z)),
+                (short) rotate(Short.toUnsignedInt(value.w), Short.toUnsignedInt(amount.w)));
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UInt8 rotate(UInt8 value, UInt8 amount) {
+        return new UInt8(
+                rotate(new UInt(value.s0), new UInt(amount.s0)).value,
+                rotate(new UInt(value.s1), new UInt(amount.s1)).value,
+                rotate(new UInt(value.s2), new UInt(amount.s2)).value,
+                rotate(new UInt(value.s3), new UInt(amount.s3)).value,
+                rotate(new UInt(value.s4), new UInt(amount.s4)).value,
+                rotate(new UInt(value.s5), new UInt(amount.s5)).value,
+                rotate(new UInt(value.s6), new UInt(amount.s6)).value,
+                rotate(new UInt(value.s7), new UInt(amount.s7)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UInt16 rotate(UInt16 value, UInt16 amount) {
+        return new UInt16(
+                rotate(new UInt(value.s0), new UInt(amount.s0)).value,
+                rotate(new UInt(value.s1), new UInt(amount.s1)).value,
+                rotate(new UInt(value.s2), new UInt(amount.s2)).value,
+                rotate(new UInt(value.s3), new UInt(amount.s3)).value,
+                rotate(new UInt(value.s4), new UInt(amount.s4)).value,
+                rotate(new UInt(value.s5), new UInt(amount.s5)).value,
+                rotate(new UInt(value.s6), new UInt(amount.s6)).value,
+                rotate(new UInt(value.s7), new UInt(amount.s7)).value,
+                rotate(new UInt(value.s8), new UInt(amount.s8)).value,
+                rotate(new UInt(value.s9), new UInt(amount.s9)).value,
+                rotate(new UInt(value.sa), new UInt(amount.sa)).value,
+                rotate(new UInt(value.sb), new UInt(amount.sb)).value,
+                rotate(new UInt(value.sc), new UInt(amount.sc)).value,
+                rotate(new UInt(value.sd), new UInt(amount.sd)).value,
+                rotate(new UInt(value.se), new UInt(amount.se)).value,
+                rotate(new UInt(value.sf), new UInt(amount.sf)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static ULong8 rotate(ULong8 value, ULong8 amount) {
+        return new ULong8(
+                rotate(new ULong(value.s0), new ULong(amount.s0)).value,
+                rotate(new ULong(value.s1), new ULong(amount.s1)).value,
+                rotate(new ULong(value.s2), new ULong(amount.s2)).value,
+                rotate(new ULong(value.s3), new ULong(amount.s3)).value,
+                rotate(new ULong(value.s4), new ULong(amount.s4)).value,
+                rotate(new ULong(value.s5), new ULong(amount.s5)).value,
+                rotate(new ULong(value.s6), new ULong(amount.s6)).value,
+                rotate(new ULong(value.s7), new ULong(amount.s7)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static ULong16 rotate(ULong16 value, ULong16 amount) {
+        return new ULong16(
+                rotate(new ULong(value.s0), new ULong(amount.s0)).value,
+                rotate(new ULong(value.s1), new ULong(amount.s1)).value,
+                rotate(new ULong(value.s2), new ULong(amount.s2)).value,
+                rotate(new ULong(value.s3), new ULong(amount.s3)).value,
+                rotate(new ULong(value.s4), new ULong(amount.s4)).value,
+                rotate(new ULong(value.s5), new ULong(amount.s5)).value,
+                rotate(new ULong(value.s6), new ULong(amount.s6)).value,
+                rotate(new ULong(value.s7), new ULong(amount.s7)).value,
+                rotate(new ULong(value.s8), new ULong(amount.s8)).value,
+                rotate(new ULong(value.s9), new ULong(amount.s9)).value,
+                rotate(new ULong(value.sa), new ULong(amount.sa)).value,
+                rotate(new ULong(value.sb), new ULong(amount.sb)).value,
+                rotate(new ULong(value.sc), new ULong(amount.sc)).value,
+                rotate(new ULong(value.sd), new ULong(amount.sd)).value,
+                rotate(new ULong(value.se), new ULong(amount.se)).value,
+                rotate(new ULong(value.sf), new ULong(amount.sf)).value
+        );
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UByte8 rotate(UByte8 value, UByte8 amount) {
+        return new UByte8(
+                (byte) rotate(Byte.toUnsignedInt(value.s0), Byte.toUnsignedInt(amount.s0)),
+                (byte) rotate(Byte.toUnsignedInt(value.s1), Byte.toUnsignedInt(amount.s1)),
+                (byte) rotate(Byte.toUnsignedInt(value.s2), Byte.toUnsignedInt(amount.s2)),
+                (byte) rotate(Byte.toUnsignedInt(value.s3), Byte.toUnsignedInt(amount.s3)),
+                (byte) rotate(Byte.toUnsignedInt(value.s4), Byte.toUnsignedInt(amount.s4)),
+                (byte) rotate(Byte.toUnsignedInt(value.s5), Byte.toUnsignedInt(amount.s5)),
+                (byte) rotate(Byte.toUnsignedInt(value.s6), Byte.toUnsignedInt(amount.s6)),
+                (byte) rotate(Byte.toUnsignedInt(value.s7), Byte.toUnsignedInt(amount.s7))
+        );
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UByte16 rotate(UByte16 value, UByte16 amount) {
+        return new UByte16(
+                (byte) rotate(Byte.toUnsignedInt(value.s0), Byte.toUnsignedInt(amount.s0)),
+                (byte) rotate(Byte.toUnsignedInt(value.s1), Byte.toUnsignedInt(amount.s1)),
+                (byte) rotate(Byte.toUnsignedInt(value.s2), Byte.toUnsignedInt(amount.s2)),
+                (byte) rotate(Byte.toUnsignedInt(value.s3), Byte.toUnsignedInt(amount.s3)),
+                (byte) rotate(Byte.toUnsignedInt(value.s4), Byte.toUnsignedInt(amount.s4)),
+                (byte) rotate(Byte.toUnsignedInt(value.s5), Byte.toUnsignedInt(amount.s5)),
+                (byte) rotate(Byte.toUnsignedInt(value.s6), Byte.toUnsignedInt(amount.s6)),
+                (byte) rotate(Byte.toUnsignedInt(value.s7), Byte.toUnsignedInt(amount.s7)),
+                (byte) rotate(Byte.toUnsignedInt(value.s8), Byte.toUnsignedInt(amount.s8)),
+                (byte) rotate(Byte.toUnsignedInt(value.s9), Byte.toUnsignedInt(amount.s9)),
+                (byte) rotate(Byte.toUnsignedInt(value.sa), Byte.toUnsignedInt(amount.sa)),
+                (byte) rotate(Byte.toUnsignedInt(value.sb), Byte.toUnsignedInt(amount.sb)),
+                (byte) rotate(Byte.toUnsignedInt(value.sc), Byte.toUnsignedInt(amount.sc)),
+                (byte) rotate(Byte.toUnsignedInt(value.sd), Byte.toUnsignedInt(amount.sd)),
+                (byte) rotate(Byte.toUnsignedInt(value.se), Byte.toUnsignedInt(amount.se)),
+                (byte) rotate(Byte.toUnsignedInt(value.sf), Byte.toUnsignedInt(amount.sf))
+        );
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UShort8 rotate(UShort8 value, UShort8 amount) {
+        return new UShort8(
+                (short) rotate(Short.toUnsignedInt(value.s0), Short.toUnsignedInt(amount.s0)),
+                (short) rotate(Short.toUnsignedInt(value.s1), Short.toUnsignedInt(amount.s1)),
+                (short) rotate(Short.toUnsignedInt(value.s2), Short.toUnsignedInt(amount.s2)),
+                (short) rotate(Short.toUnsignedInt(value.s3), Short.toUnsignedInt(amount.s3)),
+                (short) rotate(Short.toUnsignedInt(value.s4), Short.toUnsignedInt(amount.s4)),
+                (short) rotate(Short.toUnsignedInt(value.s5), Short.toUnsignedInt(amount.s5)),
+                (short) rotate(Short.toUnsignedInt(value.s6), Short.toUnsignedInt(amount.s6)),
+                (short) rotate(Short.toUnsignedInt(value.s7), Short.toUnsignedInt(amount.s7))
+        );
+    }
+
+    @GPUIntrinsic(code = "rotate({0}, {1})")
+    public static UShort16 rotate(UShort16 value, UShort16 amount) {
+        return new UShort16(
+                (short) rotate(Short.toUnsignedInt(value.s0), Short.toUnsignedInt(amount.s0)),
+                (short) rotate(Short.toUnsignedInt(value.s1), Short.toUnsignedInt(amount.s1)),
+                (short) rotate(Short.toUnsignedInt(value.s2), Short.toUnsignedInt(amount.s2)),
+                (short) rotate(Short.toUnsignedInt(value.s3), Short.toUnsignedInt(amount.s3)),
+                (short) rotate(Short.toUnsignedInt(value.s4), Short.toUnsignedInt(amount.s4)),
+                (short) rotate(Short.toUnsignedInt(value.s5), Short.toUnsignedInt(amount.s5)),
+                (short) rotate(Short.toUnsignedInt(value.s6), Short.toUnsignedInt(amount.s6)),
+                (short) rotate(Short.toUnsignedInt(value.s7), Short.toUnsignedInt(amount.s7)),
+                (short) rotate(Short.toUnsignedInt(value.s8), Short.toUnsignedInt(amount.s8)),
+                (short) rotate(Short.toUnsignedInt(value.s9), Short.toUnsignedInt(amount.s9)),
+                (short) rotate(Short.toUnsignedInt(value.sa), Short.toUnsignedInt(amount.sa)),
+                (short) rotate(Short.toUnsignedInt(value.sb), Short.toUnsignedInt(amount.sb)),
+                (short) rotate(Short.toUnsignedInt(value.sc), Short.toUnsignedInt(amount.sc)),
+                (short) rotate(Short.toUnsignedInt(value.sd), Short.toUnsignedInt(amount.sd)),
+                (short) rotate(Short.toUnsignedInt(value.se), Short.toUnsignedInt(amount.se)),
+                (short) rotate(Short.toUnsignedInt(value.sf), Short.toUnsignedInt(amount.sf))
+        );
     }
 
     @GPUIntrinsic(name = "get_global_id")

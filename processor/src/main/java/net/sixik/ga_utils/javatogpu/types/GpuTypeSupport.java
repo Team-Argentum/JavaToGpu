@@ -69,6 +69,27 @@ public final class GpuTypeSupport {
         registerPointerAlias(pointerType.getName(), descriptor);
     }
 
+    public static void registerPointerType(
+            String simpleName,
+            String qualifiedName,
+            String valueType,
+            String addressSpace
+    ) {
+        if (simpleName == null || simpleName.isBlank()) {
+            throw new IllegalArgumentException("simpleName cannot be blank");
+        }
+        if (valueType == null || valueType.isBlank()) {
+            throw new IllegalArgumentException("valueType cannot be blank");
+        }
+        if (addressSpace == null || addressSpace.isBlank()) {
+            throw new IllegalArgumentException("addressSpace cannot be blank");
+        }
+
+        PointerDescriptor descriptor = new PointerDescriptor(valueType, addressSpace);
+        registerPointerAlias(simpleName, descriptor);
+        registerPointerAlias(qualifiedName, descriptor);
+    }
+
     public static void registerAnnotatedScalarAliasType(Class<?> scalarAliasType) {
         if (scalarAliasType == null) {
             throw new IllegalArgumentException("scalarAliasType cannot be null");
@@ -114,6 +135,42 @@ public final class GpuTypeSupport {
         );
         registerVectorAlias(vectorType.getSimpleName(), descriptor);
         registerVectorAlias(vectorType.getName(), descriptor);
+    }
+
+    public static void registerVectorType(
+            String simpleName,
+            String qualifiedName,
+            String openClTypeName,
+            String componentType,
+            List<String> fieldNames,
+            int storageWidth
+    ) {
+        if (simpleName == null || simpleName.isBlank()) {
+            throw new IllegalArgumentException("simpleName cannot be blank");
+        }
+        if (openClTypeName == null || openClTypeName.isBlank()) {
+            throw new IllegalArgumentException("openClTypeName cannot be blank");
+        }
+        if (componentType == null || componentType.isBlank()) {
+            throw new IllegalArgumentException("componentType cannot be blank");
+        }
+        if (fieldNames == null || fieldNames.isEmpty()) {
+            throw new IllegalArgumentException("fieldNames must not be empty");
+        }
+
+        int resolvedStorageWidth = storageWidth > 0 ? storageWidth : defaultVectorStorageWidth(fieldNames.size());
+        if (resolvedStorageWidth < fieldNames.size()) {
+            throw new IllegalArgumentException("storageWidth cannot be smaller than the declared field count: " + simpleName);
+        }
+
+        VectorDescriptor descriptor = new VectorDescriptor(
+                openClTypeName,
+                componentType,
+                List.copyOf(fieldNames),
+                resolvedStorageWidth
+        );
+        registerVectorAlias(simpleName, descriptor);
+        registerVectorAlias(qualifiedName, descriptor);
     }
 
     public static boolean isSupportedVectorClassName(String className) {
@@ -331,6 +388,14 @@ public final class GpuTypeSupport {
         return descriptor.fieldNames();
     }
 
+    public static String vectorCanonicalSimpleName(String javaType) {
+        String declaredType = declaredType(javaType);
+        if (!isSupportedVectorType(declaredType)) {
+            throw new IllegalArgumentException("Unsupported vector type: " + javaType);
+        }
+        return simpleTypeName(declaredType);
+    }
+
     public static int vectorByteSize(String javaType) {
         return vectorStorageWidth(javaType) * scalarByteSize(vectorComponentType(javaType));
     }
@@ -349,6 +414,14 @@ public final class GpuTypeSupport {
             throw new IllegalArgumentException("Unsupported pointer type: " + javaType);
         }
         return descriptor.addressSpace();
+    }
+
+    public static String pointerCanonicalSimpleName(String javaType) {
+        String declaredType = declaredType(javaType);
+        if (!isSupportedPointerType(declaredType)) {
+            throw new IllegalArgumentException("Unsupported pointer type: " + javaType);
+        }
+        return simpleTypeName(declaredType);
     }
 
     public static boolean isAddressSpacePointerType(String javaType) {

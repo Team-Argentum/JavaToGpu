@@ -3990,4 +3990,188 @@ class GpuFrontendServiceTest {
 
         assertThrows(GpuValidationException.class, () -> service.parseAndValidate(methodSource));
     }
+
+    @Test
+    void parsesValidatesLowersAndEmitsAdditionalUnsignedIntegerCommonBuiltins() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] output) {
+                    int id = GPU.get_global_id(0);
+                    UShort hi = new UShort((short) 1);
+                    UShort lo = new UShort((short) 2);
+                    UInt packed = GPU.upsample(hi, lo);
+                    UInt mask = new UInt(-1);
+                    UInt chosen = GPU.select(new UInt(10), packed, mask);
+                    UInt mixed = GPU.bitselect(chosen, new UInt(255), new UInt(15));
+                    UInt rotated = GPU.rotate(mixed, new UInt(3));
+                    output[id] = GPU.popcount(rotated) + GPU.clz(rotated);
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global int* output) {
+                    int id = get_global_id(0);
+                    ushort hi = ((ushort) ((short) 1));
+                    ushort lo = ((ushort) ((short) 2));
+                    uint packed = upsample(hi, lo);
+                    uint mask = ((uint) (-1));
+                    uint chosen = select(((uint) 10), packed, mask);
+                    uint mixed = bitselect(chosen, ((uint) 255), ((uint) 15));
+                    uint rotated = rotate(mixed, ((uint) 3));
+                    output[id] = (popcount(rotated) + clz(rotated));
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsUnsignedVectorMaskBuiltins() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] output) {
+                    int id = GPU.get_global_id(0);
+                    UInt2 left = new UInt2(1, 2);
+                    UInt2 right = new UInt2(10, 20);
+                    UInt2 mask = new UInt2(-1, 0);
+                    UInt2 selected = GPU.select(left, right, mask);
+                    UInt2 mixed = GPU.bitselect(selected, new UInt2(7, 8), new UInt2(3, 12));
+                    UInt2 rotated = GPU.rotate(mixed, new UInt2(1, 2));
+                    output[id] = rotated.x + rotated.y;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global int* output) {
+                    int id = get_global_id(0);
+                    uint2 left = (uint2)(1, 2);
+                    uint2 right = (uint2)(10, 20);
+                    uint2 mask = (uint2)((-1), 0);
+                    uint2 selected = select(left, right, mask);
+                    uint2 mixed = bitselect(selected, (uint2)(7, 8), (uint2)(3, 12));
+                    uint2 rotated = rotate(mixed, (uint2)(1, 2));
+                    output[id] = (rotated.x + rotated.y);
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsWideUnsignedVectorMaskAndBitBuiltins() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] output) {
+                    int id = GPU.get_global_id(0);
+                    UInt8 left = new UInt8(1, 2, 3, 4, 5, 6, 7, 8);
+                    UInt8 right = new UInt8(11, 12, 13, 14, 15, 16, 17, 18);
+                    UInt8 mask = new UInt8(-1, 0, -1, 0, -1, 0, -1, 0);
+                    UInt8 selected = GPU.select(left, right, mask);
+                    UInt8 mixed = GPU.bitselect(selected, new UInt8(3), new UInt8(1, 2, 4, 8, 16, 32, 64, 128));
+                    UInt8 rotated = GPU.rotate(mixed, new UInt8(1));
+                    Int8 counts = GPU.popcount(rotated);
+                    Int8 zeros = GPU.clz(rotated);
+                    output[id] = counts.s0 + counts.s7 + zeros.s0 + zeros.s7;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global int* output) {
+                    int id = get_global_id(0);
+                    uint8 left = (uint8)(1, 2, 3, 4, 5, 6, 7, 8);
+                    uint8 right = (uint8)(11, 12, 13, 14, 15, 16, 17, 18);
+                    uint8 mask = (uint8)((-1), 0, (-1), 0, (-1), 0, (-1), 0);
+                    uint8 selected = select(left, right, mask);
+                    uint8 mixed = bitselect(selected, (uint8)(3), (uint8)(1, 2, 4, 8, 16, 32, 64, 128));
+                    uint8 rotated = rotate(mixed, (uint8)(1));
+                    int8 counts = popcount(rotated);
+                    int8 zeros = clz(rotated);
+                    output[id] = (((counts.s0 + counts.s7) + zeros.s0) + zeros.s7);
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsUnsignedNarrowVectorMaskBuiltins() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] output) {
+                    int id = GPU.get_global_id(0);
+                    UByte4 left = new UByte4((byte) 1, (byte) 2, (byte) 3, (byte) 4);
+                    UByte4 right = new UByte4((byte) 9, (byte) 8, (byte) 7, (byte) 6);
+                    UByte4 mask = new UByte4((byte) -1, (byte) 0, (byte) -1, (byte) 0);
+                    UByte4 selected = GPU.select(left, right, mask);
+                    UByte4 mixed = GPU.bitselect(selected, new UByte4((byte) 3), new UByte4((byte) 1, (byte) 2, (byte) 4, (byte) 8));
+                    UByte4 rotated = GPU.rotate(mixed, new UByte4((byte) 1));
+                    UShort4 low = new UShort4((short) 10, (short) 20, (short) 30, (short) 40);
+                    UShort4 high = new UShort4((short) 1, (short) 2, (short) 3, (short) 4);
+                    UShort4 ushortMask = new UShort4((short) -1, (short) 0, (short) -1, (short) 0);
+                    UShort4 merged = GPU.bitselect(low, high, ushortMask);
+                    UShort4 turned = GPU.rotate(merged, new UShort4((short) 1));
+                    output[id] = rotated.x + rotated.z + turned.x + turned.z;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global int* output) {
+                    int id = get_global_id(0);
+                    uchar4 left = (uchar4)(((char) 1), ((char) 2), ((char) 3), ((char) 4));
+                    uchar4 right = (uchar4)(((char) 9), ((char) 8), ((char) 7), ((char) 6));
+                    uchar4 mask = (uchar4)(((char) (-1)), ((char) 0), ((char) (-1)), ((char) 0));
+                    uchar4 selected = select(left, right, mask);
+                    uchar4 mixed = bitselect(selected, (uchar4)(((char) 3)), (uchar4)(((char) 1), ((char) 2), ((char) 4), ((char) 8)));
+                    uchar4 rotated = rotate(mixed, (uchar4)(((char) 1)));
+                    ushort4 low = (ushort4)(((short) 10), ((short) 20), ((short) 30), ((short) 40));
+                    ushort4 high = (ushort4)(((short) 1), ((short) 2), ((short) 3), ((short) 4));
+                    ushort4 ushortMask = (ushort4)(((short) (-1)), ((short) 0), ((short) (-1)), ((short) 0));
+                    ushort4 merged = bitselect(low, high, ushortMask);
+                    ushort4 turned = rotate(merged, (ushort4)(((short) 1)));
+                    output[id] = (((rotated.x + rotated.z) + turned.x) + turned.z);
+                }""", kernel);
+    }
+
+    @Test
+    void parsesValidatesLowersAndEmitsWideUnsignedIntegerVectorConversions() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal int[] output) {
+                    int id = GPU.get_global_id(0);
+                    UInt8 a = new UInt8(1, 2, 3, 4, 5, 6, 7, 8);
+                    UInt16 b = new UInt16(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+                    ULong8 c = new ULong8(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L);
+                    ULong16 d = new ULong16(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L);
+                    Int8 ai = GPU.convert_int(a);
+                    Int16 bi = GPU.convert_int_sat(b);
+                    Int8 ci = GPU.convert_int(c);
+                    Int16 di = GPU.convert_int_sat(d);
+                    UInt8 au = GPU.convert_uint(ai);
+                    UInt16 bu = GPU.convert_uint(bi);
+                    output[id] = ai.s0 + ai.s7 + bi.s0 + bi.sf + ci.s0 + ci.s7 + di.s0 + di.sf + au.s0 + au.s7 + bu.s0 + bu.sf;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        String kernel = service.parseValidateLowerAndEmit(methodSource);
+
+        assertEquals("""
+                __kernel void jtg_kernel(__global int* output) {
+                    int id = get_global_id(0);
+                    uint8 a = (uint8)(1, 2, 3, 4, 5, 6, 7, 8);
+                    uint16 b = (uint16)(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+                    ulong8 c = (ulong8)(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L);
+                    ulong16 d = (ulong16)(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L);
+                    int8 ai = convert_int(a);
+                    int16 bi = convert_int_sat(b);
+                    int8 ci = convert_int(c);
+                    int16 di = convert_int_sat(d);
+                    uint8 au = convert_uint(ai);
+                    uint16 bu = convert_uint(bi);
+                    output[id] = (((((((((((ai.s0 + ai.s7) + bi.s0) + bi.sf) + ci.s0) + ci.s7) + di.s0) + di.sf) + au.s0) + au.s7) + bu.s0) + bu.sf);
+                }""", kernel);
+    }
 }

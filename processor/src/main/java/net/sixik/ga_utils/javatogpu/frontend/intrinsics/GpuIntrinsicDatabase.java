@@ -7,6 +7,10 @@ import net.sixik.ga_utils.javatogpu.backend.GpuBackendSupport;
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUPointerOperator;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUPointerType;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUVectorOperator;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUVectorType;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
@@ -122,6 +126,14 @@ public final class GpuIntrinsicDatabase {
         ensureIntrinsicOwnerLoaded(ownerType);
         List<GpuIntrinsic> matches = intrinsics.get(key(ownerType, javaName, argumentTypes.size()));
         if (matches == null || matches.isEmpty()) {
+            registerVectorOperatorIntrinsic(ownerType, javaName, argumentTypes);
+            matches = intrinsics.get(key(ownerType, javaName, argumentTypes.size()));
+        }
+        if (matches == null || matches.isEmpty()) {
+            registerPointerOperatorIntrinsic(ownerType, javaName, argumentTypes);
+            matches = intrinsics.get(key(ownerType, javaName, argumentTypes.size()));
+        }
+        if (matches == null || matches.isEmpty()) {
             throw new IllegalArgumentException("Unknown GPU intrinsic: " + ownerType + "." + javaName + "/" + argumentTypes.size());
         }
         return matches.stream()
@@ -132,6 +144,73 @@ public final class GpuIntrinsicDatabase {
                         "Unknown GPU intrinsic overload: " + ownerType + "." + javaName + argumentTypes
                                 + "; check the supported overloads for that intrinsic or cast arguments to a supported GPU scalar/vector type"
                 ));
+    }
+
+    private void registerVectorOperatorIntrinsic(String ownerType, String javaName, List<String> argumentTypes) {
+        if (argumentTypes.size() != 1 || !GpuTypeSupport.isSupportedVectorType(ownerType)) {
+            return;
+        }
+        String argumentType = argumentTypes.get(0);
+        if (!GpuTypeSupport.isSupportedVectorType(argumentType)
+                || !GpuTypeSupport.openClVectorTypeName(ownerType).equals(GpuTypeSupport.openClVectorTypeName(argumentType))) {
+            return;
+        }
+
+        String operator = switch (javaName) {
+            case "add" -> "+";
+            case "sub" -> "-";
+            case "mul" -> "*";
+            case "div" -> "/";
+            default -> "";
+        };
+        if (operator.isBlank()) {
+            return;
+        }
+
+        register(intrinsics, new GpuIntrinsic(
+                GpuTypeSupport.vectorCanonicalSimpleName(ownerType),
+                ownerType.contains(".") ? ownerType : "",
+                javaName,
+                1,
+                true,
+                GpuIntrinsicKind.MATH,
+                javaName,
+                "({this} " + operator + " {0})",
+                GpuTypeSupport.vectorCanonicalSimpleName(ownerType),
+                List.of(GpuTypeSupport.vectorCanonicalSimpleName(argumentType))
+        ));
+    }
+
+    private void registerPointerOperatorIntrinsic(String ownerType, String javaName, List<String> argumentTypes) {
+        if (argumentTypes.size() != 1 || !GpuTypeSupport.isSupportedPointerType(ownerType)) {
+            return;
+        }
+        String argumentType = argumentTypes.get(0);
+        if (!"int".equals(argumentType) && !"long".equals(argumentType)) {
+            return;
+        }
+
+        String operator = switch (javaName) {
+            case "add" -> "+";
+            case "sub" -> "-";
+            default -> "";
+        };
+        if (operator.isBlank()) {
+            return;
+        }
+
+        register(intrinsics, new GpuIntrinsic(
+                GpuTypeSupport.pointerCanonicalSimpleName(ownerType),
+                ownerType.contains(".") ? ownerType : "",
+                javaName,
+                1,
+                true,
+                GpuIntrinsicKind.MATH,
+                javaName,
+                "(({this}) " + operator + " ({0}))",
+                GpuTypeSupport.pointerCanonicalSimpleName(ownerType),
+                List.of(argumentType)
+        ));
     }
 
     public boolean isAllowedAllocationType(String typeName) {
@@ -174,6 +253,58 @@ public final class GpuIntrinsicDatabase {
                 continue;
             }
             register(values, toIntrinsic(ownerType, method, annotation));
+        }
+        registerVectorOperatorIntrinsics(values, ownerType);
+        registerPointerOperatorIntrinsics(values, ownerType);
+    }
+
+    private static void registerVectorOperatorIntrinsics(Map<String, List<GpuIntrinsic>> values, Class<?> ownerType) {
+        GPUVectorType vectorType = ownerType.getAnnotation(GPUVectorType.class);
+        if (vectorType == null || vectorType.operators().length == 0) {
+            return;
+        }
+
+        for (GPUVectorOperator operator : vectorType.operators()) {
+            if (operator.method().isBlank() || operator.operator().isBlank()) {
+                continue;
+            }
+            register(values, new GpuIntrinsic(
+                    ownerType.getSimpleName(),
+                    ownerType.getName(),
+                    operator.method(),
+                    1,
+                    true,
+                    GpuIntrinsicKind.MATH,
+                    operator.method(),
+                    "({this} " + operator.operator().trim() + " {0})",
+                    ownerType.getSimpleName(),
+                    List.of(ownerType.getSimpleName())
+            ));
+        }
+    }
+
+    private static void registerPointerOperatorIntrinsics(Map<String, List<GpuIntrinsic>> values, Class<?> ownerType) {
+        GPUPointerType pointerType = ownerType.getAnnotation(GPUPointerType.class);
+        if (pointerType == null || pointerType.operators().length == 0) {
+            return;
+        }
+
+        for (GPUPointerOperator operator : pointerType.operators()) {
+            if (operator.method().isBlank() || operator.operator().isBlank()) {
+                continue;
+            }
+            register(values, new GpuIntrinsic(
+                    ownerType.getSimpleName(),
+                    ownerType.getName(),
+                    operator.method(),
+                    1,
+                    true,
+                    GpuIntrinsicKind.MATH,
+                    operator.method(),
+                    "(({this}) " + operator.operator().trim() + " ({0}))",
+                    ownerType.getSimpleName(),
+                    List.of("int")
+            ));
         }
     }
 

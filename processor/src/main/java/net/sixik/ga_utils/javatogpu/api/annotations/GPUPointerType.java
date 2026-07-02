@@ -35,4 +35,15 @@ public @interface GPUPointerType {
      * Backends that recognize this pointer wrapper.
      */
     GpuBackendTarget[] backends() default {GpuBackendTarget.OPENCL};
+
+    /**
+     * Java instance methods that should be treated as pointer arithmetic.
+     *
+     * <p>The defaults cover the normal address-space pointer surface exposed by the built-in pointer wrappers.
+     * Custom pointer wrappers can override this list when they want a smaller or different API.
+     */
+    GPUPointerOperator[] operators() default {
+            @GPUPointerOperator(method = "add", operator = "+"),
+            @GPUPointerOperator(method = "sub", operator = "-")
+    };
 }
