@@ -71,7 +71,7 @@ public final class GpuIrExpressionFingerprint {
         if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
             // Include backend/template/result metadata because equal Java shape may lower differently.
             return "intrinsic(" + escape(intrinsicCall.backendName()) + "," + escape(intrinsicCall.codeTemplate()) + ","
-                    + escape(intrinsicCall.resultType()) + "," + receiverFingerprint(intrinsicCall) + ","
+                    + escape(intrinsicCall.resultType()) + "," + fingerprintTypes(intrinsicCall.argumentTypes()) + "," + receiverFingerprint(intrinsicCall) + ","
                     + intrinsicCall.arguments().stream().map(this::fingerprintPure).collect(Collectors.joining(",")) + ")";
         }
         if (expression instanceof GpuIrHelperCall helperCall) {
@@ -84,6 +84,10 @@ public final class GpuIrExpressionFingerprint {
 
     private String receiverFingerprint(GpuIrIntrinsicCall intrinsicCall) {
         return intrinsicCall.receiver() == null ? "receiver(null)" : fingerprintPure(intrinsicCall.receiver());
+    }
+
+    private String fingerprintTypes(java.util.List<String> types) {
+        return "types(" + types.stream().map(this::escape).collect(Collectors.joining(",")) + ")";
     }
 
     private String escape(String value) {

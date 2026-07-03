@@ -13,6 +13,7 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
     private final GpuIrCommonSubexpressionClassifier classifier = new GpuIrCommonSubexpressionClassifier();
     private final GpuIrCommonSubexpressionScopeClassifier scopeClassifier = new GpuIrCommonSubexpressionScopeClassifier();
     private final GpuIrCommonSubexpressionMutationGuard mutationGuard = new GpuIrCommonSubexpressionMutationGuard();
+    private final GpuIrCommonSubexpressionDominanceGuard dominanceGuard = new GpuIrCommonSubexpressionDominanceGuard();
 
     public List<GpuIrCommonSubexpressionRewritePlan> plan(GpuIrMethod method, GpuIrCommonSubexpressionReport report) {
         return planReport(method, report).plans();
@@ -49,6 +50,9 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
         }
         if (scope != GpuIrCommonSubexpressionScope.STRAIGHT_LINE) {
             return GpuIrCommonSubexpressionSkipReason.CONTROL_FLOW_BOUNDARY;
+        }
+        if (!dominanceGuard.firstOccurrenceDominatesReplacements(candidate)) {
+            return GpuIrCommonSubexpressionSkipReason.NO_DOMINATING_FIRST_OCCURRENCE;
         }
         if (!mutationGuard.isStableBetweenOccurrences(method, candidate)) {
             return GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES;

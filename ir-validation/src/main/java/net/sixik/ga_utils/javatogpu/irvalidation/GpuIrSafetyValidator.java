@@ -304,6 +304,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             state.requireNonBlank(intrinsicCall.codeTemplate(), "intrinsic code template");
             state.requireNonBlank(intrinsicCall.resultType(), "intrinsic result type");
             validateExpressionList(intrinsicCall.arguments(), state, "intrinsic argument");
+            validateIntrinsicArgumentMetadata(intrinsicCall, state);
             validateIntrinsicTemplate(intrinsicCall, state);
             validateExpression(intrinsicCall.receiver(), state);
         } else if (expression instanceof GpuIrStructInit structInit) {
@@ -734,6 +735,24 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             } catch (NumberFormatException exception) {
                 state.fail("intrinsic template contains unsupported placeholder {" + placeholder + "}: " + intrinsicCall.backendName());
             }
+        }
+    }
+
+    private void validateIntrinsicArgumentMetadata(GpuIrIntrinsicCall intrinsicCall, ValidationState state) {
+        if (intrinsicCall.argumentTypes().isEmpty()) {
+            return;
+        }
+        if (intrinsicCall.argumentTypes().size() != intrinsicCall.arguments().size()) {
+            state.fail("intrinsic argument metadata count mismatch for " + intrinsicCall.backendName()
+                    + ": expected " + intrinsicCall.argumentTypes().size() + " but got " + intrinsicCall.arguments().size());
+        }
+        for (int index = 0; index < intrinsicCall.argumentTypes().size(); index++) {
+            validateAssignableType(
+                    intrinsicCall.argumentTypes().get(index),
+                    expressionType(intrinsicCall.arguments().get(index), state),
+                    "intrinsic argument " + index + " for " + intrinsicCall.backendName(),
+                    state
+            );
         }
     }
 }

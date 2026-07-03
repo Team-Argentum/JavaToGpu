@@ -48,11 +48,13 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         ));
         GpuIrCommonSubexpression helper = new GpuIrCommonSubexpression("helper(noise,int,var(x))", 2, List.of("stmt[0].initializer", "stmt[1].initializer"));
         GpuIrCommonSubexpression branch = new GpuIrCommonSubexpression("binary(-,var(x),var(y))", 2, List.of("stmt[0].then.stmt[0].initializer", "stmt[0].else.stmt[0].initializer"));
+        GpuIrCommonSubexpression noDominance = new GpuIrCommonSubexpression("binary(/,var(a),var(b))", 2, List.of("stmt[5].initializer", "stmt[1].initializer"));
         GpuIrCommonSubexpressionReport report = new GpuIrCommonSubexpressionReport("kernel", List.of(
                 new GpuIrCommonSubexpression("binary(+,var(x),var(y))", 2, List.of("stmt[0].initializer", "stmt[1].initializer")),
                 new GpuIrCommonSubexpression("binary(*,var(z),literal(2))", 2, List.of("stmt[2].initializer", "stmt[4].initializer")),
                 helper,
-                branch
+                branch,
+                noDominance
         ));
 
         GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(method, report);
@@ -62,7 +64,8 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         assertEquals(List.of(
                 GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES,
                 GpuIrCommonSubexpressionSkipReason.NOT_LOCAL_REUSE,
-                GpuIrCommonSubexpressionSkipReason.CONTROL_FLOW_BOUNDARY
+                GpuIrCommonSubexpressionSkipReason.CONTROL_FLOW_BOUNDARY,
+                GpuIrCommonSubexpressionSkipReason.NO_DOMINATING_FIRST_OCCURRENCE
         ), planReport.skippedCandidates().stream().map(GpuIrCommonSubexpressionSkippedCandidate::reason).toList());
     }
 }

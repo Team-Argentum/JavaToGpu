@@ -681,6 +681,60 @@ class GpuIrSafetyValidatorTest {
         assertDoesNotThrow(() -> validator.run(new GpuIrPassContext(valid, List.of(helper), List.of(), true)));
     }
 
+    @Test
+    void rejectsIntrinsicArgumentMetadataMismatches() {
+        GpuIrCompiledMethod metadataCountMismatch = method(new GpuIrMethod("intrinsicCountMismatch", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "native_sin",
+                                "native_sin({0})",
+                                "float",
+                                List.of(new GpuIrLiteral("1.0f")),
+                                List.of("float", "float")
+                        )
+                )
+        )));
+        GpuIrCompiledMethod metadataTypeMismatch = method(new GpuIrMethod("intrinsicTypeMismatch", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration(
+                        "boolean",
+                        "flag",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "is_valid",
+                                "is_valid({0})",
+                                "boolean",
+                                List.of(new GpuIrVariableRef("value")),
+                                List.of("boolean")
+                        )
+                )
+        )));
+        GpuIrCompiledMethod metadataTypeMatch = method(new GpuIrMethod("intrinsicTypeMatch", List.of(
+                new GpuIrVariableDeclaration("boolean", "inputFlag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration(
+                        "boolean",
+                        "flag",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "is_valid",
+                                "is_valid({0})",
+                                "boolean",
+                                List.of(new GpuIrVariableRef("inputFlag")),
+                                List.of("boolean")
+                        )
+                )
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(metadataCountMismatch)))
+                .getMessage().contains("intrinsic argument metadata count mismatch for native_sin: expected 2 but got 1"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(metadataTypeMismatch)))
+                .getMessage().contains("type mismatch in intrinsic argument 0 for is_valid: expected boolean but got int"));
+        assertDoesNotThrow(() -> validator.run(context(metadataTypeMatch)));
+    }
+
     private GpuIrPassContext context(GpuIrCompiledMethod method) {
         return new GpuIrPassContext(method, List.of(), List.of(), true);
     }

@@ -8,5 +8,8 @@ public enum GpuIrCommonSubexpressionSkipReason {
     CONTROL_FLOW_BOUNDARY,
 
     // One of the referenced operands may be reassigned between repeated occurrences.
-    MUTATED_BETWEEN_OCCURRENCES
+    MUTATED_BETWEEN_OCCURRENCES,
+
+    // The first occurrence cannot be proven to dominate every planned replacement.
+    NO_DOMINATING_FIRST_OCCURRENCE
 }

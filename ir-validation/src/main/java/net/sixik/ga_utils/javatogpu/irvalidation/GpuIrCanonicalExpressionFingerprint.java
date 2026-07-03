@@ -73,7 +73,7 @@ public final class GpuIrCanonicalExpressionFingerprint {
         }
         if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
             return "intrinsic(" + escape(intrinsicCall.backendName()) + "," + escape(intrinsicCall.codeTemplate()) + ","
-                    + escape(intrinsicCall.resultType()) + "," + receiverFingerprint(intrinsicCall) + ","
+                    + escape(intrinsicCall.resultType()) + "," + fingerprintTypes(intrinsicCall.argumentTypes()) + "," + receiverFingerprint(intrinsicCall) + ","
                     + fingerprintList(intrinsicCall.arguments()) + ")";
         }
         if (expression instanceof GpuIrHelperCall helperCall) {
@@ -97,6 +97,10 @@ public final class GpuIrCanonicalExpressionFingerprint {
 
     private String receiverFingerprint(GpuIrIntrinsicCall intrinsicCall) {
         return intrinsicCall.receiver() == null ? "receiver(null)" : fingerprintPure(intrinsicCall.receiver());
+    }
+
+    private String fingerprintTypes(List<String> types) {
+        return "types(" + types.stream().map(this::escape).collect(Collectors.joining(",")) + ")";
     }
 
     private String fingerprintList(List<GpuIrExpression> expressions) {

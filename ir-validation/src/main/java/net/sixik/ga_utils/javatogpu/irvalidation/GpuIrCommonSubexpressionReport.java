@@ -14,6 +14,7 @@ public record GpuIrCommonSubexpressionReport(
     private static final GpuIrCommonSubexpressionClassifier DEFAULT_CLASSIFIER = new GpuIrCommonSubexpressionClassifier();
     private static final GpuIrCommonSubexpressionScopeClassifier DEFAULT_SCOPE_CLASSIFIER = new GpuIrCommonSubexpressionScopeClassifier();
     private static final GpuIrCommonSubexpressionMutationGuard DEFAULT_MUTATION_GUARD = new GpuIrCommonSubexpressionMutationGuard();
+    private static final GpuIrCommonSubexpressionDominanceGuard DEFAULT_DOMINANCE_GUARD = new GpuIrCommonSubexpressionDominanceGuard();
 
     public GpuIrCommonSubexpressionReport {
         // Keep the report immutable so optimizer stages can safely pass it around.
@@ -45,6 +46,7 @@ public record GpuIrCommonSubexpressionReport(
 
     public List<GpuIrCommonSubexpression> rewriteReadyCandidates(GpuIrMethod method) {
         return rewriteReadyCandidates().stream()
+                .filter(DEFAULT_DOMINANCE_GUARD::firstOccurrenceDominatesReplacements)
                 .filter(candidate -> DEFAULT_MUTATION_GUARD.isStableBetweenOccurrences(method, candidate))
                 .toList();
     }
