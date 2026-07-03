@@ -65,6 +65,29 @@ class GpuIrCommonSubexpressionScannerTest {
     }
 
     @Test
+    void canonicalModeReportsAssociativeBitwiseExpressionsAsSameCandidate() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("int", "a", new GpuIrBinary("^",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrBinary("^", new GpuIrVariableRef("y"), new GpuIrVariableRef("z"))
+                )),
+                new GpuIrVariableDeclaration("int", "b", new GpuIrBinary("^",
+                        new GpuIrBinary("^", new GpuIrVariableRef("z"), new GpuIrVariableRef("x")),
+                        new GpuIrVariableRef("y")
+                ))
+        ));
+
+        GpuIrCommonSubexpressionReport canonicalReport = GpuIrCommonSubexpressionScanner.canonical().scan(method);
+
+        assertTrue(canonicalReport.candidates().stream().anyMatch(candidate ->
+                candidate.fingerprint().startsWith("binary_assoc(^")
+                        && candidate.occurrenceCount() == 2
+                        && candidate.locations().contains("stmt[0].initializer")
+                        && candidate.locations().contains("stmt[1].initializer")
+        ));
+    }
+
+    @Test
     void optimizerFocusedModeSkipsRepeatedLeafNoiseButKeepsUsefulExpressions() {
         GpuIrMethod method = new GpuIrMethod("kernel", List.of(
                 new GpuIrVariableDeclaration("int", "a", new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrLiteral("1"))),

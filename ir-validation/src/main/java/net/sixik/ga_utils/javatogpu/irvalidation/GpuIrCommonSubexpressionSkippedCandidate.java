@@ -9,4 +9,14 @@ public record GpuIrCommonSubexpressionSkippedCandidate(
         GpuIrCommonSubexpressionScope scope,
         GpuIrCommonSubexpressionSkipReason reason
 ) {
+    public GpuIrCommonSubexpressionSkippedDiagnostic diagnostic() {
+        return new GpuIrCommonSubexpressionSkippedDiagnostic(
+                candidate.fingerprint(),
+                candidate.occurrenceCount(),
+                candidate.locations(),
+                kind,
+                scope,
+                reason
+        );
+    }
 }

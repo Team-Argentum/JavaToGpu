@@ -146,6 +146,10 @@ class GpuIrCommonSubexpressionPlanningPassTest {
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
 
         assertTrue(exception.getMessage().contains("MUTATED_BETWEEN_OCCURRENCES"));
+        assertTrue(exception.getMessage().contains("LOCAL_REUSE"));
+        assertTrue(exception.getMessage().contains("STRAIGHT_LINE"));
+        assertTrue(exception.getMessage().contains("stmt[0].initializer"));
+        assertTrue(exception.getMessage().contains("stmt[2].initializer"));
     }
 
     private GpuIrMethod methodWithUnstableCandidate() {

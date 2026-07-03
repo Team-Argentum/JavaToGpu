@@ -30,6 +30,7 @@ public final class GpuIrCommonSubexpressionClassifier {
         return !(fingerprint.startsWith("array(")
                 || fingerprint.startsWith("field(")
                 || fingerprint.startsWith("binary(")
+                || fingerprint.startsWith("binary_assoc(")
                 || fingerprint.startsWith("unary(")
                 || fingerprint.startsWith("ternary(")
                 || fingerprint.startsWith("cast(")

@@ -20,6 +20,14 @@ class GpuIrCommonSubexpressionClassifierTest {
     }
 
     @Test
+    void classifiesAssociativeBinaryReuseAsRewriteReady() {
+        GpuIrCommonSubexpression candidate = new GpuIrCommonSubexpression("binary_assoc(&,var(a),var(b),var(c))", 2, List.of("a", "b"));
+
+        assertEquals(GpuIrCommonSubexpressionKind.LOCAL_REUSE, classifier.classify(candidate));
+        assertTrue(classifier.isRewriteReady(candidate));
+    }
+
+    @Test
     void classifiesHelperAndIntrinsicReuseSeparately() {
         GpuIrCommonSubexpression helper = new GpuIrCommonSubexpression("helper(noise,int,var(x))", 2, List.of("a", "b"));
         GpuIrCommonSubexpression intrinsic = new GpuIrCommonSubexpression("intrinsic(native,tpl,int,receiver(null),var(x))", 2, List.of("c", "d"));

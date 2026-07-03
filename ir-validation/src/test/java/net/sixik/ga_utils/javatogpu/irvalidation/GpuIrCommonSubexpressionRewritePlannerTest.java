@@ -176,6 +176,25 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         assertEquals(1, preview.insertionCount());
         assertEquals(1, preview.replacementEditCount());
         assertEquals(4, preview.skippedCandidateCount());
+        assertEquals(4, preview.skippedDiagnostics().size());
+        GpuIrCommonSubexpressionSkippedDiagnostic firstDiagnostic = preview.skippedDiagnostics().getFirst();
+        assertEquals("binary(*,var(z),literal(2))", firstDiagnostic.fingerprint());
+        assertEquals(2, firstDiagnostic.occurrenceCount());
+        assertEquals(List.of("stmt[2].initializer", "stmt[4].initializer"), firstDiagnostic.locations());
+        assertEquals(GpuIrCommonSubexpressionKind.LOCAL_REUSE, firstDiagnostic.kind());
+        assertEquals(GpuIrCommonSubexpressionScope.STRAIGHT_LINE, firstDiagnostic.scope());
+        assertEquals(GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES, firstDiagnostic.reason());
+        assertTrue(firstDiagnostic.summary().contains("MUTATED_BETWEEN_OCCURRENCES"));
+        assertEquals(1, preview.skippedDiagnosticsByReason()
+                .get(GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES)
+                .size());
+        assertEquals(1L, preview.skippedReasonCounts()
+                .get(GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES));
+        assertEquals(1, planReport.previewSkippedDiagnosticsByReason()
+                .get(GpuIrCommonSubexpressionSkipReason.NOT_LOCAL_REUSE)
+                .size());
+        assertEquals(1L, planReport.skippedReasonCounts()
+                .get(GpuIrCommonSubexpressionSkipReason.CONTROL_FLOW_BOUNDARY));
         assertEquals(List.of(
                 GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES,
                 GpuIrCommonSubexpressionSkipReason.NOT_LOCAL_REUSE,

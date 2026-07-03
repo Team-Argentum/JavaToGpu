@@ -51,9 +51,9 @@ public final class GpuIrCommonSubexpressionPlanningPass implements GpuIrPass {
         GpuIrCommonSubexpressionRewritePlanReport report = plan(context);
         if (mode == GpuIrCommonSubexpressionPlanningMode.STRICT_FAIL_ON_SKIPPED_CANDIDATES
                 && !report.skippedCandidates().isEmpty()) {
-            GpuIrCommonSubexpressionSkippedCandidate skipped = report.skippedCandidates().getFirst();
+            GpuIrCommonSubexpressionSkippedDiagnostic skipped = report.previewSkippedDiagnostics().getFirst();
             throw new GpuIrPassException("IR CSE planning failed for " + context.method().irMethod().name()
-                    + ": skipped candidate " + skipped.reason() + " for " + skipped.candidate().fingerprint());
+                    + ": skipped candidate " + skipped.summary());
         }
     }
 

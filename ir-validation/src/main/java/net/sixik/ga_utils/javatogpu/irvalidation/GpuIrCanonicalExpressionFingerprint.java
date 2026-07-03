@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 public final class GpuIrCanonicalExpressionFingerprint {
     // Keep this list narrow until value-type/overflow semantics are explicitly validated.
     private static final Set<String> COMMUTATIVE_OPERATORS = Set.of("+", "*", "&", "|", "^", "==", "!=");
+    private static final Set<String> ASSOCIATIVE_BITWISE_OPERATORS = Set.of("&", "|", "^");
 
     private final GpuIrExpressionClassifier classifier;
 
@@ -84,6 +85,9 @@ public final class GpuIrCanonicalExpressionFingerprint {
     }
 
     private String binaryFingerprint(GpuIrBinary binary) {
+        if (ASSOCIATIVE_BITWISE_OPERATORS.contains(binary.operator())) {
+            return associativeBitwiseFingerprint(binary.operator(), binary);
+        }
         String left = fingerprintPure(binary.left());
         String right = fingerprintPure(binary.right());
         if (COMMUTATIVE_OPERATORS.contains(binary.operator()) && left.compareTo(right) > 0) {
@@ -93,6 +97,24 @@ public final class GpuIrCanonicalExpressionFingerprint {
             right = temporary;
         }
         return "binary(" + escape(binary.operator()) + "," + left + "," + right + ")";
+    }
+
+    private String associativeBitwiseFingerprint(String operator, GpuIrBinary binary) {
+        List<String> operands = associativeOperands(operator, binary).stream()
+                .sorted()
+                .toList();
+        return "binary_assoc(" + escape(operator) + "," + String.join(",", operands) + ")";
+    }
+
+    private List<String> associativeOperands(String operator, GpuIrExpression expression) {
+        if (expression instanceof GpuIrBinary binary && operator.equals(binary.operator())) {
+            // Flatten only the exact same bitwise operator; mixed operators keep their nested shape.
+            return java.util.stream.Stream.concat(
+                    associativeOperands(operator, binary.left()).stream(),
+                    associativeOperands(operator, binary.right()).stream()
+            ).toList();
+        }
+        return List.of(fingerprintPure(expression));
     }
 
     private String receiverFingerprint(GpuIrIntrinsicCall intrinsicCall) {

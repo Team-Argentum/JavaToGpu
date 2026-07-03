@@ -432,6 +432,44 @@ class GpuIrCommonSubexpressionRewriteApplicatorTest {
     }
 
     @Test
+    void rewritePreservesAssociativeBitwiseIntegerSemantics() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("^",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrBinary("^", new GpuIrVariableRef("y"), new GpuIrVariableRef("outB"))
+                )),
+                new GpuIrAssignment(new GpuIrVariableRef("outB"), new GpuIrBinary("+",
+                        new GpuIrBinary("^",
+                                new GpuIrBinary("^", new GpuIrVariableRef("outB"), new GpuIrVariableRef("x")),
+                                new GpuIrVariableRef("y")
+                        ),
+                        new GpuIrLiteral("17")
+                )),
+                new GpuIrReturn(new GpuIrBinary("-", new GpuIrVariableRef("outB"), new GpuIrVariableRef("outA")))
+        ));
+        GpuIrCompiledMethod compiledMethod = compiledMethod(method);
+        GpuIrCommonSubexpressionReport report = GpuIrCommonSubexpressionScanner.optimizerFocused().scan(method);
+        GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(compiledMethod, report);
+        GpuIrMethod rewritten = applicator.apply(compiledMethod, planReport);
+        List<Map<String, Integer>> inputCases = List.of(
+                Map.of("x", 0b1010, "y", 0b1100, "outA", 0, "outB", 0b0110),
+                Map.of("x", -42, "y", 0x55, "outA", 7, "outB", -9),
+                Map.of("x", 0x1234, "y", 0x00FF, "outA", -100, "outB", 100)
+        );
+
+        assertTrue(planReport.hasPlans());
+        assertTrue(planReport.plans().stream().anyMatch(plan -> plan.fingerprint().startsWith("binary_assoc(^")));
+        for (Map<String, Integer> inputValues : inputCases) {
+            ExecutionResult originalResult = execute(method, inputValues);
+            ExecutionResult rewrittenResult = execute(rewritten, inputValues);
+
+            assertEquals(originalResult.returnValue(), rewrittenResult.returnValue());
+            assertEquals(originalResult.valueOf("outA"), rewrittenResult.valueOf("outA"));
+            assertEquals(originalResult.valueOf("outB"), rewrittenResult.valueOf("outB"));
+        }
+    }
+
+    @Test
     void rewritePreservesUnaryCastAndTernaryIntegerSemantics() {
         GpuIrMethod method = new GpuIrMethod("kernel", List.of(
                 new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrUnary("-",

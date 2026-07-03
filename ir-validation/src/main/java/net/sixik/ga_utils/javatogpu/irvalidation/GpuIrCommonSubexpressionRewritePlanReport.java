@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Read-only planner output that keeps both proposed rewrites and skipped-candidate reasons.
@@ -48,11 +49,25 @@ public record GpuIrCommonSubexpressionRewritePlanReport(
                 .toList();
     }
 
+    public List<GpuIrCommonSubexpressionSkippedDiagnostic> previewSkippedDiagnostics() {
+        return skippedCandidates.stream()
+                .map(GpuIrCommonSubexpressionSkippedCandidate::diagnostic)
+                .toList();
+    }
+
+    public Map<GpuIrCommonSubexpressionSkipReason, List<GpuIrCommonSubexpressionSkippedDiagnostic>> previewSkippedDiagnosticsByReason() {
+        return preview().skippedDiagnosticsByReason();
+    }
+
+    public Map<GpuIrCommonSubexpressionSkipReason, Long> skippedReasonCounts() {
+        return preview().skippedReasonCounts();
+    }
+
     public GpuIrCommonSubexpressionRewritePreview preview() {
         return new GpuIrCommonSubexpressionRewritePreview(
                 previewInsertions(),
                 previewReplacementEdits(),
-                skippedCandidateCount()
+                previewSkippedDiagnostics()
         );
     }
 }

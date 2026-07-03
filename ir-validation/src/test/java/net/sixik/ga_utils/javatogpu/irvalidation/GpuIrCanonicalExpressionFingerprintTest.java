@@ -23,6 +23,34 @@ class GpuIrCanonicalExpressionFingerprintTest {
     }
 
     @Test
+    void associativeBitwiseExpressionsShareCanonicalFingerprint() {
+        GpuIrBinary left = new GpuIrBinary("&",
+                new GpuIrVariableRef("a"),
+                new GpuIrBinary("&", new GpuIrVariableRef("b"), new GpuIrVariableRef("c"))
+        );
+        GpuIrBinary right = new GpuIrBinary("&",
+                new GpuIrBinary("&", new GpuIrVariableRef("c"), new GpuIrVariableRef("a")),
+                new GpuIrVariableRef("b")
+        );
+
+        assertEquals(fingerprint.fingerprint(left), fingerprint.fingerprint(right));
+    }
+
+    @Test
+    void mixedBitwiseOperatorsKeepNestedShape() {
+        GpuIrBinary left = new GpuIrBinary("&",
+                new GpuIrVariableRef("a"),
+                new GpuIrBinary("|", new GpuIrVariableRef("b"), new GpuIrVariableRef("c"))
+        );
+        GpuIrBinary right = new GpuIrBinary("&",
+                new GpuIrBinary("|", new GpuIrVariableRef("c"), new GpuIrVariableRef("a")),
+                new GpuIrVariableRef("b")
+        );
+
+        assertNotEquals(fingerprint.fingerprint(left), fingerprint.fingerprint(right));
+    }
+
+    @Test
     void nonCommutativeExpressionsKeepOperandOrder() {
         GpuIrBinary left = new GpuIrBinary("-", new GpuIrVariableRef("a"), new GpuIrVariableRef("b"));
         GpuIrBinary right = new GpuIrBinary("-", new GpuIrVariableRef("b"), new GpuIrVariableRef("a"));
