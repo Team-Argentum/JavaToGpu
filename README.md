@@ -67,6 +67,8 @@ dependencies {
 
 That module plugs into the compiler through Java `ServiceLoader` and validates lowered IR before OpenCL emission.
 
+See [IR Validation](docs/IR-Validation.md) for the strict validator, no-op CSE planning pass, and diagnostic vs strict planning modes.
+
 Write a restricted Java kernel:
 
 ```java
@@ -111,6 +113,7 @@ For one-off usage, `GpuRuntime.useOpenCl()` is simpler. For repeated calls, `Gpu
 - [Language contract](docs/Language-Contract.md)
 - [Runtime guide](docs/Runtime-Guide.md)
 - [OpenCL data model](docs/OpenCL-Data-Model.md)
+- [IR validation](docs/IR-Validation.md)
 - [Validation and operations](docs/Validation-and-Operations.md)
 - [ASM contract](docs/ASM-Contract.md)
 - [Troubleshooting](docs/Troubleshooting.md)

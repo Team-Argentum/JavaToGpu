@@ -1,1 +1,2 @@
 net.sixik.ga_utils.javatogpu.irvalidation.GpuIrSafetyValidator
+net.sixik.ga_utils.javatogpu.irvalidation.GpuIrCommonSubexpressionPlanningPass

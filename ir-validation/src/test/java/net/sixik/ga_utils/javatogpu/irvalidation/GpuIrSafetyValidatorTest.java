@@ -2,7 +2,10 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrHelperCall;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrIntrinsicCall;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrUnary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
@@ -12,7 +15,9 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrBreak;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrContinue;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrExpressionStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrPrivateArrayDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
@@ -96,16 +101,213 @@ class GpuIrSafetyValidatorTest {
                 .getMessage().contains("break used outside loop or switch"));
     }
 
+    @Test
+    void rejectsUnknownHelperCallTargets() {
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrHelperCall("missing_helper", "float", List.of()))
+        )));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("unknown helper call target: missing_helper"));
+    }
+
+    @Test
+    void acceptsKnownHelperCallTargets() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(new GpuIrLiteral("1.0f")))),
+                "jtg_helper",
+                List.of(),
+                "float"
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrHelperCall("jtg_helper", "float", List.of()))
+        )), "jtg_kernel", List.of("jtg_helper"));
+
+        assertDoesNotThrow(() -> validator.run(new GpuIrPassContext(method, List.of(helper), List.of(), true)));
+    }
+
+    @Test
+    void rejectsHelperCallsMissingFromDependencyMetadata() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(new GpuIrLiteral("1.0f")))),
+                "jtg_helper",
+                List.of(),
+                "float"
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrHelperCall("jtg_helper", "float", List.of()))
+        )));
+
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(helper), List.of(), true))
+        );
+
+        assertTrue(exception.getMessage().contains("missing from helperDependencies metadata: jtg_helper"));
+    }
+
+    @Test
+    void rejectsDuplicateHelperDependencyMetadata() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(new GpuIrLiteral("1.0f")))),
+                "jtg_helper",
+                List.of(),
+                "float"
+        );
+        GpuIrCompiledMethod method = method(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                "jtg_kernel",
+                List.of("jtg_helper", "jtg_helper")
+        );
+
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(helper), List.of(), true))
+        );
+
+        assertTrue(exception.getMessage().contains("duplicate helper dependency metadata: jtg_helper"));
+    }
+
+    @Test
+    void rejectsIntrinsicTemplatesThatReferenceMissingArguments() {
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(null, "OpenCL", "mad({0}, {1}, {2})", "float", List.of(new GpuIrLiteral("1.0f")))
+                )
+        )));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("intrinsic template references missing argument {1}"));
+    }
+
+    @Test
+    void rejectsReceiverTemplateWithoutReceiver() {
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(null, "OpenCL", "native_sin({this})", "float", List.of())
+                )
+        )));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("references {this} but has no receiver"));
+    }
+
+    @Test
+    void rejectsBlankDeclarationTypesAndOperators() {
+        GpuIrCompiledMethod blankTypeMethod = method(new GpuIrMethod("blankTypeKernel", List.of(
+                new GpuIrVariableDeclaration("", "value", new GpuIrLiteral("1"))
+        )));
+        GpuIrCompiledMethod blankOperatorMethod = method(new GpuIrMethod("blankOperatorKernel", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrUnary("", new GpuIrLiteral("1")))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(blankTypeMethod)))
+                .getMessage().contains("blank local declaration type for value"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(blankOperatorMethod)))
+                .getMessage().contains("blank unary operator"));
+    }
+
+    @Test
+    void rejectsInvalidReturnShapes() {
+        GpuIrCompiledMethod voidMethod = method(new GpuIrMethod("voidKernel", List.of(new GpuIrReturn(new GpuIrLiteral("1")))));
+        GpuIrCompiledMethod nonVoidMethod = method(
+                new GpuIrMethod("nonVoidKernel", List.of(new GpuIrReturn(null))),
+                "jtg_non_void",
+                List.of(),
+                "int"
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(voidMethod)))
+                .getMessage().contains("void method returns a value"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(nonVoidMethod)))
+                .getMessage().contains("non-void method returns without a value"));
+    }
+
+    @Test
+    void rejectsNonPositivePrivateArrayLiteralSizes() {
+        GpuIrCompiledMethod zeroSizedArray = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrPrivateArrayDeclaration("float", "scratch", new GpuIrLiteral("0"))
+        )));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(zeroSizedArray)));
+
+        assertTrue(exception.getMessage().contains("private array literal size must be positive: 0"));
+    }
+
+    @Test
+    void rejectsPureExpressionStatements() {
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrExpressionStatement(new GpuIrBinary("+", new GpuIrLiteral("1"), new GpuIrLiteral("2")))
+        )));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("expression statement has no observable side effect"));
+    }
+
+    @Test
+    void acceptsKnownSideEffectIntrinsicExpressionStatements() {
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrExpressionStatement(new GpuIrIntrinsicCall(null, "barrier", "barrier(1)", "void", List.of()))
+        )));
+
+        assertDoesNotThrow(() -> validator.run(context(method)));
+    }
+
+    @Test
+    void rejectsVoidHelperCallsWithValueResultMetadata() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(null))),
+                "jtg_helper",
+                List.of(),
+                "void"
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrExpressionStatement(new GpuIrHelperCall("jtg_helper", "float", List.of()))
+        )), "jtg_kernel", List.of("jtg_helper"));
+
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(helper), List.of(), true))
+        );
+
+        assertTrue(exception.getMessage().contains("void helper call must use void result metadata: jtg_helper"));
+    }
+
     private GpuIrPassContext context(GpuIrCompiledMethod method) {
         return new GpuIrPassContext(method, List.of(), List.of(), true);
     }
 
     private GpuIrCompiledMethod method(GpuIrMethod irMethod) {
+        return method(irMethod, "jtg_kernel");
+    }
+
+    private GpuIrCompiledMethod method(GpuIrMethod irMethod, String emittedName) {
+        return method(irMethod, emittedName, List.of());
+    }
+
+    private GpuIrCompiledMethod method(GpuIrMethod irMethod, String emittedName, List<String> helperDependencies) {
+        return method(irMethod, emittedName, helperDependencies, "void");
+    }
+
+    private GpuIrCompiledMethod method(
+            GpuIrMethod irMethod,
+            String emittedName,
+            List<String> helperDependencies,
+            String returnType
+    ) {
         ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
                 "KernelOwner",
                 "test.KernelOwner",
                 irMethod.name(),
-                "void",
+                returnType,
                 List.of(
                         new ParsedGpuParameter("input", "float[]", GpuAddressSpace.GLOBAL, false, List.of()),
                         new ParsedGpuParameter("output", "float[]", GpuAddressSpace.GLOBAL, false, List.of())
@@ -120,6 +322,6 @@ class GpuIrSafetyValidatorTest {
                 null,
                 false
         );
-        return new GpuIrCompiledMethod(parsedMethod, irMethod, "jtg_kernel", List.of());
+        return new GpuIrCompiledMethod(parsedMethod, irMethod, emittedName, helperDependencies);
     }
 }

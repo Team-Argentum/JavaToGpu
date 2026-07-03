@@ -29,7 +29,7 @@ dependencies {
 }
 ```
 
-The extra artifact validates lowered IR before OpenCL emission and is intended for CI, compiler development, and safety-focused builds.
+The extra artifact validates lowered IR before OpenCL emission and is intended for CI, compiler development, and safety-focused builds. See [IR Validation](IR-Validation.md) for details about the strict validator and the read-only CSE planning pass.
 
 ## Write A Kernel
 
@@ -106,4 +106,5 @@ processor/build/reports/opencl/
 - [API Overview](API-Overview.md)
 - [Language Contract](Language-Contract.md)
 - [Runtime Guide](Runtime-Guide.md)
+- [IR Validation](IR-Validation.md)
 - [Validation and Operations](Validation-and-Operations.md)

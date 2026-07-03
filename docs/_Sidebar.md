@@ -8,6 +8,7 @@
 - [Language Contract](Language-Contract.md)
 - [Runtime Guide](Runtime-Guide.md)
 - [OpenCL Data Model](OpenCL-Data-Model.md)
+- [IR Validation](IR-Validation.md)
 - [Validation and Operations](Validation-and-Operations.md)
 - [ASM Contract](ASM-Contract.md)
 - [OpenCL Runner Contract](OpenCL-Runner-Contract.md)

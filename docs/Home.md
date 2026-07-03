@@ -12,6 +12,7 @@ This documentation is the public user manual for the current alpha. It focuses o
 - [API Overview](API-Overview.md) - public packages, annotations, wrappers, runtime APIs, and compiler entry points.
 - [Language Contract](Language-Contract.md) - the supported Java subset and explicit non-goals.
 - [Runtime Guide](Runtime-Guide.md) - OpenCL runtime scopes, fallback selection, explicit launch sizes, and ABI debug.
+- [IR Validation](IR-Validation.md) - optional strict lowered-IR validation and read-only optimizer planning checks.
 - [Validation and Operations](Validation-and-Operations.md) - local test buckets, operational routine, and evidence artifacts.
 
 ## Deeper Topics
