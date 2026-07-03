@@ -1,0 +1,44 @@
+package net.sixik.ga_utils.javatogpu.irvalidation;
+
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPass;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassContext;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
+
+import java.util.Objects;
+
+/**
+ * No-op optimizer bridge: scans and ranks vectorization candidates but never mutates IR.
+ */
+public final class GpuIrAutoVectorizationPlanningPass implements GpuIrPass {
+    private final GpuIrAutoVectorizationCandidateScanner scanner;
+    private final GpuIrAutoVectorizationPlanningMode mode;
+
+    public GpuIrAutoVectorizationPlanningPass() {
+        this(new GpuIrAutoVectorizationCandidateScanner(), GpuIrAutoVectorizationPlanningMode.DIAGNOSTIC_ONLY);
+    }
+
+    public GpuIrAutoVectorizationPlanningPass(
+            GpuIrAutoVectorizationCandidateScanner scanner,
+            GpuIrAutoVectorizationPlanningMode mode
+    ) {
+        this.scanner = Objects.requireNonNull(scanner, "scanner");
+        this.mode = Objects.requireNonNull(mode, "mode");
+    }
+
+    @Override
+    public void run(GpuIrPassContext context) {
+        GpuIrAutoVectorizationReport report = scan(context);
+        if (mode == GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_WARNED_CANDIDATES
+                && report.hasCandidateWarnings()) {
+            GpuIrAutoVectorizationWarningDiagnostic warning = report.previewWarningDiagnostics().getFirst();
+            throw new GpuIrPassException("IR auto-vectorization planning failed for "
+                    + context.method().irMethod().name()
+                    + ": " + warning.summary());
+        }
+    }
+
+    public GpuIrAutoVectorizationReport scan(GpuIrPassContext context) {
+        Objects.requireNonNull(context, "context");
+        return scanner.scan(context.method().irMethod());
+    }
+}

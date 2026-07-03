@@ -1,0 +1,162 @@
+package net.sixik.ga_utils.javatogpu.irvalidation;
+
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
+import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPass;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassContext;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
+import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.ServiceLoader;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class GpuIrAutoVectorizationPlanningPassTest {
+    private final GpuIrAutoVectorizationPlanningPass pass = new GpuIrAutoVectorizationPlanningPass();
+
+    @Test
+    void moduleRegistersPlanningPassThroughServiceLoader() {
+        List<GpuIrPass> passes = ServiceLoader.load(GpuIrPass.class)
+                .stream()
+                .map(ServiceLoader.Provider::get)
+                .toList();
+
+        assertTrue(passes.stream().anyMatch(GpuIrAutoVectorizationPlanningPass.class::isInstance));
+    }
+
+    @Test
+    void runScansAndRanksCandidatesWithoutMutatingIr() {
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )))
+        ));
+        GpuIrPassContext context = context(method(irMethod));
+
+        GpuIrAutoVectorizationReport report = pass.scan(context);
+
+        assertEquals(1, report.candidateCount());
+        assertEquals(List.of(report.candidates().getFirst()), report.rewritePriorityCandidates());
+        assertEquals(irMethod.statements(), context.method().irMethod().statements());
+        assertDoesNotThrow(() -> pass.run(context));
+    }
+
+    @Test
+    void diagnosticModeDoesNotFailOnWarnedCandidates() {
+        GpuIrPassContext context = context(method(methodWithCrossLaneWarning()));
+
+        assertDoesNotThrow(() -> pass.run(context));
+    }
+
+    @Test
+    void strictModeFailsOnWarnedCandidates() {
+        GpuIrAutoVectorizationPlanningPass strictPass = new GpuIrAutoVectorizationPlanningPass(
+                new GpuIrAutoVectorizationCandidateScanner(),
+                GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_WARNED_CANDIDATES
+        );
+        GpuIrPassContext context = context(method(methodWithCrossLaneWarning()));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
+
+        assertTrue(exception.getMessage().contains("IR auto-vectorization planning failed"));
+        assertTrue(exception.getMessage().contains("auto-vectorization warning"));
+        assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
+        assertTrue(exception.getMessage().contains("stmt[0]"));
+    }
+
+    @Test
+    void strictModeReportsWarnedCandidateEvenWhenCleanCandidateRanksHigher() {
+        GpuIrAutoVectorizationPlanningPass strictPass = new GpuIrAutoVectorizationPlanningPass(
+                new GpuIrAutoVectorizationCandidateScanner(),
+                GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_WARNED_CANDIDATES
+        );
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(8, List.of(
+                        new GpuIrAssignment(
+                                new GpuIrArrayAccess("cleanOutA", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                        ),
+                        new GpuIrAssignment(
+                                new GpuIrArrayAccess("cleanOutB", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )),
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("warnedOut", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrBinary("+", new GpuIrVariableRef("i"), new GpuIrLiteral("1")))
+                )))
+        ));
+        GpuIrPassContext context = context(method(irMethod));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
+
+        assertTrue(exception.getMessage().contains("stmt[1]"));
+        assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
+        assertTrue(exception.getMessage().contains("priorityScore=0"));
+    }
+
+    private GpuIrMethod methodWithCrossLaneWarning() {
+        return new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrBinary("+", new GpuIrVariableRef("i"), new GpuIrLiteral("1")))
+                )))
+        ));
+    }
+
+    private GpuIrForLoop fixedWidthLoop(int endExclusive, List<GpuIrStatement> body) {
+        return new GpuIrForLoop(
+                new GpuIrVariableDeclaration("int", "i", new GpuIrLiteral("0")),
+                new GpuIrBinary("<", new GpuIrVariableRef("i"), new GpuIrLiteral(Integer.toString(endExclusive))),
+                new GpuIrAssignment(new GpuIrVariableRef("i"), new GpuIrBinary("+", new GpuIrVariableRef("i"), new GpuIrLiteral("1"))),
+                body
+        );
+    }
+
+    private GpuIrPassContext context(GpuIrCompiledMethod method) {
+        return new GpuIrPassContext(method, List.of(), List.of(), true);
+    }
+
+    private GpuIrCompiledMethod method(GpuIrMethod irMethod) {
+        ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
+                "KernelOwner",
+                "test.KernelOwner",
+                irMethod.name(),
+                "void",
+                List.of(
+                        new ParsedGpuParameter("left", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
+                        new ParsedGpuParameter("right", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
+                        new ParsedGpuParameter("out", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
+                ),
+                List.of(),
+                List.of(),
+                null,
+                false,
+                List.of(),
+                null,
+                "",
+                null,
+                false
+        );
+        return new GpuIrCompiledMethod(parsedMethod, irMethod, "jtg_kernel", List.of());
+    }
+}
