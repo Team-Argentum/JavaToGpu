@@ -155,6 +155,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         } else if (statement instanceof GpuIrIf gpuIf) {
             state.requireExpression(gpuIf.condition(), "if condition");
             validateExpression(gpuIf.condition(), state);
+            validateBooleanCondition(gpuIf.condition(), "if condition", state);
             // Branch-local declarations must not leak into sibling or parent scopes.
             validateStatements(gpuIf.thenBranch(), state.copy(), loopDepth, switchDepth, "if then branch");
             validateStatements(gpuIf.elseBranch(), state.copy(), loopDepth, switchDepth, "if else branch");
@@ -163,16 +164,19 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             validateOptionalStatement(loop.initializer(), loopState, loopDepth, switchDepth);
             state.requireExpression(loop.condition(), "for loop condition");
             validateExpression(loop.condition(), loopState);
+            validateBooleanCondition(loop.condition(), "for loop condition", loopState);
             validateStatements(loop.body(), loopState.copy(), loopDepth + 1, switchDepth, "for loop body");
             validateOptionalStatement(loop.update(), loopState, loopDepth + 1, switchDepth);
         } else if (statement instanceof GpuIrWhileLoop loop) {
             state.requireExpression(loop.condition(), "while loop condition");
             validateExpression(loop.condition(), state);
+            validateBooleanCondition(loop.condition(), "while loop condition", state);
             validateStatements(loop.body(), state.copy(), loopDepth + 1, switchDepth, "while loop body");
         } else if (statement instanceof GpuIrDoWhileLoop loop) {
             validateStatements(loop.body(), state.copy(), loopDepth + 1, switchDepth, "do-while loop body");
             state.requireExpression(loop.condition(), "do-while loop condition");
             validateExpression(loop.condition(), state);
+            validateBooleanCondition(loop.condition(), "do-while loop condition", state);
         } else if (statement instanceof GpuIrSwitch gpuSwitch) {
             state.requireExpression(gpuSwitch.selector(), "switch selector");
             validateExpression(gpuSwitch.selector(), state);
@@ -248,6 +252,17 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         }
     }
 
+    private void validateBooleanCondition(GpuIrExpression condition, String location, ValidationState state) {
+        String conditionType = expressionType(condition, state);
+        if (conditionType == null) {
+            return;
+        }
+        String normalizedType = GpuTypeSupport.declaredType(conditionType);
+        if (normalizedType != null && !Objects.equals("boolean", normalizedType)) {
+            state.fail("condition type mismatch in " + location + ": expected boolean but got " + normalizedType);
+        }
+    }
+
     private void validateExpression(GpuIrExpression expression, ValidationState state) {
         validateExpression(expression, state, true);
     }
@@ -280,6 +295,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             state.requireExpression(ternary.whenTrue(), "ternary true branch");
             state.requireExpression(ternary.whenFalse(), "ternary false branch");
             validateExpression(ternary.condition(), state);
+            validateBooleanCondition(ternary.condition(), "ternary condition", state);
             validateExpression(ternary.whenTrue(), state);
             validateExpression(ternary.whenFalse(), state);
         } else if (expression instanceof GpuIrCast cast) {

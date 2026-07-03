@@ -23,11 +23,13 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrContinue;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrExpressionStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrDoWhileLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrPrivateArrayDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitchCase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrWhileLoop;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
@@ -323,6 +325,55 @@ class GpuIrSafetyValidatorTest {
                 .getMessage().contains("missing if condition"));
         assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingForBody)))
                 .getMessage().contains("missing statement list: for loop body"));
+    }
+
+    @Test
+    void rejectsNonBooleanControlFlowAndTernaryConditions() {
+        GpuIrCompiledMethod ifConditionMismatch = method(new GpuIrMethod("ifConditionMismatch", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrIf(new GpuIrVariableRef("value"), List.of(), List.of())
+        )));
+        GpuIrCompiledMethod forConditionMismatch = method(new GpuIrMethod("forConditionMismatch", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrForLoop(null, new GpuIrVariableRef("value"), null, List.of())
+        )));
+        GpuIrCompiledMethod whileConditionMismatch = method(new GpuIrMethod("whileConditionMismatch", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrWhileLoop(new GpuIrVariableRef("value"), List.of())
+        )));
+        GpuIrCompiledMethod doWhileConditionMismatch = method(new GpuIrMethod("doWhileConditionMismatch", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrDoWhileLoop(List.of(), new GpuIrVariableRef("value"))
+        )));
+        GpuIrCompiledMethod ternaryConditionMismatch = method(new GpuIrMethod("ternaryConditionMismatch", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrTernary(
+                        new GpuIrVariableRef("value"),
+                        new GpuIrLiteral("2"),
+                        new GpuIrLiteral("3")
+                ))
+        )));
+        GpuIrCompiledMethod booleanConditions = method(new GpuIrMethod("booleanConditions", List.of(
+                new GpuIrVariableDeclaration("boolean", "flag", new GpuIrLiteral("true")),
+                new GpuIrIf(new GpuIrVariableRef("flag"), List.of(), List.of()),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrTernary(
+                        new GpuIrVariableRef("flag"),
+                        new GpuIrLiteral("2"),
+                        new GpuIrLiteral("3")
+                ))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(ifConditionMismatch)))
+                .getMessage().contains("condition type mismatch in if condition: expected boolean but got int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(forConditionMismatch)))
+                .getMessage().contains("condition type mismatch in for loop condition: expected boolean but got int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(whileConditionMismatch)))
+                .getMessage().contains("condition type mismatch in while loop condition: expected boolean but got int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(doWhileConditionMismatch)))
+                .getMessage().contains("condition type mismatch in do-while loop condition: expected boolean but got int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(ternaryConditionMismatch)))
+                .getMessage().contains("condition type mismatch in ternary condition: expected boolean but got int"));
+        assertDoesNotThrow(() -> validator.run(context(booleanConditions)));
     }
 
     @Test
