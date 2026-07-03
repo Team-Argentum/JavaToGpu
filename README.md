@@ -57,6 +57,16 @@ dependencies {
 }
 ```
 
+For strict compiler builds, add the optional IR validation module to the annotation-processor path:
+
+```groovy
+dependencies {
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+}
+```
+
+That module plugs into the compiler through Java `ServiceLoader` and validates lowered IR before OpenCL emission.
+
 Write a restricted Java kernel:
 
 ```java
@@ -137,6 +147,12 @@ The publishable Maven artifact is:
 
 ```text
 io.github.deussixik:javatogpu
+```
+
+The optional strict IR validation artifact is:
+
+```text
+io.github.deussixik:javatogpu-ir-validation
 ```
 
 Publishing is configured on the `processor` module. Secrets must live outside the repository in `~/.gradle/gradle.properties` or environment variables. See [Publishing Guide](docs/Publishing.md).

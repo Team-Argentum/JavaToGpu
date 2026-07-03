@@ -1,0 +1,186 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
+}
+
+import groovy.xml.XmlSlurper
+
+description = 'Optional JavaToGpu IR validation passes for strict compiler builds.'
+group = rootProject.group
+version = rootProject.version
+
+def secretValue = { String gradlePropertyName, String environmentVariableName ->
+    providers.gradleProperty(gradlePropertyName)
+            .orElse(providers.environmentVariable(environmentVariableName))
+}
+
+def centralUsernameProvider = secretValue('mavenCentralUsername', 'MAVEN_CENTRAL_USERNAME')
+def centralPasswordProvider = secretValue('mavenCentralPassword', 'MAVEN_CENTRAL_PASSWORD')
+def signingKeyProvider = secretValue('signingInMemoryKey', 'SIGNING_IN_MEMORY_KEY')
+def signingPasswordProvider = secretValue('signingInMemoryKeyPassword', 'SIGNING_IN_MEMORY_KEY_PASSWORD')
+def publicationArtifactId = findProperty('javatogpu.irValidationArtifactId') ?: 'javatogpu-ir-validation'
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api project(':processor')
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'com.github.javaparser:javaparser-core:3.28.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:none', '-quiet')
+}
+
+test {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = publicationArtifactId
+
+            pom {
+                name = 'JavaToGpu IR Validation'
+                description = project.description
+                url = 'https://github.com/Team-Argentum/JavaToGpu'
+
+                licenses {
+                    license {
+                        name = 'GNU Lesser General Public License v3.0'
+                        url = 'https://www.gnu.org/licenses/lgpl-3.0.en.html'
+                        distribution = 'repo'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'Team-Argentum'
+                        name = 'Team Argentum'
+                        organization = 'Team Argentum'
+                        organizationUrl = 'https://github.com/Team-Argentum'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:https://github.com/Team-Argentum/JavaToGpu.git'
+                    developerConnection = 'scm:git:https://github.com/Team-Argentum/JavaToGpu.git'
+                    url = 'https://github.com/Team-Argentum/JavaToGpu'
+                }
+
+                withXml {
+                    def dependenciesNode = asNode().dependencies
+                    if (dependenciesNode) {
+                        dependenciesNode[0].dependency.findAll { dependency ->
+                            dependency.groupId.text() == project.group.toString()
+                                    && dependency.artifactId.text() == 'processor'
+                        }.each { dependency ->
+                            dependency.artifactId[0].setValue('javatogpu')
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'localStaging'
+            url = layout.buildDirectory.dir('maven-staging')
+        }
+        maven {
+            name = 'centralSnapshots'
+            url = uri('https://central.sonatype.com/repository/maven-snapshots/')
+            credentials {
+                username = centralUsernameProvider.getOrElse('')
+                password = centralPasswordProvider.getOrElse('')
+            }
+        }
+        maven {
+            name = 'centralReleases'
+            url = uri('https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/')
+            credentials {
+                username = centralUsernameProvider.getOrElse('')
+                password = centralPasswordProvider.getOrElse('')
+            }
+        }
+    }
+}
+
+tasks.withType(GenerateModuleMetadata).configureEach {
+    enabled = false
+}
+
+tasks.register('validateMavenCentralReleaseReadiness') {
+    group = 'publishing'
+    description = 'Fails release publishing if the generated Maven POM contains dependencies Maven Central should not release.'
+    dependsOn tasks.named('generatePomFileForMavenJavaPublication')
+    doLast {
+        if (version.toString().endsWith('-SNAPSHOT')) {
+            return
+        }
+        File pomFile = layout.buildDirectory.file('publications/mavenJava/pom-default.xml').get().asFile
+        if (!pomFile.isFile()) {
+            throw new GradleException('Maven Central release is not ready: generated POM is missing at ' + pomFile)
+        }
+
+        def pom = new XmlSlurper(false, false).parse(pomFile)
+        java.util.List<String> unsafeDependencies = []
+        pom.dependencies.dependency.each { dependency ->
+            String groupId = dependency.groupId.text()
+            String artifactId = dependency.artifactId.text()
+            String versionText = dependency.version.text()
+            String coordinates = groupId + ':' + artifactId + ':' + (versionText.isBlank() ? '<managed>' : versionText)
+            String normalizedVersion = versionText.toLowerCase(Locale.ROOT)
+
+            if (normalizedVersion.contains('snapshot')) {
+                unsafeDependencies.add(coordinates + ' (snapshot dependency)')
+            } else if (groupId.startsWith('com.github.') && normalizedVersion.contains('master')) {
+                unsafeDependencies.add(coordinates + ' (JitPack branch dependency)')
+            }
+        }
+
+        if (!unsafeDependencies.isEmpty()) {
+            throw new GradleException('Maven Central release is not ready: generated POM contains non-release-safe dependencies: '
+                    + unsafeDependencies.join(', '))
+        }
+    }
+}
+
+tasks.matching { task ->
+    task.name == 'publishMavenJavaPublicationToCentralReleasesRepository'
+            || task.name == 'publishAllPublicationsToCentralReleasesRepository'
+}.configureEach {
+    dependsOn tasks.named('validateMavenCentralReleaseReadiness')
+}
+
+signing {
+    def signingKey = signingKeyProvider.orNull
+    def signingPassword = signingPasswordProvider.orNull
+    required {
+        !version.toString().endsWith('-SNAPSHOT') && gradle.taskGraph.allTasks.any { task ->
+            task.name.toLowerCase(Locale.ROOT).contains('central')
+                    || task.name == 'publish'
+        }
+    }
+    if (signingKey != null && !signingKey.isBlank()) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+    }
+    sign publishing.publications.mavenJava
+}

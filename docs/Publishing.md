@@ -28,6 +28,18 @@ The `mavenJava` publication includes:
 
 Gradle module metadata is disabled for publication so a build-host-specific LWJGL native classifier is not published as universal metadata. Consumers should add their own LWJGL native classifier for their operating system when they need runtime OpenCL execution.
 
+## Optional IR Validation Artifact
+
+The `ir-validation` module is a separate strict-build add-on:
+
+```text
+groupId: io.github.deussixik
+artifactId: javatogpu-ir-validation
+version: 0.1.0-alpha.1
+```
+
+It contributes compiler IR passes through Java `ServiceLoader`. Users add it to the annotation-processor path when they want extra lowered-IR safety checks before OpenCL emission.
+
 ## Release Dependency Baseline
 
 The OpenCL runtime depends on the published Packager release:
@@ -148,6 +160,7 @@ After upload, complete the release from the Maven Central / Sonatype portal if t
 dependencies {
     implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
     annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1' // optional strict IR checks
 
     runtimeOnly 'org.lwjgl:lwjgl::natives-windows'
 }

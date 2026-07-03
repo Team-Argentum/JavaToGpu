@@ -16,10 +16,20 @@ Add the processor as both a dependency and an annotation processor:
 
 ```groovy
 dependencies {
-    implementation project(':processor')
-    annotationProcessor project(':processor')
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
 }
 ```
+
+Optional strict IR validation can be enabled by adding:
+
+```groovy
+dependencies {
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+}
+```
+
+The extra artifact validates lowered IR before OpenCL emission and is intended for CI, compiler development, and safety-focused builds.
 
 ## Write A Kernel
 

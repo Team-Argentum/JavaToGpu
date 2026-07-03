@@ -8,6 +8,7 @@ import net.sixik.ga_utils.javatogpu.frontend.asm.AsmValidationConfig;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
@@ -21,13 +22,23 @@ public final class AsmFrontendService {
 
     private final AsmExpressionLifter lifter;
     private final OpenClKernelEmitter emitter;
+    private final GpuIrPassRunner passRunner;
+
+    public AsmFrontendService(
+            AsmExpressionLifter lifter,
+            OpenClKernelEmitter emitter,
+            GpuIrPassRunner passRunner
+    ) {
+        this.lifter = lifter;
+        this.emitter = emitter;
+        this.passRunner = passRunner;
+    }
 
     public AsmFrontendService(
             AsmExpressionLifter lifter,
             OpenClKernelEmitter emitter
     ) {
-        this.lifter = lifter;
-        this.emitter = emitter;
+        this(lifter, emitter, GpuIrPassRunner.loadFromServiceLoader());
     }
 
     public static AsmFrontendService createDefault() {
@@ -37,7 +48,8 @@ public final class AsmFrontendService {
     public static AsmFrontendService create(GpuIntrinsicDatabase intrinsicDatabase) {
         return new AsmFrontendService(
                 new AsmExpressionLifter(intrinsicDatabase),
-                new OpenClKernelEmitter()
+                new OpenClKernelEmitter(),
+                GpuIrPassRunner.loadFromServiceLoader()
         );
     }
 
@@ -99,6 +111,7 @@ public final class AsmFrontendService {
                 OpenClKernelNaming.toEntryPointName(kernelMethod.parsedMethod().name()),
                 kernelResult.helperDependencies()
         );
+        passRunner.run(compiledKernel, compiledMethods, structs);
 
         return emitter.emitProgram(
                 compiledKernel,
