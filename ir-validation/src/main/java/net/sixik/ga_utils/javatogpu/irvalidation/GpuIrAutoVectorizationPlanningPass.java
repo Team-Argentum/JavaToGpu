@@ -28,17 +28,27 @@ public final class GpuIrAutoVectorizationPlanningPass implements GpuIrPass {
     @Override
     public void run(GpuIrPassContext context) {
         GpuIrAutoVectorizationReport report = scan(context);
-        if (mode == GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_WARNED_CANDIDATES
-                && report.hasCandidateWarnings()) {
-            GpuIrAutoVectorizationWarningDiagnostic warning = report.previewWarningDiagnostics().getFirst();
+        GpuIrAutoVectorizationPreview preview = report.preview();
+        if (mode == GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_ANY_DIAGNOSTIC
+                && preview.hasBlockingDiagnostics()) {
             throw new GpuIrPassException("IR auto-vectorization planning failed for "
                     + context.method().irMethod().name()
-                    + ": " + warning.summary());
+                    + ": " + preview.firstBlockingDiagnosticSummary().orElseThrow());
+        }
+        if (mode == GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_WARNED_CANDIDATES
+                && preview.hasWarnings()) {
+            throw new GpuIrPassException("IR auto-vectorization planning failed for "
+                    + context.method().irMethod().name()
+                    + ": " + preview.warningDiagnostics().getFirst().summary());
         }
     }
 
     public GpuIrAutoVectorizationReport scan(GpuIrPassContext context) {
         Objects.requireNonNull(context, "context");
         return scanner.scan(context.method().irMethod());
+    }
+
+    public GpuIrAutoVectorizationPreview preview(GpuIrPassContext context) {
+        return scan(context).preview();
     }
 }

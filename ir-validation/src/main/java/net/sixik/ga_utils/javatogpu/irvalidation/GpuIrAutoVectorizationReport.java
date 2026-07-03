@@ -47,15 +47,33 @@ public record GpuIrAutoVectorizationReport(
                 .sum();
     }
 
+    public int totalWarningCount() {
+        return candidates.stream()
+                .mapToInt(GpuIrAutoVectorizationCandidate::warningCount)
+                .sum();
+    }
+
     public List<GpuIrAutoVectorizationCandidate> candidatesWithAliasWarnings() {
         return candidates.stream()
                 .filter(GpuIrAutoVectorizationCandidate::hasAliasWarnings)
                 .toList();
     }
 
+    public List<GpuIrAutoVectorizationCandidate> candidatesWithRepeatedTargetWarnings() {
+        return candidates.stream()
+                .filter(GpuIrAutoVectorizationCandidate::hasRepeatedTargetWarnings)
+                .toList();
+    }
+
     public List<GpuIrAutoVectorizationCandidate> candidatesWithCrossLaneReadWarnings() {
         return candidates.stream()
                 .filter(GpuIrAutoVectorizationCandidate::hasCrossLaneReadWarnings)
+                .toList();
+    }
+
+    public List<GpuIrAutoVectorizationCandidate> candidatesWithNonLaneReadWarnings() {
+        return candidates.stream()
+                .filter(GpuIrAutoVectorizationCandidate::hasNonLaneReadWarnings)
                 .toList();
     }
 
@@ -73,6 +91,21 @@ public record GpuIrAutoVectorizationReport(
                 .toList();
     }
 
+    public List<GpuIrAutoVectorizationRewriteCandidatePreview> previewRewritePriorityCandidates() {
+        return rewritePriorityCandidates().stream()
+                .map(GpuIrAutoVectorizationRewriteCandidatePreview::from)
+                .toList();
+    }
+
+    public GpuIrAutoVectorizationPreview preview() {
+        return new GpuIrAutoVectorizationPreview(
+                methodName,
+                previewRewritePriorityCandidates(),
+                previewWarningDiagnostics(),
+                rejections
+        );
+    }
+
     public List<GpuIrAutoVectorizationCandidate> topCandidates() {
         return candidates.stream()
                 .sorted(Comparator.comparingInt(GpuIrAutoVectorizationCandidate::priorityScore).reversed())
@@ -83,12 +116,36 @@ public record GpuIrAutoVectorizationReport(
         return !candidatesWithAliasWarnings().isEmpty();
     }
 
+    public boolean hasRepeatedTargetWarnings() {
+        return !candidatesWithRepeatedTargetWarnings().isEmpty();
+    }
+
     public boolean hasCrossLaneReadWarnings() {
         return !candidatesWithCrossLaneReadWarnings().isEmpty();
     }
 
+    public boolean hasNonLaneReadWarnings() {
+        return !candidatesWithNonLaneReadWarnings().isEmpty();
+    }
+
     public boolean hasCandidateWarnings() {
         return !candidatesWithWarnings().isEmpty();
+    }
+
+    public Map<String, Long> warningFamilyCounts() {
+        return java.util.stream.Stream.of(
+                        Map.entry("alias", (long) candidatesWithAliasWarnings().size()),
+                        Map.entry("repeatedTarget", (long) candidatesWithRepeatedTargetWarnings().size()),
+                        Map.entry("crossLaneRead", (long) candidatesWithCrossLaneReadWarnings().size()),
+                        Map.entry("nonLaneRead", (long) candidatesWithNonLaneReadWarnings().size())
+                )
+                .filter(entry -> entry.getValue() > 0)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (left, right) -> left,
+                        java.util.LinkedHashMap::new
+                ));
     }
 
     public List<GpuIrAutoVectorizationWarningDiagnostic> previewWarningDiagnostics() {
@@ -128,7 +185,10 @@ public record GpuIrAutoVectorizationReport(
         return "auto-vectorization method=" + methodName
                 + " candidates=" + candidateCount()
                 + " rewritePriorityCandidates=" + rewritePriorityCandidates().size()
+                + " rewritePreviews=" + previewRewritePriorityCandidates().size()
                 + " warnings=" + candidatesWithWarnings().size()
+                + " totalWarnings=" + totalWarningCount()
+                + (hasCandidateWarnings() ? " warningFamilies=" + warningFamilyCounts() : "")
                 + " rejections=" + rejectionCount()
                 + (hasRejections() ? " rejectionReasons=" + rejectionReasonCounts() : "");
     }

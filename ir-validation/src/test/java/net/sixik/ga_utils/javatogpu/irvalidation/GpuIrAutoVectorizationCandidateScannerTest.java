@@ -57,15 +57,21 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(List.of("out", "mask"), candidate.targetArrays());
         assertEquals(List.of("left", "right", "out"), candidate.sourceArrays());
         assertEquals(List.of("target array `out` is also read in the loop body"), candidate.aliasWarnings());
+        assertEquals(List.of(), candidate.repeatedTargetWarnings());
         assertEquals(List.of(), candidate.crossLaneReadWarnings());
         assertTrue(candidate.hasAliasWarnings());
         assertFalse(candidate.hasCrossLaneReadWarnings());
         assertTrue(candidate.hasWarnings());
         assertTrue(report.hasAliasWarnings());
+        assertFalse(report.hasRepeatedTargetWarnings());
         assertFalse(report.hasCrossLaneReadWarnings());
+        assertFalse(report.hasNonLaneReadWarnings());
         assertTrue(report.hasCandidateWarnings());
         assertEquals(List.of(candidate), report.candidatesWithAliasWarnings());
         assertEquals(List.of(candidate), report.candidatesWithWarnings());
+        assertEquals(1, candidate.warningCount());
+        assertEquals(1, report.totalWarningCount());
+        assertEquals(java.util.Map.of("alias", 1L), report.warningFamilyCounts());
         assertEquals(List.of(GpuIrAutoVectorizationWarningDiagnostic.from(candidate)), report.previewWarningDiagnostics());
         assertEquals(1, report.previewWarningDiagnosticsByLocation().get("stmt[0]").size());
         assertEquals(0, candidate.priorityScore());
@@ -100,6 +106,8 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(report.hasCrossLaneReadWarnings());
         assertTrue(report.hasCandidateWarnings());
         assertEquals(List.of(candidate), report.candidatesWithCrossLaneReadWarnings());
+        assertEquals(List.of(), report.candidatesWithRepeatedTargetWarnings());
+        assertEquals(List.of(), report.candidatesWithNonLaneReadWarnings());
         assertEquals(List.of(candidate), report.candidatesWithWarnings());
         assertEquals("stmt[0]", report.previewWarningDiagnostics().getFirst().loopLocation());
         assertTrue(report.previewWarningDiagnostics().getFirst().summary().contains("crossLaneReadWarnings"));
@@ -108,10 +116,81 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 "array `left` is read at cross-lane offset +1 from `i`",
                 "array `right` is read at cross-lane offset -1 from `i`"
         ), candidate.crossLaneReadWarnings());
+        assertEquals(List.of(), candidate.repeatedTargetWarnings());
+        assertEquals(List.of(), candidate.nonLaneReadWarnings());
+        assertEquals(2, candidate.warningCount());
+        assertEquals(2, report.totalWarningCount());
+        assertEquals(java.util.Map.of("crossLaneRead", 1L), report.warningFamilyCounts());
         assertEquals(0, candidate.priorityScore());
         assertFalse(candidate.isRewritePriorityCandidate());
         assertTrue(candidate.hasCrossLaneReadWarnings());
         assertTrue(candidate.summary().contains("crossLaneReadWarnings"));
+    }
+
+    @Test
+    void reportsNonLaneReadWarningsForUnknownArrayIndexes() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(
+                        new GpuIrAssignment(
+                                new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("j"))
+                        )
+                ))
+        ));
+
+        GpuIrAutoVectorizationReport report = scanner.scan(method);
+        GpuIrAutoVectorizationCandidate candidate = report.candidates().getFirst();
+
+        assertTrue(report.hasCandidates());
+        assertTrue(report.hasCandidateWarnings());
+        assertTrue(report.hasNonLaneReadWarnings());
+        assertEquals(List.of(candidate), report.candidatesWithNonLaneReadWarnings());
+        assertEquals(List.of("left"), candidate.sourceArrays());
+        assertEquals(List.of("array `left` is read with non-lane index `j` instead of `i`"), candidate.nonLaneReadWarnings());
+        assertTrue(candidate.hasNonLaneReadWarnings());
+        assertEquals(1, candidate.warningCount());
+        assertEquals(1, report.totalWarningCount());
+        assertEquals(java.util.Map.of("nonLaneRead", 1L), report.warningFamilyCounts());
+        assertEquals(0, candidate.priorityScore());
+        assertFalse(candidate.isRewritePriorityCandidate());
+        assertEquals(List.of(candidate), report.candidatesWithWarnings());
+        assertTrue(report.previewWarningDiagnostics().getFirst().summary().contains("nonLaneReadWarnings"));
+        assertTrue(candidate.summary().contains("nonLaneReadWarnings"));
+    }
+
+    @Test
+    void reportsRepeatedTargetWarningsForMultipleWritesToSameLaneArray() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(
+                        new GpuIrAssignment(
+                                new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                        ),
+                        new GpuIrAssignment(
+                                new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                ))
+        ));
+
+        GpuIrAutoVectorizationReport report = scanner.scan(method);
+        GpuIrAutoVectorizationCandidate candidate = report.candidates().getFirst();
+
+        assertTrue(report.hasCandidates());
+        assertTrue(report.hasCandidateWarnings());
+        assertTrue(report.hasRepeatedTargetWarnings());
+        assertEquals(List.of(candidate), report.candidatesWithRepeatedTargetWarnings());
+        assertEquals(List.of("out"), candidate.targetArrays());
+        assertEquals(List.of("target array `out` is written more than once in the loop body"), candidate.repeatedTargetWarnings());
+        assertTrue(candidate.hasRepeatedTargetWarnings());
+        assertEquals(1, candidate.warningCount());
+        assertEquals(1, report.totalWarningCount());
+        assertEquals(java.util.Map.of("repeatedTarget", 1L), report.warningFamilyCounts());
+        assertEquals(0, candidate.priorityScore());
+        assertFalse(candidate.isRewritePriorityCandidate());
+        assertEquals(List.of(candidate), report.candidatesWithWarnings());
+        assertTrue(report.previewWarningDiagnostics().getFirst().summary().contains("repeatedTargetWarnings"));
+        assertTrue(candidate.summary().contains("repeatedTargetWarnings"));
     }
 
     @Test
@@ -154,6 +233,27 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(4, ranked.get(1).priorityScore());
         assertTrue(ranked.stream().allMatch(GpuIrAutoVectorizationCandidate::isRewritePriorityCandidate));
         assertEquals(ranked, report.topCandidates());
+        assertEquals(2, report.previewRewritePriorityCandidates().size());
+        GpuIrAutoVectorizationPreview aggregatePreview = report.preview();
+        assertTrue(aggregatePreview.hasRewriteCandidates());
+        assertFalse(aggregatePreview.hasWarnings());
+        assertFalse(aggregatePreview.hasRejections());
+        assertFalse(aggregatePreview.hasBlockingDiagnostics());
+        assertEquals(2, aggregatePreview.rewriteCandidateCount());
+        assertEquals(0, aggregatePreview.warningCount());
+        assertEquals(0, aggregatePreview.rejectionCount());
+        assertEquals(2, aggregatePreview.totalDiagnosticCount());
+        assertEquals(java.util.Map.of(), aggregatePreview.warningFamilyCounts());
+        assertTrue(aggregatePreview.firstBlockingDiagnosticSummary().isEmpty());
+        assertTrue(aggregatePreview.summary().contains("rewriteCandidates=2"));
+        GpuIrAutoVectorizationRewriteCandidatePreview preview = report.previewRewritePriorityCandidates().getFirst();
+        assertEquals("stmt[1]", preview.loopLocation());
+        assertEquals(8, preview.laneCount());
+        assertEquals(2, preview.assignmentCount());
+        assertEquals(16, preview.priorityScore());
+        assertEquals(List.of("outB", "maskB"), preview.targetArrays());
+        assertTrue(preview.summary().contains("rewrite candidate"));
+        assertTrue(report.summary().contains("rewritePreviews=2"));
     }
 
     @Test
@@ -229,6 +329,15 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(2, report.rejectionsByReason().get(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT).size());
         assertTrue(report.summary().contains("rejections=3"));
         assertTrue(report.summary().contains("UNSUPPORTED_LANE_COUNT=2"));
+        GpuIrAutoVectorizationPreview preview = report.preview();
+        assertFalse(preview.hasRewriteCandidates());
+        assertFalse(preview.hasWarnings());
+        assertTrue(preview.hasRejections());
+        assertTrue(preview.hasBlockingDiagnostics());
+        assertEquals(3, preview.totalDiagnosticCount());
+        assertEquals(2L, preview.rejectionReasonCounts().get(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT));
+        assertTrue(preview.firstBlockingDiagnosticSummary().orElseThrow().contains("UNSUPPORTED_LANE_COUNT"));
+        assertTrue(preview.summary().contains("totalDiagnostics=3"));
     }
 
     @Test
@@ -244,6 +353,8 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 List.of(),
                 List.of(),
                 List.of(),
+                List.of(),
+                List.of(),
                 1
         ));
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRejectionDiagnostic(
@@ -254,6 +365,22 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationWarningDiagnostic(
                 "stmt[0]",
                 1,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRewriteCandidatePreview(
+                "stmt[0]",
+                4,
+                1,
+                0,
+                List.of("out"),
+                List.of()
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationPreview(
+                "",
+                List.of(),
                 List.of(),
                 List.of()
         ));

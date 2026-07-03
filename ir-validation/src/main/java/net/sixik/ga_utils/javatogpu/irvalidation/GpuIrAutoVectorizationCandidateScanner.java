@@ -100,7 +100,9 @@ public final class GpuIrAutoVectorizationCandidateScanner {
 
         LinkedHashSet<String> targetArrays = new LinkedHashSet<>();
         LinkedHashSet<String> sourceArrays = new LinkedHashSet<>();
+        LinkedHashSet<String> repeatedTargetWarnings = new LinkedHashSet<>();
         LinkedHashSet<String> crossLaneReadWarnings = new LinkedHashSet<>();
+        LinkedHashSet<String> nonLaneReadWarnings = new LinkedHashSet<>();
         int assignmentCount = 0;
         for (GpuIrStatement statement : loop.body()) {
             if (!(statement instanceof GpuIrAssignment assignment)) {
@@ -113,8 +115,10 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             if (expressionClassifier.mayHaveSideEffects(assignment.value())) {
                 return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, "assignment value may have side effects");
             }
-            targetArrays.add(target.arrayName());
-            collectArrayReads(assignment.value(), bounds.get().inductionVariable(), sourceArrays, crossLaneReadWarnings);
+            if (!targetArrays.add(target.arrayName())) {
+                repeatedTargetWarnings.add("target array `" + target.arrayName() + "` is written more than once in the loop body");
+            }
+            collectArrayReads(assignment.value(), bounds.get().inductionVariable(), sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             assignmentCount++;
         }
         if (assignmentCount == 0 || targetArrays.isEmpty()) {
@@ -129,7 +133,9 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 List.copyOf(targetArrays),
                 List.copyOf(sourceArrays),
                 aliasWarnings(targetArrays, sourceArrays),
+                List.copyOf(repeatedTargetWarnings),
                 List.copyOf(crossLaneReadWarnings),
+                List.copyOf(nonLaneReadWarnings),
                 assignmentCount
         ));
     }
@@ -148,57 +154,66 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             GpuIrExpression expression,
             String inductionVariable,
             Set<String> sourceArrays,
-            Set<String> crossLaneReadWarnings
+            Set<String> crossLaneReadWarnings,
+            Set<String> nonLaneReadWarnings
     ) {
         if (expression == null) {
             return;
         }
         if (expression instanceof GpuIrArrayAccess arrayAccess) {
             sourceArrays.add(arrayAccess.arrayName());
-            crossLaneOffset(arrayAccess.index(), inductionVariable)
-                    .ifPresent(offset -> crossLaneReadWarnings.add("array `" + arrayAccess.arrayName()
-                            + "` is read at cross-lane offset " + signedOffset(offset)
-                            + " from `" + inductionVariable + "`"));
-            collectArrayReads(arrayAccess.index(), inductionVariable, sourceArrays, crossLaneReadWarnings);
+            Optional<Integer> laneRelativeOffset = laneRelativeOffset(arrayAccess.index(), inductionVariable);
+            if (laneRelativeOffset.isPresent() && laneRelativeOffset.get() != 0) {
+                crossLaneReadWarnings.add("array `" + arrayAccess.arrayName()
+                            + "` is read at cross-lane offset " + signedOffset(laneRelativeOffset.get())
+                            + " from `" + inductionVariable + "`");
+            } else if (laneRelativeOffset.isEmpty()) {
+                nonLaneReadWarnings.add("array `" + arrayAccess.arrayName()
+                        + "` is read with non-lane index " + indexSummary(arrayAccess.index())
+                        + " instead of `" + inductionVariable + "`");
+            }
+            collectArrayReads(arrayAccess.index(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
         } else if (expression instanceof GpuIrBinary binary) {
-            collectArrayReads(binary.left(), inductionVariable, sourceArrays, crossLaneReadWarnings);
-            collectArrayReads(binary.right(), inductionVariable, sourceArrays, crossLaneReadWarnings);
+            collectArrayReads(binary.left(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(binary.right(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
         } else if (expression instanceof GpuIrUnary unary) {
-            collectArrayReads(unary.operand(), inductionVariable, sourceArrays, crossLaneReadWarnings);
+            collectArrayReads(unary.operand(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
         } else if (expression instanceof GpuIrTernary ternary) {
-            collectArrayReads(ternary.condition(), inductionVariable, sourceArrays, crossLaneReadWarnings);
-            collectArrayReads(ternary.whenTrue(), inductionVariable, sourceArrays, crossLaneReadWarnings);
-            collectArrayReads(ternary.whenFalse(), inductionVariable, sourceArrays, crossLaneReadWarnings);
+            collectArrayReads(ternary.condition(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(ternary.whenTrue(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(ternary.whenFalse(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
         } else if (expression instanceof GpuIrFieldAccess fieldAccess) {
-            collectArrayReads(fieldAccess.target(), inductionVariable, sourceArrays, crossLaneReadWarnings);
+            collectArrayReads(fieldAccess.target(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
         } else if (expression instanceof GpuIrStructInit structInit) {
             for (GpuIrExpression argument : structInit.arguments()) {
-                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings);
+                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             }
         } else if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
-            collectArrayReads(intrinsicCall.receiver(), inductionVariable, sourceArrays, crossLaneReadWarnings);
+            collectArrayReads(intrinsicCall.receiver(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             for (GpuIrExpression argument : intrinsicCall.arguments()) {
-                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings);
+                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             }
         } else if (expression instanceof GpuIrHelperCall helperCall) {
             for (GpuIrExpression argument : helperCall.arguments()) {
-                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings);
+                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             }
         }
     }
 
-    private Optional<Integer> crossLaneOffset(GpuIrExpression index, String inductionVariable) {
+    private Optional<Integer> laneRelativeOffset(GpuIrExpression index, String inductionVariable) {
+        if (isVariableRef(index, inductionVariable)) {
+            return Optional.of(0);
+        }
         if (!(index instanceof GpuIrBinary binary)) {
             return Optional.empty();
         }
-        Optional<Integer> offset = switch (binary.operator()) {
+        return switch (binary.operator()) {
             case "+" -> offsetFromAddition(binary, inductionVariable);
             case "-" -> isVariableRef(binary.left(), inductionVariable)
                     ? intLiteral(binary.right()).map(value -> -value)
                     : Optional.empty();
             default -> Optional.empty();
         };
-        return offset.filter(value -> value != 0);
     }
 
     private Optional<Integer> offsetFromAddition(GpuIrBinary binary, String inductionVariable) {
@@ -213,6 +228,19 @@ public final class GpuIrAutoVectorizationCandidateScanner {
 
     private String signedOffset(int offset) {
         return offset > 0 ? "+" + offset : Integer.toString(offset);
+    }
+
+    private String indexSummary(GpuIrExpression index) {
+        if (index instanceof GpuIrVariableRef variableRef) {
+            return "`" + variableRef.name() + "`";
+        }
+        if (index instanceof GpuIrLiteral literal) {
+            return literal.sourceText();
+        }
+        if (index instanceof GpuIrBinary binary) {
+            return indexSummary(binary.left()) + " " + binary.operator() + " " + indexSummary(binary.right());
+        }
+        return index.getClass().getSimpleName();
     }
 
     private Optional<LoopBounds> loopBounds(GpuIrForLoop loop) {

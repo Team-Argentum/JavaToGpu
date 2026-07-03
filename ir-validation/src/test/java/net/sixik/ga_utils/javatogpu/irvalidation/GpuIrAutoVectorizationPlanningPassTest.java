@@ -23,6 +23,7 @@ import java.util.ServiceLoader;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -61,6 +62,30 @@ class GpuIrAutoVectorizationPlanningPassTest {
     }
 
     @Test
+    void previewReturnsUnifiedReadOnlyAggregateWithoutMutatingIr() {
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+        GpuIrPassContext context = context(method(irMethod));
+
+        GpuIrAutoVectorizationPreview preview = pass.preview(context);
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertFalse(preview.hasBlockingDiagnostics());
+        assertEquals(1, preview.rewriteCandidateCount());
+        assertEquals(0, preview.warningCount());
+        assertEquals(0, preview.rejectionCount());
+        assertEquals(1, preview.totalDiagnosticCount());
+        assertEquals(java.util.Map.of(), preview.warningFamilyCounts());
+        assertTrue(preview.firstBlockingDiagnosticSummary().isEmpty());
+        assertEquals(irMethod.statements(), context.method().irMethod().statements());
+        assertTrue(preview.summary().contains("rewriteCandidates=1"));
+    }
+
+    @Test
     void diagnosticModeDoesNotFailOnWarnedCandidates() {
         GpuIrPassContext context = context(method(methodWithCrossLaneWarning()));
 
@@ -80,6 +105,59 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(exception.getMessage().contains("IR auto-vectorization planning failed"));
         assertTrue(exception.getMessage().contains("auto-vectorization warning"));
         assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
+        assertTrue(exception.getMessage().contains("stmt[0]"));
+    }
+
+    @Test
+    void warnedCandidateStrictModeIgnoresRejectedLoops() {
+        GpuIrAutoVectorizationPlanningPass strictPass = new GpuIrAutoVectorizationPlanningPass(
+                new GpuIrAutoVectorizationCandidateScanner(),
+                GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_WARNED_CANDIDATES
+        );
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(5, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+        GpuIrPassContext context = context(method(irMethod));
+
+        assertDoesNotThrow(() -> strictPass.run(context));
+    }
+
+    @Test
+    void anyDiagnosticStrictModeFailsOnWarnedCandidates() {
+        GpuIrAutoVectorizationPlanningPass strictPass = new GpuIrAutoVectorizationPlanningPass(
+                new GpuIrAutoVectorizationCandidateScanner(),
+                GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_ANY_DIAGNOSTIC
+        );
+        GpuIrPassContext context = context(method(methodWithCrossLaneWarning()));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
+
+        assertTrue(exception.getMessage().contains("auto-vectorization warning"));
+        assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
+        assertTrue(exception.getMessage().contains("stmt[0]"));
+    }
+
+    @Test
+    void anyDiagnosticStrictModeFailsOnRejectedLoops() {
+        GpuIrAutoVectorizationPlanningPass strictPass = new GpuIrAutoVectorizationPlanningPass(
+                new GpuIrAutoVectorizationCandidateScanner(),
+                GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_ANY_DIAGNOSTIC
+        );
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(5, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+        GpuIrPassContext context = context(method(irMethod));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
+
+        assertTrue(exception.getMessage().contains("UNSUPPORTED_LANE_COUNT"));
+        assertTrue(exception.getMessage().contains("laneCount=5"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
     }
 

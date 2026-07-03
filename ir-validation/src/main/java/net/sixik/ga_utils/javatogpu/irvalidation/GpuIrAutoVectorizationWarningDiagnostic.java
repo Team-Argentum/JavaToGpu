@@ -10,15 +10,22 @@ public record GpuIrAutoVectorizationWarningDiagnostic(
         String loopLocation,
         int priorityScore,
         List<String> aliasWarnings,
-        List<String> crossLaneReadWarnings
+        List<String> repeatedTargetWarnings,
+        List<String> crossLaneReadWarnings,
+        List<String> nonLaneReadWarnings
 ) {
     public GpuIrAutoVectorizationWarningDiagnostic {
         if (loopLocation == null || loopLocation.isBlank()) {
             throw new IllegalArgumentException("loopLocation must not be blank");
         }
         aliasWarnings = List.copyOf(Objects.requireNonNull(aliasWarnings, "aliasWarnings"));
+        repeatedTargetWarnings = List.copyOf(Objects.requireNonNull(repeatedTargetWarnings, "repeatedTargetWarnings"));
         crossLaneReadWarnings = List.copyOf(Objects.requireNonNull(crossLaneReadWarnings, "crossLaneReadWarnings"));
-        if (aliasWarnings.isEmpty() && crossLaneReadWarnings.isEmpty()) {
+        nonLaneReadWarnings = List.copyOf(Objects.requireNonNull(nonLaneReadWarnings, "nonLaneReadWarnings"));
+        if (aliasWarnings.isEmpty()
+                && repeatedTargetWarnings.isEmpty()
+                && crossLaneReadWarnings.isEmpty()
+                && nonLaneReadWarnings.isEmpty()) {
             throw new IllegalArgumentException("at least one warning must be present");
         }
     }
@@ -29,7 +36,9 @@ public record GpuIrAutoVectorizationWarningDiagnostic(
                 candidate.loopLocation(),
                 candidate.priorityScore(),
                 candidate.aliasWarnings(),
-                candidate.crossLaneReadWarnings()
+                candidate.repeatedTargetWarnings(),
+                candidate.crossLaneReadWarnings(),
+                candidate.nonLaneReadWarnings()
         );
     }
 
@@ -37,6 +46,8 @@ public record GpuIrAutoVectorizationWarningDiagnostic(
         return "auto-vectorization warning at " + loopLocation
                 + " priorityScore=" + priorityScore
                 + (aliasWarnings.isEmpty() ? "" : " aliasWarnings=" + aliasWarnings)
-                + (crossLaneReadWarnings.isEmpty() ? "" : " crossLaneReadWarnings=" + crossLaneReadWarnings);
+                + (repeatedTargetWarnings.isEmpty() ? "" : " repeatedTargetWarnings=" + repeatedTargetWarnings)
+                + (crossLaneReadWarnings.isEmpty() ? "" : " crossLaneReadWarnings=" + crossLaneReadWarnings)
+                + (nonLaneReadWarnings.isEmpty() ? "" : " nonLaneReadWarnings=" + nonLaneReadWarnings);
     }
 }
