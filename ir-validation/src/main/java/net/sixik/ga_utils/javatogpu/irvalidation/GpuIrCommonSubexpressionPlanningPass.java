@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
+import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPass;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassContext;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
@@ -12,12 +14,14 @@ import java.util.Objects;
 public final class GpuIrCommonSubexpressionPlanningPass implements GpuIrPass {
     private final GpuIrCommonSubexpressionScanner scanner;
     private final GpuIrCommonSubexpressionRewritePlanner planner;
+    private final GpuIrCommonSubexpressionRewriteApplicator applicator;
     private final GpuIrCommonSubexpressionPlanningMode mode;
 
     public GpuIrCommonSubexpressionPlanningPass() {
         this(
                 GpuIrCommonSubexpressionScanner.optimizerFocused(),
                 new GpuIrCommonSubexpressionRewritePlanner(),
+                new GpuIrCommonSubexpressionRewriteApplicator(),
                 GpuIrCommonSubexpressionPlanningMode.DIAGNOSTIC_ONLY
         );
     }
@@ -27,8 +31,18 @@ public final class GpuIrCommonSubexpressionPlanningPass implements GpuIrPass {
             GpuIrCommonSubexpressionRewritePlanner planner,
             GpuIrCommonSubexpressionPlanningMode mode
     ) {
+        this(scanner, planner, new GpuIrCommonSubexpressionRewriteApplicator(), mode);
+    }
+
+    public GpuIrCommonSubexpressionPlanningPass(
+            GpuIrCommonSubexpressionScanner scanner,
+            GpuIrCommonSubexpressionRewritePlanner planner,
+            GpuIrCommonSubexpressionRewriteApplicator applicator,
+            GpuIrCommonSubexpressionPlanningMode mode
+    ) {
         this.scanner = Objects.requireNonNull(scanner, "scanner");
         this.planner = Objects.requireNonNull(planner, "planner");
+        this.applicator = Objects.requireNonNull(applicator, "applicator");
         this.mode = Objects.requireNonNull(mode, "mode");
     }
 
@@ -45,6 +59,18 @@ public final class GpuIrCommonSubexpressionPlanningPass implements GpuIrPass {
 
     public GpuIrCommonSubexpressionRewritePlanReport plan(GpuIrPassContext context) {
         GpuIrCommonSubexpressionReport report = scanner.scan(context.method().irMethod());
-        return planner.planReport(context.method().irMethod(), report);
+        return planner.planReport(context.method(), report);
+    }
+
+    public GpuIrCompiledMethod rewrite(GpuIrPassContext context) {
+        Objects.requireNonNull(context, "context");
+        GpuIrCommonSubexpressionRewritePlanReport report = plan(context);
+        GpuIrMethod rewrittenMethod = applicator.apply(context.method(), report);
+        return new GpuIrCompiledMethod(
+                context.method().parsedMethod(),
+                rewrittenMethod,
+                context.method().emittedName(),
+                context.method().helperDependencies()
+        );
     }
 }

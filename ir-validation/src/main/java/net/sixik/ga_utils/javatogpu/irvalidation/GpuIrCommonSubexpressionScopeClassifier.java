@@ -16,12 +16,6 @@ public final class GpuIrCommonSubexpressionScopeClassifier {
     }
 
     private boolean isControlFlowLocation(String location) {
-        return location.contains(".then")
-                || location.contains(".else")
-                || location.contains(".body")
-                || location.contains(".case[")
-                || location.contains(".condition")
-                || location.contains(".initializer") && location.contains(".stmt[")
-                || location.contains(".update");
+        return GpuIrCommonSubexpressionLocation.parse(location).controlFlowScoped();
     }
 }

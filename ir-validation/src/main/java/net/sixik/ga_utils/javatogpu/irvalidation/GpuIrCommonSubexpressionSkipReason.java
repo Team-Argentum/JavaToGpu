@@ -11,5 +11,8 @@ public enum GpuIrCommonSubexpressionSkipReason {
     MUTATED_BETWEEN_OCCURRENCES,
 
     // The first occurrence cannot be proven to dominate every planned replacement.
-    NO_DOMINATING_FIRST_OCCURRENCE
+    NO_DOMINATING_FIRST_OCCURRENCE,
+
+    // A broader parent expression rewrite already covers this nested candidate.
+    COVERED_BY_PARENT_REWRITE
 }

@@ -55,6 +55,79 @@ class GpuIrCommonSubexpressionPlanningPassTest {
     }
 
     @Test
+    void rewriteReturnsCompiledMethodCopyWithoutMutatingContext() {
+        GpuIrBinary firstExpression = new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrVariableRef("y"));
+        GpuIrBinary secondExpression = new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrVariableRef("x"));
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("int", "first", firstExpression),
+                new GpuIrVariableDeclaration("int", "second", secondExpression)
+        ));
+        GpuIrCompiledMethod compiledMethod = method(irMethod);
+        GpuIrPassContext context = context(compiledMethod);
+
+        GpuIrCompiledMethod rewritten = pass.rewrite(context);
+
+        assertEquals(compiledMethod.parsedMethod(), rewritten.parsedMethod());
+        assertEquals(compiledMethod.emittedName(), rewritten.emittedName());
+        assertEquals(compiledMethod.helperDependencies(), rewritten.helperDependencies());
+        assertEquals(3, rewritten.irMethod().statements().size());
+        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().getFirst();
+        assertEquals("__gpu_cse_0", temp.name());
+        assertEquals(irMethod.statements(), context.method().irMethod().statements());
+    }
+
+    @Test
+    void rewriteUsesParameterTypesForAssignmentValueTemporaryDeclarations() {
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrVariableRef("y"))),
+                new GpuIrAssignment(new GpuIrVariableRef("outB"), new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrVariableRef("x")))
+        ));
+        GpuIrPassContext context = context(method(irMethod));
+
+        GpuIrCompiledMethod rewritten = pass.rewrite(context);
+
+        assertEquals(3, rewritten.irMethod().statements().size());
+        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().getFirst();
+        assertEquals("int", temp.typeName());
+        assertEquals("__gpu_cse_0", temp.name());
+        assertEquals(irMethod.statements(), context.method().irMethod().statements());
+    }
+
+    @Test
+    void rewriteAvoidsTemporaryNameCollisionsWithParameters() {
+        GpuIrMethod irMethod = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrVariableRef("y"))),
+                new GpuIrAssignment(new GpuIrVariableRef("outB"), new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrVariableRef("x")))
+        ));
+        ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
+                "KernelOwner",
+                "test.KernelOwner",
+                irMethod.name(),
+                "void",
+                List.of(
+                        new ParsedGpuParameter("x", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                        new ParsedGpuParameter("y", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                        new ParsedGpuParameter("__gpu_cse_0", "int", GpuAddressSpace.PRIVATE, false, List.of())
+                ),
+                List.of(),
+                List.of(),
+                null,
+                false,
+                List.of(),
+                null,
+                "",
+                null,
+                false
+        );
+        GpuIrPassContext context = context(new GpuIrCompiledMethod(parsedMethod, irMethod, "jtg_kernel", List.of()));
+
+        GpuIrCompiledMethod rewritten = pass.rewrite(context);
+
+        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().getFirst();
+        assertEquals("__gpu_cse_1", temp.name());
+    }
+
+    @Test
     void diagnosticModeDoesNotFailOnSkippedCandidates() {
         GpuIrPassContext context = context(method(methodWithUnstableCandidate()));
 

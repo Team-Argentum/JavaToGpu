@@ -17,4 +17,42 @@ public record GpuIrCommonSubexpressionRewritePlanReport(
     public boolean hasPlans() {
         return !plans.isEmpty();
     }
+
+    public boolean hasSkippedCandidates() {
+        return !skippedCandidates.isEmpty();
+    }
+
+    public int insertionCount() {
+        return plans.size();
+    }
+
+    public int replacementEditCount() {
+        return plans.stream()
+                .mapToInt(GpuIrCommonSubexpressionRewritePlan::replacementCountAfterAnchor)
+                .sum();
+    }
+
+    public int skippedCandidateCount() {
+        return skippedCandidates.size();
+    }
+
+    public List<GpuIrCommonSubexpressionRewriteEdit> previewReplacementEdits() {
+        return plans.stream()
+                .flatMap(plan -> plan.previewReplacementEdits().stream())
+                .toList();
+    }
+
+    public List<GpuIrCommonSubexpressionRewriteInsertion> previewInsertions() {
+        return plans.stream()
+                .map(GpuIrCommonSubexpressionRewritePlan::previewInsertion)
+                .toList();
+    }
+
+    public GpuIrCommonSubexpressionRewritePreview preview() {
+        return new GpuIrCommonSubexpressionRewritePreview(
+                previewInsertions(),
+                previewReplacementEdits(),
+                skippedCandidateCount()
+        );
+    }
 }
