@@ -34,6 +34,7 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         assertEquals("__gpu_cse_0", plan.temporaryName());
         assertTrue(plan.fingerprint().startsWith("binary(+"));
         assertEquals(1, plan.estimatedReuseSavings());
+        assertEquals(0, plan.insertionStatementIndex());
         assertEquals(List.of("stmt[0].initializer", "stmt[1].initializer"), plan.replacementLocations());
     }
 

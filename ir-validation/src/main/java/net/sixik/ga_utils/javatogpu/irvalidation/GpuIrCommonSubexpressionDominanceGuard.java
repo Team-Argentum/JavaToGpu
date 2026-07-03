@@ -11,22 +11,31 @@ public final class GpuIrCommonSubexpressionDominanceGuard {
     private static final Pattern TOP_LEVEL_STATEMENT = Pattern.compile("^stmt\\[(\\d+)]");
 
     public boolean firstOccurrenceDominatesReplacements(GpuIrCommonSubexpression candidate) {
+        return firstDominatingStatementIndex(candidate).isPresent();
+    }
+
+    public OptionalInt firstDominatingStatementIndex(GpuIrCommonSubexpression candidate) {
         if (candidate.locations().isEmpty()) {
-            return false;
+            return OptionalInt.empty();
         }
 
-        int previousStatementIndex = -1;
-        for (String location : candidate.locations()) {
-            OptionalInt statementIndex = topLevelStatementIndex(location);
+        OptionalInt firstStatementIndex = topLevelStatementIndex(candidate.locations().getFirst());
+        if (firstStatementIndex.isEmpty()) {
+            return OptionalInt.empty();
+        }
+
+        int previousStatementIndex = firstStatementIndex.getAsInt();
+        for (int index = 1; index < candidate.locations().size(); index++) {
+            OptionalInt statementIndex = topLevelStatementIndex(candidate.locations().get(index));
             if (statementIndex.isEmpty()) {
-                return false;
+                return OptionalInt.empty();
             }
             if (statementIndex.getAsInt() < previousStatementIndex) {
-                return false;
+                return OptionalInt.empty();
             }
             previousStatementIndex = statementIndex.getAsInt();
         }
-        return true;
+        return firstStatementIndex;
     }
 
     private OptionalInt topLevelStatementIndex(String location) {

@@ -9,9 +9,13 @@ public record GpuIrCommonSubexpressionRewritePlan(
         String temporaryName,
         String fingerprint,
         int estimatedReuseSavings,
+        int insertionStatementIndex,
         List<String> replacementLocations
 ) {
     public GpuIrCommonSubexpressionRewritePlan {
+        if (insertionStatementIndex < 0) {
+            throw new IllegalArgumentException("insertionStatementIndex must be non-negative");
+        }
         replacementLocations = List.copyOf(replacementLocations);
     }
 }

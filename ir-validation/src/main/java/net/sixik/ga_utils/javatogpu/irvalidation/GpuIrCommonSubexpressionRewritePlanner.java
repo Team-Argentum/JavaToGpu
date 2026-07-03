@@ -61,10 +61,13 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
     }
 
     private GpuIrCommonSubexpressionRewritePlan planCandidate(int index, GpuIrCommonSubexpression candidate) {
+        int insertionStatementIndex = dominanceGuard.firstDominatingStatementIndex(candidate)
+                .orElseThrow(() -> new IllegalStateException("rewrite candidate has no dominating insertion anchor"));
         return new GpuIrCommonSubexpressionRewritePlan(
                 "__gpu_cse_" + index,
                 candidate.fingerprint(),
                 candidate.estimatedReuseSavings(),
+                insertionStatementIndex,
                 candidate.locations()
         );
     }
