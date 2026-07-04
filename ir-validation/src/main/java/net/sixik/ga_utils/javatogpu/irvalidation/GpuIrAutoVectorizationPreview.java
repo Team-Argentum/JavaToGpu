@@ -13,8 +13,18 @@ public record GpuIrAutoVectorizationPreview(
         String methodName,
         List<GpuIrAutoVectorizationRewriteCandidatePreview> rewriteCandidates,
         List<GpuIrAutoVectorizationWarningDiagnostic> warningDiagnostics,
-        List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
+        List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
+        List<GpuIrAutoVectorizationProofSummary> additionalProofSummaries
 ) {
+    public GpuIrAutoVectorizationPreview(
+            String methodName,
+            List<GpuIrAutoVectorizationRewriteCandidatePreview> rewriteCandidates,
+            List<GpuIrAutoVectorizationWarningDiagnostic> warningDiagnostics,
+            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
+    ) {
+        this(methodName, rewriteCandidates, warningDiagnostics, rejections, List.of());
+    }
+
     public GpuIrAutoVectorizationPreview {
         if (methodName == null || methodName.isBlank()) {
             throw new IllegalArgumentException("methodName must not be blank");
@@ -22,6 +32,10 @@ public record GpuIrAutoVectorizationPreview(
         rewriteCandidates = List.copyOf(Objects.requireNonNull(rewriteCandidates, "rewriteCandidates"));
         warningDiagnostics = List.copyOf(Objects.requireNonNull(warningDiagnostics, "warningDiagnostics"));
         rejections = List.copyOf(Objects.requireNonNull(rejections, "rejections"));
+        additionalProofSummaries = List.copyOf(Objects.requireNonNull(additionalProofSummaries, "additionalProofSummaries"));
+        if (additionalProofSummaries.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("additionalProofSummaries must not contain null entries");
+        }
     }
 
     public boolean hasRewriteCandidates() {
@@ -60,6 +74,10 @@ public record GpuIrAutoVectorizationPreview(
         return rewritePlan().rewritePolicy();
     }
 
+    public GpuIrAutoVectorizationProofDecision proofDecision() {
+        return proofBundle().decision();
+    }
+
 
     /**
      * Shared proof surface for rewrite-plan warnings and guard diagnostics.
@@ -80,7 +98,10 @@ public record GpuIrAutoVectorizationPreview(
      * Single aggregate proof object for future rewrite gates.
      */
     public GpuIrAutoVectorizationProofBundle proofBundle() {
-        return GpuIrAutoVectorizationProofBundle.of(rewritePlanProofSummary());
+        List<GpuIrAutoVectorizationProofSummary> summaries = new java.util.ArrayList<>();
+        summaries.add(rewritePlanProofSummary());
+        summaries.addAll(additionalProofSummaries);
+        return new GpuIrAutoVectorizationProofBundle(summaries);
     }
 
     public int rewritePlanGuardCount() {
@@ -111,7 +132,9 @@ public record GpuIrAutoVectorizationPreview(
     }
 
     public boolean canApplyRewrite() {
-        return rewriteReadiness() == GpuIrAutoVectorizationRewriteReadiness.READY && rewritePolicy().canRewrite();
+        return rewriteReadiness() == GpuIrAutoVectorizationRewriteReadiness.READY
+                && rewritePolicy().canRewrite()
+                && proofDecision().allowRewrite();
     }
 
     public GpuIrAutoVectorizationRewriteReadiness rewriteReadiness() {
@@ -140,7 +163,10 @@ public record GpuIrAutoVectorizationPreview(
     }
 
     public boolean hasBlockingDiagnostics() {
-        return hasWarnings() || hasRejections() || hasRewritePlanGuardDiagnostics();
+        return hasWarnings()
+                || hasRejections()
+                || hasRewritePlanGuardDiagnostics()
+                || proofDecision().blocksRewrite();
     }
 
     public Optional<String> firstBlockingDiagnosticSummary() {
@@ -150,7 +176,15 @@ public record GpuIrAutoVectorizationPreview(
         if (hasRejections()) {
             return Optional.of(rejections.get(0).summary());
         }
-        return firstRewritePlanGuard().map(GpuIrAutoVectorizationRewriteGuardDiagnostic::summary);
+        Optional<String> firstRewritePlanGuard = firstRewritePlanGuard().map(GpuIrAutoVectorizationRewriteGuardDiagnostic::summary);
+        if (firstRewritePlanGuard.isPresent()) {
+            return firstRewritePlanGuard;
+        }
+        return proofDecision().firstBlockingProof()
+                .map(summary -> "proof decision " + proofDecision().status().artifactValue()
+                        + " blocks auto-vectorization rewrite at " + summary.proofKind()
+                        + "@" + summary.location()
+                        + " diagnostics=" + summary.diagnosticCount());
     }
 
     public Optional<String> firstBlockingDiagnosticFamily() {
@@ -160,7 +194,14 @@ public record GpuIrAutoVectorizationPreview(
         if (hasRejections()) {
             return Optional.of("rejection." + rejections.get(0).reason().name());
         }
-        return firstRewritePlanGuard().map(guard -> "guard." + guard.family().artifactValue());
+        Optional<String> firstRewritePlanGuard = firstRewritePlanGuard().map(guard -> "guard." + guard.family().artifactValue());
+        if (firstRewritePlanGuard.isPresent()) {
+            return firstRewritePlanGuard;
+        }
+        if (proofDecision().blocksRewrite()) {
+            return Optional.of("proofDecision." + proofDecision().status().artifactValue());
+        }
+        return Optional.empty();
     }
 
     private String firstWarningFamily(GpuIrAutoVectorizationWarningDiagnostic warning) {
@@ -211,6 +252,15 @@ public record GpuIrAutoVectorizationPreview(
                 + " rewritePolicyCanRewrite=" + rewritePolicy().canRewrite()
                 + " rewritePolicyBlockingGuards=" + rewritePolicy().blockingGuards().size()
                 + " canApplyRewrite=" + canApplyRewrite()
+                + " proofDecision=" + proofDecision().status().artifactValue()
+                + " proofDecisionAllowRewrite=" + proofDecision().allowRewrite()
+                + (proofDecision().blockingProofKinds().isEmpty() ? "" : " proofDecisionBlockingKinds=" + proofDecision().blockingProofKinds())
+                + " proofBundleRewriteSafe=" + proofBundle().rewriteSafe()
+                + " proofBundleDiagnostics=" + proofBundle().diagnosticCount()
+                + " proofBundleUnsafeProofs=" + proofBundle().unsafeProofSummaries().size()
+                + proofBundle().firstUnsafeProofSummary()
+                .map(summary -> " proofBundleFirstUnsafeProof=" + summary.proofKind() + "@" + summary.location())
+                .orElse("")
                 + " rewriteBlockedCandidates=" + rewriteBlockedCandidateCount()
                 + " rewritePlanOperations=" + rewritePlan().operationCount()
                 + " rewritePlanGuards=" + rewritePlanGuardCount()

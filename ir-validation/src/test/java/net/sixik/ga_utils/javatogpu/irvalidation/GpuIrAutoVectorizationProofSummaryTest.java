@@ -142,21 +142,166 @@ class GpuIrAutoVectorizationProofSummaryTest {
 
         assertFalse(bundle.rewriteSafe());
         assertTrue(bundle.hasDiagnostics());
+        assertEquals(List.of(rewritePlan, controlFlow), bundle.unsafeProofSummaries());
+        assertEquals(rewritePlan, bundle.firstUnsafeProofSummary().orElseThrow());
+        assertEquals(Map.of(
+                "rewritePlan", 1L,
+                "controlFlowBoundary", 1L
+        ), bundle.unsafeProofKindCounts());
+        assertEquals(GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_MULTIPLE_PROOFS, bundle.decision().status());
+        assertTrue(bundle.decision().blocksRewrite());
+        assertEquals(List.of("rewritePlan", "controlFlowBoundary"), bundle.decision().blockingProofKinds());
+        assertEquals(rewritePlan, bundle.decision().firstBlockingProof().orElseThrow());
         assertEquals(1, bundle.warningCount());
         assertEquals(2, bundle.guardDiagnosticCount());
         assertEquals(3, bundle.diagnosticCount());
         assertEquals(List.of("rewritePlan", "controlFlowBoundary", "memoryLegality"), bundle.proofKinds());
+        assertEquals(Map.of(
+                "rewritePlan", 1L,
+                "controlFlowBoundary", 1L,
+                "memoryLegality", 1L
+        ), bundle.proofKindCounts());
         assertEquals(Map.of(
                 GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE, 1L,
                 GpuIrAutoVectorizationRewriteGuardFamily.CONTROL_FLOW_BOUNDARY, 1L
         ), bundle.guardFamilyTypeCounts());
         assertEquals("3", fields.get("autoVectorizationProofBundleProofs"));
         assertEquals("rewritePlan,controlFlowBoundary,memoryLegality", fields.get("autoVectorizationProofBundleKinds"));
+        assertEquals("{rewritePlan=1,controlFlowBoundary=1,memoryLegality=1}", fields.get("autoVectorizationProofBundleKindCounts"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleKind.rewritePlan"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleKind.controlFlowBoundary"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleKind.memoryLegality"));
         assertEquals("false", fields.get("autoVectorizationProofBundleRewriteSafe"));
         assertEquals("3", fields.get("autoVectorizationProofBundleDiagnostics"));
+        assertEquals("2", fields.get("autoVectorizationProofBundleUnsafeProofs"));
+        assertEquals("{rewritePlan=1,controlFlowBoundary=1}", fields.get("autoVectorizationProofBundleUnsafeProofKindCounts"));
+        assertEquals("blockedByMultipleProofs", fields.get("autoVectorizationProofBundleDecisionStatus"));
+        assertEquals("false", fields.get("autoVectorizationProofBundleDecisionAllowRewrite"));
+        assertEquals("rewritePlan,controlFlowBoundary", fields.get("autoVectorizationProofBundleDecisionBlockingProofKinds"));
+        assertEquals("rewritePlan", fields.get("autoVectorizationProofBundleDecisionFirstBlockingProofKind"));
+        assertEquals("kernel", fields.get("autoVectorizationProofBundleDecisionFirstBlockingProofLocation"));
+        assertEquals("2", fields.get("autoVectorizationProofBundleDecisionFirstBlockingProofDiagnostics"));
+        assertTrue(fields.get("autoVectorizationProofBundleDecisionSummary").contains("status=blockedByMultipleProofs"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleUnsafeProofKind.rewritePlan"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleUnsafeProofKind.controlFlowBoundary"));
+        assertEquals("rewritePlan", fields.get("autoVectorizationProofBundleFirstUnsafeProofKind"));
+        assertEquals("kernel", fields.get("autoVectorizationProofBundleFirstUnsafeProofLocation"));
+        assertEquals("2", fields.get("autoVectorizationProofBundleFirstUnsafeProofDiagnostics"));
+        assertTrue(fields.get("autoVectorizationProofBundleFirstUnsafeProofSummary").contains("kind=rewritePlan"));
         assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.memoryAddressSpace"));
         assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.controlFlowBoundary"));
         assertTrue(bundle.summaryLine().contains("proofs=3"));
+        assertTrue(bundle.summaryLine().contains("unsafeProofs=2"));
+        assertTrue(bundle.summaryLine().contains("unsafeProofKindCounts={rewritePlan=1, controlFlowBoundary=1}"));
+        assertTrue(bundle.summaryLine().contains("decision=blockedByMultipleProofs"));
+        assertTrue(bundle.summaryLine().contains("firstUnsafeProof=rewritePlan@kernel"));
+    }
+
+    @Test
+    void proofBundleDecisionReportsSingleBlockingProofKind() {
+        GpuIrAutoVectorizationProofSummary memory = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "memoryLegality",
+                "stmt[0]",
+                1,
+                List.of()
+        );
+
+        GpuIrAutoVectorizationProofDecision decision = GpuIrAutoVectorizationProofBundle.of(memory).decision();
+        Map<String, String> fields = decision.artifactFields();
+
+        assertEquals(GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_MEMORY, decision.status());
+        assertFalse(decision.allowRewrite());
+        assertEquals(List.of("memoryLegality"), decision.blockingProofKinds());
+        assertEquals(memory, decision.firstBlockingProof().orElseThrow());
+        assertEquals("blockedByMemory", fields.get("autoVectorizationProofDecisionStatus"));
+        assertEquals("false", fields.get("autoVectorizationProofDecisionAllowRewrite"));
+        assertEquals("memoryLegality", fields.get("autoVectorizationProofDecisionBlockingProofKinds"));
+        assertEquals("memoryLegality", fields.get("autoVectorizationProofDecisionFirstBlockingProofKind"));
+        assertTrue(decision.summary().contains("firstBlockingProof=memoryLegality@stmt[0]"));
+    }
+
+    @Test
+    void previewUsesProofDecisionAsBlockingDiagnosticFallback() {
+        GpuIrAutoVectorizationPreview preview = new GpuIrAutoVectorizationPreview(
+                "kernel",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(GpuIrAutoVectorizationProofSummary.fromGuards(
+                        "memoryLegality",
+                        "stmt[0]",
+                        1,
+                        List.of()
+                ))
+        );
+
+        assertTrue(preview.hasBlockingDiagnostics());
+        assertEquals("proofDecision.blockedByMemory", preview.firstBlockingDiagnosticFamily().orElseThrow());
+        assertTrue(preview.firstBlockingDiagnosticSummary().orElseThrow().contains("proof decision blockedByMemory"));
+        assertTrue(preview.firstBlockingDiagnosticSummary().orElseThrow().contains("memoryLegality@stmt[0]"));
+    }
+
+    @Test
+    void proofBundleCompactKindsCollapseRepeatedProofSurfaces() {
+        GpuIrAutoVectorizationProofSummary rewritePlan = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "rewritePlan",
+                "kernel",
+                0,
+                List.of()
+        );
+        GpuIrAutoVectorizationProofSummary firstControlFlow = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "controlFlowBoundary",
+                "stmt[0]",
+                0,
+                List.of()
+        );
+        GpuIrAutoVectorizationProofSummary secondControlFlow = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "controlFlowBoundary",
+                "stmt[1]",
+                0,
+                List.of()
+        );
+        GpuIrAutoVectorizationProofSummary memory = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "memoryLegality",
+                "stmt[0]",
+                0,
+                List.of()
+        );
+
+        GpuIrAutoVectorizationProofBundle bundle = GpuIrAutoVectorizationProofBundle.of(
+                rewritePlan,
+                firstControlFlow,
+                secondControlFlow,
+                memory
+        );
+        Map<String, String> fields = bundle.artifactFields();
+
+        assertEquals(List.of("rewritePlan", "controlFlowBoundary", "controlFlowBoundary", "memoryLegality"), bundle.proofKinds());
+        assertEquals(List.of("rewritePlan", "controlFlowBoundary", "memoryLegality"), bundle.compactProofKinds());
+        assertEquals(Map.of(
+                "rewritePlan", 1L,
+                "controlFlowBoundary", 2L,
+                "memoryLegality", 1L
+        ), bundle.proofKindCounts());
+        assertEquals("rewritePlan,controlFlowBoundary,memoryLegality", fields.get("autoVectorizationProofBundleKinds"));
+        assertEquals("{rewritePlan=1,controlFlowBoundary=2,memoryLegality=1}", fields.get("autoVectorizationProofBundleKindCounts"));
+        assertEquals("2", fields.get("autoVectorizationProofBundleKind.controlFlowBoundary"));
+        assertTrue(bundle.unsafeProofSummaries().isEmpty());
+        assertTrue(bundle.firstUnsafeProofSummary().isEmpty());
+        assertEquals(GpuIrAutoVectorizationProofDecisionStatus.ALLOW, bundle.decision().status());
+        assertTrue(bundle.decision().allowRewrite());
+        assertEquals(List.of(), bundle.decision().blockingProofKinds());
+        assertEquals(Map.of(), bundle.unsafeProofKindCounts());
+        assertEquals("0", fields.get("autoVectorizationProofBundleUnsafeProofs"));
+        assertEquals("{}", fields.get("autoVectorizationProofBundleUnsafeProofKindCounts"));
+        assertEquals("allow", fields.get("autoVectorizationProofBundleDecisionStatus"));
+        assertEquals("true", fields.get("autoVectorizationProofBundleDecisionAllowRewrite"));
+        assertEquals("", fields.get("autoVectorizationProofBundleDecisionBlockingProofKinds"));
+        assertTrue(bundle.summaryLine().contains("kinds=[rewritePlan,controlFlowBoundary,memoryLegality]"));
+        assertTrue(bundle.summaryLine().contains("kindCounts={rewritePlan=1, controlFlowBoundary=2, memoryLegality=1}"));
+        assertTrue(bundle.summaryLine().contains("unsafeProofs=0"));
+        assertTrue(bundle.summaryLine().contains("unsafeProofKindCounts={}"));
+        assertTrue(bundle.summaryLine().contains("decision=allow"));
     }
 
     @Test

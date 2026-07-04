@@ -82,6 +82,8 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("optimizerDiagnostics=0")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteReadiness=none")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationCanApplyRewrite=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofDecision=allow")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofDecisionAllowRewrite=true")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationHasPolicyBlockedRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicyCanRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunReadiness=skipped")));
@@ -118,11 +120,14 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePlanGuards=1")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteReadiness=blockedByGuard")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationCanApplyRewrite=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofDecision=blockedByMultipleProofs")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofDecisionAllowRewrite=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofDecisionBlockingKinds=[rewritePlan, controlFlowBoundary]")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationHasPolicyBlockedRewrite=true")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicyCanRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicyBlockingGuards=1")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleRewriteSafe=false")));
-        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleDiagnostics=1")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleDiagnostics=2")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePlanGuardFamilies={controlFlowBoundary=1}")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("firstRewritePlanGuard")));
     }
@@ -189,6 +194,9 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationCandidates", "0");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "none");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
+        assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "allow");
+        assertEntryValue(entries, "autoVectorizationProofDecisionAllowRewrite", "true");
+        assertEntryValue(entries, "autoVectorizationProofDecisionBlockingProofKinds", "");
         assertEntryValue(entries, "autoVectorizationHasPolicyBlockedRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
         assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
@@ -298,6 +306,9 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "ready");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "true");
+        assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "allow");
+        assertEntryValue(entries, "autoVectorizationProofDecisionAllowRewrite", "true");
+        assertEntryValue(entries, "autoVectorizationProofDecisionBlockingProofKinds", "");
         assertEntryValue(entries, "autoVectorizationHasPolicyBlockedRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
         assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
@@ -312,7 +323,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationProofRewritePlanWarnings", "0");
         assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardDiagnostics", "0");
         assertEntryValue(entries, "autoVectorizationProofRewritePlanDiagnostics", "0");
-        assertProofBundleFields(entries, "true", "0", "0", "0", null);
+        assertProofBundleFields(entries, "2", "rewritePlan,memoryLegality", "true", "0", "0", "0", "0", "{}", null);
         assertEntryValue(entries, "autoVectorizationRewritePolicyCanRewrite", "true");
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "ready");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
@@ -352,6 +363,10 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
+        assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "blockedByRewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofDecisionAllowRewrite", "false");
+        assertEntryValue(entries, "autoVectorizationProofDecisionBlockingProofKinds", "rewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofDecisionFirstBlockingProofKind", "rewritePlan");
         assertEntryValue(entries, "autoVectorizationHasPolicyBlockedRewrite", "true");
         assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
         assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "1");
@@ -365,7 +380,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationProofRewritePlanDiagnostics", "1");
         assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardFamily.neighborSourceWrite", "1");
         assertEntryValueContains(entries, "autoVectorizationProofRewritePlanSummary", "guardFamilies={neighborSourceWrite=1}");
-        assertProofBundleFields(entries, "false", "0", "1", "1", "neighborSourceWrite");
+        assertProofBundleFields(entries, "3", "rewritePlan,controlFlowBoundary,memoryLegality", "false", "0", "1", "1", "1", "{rewritePlan=1}", "neighborSourceWrite");
         assertEntryValue(entries, "autoVectorizationRewritePolicyCanRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
@@ -582,18 +597,27 @@ class GpuIrOptimizationValidationProviderTest {
 
     private void assertProofBundleFields(
             List<GpuIrValidationReportEntry> entries,
+            String proofs,
+            String kinds,
             String rewriteSafe,
             String warnings,
             String guardDiagnostics,
             String diagnostics,
+            String unsafeProofs,
+            String unsafeProofKindCounts,
             String guardFamily
     ) {
-        assertEntryValue(entries, "autoVectorizationProofBundleProofs", "1");
-        assertEntryValue(entries, "autoVectorizationProofBundleKinds", "rewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofBundleProofs", proofs);
+        assertEntryValue(entries, "autoVectorizationProofBundleKinds", kinds);
         assertEntryValue(entries, "autoVectorizationProofBundleRewriteSafe", rewriteSafe);
         assertEntryValue(entries, "autoVectorizationProofBundleWarnings", warnings);
         assertEntryValue(entries, "autoVectorizationProofBundleGuardDiagnostics", guardDiagnostics);
         assertEntryValue(entries, "autoVectorizationProofBundleDiagnostics", diagnostics);
+        assertEntryValue(entries, "autoVectorizationProofBundleUnsafeProofs", unsafeProofs);
+        assertEntryValue(entries, "autoVectorizationProofBundleUnsafeProofKindCounts", unsafeProofKindCounts);
+        if (!"0".equals(unsafeProofs)) {
+            assertEntryValue(entries, "autoVectorizationProofBundleUnsafeProofKind.rewritePlan", "1");
+        }
         if (guardFamily != null) {
             assertEntryValue(entries, "autoVectorizationProofBundleGuardFamily." + guardFamily, "1");
             assertEntryValueContains(entries, "autoVectorizationProofBundleSummary", "guardFamilies={" + guardFamily + "=1}");

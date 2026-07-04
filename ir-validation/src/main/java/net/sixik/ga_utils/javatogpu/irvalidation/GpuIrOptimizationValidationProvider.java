@@ -61,6 +61,7 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("autoVectorizationRejections", Integer.toString(report.autoVectorizationRejectionCount()));
         values.put("autoVectorizationRewriteReadiness", report.autoVectorizationPreview().rewriteReadiness().artifactValue());
         values.put("autoVectorizationCanApplyRewrite", Boolean.toString(report.autoVectorizationPreview().canApplyRewrite()));
+        values.putAll(report.autoVectorizationPreview().proofDecision().artifactFields("autoVectorizationProofDecision"));
         values.put("autoVectorizationHasPolicyBlockedRewrite", Boolean.toString(report.autoVectorizationPreview().hasPolicyBlockedRewrite()));
         values.put("autoVectorizationRewriteBlockedCandidates", Integer.toString(report.autoVectorizationPreview().rewriteBlockedCandidateCount()));
         values.put("autoVectorizationHasRewriteBlockedCandidates", Boolean.toString(report.autoVectorizationPreview().hasRewriteBlockedCandidates()));

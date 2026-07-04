@@ -224,13 +224,15 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                     "requires one supported scalar element type across lane reads/writes; observed=" + arrayElementTypes
             );
         }
+        List<GpuIrAutoVectorizationProofSummary> proofSummaries = new ArrayList<>();
         List<GpuIrAutoVectorizationRewriteGuardDiagnostic> memoryGuardDiagnostics = new ArrayList<>(blockMutationGuards(
                 location,
                 siblingStatements,
                 statementIndex,
                 locationPrefix,
                 targetArrays,
-                sourceArrays
+                sourceArrays,
+                proofSummaries
         ));
         GpuIrAutoVectorizationMemoryLegalityReport memoryLegalityReport = memoryLegalityAnalyzer.analyze(
                 location,
@@ -239,6 +241,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 typeLookup::parameter
         );
         memoryGuardDiagnostics.addAll(memoryLegalityReport.guardDiagnostics());
+        proofSummaries.add(memoryLegalityReport.proofSummary());
         return ScanResult.accepted(new GpuIrAutoVectorizationCandidate(
                 location,
                 bounds.get().inductionVariable(),
@@ -252,6 +255,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 List.copyOf(crossLaneReadWarnings),
                 List.copyOf(nonLaneReadWarnings),
                 memoryGuardDiagnostics,
+                proofSummaries,
                 assignmentCount,
                 scalarElementType.orElseThrow(),
                 vectorType(scalarElementType.orElseThrow(), bounds.get().laneCount())
@@ -264,7 +268,8 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             int statementIndex,
             String locationPrefix,
             Set<String> targetArrays,
-            Set<String> sourceArrays
+            Set<String> sourceArrays,
+            List<GpuIrAutoVectorizationProofSummary> proofSummaries
     ) {
         List<GpuIrAutoVectorizationRewriteGuardDiagnostic> diagnostics = new ArrayList<>();
         for (int siblingIndex = 0; siblingIndex < statements.size(); siblingIndex++) {
@@ -272,7 +277,17 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 continue;
             }
             String side = siblingIndex < statementIndex ? "previous" : "next";
-            collectBlockMutationGuard(diagnostics, location, statements.get(siblingIndex), siblingIndex, locationPrefix, side, targetArrays, sourceArrays);
+            collectBlockMutationGuard(
+                    diagnostics,
+                    location,
+                    statements.get(siblingIndex),
+                    siblingIndex,
+                    locationPrefix,
+                    side,
+                    targetArrays,
+                    sourceArrays,
+                    proofSummaries
+            );
         }
         return diagnostics;
     }
@@ -285,7 +300,8 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             String locationPrefix,
             String side,
             Set<String> targetArrays,
-            Set<String> sourceArrays
+            Set<String> sourceArrays,
+            List<GpuIrAutoVectorizationProofSummary> proofSummaries
     ) {
         GpuIrAutoVectorizationControlFlowBoundaryReport boundaryReport = controlFlowBoundaryAnalyzer.analyze(
                 location,
@@ -293,6 +309,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 side,
                 sibling
         );
+        proofSummaries.add(boundaryReport.proofSummary());
         if (boundaryReport.blocksRewrite()) {
             diagnostics.add(boundaryReport.guardDiagnostic());
             return;

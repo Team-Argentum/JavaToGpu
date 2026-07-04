@@ -300,10 +300,12 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofRewritePlanKind", "rewritePlan"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofRewritePlanRewriteSafe", "true"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofRewritePlanDiagnostics", "0"));
-        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleProofs", "1"));
-        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleKinds", "rewritePlan"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleProofs", "2"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleKinds", "rewritePlan,memoryLegality"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleRewriteSafe", "true"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleDiagnostics", "0"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleUnsafeProofs", "0"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofBundleUnsafeProofKindCounts", "{}"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyCanRewrite", "true"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyReadiness", "ready"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyPlannedOperations", "2"));
@@ -397,10 +399,13 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanDiagnostics")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanGuardFamily.neighborTargetWrite")));
         assertTrue(report.getProperty("entry.0.autoVectorizationProofRewritePlanSummary").contains("guardFamilies={neighborTargetWrite=1}"));
-        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleProofs")));
-        assertTrue("rewritePlan".equals(report.getProperty("entry.0.autoVectorizationProofBundleKinds")));
+        assertTrue("3".equals(report.getProperty("entry.0.autoVectorizationProofBundleProofs")));
+        assertTrue("rewritePlan,controlFlowBoundary,memoryLegality".equals(report.getProperty("entry.0.autoVectorizationProofBundleKinds")));
         assertTrue("false".equals(report.getProperty("entry.0.autoVectorizationProofBundleRewriteSafe")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleDiagnostics")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleUnsafeProofs")));
+        assertTrue("{rewritePlan=1}".equals(report.getProperty("entry.0.autoVectorizationProofBundleUnsafeProofKindCounts")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleUnsafeProofKind.rewritePlan")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleGuardFamily.neighborTargetWrite")));
         assertTrue(report.getProperty("entry.0.autoVectorizationProofBundleSummary").contains("guardFamilies={neighborTargetWrite=1}"));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("writes target array `output`"));
@@ -445,8 +450,12 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanDiagnostics")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanGuardFamily.controlFlowBoundary")));
         assertTrue("false".equals(report.getProperty("entry.0.autoVectorizationProofBundleRewriteSafe")));
-        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleDiagnostics")));
-        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleGuardFamily.controlFlowBoundary")));
+        assertTrue("2".equals(report.getProperty("entry.0.autoVectorizationProofBundleDiagnostics")));
+        assertTrue("2".equals(report.getProperty("entry.0.autoVectorizationProofBundleUnsafeProofs")));
+        assertTrue("{rewritePlan=1,controlFlowBoundary=1}".equals(report.getProperty("entry.0.autoVectorizationProofBundleUnsafeProofKindCounts")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleUnsafeProofKind.rewritePlan")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofBundleUnsafeProofKind.controlFlowBoundary")));
+        assertTrue("2".equals(report.getProperty("entry.0.autoVectorizationProofBundleGuardFamily.controlFlowBoundary")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("control-flow boundary"));
         assertTrue("guard.controlFlowBoundary".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
     }

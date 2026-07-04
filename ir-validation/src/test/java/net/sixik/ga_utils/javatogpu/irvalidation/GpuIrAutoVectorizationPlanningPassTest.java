@@ -106,6 +106,10 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(preview.summary().contains("rewriteCandidates=1"));
         assertTrue(preview.summary().contains("rewriteReadiness=ready"));
         assertTrue(preview.summary().contains("canApplyRewrite=true"));
+        assertTrue(preview.summary().contains("proofBundleRewriteSafe=true"));
+        assertTrue(preview.summary().contains("proofBundleDiagnostics=0"));
+        assertTrue(preview.summary().contains("proofBundleUnsafeProofs=0"));
+        assertFalse(preview.summary().contains("proofBundleFirstUnsafeProof="));
         assertTrue(preview.summary().contains("rewriteBlockedCandidates=0"));
     }
 

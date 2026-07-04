@@ -19,10 +19,48 @@ public record GpuIrAutoVectorizationCandidate(
         List<String> crossLaneReadWarnings,
         List<String> nonLaneReadWarnings,
         List<GpuIrAutoVectorizationRewriteGuardDiagnostic> memoryGuardDiagnosticDetails,
+        List<GpuIrAutoVectorizationProofSummary> proofSummaries,
         int assignmentCount,
         String scalarElementType,
         String vectorType
 ) {
+    public GpuIrAutoVectorizationCandidate(
+            String loopLocation,
+            String inductionVariable,
+            int startInclusive,
+            int endExclusive,
+            int laneCount,
+            List<String> targetArrays,
+            List<String> sourceArrays,
+            List<String> aliasWarnings,
+            List<String> repeatedTargetWarnings,
+            List<String> crossLaneReadWarnings,
+            List<String> nonLaneReadWarnings,
+            List<GpuIrAutoVectorizationRewriteGuardDiagnostic> memoryGuardDiagnosticDetails,
+            int assignmentCount,
+            String scalarElementType,
+            String vectorType
+    ) {
+        this(
+                loopLocation,
+                inductionVariable,
+                startInclusive,
+                endExclusive,
+                laneCount,
+                targetArrays,
+                sourceArrays,
+                aliasWarnings,
+                repeatedTargetWarnings,
+                crossLaneReadWarnings,
+                nonLaneReadWarnings,
+                memoryGuardDiagnosticDetails,
+                List.of(),
+                assignmentCount,
+                scalarElementType,
+                vectorType
+        );
+    }
+
     public GpuIrAutoVectorizationCandidate {
         if (loopLocation == null || loopLocation.isBlank()) {
             throw new IllegalArgumentException("loopLocation must not be blank");
@@ -52,6 +90,10 @@ public record GpuIrAutoVectorizationCandidate(
         crossLaneReadWarnings = List.copyOf(Objects.requireNonNull(crossLaneReadWarnings, "crossLaneReadWarnings"));
         nonLaneReadWarnings = List.copyOf(Objects.requireNonNull(nonLaneReadWarnings, "nonLaneReadWarnings"));
         memoryGuardDiagnosticDetails = List.copyOf(Objects.requireNonNull(memoryGuardDiagnosticDetails, "memoryGuardDiagnosticDetails"));
+        proofSummaries = List.copyOf(Objects.requireNonNull(proofSummaries, "proofSummaries"));
+        if (proofSummaries.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("proofSummaries must not contain null entries");
+        }
         if (assignmentCount <= 0) {
             throw new IllegalArgumentException("assignmentCount must be positive");
         }
@@ -126,7 +168,10 @@ public record GpuIrAutoVectorizationCandidate(
                 + (repeatedTargetWarnings.isEmpty() ? "" : " repeatedTargetWarnings=" + repeatedTargetWarnings)
                 + (crossLaneReadWarnings.isEmpty() ? "" : " crossLaneReadWarnings=" + crossLaneReadWarnings)
                 + (nonLaneReadWarnings.isEmpty() ? "" : " nonLaneReadWarnings=" + nonLaneReadWarnings)
-                + (memoryGuardDiagnosticDetails.isEmpty() ? "" : " memoryGuardDiagnostics=" + memoryGuardDiagnostics());
+                + (memoryGuardDiagnosticDetails.isEmpty() ? "" : " memoryGuardDiagnostics=" + memoryGuardDiagnostics())
+                + (proofSummaries.isEmpty() ? "" : " proofs=" + proofSummaries.stream()
+                .map(GpuIrAutoVectorizationProofSummary::proofKind)
+                .toList());
     }
 
 }

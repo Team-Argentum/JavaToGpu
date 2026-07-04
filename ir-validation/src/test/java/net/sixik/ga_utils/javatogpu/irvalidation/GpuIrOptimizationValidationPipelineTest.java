@@ -75,6 +75,8 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(report.compactSummary().contains("autoVectorizationCandidates=1"));
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteReadiness=blockedByGuard"));
         assertTrue(report.compactSummary().contains("autoVectorizationRejections=0"));
+        assertTrue(report.compactSummary().contains("autoVectorizationProofBundleUnsafeProofs=2"));
+        assertTrue(report.compactSummary().contains("autoVectorizationProofBundleFirstUnsafeProof=rewritePlan@kernel"));
         assertFalse(report.compactSummary().contains("cse rewrite preview"));
         assertTrue(irMethod.statements().get(0) instanceof GpuIrVariableDeclaration);
     }

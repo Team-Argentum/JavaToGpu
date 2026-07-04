@@ -97,12 +97,19 @@ public record GpuIrAutoVectorizationReport(
                 .toList();
     }
 
+    public List<GpuIrAutoVectorizationProofSummary> previewAdditionalProofSummaries() {
+        return rewritePriorityCandidates().stream()
+                .flatMap(candidate -> candidate.proofSummaries().stream())
+                .toList();
+    }
+
     public GpuIrAutoVectorizationPreview preview() {
         return new GpuIrAutoVectorizationPreview(
                 methodName,
                 previewRewritePriorityCandidates(),
                 previewWarningDiagnostics(),
-                rejections
+                rejections,
+                previewAdditionalProofSummaries()
         );
     }
 

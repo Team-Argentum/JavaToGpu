@@ -113,6 +113,11 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationCandidates=" + autoVectorizationRewriteCandidateCount()
                 + " autoVectorizationRewriteReadiness=" + autoVectorizationPreview.rewriteReadiness().artifactValue()
                 + " autoVectorizationCanApplyRewrite=" + autoVectorizationPreview.canApplyRewrite()
+                + " autoVectorizationProofDecision=" + autoVectorizationPreview.proofDecision().status().artifactValue()
+                + " autoVectorizationProofDecisionAllowRewrite=" + autoVectorizationPreview.proofDecision().allowRewrite()
+                + (autoVectorizationPreview.proofDecision().blockingProofKinds().isEmpty()
+                ? ""
+                : " autoVectorizationProofDecisionBlockingKinds=" + autoVectorizationPreview.proofDecision().blockingProofKinds())
                 + " autoVectorizationHasPolicyBlockedRewrite=" + autoVectorizationPreview.hasPolicyBlockedRewrite()
                 + " autoVectorizationRewritePolicyCanRewrite=" + autoVectorizationPreview.rewritePolicy().canRewrite()
                 + " autoVectorizationRewritePolicyBlockingGuards=" + autoVectorizationPreview.rewritePolicy().blockingGuards().size()
@@ -125,6 +130,10 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationRewritePlanGuards=" + autoVectorizationPreview.rewritePlanGuardCount()
                 + " autoVectorizationProofBundleRewriteSafe=" + autoVectorizationPreview.proofBundle().rewriteSafe()
                 + " autoVectorizationProofBundleDiagnostics=" + autoVectorizationPreview.proofBundle().diagnosticCount()
+                + " autoVectorizationProofBundleUnsafeProofs=" + autoVectorizationPreview.proofBundle().unsafeProofSummaries().size()
+                + autoVectorizationPreview.proofBundle().firstUnsafeProofSummary()
+                .map(summary -> " autoVectorizationProofBundleFirstUnsafeProof=" + summary.proofKind() + "@" + summary.location())
+                .orElse("")
                 + (autoVectorizationPreview.hasRewritePlanGuardDiagnostics()
                 ? " autoVectorizationRewritePlanGuardFamilies=" + autoVectorizationPreview.rewritePlan().guardFamilyCounts()
                 : "");

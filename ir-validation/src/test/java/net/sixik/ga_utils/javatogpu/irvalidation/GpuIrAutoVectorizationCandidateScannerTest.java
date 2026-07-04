@@ -303,6 +303,22 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(aggregatePreview.summary().contains("rewritePolicyCanRewrite=false"));
         assertTrue(aggregatePreview.summary().contains("rewritePolicyBlockingGuards=2"));
         assertTrue(aggregatePreview.summary().contains("canApplyRewrite=false"));
+        assertTrue(aggregatePreview.summary().contains("proofBundleRewriteSafe=false"));
+        assertTrue(aggregatePreview.summary().contains("proofBundleDiagnostics=2"));
+        assertTrue(aggregatePreview.summary().contains("proofBundleUnsafeProofs=1"));
+        assertTrue(aggregatePreview.summary().contains("proofBundleFirstUnsafeProof=rewritePlan@kernel"));
+        assertEquals(List.of(
+                "rewritePlan",
+                "controlFlowBoundary",
+                "memoryLegality",
+                "controlFlowBoundary",
+                "memoryLegality"
+        ), aggregatePreview.proofBundle().proofKinds());
+        assertEquals(List.of(
+                "rewritePlan",
+                "controlFlowBoundary",
+                "memoryLegality"
+        ), aggregatePreview.proofBundle().compactProofKinds());
         assertTrue(aggregatePreview.summary().contains("rewritePlanOperations=0"));
         assertTrue(aggregatePreview.summary().contains("vectorTypes="));
         assertTrue(aggregatePreview.summary().contains("unknownx8=1"));
@@ -359,6 +375,12 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         GpuIrAutoVectorizationRewritePolicy policy = report.preview().rewritePlan().rewritePolicy();
         assertTrue(policy.canRewrite());
         assertTrue(report.preview().canApplyRewrite());
+        assertTrue(report.preview().proofBundle().rewriteSafe());
+        assertEquals(List.of("rewritePlan", "memoryLegality"), report.preview().proofBundle().proofKinds());
+        assertTrue(report.preview().summary().contains("proofBundleRewriteSafe=true"));
+        assertTrue(report.preview().summary().contains("proofBundleDiagnostics=0"));
+        assertTrue(report.preview().summary().contains("proofBundleUnsafeProofs=0"));
+        assertFalse(report.preview().summary().contains("proofBundleFirstUnsafeProof="));
         assertFalse(report.preview().hasPolicyBlockedRewrite());
         assertEquals(GpuIrAutoVectorizationRewriteReadiness.READY, policy.readiness());
         assertEquals(1, policy.candidateCount());
