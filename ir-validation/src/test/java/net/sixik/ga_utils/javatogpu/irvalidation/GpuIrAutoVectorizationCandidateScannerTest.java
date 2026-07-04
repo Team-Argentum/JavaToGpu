@@ -2,15 +2,22 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrHelperCall;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrIntrinsicCall;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrStructInit;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitchCase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -341,6 +348,64 @@ class GpuIrAutoVectorizationCandidateScannerTest {
     }
 
     @Test
+    void reportsIncompleteIrDiagnosticsInsteadOfThrowing() {
+        GpuIrMethod missingStatements = new GpuIrMethod("missingStatements", null);
+        GpuIrMethod missingTopLevelStatement = new GpuIrMethod("missingTopLevelStatement", Arrays.asList((GpuIrStatement) null));
+        GpuIrMethod missingLoopBody = new GpuIrMethod("missingLoopBody", List.of(new GpuIrForLoop(
+                new GpuIrVariableDeclaration("int", "i", new GpuIrLiteral("0")),
+                new GpuIrBinary("<", new GpuIrVariableRef("i"), new GpuIrLiteral("4")),
+                new GpuIrAssignment(new GpuIrVariableRef("i"), new GpuIrBinary("+", new GpuIrVariableRef("i"), new GpuIrLiteral("1"))),
+                null
+        )));
+        GpuIrMethod missingNestedBranch = new GpuIrMethod("missingNestedBranch", List.of(new GpuIrIf(
+                new GpuIrVariableRef("flag"),
+                null,
+                List.of()
+        )));
+        GpuIrMethod missingSwitchCases = new GpuIrMethod("missingSwitchCases", List.of(new GpuIrSwitch(
+                new GpuIrVariableRef("selector"),
+                null
+        )));
+        GpuIrMethod missingSwitchCase = new GpuIrMethod("missingSwitchCase", List.of(new GpuIrSwitch(
+                new GpuIrVariableRef("selector"),
+                Arrays.asList((GpuIrSwitchCase) null)
+        )));
+
+        assertIncompleteIr(missingStatements, "missing statement list");
+        assertIncompleteIr(missingTopLevelStatement, "missing statement");
+        assertIncompleteIr(missingLoopBody, "missing loop body");
+        assertIncompleteIr(missingNestedBranch, "missing statement list");
+        assertIncompleteIr(missingSwitchCases, "missing switch cases");
+        assertIncompleteIr(missingSwitchCase, "missing switch case");
+    }
+
+    @Test
+    void treatsIncompleteExpressionArgumentListsAsUnsafeWithoutThrowing() {
+        GpuIrMethod missingStructArguments = new GpuIrMethod("missingStructArguments", List.of(fixedWidthLoop(4, List.of(
+                new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrStructInit("Pair", null)
+                )
+        ))));
+        GpuIrMethod missingIntrinsicArguments = new GpuIrMethod("missingIntrinsicArguments", List.of(fixedWidthLoop(4, List.of(
+                new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrIntrinsicCall(null, "native_sin", "native_sin({0})", "float", null)
+                )
+        ))));
+        GpuIrMethod missingHelperArguments = new GpuIrMethod("missingHelperArguments", List.of(fixedWidthLoop(4, List.of(
+                new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrHelperCall("jtg_helper", "float", null)
+                )
+        ))));
+
+        assertSideEffectingValue(missingStructArguments);
+        assertSideEffectingValue(missingIntrinsicArguments);
+        assertSideEffectingValue(missingHelperArguments);
+    }
+
+    @Test
     void reportAndCandidateValidateRequiredFields() {
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationReport("", List.of()));
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationCandidate(
@@ -393,5 +458,22 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 new GpuIrAssignment(new GpuIrVariableRef("i"), new GpuIrBinary("+", new GpuIrVariableRef("i"), new GpuIrLiteral("1"))),
                 body
         );
+    }
+
+    private void assertIncompleteIr(GpuIrMethod method, String detail) {
+        GpuIrAutoVectorizationReport report = scanner.scan(method);
+
+        assertFalse(report.hasCandidates());
+        assertTrue(report.hasRejections());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR, report.rejections().getFirst().reason());
+        assertTrue(report.rejections().getFirst().summary().contains(detail));
+    }
+
+    private void assertSideEffectingValue(GpuIrMethod method) {
+        GpuIrAutoVectorizationReport report = scanner.scan(method);
+
+        assertFalse(report.hasCandidates());
+        assertTrue(report.hasRejections());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, report.rejections().getFirst().reason());
     }
 }

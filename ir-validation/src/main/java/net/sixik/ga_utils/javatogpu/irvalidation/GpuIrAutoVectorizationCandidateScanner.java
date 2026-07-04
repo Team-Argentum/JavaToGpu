@@ -46,6 +46,14 @@ public final class GpuIrAutoVectorizationCandidateScanner {
     public GpuIrAutoVectorizationReport scan(GpuIrMethod method) {
         List<GpuIrAutoVectorizationCandidate> candidates = new ArrayList<>();
         List<GpuIrAutoVectorizationRejectionDiagnostic> rejections = new ArrayList<>();
+        if (method == null) {
+            rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
+                    "method",
+                    GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR,
+                    "missing method"
+            ));
+            return new GpuIrAutoVectorizationReport("<missing>", candidates, rejections);
+        }
         scanStatements(method.statements(), "stmt", candidates, rejections);
         return new GpuIrAutoVectorizationReport(method.name(), candidates, rejections);
     }
@@ -56,6 +64,14 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             List<GpuIrAutoVectorizationCandidate> candidates,
             List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
     ) {
+        if (statements == null) {
+            rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
+                    locationPrefix,
+                    GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR,
+                    "missing statement list"
+            ));
+            return;
+        }
         for (int index = 0; index < statements.size(); index++) {
             scanStatement(statements.get(index), locationPrefix + "[" + index + "]", candidates, rejections);
         }
@@ -67,7 +83,13 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             List<GpuIrAutoVectorizationCandidate> candidates,
             List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
     ) {
-        if (statement instanceof GpuIrForLoop loop) {
+        if (statement == null) {
+            rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
+                    location,
+                    GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR,
+                    "missing statement"
+            ));
+        } else if (statement instanceof GpuIrForLoop loop) {
             ScanResult result = candidateFromLoop(location, loop);
             result.candidate().ifPresent(candidates::add);
             result.rejection().ifPresent(rejections::add);
@@ -80,8 +102,24 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         } else if (statement instanceof GpuIrDoWhileLoop loop) {
             scanStatements(loop.body(), location + ".body.stmt", candidates, rejections);
         } else if (statement instanceof GpuIrSwitch gpuSwitch) {
+            if (gpuSwitch.cases() == null) {
+                rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
+                        location + ".case",
+                        GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR,
+                        "missing switch cases"
+                ));
+                return;
+            }
             for (int caseIndex = 0; caseIndex < gpuSwitch.cases().size(); caseIndex++) {
-                scanStatements(gpuSwitch.cases().get(caseIndex).statements(), location + ".case[" + caseIndex + "].stmt", candidates, rejections);
+                if (gpuSwitch.cases().get(caseIndex) == null) {
+                    rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
+                            location + ".case[" + caseIndex + "]",
+                            GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR,
+                            "missing switch case"
+                    ));
+                } else {
+                    scanStatements(gpuSwitch.cases().get(caseIndex).statements(), location + ".case[" + caseIndex + "].stmt", candidates, rejections);
+                }
             }
         }
     }
@@ -94,6 +132,9 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         if (!SUPPORTED_LANE_COUNTS.contains(bounds.get().laneCount())) {
             return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT, "laneCount=" + bounds.get().laneCount());
         }
+        if (loop.body() == null) {
+            return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR, "missing loop body");
+        }
         if (loop.body().isEmpty()) {
             return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.EMPTY_BODY, "loop body has no assignments");
         }
@@ -105,6 +146,9 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         LinkedHashSet<String> nonLaneReadWarnings = new LinkedHashSet<>();
         int assignmentCount = 0;
         for (GpuIrStatement statement : loop.body()) {
+            if (statement == null) {
+                return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR, "missing loop body statement");
+            }
             if (!(statement instanceof GpuIrAssignment assignment)) {
                 return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_BODY_STATEMENT, statement.getClass().getSimpleName());
             }
@@ -185,15 +229,24 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         } else if (expression instanceof GpuIrFieldAccess fieldAccess) {
             collectArrayReads(fieldAccess.target(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
         } else if (expression instanceof GpuIrStructInit structInit) {
+            if (structInit.arguments() == null) {
+                return;
+            }
             for (GpuIrExpression argument : structInit.arguments()) {
                 collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             }
         } else if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
             collectArrayReads(intrinsicCall.receiver(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            if (intrinsicCall.arguments() == null) {
+                return;
+            }
             for (GpuIrExpression argument : intrinsicCall.arguments()) {
                 collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             }
         } else if (expression instanceof GpuIrHelperCall helperCall) {
+            if (helperCall.arguments() == null) {
+                return;
+            }
             for (GpuIrExpression argument : helperCall.arguments()) {
                 collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
             }

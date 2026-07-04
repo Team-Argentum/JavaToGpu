@@ -184,6 +184,362 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
+    void rejectsUnknownHelperDependencyMetadata() {
+        GpuIrCompiledMethod method = method(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                "jtg_kernel",
+                List.of("jtg_missing_helper")
+        );
+
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(), List.of(), true))
+        );
+
+        assertTrue(exception.getMessage().contains("unknown helper call target: jtg_missing_helper"));
+    }
+
+    @Test
+    void rejectsMissingHelperDependencyMetadataList() {
+        GpuIrCompiledMethod method = method(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                "jtg_kernel",
+                null
+        );
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("missing helper dependency metadata list"));
+    }
+
+    @Test
+    void rejectsMalformedHelperDependencyMetadataEntries() {
+        GpuIrCompiledMethod blankDependency = method(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                "jtg_kernel",
+                List.of(" ")
+        );
+        GpuIrCompiledMethod nullDependency = method(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                "jtg_kernel",
+                Arrays.asList((String) null)
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(blankDependency)))
+                .getMessage().contains("blank helper dependency name"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(nullDependency)))
+                .getMessage().contains("blank helper dependency name"));
+    }
+
+    @Test
+    void rejectsMissingEntryPointParameterMetadataList() {
+        GpuIrCompiledMethod method = method(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                "jtg_kernel",
+                List.of(),
+                "void",
+                null
+        );
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("missing parameter metadata list"));
+    }
+
+    @Test
+    void rejectsNullEntryPointParameterMetadata() {
+        GpuIrCompiledMethod method = method(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                Arrays.asList((ParsedGpuParameter) null)
+        );
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("null parameter metadata"));
+    }
+
+    @Test
+    void rejectsMissingCompiledMethodMetadata() {
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(null, List.of(), List.of(), true))
+        );
+
+        assertTrue(exception.getMessage().contains("missing compiled method metadata"));
+    }
+
+    @Test
+    void rejectsMissingPassContext() {
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(null)
+        );
+
+        assertTrue(exception.getMessage().contains("missing pass context"));
+    }
+
+    @Test
+    void rejectsMissingCompiledMethodEnvelopeMetadata() {
+        GpuIrCompiledMethod missingIrMethod = new GpuIrCompiledMethod(
+                parsedMethod("kernel", "void", defaultParameters()),
+                null,
+                "jtg_kernel",
+                List.of()
+        );
+        GpuIrCompiledMethod missingParsedMethod = new GpuIrCompiledMethod(
+                null,
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                "jtg_kernel",
+                List.of()
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingIrMethod)))
+                .getMessage().contains("missing IR method metadata for compiled method"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingParsedMethod)))
+                .getMessage().contains("missing parsed method metadata for compiled method"));
+    }
+
+    @Test
+    void rejectsMissingHelperCompiledMethodEnvelopeMetadata() {
+        GpuIrCompiledMethod missingHelperIrMethod = new GpuIrCompiledMethod(
+                parsedMethod("helper", "void", List.of()),
+                null,
+                "jtg_missing_ir_helper",
+                List.of()
+        );
+        GpuIrCompiledMethod missingHelperParsedMethod = new GpuIrCompiledMethod(
+                null,
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(null))),
+                "jtg_missing_parsed_helper",
+                List.of()
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(missingHelperIrMethod), List.of(), true))
+        ).getMessage().contains("missing IR method metadata for helper jtg_missing_ir_helper"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(missingHelperParsedMethod), List.of(), true))
+        ).getMessage().contains("missing parsed method metadata for helper jtg_missing_parsed_helper"));
+    }
+
+    @Test
+    void rejectsDuplicateHelperEmittedNames() {
+        GpuIrCompiledMethod firstHelper = method(
+                new GpuIrMethod("firstHelper", List.of(new GpuIrReturn(new GpuIrLiteral("1.0f")))),
+                "jtg_helper",
+                List.of(),
+                "float",
+                List.of()
+        );
+        GpuIrCompiledMethod secondHelper = method(
+                new GpuIrMethod("secondHelper", List.of(new GpuIrReturn(new GpuIrLiteral("2.0f")))),
+                "jtg_helper",
+                List.of(),
+                "float",
+                List.of()
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(firstHelper, secondHelper), List.of(), true))
+        );
+
+        assertTrue(exception.getMessage().contains("duplicate helper emitted method name: jtg_helper"));
+    }
+
+    @Test
+    void rejectsUnsupportedHelperSignatureMetadata() {
+        GpuIrCompiledMethod badReturnHelper = method(
+                new GpuIrMethod("badReturnHelper", List.of(new GpuIrReturn(new GpuIrLiteral("1")))),
+                "jtg_bad_return_helper",
+                List.of(),
+                "Object",
+                List.of()
+        );
+        GpuIrCompiledMethod badParameterHelper = method(
+                new GpuIrMethod("badParameterHelper", List.of(new GpuIrReturn(null))),
+                "jtg_bad_parameter_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("bad", "Object", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(badReturnHelper), List.of(), true))
+        ).getMessage().contains("unsupported helper return type for jtg_bad_return_helper: Object"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(badParameterHelper), List.of(), true))
+        ).getMessage().contains("unsupported helper parameter type for jtg_bad_parameter_helper: bad is Object"));
+    }
+
+    @Test
+    void rejectsBlankHelperSignatureMetadata() {
+        GpuIrCompiledMethod blankReturnHelper = method(
+                new GpuIrMethod("blankReturnHelper", List.of(new GpuIrReturn(null))),
+                "jtg_blank_return_helper",
+                List.of(),
+                " ",
+                List.of()
+        );
+        GpuIrCompiledMethod blankParameterHelper = method(
+                new GpuIrMethod("blankParameterHelper", List.of(new GpuIrReturn(null))),
+                "jtg_blank_parameter_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("blank", " ", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(blankReturnHelper), List.of(), true))
+        ).getMessage().contains("blank helper return type for jtg_blank_return_helper"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(blankParameterHelper), List.of(), true))
+        ).getMessage().contains("blank helper parameter type for jtg_blank_parameter_helper: blank"));
+    }
+
+    @Test
+    void rejectsMalformedHelperParameterNames() {
+        GpuIrCompiledMethod blankParameterNameHelper = method(
+                new GpuIrMethod("blankParameterNameHelper", List.of(new GpuIrReturn(null))),
+                "jtg_blank_parameter_name_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter(" ", "float", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod duplicateParameterNameHelper = method(
+                new GpuIrMethod("duplicateParameterNameHelper", List.of(new GpuIrReturn(null))),
+                "jtg_duplicate_parameter_name_helper",
+                List.of(),
+                "void",
+                List.of(
+                        new ParsedGpuParameter("value", "float", GpuAddressSpace.PRIVATE, false, List.of()),
+                        new ParsedGpuParameter("value", "int", GpuAddressSpace.PRIVATE, false, List.of())
+                )
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(blankParameterNameHelper), List.of(), true))
+        ).getMessage().contains("blank helper parameter name for jtg_blank_parameter_name_helper"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(duplicateParameterNameHelper), List.of(), true))
+        ).getMessage().contains("duplicate helper parameter name for jtg_duplicate_parameter_name_helper: value"));
+    }
+
+    @Test
+    void rejectsNullHelperParameterMetadata() {
+        GpuIrCompiledMethod nullParameterHelper = method(
+                new GpuIrMethod("nullParameterHelper", List.of(new GpuIrReturn(null))),
+                "jtg_null_parameter_helper",
+                List.of(),
+                "void",
+                Arrays.asList((ParsedGpuParameter) null)
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(nullParameterHelper), List.of(), true))
+        ).getMessage().contains("null helper parameter metadata for jtg_null_parameter_helper"));
+    }
+
+    @Test
+    void rejectsMissingHelperParameterMetadataList() {
+        GpuIrCompiledMethod missingParameterListHelper = method(
+                new GpuIrMethod("missingParameterListHelper", List.of(new GpuIrReturn(null))),
+                "jtg_missing_parameter_list_helper",
+                List.of(),
+                "void",
+                null
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(missingParameterListHelper), List.of(), true))
+        ).getMessage().contains("missing helper parameter metadata list for jtg_missing_parameter_list_helper"));
+    }
+
+    @Test
+    void rejectsMissingHelperParameterAddressSpaceMetadata() {
+        GpuIrCompiledMethod missingAddressSpaceHelper = method(
+                new GpuIrMethod("missingAddressSpaceHelper", List.of(new GpuIrReturn(null))),
+                "jtg_missing_address_space_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("value", "float", null, false, List.of()))
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(missingAddressSpaceHelper), List.of(), true))
+        ).getMessage().contains("missing helper parameter address space for jtg_missing_address_space_helper: value"));
+    }
+
+    @Test
+    void rejectsMalformedHelperParameterQualifierMetadata() {
+        GpuIrCompiledMethod scalarQualifierHelper = method(
+                new GpuIrMethod("scalarQualifierHelper", List.of(new GpuIrReturn(null))),
+                "jtg_scalar_qualifier_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("value", "float", GpuAddressSpace.PRIVATE, false, List.of("const")))
+        );
+        GpuIrCompiledMethod duplicateQualifierHelper = method(
+                new GpuIrMethod("duplicateQualifierHelper", List.of(new GpuIrReturn(null))),
+                "jtg_duplicate_qualifier_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.GLOBAL, false, List.of("const", "const")))
+        );
+        GpuIrCompiledMethod unsupportedQualifierHelper = method(
+                new GpuIrMethod("unsupportedQualifierHelper", List.of(new GpuIrReturn(null))),
+                "jtg_unsupported_qualifier_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.GLOBAL, false, List.of("readonly")))
+        );
+        GpuIrCompiledMethod blankQualifierHelper = method(
+                new GpuIrMethod("blankQualifierHelper", List.of(new GpuIrReturn(null))),
+                "jtg_blank_qualifier_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.GLOBAL, false, List.of(" ")))
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(scalarQualifierHelper), List.of(), true))
+        ).getMessage().contains("OpenCL qualifiers require a pointer-like helper parameter for jtg_scalar_qualifier_helper: value is float"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(duplicateQualifierHelper), List.of(), true))
+        ).getMessage().contains("duplicate OpenCL helper parameter qualifier for jtg_duplicate_qualifier_helper: values is const"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(unsupportedQualifierHelper), List.of(), true))
+        ).getMessage().contains("unsupported OpenCL helper parameter qualifier for jtg_unsupported_qualifier_helper: values is readonly"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(blankQualifierHelper), List.of(), true))
+        ).getMessage().contains("blank OpenCL helper parameter qualifier for jtg_blank_qualifier_helper: values"));
+    }
+
+    @Test
     void rejectsIntrinsicTemplatesThatReferenceMissingArguments() {
         GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
                 new GpuIrVariableDeclaration(
@@ -196,6 +552,44 @@ class GpuIrSafetyValidatorTest {
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
 
         assertTrue(exception.getMessage().contains("intrinsic template references missing argument {1}"));
+    }
+
+    @Test
+    void rejectsIntrinsicTemplatesThatReferenceNegativeArgumentIndexes() {
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(null, "OpenCL", "native_sin({-1})", "float", List.of(new GpuIrLiteral("1.0f")))
+                )
+        )));
+
+        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
+
+        assertTrue(exception.getMessage().contains("intrinsic template references negative argument index {-1}: OpenCL"));
+    }
+
+    @Test
+    void rejectsMalformedIntrinsicTemplatePlaceholders() {
+        GpuIrCompiledMethod unclosedPlaceholder = method(new GpuIrMethod("unclosedPlaceholder", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(null, "OpenCL", "native_sin({0)", "float", List.of(new GpuIrLiteral("1.0f")))
+                )
+        )));
+        GpuIrCompiledMethod unsupportedPlaceholder = method(new GpuIrMethod("unsupportedPlaceholder", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(null, "OpenCL", "native_sin({value})", "float", List.of(new GpuIrLiteral("1.0f")))
+                )
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unclosedPlaceholder)))
+                .getMessage().contains("intrinsic template contains an unclosed placeholder: native_sin({0)"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedPlaceholder)))
+                .getMessage().contains("intrinsic template contains unsupported placeholder {value}: OpenCL"));
     }
 
     @Test
@@ -229,6 +623,47 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedLocalAndPrivateArrayElementTypes() {
+        GpuIrCompiledMethod unsupportedLocalType = method(new GpuIrMethod("unsupportedLocalType", List.of(
+                new GpuIrVariableDeclaration("Object", "value", new GpuIrLiteral("1"))
+        )));
+        GpuIrCompiledMethod unsupportedPrivateArrayElementType = method(new GpuIrMethod("unsupportedPrivateArrayElementType", List.of(
+                new GpuIrPrivateArrayDeclaration("Object", "scratch", new GpuIrLiteral("4"))
+        )));
+        GpuIrCompiledMethod supportedTypes = method(new GpuIrMethod("supportedTypes", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrPrivateArrayDeclaration("float", "scratch", new GpuIrLiteral("4"))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedLocalType)))
+                .getMessage().contains("unsupported local declaration type for value: Object"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedPrivateArrayElementType)))
+                .getMessage().contains("unsupported private array element type for scratch: Object"));
+        assertDoesNotThrow(() -> validator.run(context(supportedTypes)));
+    }
+
+    @Test
+    void rejectsUnsupportedOperatorTokensWhenOperandTypesAreKnown() {
+        GpuIrCompiledMethod unsupportedBinaryOperator = method(new GpuIrMethod("unsupportedBinaryOperator", List.of(
+                new GpuIrVariableDeclaration("int", "left", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "right", new GpuIrLiteral("2")),
+                new GpuIrVariableDeclaration("int", "value", new GpuIrBinary("**", new GpuIrVariableRef("left"), new GpuIrVariableRef("right")))
+        )));
+        GpuIrCompiledMethod unsupportedUnaryOperator = method(new GpuIrMethod("unsupportedUnaryOperator", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrUnary("abs", new GpuIrVariableRef("value")))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedBinaryOperator)))
+                .getMessage().contains("unsupported binary operator: **"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedUnaryOperator)))
+                .getMessage().contains("unsupported unary operator: abs"));
+    }
+
+    @Test
     void rejectsInvalidReturnShapes() {
         GpuIrCompiledMethod voidMethod = method(new GpuIrMethod("voidKernel", List.of(new GpuIrReturn(new GpuIrLiteral("1")))));
         GpuIrCompiledMethod nonVoidMethod = method(
@@ -245,6 +680,29 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedMethodReturnTypes() {
+        GpuIrCompiledMethod unsupportedReturnType = method(
+                new GpuIrMethod("unsupportedReturnType", List.of(new GpuIrReturn(new GpuIrLiteral("1")))),
+                "jtg_unsupported_return",
+                List.of(),
+                "Object"
+        );
+        GpuIrCompiledMethod supportedVectorReturnType = method(
+                new GpuIrMethod("supportedVectorReturnType", List.of(new GpuIrReturn(new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))))),
+                "jtg_supported_vector_return",
+                List.of(),
+                "Float2"
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedReturnType)))
+                .getMessage().contains("unsupported method return type: Object"));
+        assertDoesNotThrow(() -> validator.run(context(supportedVectorReturnType)));
+    }
+
+    @Test
     void rejectsNonPositivePrivateArrayLiteralSizes() {
         GpuIrCompiledMethod zeroSizedArray = method(new GpuIrMethod("kernel", List.of(
                 new GpuIrPrivateArrayDeclaration("float", "scratch", new GpuIrLiteral("0"))
@@ -253,6 +711,32 @@ class GpuIrSafetyValidatorTest {
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(zeroSizedArray)));
 
         assertTrue(exception.getMessage().contains("private array literal size must be positive: 0"));
+    }
+
+    @Test
+    void rejectsMissingPrivateArraySizes() {
+        GpuIrCompiledMethod missingSize = method(new GpuIrMethod("missingPrivateArraySize", List.of(
+                new GpuIrPrivateArrayDeclaration("float", "scratch", null)
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingSize)))
+                .getMessage().contains("missing private array size"));
+    }
+
+    @Test
+    void rejectsNonIntegralPrivateArraySizesWhenTypeIsKnown() {
+        GpuIrCompiledMethod floatSizedArray = method(new GpuIrMethod("floatSizedArray", List.of(
+                new GpuIrVariableDeclaration("float", "size", new GpuIrLiteral("4.0f")),
+                new GpuIrPrivateArrayDeclaration("float", "scratch", new GpuIrVariableRef("size"))
+        )));
+        GpuIrCompiledMethod integralSizedArray = method(new GpuIrMethod("integralSizedArray", List.of(
+                new GpuIrVariableDeclaration("int", "size", new GpuIrLiteral("4")),
+                new GpuIrPrivateArrayDeclaration("float", "scratch", new GpuIrVariableRef("size"))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(floatSizedArray)))
+                .getMessage().contains("private array size must be an integral scalar type but got float"));
+        assertDoesNotThrow(() -> validator.run(context(integralSizedArray)));
     }
 
     @Test
@@ -294,6 +778,46 @@ class GpuIrSafetyValidatorTest {
         );
 
         assertTrue(exception.getMessage().contains("void helper call must use void result metadata: jtg_helper"));
+    }
+
+    @Test
+    void rejectsHelperCallsWithWrongResultMetadata() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(new GpuIrLiteral("1")))),
+                "jtg_helper",
+                List.of(),
+                "int",
+                List.of()
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrHelperCall("jtg_helper", "float", List.of()))
+        )), "jtg_kernel", List.of("jtg_helper"));
+
+        GpuIrPassException exception = assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(method, List.of(helper), List.of(), true))
+        );
+
+        assertTrue(exception.getMessage().contains("helper call result type mismatch for jtg_helper: expected int but got float"));
+    }
+
+    @Test
+    void acceptsHelperCallsWithEquivalentVectorResultMetadataAliases() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))))),
+                "jtg_vector_helper",
+                List.of(),
+                "net.sixik.ga_utils.javatogpu.api.Float2",
+                List.of()
+        );
+        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("Float2", "value", new GpuIrHelperCall("jtg_vector_helper", "Float2", List.of()))
+        )), "jtg_kernel", List.of("jtg_vector_helper"));
+
+        assertDoesNotThrow(() -> validator.run(new GpuIrPassContext(method, List.of(helper), List.of(), true)));
     }
 
     @Test
@@ -378,19 +902,67 @@ class GpuIrSafetyValidatorTest {
 
     @Test
     void rejectsMissingSwitchStructure() {
+        GpuIrCompiledMethod missingSelector = method(new GpuIrMethod("missingSelector", List.of(
+                new GpuIrSwitch(null, List.of(new GpuIrSwitchCase(List.of(), List.of(), true)))
+        )));
         GpuIrCompiledMethod missingCases = method(new GpuIrMethod("missingCases", List.of(
                 new GpuIrSwitch(new GpuIrLiteral("1"), null)
+        )));
+        GpuIrCompiledMethod nullCase = method(new GpuIrMethod("nullCase", List.of(
+                new GpuIrSwitch(new GpuIrLiteral("1"), Arrays.asList((GpuIrSwitchCase) null))
         )));
         GpuIrCompiledMethod missingLabel = method(new GpuIrMethod("missingLabel", List.of(
                 new GpuIrSwitch(new GpuIrLiteral("1"), List.of(
                         new GpuIrSwitchCase(Arrays.asList((GpuIrExpression) null), List.of(), false)
                 ))
         )));
+        GpuIrCompiledMethod duplicateDefaults = method(new GpuIrMethod("duplicateDefaults", List.of(
+                new GpuIrSwitch(new GpuIrLiteral("1"), List.of(
+                        new GpuIrSwitchCase(List.of(), List.of(), true),
+                        new GpuIrSwitchCase(List.of(), List.of(), true)
+                ))
+        )));
 
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingSelector)))
+                .getMessage().contains("missing switch selector"));
         assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingCases)))
                 .getMessage().contains("missing switch cases"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(nullCase)))
+                .getMessage().contains("null switch case"));
         assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingLabel)))
                 .getMessage().contains("missing switch case label"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(duplicateDefaults)))
+                .getMessage().contains("switch contains more than one default case"));
+    }
+
+    @Test
+    void rejectsNonIntegralSwitchSelectorsAndLabelsWhenTypeIsKnown() {
+        GpuIrCompiledMethod nonIntegralSelector = method(new GpuIrMethod("nonIntegralSelector", List.of(
+                new GpuIrVariableDeclaration("float", "selector", new GpuIrLiteral("1.0f")),
+                new GpuIrSwitch(new GpuIrVariableRef("selector"), List.of(
+                        new GpuIrSwitchCase(List.of(new GpuIrCast("int", new GpuIrLiteral("1"))), List.of(), false)
+                ))
+        )));
+        GpuIrCompiledMethod nonIntegralLabel = method(new GpuIrMethod("nonIntegralLabel", List.of(
+                new GpuIrVariableDeclaration("int", "selector", new GpuIrLiteral("1")),
+                new GpuIrSwitch(new GpuIrVariableRef("selector"), List.of(
+                        new GpuIrSwitchCase(List.of(new GpuIrCast("float", new GpuIrLiteral("1"))), List.of(), false)
+                ))
+        )));
+        GpuIrCompiledMethod compatibleIntegralLabels = method(new GpuIrMethod("compatibleIntegralLabels", List.of(
+                new GpuIrVariableDeclaration("int", "selector", new GpuIrLiteral("1")),
+                new GpuIrSwitch(new GpuIrVariableRef("selector"), List.of(
+                        new GpuIrSwitchCase(List.of(new GpuIrCast("int", new GpuIrLiteral("1"))), List.of(), false),
+                        new GpuIrSwitchCase(List.of(new GpuIrCast("short", new GpuIrLiteral("2"))), List.of(), false),
+                        new GpuIrSwitchCase(List.of(), List.of(), true)
+                ))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(nonIntegralSelector)))
+                .getMessage().contains("switch selector must be an integral scalar type but got float"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(nonIntegralLabel)))
+                .getMessage().contains("switch case label must be an integral scalar type but got float"));
+        assertDoesNotThrow(() -> validator.run(context(compatibleIntegralLabels)));
     }
 
     @Test
@@ -438,6 +1010,198 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
+    void rejectsNonIntegralArrayIndexesWhenTypeIsKnown() {
+        GpuIrCompiledMethod readWithFloatIndex = method(new GpuIrMethod("readWithFloatIndex", List.of(
+                new GpuIrVariableDeclaration("float", "idx", new GpuIrLiteral("1.0f")),
+                new GpuIrVariableDeclaration("float", "value", new GpuIrArrayAccess("input", new GpuIrVariableRef("idx")))
+        )));
+        GpuIrCompiledMethod writeWithBooleanIndex = method(new GpuIrMethod("writeWithBooleanIndex", List.of(
+                new GpuIrVariableDeclaration("boolean", "idx", new GpuIrLiteral("true")),
+                new GpuIrAssignment(new GpuIrArrayAccess("output", new GpuIrVariableRef("idx")), new GpuIrLiteral("1.0f"))
+        )));
+        GpuIrCompiledMethod readAndWriteWithIntegralIndexes = method(new GpuIrMethod("readAndWriteWithIntegralIndexes", List.of(
+                new GpuIrVariableDeclaration("int", "readIndex", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("long", "writeIndex", new GpuIrLiteral("2L")),
+                new GpuIrAssignment(
+                        new GpuIrArrayAccess("output", new GpuIrVariableRef("writeIndex")),
+                        new GpuIrArrayAccess("input", new GpuIrVariableRef("readIndex"))
+                )
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(readWithFloatIndex)))
+                .getMessage().contains("array access index for input must be an integral scalar type but got float"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(writeWithBooleanIndex)))
+                .getMessage().contains("array access index for output must be an integral scalar type but got boolean"));
+        assertDoesNotThrow(() -> validator.run(context(readAndWriteWithIntegralIndexes)));
+    }
+
+    @Test
+    void rejectsArrayAccessOnNonArrayTargetsWhenTypeIsKnown() {
+        GpuIrCompiledMethod readFromScalar = method(new GpuIrMethod("readFromScalar", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrArrayAccess("value", new GpuIrLiteral("0")))
+        )));
+        GpuIrCompiledMethod writeToScalar = method(new GpuIrMethod("writeToScalar", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrAssignment(new GpuIrArrayAccess("value", new GpuIrLiteral("0")), new GpuIrLiteral("2"))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(readFromScalar)))
+                .getMessage().contains("array access target must be an array type: value is int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(writeToScalar)))
+                .getMessage().contains("array access target must be an array type: value is int"));
+    }
+
+    @Test
+    void validatesKnownVectorFieldAccessWhenTypeIsKnown() {
+        GpuIrCompiledMethod unknownVectorField = method(new GpuIrMethod("unknownVectorField", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrVariableDeclaration("float", "value", new GpuIrFieldAccess(new GpuIrVariableRef("vector"), "z"))
+        )));
+        GpuIrCompiledMethod fieldTypeMismatch = method(new GpuIrMethod("fieldTypeMismatch", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrVariableDeclaration("int", "value", new GpuIrFieldAccess(new GpuIrVariableRef("vector"), "x"))
+        )));
+        GpuIrCompiledMethod knownVectorField = method(new GpuIrMethod("knownVectorField", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrVariableDeclaration("float", "value", new GpuIrFieldAccess(new GpuIrVariableRef("vector"), "x"))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unknownVectorField)))
+                .getMessage().contains("unknown vector field z for type Float2"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(fieldTypeMismatch)))
+                .getMessage().contains("type mismatch in local initializer for value: expected int but got float"));
+        assertDoesNotThrow(() -> validator.run(context(knownVectorField)));
+    }
+
+    @Test
+    void validatesKnownVectorFieldAssignmentTargetsWhenTypeIsKnown() {
+        GpuIrCompiledMethod blankFieldName = method(new GpuIrMethod("blankVectorFieldAssignment", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrAssignment(new GpuIrFieldAccess(new GpuIrVariableRef("vector"), ""), new GpuIrLiteral("1.0f"))
+        )));
+        GpuIrCompiledMethod unknownVectorField = method(new GpuIrMethod("unknownVectorFieldAssignment", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrAssignment(new GpuIrFieldAccess(new GpuIrVariableRef("vector"), "z"), new GpuIrLiteral("1.0f"))
+        )));
+        GpuIrCompiledMethod knownVectorField = method(new GpuIrMethod("knownVectorFieldAssignment", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrAssignment(new GpuIrFieldAccess(new GpuIrVariableRef("vector"), "x"), new GpuIrLiteral("1.0f"))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(blankFieldName)))
+                .getMessage().contains("blank field access name"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unknownVectorField)))
+                .getMessage().contains("unknown vector field z for type Float2"));
+        assertDoesNotThrow(() -> validator.run(context(knownVectorField)));
+    }
+
+    @Test
+    void validatesKnownVectorInitializersWhenTypeIsKnown() {
+        GpuIrCompiledMethod countMismatch = method(new GpuIrMethod("vectorCountMismatch", List.of(
+                new GpuIrVariableDeclaration("Float2", "value", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f"),
+                        new GpuIrLiteral("3.0f")
+                )))
+        )));
+        GpuIrCompiledMethod scalarTypeMismatch = method(new GpuIrMethod("vectorScalarTypeMismatch", List.of(
+                new GpuIrVariableDeclaration("boolean", "flag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("Float2", "value", new GpuIrStructInit("Float2", List.of(new GpuIrVariableRef("flag"))))
+        )));
+        GpuIrCompiledMethod vectorTypeMismatch = method(new GpuIrMethod("vectorTypeMismatch", List.of(
+                new GpuIrVariableDeclaration("Int2", "source", new GpuIrStructInit("Int2", List.of(
+                        new GpuIrLiteral("1"),
+                        new GpuIrLiteral("2")
+                ))),
+                new GpuIrVariableDeclaration("Float2", "value", new GpuIrStructInit("Float2", List.of(new GpuIrVariableRef("source"))))
+        )));
+        GpuIrCompiledMethod validVectorInitializers = method(new GpuIrMethod("validVectorInitializers", List.of(
+                new GpuIrVariableDeclaration("int", "source", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("Float2", "zero", new GpuIrStructInit("Float2", List.of())),
+                new GpuIrVariableDeclaration("Float2", "splat", new GpuIrStructInit("Float2", List.of(new GpuIrVariableRef("source")))),
+                new GpuIrVariableDeclaration("Float2", "explicit", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                )))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(countMismatch)))
+                .getMessage().contains("vector initializer argument count mismatch for Float2: expected 0, 1 or 2 but got 3"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(scalarTypeMismatch)))
+                .getMessage().contains("type mismatch in vector initializer argument for Float2: expected float but got boolean"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(vectorTypeMismatch)))
+                .getMessage().contains("vector initializer argument type mismatch for Float2: expected Float2 but got Int2"));
+        assertDoesNotThrow(() -> validator.run(context(validVectorInitializers)));
+    }
+
+    @Test
+    void validatesWideVectorInitializersAndFieldsWhenTypeIsKnown() {
+        GpuIrCompiledMethod countMismatch = method(new GpuIrMethod("wideVectorCountMismatch", List.of(
+                new GpuIrVariableDeclaration("Int16", "value", new GpuIrStructInit("Int16", List.of(
+                        new GpuIrLiteral("0"),
+                        new GpuIrLiteral("1"),
+                        new GpuIrLiteral("2"),
+                        new GpuIrLiteral("3"),
+                        new GpuIrLiteral("4"),
+                        new GpuIrLiteral("5"),
+                        new GpuIrLiteral("6"),
+                        new GpuIrLiteral("7"),
+                        new GpuIrLiteral("8"),
+                        new GpuIrLiteral("9"),
+                        new GpuIrLiteral("10"),
+                        new GpuIrLiteral("11"),
+                        new GpuIrLiteral("12"),
+                        new GpuIrLiteral("13"),
+                        new GpuIrLiteral("14")
+                )))
+        )));
+        GpuIrCompiledMethod knownWideVectorField = method(new GpuIrMethod("knownWideVectorField", List.of(
+                new GpuIrVariableDeclaration("Int16", "vector", new GpuIrStructInit("Int16", List.of(
+                        new GpuIrLiteral("0"),
+                        new GpuIrLiteral("1"),
+                        new GpuIrLiteral("2"),
+                        new GpuIrLiteral("3"),
+                        new GpuIrLiteral("4"),
+                        new GpuIrLiteral("5"),
+                        new GpuIrLiteral("6"),
+                        new GpuIrLiteral("7"),
+                        new GpuIrLiteral("8"),
+                        new GpuIrLiteral("9"),
+                        new GpuIrLiteral("10"),
+                        new GpuIrLiteral("11"),
+                        new GpuIrLiteral("12"),
+                        new GpuIrLiteral("13"),
+                        new GpuIrLiteral("14"),
+                        new GpuIrLiteral("15")
+                ))),
+                new GpuIrVariableDeclaration("int", "last", new GpuIrFieldAccess(new GpuIrVariableRef("vector"), "sf"))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(countMismatch)))
+                .getMessage().contains("vector initializer argument count mismatch for Int16: expected 0, 1 or 16 but got 15"));
+        assertDoesNotThrow(() -> validator.run(context(knownWideVectorField)));
+    }
+
+    @Test
     void rejectsMissingCallAndInitializerArguments() {
         GpuIrCompiledMethod helper = method(
                 new GpuIrMethod("helper", List.of(new GpuIrReturn(new GpuIrLiteral("1.0f")))),
@@ -468,6 +1232,34 @@ class GpuIrSafetyValidatorTest {
                 .getMessage().contains("missing intrinsic argument list"));
         assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingStructArgument)))
                 .getMessage().contains("missing struct initializer argument"));
+    }
+
+    @Test
+    void rejectsMissingCallAndInitializerArgumentLists() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(new GpuIrLiteral("1.0f")))),
+                "jtg_helper",
+                List.of(),
+                "float",
+                List.of()
+        );
+        GpuIrCompiledMethod missingHelperArgumentList = method(new GpuIrMethod("missingHelperArgumentList", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrHelperCall("jtg_helper", "float", null)
+                )
+        )), "jtg_kernel", List.of("jtg_helper"));
+        GpuIrCompiledMethod missingStructArgumentList = method(new GpuIrMethod("missingStructArgumentList", List.of(
+                new GpuIrVariableDeclaration("float2", "value", new GpuIrStructInit("float2", null))
+        )));
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(missingHelperArgumentList, List.of(helper), List.of(), true))
+        ).getMessage().contains("missing helper call argument list"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingStructArgumentList)))
+                .getMessage().contains("missing struct initializer argument list"));
     }
 
     @Test
@@ -502,6 +1294,30 @@ class GpuIrSafetyValidatorTest {
                 .getMessage().contains("cast expression cannot target void"));
         assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(voidStructValue)))
                 .getMessage().contains("struct initializer cannot target void"));
+    }
+
+    @Test
+    void rejectsUnsupportedScalarCastShapesWhenTypeIsKnown() {
+        GpuIrCompiledMethod unsupportedCastTarget = method(new GpuIrMethod("unsupportedCastTarget", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrCast("Float2", new GpuIrLiteral("1")))
+        )));
+        GpuIrCompiledMethod unsupportedCastSource = method(new GpuIrMethod("unsupportedCastSource", List.of(
+                new GpuIrVariableDeclaration("Float2", "vector", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrVariableDeclaration("float", "value", new GpuIrCast("float", new GpuIrVariableRef("vector")))
+        )));
+        GpuIrCompiledMethod supportedScalarCast = method(new GpuIrMethod("supportedScalarCast", List.of(
+                new GpuIrVariableDeclaration("int", "source", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("double", "value", new GpuIrCast("double", new GpuIrVariableRef("source")))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedCastTarget)))
+                .getMessage().contains("unsupported cast target type: Float2"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedCastSource)))
+                .getMessage().contains("cast source must be a supported scalar type but got Float2"));
+        assertDoesNotThrow(() -> validator.run(context(supportedScalarCast)));
     }
 
     @Test
@@ -566,6 +1382,124 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
+    void rejectsInvalidTypedOperatorOperandsWhenTypeIsKnown() {
+        GpuIrCompiledMethod logicalOperandMismatch = method(new GpuIrMethod("logicalOperandMismatch", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("boolean", "flag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("boolean", "out", new GpuIrBinary("&&", new GpuIrVariableRef("value"), new GpuIrVariableRef("flag")))
+        )));
+        GpuIrCompiledMethod bitwiseOperandMismatch = method(new GpuIrMethod("bitwiseOperandMismatch", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrLiteral("1.0f")),
+                new GpuIrVariableDeclaration("int", "mask", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrBinary("&", new GpuIrVariableRef("value"), new GpuIrVariableRef("mask")))
+        )));
+        GpuIrCompiledMethod numericOperandMismatch = method(new GpuIrMethod("numericOperandMismatch", List.of(
+                new GpuIrVariableDeclaration("boolean", "flag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrBinary("+", new GpuIrVariableRef("flag"), new GpuIrVariableRef("value")))
+        )));
+        GpuIrCompiledMethod unaryOperandMismatch = method(new GpuIrMethod("unaryOperandMismatch", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrLiteral("1.0f")),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrUnary("~", new GpuIrVariableRef("value")))
+        )));
+        GpuIrCompiledMethod validTypedOperators = method(new GpuIrMethod("validTypedOperators", List.of(
+                new GpuIrVariableDeclaration("boolean", "leftFlag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("boolean", "rightFlag", new GpuIrLiteral("false")),
+                new GpuIrVariableDeclaration("int", "left", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "right", new GpuIrLiteral("2")),
+                new GpuIrVariableDeclaration("boolean", "logical", new GpuIrBinary("&&", new GpuIrVariableRef("leftFlag"), new GpuIrVariableRef("rightFlag"))),
+                new GpuIrVariableDeclaration("int", "bitwise", new GpuIrBinary("&", new GpuIrVariableRef("left"), new GpuIrVariableRef("right"))),
+                new GpuIrVariableDeclaration("int", "numeric", new GpuIrBinary("+", new GpuIrVariableRef("left"), new GpuIrVariableRef("right"))),
+                new GpuIrVariableDeclaration("int", "unary", new GpuIrUnary("~", new GpuIrVariableRef("left")))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(logicalOperandMismatch)))
+                .getMessage().contains("operator && requires boolean left operand but got int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(bitwiseOperandMismatch)))
+                .getMessage().contains("operator & requires integral left operand but got float"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(numericOperandMismatch)))
+                .getMessage().contains("operator + requires numeric left operand but got boolean"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unaryOperandMismatch)))
+                .getMessage().contains("operator ~ requires integral operand but got float"));
+        assertDoesNotThrow(() -> validator.run(context(validTypedOperators)));
+    }
+
+    @Test
+    void rejectsInvalidTypedComparisonOperandsWhenTypeIsKnown() {
+        GpuIrCompiledMethod relationalOperandMismatch = method(new GpuIrMethod("relationalOperandMismatch", List.of(
+                new GpuIrVariableDeclaration("boolean", "flag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("boolean", "out", new GpuIrBinary("<", new GpuIrVariableRef("flag"), new GpuIrVariableRef("value")))
+        )));
+        GpuIrCompiledMethod equalityOperandMismatch = method(new GpuIrMethod("equalityOperandMismatch", List.of(
+                new GpuIrVariableDeclaration("boolean", "flag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("boolean", "out", new GpuIrBinary("==", new GpuIrVariableRef("flag"), new GpuIrVariableRef("value")))
+        )));
+        GpuIrCompiledMethod validTypedComparisons = method(new GpuIrMethod("validTypedComparisons", List.of(
+                new GpuIrVariableDeclaration("boolean", "leftFlag", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("boolean", "rightFlag", new GpuIrLiteral("false")),
+                new GpuIrVariableDeclaration("int", "left", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("double", "right", new GpuIrLiteral("2.0")),
+                new GpuIrVariableDeclaration("boolean", "relational", new GpuIrBinary("<", new GpuIrVariableRef("left"), new GpuIrVariableRef("right"))),
+                new GpuIrVariableDeclaration("boolean", "numericEquality", new GpuIrBinary("!=", new GpuIrVariableRef("left"), new GpuIrVariableRef("right"))),
+                new GpuIrVariableDeclaration("boolean", "booleanEquality", new GpuIrBinary("==", new GpuIrVariableRef("leftFlag"), new GpuIrVariableRef("rightFlag")))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(relationalOperandMismatch)))
+                .getMessage().contains("operator < requires numeric left operand but got boolean"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(equalityOperandMismatch)))
+                .getMessage().contains("operator == cannot compare boolean and numeric operands: boolean and int"));
+        assertDoesNotThrow(() -> validator.run(context(validTypedComparisons)));
+    }
+
+    @Test
+    void rejectsInvalidTypedTernaryBranchesWhenTypeIsKnown() {
+        GpuIrCompiledMethod booleanNumericBranchMismatch = method(new GpuIrMethod("booleanNumericBranchMismatch", List.of(
+                new GpuIrVariableDeclaration("boolean", "condition", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("boolean", "flag", new GpuIrLiteral("false")),
+                new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("int", "out", new GpuIrTernary(
+                        new GpuIrVariableRef("condition"),
+                        new GpuIrVariableRef("flag"),
+                        new GpuIrVariableRef("value")
+                ))
+        )));
+        GpuIrCompiledMethod vectorBranchMismatch = method(new GpuIrMethod("vectorBranchMismatch", List.of(
+                new GpuIrVariableDeclaration("boolean", "condition", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("Float2", "left", new GpuIrStructInit("Float2", List.of(
+                        new GpuIrLiteral("1.0f"),
+                        new GpuIrLiteral("2.0f")
+                ))),
+                new GpuIrVariableDeclaration("Int2", "right", new GpuIrStructInit("Int2", List.of(
+                        new GpuIrLiteral("1"),
+                        new GpuIrLiteral("2")
+                ))),
+                new GpuIrVariableDeclaration("Float2", "out", new GpuIrTernary(
+                        new GpuIrVariableRef("condition"),
+                        new GpuIrVariableRef("left"),
+                        new GpuIrVariableRef("right")
+                ))
+        )));
+        GpuIrCompiledMethod validNumericBranchWidening = method(new GpuIrMethod("validNumericBranchWidening", List.of(
+                new GpuIrVariableDeclaration("boolean", "condition", new GpuIrLiteral("true")),
+                new GpuIrVariableDeclaration("int", "left", new GpuIrLiteral("1")),
+                new GpuIrVariableDeclaration("double", "right", new GpuIrLiteral("2.0")),
+                new GpuIrVariableDeclaration("double", "out", new GpuIrTernary(
+                        new GpuIrVariableRef("condition"),
+                        new GpuIrVariableRef("left"),
+                        new GpuIrVariableRef("right")
+                ))
+        )));
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(booleanNumericBranchMismatch)))
+                .getMessage().contains("ternary branch type mismatch: cannot mix boolean and numeric branches: boolean and int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(vectorBranchMismatch)))
+                .getMessage().contains("ternary branch type mismatch: true branch is Float2 but false branch is Int2"));
+        assertDoesNotThrow(() -> validator.run(context(validNumericBranchWidening)));
+    }
+
+    @Test
     void rejectsWritesToReadOnlyArrayStorage() {
         GpuIrCompiledMethod constantParameterWrite = method(
                 new GpuIrMethod("constantParameterWrite", List.of(
@@ -594,6 +1528,99 @@ class GpuIrSafetyValidatorTest {
         assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(constantGlobalWrite)))
                 .getMessage().contains("read-only storage cannot be used as array assignment target: input"));
         assertDoesNotThrow(() -> validator.run(context(writableGlobalWrite)));
+    }
+
+    @Test
+    void rejectsUnsupportedAndMisaddressedParameterMetadata() {
+        GpuIrCompiledMethod unsupportedParameterType = method(
+                new GpuIrMethod("unsupportedParameterType", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("bad", "Object", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod globalScalarParameter = method(
+                new GpuIrMethod("globalScalarParameter", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("value", "float", GpuAddressSpace.GLOBAL, false, List.of()))
+        );
+        GpuIrCompiledMethod privateArrayParameter = method(
+                new GpuIrMethod("privateArrayParameter", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod vectorArrayParameter = method(
+                new GpuIrMethod("vectorArrayParameter", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("vectors", "Float2[]", GpuAddressSpace.GLOBAL, false, List.of()))
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedParameterType)))
+                .getMessage().contains("unsupported entry-point parameter type for bad: Object"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(globalScalarParameter)))
+                .getMessage().contains("GLOBAL parameter must be an array type: value is float"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(privateArrayParameter)))
+                .getMessage().contains("array parameter must use an explicit GPU address space: values is float[]"));
+        assertDoesNotThrow(() -> validator.run(context(vectorArrayParameter)));
+    }
+
+    @Test
+    void rejectsMalformedEntryPointParameterNames() {
+        GpuIrCompiledMethod blankParameterName = method(
+                new GpuIrMethod("blankParameterName", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter(" ", "float", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod duplicateParameterName = method(
+                new GpuIrMethod("duplicateParameterName", List.of(new GpuIrReturn(null))),
+                List.of(
+                        new ParsedGpuParameter("value", "float", GpuAddressSpace.PRIVATE, false, List.of()),
+                        new ParsedGpuParameter("value", "int", GpuAddressSpace.PRIVATE, false, List.of())
+                )
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(blankParameterName)))
+                .getMessage().contains("blank parameter name"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(duplicateParameterName)))
+                .getMessage().contains("duplicate parameter declaration: value"));
+    }
+
+    @Test
+    void rejectsMissingEntryPointParameterAddressSpaceMetadata() {
+        GpuIrCompiledMethod missingAddressSpace = method(
+                new GpuIrMethod("missingAddressSpace", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("value", "float", null, false, List.of()))
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(missingAddressSpace)))
+                .getMessage().contains("missing entry-point parameter address space for value"));
+    }
+
+    @Test
+    void rejectsMalformedEntryPointParameterQualifierMetadata() {
+        GpuIrCompiledMethod scalarQualifier = method(
+                new GpuIrMethod("scalarQualifier", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("value", "float", GpuAddressSpace.PRIVATE, false, List.of("const")))
+        );
+        GpuIrCompiledMethod duplicateQualifier = method(
+                new GpuIrMethod("duplicateQualifier", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.GLOBAL, false, List.of("restrict", "restrict")))
+        );
+        GpuIrCompiledMethod unsupportedQualifier = method(
+                new GpuIrMethod("unsupportedQualifier", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.GLOBAL, false, List.of("readonly")))
+        );
+        GpuIrCompiledMethod blankQualifier = method(
+                new GpuIrMethod("blankQualifier", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.GLOBAL, false, List.of(" ")))
+        );
+        GpuIrCompiledMethod validQualifiers = method(
+                new GpuIrMethod("validQualifiers", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("values", "float[]", GpuAddressSpace.GLOBAL, false, List.of("const", "restrict", "volatile")))
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(scalarQualifier)))
+                .getMessage().contains("OpenCL qualifiers require a pointer-like parameter: value is float"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(duplicateQualifier)))
+                .getMessage().contains("duplicate OpenCL parameter qualifier for values: restrict"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedQualifier)))
+                .getMessage().contains("unsupported OpenCL parameter qualifier for values: readonly"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(blankQualifier)))
+                .getMessage().contains("blank OpenCL parameter qualifier for values"));
+        assertDoesNotThrow(() -> validator.run(context(validQualifiers)));
     }
 
     @Test
@@ -763,6 +1790,48 @@ class GpuIrSafetyValidatorTest {
                         )
                 )
         )));
+        GpuIrCompiledMethod blankMetadataType = method(new GpuIrMethod("intrinsicBlankMetadataType", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "native_sin",
+                                "native_sin({0})",
+                                "float",
+                                List.of(new GpuIrLiteral("1.0f")),
+                                List.of("")
+                        )
+                )
+        )));
+        GpuIrCompiledMethod unsupportedMetadataType = method(new GpuIrMethod("intrinsicUnsupportedMetadataType", List.of(
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "native_sin",
+                                "native_sin({0})",
+                                "float",
+                                List.of(new GpuIrLiteral("1.0f")),
+                                List.of("Object")
+                        )
+                )
+        )));
+        GpuIrCompiledMethod unsupportedResultMetadataType = method(new GpuIrMethod("intrinsicUnsupportedResultType", List.of(
+                new GpuIrVariableDeclaration(
+                        "Object",
+                        "value",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "native_object",
+                                "native_object({0})",
+                                "Object",
+                                List.of(new GpuIrLiteral("1.0f")),
+                                List.of("float")
+                        )
+                )
+        )));
         GpuIrCompiledMethod metadataTypeMatch = method(new GpuIrMethod("intrinsicTypeMatch", List.of(
                 new GpuIrVariableDeclaration("boolean", "inputFlag", new GpuIrLiteral("true")),
                 new GpuIrVariableDeclaration(
@@ -783,6 +1852,12 @@ class GpuIrSafetyValidatorTest {
                 .getMessage().contains("intrinsic argument metadata count mismatch for native_sin: expected 2 but got 1"));
         assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(metadataTypeMismatch)))
                 .getMessage().contains("type mismatch in intrinsic argument 0 for is_valid: expected boolean but got int"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(blankMetadataType)))
+                .getMessage().contains("blank intrinsic argument 0 type for native_sin"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedMetadataType)))
+                .getMessage().contains("unsupported intrinsic argument 0 metadata type for native_sin: Object"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unsupportedResultMetadataType)))
+                .getMessage().contains("unsupported intrinsic result metadata type for native_object: Object"));
         assertDoesNotThrow(() -> validator.run(context(metadataTypeMatch)));
     }
 
@@ -822,10 +1897,15 @@ class GpuIrSafetyValidatorTest {
             String returnType,
             List<ParsedGpuParameter> parameters
     ) {
-        ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
+        ParsedGpuMethod parsedMethod = parsedMethod(irMethod.name(), returnType, parameters);
+        return new GpuIrCompiledMethod(parsedMethod, irMethod, emittedName, helperDependencies);
+    }
+
+    private ParsedGpuMethod parsedMethod(String methodName, String returnType, List<ParsedGpuParameter> parameters) {
+        return new ParsedGpuMethod(
                 "KernelOwner",
                 "test.KernelOwner",
-                irMethod.name(),
+                methodName,
                 returnType,
                 parameters,
                 List.of(),
@@ -838,7 +1918,6 @@ class GpuIrSafetyValidatorTest {
                 null,
                 false
         );
-        return new GpuIrCompiledMethod(parsedMethod, irMethod, emittedName, helperDependencies);
     }
 
     private List<ParsedGpuParameter> defaultParameters() {

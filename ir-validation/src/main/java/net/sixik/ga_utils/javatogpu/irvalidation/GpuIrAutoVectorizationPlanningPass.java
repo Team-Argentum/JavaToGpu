@@ -32,19 +32,21 @@ public final class GpuIrAutoVectorizationPlanningPass implements GpuIrPass {
         if (mode == GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_ANY_DIAGNOSTIC
                 && preview.hasBlockingDiagnostics()) {
             throw new GpuIrPassException("IR auto-vectorization planning failed for "
-                    + context.method().irMethod().name()
+                    + report.methodName()
                     + ": " + preview.firstBlockingDiagnosticSummary().orElseThrow());
         }
         if (mode == GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_WARNED_CANDIDATES
                 && preview.hasWarnings()) {
             throw new GpuIrPassException("IR auto-vectorization planning failed for "
-                    + context.method().irMethod().name()
+                    + report.methodName()
                     + ": " + preview.warningDiagnostics().getFirst().summary());
         }
     }
 
     public GpuIrAutoVectorizationReport scan(GpuIrPassContext context) {
-        Objects.requireNonNull(context, "context");
+        if (context == null || context.method() == null) {
+            return scanner.scan(null);
+        }
         return scanner.scan(context.method().irMethod());
     }
 

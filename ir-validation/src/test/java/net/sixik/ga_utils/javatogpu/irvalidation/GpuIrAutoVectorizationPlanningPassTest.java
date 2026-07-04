@@ -162,6 +162,27 @@ class GpuIrAutoVectorizationPlanningPassTest {
     }
 
     @Test
+    void anyDiagnosticStrictModeReportsIncompleteContextWithoutThrowingNullPointerExceptions() {
+        GpuIrAutoVectorizationPlanningPass strictPass = new GpuIrAutoVectorizationPlanningPass(
+                new GpuIrAutoVectorizationCandidateScanner(),
+                GpuIrAutoVectorizationPlanningMode.STRICT_FAIL_ON_ANY_DIAGNOSTIC
+        );
+
+        GpuIrPassException nullContext = assertThrows(GpuIrPassException.class, () -> strictPass.run(null));
+        GpuIrPassException missingMethod = assertThrows(
+                GpuIrPassException.class,
+                () -> strictPass.run(new GpuIrPassContext(null, List.of(), List.of(), true))
+        );
+
+        assertTrue(nullContext.getMessage().contains("IR auto-vectorization planning failed for <missing>"));
+        assertTrue(nullContext.getMessage().contains("INCOMPLETE_IR"));
+        assertTrue(nullContext.getMessage().contains("missing method"));
+        assertTrue(missingMethod.getMessage().contains("IR auto-vectorization planning failed for <missing>"));
+        assertTrue(missingMethod.getMessage().contains("INCOMPLETE_IR"));
+        assertTrue(missingMethod.getMessage().contains("missing method"));
+    }
+
+    @Test
     void strictModeReportsWarnedCandidateEvenWhenCleanCandidateRanksHigher() {
         GpuIrAutoVectorizationPlanningPass strictPass = new GpuIrAutoVectorizationPlanningPass(
                 new GpuIrAutoVectorizationCandidateScanner(),

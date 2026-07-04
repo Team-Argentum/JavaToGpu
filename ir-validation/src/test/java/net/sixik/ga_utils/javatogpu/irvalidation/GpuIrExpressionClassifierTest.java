@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrHelperCall;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrIntrinsicCall;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrStructInit;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrTernary;
 import org.junit.jupiter.api.Test;
 
@@ -44,5 +45,22 @@ class GpuIrExpressionClassifierTest {
         );
 
         assertEquals(GpuIrExpressionEffect.SIDE_EFFECTING, classifier.effectOf(expression));
+    }
+
+    @Test
+    void treatsMalformedArgumentListsAsSideEffectingForOptimizerSafety() {
+        GpuIrIntrinsicCall intrinsicCall = new GpuIrIntrinsicCall(
+                null,
+                "native_sin",
+                "native_sin({0})",
+                "float",
+                null
+        );
+        GpuIrStructInit structInit = new GpuIrStructInit("Pair", null);
+
+        assertEquals(GpuIrExpressionEffect.SIDE_EFFECTING, classifier.effectOf(intrinsicCall));
+        assertEquals(GpuIrExpressionEffect.SIDE_EFFECTING, classifier.effectOf(structInit));
+        assertTrue(classifier.mayHaveSideEffects(intrinsicCall));
+        assertTrue(classifier.mayHaveSideEffects(structInit));
     }
 }

@@ -11,6 +11,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrStructInit;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrTernary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrUnary;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -30,6 +31,9 @@ public final class GpuIrExpressionClassifier {
             return true;
         }
         if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
+            if (intrinsicCall.arguments() == null) {
+                return true;
+            }
             return intrinsicMayHaveSideEffects(intrinsicCall);
         }
         if (expression instanceof GpuIrBinary binary) {
@@ -53,9 +57,14 @@ public final class GpuIrExpressionClassifier {
             return mayHaveSideEffects(arrayAccess.index());
         }
         if (expression instanceof GpuIrStructInit structInit) {
-            return structInit.arguments().stream().anyMatch(this::mayHaveSideEffects);
+            return expressionListMayHaveSideEffects(structInit.arguments());
         }
         return false;
+    }
+
+    private boolean expressionListMayHaveSideEffects(List<GpuIrExpression> expressions) {
+        // Missing expression lists are malformed IR; keep optimization consumers conservative.
+        return expressions == null || expressions.stream().anyMatch(this::mayHaveSideEffects);
     }
 
     private boolean intrinsicMayHaveSideEffects(GpuIrIntrinsicCall intrinsicCall) {

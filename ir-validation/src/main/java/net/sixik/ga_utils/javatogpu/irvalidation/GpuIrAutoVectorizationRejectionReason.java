@@ -1,6 +1,9 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
 public enum GpuIrAutoVectorizationRejectionReason {
+    // The lowered IR is incomplete, so the scanner reports a diagnostic instead of throwing.
+    INCOMPLETE_IR,
+
     // Loop shape is not the first supported fixed-width int induction pattern.
     UNSUPPORTED_LOOP_SHAPE,
 
