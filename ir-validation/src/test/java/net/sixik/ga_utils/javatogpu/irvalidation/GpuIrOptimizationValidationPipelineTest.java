@@ -73,6 +73,7 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(report.compactSummary().contains("ir optimization validation method=kernel"));
         assertTrue(report.compactSummary().contains("cseInsertions=1"));
         assertTrue(report.compactSummary().contains("autoVectorizationCandidates=1"));
+        assertTrue(report.compactSummary().contains("autoVectorizationRewriteReadiness=blockedByGuard"));
         assertTrue(report.compactSummary().contains("autoVectorizationRejections=0"));
         assertFalse(report.compactSummary().contains("cse rewrite preview"));
         assertTrue(irMethod.statements().get(0) instanceof GpuIrVariableDeclaration);

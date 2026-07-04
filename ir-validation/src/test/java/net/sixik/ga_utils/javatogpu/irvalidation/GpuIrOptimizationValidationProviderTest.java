@@ -80,6 +80,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("ir optimization validation method=broken")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("safety=failed")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("optimizerDiagnostics=0")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteReadiness=none")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("unknown variable reference: missing")));
     }
 
@@ -107,6 +108,7 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePlanGuards=1")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteReadiness=blockedByGuard")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePlanGuardFamilies={controlFlowBoundary=1}")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("firstRewritePlanGuard")));
     }

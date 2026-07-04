@@ -83,6 +83,7 @@ public record GpuIrOptimizationValidationReport(
                 + " cseReplacements=" + commonSubexpressionReplacementCount()
                 + " cseSkipped=" + commonSubexpressionSkippedCount()
                 + " autoVectorizationCandidates=" + autoVectorizationRewriteCandidateCount()
+                + " autoVectorizationRewriteReadiness=" + autoVectorizationPreview.rewriteReadiness().artifactValue()
                 + " autoVectorizationWarnings=" + autoVectorizationWarningCount()
                 + " autoVectorizationRejections=" + autoVectorizationRejectionCount()
                 + " autoVectorizationRewritePlanGuards=" + autoVectorizationPreview.rewritePlanGuardCount()
