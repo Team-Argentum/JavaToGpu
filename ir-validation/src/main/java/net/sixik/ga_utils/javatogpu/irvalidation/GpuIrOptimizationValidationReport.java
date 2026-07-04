@@ -1,5 +1,6 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -53,6 +54,26 @@ public record GpuIrOptimizationValidationReport(
         return commonSubexpressionPreview.skippedCandidateCount();
     }
 
+    public GpuIrCommonSubexpressionArtifactSnapshot commonSubexpressionArtifactSnapshot() {
+        return new GpuIrCommonSubexpressionArtifactSnapshot(commonSubexpressionPreview);
+    }
+
+    public GpuIrCommonSubexpressionLocalExpressionDominanceReport commonSubexpressionLocalExpressionDominanceReport() {
+        return commonSubexpressionArtifactSnapshot().localExpressionDominanceReport();
+    }
+
+    public Optional<GpuIrCommonSubexpressionSkippedDiagnostic> firstCommonSubexpressionSkippedDiagnostic() {
+        return commonSubexpressionArtifactSnapshot().firstSkippedDiagnostic();
+    }
+
+    public Optional<GpuIrCommonSubexpressionDominanceStatus> firstCommonSubexpressionSkippedDominanceStatus() {
+        return commonSubexpressionArtifactSnapshot().firstSkippedDominanceStatus();
+    }
+
+    public Optional<String> firstCommonSubexpressionSkippedDominanceSummary() {
+        return commonSubexpressionArtifactSnapshot().firstSkippedDominanceSummary();
+    }
+
     public int autoVectorizationRewriteCandidateCount() {
         return autoVectorizationPreview.rewriteCandidateCount();
     }
@@ -89,6 +110,14 @@ public record GpuIrOptimizationValidationReport(
         return autoVectorizationResolvedRewriteOperations.replacements().size();
     }
 
+    public GpuIrAutoVectorizationArtifactSnapshot autoVectorizationArtifactSnapshot() {
+        return new GpuIrAutoVectorizationArtifactSnapshot(
+                autoVectorizationPreview,
+                autoVectorizationRewriteDryRunReport,
+                autoVectorizationResolvedRewriteOperations
+        );
+    }
+
     public int optimizerDiagnosticCount() {
         return commonSubexpressionSkippedCount()
                 + autoVectorizationWarningCount()
@@ -100,16 +129,56 @@ public record GpuIrOptimizationValidationReport(
         return hasSafetyError() || hasOptimizerDiagnostics();
     }
 
+    public GpuIrOptimizerGateExplanation optimizerGateExplanation() {
+        return optimizerGateSnapshot().explanation();
+    }
+
+    public GpuIrOptimizerGateSnapshot optimizerGateSnapshot() {
+        return GpuIrOptimizerGateSnapshot.from(this);
+    }
+
+    public Map<String, Long> optimizerGateSourceCounts() {
+        return optimizerGateSnapshot().sourceCounts();
+    }
+
+    public String optimizerGateSourceCountsSummary() {
+        return optimizerGateSnapshot().sourceCountsSummary();
+    }
+
+    public Map<String, Long> optimizerGateFamilyCounts() {
+        return optimizerGateSnapshot().familyCounts();
+    }
+
+    public String optimizerGateFamilyCountsSummary() {
+        return optimizerGateSnapshot().familyCountsSummary();
+    }
+
+    public GpuIrOptimizerGatePolicyDecision optimizerGatePolicyDecision(GpuIrOptimizationValidationMode mode) {
+        return GpuIrOptimizerGatePolicyDecision.from(mode, this);
+    }
+
     /**
      * Short one-line summary intended for javac diagnostics and CI logs.
      */
     public String compactSummary() {
         return "ir optimization validation method=" + methodName
                 + " safety=" + (hasSafetyError() ? "failed" : "ok")
+                + " optimizerGateBlocked=" + optimizerGateExplanation().blocked()
+                + " optimizerGateSource=" + optimizerGateExplanation().source()
+                + " optimizerGateFamily=" + optimizerGateExplanation().family()
+                + " optimizerGateSourceCounts=" + optimizerGateSourceCountsSummary()
+                + " optimizerGateFamilyCounts=" + optimizerGateFamilyCountsSummary()
                 + " optimizerDiagnostics=" + optimizerDiagnosticCount()
                 + " cseInsertions=" + commonSubexpressionInsertionCount()
                 + " cseReplacements=" + commonSubexpressionReplacementCount()
                 + " cseSkipped=" + commonSubexpressionSkippedCount()
+                + " cseLocalExpressionProvenCandidates=" + commonSubexpressionLocalExpressionDominanceReport().provenCandidateCount()
+                + " cseLocalExpressionProvenReplacements=" + commonSubexpressionLocalExpressionDominanceReport().provenReplacementCount()
+                + " cseLocalExpressionBlockedCandidates=" + commonSubexpressionLocalExpressionDominanceReport().blockedCandidateCount()
+                + " cseLocalExpressionHasEvidence=" + commonSubexpressionLocalExpressionDominanceReport().hasLocalExpressionEvidence()
+                + firstCommonSubexpressionSkippedDominanceStatus()
+                .map(status -> " cseFirstSkippedDominanceStatus=" + status.artifactValue())
+                .orElse("")
                 + " autoVectorizationCandidates=" + autoVectorizationRewriteCandidateCount()
                 + " autoVectorizationRewriteReadiness=" + autoVectorizationPreview.rewriteReadiness().artifactValue()
                 + " autoVectorizationCanApplyRewrite=" + autoVectorizationPreview.canApplyRewrite()
@@ -146,12 +215,21 @@ public record GpuIrOptimizationValidationReport(
         return "ir optimization validation method=" + methodName
                 + " safety=" + (hasSafetyError() ? "failed" : "ok")
                 + (hasSafetyError() ? " safetyError=" + safetyError.orElseThrow() : "")
+                + " optimizerGate={" + optimizerGateSnapshot().compactSummary() + "}"
+                + " optimizerGateSourceCounts=" + optimizerGateSourceCountsSummary()
+                + " optimizerGateFamilyCounts=" + optimizerGateFamilyCountsSummary()
                 + " optimizerDiagnostics=" + optimizerDiagnosticCount()
                 + " cse={" + commonSubexpressionPreview.summary() + "}"
+                + " cseArtifacts={" + commonSubexpressionArtifactSnapshot().summary() + "}"
+                + " cseLocalExpression={" + commonSubexpressionLocalExpressionDominanceReport().summary() + "}"
+                + firstCommonSubexpressionSkippedDominanceSummary()
+                .map(summary -> " cseFirstSkippedDominance={" + summary + "}")
+                .orElse("")
                 + " autoVectorizationRewritePolicy={" + autoVectorizationPreview.rewritePolicy().summary() + "}"
                 + " autoVectorizationRewriteDryRun={" + autoVectorizationRewriteDryRunReport.summary() + "}"
                 + " autoVectorizationResolvedRewriteOperations={" + autoVectorizationResolvedRewriteOperations.summary() + "}"
                 + " autoVectorizationProofBundle={" + autoVectorizationPreview.proofBundle().summaryLine() + "}"
+                + " autoVectorizationArtifacts={" + autoVectorizationArtifactSnapshot().summary() + "}"
                 + " autoVectorization={" + autoVectorizationPreview.summary() + "}";
     }
 

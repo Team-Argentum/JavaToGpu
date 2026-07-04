@@ -49,6 +49,11 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(report.autoVectorizationPreview().hasRewriteCandidates());
         assertTrue(report.hasBlockingDiagnostics());
         assertTrue(report.hasOptimizerDiagnostics());
+        assertTrue(report.optimizerGateExplanation().blocked());
+        assertEquals("autoVectorization", report.optimizerGateExplanation().source());
+        assertEquals("guard.earlyExitBoundary", report.optimizerGateExplanation().family());
+        assertEquals(java.util.Map.of("autoVectorization", 1L), report.optimizerGateSourceCounts());
+        assertEquals(java.util.Map.of("guard.earlyExitBoundary", 1L), report.optimizerGateFamilyCounts());
         assertFalse(report.hasCommonSubexpressionDiagnostics());
         assertTrue(report.hasAutoVectorizationDiagnostics());
         assertEquals(1, report.commonSubexpressionInsertionCount());
@@ -60,6 +65,9 @@ class GpuIrOptimizationValidationPipelineTest {
         assertEquals(1, report.optimizerDiagnosticCount());
         assertTrue(report.summary().contains("safety=ok"));
         assertTrue(report.summary().contains("optimizerDiagnostics=1"));
+        assertTrue(report.summary().contains("optimizerGate={optimizer gate blocked=true source=autoVectorization family=guard.earlyExitBoundary"));
+        assertTrue(report.summary().contains("optimizerGateSourceCounts={autoVectorization=1}"));
+        assertTrue(report.summary().contains("optimizerGateFamilyCounts={guard.earlyExitBoundary=1}"));
         assertTrue(report.summary().contains("cse rewrite preview"));
         assertTrue(report.summary().contains("auto-vectorization preview"));
         assertTrue(report.summary().contains("rewriteCandidates=1"));
@@ -71,7 +79,14 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(report.summary().contains("rewritePlanGuards=1"));
         assertTrue(report.summary().contains("earlyExitBoundary=1"));
         assertTrue(report.compactSummary().contains("ir optimization validation method=kernel"));
+        assertTrue(report.compactSummary().contains("optimizerGateBlocked=true"));
+        assertTrue(report.compactSummary().contains("optimizerGateSource=autoVectorization"));
+        assertTrue(report.compactSummary().contains("optimizerGateFamily=guard.earlyExitBoundary"));
+        assertTrue(report.compactSummary().contains("optimizerGateSourceCounts={autoVectorization=1}"));
+        assertTrue(report.compactSummary().contains("optimizerGateFamilyCounts={guard.earlyExitBoundary=1}"));
         assertTrue(report.compactSummary().contains("cseInsertions=1"));
+        assertTrue(report.compactSummary().contains("cseLocalExpressionProvenCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseLocalExpressionHasEvidence=false"));
         assertTrue(report.compactSummary().contains("autoVectorizationCandidates=1"));
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteReadiness=blockedByGuard"));
         assertTrue(report.compactSummary().contains("autoVectorizationRejections=0"));
@@ -90,6 +105,11 @@ class GpuIrOptimizationValidationPipelineTest {
         GpuIrOptimizationValidationReport report = pipeline.validate(context);
 
         assertTrue(report.hasSafetyError());
+        assertTrue(report.optimizerGateExplanation().blocked());
+        assertEquals("safety", report.optimizerGateExplanation().source());
+        assertEquals("safety.error", report.optimizerGateExplanation().family());
+        assertEquals(java.util.Map.of("safety", 1L), report.optimizerGateSourceCounts());
+        assertEquals(java.util.Map.of("safety.error", 1L), report.optimizerGateFamilyCounts());
         assertTrue(report.safetyError().orElseThrow().contains("unknown variable reference: missing"));
         assertFalse(report.commonSubexpressionPreview().hasRewriteWork());
         assertEquals(GpuIrAutoVectorizationRewriteDryRunReadiness.SKIPPED, report.autoVectorizationRewriteDryRunReadiness());
@@ -100,6 +120,9 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(report.summary().contains("safety=failed"));
         assertTrue(report.summary().contains("unknown variable reference: missing"));
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunReadiness=skipped"));
+        assertTrue(report.compactSummary().contains("optimizerGateSource=safety"));
+        assertTrue(report.compactSummary().contains("optimizerGateSourceCounts={safety=1}"));
+        assertTrue(report.compactSummary().contains("optimizerGateFamilyCounts={safety.error=1}"));
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunSuccessful=false"));
     }
 
@@ -141,6 +164,11 @@ class GpuIrOptimizationValidationPipelineTest {
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPipeline.validate(context));
 
         assertTrue(exception.getMessage().contains("IR optimization validation failed for kernel"));
+        assertTrue(exception.getMessage().contains("optimizer gate policy mode=STRICT_FAIL_ON_OPTIMIZER_DIAGNOSTICS blocked=true source=autoVectorization family=rejection.UNSUPPORTED_LANE_COUNT"));
+        assertTrue(exception.getMessage().contains("optimizer gate blocked=true source=autoVectorization family=rejection.UNSUPPORTED_LANE_COUNT"));
+        assertTrue(exception.getMessage().contains("optimizerGateSourceCounts={autoVectorization=1,cse=1}"));
+        assertTrue(exception.getMessage().contains("optimizerGateFamilyCounts={rejection.UNSUPPORTED_LANE_COUNT=1,cse.MUTATED_BETWEEN_OCCURRENCES=1}"));
+        assertTrue(exception.getMessage().contains("cseFirstSkippedDominance={MUTATED_BETWEEN_OCCURRENCES dominance=topLevelDownstreamReplacements"));
         assertTrue(exception.getMessage().contains("optimizerDiagnostics=2"));
         assertTrue(exception.getMessage().contains("MUTATED_BETWEEN_OCCURRENCES"));
         assertTrue(exception.getMessage().contains("UNSUPPORTED_LANE_COUNT"));
@@ -163,6 +191,8 @@ class GpuIrOptimizationValidationPipelineTest {
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPipeline.validate(context));
 
         assertTrue(exception.getMessage().contains("IR optimization validation failed for kernel"));
+        assertTrue(exception.getMessage().contains("optimizer gate policy mode=STRICT_FAIL_ON_OPTIMIZER_DIAGNOSTICS blocked=true source=autoVectorization family=guard.earlyExitBoundary"));
+        assertTrue(exception.getMessage().contains("optimizer gate blocked=true source=autoVectorization family=guard.earlyExitBoundary"));
         assertTrue(exception.getMessage().contains("optimizerDiagnostics=1"));
         assertTrue(exception.getMessage().contains("rewritePlanGuardFamilies={earlyExitBoundary=1}"));
         assertTrue(exception.getMessage().contains("next statement stmt[1] is an early-exit boundary"));

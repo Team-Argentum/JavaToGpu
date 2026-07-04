@@ -80,6 +80,8 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("ir optimization validation method=broken")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("safety=failed")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("optimizerDiagnostics=0")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpressionProvenCandidates=0")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpressionHasEvidence=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteReadiness=none")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationCanApplyRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofDecision=allow")));
@@ -167,6 +169,7 @@ class GpuIrOptimizationValidationProviderTest {
 
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("unknown variable reference: missing")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cse={")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpression={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicy={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundle={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorization={")));
@@ -192,6 +195,16 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "0");
+        assertEntryValue(entries, "optimizerGateBlocked", "false");
+        assertEntryValue(entries, "optimizerGateSource", "none");
+        assertEntryValue(entries, "optimizerGateFamily", "none");
+        assertEntryValue(entries, "optimizerGateSourceCounts", "{}");
+        assertEntryValue(entries, "optimizerGateFamilyCounts", "{}");
+        assertEntryValue(entries, "optimizerGatePolicyMode", "DIAGNOSTIC_ONLY");
+        assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
+        assertEntryValue(entries, "optimizerGatePolicySource", "none");
+        assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
+        assertEntryValue(entries, "cseSkippedDominanceStatusCounts", "{}");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "none");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
         assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "allow");
@@ -214,7 +227,10 @@ class GpuIrOptimizationValidationProviderTest {
         GpuIrValidationRequest request = new GpuIrValidationRequest(
                 method(new GpuIrMethod("kernel", List.of(fixedWidthLoop(5, List.of(
                         laneAssignment("out", arrayRead("input", new GpuIrVariableRef("i")))
-                ))))),
+                )))), List.of(
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]")
+                )),
                 List.of(),
                 List.of(),
                 true,
@@ -227,6 +243,17 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "0");
+        assertEntryValue(entries, "optimizerGateBlocked", "true");
+        assertEntryValue(entries, "optimizerGateSource", "autoVectorization");
+        assertEntryValue(entries, "optimizerGateFamily", "rejection.UNSUPPORTED_LANE_COUNT");
+        assertEntryValue(entries, "optimizerGateSourceCounts", "{autoVectorization=1}");
+        assertEntryValue(entries, "optimizerGateSourceCount.autoVectorization", "1");
+        assertEntryValue(entries, "optimizerGateFamilyCounts", "{rejection.UNSUPPORTED_LANE_COUNT=1}");
+        assertEntryValue(entries, "optimizerGateFamilyCount.rejection.UNSUPPORTED_LANE_COUNT", "1");
+        assertEntryValue(entries, "optimizerGatePolicyMode", "DIAGNOSTIC_ONLY");
+        assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
+        assertEntryValue(entries, "optimizerGatePolicySource", "none");
+        assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
         assertEntryValue(entries, "autoVectorizationRejections", "1");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "rejected");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
@@ -241,18 +268,21 @@ class GpuIrOptimizationValidationProviderTest {
     void reportEntryIncludesAutoVectorizationWarningFamilyCounts() {
         List<GpuIrValidationReportEntry> entries = new ArrayList<>();
         GpuIrValidationRequest request = new GpuIrValidationRequest(
-                method(new GpuIrMethod("kernel", List.of(fixedWidthLoop(4, List.of(
-                        laneAssignment("out", arrayRead("out", new GpuIrVariableRef("i"))),
-                        laneAssignment("out", arrayRead(
-                                "input",
-                                new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary(
-                                        "+",
-                                        new GpuIrVariableRef("i"),
-                                        new GpuIrLiteral("1")
-                                )
-                        )),
-                        laneAssignment("scratch", arrayRead("input", new GpuIrVariableRef("j")))
-                )))), List.of(
+                method(new GpuIrMethod("kernel", List.of(
+                        new GpuIrVariableDeclaration("int", "j", new GpuIrLiteral("0")),
+                        fixedWidthLoop(4, List.of(
+                                laneAssignment("out", arrayRead("out", new GpuIrVariableRef("i"))),
+                                laneAssignment("out", arrayRead(
+                                        "input",
+                                        new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary(
+                                                "+",
+                                                new GpuIrVariableRef("i"),
+                                                new GpuIrLiteral("1")
+                                        )
+                                )),
+                                laneAssignment("scratch", arrayRead("input", new GpuIrVariableRef("j")))
+                        ))
+                )), List.of(
                         parameter("out", "int[]"),
                         parameter("input", "int[]"),
                         parameter("scratch", "int[]")
@@ -269,6 +299,25 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "0");
+        assertEntryValue(entries, "optimizerGateBlocked", "true");
+        assertEntryValue(entries, "optimizerGateSource", "autoVectorization");
+        assertEntryValue(entries, "optimizerGateFamily", "warning.alias");
+        assertEntryValue(entries, "optimizerGateSourceCounts", "{autoVectorization=1,cse=2}");
+        assertEntryValue(entries, "optimizerGateSourceCount.autoVectorization", "1");
+        assertEntryValue(entries, "optimizerGateSourceCount.cse", "2");
+        assertEntryValue(entries, "optimizerGateFamilyCounts", "{warning.alias=1,warning.repeatedTarget=1,warning.crossLaneRead=1,warning.nonLaneRead=1,cse.CONTROL_FLOW_BOUNDARY=2}");
+        assertEntryValue(entries, "optimizerGateFamilyCount.warning.alias", "1");
+        assertEntryValue(entries, "optimizerGateFamilyCount.cse.CONTROL_FLOW_BOUNDARY", "2");
+        assertEntryValue(entries, "optimizerGatePolicyMode", "DIAGNOSTIC_ONLY");
+        assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
+        assertEntryValue(entries, "optimizerGatePolicySource", "none");
+        assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
+        assertEntryValue(entries, "cseSkippedDominanceStatusCounts", "{localExpressionDownstreamReplacements=1,requiresLocalExpressionDominance=1}");
+        assertEntryValue(entries, "cseSkippedDominanceStatus.localExpressionDownstreamReplacements", "1");
+        assertEntryValue(entries, "cseSkippedDominanceStatus.requiresLocalExpressionDominance", "1");
+        assertEntryValue(entries, "cseFirstSkippedReason", "CONTROL_FLOW_BOUNDARY");
+        assertEntryValue(entries, "cseFirstSkippedDominanceStatus", "requiresLocalExpressionDominance");
+        assertEntryValueContains(entries, "cseFirstSkippedDominanceSummary", "dominance=requiresLocalExpressionDominance");
         assertEntryValue(entries, "autoVectorizationWarnings", "1");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByWarning");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
@@ -304,6 +353,11 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "optimizerGateBlocked", "false");
+        assertEntryValue(entries, "optimizerGateSource", "none");
+        assertEntryValue(entries, "optimizerGateFamily", "none");
+        assertEntryValue(entries, "optimizerGateSourceCounts", "{}");
+        assertEntryValue(entries, "optimizerGateFamilyCounts", "{}");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "ready");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "true");
         assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "allow");
@@ -361,6 +415,17 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "optimizerGateBlocked", "true");
+        assertEntryValue(entries, "optimizerGateSource", "autoVectorization");
+        assertEntryValue(entries, "optimizerGateFamily", "guard.neighborSourceWrite");
+        assertEntryValue(entries, "optimizerGateSourceCounts", "{autoVectorization=1}");
+        assertEntryValue(entries, "optimizerGateSourceCount.autoVectorization", "1");
+        assertEntryValue(entries, "optimizerGateFamilyCounts", "{guard.neighborSourceWrite=1}");
+        assertEntryValue(entries, "optimizerGateFamilyCount.guard.neighborSourceWrite", "1");
+        assertEntryValue(entries, "optimizerGatePolicyMode", "DIAGNOSTIC_ONLY");
+        assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
+        assertEntryValue(entries, "optimizerGatePolicySource", "none");
+        assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
         assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "blockedByRewritePlan");
@@ -587,7 +652,8 @@ class GpuIrOptimizationValidationProviderTest {
     }
 
     private void assertEntryValue(List<GpuIrValidationReportEntry> entries, String key, String expectedValue) {
-        assertTrue(expectedValue.equals(firstEntryValue(entries, key)));
+        String actualValue = firstEntryValue(entries, key);
+        assertTrue(expectedValue.equals(actualValue), key + " expected=" + expectedValue + " actual=" + actualValue + " values=" + entries.get(0).values());
     }
 
     private void assertEntryValueContains(List<GpuIrValidationReportEntry> entries, String key, String expectedFragment) {

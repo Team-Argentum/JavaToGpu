@@ -57,7 +57,8 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
         for (GpuIrCommonSubexpression candidate : report.topCandidates()) {
             GpuIrCommonSubexpressionKind kind = classifier.classify(candidate);
             GpuIrCommonSubexpressionScope scope = scopeClassifier.classify(candidate);
-            GpuIrCommonSubexpressionSkipReason skipReason = skipReason(method, candidate, kind, scope);
+            GpuIrCommonSubexpressionDominanceStatus dominanceStatus = dominanceGuard.status(candidate);
+            GpuIrCommonSubexpressionSkipReason skipReason = skipReason(method, candidate, kind, scope, dominanceStatus);
             if (skipReason == null && isCoveredByExistingParentRewrite(candidate, plannedCoverageLocations)) {
                 skipReason = GpuIrCommonSubexpressionSkipReason.COVERED_BY_PARENT_REWRITE;
             }
@@ -69,7 +70,7 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
                 plans.add(plan);
                 plannedCoverageLocations.addAll(plan.replacementLocationsAfterAnchor());
             } else {
-                skippedCandidates.add(new GpuIrCommonSubexpressionSkippedCandidate(candidate, kind, scope, skipReason));
+                skippedCandidates.add(new GpuIrCommonSubexpressionSkippedCandidate(candidate, kind, scope, skipReason, dominanceStatus));
             }
         }
 
@@ -111,7 +112,8 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
             GpuIrMethod method,
             GpuIrCommonSubexpression candidate,
             GpuIrCommonSubexpressionKind kind,
-            GpuIrCommonSubexpressionScope scope
+            GpuIrCommonSubexpressionScope scope,
+            GpuIrCommonSubexpressionDominanceStatus dominanceStatus
     ) {
         if (kind != GpuIrCommonSubexpressionKind.LOCAL_REUSE) {
             return GpuIrCommonSubexpressionSkipReason.NOT_LOCAL_REUSE;
@@ -119,7 +121,7 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
         if (scope != GpuIrCommonSubexpressionScope.STRAIGHT_LINE) {
             return GpuIrCommonSubexpressionSkipReason.CONTROL_FLOW_BOUNDARY;
         }
-        if (!dominanceGuard.firstOccurrenceDominatesReplacements(candidate)) {
+        if (!dominanceGuard.hasDominatingOccurrence(dominanceStatus)) {
             return GpuIrCommonSubexpressionSkipReason.NO_DOMINATING_FIRST_OCCURRENCE;
         }
         if (!mutationGuard.isStableBetweenOccurrences(method, candidate)) {

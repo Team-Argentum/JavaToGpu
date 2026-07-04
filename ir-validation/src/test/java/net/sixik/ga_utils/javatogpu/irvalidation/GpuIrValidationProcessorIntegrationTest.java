@@ -27,9 +27,11 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(result.success(), result.diagnosticMessages());
         assertTrue(Files.exists(result.generatedOutputDir().resolve("javatogpu/sample/Demo/kernel.cl")));
         assertTrue(result.diagnosticMessages().contains("ir optimization validation method=kernel"));
+        assertTrue(result.diagnosticMessages().contains("optimizerGateBlocked=true"));
+        assertTrue(result.diagnosticMessages().contains("optimizerGateSource=autoVectorization"));
+        assertTrue(result.diagnosticMessages().contains("optimizerGateFamily=rejection.UNSUPPORTED_LANE_COUNT"));
         assertTrue(result.diagnosticMessages().contains("autoVectorizationRejections=1"));
         assertTrue(result.diagnosticMessages().contains("autoVectorizationRewriteReadiness=rejected"));
-        assertFalse(result.diagnosticMessages().contains("UNSUPPORTED_LANE_COUNT"));
     }
 
     @Test

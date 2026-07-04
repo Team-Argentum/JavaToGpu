@@ -75,4 +75,28 @@ class GpuIrCommonSubexpressionReportTest {
 
         assertEquals(List.of(stable), report.rewriteReadyCandidates(method));
     }
+
+    @Test
+    void rewriteReadyCandidatesWithMethodIncludeProvenSameStatementOccurrences() {
+        GpuIrCommonSubexpression sameStatementOnly = new GpuIrCommonSubexpression(
+                "binary(*,var(x),var(y))",
+                2,
+                List.of("stmt[0].value.left", "stmt[0].value.right")
+        );
+        GpuIrCommonSubexpression laterStatement = new GpuIrCommonSubexpression(
+                "binary(+,var(x),var(y))",
+                2,
+                List.of("stmt[0].value.left", "stmt[1].value")
+        );
+        GpuIrCommonSubexpressionReport report = new GpuIrCommonSubexpressionReport(
+                "kernel",
+                List.of(sameStatementOnly, laterStatement)
+        );
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrVariableRef("y"))),
+                new GpuIrAssignment(new GpuIrVariableRef("outB"), new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrVariableRef("y")))
+        ));
+
+        assertEquals(List.of(sameStatementOnly, laterStatement), report.rewriteReadyCandidates(method));
+    }
 }

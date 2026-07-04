@@ -12,7 +12,8 @@ public record GpuIrCommonSubexpressionSkippedDiagnostic(
         List<String> locations,
         GpuIrCommonSubexpressionKind kind,
         GpuIrCommonSubexpressionScope scope,
-        GpuIrCommonSubexpressionSkipReason reason
+        GpuIrCommonSubexpressionSkipReason reason,
+        GpuIrCommonSubexpressionDominanceStatus dominanceStatus
 ) {
     public GpuIrCommonSubexpressionSkippedDiagnostic {
         if (fingerprint == null || fingerprint.isBlank()) {
@@ -25,9 +26,12 @@ public record GpuIrCommonSubexpressionSkippedDiagnostic(
         kind = Objects.requireNonNull(kind, "kind");
         scope = Objects.requireNonNull(scope, "scope");
         reason = Objects.requireNonNull(reason, "reason");
+        dominanceStatus = Objects.requireNonNull(dominanceStatus, "dominanceStatus");
     }
 
     public String summary() {
-        return reason + " " + kind + " " + scope + " " + fingerprint + " @ " + locations;
+        return reason + " " + kind + " " + scope
+                + " dominance=" + dominanceStatus.artifactValue()
+                + " " + fingerprint + " @ " + locations;
     }
 }

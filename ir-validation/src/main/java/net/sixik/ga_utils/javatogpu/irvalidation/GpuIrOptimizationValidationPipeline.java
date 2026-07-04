@@ -136,8 +136,10 @@ public final class GpuIrOptimizationValidationPipeline {
         }
         if (mode == GpuIrOptimizationValidationMode.STRICT_FAIL_ON_OPTIMIZER_DIAGNOSTICS
                 && report.hasBlockingDiagnostics()) {
+            GpuIrOptimizerGatePolicyDecision policyDecision = report.optimizerGatePolicyDecision(mode);
             throw new GpuIrPassException("IR optimization validation failed for "
-                    + report.methodName() + ": " + report.detailedSummary());
+                    + report.methodName() + ": " + policyDecision.compactSummary()
+                    + "; " + report.detailedSummary());
         }
     }
 

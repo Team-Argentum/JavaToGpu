@@ -177,6 +177,16 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         assertEquals(1, preview.replacementEditCount());
         assertEquals(4, preview.skippedCandidateCount());
         assertEquals(4, preview.skippedDiagnostics().size());
+        assertTrue(preview.firstSkippedDiagnostic().isPresent());
+        assertEquals(
+                GpuIrCommonSubexpressionDominanceStatus.TOP_LEVEL_DOWNSTREAM_REPLACEMENTS,
+                preview.firstSkippedDominanceStatus().orElseThrow()
+        );
+        assertTrue(preview.firstSkippedDominanceSummary().orElseThrow().contains("dominance=topLevelDownstreamReplacements"));
+        assertEquals(
+                GpuIrCommonSubexpressionDominanceStatus.TOP_LEVEL_DOWNSTREAM_REPLACEMENTS,
+                planReport.firstSkippedDominanceStatus().orElseThrow()
+        );
         GpuIrCommonSubexpressionSkippedDiagnostic firstDiagnostic = preview.skippedDiagnostics().get(0);
         assertEquals("binary(*,var(z),literal(2))", firstDiagnostic.fingerprint());
         assertEquals(2, firstDiagnostic.occurrenceCount());
@@ -184,15 +194,28 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         assertEquals(GpuIrCommonSubexpressionKind.LOCAL_REUSE, firstDiagnostic.kind());
         assertEquals(GpuIrCommonSubexpressionScope.STRAIGHT_LINE, firstDiagnostic.scope());
         assertEquals(GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES, firstDiagnostic.reason());
+        assertEquals(GpuIrCommonSubexpressionDominanceStatus.TOP_LEVEL_DOWNSTREAM_REPLACEMENTS, firstDiagnostic.dominanceStatus());
         assertTrue(firstDiagnostic.summary().contains("MUTATED_BETWEEN_OCCURRENCES"));
         assertEquals(1, preview.skippedDiagnosticsByReason()
                 .get(GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES)
                 .size());
         assertEquals(1L, preview.skippedReasonCounts()
                 .get(GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES));
+        assertEquals(2, preview.skippedDiagnosticsByDominanceStatus()
+                .get(GpuIrCommonSubexpressionDominanceStatus.TOP_LEVEL_DOWNSTREAM_REPLACEMENTS)
+                .size());
+        assertEquals(2L, preview.skippedDominanceStatusCounts()
+                .get(GpuIrCommonSubexpressionDominanceStatus.TOP_LEVEL_DOWNSTREAM_REPLACEMENTS));
         assertEquals(1, planReport.previewSkippedDiagnosticsByReason()
                 .get(GpuIrCommonSubexpressionSkipReason.NOT_LOCAL_REUSE)
                 .size());
+        assertEquals(1, planReport.previewSkippedDiagnosticsByDominanceStatus()
+                .get(GpuIrCommonSubexpressionDominanceStatus.LOCATIONS_MOVE_BACKWARDS)
+                .size());
+        assertEquals(1L, planReport.skippedDominanceStatusCounts()
+                .get(GpuIrCommonSubexpressionDominanceStatus.LOCATIONS_MOVE_BACKWARDS));
+        assertEquals(1L, planReport.skippedDominanceStatusCounts()
+                .get(GpuIrCommonSubexpressionDominanceStatus.REQUIRES_LOCAL_EXPRESSION_DOMINANCE));
         assertEquals(1L, planReport.skippedReasonCounts()
                 .get(GpuIrCommonSubexpressionSkipReason.CONTROL_FLOW_BOUNDARY));
         assertTrue(preview.summary().contains("insertions=1"));
@@ -200,6 +223,9 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         assertTrue(preview.summary().contains("skipped=4"));
         assertTrue(preview.summary().contains("MUTATED_BETWEEN_OCCURRENCES=1"));
         assertTrue(preview.summary().contains("CONTROL_FLOW_BOUNDARY=1"));
+        assertTrue(preview.summary().contains("TOP_LEVEL_DOWNSTREAM_REPLACEMENTS=2"));
+        assertTrue(preview.summary().contains("LOCATIONS_MOVE_BACKWARDS=1"));
+        assertTrue(preview.summary().contains("REQUIRES_LOCAL_EXPRESSION_DOMINANCE=1"));
         assertEquals(List.of(
                 GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES,
                 GpuIrCommonSubexpressionSkipReason.NOT_LOCAL_REUSE,
@@ -241,6 +267,66 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
                 GpuIrCommonSubexpressionSkipReason.COVERED_BY_PARENT_REWRITE,
                 planReport.skippedCandidates().get(0).reason()
         );
+    }
+
+    @Test
+    void plansSameStatementNestedCandidatesWhenLocalDominanceIsProven() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("out"), new GpuIrBinary("+",
+                        new GpuIrBinary("*", new GpuIrVariableRef("x"), new GpuIrVariableRef("y")),
+                        new GpuIrBinary("*", new GpuIrVariableRef("x"), new GpuIrVariableRef("y"))))
+        ));
+        GpuIrCommonSubexpressionReport report = new GpuIrCommonSubexpressionReport("kernel", List.of(
+                new GpuIrCommonSubexpression(
+                        "binary(*,var(x),var(y))",
+                        2,
+                        List.of("stmt[0].value.left", "stmt[0].value.right")
+                )
+        ));
+
+        GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(method, report);
+
+        assertEquals(1, planReport.plans().size());
+        assertEquals(0, planReport.skippedCandidateCount());
+        GpuIrCommonSubexpressionRewritePlan plan = planReport.plans().get(0);
+        assertEquals("stmt[0].value.left", plan.insertionAnchorLocation());
+        assertEquals(List.of("stmt[0].value.right"), plan.replacementLocationsAfterAnchor());
+        assertEquals(
+                GpuIrCommonSubexpressionDominanceStatus.LOCAL_EXPRESSION_DOWNSTREAM_REPLACEMENTS,
+                new GpuIrCommonSubexpressionDominanceGuard().status(report.candidates().get(0))
+        );
+    }
+
+    @Test
+    void skipsSameStatementNestedCandidatesWhenLocalPathsMoveBackwards() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("out"), new GpuIrBinary("+",
+                        new GpuIrBinary("*", new GpuIrVariableRef("x"), new GpuIrVariableRef("y")),
+                        new GpuIrBinary("*", new GpuIrVariableRef("x"), new GpuIrVariableRef("y"))))
+        ));
+        GpuIrCommonSubexpressionReport report = new GpuIrCommonSubexpressionReport("kernel", List.of(
+                new GpuIrCommonSubexpression(
+                        "binary(*,var(x),var(y))",
+                        2,
+                        List.of("stmt[0].value.right", "stmt[0].value.left")
+                )
+        ));
+
+        GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(method, report);
+
+        assertEquals(0, planReport.plans().size());
+        assertEquals(1, planReport.skippedCandidateCount());
+        assertEquals(
+                GpuIrCommonSubexpressionSkipReason.NO_DOMINATING_FIRST_OCCURRENCE,
+                planReport.skippedCandidates().get(0).reason()
+        );
+        assertEquals(
+                GpuIrCommonSubexpressionDominanceStatus.REQUIRES_LOCAL_EXPRESSION_DOMINANCE,
+                planReport.previewSkippedDiagnostics().get(0).dominanceStatus()
+        );
+        assertEquals(1L, planReport.preview().skippedDominanceStatusCounts()
+                .get(GpuIrCommonSubexpressionDominanceStatus.REQUIRES_LOCAL_EXPRESSION_DOMINANCE));
+        assertTrue(planReport.previewSkippedDiagnostics().get(0).summary().contains("requiresLocalExpressionDominance"));
     }
 
     private GpuIrCompiledMethod compiledMethod(GpuIrMethod irMethod, List<ParsedGpuParameter> parameters) {

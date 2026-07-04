@@ -540,6 +540,36 @@ class GpuIrCommonSubexpressionRewriteApplicatorTest {
         }
     }
 
+    @Test
+    void rewritePreservesSameStatementLocalExpressionSemantics() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+",
+                        new GpuIrBinary("*", new GpuIrVariableRef("x"), new GpuIrVariableRef("y")),
+                        new GpuIrBinary("*", new GpuIrVariableRef("x"), new GpuIrVariableRef("y")))),
+                new GpuIrReturn(new GpuIrVariableRef("outA"))
+        ));
+        GpuIrCompiledMethod compiledMethod = compiledMethod(method);
+        GpuIrCommonSubexpressionReport report = GpuIrCommonSubexpressionScanner.optimizerFocused().scan(method);
+        GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(compiledMethod, report);
+        GpuIrMethod rewritten = applicator.apply(compiledMethod, planReport);
+        List<Map<String, Integer>> inputCases = List.of(
+                Map.of("x", 2, "y", 5, "outA", 0, "outB", 0),
+                Map.of("x", -3, "y", 7, "outA", 11, "outB", 0),
+                Map.of("x", 0, "y", -9, "outA", 99, "outB", 0)
+        );
+
+        assertEquals(1, planReport.plans().size());
+        assertEquals(GpuIrCommonSubexpressionDominanceStatus.LOCAL_EXPRESSION_DOWNSTREAM_REPLACEMENTS,
+                new GpuIrCommonSubexpressionDominanceGuard().status(report.candidates().get(0)));
+        for (Map<String, Integer> inputValues : inputCases) {
+            ExecutionResult originalResult = execute(method, inputValues);
+            ExecutionResult rewrittenResult = execute(rewritten, inputValues);
+
+            assertEquals(originalResult.returnValue(), rewrittenResult.returnValue());
+            assertEquals(originalResult.valueOf("outA"), rewrittenResult.valueOf("outA"));
+        }
+    }
+
     private GpuIrCompiledMethod compiledMethod(GpuIrMethod method) {
         ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
                 "KernelOwner",

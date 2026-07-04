@@ -1,0 +1,147 @@
+package net.sixik.ga_utils.javatogpu.irvalidation;
+
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * Read-only auto-vectorization artifact snapshot for validation reports and CI exports.
+ */
+public record GpuIrAutoVectorizationArtifactSnapshot(
+        GpuIrAutoVectorizationPreview preview,
+        GpuIrAutoVectorizationRewriteDryRunReport dryRunReport,
+        GpuIrAutoVectorizationResolvedRewriteOperations resolvedRewriteOperations
+) {
+    public GpuIrAutoVectorizationArtifactSnapshot {
+        preview = Objects.requireNonNull(preview, "preview");
+        dryRunReport = Objects.requireNonNull(dryRunReport, "dryRunReport");
+        resolvedRewriteOperations = Objects.requireNonNull(resolvedRewriteOperations, "resolvedRewriteOperations");
+    }
+
+    public int candidateCount() {
+        return preview.rewriteCandidateCount();
+    }
+
+    public int warningCount() {
+        return preview.warningCount();
+    }
+
+    public int rejectionCount() {
+        return preview.rejectionCount();
+    }
+
+    public int rewriteBlockedCandidateCount() {
+        return preview.rewriteBlockedCandidateCount();
+    }
+
+    public boolean hasRewriteBlockedCandidates() {
+        return preview.hasRewriteBlockedCandidates();
+    }
+
+    public GpuIrAutoVectorizationRewritePlan rewritePlan() {
+        return preview.rewritePlan();
+    }
+
+    public GpuIrAutoVectorizationRewritePolicy rewritePolicy() {
+        return preview.rewritePolicy();
+    }
+
+    public Map<String, String> artifactFields(String prefix) {
+        Objects.requireNonNull(prefix, "prefix");
+        Map<String, String> values = new LinkedHashMap<>();
+        GpuIrAutoVectorizationRewritePlan plan = rewritePlan();
+        GpuIrAutoVectorizationRewritePolicy policy = rewritePolicy();
+
+        values.put(prefix + "Candidates", Integer.toString(candidateCount()));
+        values.put(prefix + "Warnings", Integer.toString(warningCount()));
+        values.put(prefix + "Rejections", Integer.toString(rejectionCount()));
+        values.put(prefix + "RewriteReadiness", preview.rewriteReadiness().artifactValue());
+        values.put(prefix + "CanApplyRewrite", Boolean.toString(preview.canApplyRewrite()));
+        values.putAll(preview.proofDecision().artifactFields(prefix + "ProofDecision"));
+        values.put(prefix + "HasPolicyBlockedRewrite", Boolean.toString(preview.hasPolicyBlockedRewrite()));
+        values.put(prefix + "RewriteBlockedCandidates", Integer.toString(rewriteBlockedCandidateCount()));
+        values.put(prefix + "HasRewriteBlockedCandidates", Boolean.toString(hasRewriteBlockedCandidates()));
+        preview.firstBlockingDiagnosticSummary()
+                .ifPresent(diagnostic -> values.put(prefix + "FirstBlockingDiagnostic", diagnostic));
+        preview.firstBlockingDiagnosticFamily()
+                .ifPresent(family -> values.put(prefix + "FirstBlockingDiagnosticFamily", family));
+
+        values.put(prefix + "RewritePlanCandidates", Integer.toString(plan.candidateCount()));
+        values.put(prefix + "RewritePlanInsertions", Integer.toString(plan.insertionCount()));
+        values.put(prefix + "RewritePlanReplacements", Integer.toString(plan.replacementCount()));
+        values.put(prefix + "RewritePlanOperations", Integer.toString(plan.operationCount()));
+        values.put(prefix + "RewritePlanGuards", Integer.toString(plan.guardDiagnostics().size()));
+
+        values.put(prefix + "RewritePolicyCanRewrite", Boolean.toString(policy.canRewrite()));
+        values.put(prefix + "RewritePolicyReadiness", policy.readiness().artifactValue());
+        values.put(prefix + "RewritePolicyPlannedOperations", Integer.toString(policy.plannedOperationCount()));
+        values.put(prefix + "RewritePolicyBlockingGuards", Integer.toString(policy.blockingGuards().size()));
+        policy.firstBlockingGuard()
+                .ifPresent(guard -> values.put(prefix + "RewritePolicyFirstBlockingGuardFamily", guard.family().artifactValue()));
+
+        values.put(prefix + "RewriteDryRunReadiness", dryRunReport.readiness().artifactValue());
+        values.put(prefix + "RewriteDryRunSuccessful", Boolean.toString(dryRunReport.successful()));
+        values.put(prefix + "RewriteDryRunDiagnostics", Integer.toString(dryRunReport.diagnostics().size()));
+        values.put(prefix + "RewriteDryRunCandidates", Integer.toString(dryRunReport.candidateCount()));
+        values.put(prefix + "RewriteDryRunOperations", Integer.toString(dryRunReport.operationCount()));
+        if (dryRunReport.hasFailures()) {
+            values.put(prefix + "RewriteDryRunFirstDiagnostic", dryRunReport.firstDiagnostic());
+        }
+
+        values.put(prefix + "ResolvedRewriteInsertions", Integer.toString(resolvedRewriteOperations.insertions().size()));
+        values.put(prefix + "ResolvedRewriteReplacements", Integer.toString(resolvedRewriteOperations.replacements().size()));
+        values.put(prefix + "ResolvedRewriteOperations", Integer.toString(resolvedRewriteOperations.operationCount()));
+        if (!resolvedRewriteOperations.insertions().isEmpty()) {
+            values.put(prefix + "ResolvedRewriteFirstInsertion", resolvedRewriteOperations.insertions().get(0).summary());
+        }
+        if (!resolvedRewriteOperations.replacements().isEmpty()) {
+            values.put(prefix + "ResolvedRewriteFirstReplacement", resolvedRewriteOperations.replacements().get(0).summary());
+        }
+
+        plan.guardFamilyTypeCounts().entrySet().stream()
+                .sorted(java.util.Comparator.comparing(entry -> entry.getKey().artifactValue()))
+                .forEach(entry -> values.put(
+                        prefix + "RewritePlanGuardFamily." + entry.getKey().artifactValue(),
+                        Long.toString(entry.getValue())
+                ));
+        values.putAll(preview.rewritePlanProofSummary().artifactFields(prefix + "ProofRewritePlan"));
+        values.putAll(preview.proofBundle().artifactFields(prefix + "ProofBundle"));
+        preview.vectorTypeCounts().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> values.put(
+                        prefix + "VectorType." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
+        preview.warningFamilyCounts().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> values.put(
+                        prefix + "WarningFamily." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
+        preview.rejectionReasonCounts().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> values.put(
+                        prefix + "RejectionReason." + entry.getKey().name(),
+                        Long.toString(entry.getValue())
+                ));
+        return Collections.unmodifiableMap(values);
+    }
+
+    public Map<String, String> artifactFields() {
+        return artifactFields("autoVectorization");
+    }
+
+    public String summary() {
+        return "auto-vectorization artifact snapshot candidates=" + candidateCount()
+                + " warnings=" + warningCount()
+                + " rejections=" + rejectionCount()
+                + " rewriteReadiness=" + preview.rewriteReadiness().artifactValue()
+                + " canApplyRewrite=" + preview.canApplyRewrite()
+                + " rewritePlanOperations=" + rewritePlan().operationCount()
+                + " rewritePlanGuards=" + rewritePlan().guardDiagnostics().size()
+                + " dryRunReadiness=" + dryRunReport.readiness().artifactValue()
+                + " dryRunSuccessful=" + dryRunReport.successful()
+                + " resolvedRewriteOperations=" + resolvedRewriteOperations.operationCount();
+    }
+}

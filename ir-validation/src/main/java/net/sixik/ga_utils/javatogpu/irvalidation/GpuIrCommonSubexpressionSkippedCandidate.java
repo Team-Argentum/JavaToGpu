@@ -7,7 +7,8 @@ public record GpuIrCommonSubexpressionSkippedCandidate(
         GpuIrCommonSubexpression candidate,
         GpuIrCommonSubexpressionKind kind,
         GpuIrCommonSubexpressionScope scope,
-        GpuIrCommonSubexpressionSkipReason reason
+        GpuIrCommonSubexpressionSkipReason reason,
+        GpuIrCommonSubexpressionDominanceStatus dominanceStatus
 ) {
     public GpuIrCommonSubexpressionSkippedDiagnostic diagnostic() {
         return new GpuIrCommonSubexpressionSkippedDiagnostic(
@@ -16,7 +17,8 @@ public record GpuIrCommonSubexpressionSkippedCandidate(
                 candidate.locations(),
                 kind,
                 scope,
-                reason
+                reason,
+                dominanceStatus
         );
     }
 }
