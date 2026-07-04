@@ -90,6 +90,35 @@ public record GpuIrAutoVectorizationPreview(
         return Optional.empty();
     }
 
+    public Optional<String> firstBlockingDiagnosticFamily() {
+        if (hasWarnings()) {
+            return Optional.of(firstWarningFamily(warningDiagnostics.get(0)));
+        }
+        if (hasRejections()) {
+            return Optional.of("rejection." + rejections.get(0).reason().name());
+        }
+        if (hasRewritePlanGuardDiagnostics()) {
+            return Optional.of("guard." + GpuIrAutoVectorizationRewritePlan.guardFamily(rewritePlan().guardDiagnostics().get(0)));
+        }
+        return Optional.empty();
+    }
+
+    private String firstWarningFamily(GpuIrAutoVectorizationWarningDiagnostic warning) {
+        if (!warning.aliasWarnings().isEmpty()) {
+            return "warning.alias";
+        }
+        if (!warning.repeatedTargetWarnings().isEmpty()) {
+            return "warning.repeatedTarget";
+        }
+        if (!warning.crossLaneReadWarnings().isEmpty()) {
+            return "warning.crossLaneRead";
+        }
+        if (!warning.nonLaneReadWarnings().isEmpty()) {
+            return "warning.nonLaneRead";
+        }
+        return "warning.other";
+    }
+
     public Map<String, Long> warningFamilyCounts() {
         return java.util.stream.Stream.of(
                         Map.entry("alias", warningDiagnostics.stream().filter(warning -> !warning.aliasWarnings().isEmpty()).count()),

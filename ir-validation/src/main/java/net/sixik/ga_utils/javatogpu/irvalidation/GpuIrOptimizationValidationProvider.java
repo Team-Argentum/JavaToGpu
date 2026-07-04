@@ -61,6 +61,8 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("autoVectorizationRejections", Integer.toString(report.autoVectorizationRejectionCount()));
         report.autoVectorizationPreview().firstBlockingDiagnosticSummary()
                 .ifPresent(diagnostic -> values.put("autoVectorizationFirstBlockingDiagnostic", diagnostic));
+        report.autoVectorizationPreview().firstBlockingDiagnosticFamily()
+                .ifPresent(family -> values.put("autoVectorizationFirstBlockingDiagnosticFamily", family));
         GpuIrAutoVectorizationRewritePlan autoVectorizationRewritePlan = report.autoVectorizationPreview().rewritePlan();
         values.put("autoVectorizationRewritePlanCandidates", Integer.toString(autoVectorizationRewritePlan.candidateCount()));
         values.put("autoVectorizationRewritePlanInsertions", Integer.toString(autoVectorizationRewritePlan.insertionCount()));

@@ -152,6 +152,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejections")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("UNSUPPORTED_LANE_COUNT"));
+        assertTrue("rejection.UNSUPPORTED_LANE_COUNT".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
     }
 
     @Test
@@ -203,6 +204,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejections", "1"));
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1"));
         assertTrue(reportContainsMethodCounterContaining(report, "second", "autoVectorizationFirstBlockingDiagnostic", "UNSUPPORTED_LANE_COUNT"));
+        assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationFirstBlockingDiagnosticFamily", "rejection.UNSUPPORTED_LANE_COUNT"));
     }
 
     @Test
@@ -235,6 +237,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejections")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejectionReason.UNSUPPORTED_ELEMENT_TYPE")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("UNSUPPORTED_ELEMENT_TYPE"));
+        assertTrue("rejection.UNSUPPORTED_ELEMENT_TYPE".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
     }
 
     @Test
@@ -270,6 +273,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.neighborTargetWrite")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("writes target array `output`"));
+        assertTrue("guard.neighborTargetWrite".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
     }
 
     @Test
@@ -307,6 +311,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.controlFlowBoundary")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("control-flow boundary"));
+        assertTrue("guard.controlFlowBoundary".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
     }
 
     private CompilationResult compileWithIrValidationMode(String mode, String diagnosticPolicy) throws IOException {

@@ -119,7 +119,7 @@ public record GpuIrAutoVectorizationRewritePlan(
                 ));
     }
 
-    private static String guardFamily(String diagnostic) {
+    public static String guardFamily(String diagnostic) {
         if (diagnostic.contains("unknown vector type")) {
             return "unknownVectorType";
         }

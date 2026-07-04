@@ -79,6 +79,7 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertEquals(1, preview.totalDiagnosticCount());
         assertEquals(java.util.Map.of(), preview.warningFamilyCounts());
         assertTrue(preview.firstBlockingDiagnosticSummary().isEmpty());
+        assertTrue(preview.firstBlockingDiagnosticFamily().isEmpty());
         assertEquals(irMethod.statements(), context.method().irMethod().statements());
         assertTrue(preview.summary().contains("rewriteCandidates=1"));
     }
@@ -137,12 +138,15 @@ class GpuIrAutoVectorizationPlanningPassTest {
 
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
 
+        GpuIrAutoVectorizationPreview preview = strictPass.preview(context);
+
         assertTrue(exception.getMessage().contains("auto-vectorization preview"));
         assertTrue(exception.getMessage().contains("warnings=1"));
         assertTrue(exception.getMessage().contains("first blocking diagnostic"));
         assertTrue(exception.getMessage().contains("auto-vectorization warning"));
         assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
+        assertEquals("warning.crossLaneRead", preview.firstBlockingDiagnosticFamily().orElseThrow());
     }
 
     @Test
@@ -161,6 +165,8 @@ class GpuIrAutoVectorizationPlanningPassTest {
 
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
 
+        GpuIrAutoVectorizationPreview preview = strictPass.preview(context);
+
         assertTrue(exception.getMessage().contains("auto-vectorization preview"));
         assertTrue(exception.getMessage().contains("rejections=1"));
         assertTrue(exception.getMessage().contains("rejectionReasons"));
@@ -168,6 +174,7 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(exception.getMessage().contains("UNSUPPORTED_LANE_COUNT"));
         assertTrue(exception.getMessage().contains("laneCount=5"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
+        assertEquals("rejection.UNSUPPORTED_LANE_COUNT", preview.firstBlockingDiagnosticFamily().orElseThrow());
     }
 
     @Test

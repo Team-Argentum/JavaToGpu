@@ -169,6 +169,7 @@ class GpuIrOptimizationValidationProviderTest {
 
         assertEntryValue(entries, "autoVectorizationRejections", "1");
         assertEntryValue(entries, "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1");
+        assertEntryValue(entries, "autoVectorizationFirstBlockingDiagnosticFamily", "rejection.UNSUPPORTED_LANE_COUNT");
     }
 
     @Test
@@ -208,6 +209,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationWarningFamily.repeatedTarget", "1");
         assertEntryValue(entries, "autoVectorizationWarningFamily.crossLaneRead", "1");
         assertEntryValue(entries, "autoVectorizationWarningFamily.nonLaneRead", "1");
+        assertEntryValue(entries, "autoVectorizationFirstBlockingDiagnosticFamily", "warning.alias");
     }
 
     @Test
@@ -269,6 +271,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.neighborSourceWrite", "1");
         assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "writes source array `input`");
+        assertEntryValue(entries, "autoVectorizationFirstBlockingDiagnosticFamily", "guard.neighborSourceWrite");
     }
 
     @Test
@@ -301,6 +304,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.controlFlowBoundary", "1");
         assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "control-flow boundary");
+        assertEntryValue(entries, "autoVectorizationFirstBlockingDiagnosticFamily", "guard.controlFlowBoundary");
     }
 
     @Test
@@ -332,6 +336,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.earlyExitBoundary", "1");
         assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "early-exit boundary");
+        assertEntryValue(entries, "autoVectorizationFirstBlockingDiagnosticFamily", "guard.earlyExitBoundary");
     }
 
     @Test
