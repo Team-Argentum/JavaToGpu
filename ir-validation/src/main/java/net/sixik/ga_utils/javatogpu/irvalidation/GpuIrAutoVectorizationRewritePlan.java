@@ -132,6 +132,12 @@ public record GpuIrAutoVectorizationRewritePlan(
         if (diagnostic.contains("writes target array")) {
             return "neighborTargetWrite";
         }
+        if (diagnostic.contains("control-flow boundary")) {
+            return "controlFlowBoundary";
+        }
+        if (diagnostic.contains("early-exit boundary")) {
+            return "earlyExitBoundary";
+        }
         return "other";
     }
 

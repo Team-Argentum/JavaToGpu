@@ -11,6 +11,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitchCase;
@@ -247,14 +248,14 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(aggregatePreview.hasRewriteCandidates());
         assertFalse(aggregatePreview.hasWarnings());
         assertFalse(aggregatePreview.hasRejections());
-        assertFalse(aggregatePreview.hasBlockingDiagnostics());
+        assertTrue(aggregatePreview.hasBlockingDiagnostics());
         assertEquals(2, aggregatePreview.rewriteCandidateCount());
         assertEquals(0, aggregatePreview.warningCount());
         assertEquals(0, aggregatePreview.rejectionCount());
         assertEquals(2, aggregatePreview.totalDiagnosticCount());
         assertEquals(java.util.Map.of(), aggregatePreview.warningFamilyCounts());
         assertEquals(java.util.Map.of("unknownx4", 1L, "unknownx8", 1L), aggregatePreview.vectorTypeCounts());
-        assertTrue(aggregatePreview.firstBlockingDiagnosticSummary().isEmpty());
+        assertTrue(aggregatePreview.firstBlockingDiagnosticSummary().orElseThrow().contains("unknown vector type"));
         GpuIrAutoVectorizationRewritePlan rewritePlan = aggregatePreview.rewritePlan();
         assertTrue(rewritePlan.hasOperations());
         assertEquals(2, rewritePlan.candidateCount());
@@ -418,6 +419,97 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(preview.rewritePlan().hasGuardDiagnostics());
         assertEquals(0, preview.rewritePlan().operationCount());
         assertEquals(java.util.Map.of("neighborTargetWrite", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGuardsNonAdjacentSourceMutationsBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrArrayAccess("left", new GpuIrLiteral("0")), new GpuIrLiteral("7")),
+                new GpuIrVariableDeclaration("int", "unrelated", new GpuIrLiteral("1")),
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("previous statement stmt[0] writes source array `left`"));
+        assertEquals(java.util.Map.of("neighborSourceWrite", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGuardsNonAdjacentTargetMutationsBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                ))),
+                new GpuIrVariableDeclaration("int", "unrelated", new GpuIrLiteral("1")),
+                new GpuIrAssignment(new GpuIrArrayAccess("out", new GpuIrLiteral("0")), new GpuIrLiteral("3"))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("next statement stmt[2] writes target array `out`"));
+        assertEquals(java.util.Map.of("neighborTargetWrite", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGuardsSiblingControlFlowBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrIf(new GpuIrVariableRef("flag"), List.of(), List.of()),
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("flag", "boolean"),
+                parameter("left", "int[]"),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("previous statement stmt[0] is a control-flow boundary"));
+        assertEquals(java.util.Map.of("controlFlowBoundary", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGuardsSiblingEarlyExitBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrReturn(null),
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("previous statement stmt[0] is an early-exit boundary"));
+        assertEquals(java.util.Map.of("earlyExitBoundary", 1L), preview.rewritePlan().guardFamilyCounts());
     }
 
     @Test

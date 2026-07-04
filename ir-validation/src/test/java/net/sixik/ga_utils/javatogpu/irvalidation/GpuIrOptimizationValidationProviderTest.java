@@ -1,12 +1,15 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
@@ -78,6 +81,34 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("safety=failed")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("optimizerDiagnostics=0")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("unknown variable reference: missing")));
+    }
+
+    @Test
+    void diagnosticModeReportsCompactRewritePlanGuardFamilies() {
+        List<String> diagnostics = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(
+                        new GpuIrIf(new GpuIrBinary("!=", new GpuIrVariableRef("flag"), new GpuIrLiteral("0")), List.of(), List.of()),
+                        fixedWidthLoop(4, List.of(
+                                laneAssignment("out", arrayRead("input", new GpuIrVariableRef("i")))
+                        ))
+                )), List.of(
+                        parameter("flag", "int"),
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]")
+                )),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                diagnostics::add
+        );
+
+        provider.validate(request);
+
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePlanGuards=1")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePlanGuardFamilies={controlFlowBoundary=1}")));
+        assertTrue(diagnostics.stream().noneMatch(message -> message.contains("firstRewritePlanGuard")));
     }
 
     @Test
@@ -237,6 +268,67 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
         assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
         assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuardFamily.neighborSourceWrite")));
+    }
+
+    @Test
+    void reportEntryIncludesAutoVectorizationControlFlowGuardFamily() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(
+                        new GpuIrIf(new GpuIrBinary("!=", new GpuIrVariableRef("flag"), new GpuIrLiteral("0")), List.of(), List.of()),
+                        fixedWidthLoop(4, List.of(
+                                laneAssignment("out", arrayRead("input", new GpuIrVariableRef("i")))
+                        ))
+                )), List.of(
+                        parameter("flag", "int"),
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]")
+                )),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
+        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuardFamily.controlFlowBoundary")));
+    }
+
+    @Test
+    void reportEntryIncludesAutoVectorizationEarlyExitGuardFamily() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(
+                        new GpuIrReturn(null),
+                        fixedWidthLoop(4, List.of(
+                                laneAssignment("out", arrayRead("input", new GpuIrVariableRef("i")))
+                        ))
+                )), List.of(
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]")
+                )),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
+        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuardFamily.earlyExitBoundary")));
     }
 
     @Test

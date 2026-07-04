@@ -32,6 +32,38 @@ class GpuIrValidationProcessorIntegrationTest {
     }
 
     @Test
+    void diagnosticModeReportsCompactRewritePlanGuardFamiliesThroughJavacProcessor() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                null,
+                null,
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void guarded(int flag, @GPUGlobal int[] input, @GPUGlobal int[] output) {
+                                if (flag != 0) {
+                                    output[0] = output[0] + 1;
+                                }
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        assertTrue(result.diagnosticMessages().contains("ir optimization validation method=guarded"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuards=1"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuardFamilies={controlFlowBoundary=1}"));
+        assertFalse(result.diagnosticMessages().contains("firstRewritePlanGuard"));
+    }
+
+    @Test
     void quietDiagnosticPolicySuppressesJavacNotesWithoutFailingBuild() throws IOException {
         CompilationResult result = compileWithIrValidationMode("diagnostic", "quiet");
 
@@ -58,6 +90,38 @@ class GpuIrValidationProcessorIntegrationTest {
         assertFalse(result.success(), result.diagnosticMessages());
         assertTrue(result.diagnosticMessages().contains("IR optimization validation failed for kernel"));
         assertTrue(result.diagnosticMessages().contains("UNSUPPORTED_LANE_COUNT"));
+    }
+
+    @Test
+    void strictOptimizerModeFailsThroughJavacProcessorOnRewritePlanGuards() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "strictOptimizer",
+                null,
+                null,
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void guarded(int flag, @GPUGlobal int[] input, @GPUGlobal int[] output) {
+                                if (flag != 0) {
+                                    output[0] = output[0] + 1;
+                                }
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertFalse(result.success(), result.diagnosticMessages());
+        assertTrue(result.diagnosticMessages().contains("IR optimization validation failed for guarded"));
+        assertTrue(result.diagnosticMessages().contains("optimizerDiagnostics="));
+        assertTrue(result.diagnosticMessages().contains("controlFlowBoundary=1"));
+        assertTrue(result.diagnosticMessages().contains("control-flow boundary"));
     }
 
     @Test
@@ -202,6 +266,42 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("0".equals(report.getProperty("entry.0.autoVectorizationRewritePlanOperations")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.neighborTargetWrite")));
+    }
+
+    @Test
+    void diagnosticModeReportCountsControlFlowRewritePlanGuardFamilies() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                "quiet",
+                "reports/javatogpu-ir-validation.properties",
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void guarded(int flag, @GPUGlobal int[] input, @GPUGlobal int[] output) {
+                                if (flag != 0) {
+                                    output[0] = output[0] + 1;
+                                }
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
+
+        assertTrue("1".equals(report.getProperty("entry.count")));
+        assertTrue("guarded".equals(report.getProperty("entry.0.methodName")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationCandidates")));
+        assertTrue("0".equals(report.getProperty("entry.0.autoVectorizationRewritePlanOperations")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.controlFlowBoundary")));
     }
 
     private CompilationResult compileWithIrValidationMode(String mode, String diagnosticPolicy) throws IOException {

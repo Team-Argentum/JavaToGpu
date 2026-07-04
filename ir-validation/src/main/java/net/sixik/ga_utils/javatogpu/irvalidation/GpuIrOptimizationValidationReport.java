@@ -64,7 +64,8 @@ public record GpuIrOptimizationValidationReport(
     public int optimizerDiagnosticCount() {
         return commonSubexpressionSkippedCount()
                 + autoVectorizationWarningCount()
-                + autoVectorizationRejectionCount();
+                + autoVectorizationRejectionCount()
+                + autoVectorizationPreview.rewritePlanGuardCount();
     }
 
     public boolean hasBlockingDiagnostics() {
@@ -83,7 +84,11 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSkipped=" + commonSubexpressionSkippedCount()
                 + " autoVectorizationCandidates=" + autoVectorizationRewriteCandidateCount()
                 + " autoVectorizationWarnings=" + autoVectorizationWarningCount()
-                + " autoVectorizationRejections=" + autoVectorizationRejectionCount();
+                + " autoVectorizationRejections=" + autoVectorizationRejectionCount()
+                + " autoVectorizationRewritePlanGuards=" + autoVectorizationPreview.rewritePlanGuardCount()
+                + (autoVectorizationPreview.hasRewritePlanGuardDiagnostics()
+                ? " autoVectorizationRewritePlanGuardFamilies=" + autoVectorizationPreview.rewritePlan().guardFamilyCounts()
+                : "");
     }
 
     /**

@@ -15,9 +15,13 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrBreak;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrContinue;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrDoWhileLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrLoopBreak;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
@@ -227,14 +231,14 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 List.copyOf(repeatedTargetWarnings),
                 List.copyOf(crossLaneReadWarnings),
                 List.copyOf(nonLaneReadWarnings),
-                neighboringMutationGuards(location, siblingStatements, statementIndex, locationPrefix, targetArrays, sourceArrays),
+                blockMutationGuards(location, siblingStatements, statementIndex, locationPrefix, targetArrays, sourceArrays),
                 assignmentCount,
                 scalarElementType.orElseThrow(),
                 vectorType(scalarElementType.orElseThrow(), bounds.get().laneCount())
         ));
     }
 
-    private List<String> neighboringMutationGuards(
+    private List<String> blockMutationGuards(
             String location,
             List<GpuIrStatement> statements,
             int statementIndex,
@@ -243,30 +247,41 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             Set<String> sourceArrays
     ) {
         List<String> diagnostics = new ArrayList<>();
-        collectNeighboringMutationGuard(diagnostics, location, statements, statementIndex - 1, locationPrefix, "previous", targetArrays, sourceArrays);
-        collectNeighboringMutationGuard(diagnostics, location, statements, statementIndex + 1, locationPrefix, "next", targetArrays, sourceArrays);
+        for (int siblingIndex = 0; siblingIndex < statements.size(); siblingIndex++) {
+            if (siblingIndex == statementIndex) {
+                continue;
+            }
+            String side = siblingIndex < statementIndex ? "previous" : "next";
+            collectBlockMutationGuard(diagnostics, location, statements.get(siblingIndex), siblingIndex, locationPrefix, side, targetArrays, sourceArrays);
+        }
         return diagnostics;
     }
 
-    private void collectNeighboringMutationGuard(
+    private void collectBlockMutationGuard(
             List<String> diagnostics,
             String location,
-            List<GpuIrStatement> statements,
-            int neighborIndex,
+            GpuIrStatement sibling,
+            int siblingIndex,
             String locationPrefix,
             String side,
             Set<String> targetArrays,
             Set<String> sourceArrays
     ) {
-        if (neighborIndex < 0 || neighborIndex >= statements.size()) {
+        if (isEarlyExitBoundary(sibling)) {
+            diagnostics.add("guard " + location + ": " + side + " statement " + locationPrefix + "[" + siblingIndex + "]"
+                    + " is an early-exit boundary before vector rewrite safety is proven");
             return;
         }
-        GpuIrStatement neighbor = statements.get(neighborIndex);
-        if (!(neighbor instanceof GpuIrAssignment assignment) || !(assignment.target() instanceof GpuIrArrayAccess target)) {
+        if (isControlFlowBoundary(sibling)) {
+            diagnostics.add("guard " + location + ": " + side + " statement " + locationPrefix + "[" + siblingIndex + "]"
+                    + " is a control-flow boundary before vector rewrite safety is proven");
+            return;
+        }
+        if (!(sibling instanceof GpuIrAssignment assignment) || !(assignment.target() instanceof GpuIrArrayAccess target)) {
             return;
         }
         String arrayName = target.arrayName();
-        String neighborLocation = locationPrefix + "[" + neighborIndex + "]";
+        String neighborLocation = locationPrefix + "[" + siblingIndex + "]";
         if (sourceArrays.contains(arrayName)) {
             diagnostics.add("guard " + location + ": " + side + " statement " + neighborLocation
                     + " writes source array `" + arrayName + "`");
@@ -275,6 +290,40 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             diagnostics.add("guard " + location + ": " + side + " statement " + neighborLocation
                     + " writes target array `" + arrayName + "`");
         }
+    }
+
+    private boolean isEarlyExitBoundary(GpuIrStatement statement) {
+        return statement instanceof GpuIrReturn
+                || statement instanceof GpuIrBreak
+                || statement instanceof GpuIrContinue
+                || statement instanceof GpuIrLoopBreak;
+    }
+
+    private boolean isControlFlowBoundary(GpuIrStatement statement) {
+        if (statement instanceof GpuIrForLoop loop && isVectorShapedLoop(loop)) {
+            return false;
+        }
+        return statement instanceof GpuIrIf
+                || statement instanceof GpuIrForLoop
+                || statement instanceof GpuIrWhileLoop
+                || statement instanceof GpuIrDoWhileLoop
+                || statement instanceof GpuIrSwitch;
+    }
+
+    private boolean isVectorShapedLoop(GpuIrForLoop loop) {
+        Optional<LoopBounds> bounds = loopBounds(loop);
+        if (bounds.isEmpty() || !SUPPORTED_LANE_COUNTS.contains(bounds.get().laneCount()) || loop.body() == null || loop.body().isEmpty()) {
+            return false;
+        }
+        for (GpuIrStatement statement : loop.body()) {
+            if (!(statement instanceof GpuIrAssignment assignment)
+                    || !(assignment.target() instanceof GpuIrArrayAccess target)
+                    || !isVariableRef(target.index(), bounds.get().inductionVariable())
+                    || expressionClassifier.mayHaveSideEffects(assignment.value())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Optional<String> scalarElementType(Map<String, String> arrayElementTypes, boolean requiresKnownTypes) {
