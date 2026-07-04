@@ -150,6 +150,33 @@ class GpuIrOptimizationValidationProviderTest {
     }
 
     @Test
+    void reportEntryIncludesNoAutoVectorizationRewriteReadiness() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(
+                        new GpuIrVariableDeclaration("int", "value", new GpuIrLiteral("1")),
+                        new GpuIrAssignment(new GpuIrVariableRef("value"), new GpuIrLiteral("2"))
+                ))),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertEntryValue(entries, "autoVectorizationCandidates", "0");
+        assertEntryValue(entries, "autoVectorizationRewriteReadiness", "none");
+        assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
+        assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
+        assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "0");
+    }
+
+    @Test
     void reportEntryIncludesAutoVectorizationRejectionReasonCounts() {
         List<GpuIrValidationReportEntry> entries = new ArrayList<>();
         GpuIrValidationRequest request = new GpuIrValidationRequest(
@@ -167,7 +194,11 @@ class GpuIrOptimizationValidationProviderTest {
 
         provider.validate(request);
 
+        assertEntryValue(entries, "autoVectorizationCandidates", "0");
         assertEntryValue(entries, "autoVectorizationRejections", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteReadiness", "rejected");
+        assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
+        assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
         assertEntryValue(entries, "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1");
         assertEntryValue(entries, "autoVectorizationFirstBlockingDiagnosticFamily", "rejection.UNSUPPORTED_LANE_COUNT");
     }
@@ -205,6 +236,9 @@ class GpuIrOptimizationValidationProviderTest {
 
         assertEntryValue(entries, "autoVectorizationCandidates", "0");
         assertEntryValue(entries, "autoVectorizationWarnings", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByWarning");
+        assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
+        assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
         assertEntryValue(entries, "autoVectorizationWarningFamily.alias", "1");
         assertEntryValue(entries, "autoVectorizationWarningFamily.repeatedTarget", "1");
         assertEntryValue(entries, "autoVectorizationWarningFamily.crossLaneRead", "1");
@@ -234,6 +268,9 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteReadiness", "ready");
+        assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
+        assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
         assertEntryValue(entries, "autoVectorizationRewritePlanCandidates", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanInsertions", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanReplacements", "1");
