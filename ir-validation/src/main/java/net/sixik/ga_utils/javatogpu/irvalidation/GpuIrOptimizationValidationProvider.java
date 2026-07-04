@@ -104,6 +104,9 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
                         "autoVectorizationRewritePlanGuardFamily." + entry.getKey().artifactValue(),
                         Long.toString(entry.getValue())
                 ));
+        values.putAll(report.autoVectorizationPreview()
+                .rewritePlanProofSummary()
+                .artifactFields("autoVectorizationProofRewritePlan"));
         report.autoVectorizationPreview().vectorTypeCounts().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> values.put(

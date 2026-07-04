@@ -725,6 +725,11 @@ class GpuIrAutoVectorizationCandidateScannerTest {
 
     @Test
     void rewritePlanGroupsTargetSourceAliasGuardFamilies() {
+        GpuIrAutoVectorizationRewriteGuardDiagnostic memoryGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                "stmt[0]",
+                "source array `input` uses constant memory address space"
+        );
         GpuIrAutoVectorizationRewriteCandidatePreview candidate = new GpuIrAutoVectorizationRewriteCandidatePreview(
                 "stmt[0]",
                 "i",
@@ -753,6 +758,58 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(plan.hasGuardDiagnostics());
         assertEquals(0, plan.operationCount());
         assertEquals(java.util.Map.of("targetSourceAlias", 1L), plan.guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanProofSummaryCombinesWarningsAndGuards() {
+        GpuIrAutoVectorizationRewriteGuardDiagnostic memoryGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                "stmt[0]",
+                "source array `input` uses constant memory address space"
+        );
+        GpuIrAutoVectorizationRewriteCandidatePreview candidate = new GpuIrAutoVectorizationRewriteCandidatePreview(
+                "stmt[0]",
+                "i",
+                0,
+                4,
+                4,
+                1,
+                4,
+                "x4",
+                "int",
+                "int4",
+                List.of("write out[i=0..3]"),
+                List.of("read input[i=0..3]"),
+                List.of(memoryGuard),
+                List.of("out"),
+                List.of("input")
+        );
+        GpuIrAutoVectorizationWarningDiagnostic warning = new GpuIrAutoVectorizationWarningDiagnostic(
+                "stmt[0]",
+                1,
+                List.of("target array `out` is read inside the same loop body"),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+        GpuIrAutoVectorizationPreview preview = new GpuIrAutoVectorizationPreview(
+                "kernel",
+                List.of(candidate),
+                List.of(warning),
+                List.of()
+        );
+
+        GpuIrAutoVectorizationProofSummary summary = preview.rewritePlanProofSummary();
+
+        assertFalse(summary.rewriteSafe());
+        assertEquals("rewritePlan", summary.proofKind());
+        assertEquals("kernel", summary.location());
+        assertEquals(1, summary.warningCount());
+        assertEquals(1, summary.guardDiagnosticCount());
+        assertEquals(2, summary.diagnosticCount());
+        assertEquals(java.util.Map.of("memoryAddressSpace", 1L), summary.guardFamilyCounts());
+        assertEquals("2", summary.artifactFields("autoVectorizationProofRewritePlan")
+                .get("autoVectorizationProofRewritePlanDiagnostics"));
     }
 
     @Test

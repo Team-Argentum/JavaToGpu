@@ -297,6 +297,9 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanReplacements", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanOperations", "2"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanGuards", "0"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofRewritePlanKind", "rewritePlan"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofRewritePlanRewriteSafe", "true"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationProofRewritePlanDiagnostics", "0"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyCanRewrite", "true"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyReadiness", "ready"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyPlannedOperations", "2"));
@@ -384,6 +387,12 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePolicyBlockingGuards")));
         assertTrue("neighborTargetWrite".equals(report.getProperty("entry.0.autoVectorizationRewritePolicyFirstBlockingGuardFamily")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.neighborTargetWrite")));
+        assertTrue("rewritePlan".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanKind")));
+        assertTrue("guarded".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanLocation")));
+        assertTrue("false".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanRewriteSafe")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanDiagnostics")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanGuardFamily.neighborTargetWrite")));
+        assertTrue(report.getProperty("entry.0.autoVectorizationProofRewritePlanSummary").contains("guardFamilies={neighborTargetWrite=1}"));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("writes target array `output`"));
         assertTrue("guard.neighborTargetWrite".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
     }
@@ -422,6 +431,9 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("0".equals(report.getProperty("entry.0.autoVectorizationRewritePlanOperations")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.controlFlowBoundary")));
+        assertTrue("false".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanRewriteSafe")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanDiagnostics")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationProofRewritePlanGuardFamily.controlFlowBoundary")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("control-flow boundary"));
         assertTrue("guard.controlFlowBoundary".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
     }

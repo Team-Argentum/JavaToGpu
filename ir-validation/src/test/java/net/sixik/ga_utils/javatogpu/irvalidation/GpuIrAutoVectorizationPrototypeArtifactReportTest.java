@@ -34,6 +34,8 @@ class GpuIrAutoVectorizationPrototypeArtifactReportTest {
         assertEquals("true", fields.get("autoVectorizationPrototypeArtifactHasAppliedRewrites"));
         assertEquals("true", fields.get("autoVectorizationPrototypeArtifactRuntimeEquivalenceSuccessful"));
         assertEquals("0", fields.get("autoVectorizationPrototypeArtifactRuntimeEquivalenceDiagnostics"));
+        assertTrue(fields.get("autoVectorizationPrototypeArtifactSummary").contains("method=kernel"));
+        assertTrue(fields.get("autoVectorizationPrototypeArtifactSummary").contains("inputCases=2"));
         assertEquals("1", fields.get("autoVectorizationPrototypeArtifactRewrite.AppliedRewrites"));
         assertEquals("true", fields.get("autoVectorizationPrototypeArtifactRewrite.HasAppliedRewrites"));
         assertEquals("laneCopy", fields.get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteExpressionKind"));
@@ -46,6 +48,32 @@ class GpuIrAutoVectorizationPrototypeArtifactReportTest {
         );
         assertTrue(report.summary().contains("successful=true"));
         assertTrue(report.summary().contains("runtimeEquivalenceSuccessful=true"));
+    }
+
+    @Test
+    void exposesTypedArtifactSummaryForSuccessfulRun() {
+        GpuIrAutoVectorizationPrototypeArtifactReport report = new GpuIrAutoVectorizationPrototypeArtifactReport(
+                GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport.equivalent(
+                        rewriteReport(),
+                        2,
+                        List.of("out")
+                )
+        );
+
+        GpuIrAutoVectorizationPrototypeArtifactSummary summary = report.artifactSummary();
+
+        assertEquals("kernel", summary.methodName());
+        assertTrue(summary.successful());
+        assertEquals(1, summary.appliedRewriteCount());
+        assertTrue(summary.runtimeEquivalenceSuccessful());
+        assertEquals(2, summary.inputCaseCount());
+        assertEquals(1, summary.comparedOutputCount());
+        assertEquals(0, summary.diagnosticCount());
+        assertFalse(summary.hasDiagnostics());
+        assertEquals("", summary.firstDiagnostic());
+        assertEquals("{laneCopy=1,unaryLaneOp=0,binaryLaneOp=0,laneLiteralBinaryOp=0}", summary.appliedRewriteFamilies());
+        assertTrue(summary.summaryLine().contains("successful=true"));
+        assertTrue(summary.summaryLine().contains("appliedRewriteFamilies={laneCopy=1"));
     }
 
     @Test
@@ -66,6 +94,7 @@ class GpuIrAutoVectorizationPrototypeArtifactReportTest {
         assertEquals("false", fields.get("prototypeArtifact.Successful"));
         assertEquals("false", fields.get("prototypeArtifact.RuntimeEquivalenceSuccessful"));
         assertEquals("1", fields.get("prototypeArtifact.RuntimeEquivalenceDiagnostics"));
+        assertTrue(fields.get("prototypeArtifact.Summary").contains("diagnostics=1"));
         assertEquals("false", fields.get("prototypeArtifact.RuntimeEquivalence.Successful"));
         assertEquals("out differs at lane 3", fields.get("prototypeArtifact.RuntimeEquivalence.FirstDiagnostic"));
         assertTrue(report.summary().contains("successful=false"));

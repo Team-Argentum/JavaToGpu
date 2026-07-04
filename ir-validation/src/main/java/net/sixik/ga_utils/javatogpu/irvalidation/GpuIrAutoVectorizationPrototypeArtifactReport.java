@@ -37,6 +37,20 @@ public record GpuIrAutoVectorizationPrototypeArtifactReport(
         return runtimeEquivalenceReport.diagnosticCount();
     }
 
+    public GpuIrAutoVectorizationPrototypeArtifactSummary artifactSummary() {
+        return new GpuIrAutoVectorizationPrototypeArtifactSummary(
+                rewriteReport().method().name(),
+                successful(),
+                appliedRewriteCount(),
+                runtimeEquivalenceReport.successful(),
+                runtimeEquivalenceReport.inputCaseCount(),
+                runtimeEquivalenceReport.comparedOutputCount(),
+                runtimeEquivalenceReport.diagnosticCount(),
+                runtimeEquivalenceReport.firstDiagnostic(),
+                rewriteReport().appliedRewriteFamilyCountersSummary()
+        );
+    }
+
     /**
      * Exposes one stable field map for explicit prototype artifact writers.
      */
@@ -51,6 +65,7 @@ public record GpuIrAutoVectorizationPrototypeArtifactReport(
         values.put(prefix + "HasAppliedRewrites", Boolean.toString(hasAppliedRewrites()));
         values.put(prefix + "RuntimeEquivalenceSuccessful", Boolean.toString(runtimeEquivalenceReport.successful()));
         values.put(prefix + "RuntimeEquivalenceDiagnostics", Integer.toString(runtimeEquivalenceReport.diagnosticCount()));
+        values.put(prefix + "Summary", artifactSummary().summaryLine());
         values.putAll(rewriteReport().artifactFields(prefix + "Rewrite."));
         values.putAll(runtimeEquivalenceReport.artifactFields(prefix + "RuntimeEquivalence."));
         return Collections.unmodifiableMap(values);
@@ -61,11 +76,7 @@ public record GpuIrAutoVectorizationPrototypeArtifactReport(
     }
 
     public String summary() {
-        return "auto-vectorization prototype artifact method=" + rewriteReport().method().name()
-                + " successful=" + successful()
-                + " appliedRewrites=" + appliedRewriteCount()
-                + " runtimeEquivalenceSuccessful=" + runtimeEquivalenceReport.successful()
-                + " diagnostics=" + diagnosticCount()
+        return artifactSummary().summaryLine()
                 + " rewrite={" + rewriteReport().summary() + "}"
                 + " runtimeEquivalence={" + runtimeEquivalenceReport.summary() + "}";
     }

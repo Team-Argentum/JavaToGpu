@@ -60,6 +60,22 @@ public record GpuIrAutoVectorizationPreview(
         return rewritePlan().rewritePolicy();
     }
 
+
+    /**
+     * Shared proof surface for rewrite-plan warnings and guard diagnostics.
+     */
+    public GpuIrAutoVectorizationProofSummary rewritePlanProofSummary() {
+        GpuIrAutoVectorizationRewritePlan plan = rewritePlan();
+        return new GpuIrAutoVectorizationProofSummary(
+                "rewritePlan",
+                methodName,
+                warningCount() == 0 && plan.guardDiagnostics().isEmpty(),
+                warningCount(),
+                plan.guardDiagnostics().size(),
+                plan.guardFamilyTypeCounts()
+        );
+    }
+
     public int rewritePlanGuardCount() {
         return rewritePlan().guardDiagnostics().size();
     }

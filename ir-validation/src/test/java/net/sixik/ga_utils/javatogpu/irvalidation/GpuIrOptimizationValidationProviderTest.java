@@ -301,6 +301,12 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationRewritePlanReplacements", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "2");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "0");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanKind", "rewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanLocation", "kernel");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanRewriteSafe", "true");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanWarnings", "0");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardDiagnostics", "0");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanDiagnostics", "0");
         assertEntryValue(entries, "autoVectorizationRewritePolicyCanRewrite", "true");
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "ready");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
@@ -345,6 +351,14 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "1");
         assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "true");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanKind", "rewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanLocation", "kernel");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanRewriteSafe", "false");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanWarnings", "0");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardDiagnostics", "1");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanDiagnostics", "1");
+        assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardFamily.neighborSourceWrite", "1");
+        assertEntryValueContains(entries, "autoVectorizationProofRewritePlanSummary", "guardFamilies={neighborSourceWrite=1}");
         assertEntryValue(entries, "autoVectorizationRewritePolicyCanRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
