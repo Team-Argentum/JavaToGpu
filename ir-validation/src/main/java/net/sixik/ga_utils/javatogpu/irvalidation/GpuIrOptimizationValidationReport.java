@@ -71,12 +71,34 @@ public record GpuIrOptimizationValidationReport(
         return hasSafetyError() || hasOptimizerDiagnostics();
     }
 
-    public String summary() {
+    /**
+     * Short one-line summary intended for javac diagnostics and CI logs.
+     */
+    public String compactSummary() {
+        return "ir optimization validation method=" + methodName
+                + " safety=" + (hasSafetyError() ? "failed" : "ok")
+                + " optimizerDiagnostics=" + optimizerDiagnosticCount()
+                + " cseInsertions=" + commonSubexpressionInsertionCount()
+                + " cseReplacements=" + commonSubexpressionReplacementCount()
+                + " cseSkipped=" + commonSubexpressionSkippedCount()
+                + " autoVectorizationCandidates=" + autoVectorizationRewriteCandidateCount()
+                + " autoVectorizationWarnings=" + autoVectorizationWarningCount()
+                + " autoVectorizationRejections=" + autoVectorizationRejectionCount();
+    }
+
+    /**
+     * Detailed summary with the full nested optimizer preview diagnostics.
+     */
+    public String detailedSummary() {
         return "ir optimization validation method=" + methodName
                 + " safety=" + (hasSafetyError() ? "failed" : "ok")
                 + (hasSafetyError() ? " safetyError=" + safetyError.orElseThrow() : "")
                 + " optimizerDiagnostics=" + optimizerDiagnosticCount()
                 + " cse={" + commonSubexpressionPreview.summary() + "}"
                 + " autoVectorization={" + autoVectorizationPreview.summary() + "}";
+    }
+
+    public String summary() {
+        return detailedSummary();
     }
 }

@@ -41,4 +41,28 @@ class GpuIrValidationModeTest {
                 exception.getMessage()
         );
     }
+
+    @Test
+    void parsesDiagnosticPolicyAliases() {
+        assertEquals(GpuIrValidationDiagnosticPolicy.SUMMARY, GpuIrValidationDiagnosticPolicy.parse(null));
+        assertEquals(GpuIrValidationDiagnosticPolicy.SUMMARY, GpuIrValidationDiagnosticPolicy.parse("summary"));
+        assertEquals(GpuIrValidationDiagnosticPolicy.SUMMARY, GpuIrValidationDiagnosticPolicy.parse("compact"));
+        assertEquals(GpuIrValidationDiagnosticPolicy.QUIET, GpuIrValidationDiagnosticPolicy.parse("quiet"));
+        assertEquals(GpuIrValidationDiagnosticPolicy.QUIET, GpuIrValidationDiagnosticPolicy.parse("none"));
+        assertEquals(GpuIrValidationDiagnosticPolicy.DETAILED, GpuIrValidationDiagnosticPolicy.parse("detailed"));
+        assertEquals(GpuIrValidationDiagnosticPolicy.DETAILED, GpuIrValidationDiagnosticPolicy.parse("verbose"));
+    }
+
+    @Test
+    void rejectsUnknownDiagnosticPolicyWithSupportedValuesHint() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuIrValidationDiagnosticPolicy.parse("chatty")
+        );
+
+        assertEquals(
+                "Unsupported JavaToGpu IR validation diagnostic policy: chatty; expected quiet, summary, or detailed",
+                exception.getMessage()
+        );
+    }
 }

@@ -12,7 +12,9 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendService;
 import net.sixik.ga_utils.javatogpu.frontend.GpuStructAliasRegistry;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
@@ -83,6 +85,8 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private final Set<String> writtenIntrinsicMetadata = new HashSet<>();
     private final Map<String, String> exportedHelperLibraries = new LinkedHashMap<>();
     private final Map<String, String> exportedIntrinsicLibraries = new LinkedHashMap<>();
+    private final List<GpuIrValidationReportEntry> irValidationReportEntries = new ArrayList<>();
+    private boolean irValidationReportWritten;
 
     private Trees trees;
 
@@ -103,7 +107,12 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     @Override
     public Set<String> getSupportedOptions() {
-        return Set.of("javatogpu.debugAbi", "javatogpu.irValidation");
+        return Set.of(
+                "javatogpu.debugAbi",
+                "javatogpu.irValidation",
+                "javatogpu.irValidationDiagnostics",
+                "javatogpu.irValidationReport"
+        );
     }
 
     @Override
@@ -151,6 +160,14 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                         "Failed to write @GPUIntrinsic library index: " + exception.getMessage()
                 );
             }
+            try {
+                writeIrValidationReport();
+            } catch (IOException exception) {
+                processingEnv.getMessager().printMessage(
+                        Diagnostic.Kind.ERROR,
+                        "Failed to write JavaToGpu IR validation report: " + exception.getMessage()
+                );
+            }
         }
 
         for (Element element : elementsAnnotatedWithAny(roundEnv, GPU_ANNOTATIONS)) {
@@ -175,7 +192,10 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 }
                 GpuFrontendService frontendService = GpuFrontendService.create(
                         GpuIntrinsicDatabase.createDefault(intrinsics, TARGET_BACKEND),
-                        irValidationMode()
+                        irValidationMode(),
+                        irValidationDiagnosticPolicy(),
+                        message -> processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE, message, method),
+                        this::recordIrValidationReportEntry
                 );
                 String kernelSource = frontendService.validateLowerAndEmit(kernelMethod, helpers, structs);
                 writeKernelResource(method, kernelSource);
@@ -624,6 +644,63 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private void writeIntrinsicLibraryIndex() throws IOException {
         writeLibraryIndex(exportedIntrinsicLibraries, INTRINSIC_LIBRARY_INDEX_PATH, "JavaToGpu reusable @GPUIntrinsic libraries");
+    }
+
+    private void writeIrValidationReport() throws IOException {
+        String reportPath = irValidationReportPath();
+        if (reportPath == null || irValidationReportWritten) {
+            return;
+        }
+        irValidationReportWritten = true;
+
+        FileObject resource = processingEnv.getFiler().createResource(StandardLocation.SOURCE_OUTPUT, "", reportPath);
+        try (Writer writer = resource.openWriter()) {
+            writer.write(buildIrValidationReportProperties());
+        }
+    }
+
+    private String buildIrValidationReportProperties() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("format=javatogpu.ir.validation.v1\n");
+        builder.append("entry.count=").append(irValidationReportEntries.size()).append("\n");
+        for (int index = 0; index < irValidationReportEntries.size(); index++) {
+            GpuIrValidationReportEntry entry = irValidationReportEntries.get(index);
+            String prefix = "entry." + index + ".";
+            appendProperty(builder, prefix + "provider", entry.provider());
+            appendProperty(builder, prefix + "methodName", entry.methodName());
+            appendProperty(builder, prefix + "entryPoint", Boolean.toString(entry.entryPoint()));
+            entry.values().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(value -> appendProperty(builder, prefix + value.getKey(), value.getValue()));
+        }
+        return builder.toString();
+    }
+
+    private void appendProperty(StringBuilder builder, String key, String value) {
+        builder.append(escapeProperty(key))
+                .append('=')
+                .append(escapeProperty(value == null ? "" : value))
+                .append('\n');
+    }
+
+    private String escapeProperty(String value) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\' -> builder.append("\\\\");
+                case '\n' -> builder.append("\\n");
+                case '\r' -> builder.append("\\r");
+                case '\t' -> builder.append("\\t");
+                case '=', ':', '#', '!' -> builder.append('\\').append(ch);
+                default -> builder.append(ch);
+            }
+        }
+        return builder.toString();
+    }
+
+    private void recordIrValidationReportEntry(GpuIrValidationReportEntry entry) {
+        irValidationReportEntries.add(entry);
     }
 
     private void writeLibraryIndex(Map<String, String> libraries, String resourcePath, String comment) throws IOException {
@@ -1506,6 +1583,24 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private GpuIrValidationMode irValidationMode() {
         return GpuIrValidationMode.parse(processingEnv.getOptions().get("javatogpu.irValidation"));
+    }
+
+    private GpuIrValidationDiagnosticPolicy irValidationDiagnosticPolicy() {
+        return GpuIrValidationDiagnosticPolicy.parse(processingEnv.getOptions().get("javatogpu.irValidationDiagnostics"));
+    }
+
+    private String irValidationReportPath() {
+        String reportPath = processingEnv.getOptions().get("javatogpu.irValidationReport");
+        if (reportPath == null || reportPath.isBlank()) {
+            return null;
+        }
+        String normalized = reportPath.trim().replace('\\', '/');
+        if (normalized.startsWith("/") || normalized.contains(":") || normalized.contains("..")) {
+            throw new IllegalArgumentException(
+                    "javatogpu.irValidationReport must be a relative generated-source resource path"
+            );
+        }
+        return normalized;
     }
 
     private String buildAbiHintMessage(ParsedGpuMethod kernelMethod, List<ParsedGpuStruct> structs) {

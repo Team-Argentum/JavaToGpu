@@ -30,10 +30,12 @@ dependencies {
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
 }
 ```
 
-The extra artifact provides lowered-IR validation and read-only optimizer diagnostics, while the compiler option chooses how aggressively builds should react. See [IR Validation](IR-Validation.md) for details about `diagnostic`, `strictSafety`, and `strictOptimizer` modes.
+The extra artifact provides lowered-IR validation and read-only optimizer diagnostics, while the compiler options choose how aggressively builds should react, how much diagnostic detail javac prints, and whether CI should capture a machine-readable report. See [IR Validation](IR-Validation.md) for details about validation and diagnostic-output modes.
 
 ## Write A Kernel
 

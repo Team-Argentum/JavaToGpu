@@ -21,6 +21,8 @@ dependencies {
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
 }
 ```
 
@@ -69,7 +71,7 @@ strictOptimizer
 
 `off` is the default and skips optional validation providers.
 
-`diagnostic` runs safety validation plus read-only CSE and auto-vectorization previews. It is the safest first opt-in mode for public alpha users.
+`diagnostic` runs safety validation plus read-only CSE and auto-vectorization previews. It is the safest first opt-in mode for public alpha users and reports a compact javac `NOTE` summary for each validated lowered method.
 
 `strictSafety` fails builds when lowered-IR safety validation fails.
 
@@ -92,6 +94,28 @@ Optimizer diagnostics can include reasons such as:
 - `SIDE_EFFECTING_VALUE`
 
 Use `strictOptimizer` mainly for compiler development and internal hardening. It is expected to be conservative while optimizer analysis is still maturing.
+
+## Diagnostic Output
+
+`javatogpu.irValidationDiagnostics` controls javac `NOTE` output in `diagnostic` mode:
+
+```text
+quiet
+summary
+detailed
+```
+
+`summary` is the default and emits compact aggregate counters. `quiet` suppresses diagnostic notes while still running the read-only pipeline. `detailed` emits nested optimizer context and is intended for CI/debug runs where verbose javac output is acceptable.
+
+## Report Artifact
+
+`javatogpu.irValidationReport` writes a machine-readable `.properties` artifact under the generated-source output directory. The value must be a relative resource path, for example:
+
+```text
+reports/javatogpu-ir-validation.properties
+```
+
+The report currently uses format `javatogpu.ir.validation.v1` and records one entry per validated lowered method, including provider name, method name, entry-point flag, safety status, CSE counters, auto-vectorization counters, and aggregate optimizer diagnostic counts. This is intended for CI trend tracking and build artifacts; javac diagnostics remain controlled separately by `javatogpu.irValidationDiagnostics`.
 
 ## When To Enable It
 

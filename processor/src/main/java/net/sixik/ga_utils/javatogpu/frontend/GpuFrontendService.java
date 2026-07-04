@@ -6,7 +6,9 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.lowering.GpuIrLowerer;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
@@ -21,6 +23,7 @@ import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 public final class GpuFrontendService {
 
@@ -82,13 +85,45 @@ public final class GpuFrontendService {
     }
 
     public static GpuFrontendService create(GpuIntrinsicDatabase intrinsicDatabase, GpuIrValidationMode validationMode) {
+        return create(intrinsicDatabase, validationMode, ignored -> { });
+    }
+
+    public static GpuFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            Consumer<String> diagnosticReporter
+    ) {
+        return create(
+                intrinsicDatabase,
+                validationMode,
+                GpuIrValidationDiagnosticPolicy.SUMMARY,
+                diagnosticReporter
+        );
+    }
+
+    public static GpuFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            GpuIrValidationDiagnosticPolicy diagnosticPolicy,
+            Consumer<String> diagnosticReporter
+    ) {
+        return create(intrinsicDatabase, validationMode, diagnosticPolicy, diagnosticReporter, ignored -> { });
+    }
+
+    public static GpuFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            GpuIrValidationDiagnosticPolicy diagnosticPolicy,
+            Consumer<String> diagnosticReporter,
+            Consumer<GpuIrValidationReportEntry> reportSink
+    ) {
         return new GpuFrontendService(
                 new GpuMethodParser(),
                 new GpuSubsetValidator(intrinsicDatabase),
                 new GpuIrLowerer(intrinsicDatabase),
                 new OpenClKernelEmitter(),
                 GpuIrPassRunner.loadFromServiceLoader(),
-                GpuIrValidationRunner.loadFromServiceLoader(validationMode)
+                GpuIrValidationRunner.loadFromServiceLoader(validationMode, diagnosticPolicy, diagnosticReporter, reportSink)
         );
     }
 

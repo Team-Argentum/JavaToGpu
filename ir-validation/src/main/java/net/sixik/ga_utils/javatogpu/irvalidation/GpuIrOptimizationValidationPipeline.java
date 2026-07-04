@@ -93,7 +93,7 @@ public final class GpuIrOptimizationValidationPipeline {
         if (mode == GpuIrOptimizationValidationMode.STRICT_FAIL_ON_OPTIMIZER_DIAGNOSTICS
                 && report.hasBlockingDiagnostics()) {
             throw new GpuIrPassException("IR optimization validation failed for "
-                    + report.methodName() + ": " + report.summary());
+                    + report.methodName() + ": " + report.detailedSummary());
         }
     }
 

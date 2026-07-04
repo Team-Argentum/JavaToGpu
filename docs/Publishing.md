@@ -167,6 +167,8 @@ dependencies {
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
 }
 ```
 

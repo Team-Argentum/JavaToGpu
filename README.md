@@ -66,10 +66,14 @@ dependencies {
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+    // Optional: quiet, summary, or detailed. Defaults to summary.
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    // Optional: machine-readable CI artifact under generated sources.
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
 }
 ```
 
-That module plugs into the compiler through Java `ServiceLoader`, but remains inactive until `javatogpu.irValidation` is enabled. Supported modes are `diagnostic`, `strictSafety`, and `strictOptimizer`.
+That module plugs into the compiler through Java `ServiceLoader`, but remains inactive until `javatogpu.irValidation` is enabled. Supported validation modes are `diagnostic`, `strictSafety`, and `strictOptimizer`; diagnostic output can be `quiet`, `summary`, or `detailed`, and CI can opt into a structured `.properties` report.
 
 See [IR Validation](docs/IR-Validation.md) for the strict validator, read-only optimizer planning reports, and diagnostic vs strict build modes.
 

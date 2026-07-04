@@ -9,7 +9,9 @@ import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
@@ -19,6 +21,7 @@ import org.objectweb.asm.Type;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 public final class AsmFrontendService {
 
@@ -63,11 +66,43 @@ public final class AsmFrontendService {
     }
 
     public static AsmFrontendService create(GpuIntrinsicDatabase intrinsicDatabase, GpuIrValidationMode validationMode) {
+        return create(intrinsicDatabase, validationMode, ignored -> { });
+    }
+
+    public static AsmFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            Consumer<String> diagnosticReporter
+    ) {
+        return create(
+                intrinsicDatabase,
+                validationMode,
+                GpuIrValidationDiagnosticPolicy.SUMMARY,
+                diagnosticReporter
+        );
+    }
+
+    public static AsmFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            GpuIrValidationDiagnosticPolicy diagnosticPolicy,
+            Consumer<String> diagnosticReporter
+    ) {
+        return create(intrinsicDatabase, validationMode, diagnosticPolicy, diagnosticReporter, ignored -> { });
+    }
+
+    public static AsmFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            GpuIrValidationDiagnosticPolicy diagnosticPolicy,
+            Consumer<String> diagnosticReporter,
+            Consumer<GpuIrValidationReportEntry> reportSink
+    ) {
         return new AsmFrontendService(
                 new AsmExpressionLifter(intrinsicDatabase),
                 new OpenClKernelEmitter(),
                 GpuIrPassRunner.loadFromServiceLoader(),
-                GpuIrValidationRunner.loadFromServiceLoader(validationMode)
+                GpuIrValidationRunner.loadFromServiceLoader(validationMode, diagnosticPolicy, diagnosticReporter, reportSink)
         );
     }
 

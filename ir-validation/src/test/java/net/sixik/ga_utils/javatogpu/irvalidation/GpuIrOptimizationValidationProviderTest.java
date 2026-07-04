@@ -7,6 +7,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRequest;
@@ -14,6 +15,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
 
@@ -51,6 +53,64 @@ class GpuIrOptimizationValidationProviderTest {
         GpuIrValidationRequest request = request(GpuIrValidationMode.DIAGNOSTIC, brokenMethod());
 
         assertDoesNotThrow(() -> provider.validate(request));
+    }
+
+    @Test
+    void diagnosticModeReportsCompactUnifiedSummary() {
+        List<String> diagnostics = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                brokenMethod(),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                diagnostics::add
+        );
+
+        provider.validate(request);
+
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("ir optimization validation method=broken")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("safety=failed")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("optimizerDiagnostics=0")));
+        assertTrue(diagnostics.stream().noneMatch(message -> message.contains("unknown variable reference: missing")));
+    }
+
+    @Test
+    void quietDiagnosticPolicySuppressesDiagnosticSummary() {
+        List<String> diagnostics = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                brokenMethod(),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                diagnostics::add
+        );
+
+        provider.validate(request);
+
+        assertTrue(diagnostics.isEmpty());
+    }
+
+    @Test
+    void detailedDiagnosticPolicyReportsNestedSummary() {
+        List<String> diagnostics = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                brokenMethod(),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.DETAILED,
+                diagnostics::add
+        );
+
+        provider.validate(request);
+
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("unknown variable reference: missing")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cse={")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorization={")));
     }
 
     @Test
