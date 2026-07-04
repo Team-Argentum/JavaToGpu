@@ -58,10 +58,10 @@ public record GpuIrAutoVectorizationPreview(
 
     public Optional<String> firstBlockingDiagnosticSummary() {
         if (hasWarnings()) {
-            return Optional.of(warningDiagnostics.getFirst().summary());
+            return Optional.of(warningDiagnostics.get(0).summary());
         }
         if (hasRejections()) {
-            return Optional.of(rejections.getFirst().summary());
+            return Optional.of(rejections.get(0).summary());
         }
         return Optional.empty();
     }

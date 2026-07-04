@@ -502,6 +502,44 @@ class GpuIrCommonSubexpressionRewriteApplicatorTest {
         }
     }
 
+    @Test
+    void rewritePreservesMultipleIndependentTemporarySemantics() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+",
+                        new GpuIrBinary("*",
+                                new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrVariableRef("y")),
+                                new GpuIrLiteral("3")),
+                        new GpuIrBinary("^", new GpuIrVariableRef("x"), new GpuIrVariableRef("y")))),
+                new GpuIrAssignment(new GpuIrVariableRef("outB"), new GpuIrBinary("-",
+                        new GpuIrBinary("*",
+                                new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrVariableRef("x")),
+                                new GpuIrLiteral("5")),
+                        new GpuIrBinary("^", new GpuIrVariableRef("y"), new GpuIrVariableRef("x")))),
+                new GpuIrReturn(new GpuIrBinary("+", new GpuIrVariableRef("outA"), new GpuIrVariableRef("outB")))
+        ));
+        GpuIrCompiledMethod compiledMethod = compiledMethod(method);
+        GpuIrCommonSubexpressionReport report = GpuIrCommonSubexpressionScanner.optimizerFocused().scan(method);
+        GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(compiledMethod, report);
+        GpuIrMethod rewritten = applicator.apply(compiledMethod, planReport);
+        List<Map<String, Integer>> inputCases = List.of(
+                Map.of("x", 6, "y", 10, "outA", 0, "outB", 0),
+                Map.of("x", -11, "y", 4, "outA", 123, "outB", -456),
+                Map.of("x", 0x55, "y", 0x0F, "outA", -1, "outB", 1)
+        );
+
+        assertEquals(2, planReport.plans().size());
+        assertTrue(planReport.plans().stream().anyMatch(plan -> plan.fingerprint().startsWith("binary(+,")));
+        assertTrue(planReport.plans().stream().anyMatch(plan -> plan.fingerprint().startsWith("binary_assoc(^")));
+        for (Map<String, Integer> inputValues : inputCases) {
+            ExecutionResult originalResult = execute(method, inputValues);
+            ExecutionResult rewrittenResult = execute(rewritten, inputValues);
+
+            assertEquals(originalResult.returnValue(), rewrittenResult.returnValue());
+            assertEquals(originalResult.valueOf("outA"), rewrittenResult.valueOf("outA"));
+            assertEquals(originalResult.valueOf("outB"), rewrittenResult.valueOf("outB"));
+        }
+    }
+
     private GpuIrCompiledMethod compiledMethod(GpuIrMethod method) {
         ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
                 "KernelOwner",

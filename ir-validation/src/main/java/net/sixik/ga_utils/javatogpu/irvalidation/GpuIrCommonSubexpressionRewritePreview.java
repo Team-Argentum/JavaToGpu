@@ -51,4 +51,11 @@ public record GpuIrCommonSubexpressionRewritePreview(
                         Collectors.counting()
                 ));
     }
+
+    public String summary() {
+        return "cse rewrite preview insertions=" + insertionCount()
+                + " replacements=" + replacementEditCount()
+                + " skipped=" + skippedCandidateCount()
+                + (skippedDiagnostics.isEmpty() ? "" : " skipReasons=" + skippedReasonCounts());
+    }
 }

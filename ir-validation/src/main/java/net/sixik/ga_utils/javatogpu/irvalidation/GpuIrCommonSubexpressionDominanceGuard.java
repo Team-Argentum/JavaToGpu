@@ -15,7 +15,7 @@ public final class GpuIrCommonSubexpressionDominanceGuard {
             return OptionalInt.empty();
         }
 
-        OptionalInt firstStatementIndex = topLevelStatementIndex(candidate.locations().getFirst());
+        OptionalInt firstStatementIndex = topLevelStatementIndex(candidate.locations().get(0));
         if (firstStatementIndex.isEmpty()) {
             return OptionalInt.empty();
         }

@@ -29,7 +29,7 @@ class GpuIrCommonSubexpressionPipelineTest {
         List<GpuIrCommonSubexpression> rewriteReady = report.rewriteReadyCandidates(method);
 
         assertEquals(1, rewriteReady.size());
-        GpuIrCommonSubexpression candidate = rewriteReady.getFirst();
+        GpuIrCommonSubexpression candidate = rewriteReady.get(0);
         assertTrue(candidate.fingerprint().startsWith("binary(+"));
         assertEquals(2, candidate.occurrenceCount());
         assertEquals(List.of("stmt[0].initializer", "stmt[2].initializer"), candidate.locations());

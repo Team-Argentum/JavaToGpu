@@ -56,7 +56,7 @@ class GpuIrAutoVectorizationPlanningPassTest {
         GpuIrAutoVectorizationReport report = pass.scan(context);
 
         assertEquals(1, report.candidateCount());
-        assertEquals(List.of(report.candidates().getFirst()), report.rewritePriorityCandidates());
+        assertEquals(List.of(report.candidates().get(0)), report.rewritePriorityCandidates());
         assertEquals(irMethod.statements(), context.method().irMethod().statements());
         assertDoesNotThrow(() -> pass.run(context));
     }
@@ -103,6 +103,10 @@ class GpuIrAutoVectorizationPlanningPassTest {
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
 
         assertTrue(exception.getMessage().contains("IR auto-vectorization planning failed"));
+        assertTrue(exception.getMessage().contains("auto-vectorization preview"));
+        assertTrue(exception.getMessage().contains("warnings=1"));
+        assertTrue(exception.getMessage().contains("warningFamilies"));
+        assertTrue(exception.getMessage().contains("first warning"));
         assertTrue(exception.getMessage().contains("auto-vectorization warning"));
         assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
@@ -135,6 +139,9 @@ class GpuIrAutoVectorizationPlanningPassTest {
 
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
 
+        assertTrue(exception.getMessage().contains("auto-vectorization preview"));
+        assertTrue(exception.getMessage().contains("warnings=1"));
+        assertTrue(exception.getMessage().contains("first blocking diagnostic"));
         assertTrue(exception.getMessage().contains("auto-vectorization warning"));
         assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
@@ -156,6 +163,10 @@ class GpuIrAutoVectorizationPlanningPassTest {
 
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
 
+        assertTrue(exception.getMessage().contains("auto-vectorization preview"));
+        assertTrue(exception.getMessage().contains("rejections=1"));
+        assertTrue(exception.getMessage().contains("rejectionReasons"));
+        assertTrue(exception.getMessage().contains("first blocking diagnostic"));
         assertTrue(exception.getMessage().contains("UNSUPPORTED_LANE_COUNT"));
         assertTrue(exception.getMessage().contains("laneCount=5"));
         assertTrue(exception.getMessage().contains("stmt[0]"));

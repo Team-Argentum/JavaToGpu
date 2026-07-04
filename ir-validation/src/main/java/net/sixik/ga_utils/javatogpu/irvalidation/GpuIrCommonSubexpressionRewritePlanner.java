@@ -136,7 +136,7 @@ public final class GpuIrCommonSubexpressionRewritePlanner {
                 candidate.fingerprint(),
                 candidate.estimatedReuseSavings(),
                 insertionStatementIndex,
-                candidate.locations().getFirst(),
+                candidate.locations().get(0),
                 candidate.locations()
         );
     }

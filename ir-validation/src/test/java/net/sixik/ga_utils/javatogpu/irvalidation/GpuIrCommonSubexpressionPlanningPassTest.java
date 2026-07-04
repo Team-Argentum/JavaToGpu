@@ -49,7 +49,7 @@ class GpuIrCommonSubexpressionPlanningPassTest {
         GpuIrCommonSubexpressionRewritePlanReport report = pass.plan(context);
 
         assertEquals(1, report.plans().size());
-        assertEquals("__gpu_cse_0", report.plans().getFirst().temporaryName());
+        assertEquals("__gpu_cse_0", report.plans().get(0).temporaryName());
         assertEquals(irMethod.statements(), context.method().irMethod().statements());
         assertDoesNotThrow(() -> pass.run(context));
     }
@@ -71,7 +71,7 @@ class GpuIrCommonSubexpressionPlanningPassTest {
         assertEquals(compiledMethod.emittedName(), rewritten.emittedName());
         assertEquals(compiledMethod.helperDependencies(), rewritten.helperDependencies());
         assertEquals(3, rewritten.irMethod().statements().size());
-        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().getFirst();
+        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().get(0);
         assertEquals("__gpu_cse_0", temp.name());
         assertEquals(irMethod.statements(), context.method().irMethod().statements());
     }
@@ -87,7 +87,7 @@ class GpuIrCommonSubexpressionPlanningPassTest {
         GpuIrCompiledMethod rewritten = pass.rewrite(context);
 
         assertEquals(3, rewritten.irMethod().statements().size());
-        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().getFirst();
+        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().get(0);
         assertEquals("int", temp.typeName());
         assertEquals("__gpu_cse_0", temp.name());
         assertEquals(irMethod.statements(), context.method().irMethod().statements());
@@ -123,7 +123,7 @@ class GpuIrCommonSubexpressionPlanningPassTest {
 
         GpuIrCompiledMethod rewritten = pass.rewrite(context);
 
-        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().getFirst();
+        GpuIrVariableDeclaration temp = (GpuIrVariableDeclaration) rewritten.irMethod().statements().get(0);
         assertEquals("__gpu_cse_1", temp.name());
     }
 
@@ -145,11 +145,37 @@ class GpuIrCommonSubexpressionPlanningPassTest {
 
         GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> strictPass.run(context));
 
+        assertTrue(exception.getMessage().contains("cse rewrite preview"));
+        assertTrue(exception.getMessage().contains("skipped=1"));
+        assertTrue(exception.getMessage().contains("skipReasons"));
         assertTrue(exception.getMessage().contains("MUTATED_BETWEEN_OCCURRENCES"));
         assertTrue(exception.getMessage().contains("LOCAL_REUSE"));
         assertTrue(exception.getMessage().contains("STRAIGHT_LINE"));
         assertTrue(exception.getMessage().contains("stmt[0].initializer"));
         assertTrue(exception.getMessage().contains("stmt[2].initializer"));
+    }
+
+    @Test
+    void reportsIncompleteContextWithoutThrowingNullPointerExceptions() {
+        GpuIrCompiledMethod missingIrMethod = new GpuIrCompiledMethod(
+                method(methodWithUnstableCandidate()).parsedMethod(),
+                null,
+                "jtg_kernel",
+                List.of()
+        );
+
+        assertTrue(assertThrows(GpuIrPassException.class, () -> pass.plan(null))
+                .getMessage().contains("IR CSE planning failed: missing pass context"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> pass.plan(new GpuIrPassContext(null, List.of(), List.of(), true))
+        ).getMessage().contains("IR CSE planning failed: missing compiled method metadata"));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> pass.plan(new GpuIrPassContext(missingIrMethod, List.of(), List.of(), true))
+        ).getMessage().contains("IR CSE planning failed: missing IR method metadata"));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> pass.rewrite(null))
+                .getMessage().contains("IR CSE rewrite failed: missing pass context"));
     }
 
     private GpuIrMethod methodWithUnstableCandidate() {

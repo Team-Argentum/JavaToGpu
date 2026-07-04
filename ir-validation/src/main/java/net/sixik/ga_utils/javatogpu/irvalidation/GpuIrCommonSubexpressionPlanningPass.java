@@ -51,26 +51,41 @@ public final class GpuIrCommonSubexpressionPlanningPass implements GpuIrPass {
         GpuIrCommonSubexpressionRewritePlanReport report = plan(context);
         if (mode == GpuIrCommonSubexpressionPlanningMode.STRICT_FAIL_ON_SKIPPED_CANDIDATES
                 && !report.skippedCandidates().isEmpty()) {
-            GpuIrCommonSubexpressionSkippedDiagnostic skipped = report.previewSkippedDiagnostics().getFirst();
+            GpuIrCommonSubexpressionRewritePreview preview = report.preview();
+            GpuIrCommonSubexpressionSkippedDiagnostic skipped = report.previewSkippedDiagnostics().get(0);
             throw new GpuIrPassException("IR CSE planning failed for " + context.method().irMethod().name()
-                    + ": skipped candidate " + skipped.summary());
+                    + ": " + preview.summary() + "; first skipped candidate " + skipped.summary());
         }
     }
 
     public GpuIrCommonSubexpressionRewritePlanReport plan(GpuIrPassContext context) {
-        GpuIrCommonSubexpressionReport report = scanner.scan(context.method().irMethod());
-        return planner.planReport(context.method(), report);
+        GpuIrCompiledMethod method = requireCompiledMethod(context, "planning");
+        GpuIrCommonSubexpressionReport report = scanner.scan(method.irMethod());
+        return planner.planReport(method, report);
     }
 
     public GpuIrCompiledMethod rewrite(GpuIrPassContext context) {
-        Objects.requireNonNull(context, "context");
+        GpuIrCompiledMethod method = requireCompiledMethod(context, "rewrite");
         GpuIrCommonSubexpressionRewritePlanReport report = plan(context);
-        GpuIrMethod rewrittenMethod = applicator.apply(context.method(), report);
+        GpuIrMethod rewrittenMethod = applicator.apply(method, report);
         return new GpuIrCompiledMethod(
-                context.method().parsedMethod(),
+                method.parsedMethod(),
                 rewrittenMethod,
-                context.method().emittedName(),
-                context.method().helperDependencies()
+                method.emittedName(),
+                method.helperDependencies()
         );
+    }
+
+    private GpuIrCompiledMethod requireCompiledMethod(GpuIrPassContext context, String operation) {
+        if (context == null) {
+            throw new GpuIrPassException("IR CSE " + operation + " failed: missing pass context");
+        }
+        if (context.method() == null) {
+            throw new GpuIrPassException("IR CSE " + operation + " failed: missing compiled method metadata");
+        }
+        if (context.method().irMethod() == null) {
+            throw new GpuIrPassException("IR CSE " + operation + " failed: missing IR method metadata");
+        }
+        return context.method();
     }
 }

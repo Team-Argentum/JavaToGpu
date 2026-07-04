@@ -35,7 +35,7 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         List<GpuIrCommonSubexpressionRewritePlan> plans = planner.plan(method, report);
 
         assertEquals(1, plans.size());
-        GpuIrCommonSubexpressionRewritePlan plan = plans.getFirst();
+        GpuIrCommonSubexpressionRewritePlan plan = plans.get(0);
         assertEquals("__gpu_cse_0", plan.temporaryName());
         assertTrue(plan.fingerprint().startsWith("binary(+"));
         assertEquals(1, plan.estimatedReuseSavings());
@@ -84,7 +84,7 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         List<GpuIrCommonSubexpressionRewritePlan> plans = planner.plan(method, report);
 
         assertEquals(1, plans.size());
-        assertEquals("__gpu_cse_1", plans.getFirst().temporaryName());
+        assertEquals("__gpu_cse_1", plans.get(0).temporaryName());
     }
 
     @Test
@@ -103,7 +103,7 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         List<GpuIrCommonSubexpressionRewritePlan> plans = planner.plan(method, report);
 
         assertEquals(1, plans.size());
-        assertEquals("__gpu_cse_1", plans.getFirst().temporaryName());
+        assertEquals("__gpu_cse_1", plans.get(0).temporaryName());
     }
 
     @Test
@@ -165,19 +165,19 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         assertEquals(1, planReport.replacementEditCount());
         assertEquals(4, planReport.skippedCandidateCount());
         assertEquals(1, planReport.previewInsertions().size());
-        assertEquals("stmt[0].initializer", planReport.previewInsertions().getFirst().anchorLocation());
-        assertEquals(0, planReport.previewInsertions().getFirst().anchor().topLevelStatementIndex().orElseThrow());
+        assertEquals("stmt[0].initializer", planReport.previewInsertions().get(0).anchorLocation());
+        assertEquals(0, planReport.previewInsertions().get(0).anchor().topLevelStatementIndex().orElseThrow());
         assertEquals(1, planReport.previewReplacementEdits().size());
-        assertEquals("stmt[1].initializer", planReport.previewReplacementEdits().getFirst().replacementLocation());
-        assertEquals(0, planReport.previewReplacementEdits().getFirst().insertionAnchor().topLevelStatementIndex().orElseThrow());
-        assertEquals(1, planReport.previewReplacementEdits().getFirst().replacement().topLevelStatementIndex().orElseThrow());
+        assertEquals("stmt[1].initializer", planReport.previewReplacementEdits().get(0).replacementLocation());
+        assertEquals(0, planReport.previewReplacementEdits().get(0).insertionAnchor().topLevelStatementIndex().orElseThrow());
+        assertEquals(1, planReport.previewReplacementEdits().get(0).replacement().topLevelStatementIndex().orElseThrow());
         GpuIrCommonSubexpressionRewritePreview preview = planReport.preview();
         assertTrue(preview.hasRewriteWork());
         assertEquals(1, preview.insertionCount());
         assertEquals(1, preview.replacementEditCount());
         assertEquals(4, preview.skippedCandidateCount());
         assertEquals(4, preview.skippedDiagnostics().size());
-        GpuIrCommonSubexpressionSkippedDiagnostic firstDiagnostic = preview.skippedDiagnostics().getFirst();
+        GpuIrCommonSubexpressionSkippedDiagnostic firstDiagnostic = preview.skippedDiagnostics().get(0);
         assertEquals("binary(*,var(z),literal(2))", firstDiagnostic.fingerprint());
         assertEquals(2, firstDiagnostic.occurrenceCount());
         assertEquals(List.of("stmt[2].initializer", "stmt[4].initializer"), firstDiagnostic.locations());
@@ -195,6 +195,11 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
                 .size());
         assertEquals(1L, planReport.skippedReasonCounts()
                 .get(GpuIrCommonSubexpressionSkipReason.CONTROL_FLOW_BOUNDARY));
+        assertTrue(preview.summary().contains("insertions=1"));
+        assertTrue(preview.summary().contains("replacements=1"));
+        assertTrue(preview.summary().contains("skipped=4"));
+        assertTrue(preview.summary().contains("MUTATED_BETWEEN_OCCURRENCES=1"));
+        assertTrue(preview.summary().contains("CONTROL_FLOW_BOUNDARY=1"));
         assertEquals(List.of(
                 GpuIrCommonSubexpressionSkipReason.MUTATED_BETWEEN_OCCURRENCES,
                 GpuIrCommonSubexpressionSkipReason.NOT_LOCAL_REUSE,
@@ -229,12 +234,12 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
         GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(method, report);
 
         assertEquals(1, planReport.plans().size());
-        assertEquals("stmt[0].value", planReport.plans().getFirst().insertionAnchorLocation());
-        assertEquals(List.of("stmt[1].value"), planReport.plans().getFirst().replacementLocationsAfterAnchor());
+        assertEquals("stmt[0].value", planReport.plans().get(0).insertionAnchorLocation());
+        assertEquals(List.of("stmt[1].value"), planReport.plans().get(0).replacementLocationsAfterAnchor());
         assertEquals(1, planReport.skippedCandidateCount());
         assertEquals(
                 GpuIrCommonSubexpressionSkipReason.COVERED_BY_PARENT_REWRITE,
-                planReport.skippedCandidates().getFirst().reason()
+                planReport.skippedCandidates().get(0).reason()
         );
     }
 

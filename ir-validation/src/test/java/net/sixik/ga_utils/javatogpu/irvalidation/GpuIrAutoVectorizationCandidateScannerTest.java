@@ -55,7 +55,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals("kernel", report.methodName());
         assertEquals(1, report.candidateCount());
         assertEquals(2, report.totalAssignmentCount());
-        GpuIrAutoVectorizationCandidate candidate = report.candidates().getFirst();
+        GpuIrAutoVectorizationCandidate candidate = report.candidates().get(0);
         assertEquals("stmt[0]", candidate.loopLocation());
         assertEquals("i", candidate.inductionVariable());
         assertEquals(0, candidate.startInclusive());
@@ -107,7 +107,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         ));
 
         GpuIrAutoVectorizationReport report = scanner.scan(method);
-        GpuIrAutoVectorizationCandidate candidate = report.candidates().getFirst();
+        GpuIrAutoVectorizationCandidate candidate = report.candidates().get(0);
 
         assertTrue(report.hasCandidates());
         assertTrue(report.hasCrossLaneReadWarnings());
@@ -116,8 +116,8 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(List.of(), report.candidatesWithRepeatedTargetWarnings());
         assertEquals(List.of(), report.candidatesWithNonLaneReadWarnings());
         assertEquals(List.of(candidate), report.candidatesWithWarnings());
-        assertEquals("stmt[0]", report.previewWarningDiagnostics().getFirst().loopLocation());
-        assertTrue(report.previewWarningDiagnostics().getFirst().summary().contains("crossLaneReadWarnings"));
+        assertEquals("stmt[0]", report.previewWarningDiagnostics().get(0).loopLocation());
+        assertTrue(report.previewWarningDiagnostics().get(0).summary().contains("crossLaneReadWarnings"));
         assertEquals(List.of("left", "right"), candidate.sourceArrays());
         assertEquals(List.of(
                 "array `left` is read at cross-lane offset +1 from `i`",
@@ -146,7 +146,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         ));
 
         GpuIrAutoVectorizationReport report = scanner.scan(method);
-        GpuIrAutoVectorizationCandidate candidate = report.candidates().getFirst();
+        GpuIrAutoVectorizationCandidate candidate = report.candidates().get(0);
 
         assertTrue(report.hasCandidates());
         assertTrue(report.hasCandidateWarnings());
@@ -161,7 +161,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(0, candidate.priorityScore());
         assertFalse(candidate.isRewritePriorityCandidate());
         assertEquals(List.of(candidate), report.candidatesWithWarnings());
-        assertTrue(report.previewWarningDiagnostics().getFirst().summary().contains("nonLaneReadWarnings"));
+        assertTrue(report.previewWarningDiagnostics().get(0).summary().contains("nonLaneReadWarnings"));
         assertTrue(candidate.summary().contains("nonLaneReadWarnings"));
     }
 
@@ -181,7 +181,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         ));
 
         GpuIrAutoVectorizationReport report = scanner.scan(method);
-        GpuIrAutoVectorizationCandidate candidate = report.candidates().getFirst();
+        GpuIrAutoVectorizationCandidate candidate = report.candidates().get(0);
 
         assertTrue(report.hasCandidates());
         assertTrue(report.hasCandidateWarnings());
@@ -196,7 +196,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(0, candidate.priorityScore());
         assertFalse(candidate.isRewritePriorityCandidate());
         assertEquals(List.of(candidate), report.candidatesWithWarnings());
-        assertTrue(report.previewWarningDiagnostics().getFirst().summary().contains("repeatedTargetWarnings"));
+        assertTrue(report.previewWarningDiagnostics().get(0).summary().contains("repeatedTargetWarnings"));
         assertTrue(candidate.summary().contains("repeatedTargetWarnings"));
     }
 
@@ -253,7 +253,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(java.util.Map.of(), aggregatePreview.warningFamilyCounts());
         assertTrue(aggregatePreview.firstBlockingDiagnosticSummary().isEmpty());
         assertTrue(aggregatePreview.summary().contains("rewriteCandidates=2"));
-        GpuIrAutoVectorizationRewriteCandidatePreview preview = report.previewRewritePriorityCandidates().getFirst();
+        GpuIrAutoVectorizationRewriteCandidatePreview preview = report.previewRewritePriorityCandidates().get(0);
         assertEquals("stmt[1]", preview.loopLocation());
         assertEquals(8, preview.laneCount());
         assertEquals(2, preview.assignmentCount());
@@ -281,11 +281,11 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         GpuIrAutoVectorizationReport unsupportedWidthReport = scanner.scan(unsupportedWidth);
         assertTrue(unsupportedWidthReport.hasRejections());
         assertEquals(1, unsupportedWidthReport.rejectionCount());
-        assertEquals(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT, unsupportedWidthReport.rejections().getFirst().reason());
-        assertTrue(unsupportedWidthReport.rejections().getFirst().summary().contains("laneCount=5"));
+        assertEquals(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT, unsupportedWidthReport.rejections().get(0).reason());
+        assertTrue(unsupportedWidthReport.rejections().get(0).summary().contains("laneCount=5"));
 
         GpuIrAutoVectorizationReport nonZeroStartReport = scanner.scan(nonZeroStart);
-        assertEquals(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LOOP_SHAPE, nonZeroStartReport.rejections().getFirst().reason());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LOOP_SHAPE, nonZeroStartReport.rejections().get(0).reason());
     }
 
     @Test
@@ -304,10 +304,10 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertFalse(scanner.scan(nonLaneTarget).hasCandidates());
 
         GpuIrAutoVectorizationReport sideEffectingReport = scanner.scan(sideEffecting);
-        assertEquals(GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, sideEffectingReport.rejections().getFirst().reason());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, sideEffectingReport.rejections().get(0).reason());
 
         GpuIrAutoVectorizationReport nonLaneTargetReport = scanner.scan(nonLaneTarget);
-        assertEquals(GpuIrAutoVectorizationRejectionReason.NON_LANE_TARGET, nonLaneTargetReport.rejections().getFirst().reason());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.NON_LANE_TARGET, nonLaneTargetReport.rejections().get(0).reason());
         assertEquals(1L, nonLaneTargetReport.rejectionReasonCounts().get(GpuIrAutoVectorizationRejectionReason.NON_LANE_TARGET));
         assertEquals(1, nonLaneTargetReport.rejectionsByReason().get(GpuIrAutoVectorizationRejectionReason.NON_LANE_TARGET).size());
     }
@@ -465,8 +465,8 @@ class GpuIrAutoVectorizationCandidateScannerTest {
 
         assertFalse(report.hasCandidates());
         assertTrue(report.hasRejections());
-        assertEquals(GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR, report.rejections().getFirst().reason());
-        assertTrue(report.rejections().getFirst().summary().contains(detail));
+        assertEquals(GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR, report.rejections().get(0).reason());
+        assertTrue(report.rejections().get(0).summary().contains(detail));
     }
 
     private void assertSideEffectingValue(GpuIrMethod method) {
@@ -474,6 +474,6 @@ class GpuIrAutoVectorizationCandidateScannerTest {
 
         assertFalse(report.hasCandidates());
         assertTrue(report.hasRejections());
-        assertEquals(GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, report.rejections().getFirst().reason());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, report.rejections().get(0).reason());
     }
 }
