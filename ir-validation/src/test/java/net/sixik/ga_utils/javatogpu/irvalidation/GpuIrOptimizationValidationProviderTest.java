@@ -167,8 +167,8 @@ class GpuIrOptimizationValidationProviderTest {
 
         provider.validate(request);
 
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRejections")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT")));
+        assertEntryValue(entries, "autoVectorizationRejections", "1");
+        assertEntryValue(entries, "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1");
     }
 
     @Test
@@ -202,12 +202,12 @@ class GpuIrOptimizationValidationProviderTest {
 
         provider.validate(request);
 
-        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationCandidates")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarnings")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.alias")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.repeatedTarget")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.crossLaneRead")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.nonLaneRead")));
+        assertEntryValue(entries, "autoVectorizationCandidates", "0");
+        assertEntryValue(entries, "autoVectorizationWarnings", "1");
+        assertEntryValue(entries, "autoVectorizationWarningFamily.alias", "1");
+        assertEntryValue(entries, "autoVectorizationWarningFamily.repeatedTarget", "1");
+        assertEntryValue(entries, "autoVectorizationWarningFamily.crossLaneRead", "1");
+        assertEntryValue(entries, "autoVectorizationWarningFamily.nonLaneRead", "1");
     }
 
     @Test
@@ -231,13 +231,13 @@ class GpuIrOptimizationValidationProviderTest {
 
         provider.validate(request);
 
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanCandidates")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanInsertions")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanReplacements")));
-        assertTrue("2".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
-        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationVectorType.int4")));
+        assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanInsertions", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanReplacements", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "2");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "0");
+        assertEntryValue(entries, "autoVectorizationVectorType.int4", "1");
     }
 
     @Test
@@ -264,10 +264,11 @@ class GpuIrOptimizationValidationProviderTest {
 
         provider.validate(request);
 
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
-        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuardFamily.neighborSourceWrite")));
+        assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.neighborSourceWrite", "1");
+        assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "writes source array `input`");
     }
 
     @Test
@@ -295,10 +296,11 @@ class GpuIrOptimizationValidationProviderTest {
 
         provider.validate(request);
 
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
-        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuardFamily.controlFlowBoundary")));
+        assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.controlFlowBoundary", "1");
+        assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "control-flow boundary");
     }
 
     @Test
@@ -325,10 +327,11 @@ class GpuIrOptimizationValidationProviderTest {
 
         provider.validate(request);
 
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
-        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
-        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuardFamily.earlyExitBoundary")));
+        assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
+        assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.earlyExitBoundary", "1");
+        assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "early-exit boundary");
     }
 
     @Test
@@ -352,6 +355,19 @@ class GpuIrOptimizationValidationProviderTest {
                 new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")),
                 new GpuIrAssignment(new GpuIrVariableRef("value"), new GpuIrLiteral("1"))
         )));
+    }
+
+    private void assertEntryValue(List<GpuIrValidationReportEntry> entries, String key, String expectedValue) {
+        assertTrue(expectedValue.equals(firstEntryValue(entries, key)));
+    }
+
+    private void assertEntryValueContains(List<GpuIrValidationReportEntry> entries, String key, String expectedFragment) {
+        String actualValue = firstEntryValue(entries, key);
+        assertTrue(actualValue != null && actualValue.contains(expectedFragment));
+    }
+
+    private String firstEntryValue(List<GpuIrValidationReportEntry> entries, String key) {
+        return entries.get(0).values().get(key);
     }
 
     private GpuIrForLoop fixedWidthLoop(int endExclusive, List<GpuIrStatement> body) {

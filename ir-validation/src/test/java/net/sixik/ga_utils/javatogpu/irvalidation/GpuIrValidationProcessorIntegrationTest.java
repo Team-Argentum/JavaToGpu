@@ -151,6 +151,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.0.optimizerDiagnostics")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejections")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT")));
+        assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("UNSUPPORTED_LANE_COUNT"));
     }
 
     @Test
@@ -201,6 +202,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRewritePlanGuards", "0"));
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejections", "1"));
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1"));
+        assertTrue(reportContainsMethodCounterContaining(report, "second", "autoVectorizationFirstBlockingDiagnostic", "UNSUPPORTED_LANE_COUNT"));
     }
 
     @Test
@@ -232,6 +234,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("mixed".equals(report.getProperty("entry.0.methodName")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejections")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejectionReason.UNSUPPORTED_ELEMENT_TYPE")));
+        assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("UNSUPPORTED_ELEMENT_TYPE"));
     }
 
     @Test
@@ -266,6 +269,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("0".equals(report.getProperty("entry.0.autoVectorizationRewritePlanOperations")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.neighborTargetWrite")));
+        assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("writes target array `output`"));
     }
 
     @Test
@@ -302,6 +306,7 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("0".equals(report.getProperty("entry.0.autoVectorizationRewritePlanOperations")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.controlFlowBoundary")));
+        assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("control-flow boundary"));
     }
 
     private CompilationResult compileWithIrValidationMode(String mode, String diagnosticPolicy) throws IOException {
@@ -398,6 +403,21 @@ class GpuIrValidationProcessorIntegrationTest {
         for (int index = 0; index < Integer.parseInt(report.getProperty("entry.count")); index++) {
             if (methodName.equals(report.getProperty("entry." + index + ".methodName"))) {
                 return expectedValue.equals(report.getProperty("entry." + index + "." + counterName));
+            }
+        }
+        return false;
+    }
+
+    private boolean reportContainsMethodCounterContaining(
+            Properties report,
+            String methodName,
+            String counterName,
+            String expectedValueFragment
+    ) {
+        for (int index = 0; index < Integer.parseInt(report.getProperty("entry.count")); index++) {
+            if (methodName.equals(report.getProperty("entry." + index + ".methodName"))) {
+                String actualValue = report.getProperty("entry." + index + "." + counterName);
+                return actualValue != null && actualValue.contains(expectedValueFragment);
             }
         }
         return false;
