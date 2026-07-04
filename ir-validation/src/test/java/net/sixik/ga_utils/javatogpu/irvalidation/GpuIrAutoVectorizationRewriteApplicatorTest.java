@@ -2,10 +2,9 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
-import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrExpression;
-import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrFieldAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrStructInit;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrUnary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
@@ -20,8 +19,6 @@ import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GpuIrAutoVectorizationRewriteApplicatorTest {
     private final GpuIrAutoVectorizationCandidateScanner scanner = new GpuIrAutoVectorizationCandidateScanner();
     private final GpuIrAutoVectorizationRewriteApplicator applicator = new GpuIrAutoVectorizationRewriteApplicator();
+    private final GpuIrAutoVectorizationPrototypeArtifactRunner prototypeArtifactRunner = new GpuIrAutoVectorizationPrototypeArtifactRunner();
     private final GpuIrSafetyValidator safetyValidator = new GpuIrSafetyValidator();
 
     @Test
@@ -165,19 +163,23 @@ class GpuIrAutoVectorizationRewriteApplicatorTest {
         ));
         GpuIrCompiledMethod compiledMethod = compiledMethod(method);
         GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
-        GpuIrMethod rewritten = applicator.rewritePrototype(method, preview);
+        GpuIrAutoVectorizationPrototypeArtifactReport artifactReport = prototypeArtifactRunner.run(
+                method,
+                preview,
+                List.of(inputCase("case-a", new int[]{7, -2, 13, 99}, null, new int[]{0, 0, 0, 0})),
+                List.of("out")
+        );
+        Map<String, String> artifactFields = artifactReport.artifactFields();
 
-        ExecutionResult original = execute(method, Map.of(
-                "left", new int[]{7, -2, 13, 99},
-                "out", new int[]{0, 0, 0, 0}
-        ));
-        ExecutionResult rewrittenResult = execute(rewritten, Map.of(
-                "left", new int[]{7, -2, 13, 99},
-                "out", new int[]{0, 0, 0, 0}
-        ));
-
-        assertEquals(List.of(7, -2, 13, 99), original.arrayValues("out"));
-        assertEquals(original.arrayValues("out"), rewrittenResult.arrayValues("out"));
+        assertTrue(artifactReport.successful());
+        assertEquals("true", artifactFields.get("autoVectorizationPrototypeArtifactRuntimeEquivalence.Successful"));
+        assertEquals("1", artifactFields.get("autoVectorizationPrototypeArtifactRuntimeEquivalence.InputCases"));
+        assertEquals("out", artifactFields.get("autoVectorizationPrototypeArtifactRuntimeEquivalence.ComparedOutputNames"));
+        assertEquals("1", artifactFields.get("autoVectorizationPrototypeArtifactRuntimeEquivalence.AppliedRewrites"));
+        assertEquals(
+                "{laneCopy=1,unaryLaneOp=0,binaryLaneOp=0,laneLiteralBinaryOp=0}",
+                artifactFields.get("autoVectorizationPrototypeArtifactRuntimeEquivalence.AppliedRewriteFamilies")
+        );
     }
 
     @Test
@@ -208,22 +210,101 @@ class GpuIrAutoVectorizationRewriteApplicatorTest {
         ));
         GpuIrCompiledMethod compiledMethod = compiledMethod(method);
         GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
-        GpuIrMethod rewritten = applicator.rewritePrototype(method, preview);
 
-        ExecutionResult original = execute(method, Map.of(
-                "left", new int[]{7, -2, 13, 99},
-                "right", new int[]{1, 4, -3, 11},
-                "out", new int[]{0, 0, 0, 0}
-        ));
-        ExecutionResult rewrittenResult = execute(rewritten, Map.of(
-                "left", new int[]{7, -2, 13, 99},
-                "right", new int[]{1, 4, -3, 11},
-                "out", new int[]{0, 0, 0, 0}
-        ));
+        GpuIrAutoVectorizationPrototypeArtifactReport artifactReport = prototypeArtifactRunner.run(
+                method,
+                preview,
+                List.of(inputCase(
+                        "case-a",
+                        new int[]{7, -2, 13, 99},
+                        new int[]{1, 4, -3, 11},
+                        new int[]{0, 0, 0, 0}
+                )),
+                List.of("out")
+        );
 
-        assertFalse(rewritten.statements().stream().anyMatch(GpuIrForLoop.class::isInstance));
-        assertEquals(List.of(8, 2, 10, 110), original.arrayValues("out"));
-        assertEquals(original.arrayValues("out"), rewrittenResult.arrayValues("out"));
+        assertTrue(artifactReport.successful());
+        assertFalse(artifactReport.rewriteReport().method().statements().stream().anyMatch(GpuIrForLoop.class::isInstance));
+        assertEquals("binaryLaneOp", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteExpressionKind"));
+        assertEquals("+", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteBinaryOperator"));
+    }
+
+    @Test
+    void rewritePrototypePreservesLaneLiteralBinaryArraySemantics() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrLiteral("5")
+                        )
+                )))
+        ));
+        GpuIrCompiledMethod compiledMethod = compiledMethod(method);
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
+
+        GpuIrAutoVectorizationPrototypeArtifactReport artifactReport = prototypeArtifactRunner.run(
+                method,
+                preview,
+                List.of(inputCase("case-a", new int[]{7, -2, 13, 99}, null, new int[]{0, 0, 0, 0})),
+                List.of("out")
+        );
+
+        assertTrue(artifactReport.successful());
+        assertFalse(artifactReport.rewriteReport().method().statements().stream().anyMatch(GpuIrForLoop.class::isInstance));
+        assertEquals("laneLiteralBinaryOp", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteExpressionKind"));
+        assertEquals("+", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteBinaryOperator"));
+    }
+
+    @Test
+    void rewritePrototypePreservesLiteralLaneBinaryArraySemantics() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("-",
+                                new GpuIrLiteral("20"),
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                        )
+                )))
+        ));
+        GpuIrCompiledMethod compiledMethod = compiledMethod(method);
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
+
+        GpuIrAutoVectorizationPrototypeArtifactReport artifactReport = prototypeArtifactRunner.run(
+                method,
+                preview,
+                List.of(inputCase("case-a", new int[]{7, -2, 13, 99}, null, new int[]{0, 0, 0, 0})),
+                List.of("out")
+        );
+
+        assertTrue(artifactReport.successful());
+        assertFalse(artifactReport.rewriteReport().method().statements().stream().anyMatch(GpuIrForLoop.class::isInstance));
+        assertEquals("laneLiteralBinaryOp", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteExpressionKind"));
+        assertEquals("-", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteBinaryOperator"));
+    }
+
+    @Test
+    void rewritePrototypePreservesUnaryLaneArraySemantics() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrUnary("-", new GpuIrArrayAccess("left", new GpuIrVariableRef("i")))
+                )))
+        ));
+        GpuIrCompiledMethod compiledMethod = compiledMethod(method);
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
+
+        GpuIrAutoVectorizationPrototypeArtifactReport artifactReport = prototypeArtifactRunner.run(
+                method,
+                preview,
+                List.of(inputCase("case-a", new int[]{7, -2, 13, 99}, null, new int[]{0, 0, 0, 0})),
+                List.of("out")
+        );
+
+        assertTrue(artifactReport.successful());
+        assertFalse(artifactReport.rewriteReport().method().statements().stream().anyMatch(GpuIrForLoop.class::isInstance));
+        assertEquals("unaryLaneOp", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteExpressionKind"));
+        assertEquals("-", artifactReport.artifactFields().get("autoVectorizationPrototypeArtifactRewrite.FirstAppliedRewriteUnaryOperator"));
     }
 
     @Test
@@ -252,9 +333,101 @@ class GpuIrAutoVectorizationRewriteApplicatorTest {
         assertEquals(4, appliedRewrite.laneCount());
         assertEquals(List.of("out"), appliedRewrite.targetArrays());
         assertEquals(List.of("left"), appliedRewrite.sourceArrays());
+        assertEquals(GpuIrAutoVectorizationPrototypeExpressionKind.LANE_COPY, appliedRewrite.expressionKind());
+        assertEquals("laneCopy", appliedRewrite.expressionKindArtifactValue());
+        assertEquals("", appliedRewrite.binaryOperator());
+        assertEquals(1, report.appliedRewriteCount(GpuIrAutoVectorizationPrototypeExpressionKind.LANE_COPY));
+        assertEquals(1, report.appliedRewriteCount("laneCopy"));
+        assertEquals(0, report.appliedRewriteCount(GpuIrAutoVectorizationPrototypeExpressionKind.UNARY_LANE_OP));
+        assertEquals(1, report.appliedRewriteCountsByKind().get(GpuIrAutoVectorizationPrototypeExpressionKind.LANE_COPY));
+        assertEquals(1, report.appliedRewriteCountsByArtifactValue().get("laneCopy"));
         assertTrue(report.firstAppliedRewriteSummary().contains("statementIndex=0"));
         assertTrue(report.firstAppliedRewriteSummary().contains("vectorType=Int4"));
+        assertTrue(report.firstAppliedRewriteSummary().contains("expressionKind=laneCopy"));
+        assertTrue(report.appliedRewriteFamilyCountersSummary().contains("laneCopy=1"));
+        assertTrue(report.appliedRewriteFamilyCountersSummary().contains("unaryLaneOp=0"));
         assertTrue(report.summary().contains("appliedRewrites=1"));
+        assertTrue(report.summary().contains("appliedRewriteFamilies="));
+    }
+
+    @Test
+    void rewritePrototypeReportSummarizesBinaryAppliedRewriteShape() {
+        GpuIrCompiledMethod compiledMethod = compiledMethod(new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("^",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )))
+        )));
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
+
+        GpuIrAutoVectorizationPrototypeRewriteReport report = applicator.rewritePrototypeReport(
+                compiledMethod.irMethod(),
+                preview
+        );
+
+        GpuIrAutoVectorizationPrototypeAppliedRewrite appliedRewrite = report.firstAppliedRewrite();
+        assertEquals(GpuIrAutoVectorizationPrototypeExpressionKind.BINARY_LANE_OP, appliedRewrite.expressionKind());
+        assertEquals("binaryLaneOp", appliedRewrite.expressionKindArtifactValue());
+        assertEquals("^", appliedRewrite.binaryOperator());
+        assertTrue(report.firstAppliedRewriteSummary().contains("expressionKind=binaryLaneOp"));
+        assertTrue(report.firstAppliedRewriteSummary().contains("binaryOperator=^"));
+    }
+
+    @Test
+    void rewritePrototypeReportSummarizesLaneLiteralAppliedRewriteShape() {
+        GpuIrCompiledMethod compiledMethod = compiledMethod(new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrLiteral("5")
+                        )
+                )))
+        )));
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
+
+        GpuIrAutoVectorizationPrototypeRewriteReport report = applicator.rewritePrototypeReport(
+                compiledMethod.irMethod(),
+                preview
+        );
+
+        GpuIrAutoVectorizationPrototypeAppliedRewrite appliedRewrite = report.firstAppliedRewrite();
+        assertEquals(GpuIrAutoVectorizationPrototypeExpressionKind.LANE_LITERAL_BINARY_OP, appliedRewrite.expressionKind());
+        assertEquals("laneLiteralBinaryOp", appliedRewrite.expressionKindArtifactValue());
+        assertEquals("laneLiteralBinaryOp", appliedRewrite.expressionKindSummary());
+        assertEquals("+", appliedRewrite.binaryOperator());
+        assertTrue(report.firstAppliedRewriteSummary().contains("expressionKind=laneLiteralBinaryOp"));
+        assertTrue(report.firstAppliedRewriteSummary().contains("binaryOperator=+"));
+    }
+
+    @Test
+    void rewritePrototypeReportSummarizesUnaryAppliedRewriteShape() {
+        GpuIrCompiledMethod compiledMethod = compiledMethod(new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrUnary("~", new GpuIrArrayAccess("left", new GpuIrVariableRef("i")))
+                )))
+        )));
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod).preview();
+
+        GpuIrAutoVectorizationPrototypeRewriteReport report = applicator.rewritePrototypeReport(
+                compiledMethod.irMethod(),
+                preview
+        );
+
+        GpuIrAutoVectorizationPrototypeAppliedRewrite appliedRewrite = report.firstAppliedRewrite();
+        assertEquals(GpuIrAutoVectorizationPrototypeExpressionKind.UNARY_LANE_OP, appliedRewrite.expressionKind());
+        assertEquals("unaryLaneOp", appliedRewrite.expressionKindArtifactValue());
+        assertEquals("", appliedRewrite.binaryOperator());
+        assertEquals("~", appliedRewrite.unaryOperator());
+        assertEquals(1, report.appliedRewriteCount(GpuIrAutoVectorizationPrototypeExpressionKind.UNARY_LANE_OP));
+        assertEquals(1, report.appliedRewriteCount("unaryLaneOp"));
+        assertTrue(report.firstAppliedRewriteSummary().contains("expressionKind=unaryLaneOp"));
+        assertTrue(report.firstAppliedRewriteSummary().contains("unaryOperator=~"));
+        assertTrue(report.appliedRewriteFamilyCountersSummary().contains("unaryLaneOp=1"));
     }
 
     @Test
@@ -525,108 +698,18 @@ class GpuIrAutoVectorizationRewriteApplicatorTest {
         );
     }
 
-    private ExecutionResult execute(GpuIrMethod method, Map<String, int[]> inputArrays) {
-        Map<String, Object> values = new HashMap<>();
-        inputArrays.forEach((name, value) -> values.put(name, value.clone()));
-        executeStatements(method.statements(), values);
-        return new ExecutionResult(values);
-    }
-
-    private void executeStatements(List<GpuIrStatement> statements, Map<String, Object> values) {
-        for (GpuIrStatement statement : statements) {
-            if (statement instanceof GpuIrVariableDeclaration declaration) {
-                values.put(declaration.name(), evaluate(declaration.initializer(), values));
-            } else if (statement instanceof GpuIrAssignment assignment) {
-                assign(assignment, values);
-            } else if (statement instanceof GpuIrForLoop loop) {
-                executeLoop(loop, values);
-            }
+    private GpuIrAutoVectorizationPrototypeInputCase inputCase(
+            String name,
+            int[] left,
+            int[] right,
+            int[] out
+    ) {
+        Map<String, int[]> arrays = new java.util.LinkedHashMap<>();
+        arrays.put("left", left);
+        if (right != null) {
+            arrays.put("right", right);
         }
-    }
-
-    private void executeLoop(GpuIrForLoop loop, Map<String, Object> values) {
-        executeStatements(List.of(loop.initializer()), values);
-        while (evaluateInt(loop.condition(), values) != 0) {
-            executeStatements(loop.body(), values);
-            executeStatements(List.of(loop.update()), values);
-        }
-    }
-
-    private void assign(GpuIrAssignment assignment, Map<String, Object> values) {
-        if (assignment.target() instanceof GpuIrVariableRef variableRef) {
-            values.put(variableRef.name(), evaluate(assignment.value(), values));
-            return;
-        }
-        if (assignment.target() instanceof GpuIrArrayAccess arrayAccess) {
-            int[] array = (int[]) values.get(arrayAccess.arrayName());
-            array[evaluateInt(arrayAccess.index(), values)] = evaluateInt(assignment.value(), values);
-            return;
-        }
-        throw new IllegalArgumentException("Unsupported test assignment target: " + assignment.target());
-    }
-
-    private Object evaluate(GpuIrExpression expression, Map<String, Object> values) {
-        if (expression instanceof GpuIrStructInit structInit) {
-            List<Integer> lanes = new ArrayList<>();
-            for (GpuIrExpression argument : structInit.arguments()) {
-                lanes.add(evaluateInt(argument, values));
-            }
-            return lanes;
-        }
-        return evaluateInt(expression, values);
-    }
-
-    private int evaluateInt(GpuIrExpression expression, Map<String, Object> values) {
-        if (expression instanceof GpuIrLiteral literal) {
-            return Integer.parseInt(literal.sourceText());
-        }
-        if (expression instanceof GpuIrVariableRef variableRef) {
-            return (Integer) values.get(variableRef.name());
-        }
-        if (expression instanceof GpuIrArrayAccess arrayAccess) {
-            int[] array = (int[]) values.get(arrayAccess.arrayName());
-            return array[evaluateInt(arrayAccess.index(), values)];
-        }
-        if (expression instanceof GpuIrFieldAccess fieldAccess) {
-            @SuppressWarnings("unchecked")
-            List<Integer> lanes = (List<Integer>) values.get(((GpuIrVariableRef) fieldAccess.target()).name());
-            return lanes.get(vectorFieldIndex(fieldAccess.fieldName()));
-        }
-        if (expression instanceof GpuIrBinary binary) {
-            int left = evaluateInt(binary.left(), values);
-            int right = evaluateInt(binary.right(), values);
-            return switch (binary.operator()) {
-                case "+" -> left + right;
-                case "-" -> left - right;
-                case "*" -> left * right;
-                case "&" -> left & right;
-                case "|" -> left | right;
-                case "^" -> left ^ right;
-                case "<" -> left < right ? 1 : 0;
-                default -> throw new IllegalArgumentException("Unsupported test binary operator: " + binary.operator());
-            };
-        }
-        throw new IllegalArgumentException("Unsupported test expression: " + expression);
-    }
-
-    private int vectorFieldIndex(String fieldName) {
-        return switch (fieldName) {
-            case "x", "s0" -> 0;
-            case "y", "s1" -> 1;
-            case "z", "s2" -> 2;
-            case "w", "s3" -> 3;
-            default -> throw new IllegalArgumentException("Unsupported test vector field: " + fieldName);
-        };
-    }
-
-    private record ExecutionResult(Map<String, Object> values) {
-        List<Integer> arrayValues(String name) {
-            int[] array = (int[]) values.get(name);
-            List<Integer> result = new ArrayList<>();
-            for (int value : array) {
-                result.add(value);
-            }
-            return result;
-        }
+        arrays.put("out", out);
+        return new GpuIrAutoVectorizationPrototypeInputCase(name, arrays);
     }
 }

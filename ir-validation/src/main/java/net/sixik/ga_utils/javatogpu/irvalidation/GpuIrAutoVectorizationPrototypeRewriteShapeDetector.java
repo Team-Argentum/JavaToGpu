@@ -3,6 +3,8 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrExpression;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrUnary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
@@ -28,6 +30,7 @@ final class GpuIrAutoVectorizationPrototypeRewriteShapeDetector {
         }
 
         GpuIrAssignment assignment = laneAssignment(loop, candidate);
+        GpuIrAutoVectorizationPrototypeExpressionKind expressionKind = expressionKind(assignment.value(), candidate.inductionVariable());
         return new GpuIrAutoVectorizationPrototypeRewriteShape(
                 candidate.loopLocation(),
                 insertion.statementIndex(),
@@ -37,6 +40,9 @@ final class GpuIrAutoVectorizationPrototypeRewriteShapeDetector {
                 candidate.inductionVariable(),
                 candidate.targetArrays(),
                 candidate.sourceArrays(),
+                expressionKind,
+                binaryOperator(assignment.value(), expressionKind),
+                unaryOperator(assignment.value(), expressionKind),
                 assignment
         );
     }
@@ -56,7 +62,7 @@ final class GpuIrAutoVectorizationPrototypeRewriteShapeDetector {
                     + candidate.loopLocation());
         }
         if (!isPrototypeLaneValue(assignment.value(), candidate.inductionVariable())) {
-            throw new IllegalArgumentException("Auto-vectorization prototype rewrite only supports lane-copy or simple binary lane values at "
+            throw new IllegalArgumentException("Auto-vectorization prototype rewrite only supports lane-copy, unary lane, or simple binary lane values at "
                     + candidate.loopLocation());
         }
         return assignment;
@@ -83,6 +89,12 @@ final class GpuIrAutoVectorizationPrototypeRewriteShapeDetector {
                 || "^".equals(operator);
     }
 
+    boolean isPrototypeUnaryOperator(String operator) {
+        return "+".equals(operator)
+                || "-".equals(operator)
+                || "~".equals(operator);
+    }
+
     boolean isInductionIndex(GpuIrExpression expression, String inductionVariable) {
         return expression instanceof GpuIrVariableRef variableRef
                 && inductionVariable.equals(variableRef.name());
@@ -94,7 +106,11 @@ final class GpuIrAutoVectorizationPrototypeRewriteShapeDetector {
         }
         if (expression instanceof GpuIrBinary binary && isPrototypeBinaryOperator(binary.operator())) {
             return isLaneArrayAccess(binary.left(), inductionVariable)
-                    && isLaneArrayAccess(binary.right(), inductionVariable);
+                    && isLaneArrayAccess(binary.right(), inductionVariable)
+                    || isLaneLiteralBinary(binary, inductionVariable);
+        }
+        if (expression instanceof GpuIrUnary unary && isPrototypeUnaryOperator(unary.operator())) {
+            return isLaneArrayAccess(unary.operand(), inductionVariable);
         }
         return false;
     }
@@ -102,5 +118,53 @@ final class GpuIrAutoVectorizationPrototypeRewriteShapeDetector {
     private boolean isLaneArrayAccess(GpuIrExpression expression, String inductionVariable) {
         return expression instanceof GpuIrArrayAccess arrayAccess
                 && isInductionIndex(arrayAccess.index(), inductionVariable);
+    }
+
+    private GpuIrAutoVectorizationPrototypeExpressionKind expressionKind(
+            GpuIrExpression expression,
+            String inductionVariable
+    ) {
+        if (isLaneArrayAccess(expression, inductionVariable)) {
+            return GpuIrAutoVectorizationPrototypeExpressionKind.LANE_COPY;
+        }
+        if (expression instanceof GpuIrBinary binary && isPrototypeBinaryOperator(binary.operator())) {
+            if (isLaneLiteralBinary(binary, inductionVariable)) {
+                return GpuIrAutoVectorizationPrototypeExpressionKind.LANE_LITERAL_BINARY_OP;
+            }
+            return GpuIrAutoVectorizationPrototypeExpressionKind.BINARY_LANE_OP;
+        }
+        if (expression instanceof GpuIrUnary unary && isPrototypeUnaryOperator(unary.operator())) {
+            return GpuIrAutoVectorizationPrototypeExpressionKind.UNARY_LANE_OP;
+        }
+        throw new IllegalArgumentException("Unsupported prototype lane expression: " + expression);
+    }
+
+    private String binaryOperator(
+            GpuIrExpression expression,
+            GpuIrAutoVectorizationPrototypeExpressionKind expressionKind
+    ) {
+        if (!expressionKind.requiresBinaryOperator()) {
+            return "";
+        }
+        return ((GpuIrBinary) expression).operator();
+    }
+
+    private String unaryOperator(
+            GpuIrExpression expression,
+            GpuIrAutoVectorizationPrototypeExpressionKind expressionKind
+    ) {
+        if (expressionKind != GpuIrAutoVectorizationPrototypeExpressionKind.UNARY_LANE_OP) {
+            return "";
+        }
+        return ((GpuIrUnary) expression).operator();
+    }
+
+    private boolean isLaneLiteralBinary(GpuIrBinary binary, String inductionVariable) {
+        return isLaneArrayAccess(binary.left(), inductionVariable) && isLiteral(binary.right())
+                || isLiteral(binary.left()) && isLaneArrayAccess(binary.right(), inductionVariable);
+    }
+
+    private boolean isLiteral(GpuIrExpression expression) {
+        return expression instanceof GpuIrLiteral;
     }
 }

@@ -1,7 +1,6 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
-import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrExpression;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrFieldAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
@@ -21,13 +20,14 @@ import java.util.Objects;
 /**
  * Safe entrypoint for future auto-vectorization rewrites.
  *
- * <p>The current implementation intentionally does not mutate IR. It only proves that callers
- * go through the same readiness and guard policy gates that a future mutating vector rewrite will
- * have to satisfy before replacing scalar lane loops.</p>
+ * <p>The production-facing {@link #apply(GpuIrMethod, GpuIrAutoVectorizationPreview)} path
+ * intentionally stays a no-op safety gate. Explicit prototype helpers may mutate only the small
+ * expression families that already have dedicated detector, report, and equivalence coverage.</p>
  */
 public final class GpuIrAutoVectorizationRewriteApplicator {
     private final GpuIrAutoVectorizationRewriteOperationResolver operationResolver;
     private final GpuIrAutoVectorizationPrototypeRewriteShapeDetector prototypeShapeDetector;
+    private final GpuIrAutoVectorizationPrototypeLaneExpressionRewriter laneExpressionRewriter;
 
     public GpuIrAutoVectorizationRewriteApplicator() {
         this(
@@ -48,6 +48,7 @@ public final class GpuIrAutoVectorizationRewriteApplicator {
     ) {
         this.operationResolver = Objects.requireNonNull(operationResolver, "operationResolver");
         this.prototypeShapeDetector = Objects.requireNonNull(prototypeShapeDetector, "prototypeShapeDetector");
+        this.laneExpressionRewriter = new GpuIrAutoVectorizationPrototypeLaneExpressionRewriter(prototypeShapeDetector);
     }
 
     public GpuIrMethod apply(GpuIrMethod method, GpuIrAutoVectorizationPreview preview) {
@@ -63,11 +64,12 @@ public final class GpuIrAutoVectorizationRewriteApplicator {
     }
 
     /**
-     * Opt-in prototype rewrite for the narrowest proven lane-copy shape.
+     * Opt-in prototype rewrite for the currently proven lane-wise expression shapes.
      *
      * <p>The production {@link #apply(GpuIrMethod, GpuIrAutoVectorizationPreview)} path stays a
      * no-op safety gate. This method exists so tests and future integration points can validate
-     * the first concrete IR mutation behind the same preview/dry-run boundary.</p>
+     * narrow lane-copy, unary lane, lane-wise binary, and lane/literal binary IR mutations behind
+     * the same preview/dry-run boundary.</p>
      */
     public GpuIrMethod rewritePrototype(GpuIrMethod method, GpuIrAutoVectorizationPreview preview) {
         return rewritePrototypeReport(method, preview).method();
@@ -127,7 +129,10 @@ public final class GpuIrAutoVectorizationRewriteApplicator {
                 shape.startInclusive(),
                 shape.endExclusive(),
                 shape.targetArrays(),
-                shape.sourceArrays()
+                shape.sourceArrays(),
+                shape.expressionKind(),
+                shape.binaryOperator(),
+                shape.unaryOperator()
         );
     }
 
@@ -210,28 +215,9 @@ public final class GpuIrAutoVectorizationRewriteApplicator {
     private GpuIrStructInit vectorInitializer(GpuIrAutoVectorizationPrototypeRewriteShape shape) {
         List<GpuIrExpression> lanes = new ArrayList<>();
         for (int lane = shape.startInclusive(); lane < shape.endExclusive(); lane++) {
-            lanes.add(rewriteLaneExpression(shape.assignment().value(), shape.inductionVariable(), lane));
+            lanes.add(laneExpressionRewriter.rewrite(shape.assignment().value(), shape.inductionVariable(), lane));
         }
         return new GpuIrStructInit(shape.vectorType(), lanes);
-    }
-
-    private GpuIrExpression rewriteLaneExpression(
-            GpuIrExpression expression,
-            String inductionVariable,
-            int lane
-    ) {
-        if (expression instanceof GpuIrArrayAccess arrayAccess
-                && prototypeShapeDetector.isInductionIndex(arrayAccess.index(), inductionVariable)) {
-            return new GpuIrArrayAccess(arrayAccess.arrayName(), new GpuIrLiteral(Integer.toString(lane)));
-        }
-        if (expression instanceof GpuIrBinary binary && prototypeShapeDetector.isPrototypeBinaryOperator(binary.operator())) {
-            return new GpuIrBinary(
-                    binary.operator(),
-                    rewriteLaneExpression(binary.left(), inductionVariable, lane),
-                    rewriteLaneExpression(binary.right(), inductionVariable, lane)
-            );
-        }
-        throw new IllegalArgumentException("Unsupported prototype lane expression: " + expression);
     }
 
     private List<GpuIrStatement> scalarLaneWrites(
