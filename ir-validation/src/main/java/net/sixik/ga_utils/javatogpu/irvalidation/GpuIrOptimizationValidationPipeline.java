@@ -52,11 +52,23 @@ public final class GpuIrOptimizationValidationPipeline {
         Optional<String> safetyError = safetyError(context);
         GpuIrCommonSubexpressionRewritePreview commonSubexpressionPreview = commonSubexpressionPreview(context, safetyError);
         GpuIrAutoVectorizationPreview autoVectorizationPreview = autoVectorizationPlanningPass.preview(context);
+        GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport = autoVectorizationRewriteDryRunReport(
+                context,
+                autoVectorizationPreview,
+                safetyError
+        );
+        GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations = autoVectorizationResolvedRewriteOperations(
+                context,
+                autoVectorizationPreview,
+                autoVectorizationRewriteDryRunReport
+        );
         GpuIrOptimizationValidationReport report = new GpuIrOptimizationValidationReport(
                 methodName,
                 safetyError,
                 commonSubexpressionPreview,
-                autoVectorizationPreview
+                autoVectorizationPreview,
+                autoVectorizationRewriteDryRunReport,
+                autoVectorizationResolvedRewriteOperations
         );
         enforceMode(report);
         return report;
@@ -83,6 +95,38 @@ public final class GpuIrOptimizationValidationPipeline {
 
     private GpuIrCommonSubexpressionRewritePreview emptyCommonSubexpressionPreview() {
         return new GpuIrCommonSubexpressionRewritePreview(List.of(), List.of(), List.of());
+    }
+
+    private GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport(
+            GpuIrPassContext context,
+            GpuIrAutoVectorizationPreview preview,
+            Optional<String> safetyError
+    ) {
+        GpuIrAutoVectorizationRewritePlan plan = preview.rewritePlan();
+        if (safetyError.isPresent() || context == null || context.method() == null || context.method().irMethod() == null) {
+            return GpuIrAutoVectorizationRewriteDryRunReport.skipped(
+                    preview.methodName(),
+                    plan.candidateCount(),
+                    plan.rawInsertionOperationCount(),
+                    plan.rawReplacementOperationCount(),
+                    List.of("Auto-vectorization rewrite dry-run skipped: method context is unavailable or safety validation failed")
+            );
+        }
+        return new GpuIrAutoVectorizationRewriteApplicator().dryRun(context.method().irMethod(), plan);
+    }
+
+    private GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations(
+            GpuIrPassContext context,
+            GpuIrAutoVectorizationPreview preview,
+            GpuIrAutoVectorizationRewriteDryRunReport dryRunReport
+    ) {
+        if (!dryRunReport.successful() || context == null || context.method() == null || context.method().irMethod() == null) {
+            return GpuIrAutoVectorizationResolvedRewriteOperations.empty(preview.methodName());
+        }
+        return new GpuIrAutoVectorizationRewriteApplicator().resolveOperations(
+                context.method().irMethod(),
+                preview.rewritePlan()
+        );
     }
 
     private void enforceMode(GpuIrOptimizationValidationReport report) {

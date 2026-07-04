@@ -79,6 +79,23 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("autoVectorizationRewritePolicyReadiness", autoVectorizationRewritePolicy.readiness().artifactValue());
         values.put("autoVectorizationRewritePolicyPlannedOperations", Integer.toString(autoVectorizationRewritePolicy.plannedOperationCount()));
         values.put("autoVectorizationRewritePolicyBlockingGuards", Integer.toString(autoVectorizationRewritePolicy.blockingGuards().size()));
+        GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport = report.autoVectorizationRewriteDryRunReport();
+        values.put("autoVectorizationRewriteDryRunReadiness", autoVectorizationRewriteDryRunReport.readiness().artifactValue());
+        values.put("autoVectorizationRewriteDryRunSuccessful", Boolean.toString(autoVectorizationRewriteDryRunReport.successful()));
+        values.put("autoVectorizationRewriteDryRunDiagnostics", Integer.toString(autoVectorizationRewriteDryRunReport.diagnostics().size()));
+        values.put("autoVectorizationRewriteDryRunCandidates", Integer.toString(autoVectorizationRewriteDryRunReport.candidateCount()));
+        values.put("autoVectorizationRewriteDryRunOperations", Integer.toString(autoVectorizationRewriteDryRunReport.operationCount()));
+        GpuIrAutoVectorizationResolvedRewriteOperations resolvedRewriteOperations = report.autoVectorizationResolvedRewriteOperations();
+        values.put("autoVectorizationResolvedRewriteInsertions", Integer.toString(resolvedRewriteOperations.insertions().size()));
+        values.put("autoVectorizationResolvedRewriteReplacements", Integer.toString(resolvedRewriteOperations.replacements().size()));
+        values.put("autoVectorizationResolvedRewriteOperations", Integer.toString(resolvedRewriteOperations.operationCount()));
+        if (resolvedRewriteOperations.hasOperations()) {
+            values.put("autoVectorizationResolvedRewriteFirstInsertion", resolvedRewriteOperations.insertions().get(0).summary());
+            values.put("autoVectorizationResolvedRewriteFirstReplacement", resolvedRewriteOperations.replacements().get(0).summary());
+        }
+        if (autoVectorizationRewriteDryRunReport.hasFailures()) {
+            values.put("autoVectorizationRewriteDryRunFirstDiagnostic", autoVectorizationRewriteDryRunReport.firstDiagnostic());
+        }
         autoVectorizationRewritePolicy.firstBlockingGuard()
                 .ifPresent(guard -> values.put("autoVectorizationRewritePolicyFirstBlockingGuardFamily", guard.family().artifactValue()));
         autoVectorizationRewritePlan.guardFamilyTypeCounts().entrySet().stream()

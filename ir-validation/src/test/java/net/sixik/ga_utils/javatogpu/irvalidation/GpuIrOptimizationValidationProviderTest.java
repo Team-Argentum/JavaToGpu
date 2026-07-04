@@ -84,6 +84,9 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationCanApplyRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationHasPolicyBlockedRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicyCanRewrite=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunReadiness=skipped")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunSuccessful=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunDiagnostics=1")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("unknown variable reference: missing")));
     }
 
@@ -302,6 +305,11 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "ready");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
         assertEntryValue(entries, "autoVectorizationRewritePolicyBlockingGuards", "0");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunReadiness", "ready");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunSuccessful", "true");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunDiagnostics", "0");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunOperations", "2");
         assertEntryValue(entries, "autoVectorizationVectorType.int4", "1");
     }
 
@@ -341,6 +349,11 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
         assertEntryValue(entries, "autoVectorizationRewritePolicyBlockingGuards", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunReadiness", "ready");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunSuccessful", "true");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunDiagnostics", "0");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteDryRunOperations", "2");
         assertEntryValue(entries, "autoVectorizationRewritePolicyFirstBlockingGuardFamily", "neighborSourceWrite");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.neighborSourceWrite", "1");
         assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "writes source array `input`");

@@ -37,6 +37,20 @@ public record GpuIrCommonSubexpressionLocation(
                 : Optional.empty();
     }
 
+    /**
+     * Returns the top-level statement index for callers that must reject unsupported locations.
+     */
+    public static int requireTopLevelStatementIndex(String rawLocation, String diagnosticPrefix) {
+        OptionalInt statementIndex = parseTopLevelStatementIndex(rawLocation);
+        if (statementIndex.isPresent()) {
+            return statementIndex.getAsInt();
+        }
+        String prefix = diagnosticPrefix == null || diagnosticPrefix.isBlank()
+                ? "Unsupported IR location"
+                : diagnosticPrefix;
+        throw new IllegalArgumentException(prefix + ": unsupported top-level statement location " + rawLocation);
+    }
+
     private static OptionalInt parseTopLevelStatementIndex(String rawLocation) {
         if (rawLocation == null || rawLocation.isBlank()) {
             return OptionalInt.empty();

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuIrCommonSubexpressionLocationTest {
@@ -13,7 +14,20 @@ class GpuIrCommonSubexpressionLocationTest {
 
         assertEquals("stmt[12].initializer.left", location.rawLocation());
         assertEquals(12, location.topLevelStatementIndex().orElseThrow());
+        assertEquals(java.util.Optional.of(12), GpuIrCommonSubexpressionLocation.topLevelStatementIndexOf("stmt[12].initializer.left"));
+        assertEquals(12, GpuIrCommonSubexpressionLocation.requireTopLevelStatementIndex("stmt[12].initializer.left", "test failure"));
         assertFalse(location.controlFlowScoped());
+    }
+
+    @Test
+    void requiredTopLevelStatementIndexRejectsUnsupportedLocations() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuIrCommonSubexpressionLocation.requireTopLevelStatementIndex("helper[0].initializer", "dry-run failed")
+        );
+
+        assertTrue(exception.getMessage().contains("dry-run failed"));
+        assertTrue(exception.getMessage().contains("unsupported top-level statement location helper[0].initializer"));
     }
 
     @Test

@@ -1,11 +1,21 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrExpression;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrFieldAccess;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrStructInit;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Objects;
 
 /**
@@ -16,6 +26,30 @@ import java.util.Objects;
  * have to satisfy before replacing scalar lane loops.</p>
  */
 public final class GpuIrAutoVectorizationRewriteApplicator {
+    private final GpuIrAutoVectorizationRewriteOperationResolver operationResolver;
+    private final GpuIrAutoVectorizationPrototypeRewriteShapeDetector prototypeShapeDetector;
+
+    public GpuIrAutoVectorizationRewriteApplicator() {
+        this(
+                new GpuIrAutoVectorizationRewriteOperationResolver(),
+                new GpuIrAutoVectorizationPrototypeRewriteShapeDetector()
+        );
+    }
+
+    public GpuIrAutoVectorizationRewriteApplicator(
+            GpuIrAutoVectorizationRewriteOperationResolver operationResolver
+    ) {
+        this(operationResolver, new GpuIrAutoVectorizationPrototypeRewriteShapeDetector());
+    }
+
+    GpuIrAutoVectorizationRewriteApplicator(
+            GpuIrAutoVectorizationRewriteOperationResolver operationResolver,
+            GpuIrAutoVectorizationPrototypeRewriteShapeDetector prototypeShapeDetector
+    ) {
+        this.operationResolver = Objects.requireNonNull(operationResolver, "operationResolver");
+        this.prototypeShapeDetector = Objects.requireNonNull(prototypeShapeDetector, "prototypeShapeDetector");
+    }
+
     public GpuIrMethod apply(GpuIrMethod method, GpuIrAutoVectorizationPreview preview) {
         Objects.requireNonNull(method, "method");
         requireApplicable(preview);
@@ -26,6 +60,75 @@ public final class GpuIrAutoVectorizationRewriteApplicator {
     public GpuIrMethod apply(GpuIrCompiledMethod method, GpuIrAutoVectorizationPreview preview) {
         Objects.requireNonNull(method, "method");
         return apply(method.irMethod(), preview);
+    }
+
+    /**
+     * Opt-in prototype rewrite for the narrowest proven lane-copy shape.
+     *
+     * <p>The production {@link #apply(GpuIrMethod, GpuIrAutoVectorizationPreview)} path stays a
+     * no-op safety gate. This method exists so tests and future integration points can validate
+     * the first concrete IR mutation behind the same preview/dry-run boundary.</p>
+     */
+    public GpuIrMethod rewritePrototype(GpuIrMethod method, GpuIrAutoVectorizationPreview preview) {
+        return rewritePrototypeReport(method, preview).method();
+    }
+
+    public GpuIrAutoVectorizationPrototypeRewriteReport rewritePrototypeReport(
+            GpuIrMethod method,
+            GpuIrAutoVectorizationPreview preview
+    ) {
+        Objects.requireNonNull(method, "method");
+        requireApplicable(preview);
+        dryRunValidate(method, preview.rewritePlan());
+        GpuIrAutoVectorizationResolvedRewriteOperations resolved = resolveOperations(method, preview.rewritePlan());
+        if (resolved.insertions().isEmpty()) {
+            return new GpuIrAutoVectorizationPrototypeRewriteReport(method, List.of());
+        }
+
+        List<GpuIrStatement> rewrittenStatements = new ArrayList<>();
+        List<GpuIrAutoVectorizationPrototypeAppliedRewrite> appliedRewrites = new ArrayList<>();
+        for (int statementIndex = 0; statementIndex < method.statements().size(); statementIndex++) {
+            int candidateIndex = candidateIndexAtStatement(resolved, statementIndex);
+            if (candidateIndex < 0) {
+                rewrittenStatements.add(method.statements().get(statementIndex));
+                continue;
+            }
+            GpuIrAutoVectorizationPrototypeRewriteShape shape = prototypeShapeDetector.detect(
+                    (GpuIrForLoop) method.statements().get(statementIndex),
+                    preview.rewritePlan().candidates().get(candidateIndex),
+                    resolved.insertions().get(candidateIndex)
+            );
+            rewrittenStatements.addAll(rewriteSingleLaneCandidate(shape));
+            appliedRewrites.add(appliedRewrite(shape));
+        }
+        return new GpuIrAutoVectorizationPrototypeRewriteReport(
+                new GpuIrMethod(method.name(), rewrittenStatements),
+                appliedRewrites
+        );
+    }
+
+    public GpuIrCompiledMethod rewritePrototype(GpuIrCompiledMethod method, GpuIrAutoVectorizationPreview preview) {
+        Objects.requireNonNull(method, "method");
+        return new GpuIrCompiledMethod(
+                method.parsedMethod(),
+                rewritePrototype(method.irMethod(), preview),
+                method.emittedName(),
+                method.helperDependencies()
+        );
+    }
+
+    private GpuIrAutoVectorizationPrototypeAppliedRewrite appliedRewrite(
+            GpuIrAutoVectorizationPrototypeRewriteShape shape
+    ) {
+        return new GpuIrAutoVectorizationPrototypeAppliedRewrite(
+                shape.loopLocation(),
+                shape.statementIndex(),
+                shape.vectorType(),
+                shape.startInclusive(),
+                shape.endExclusive(),
+                shape.targetArrays(),
+                shape.sourceArrays()
+        );
     }
 
     public void requireApplicable(GpuIrAutoVectorizationPreview preview) {
@@ -44,11 +147,21 @@ public final class GpuIrAutoVectorizationRewriteApplicator {
     }
 
     public void dryRunValidate(GpuIrMethod method, GpuIrAutoVectorizationRewritePlan plan) {
+        GpuIrAutoVectorizationRewriteDryRunReport report = dryRun(method, plan);
+        if (report.successful()) {
+            return;
+        }
+        throw new IllegalArgumentException(report.firstDiagnostic());
+    }
+
+    public GpuIrAutoVectorizationRewriteDryRunReport dryRun(GpuIrMethod method, GpuIrAutoVectorizationRewritePlan plan) {
         Objects.requireNonNull(method, "method");
         Objects.requireNonNull(plan, "plan");
+        List<String> diagnostics = new ArrayList<>();
         if (method.statements() == null) {
-            throw new IllegalArgumentException("Auto-vectorization rewrite dry-run failed for "
+            diagnostics.add("Auto-vectorization rewrite dry-run failed for "
                     + plan.methodName() + ": method statements are missing");
+            return dryRunReport(plan, diagnostics);
         }
 
         List<GpuIrAutoVectorizationRewriteCandidatePreview> candidates = plan.candidates();
@@ -56,107 +169,191 @@ public final class GpuIrAutoVectorizationRewriteApplicator {
             GpuIrAutoVectorizationRewriteCandidatePreview candidate = candidates.get(index);
             GpuIrAutoVectorizationRewriteInsertionOperation insertion = plan.insertionOperations().get(index);
             GpuIrAutoVectorizationRewriteReplacementOperation replacement = plan.replacementOperations().get(index);
-            validateCandidateLoop(method, plan, candidate);
-            validateInsertionOperation(plan, candidate, insertion);
-            validateReplacementOperation(plan, candidate, replacement);
+            validateInsertionOperation(plan, candidate, insertion, diagnostics);
+            validateReplacementOperation(plan, candidate, replacement, diagnostics);
         }
+        resolveOperations(method, plan, diagnostics);
+        return dryRunReport(plan, diagnostics);
     }
 
-    private void validateCandidateLoop(
+    public GpuIrAutoVectorizationResolvedRewriteOperations resolveOperations(
+            GpuIrMethod method,
+            GpuIrAutoVectorizationRewritePlan plan
+    ) {
+        return operationResolver.resolve(method, plan);
+    }
+
+    private int candidateIndexAtStatement(
+            GpuIrAutoVectorizationResolvedRewriteOperations resolved,
+            int statementIndex
+    ) {
+        for (int index = 0; index < resolved.insertions().size(); index++) {
+            if (resolved.insertions().get(index).statementIndex() == statementIndex) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private List<GpuIrStatement> rewriteSingleLaneCandidate(GpuIrAutoVectorizationPrototypeRewriteShape shape) {
+        String vectorName = "__jtg_vec_" + shape.statementIndex();
+        List<GpuIrStatement> rewritten = new ArrayList<>();
+        rewritten.add(new GpuIrVariableDeclaration(
+                shape.vectorType(),
+                vectorName,
+                vectorInitializer(shape)
+        ));
+        rewritten.addAll(scalarLaneWrites(shape, vectorName));
+        return rewritten;
+    }
+
+    private GpuIrStructInit vectorInitializer(GpuIrAutoVectorizationPrototypeRewriteShape shape) {
+        List<GpuIrExpression> lanes = new ArrayList<>();
+        for (int lane = shape.startInclusive(); lane < shape.endExclusive(); lane++) {
+            lanes.add(rewriteLaneExpression(shape.assignment().value(), shape.inductionVariable(), lane));
+        }
+        return new GpuIrStructInit(shape.vectorType(), lanes);
+    }
+
+    private GpuIrExpression rewriteLaneExpression(
+            GpuIrExpression expression,
+            String inductionVariable,
+            int lane
+    ) {
+        if (expression instanceof GpuIrArrayAccess arrayAccess
+                && prototypeShapeDetector.isInductionIndex(arrayAccess.index(), inductionVariable)) {
+            return new GpuIrArrayAccess(arrayAccess.arrayName(), new GpuIrLiteral(Integer.toString(lane)));
+        }
+        if (expression instanceof GpuIrBinary binary && prototypeShapeDetector.isPrototypeBinaryOperator(binary.operator())) {
+            return new GpuIrBinary(
+                    binary.operator(),
+                    rewriteLaneExpression(binary.left(), inductionVariable, lane),
+                    rewriteLaneExpression(binary.right(), inductionVariable, lane)
+            );
+        }
+        throw new IllegalArgumentException("Unsupported prototype lane expression: " + expression);
+    }
+
+    private List<GpuIrStatement> scalarLaneWrites(
+            GpuIrAutoVectorizationPrototypeRewriteShape shape,
+            String vectorName
+    ) {
+        GpuIrArrayAccess target = (GpuIrArrayAccess) shape.assignment().target();
+        List<String> fields = vectorFields(shape.laneCount());
+        List<GpuIrStatement> writes = new ArrayList<>();
+        for (int laneOffset = 0; laneOffset < shape.laneCount(); laneOffset++) {
+            int lane = shape.startInclusive() + laneOffset;
+            writes.add(new GpuIrAssignment(
+                    new GpuIrArrayAccess(target.arrayName(), new GpuIrLiteral(Integer.toString(lane))),
+                    new GpuIrFieldAccess(new GpuIrVariableRef(vectorName), fields.get(laneOffset))
+            ));
+        }
+        return writes;
+    }
+
+    private List<String> vectorFields(int laneCount) {
+        // OpenCL names the first four vector lanes x/y/z/w; wider vectors use sN fields.
+        return switch (laneCount) {
+            case 2 -> List.of("x", "y");
+            case 3 -> List.of("x", "y", "z");
+            case 4 -> List.of("x", "y", "z", "w");
+            case 8 -> List.of("s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7");
+            case 16 -> List.of("s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "sa", "sb", "sc", "sd", "se", "sf");
+            default -> throw new IllegalArgumentException("Unsupported prototype vector lane count: " + laneCount);
+        };
+    }
+
+    private void resolveOperations(
             GpuIrMethod method,
             GpuIrAutoVectorizationRewritePlan plan,
-            GpuIrAutoVectorizationRewriteCandidatePreview candidate
+            List<String> diagnostics
     ) {
-        int statementIndex = statementIndex(candidate.loopLocation(), plan.methodName());
-        if (statementIndex >= method.statements().size()) {
-            throw new IllegalArgumentException("Auto-vectorization rewrite dry-run failed for "
-                    + plan.methodName()
-                    + ": loop location " + candidate.loopLocation()
-                    + " is outside method statements");
-        }
-        GpuIrStatement statement = method.statements().get(statementIndex);
-        if (!(statement instanceof GpuIrForLoop)) {
-            throw new IllegalArgumentException("Auto-vectorization rewrite dry-run failed for "
-                    + plan.methodName()
-                    + ": loop location " + candidate.loopLocation()
-                    + " does not point to a for-loop");
+        try {
+            operationResolver.resolve(method, plan);
+        } catch (IllegalArgumentException exception) {
+            diagnostics.add(exception.getMessage());
         }
     }
 
     private void validateInsertionOperation(
             GpuIrAutoVectorizationRewritePlan plan,
             GpuIrAutoVectorizationRewriteCandidatePreview candidate,
-            GpuIrAutoVectorizationRewriteInsertionOperation insertion
+            GpuIrAutoVectorizationRewriteInsertionOperation insertion,
+            List<String> diagnostics
     ) {
         if (!candidate.loopLocation().equals(insertion.loopLocation())) {
-            throw mismatch(plan, candidate, "insertion loopLocation", candidate.loopLocation(), insertion.loopLocation());
+            diagnostics.add(mismatch(plan, candidate, "insertion loopLocation", candidate.loopLocation(), insertion.loopLocation()));
         }
         if (!candidate.vectorType().equals(insertion.vectorType())) {
-            throw mismatch(plan, candidate, "insertion vectorType", candidate.vectorType(), insertion.vectorType());
+            diagnostics.add(mismatch(plan, candidate, "insertion vectorType", candidate.vectorType(), insertion.vectorType()));
         }
         if (candidate.startInclusive() != insertion.startInclusive()) {
-            throw mismatch(plan, candidate, "insertion startInclusive", candidate.startInclusive(), insertion.startInclusive());
+            diagnostics.add(mismatch(plan, candidate, "insertion startInclusive", candidate.startInclusive(), insertion.startInclusive()));
         }
         if (candidate.endExclusive() != insertion.endExclusive()) {
-            throw mismatch(plan, candidate, "insertion endExclusive", candidate.endExclusive(), insertion.endExclusive());
+            diagnostics.add(mismatch(plan, candidate, "insertion endExclusive", candidate.endExclusive(), insertion.endExclusive()));
         }
         if (!candidate.plannedVectorReads().equals(insertion.plannedVectorReads())) {
-            throw mismatch(plan, candidate, "insertion plannedVectorReads", candidate.plannedVectorReads(), insertion.plannedVectorReads());
+            diagnostics.add(mismatch(plan, candidate, "insertion plannedVectorReads", candidate.plannedVectorReads(), insertion.plannedVectorReads()));
         }
     }
 
     private void validateReplacementOperation(
             GpuIrAutoVectorizationRewritePlan plan,
             GpuIrAutoVectorizationRewriteCandidatePreview candidate,
-            GpuIrAutoVectorizationRewriteReplacementOperation replacement
+            GpuIrAutoVectorizationRewriteReplacementOperation replacement,
+            List<String> diagnostics
     ) {
         if (!candidate.loopLocation().equals(replacement.loopLocation())) {
-            throw mismatch(plan, candidate, "replacement loopLocation", candidate.loopLocation(), replacement.loopLocation());
+            diagnostics.add(mismatch(plan, candidate, "replacement loopLocation", candidate.loopLocation(), replacement.loopLocation()));
         }
         if (!candidate.inductionVariable().equals(replacement.inductionVariable())) {
-            throw mismatch(plan, candidate, "replacement inductionVariable", candidate.inductionVariable(), replacement.inductionVariable());
+            diagnostics.add(mismatch(plan, candidate, "replacement inductionVariable", candidate.inductionVariable(), replacement.inductionVariable()));
         }
         if (candidate.startInclusive() != replacement.startInclusive()) {
-            throw mismatch(plan, candidate, "replacement startInclusive", candidate.startInclusive(), replacement.startInclusive());
+            diagnostics.add(mismatch(plan, candidate, "replacement startInclusive", candidate.startInclusive(), replacement.startInclusive()));
         }
         if (candidate.endExclusive() != replacement.endExclusive()) {
-            throw mismatch(plan, candidate, "replacement endExclusive", candidate.endExclusive(), replacement.endExclusive());
+            diagnostics.add(mismatch(plan, candidate, "replacement endExclusive", candidate.endExclusive(), replacement.endExclusive()));
         }
         if (!candidate.plannedVectorWrites().equals(replacement.plannedVectorWrites())) {
-            throw mismatch(plan, candidate, "replacement plannedVectorWrites", candidate.plannedVectorWrites(), replacement.plannedVectorWrites());
+            diagnostics.add(mismatch(plan, candidate, "replacement plannedVectorWrites", candidate.plannedVectorWrites(), replacement.plannedVectorWrites()));
         }
     }
 
-    private int statementIndex(String location, String methodName) {
-        if (!location.startsWith("stmt[")) {
-            throw new IllegalArgumentException("Auto-vectorization rewrite dry-run failed for "
-                    + methodName + ": unsupported loop location " + location);
+    private GpuIrAutoVectorizationRewriteDryRunReport dryRunReport(
+            GpuIrAutoVectorizationRewritePlan plan,
+            List<String> diagnostics
+    ) {
+        if (diagnostics.isEmpty()) {
+            return GpuIrAutoVectorizationRewriteDryRunReport.ready(
+                    plan.methodName(),
+                    plan.candidateCount(),
+                    plan.rawInsertionOperationCount(),
+                    plan.rawReplacementOperationCount()
+            );
         }
-        int closingBracket = location.indexOf(']');
-        if (closingBracket < 0) {
-            throw new IllegalArgumentException("Auto-vectorization rewrite dry-run failed for "
-                    + methodName + ": malformed loop location " + location);
-        }
-        try {
-            return Integer.parseInt(location.substring("stmt[".length(), closingBracket));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("Auto-vectorization rewrite dry-run failed for "
-                    + methodName + ": malformed loop location " + location, exception);
-        }
+        return GpuIrAutoVectorizationRewriteDryRunReport.failed(
+                plan.methodName(),
+                plan.candidateCount(),
+                plan.rawInsertionOperationCount(),
+                plan.rawReplacementOperationCount(),
+                diagnostics
+        );
     }
 
-    private IllegalArgumentException mismatch(
+    private String mismatch(
             GpuIrAutoVectorizationRewritePlan plan,
             GpuIrAutoVectorizationRewriteCandidatePreview candidate,
             String field,
             Object expected,
             Object actual
     ) {
-        return new IllegalArgumentException("Auto-vectorization rewrite dry-run failed for "
+        return "Auto-vectorization rewrite dry-run failed for "
                 + plan.methodName()
                 + " at " + candidate.loopLocation()
                 + ": " + field
                 + " expected=" + expected
-                + " actual=" + actual);
+                + " actual=" + actual;
     }
 }

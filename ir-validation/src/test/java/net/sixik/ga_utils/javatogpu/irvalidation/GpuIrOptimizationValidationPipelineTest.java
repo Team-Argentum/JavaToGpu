@@ -90,9 +90,15 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(report.hasSafetyError());
         assertTrue(report.safetyError().orElseThrow().contains("unknown variable reference: missing"));
         assertFalse(report.commonSubexpressionPreview().hasRewriteWork());
+        assertEquals(GpuIrAutoVectorizationRewriteDryRunReadiness.SKIPPED, report.autoVectorizationRewriteDryRunReadiness());
+        assertFalse(report.autoVectorizationRewriteDryRunSuccessful());
+        assertEquals(1, report.autoVectorizationRewriteDryRunDiagnosticCount());
+        assertTrue(report.autoVectorizationRewriteDryRunReport().firstDiagnostic().contains("dry-run skipped"));
         assertEquals(0, report.optimizerDiagnosticCount());
         assertTrue(report.summary().contains("safety=failed"));
         assertTrue(report.summary().contains("unknown variable reference: missing"));
+        assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunReadiness=skipped"));
+        assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunSuccessful=false"));
     }
 
     @Test
