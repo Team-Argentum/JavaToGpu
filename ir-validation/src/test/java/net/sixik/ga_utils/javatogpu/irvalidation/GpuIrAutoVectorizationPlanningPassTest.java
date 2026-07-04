@@ -71,12 +71,28 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertEquals(List.of("write out[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorWrites());
         assertEquals(List.of("read left[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorReads());
         assertEquals(GpuIrAutoVectorizationRewriteReadiness.READY, preview.rewriteReadiness());
+        assertTrue(preview.canApplyRewrite());
         assertEquals(2, preview.rewritePlan().operationCount());
+        assertEquals(1, preview.rewritePlan().rawInsertionOperationCount());
+        assertEquals(1, preview.rewritePlan().rawReplacementOperationCount());
         assertFalse(preview.rewritePlan().hasGuardDiagnostics());
         assertEquals(0, preview.rewritePlan().blockedCandidateCount());
         assertFalse(preview.rewritePlan().hasBlockedCandidates());
         assertEquals(0, preview.rewriteBlockedCandidateCount());
         assertFalse(preview.hasRewriteBlockedCandidates());
+        assertFalse(preview.hasPolicyBlockedRewrite());
+        GpuIrAutoVectorizationRewriteInsertionOperation insertionOperation = preview.rewritePlan().insertionOperations().get(0);
+        assertEquals("stmt[0]", insertionOperation.loopLocation());
+        assertEquals("int4", insertionOperation.vectorType());
+        assertEquals(0, insertionOperation.startInclusive());
+        assertEquals(4, insertionOperation.endExclusive());
+        assertEquals(List.of("read left[i=0..3]"), insertionOperation.plannedVectorReads());
+        GpuIrAutoVectorizationRewriteReplacementOperation replacementOperation = preview.rewritePlan().replacementOperations().get(0);
+        assertEquals("stmt[0]", replacementOperation.loopLocation());
+        assertEquals("i", replacementOperation.inductionVariable());
+        assertEquals(0, replacementOperation.startInclusive());
+        assertEquals(4, replacementOperation.endExclusive());
+        assertEquals(List.of("write out[i=0..3]"), replacementOperation.plannedVectorWrites());
         assertTrue(preview.rewritePlan().insertionPreviews().get(0).contains("type=int4"));
         assertTrue(preview.rewritePlan().replacementPreviews().get(0).contains("write out[i=0..3]"));
         assertEquals(0, preview.warningCount());
@@ -85,9 +101,11 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertEquals(java.util.Map.of(), preview.warningFamilyCounts());
         assertTrue(preview.firstBlockingDiagnosticSummary().isEmpty());
         assertTrue(preview.firstBlockingDiagnosticFamily().isEmpty());
+        assertTrue(preview.firstRewritePlanGuard().isEmpty());
         assertEquals(irMethod.statements(), context.method().irMethod().statements());
         assertTrue(preview.summary().contains("rewriteCandidates=1"));
         assertTrue(preview.summary().contains("rewriteReadiness=ready"));
+        assertTrue(preview.summary().contains("canApplyRewrite=true"));
         assertTrue(preview.summary().contains("rewriteBlockedCandidates=0"));
     }
 
@@ -154,6 +172,7 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
         assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_WARNING, preview.rewriteReadiness());
+        assertFalse(preview.canApplyRewrite());
         assertEquals("warning.crossLaneRead", preview.firstBlockingDiagnosticFamily().orElseThrow());
     }
 
@@ -183,6 +202,7 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(exception.getMessage().contains("laneCount=5"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
         assertEquals(GpuIrAutoVectorizationRewriteReadiness.REJECTED, preview.rewriteReadiness());
+        assertFalse(preview.canApplyRewrite());
         assertEquals("rejection.UNSUPPORTED_LANE_COUNT", preview.firstBlockingDiagnosticFamily().orElseThrow());
     }
 

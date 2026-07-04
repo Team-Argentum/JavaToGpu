@@ -84,6 +84,10 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSkipped=" + commonSubexpressionSkippedCount()
                 + " autoVectorizationCandidates=" + autoVectorizationRewriteCandidateCount()
                 + " autoVectorizationRewriteReadiness=" + autoVectorizationPreview.rewriteReadiness().artifactValue()
+                + " autoVectorizationCanApplyRewrite=" + autoVectorizationPreview.canApplyRewrite()
+                + " autoVectorizationHasPolicyBlockedRewrite=" + autoVectorizationPreview.hasPolicyBlockedRewrite()
+                + " autoVectorizationRewritePolicyCanRewrite=" + autoVectorizationPreview.rewritePolicy().canRewrite()
+                + " autoVectorizationRewritePolicyBlockingGuards=" + autoVectorizationPreview.rewritePolicy().blockingGuards().size()
                 + " autoVectorizationWarnings=" + autoVectorizationWarningCount()
                 + " autoVectorizationRejections=" + autoVectorizationRejectionCount()
                 + " autoVectorizationRewritePlanGuards=" + autoVectorizationPreview.rewritePlanGuardCount()
@@ -101,6 +105,7 @@ public record GpuIrOptimizationValidationReport(
                 + (hasSafetyError() ? " safetyError=" + safetyError.orElseThrow() : "")
                 + " optimizerDiagnostics=" + optimizerDiagnosticCount()
                 + " cse={" + commonSubexpressionPreview.summary() + "}"
+                + " autoVectorizationRewritePolicy={" + autoVectorizationPreview.rewritePolicy().summary() + "}"
                 + " autoVectorization={" + autoVectorizationPreview.summary() + "}";
     }
 

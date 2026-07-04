@@ -61,7 +61,103 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(result.diagnosticMessages().contains("ir optimization validation method=guarded"));
         assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuards=1"));
         assertTrue(result.diagnosticMessages().contains("autoVectorizationRewriteReadiness=blockedByGuard"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationCanApplyRewrite=false"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationHasPolicyBlockedRewrite=true"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePolicyCanRewrite=false"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePolicyBlockingGuards=1"));
         assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuardFamilies={controlFlowBoundary=1}"));
+        assertFalse(result.diagnosticMessages().contains("firstRewritePlanGuard"));
+    }
+
+    @Test
+    void diagnosticModeReportsCompactBackendVectorWidthGuardThroughJavacProcessor() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                null,
+                null,
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void vector3(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                                for (int i = 0; i < 3; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        assertTrue(result.diagnosticMessages().contains("ir optimization validation method=vector3"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuards=1"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewriteReadiness=blockedByGuard"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePolicyCanRewrite=false"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuardFamilies={backendVectorWidth=1}"));
+        assertFalse(result.diagnosticMessages().contains("firstRewritePlanGuard"));
+    }
+
+    @Test
+    void diagnosticModeReportsCompactBackendDoubleVectorGuardThroughJavacProcessor() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                null,
+                null,
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void doubleVector(@GPUGlobal double[] input, @GPUGlobal double[] output) {
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        assertTrue(result.diagnosticMessages().contains("ir optimization validation method=doubleVector"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuards=1"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewriteReadiness=blockedByGuard"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuardFamilies={backendDoubleVector=1}"));
+        assertFalse(result.diagnosticMessages().contains("firstRewritePlanGuard"));
+    }
+
+    @Test
+    void diagnosticModeReportsCompactMemoryAddressSpaceGuardThroughJavacProcessor() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                null,
+                null,
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void constantSource(@GPUConstant int[] input, @GPUGlobal int[] output) {
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        assertTrue(result.diagnosticMessages().contains("ir optimization validation method=constantSource"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuards=1"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewriteReadiness=blockedByGuard"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePlanGuardFamilies={memoryAddressSpace=1}"));
         assertFalse(result.diagnosticMessages().contains("firstRewritePlanGuard"));
     }
 
@@ -81,6 +177,7 @@ class GpuIrValidationProcessorIntegrationTest {
 
         assertTrue(result.success(), result.diagnosticMessages());
         assertTrue(result.diagnosticMessages().contains("ir optimization validation method=kernel"));
+        assertTrue(result.diagnosticMessages().contains("autoVectorizationRewritePolicy={"));
         assertTrue(result.diagnosticMessages().contains("auto-vectorization preview"));
         assertTrue(result.diagnosticMessages().contains("UNSUPPORTED_LANE_COUNT"));
     }
@@ -193,11 +290,17 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(reportContainsMethod(report, "first", "0"));
         assertTrue(reportContainsMethod(report, "second", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationCandidates", "1"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationCanApplyRewrite", "true"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationHasPolicyBlockedRewrite", "false"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanCandidates", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanInsertions", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanReplacements", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanOperations", "2"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanGuards", "0"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyCanRewrite", "true"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyReadiness", "ready"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyPlannedOperations", "2"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePolicyBlockingGuards", "0"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationVectorType.int4", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRejections", "0"));
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationCandidates", "0"));
@@ -271,8 +374,15 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("1".equals(report.getProperty("entry.count")));
         assertTrue("guarded".equals(report.getProperty("entry.0.methodName")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationCandidates")));
+        assertTrue("false".equals(report.getProperty("entry.0.autoVectorizationCanApplyRewrite")));
+        assertTrue("true".equals(report.getProperty("entry.0.autoVectorizationHasPolicyBlockedRewrite")));
         assertTrue("0".equals(report.getProperty("entry.0.autoVectorizationRewritePlanOperations")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
+        assertTrue("false".equals(report.getProperty("entry.0.autoVectorizationRewritePolicyCanRewrite")));
+        assertTrue("blockedByGuard".equals(report.getProperty("entry.0.autoVectorizationRewritePolicyReadiness")));
+        assertTrue("2".equals(report.getProperty("entry.0.autoVectorizationRewritePolicyPlannedOperations")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePolicyBlockingGuards")));
+        assertTrue("neighborTargetWrite".equals(report.getProperty("entry.0.autoVectorizationRewritePolicyFirstBlockingGuardFamily")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.neighborTargetWrite")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("writes target array `output`"));
         assertTrue("guard.neighborTargetWrite".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));

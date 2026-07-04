@@ -56,6 +56,10 @@ public record GpuIrAutoVectorizationPreview(
         return GpuIrAutoVectorizationRewritePlan.from(this);
     }
 
+    public GpuIrAutoVectorizationRewritePolicy rewritePolicy() {
+        return rewritePlan().rewritePolicy();
+    }
+
     public int rewritePlanGuardCount() {
         return rewritePlan().guardDiagnostics().size();
     }
@@ -64,12 +68,27 @@ public record GpuIrAutoVectorizationPreview(
         return rewritePlanGuardCount() > 0;
     }
 
+    public Optional<GpuIrAutoVectorizationRewriteGuardDiagnostic> firstRewritePlanGuard() {
+        if (!hasRewritePlanGuardDiagnostics()) {
+            return Optional.empty();
+        }
+        return Optional.of(rewritePlan().typedGuardDiagnostics().get(0));
+    }
+
     public int rewriteBlockedCandidateCount() {
         return rewritePlan().blockedCandidateCount();
     }
 
     public boolean hasRewriteBlockedCandidates() {
         return rewriteBlockedCandidateCount() > 0;
+    }
+
+    public boolean hasPolicyBlockedRewrite() {
+        return rewritePolicy().hasBlockingGuards();
+    }
+
+    public boolean canApplyRewrite() {
+        return rewriteReadiness() == GpuIrAutoVectorizationRewriteReadiness.READY && rewritePolicy().canRewrite();
     }
 
     public GpuIrAutoVectorizationRewriteReadiness rewriteReadiness() {
@@ -108,10 +127,7 @@ public record GpuIrAutoVectorizationPreview(
         if (hasRejections()) {
             return Optional.of(rejections.get(0).summary());
         }
-        if (hasRewritePlanGuardDiagnostics()) {
-            return Optional.of(rewritePlan().guardDiagnostics().get(0));
-        }
-        return Optional.empty();
+        return firstRewritePlanGuard().map(GpuIrAutoVectorizationRewriteGuardDiagnostic::summary);
     }
 
     public Optional<String> firstBlockingDiagnosticFamily() {
@@ -121,10 +137,7 @@ public record GpuIrAutoVectorizationPreview(
         if (hasRejections()) {
             return Optional.of("rejection." + rejections.get(0).reason().name());
         }
-        if (hasRewritePlanGuardDiagnostics()) {
-            return Optional.of("guard." + GpuIrAutoVectorizationRewritePlan.guardFamily(rewritePlan().guardDiagnostics().get(0)));
-        }
-        return Optional.empty();
+        return firstRewritePlanGuard().map(guard -> "guard." + guard.family().artifactValue());
     }
 
     private String firstWarningFamily(GpuIrAutoVectorizationWarningDiagnostic warning) {
@@ -172,11 +185,14 @@ public record GpuIrAutoVectorizationPreview(
         return "auto-vectorization preview method=" + methodName
                 + " rewriteCandidates=" + rewriteCandidateCount()
                 + " rewriteReadiness=" + rewriteReadiness().artifactValue()
+                + " rewritePolicyCanRewrite=" + rewritePolicy().canRewrite()
+                + " rewritePolicyBlockingGuards=" + rewritePolicy().blockingGuards().size()
+                + " canApplyRewrite=" + canApplyRewrite()
                 + " rewriteBlockedCandidates=" + rewriteBlockedCandidateCount()
                 + " rewritePlanOperations=" + rewritePlan().operationCount()
                 + " rewritePlanGuards=" + rewritePlanGuardCount()
                 + (hasRewritePlanGuardDiagnostics() ? " rewritePlanGuardFamilies=" + rewritePlan().guardFamilyCounts() : "")
-                + (hasRewritePlanGuardDiagnostics() ? " firstRewritePlanGuard=" + rewritePlan().guardDiagnostics().get(0) : "")
+                + firstRewritePlanGuard().map(guard -> " firstRewritePlanGuard=" + guard.summary()).orElse("")
                 + (hasRewriteCandidates() ? " vectorTypes=" + vectorTypeCounts() : "")
                 + " warnings=" + warningCount()
                 + " totalDiagnostics=" + totalDiagnosticCount()

@@ -60,6 +60,8 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("autoVectorizationWarnings", Integer.toString(report.autoVectorizationWarningCount()));
         values.put("autoVectorizationRejections", Integer.toString(report.autoVectorizationRejectionCount()));
         values.put("autoVectorizationRewriteReadiness", report.autoVectorizationPreview().rewriteReadiness().artifactValue());
+        values.put("autoVectorizationCanApplyRewrite", Boolean.toString(report.autoVectorizationPreview().canApplyRewrite()));
+        values.put("autoVectorizationHasPolicyBlockedRewrite", Boolean.toString(report.autoVectorizationPreview().hasPolicyBlockedRewrite()));
         values.put("autoVectorizationRewriteBlockedCandidates", Integer.toString(report.autoVectorizationPreview().rewriteBlockedCandidateCount()));
         values.put("autoVectorizationHasRewriteBlockedCandidates", Boolean.toString(report.autoVectorizationPreview().hasRewriteBlockedCandidates()));
         report.autoVectorizationPreview().firstBlockingDiagnosticSummary()
@@ -67,15 +69,22 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         report.autoVectorizationPreview().firstBlockingDiagnosticFamily()
                 .ifPresent(family -> values.put("autoVectorizationFirstBlockingDiagnosticFamily", family));
         GpuIrAutoVectorizationRewritePlan autoVectorizationRewritePlan = report.autoVectorizationPreview().rewritePlan();
+        GpuIrAutoVectorizationRewritePolicy autoVectorizationRewritePolicy = report.autoVectorizationPreview().rewritePolicy();
         values.put("autoVectorizationRewritePlanCandidates", Integer.toString(autoVectorizationRewritePlan.candidateCount()));
         values.put("autoVectorizationRewritePlanInsertions", Integer.toString(autoVectorizationRewritePlan.insertionCount()));
         values.put("autoVectorizationRewritePlanReplacements", Integer.toString(autoVectorizationRewritePlan.replacementCount()));
         values.put("autoVectorizationRewritePlanOperations", Integer.toString(autoVectorizationRewritePlan.operationCount()));
         values.put("autoVectorizationRewritePlanGuards", Integer.toString(autoVectorizationRewritePlan.guardDiagnostics().size()));
-        autoVectorizationRewritePlan.guardFamilyCounts().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
+        values.put("autoVectorizationRewritePolicyCanRewrite", Boolean.toString(autoVectorizationRewritePolicy.canRewrite()));
+        values.put("autoVectorizationRewritePolicyReadiness", autoVectorizationRewritePolicy.readiness().artifactValue());
+        values.put("autoVectorizationRewritePolicyPlannedOperations", Integer.toString(autoVectorizationRewritePolicy.plannedOperationCount()));
+        values.put("autoVectorizationRewritePolicyBlockingGuards", Integer.toString(autoVectorizationRewritePolicy.blockingGuards().size()));
+        autoVectorizationRewritePolicy.firstBlockingGuard()
+                .ifPresent(guard -> values.put("autoVectorizationRewritePolicyFirstBlockingGuardFamily", guard.family().artifactValue()));
+        autoVectorizationRewritePlan.guardFamilyTypeCounts().entrySet().stream()
+                .sorted(java.util.Comparator.comparing(entry -> entry.getKey().artifactValue()))
                 .forEach(entry -> values.put(
-                        "autoVectorizationRewritePlanGuardFamily." + entry.getKey(),
+                        "autoVectorizationRewritePlanGuardFamily." + entry.getKey().artifactValue(),
                         Long.toString(entry.getValue())
                 ));
         report.autoVectorizationPreview().vectorTypeCounts().entrySet().stream()

@@ -19,7 +19,7 @@ public record GpuIrAutoVectorizationRewriteCandidatePreview(
         String vectorType,
         List<String> plannedVectorWrites,
         List<String> plannedVectorReads,
-        List<String> memoryGuardDiagnostics,
+        List<GpuIrAutoVectorizationRewriteGuardDiagnostic> memoryGuardDiagnosticDetails,
         List<String> targetArrays,
         List<String> sourceArrays
 ) {
@@ -65,10 +65,7 @@ public record GpuIrAutoVectorizationRewriteCandidatePreview(
         if (plannedVectorReads.stream().anyMatch(name -> name == null || name.isBlank())) {
             throw new IllegalArgumentException("plannedVectorReads must not contain blank entries");
         }
-        memoryGuardDiagnostics = List.copyOf(Objects.requireNonNull(memoryGuardDiagnostics, "memoryGuardDiagnostics"));
-        if (memoryGuardDiagnostics.stream().anyMatch(diagnostic -> diagnostic == null || diagnostic.isBlank())) {
-            throw new IllegalArgumentException("memoryGuardDiagnostics must not contain blank entries");
-        }
+        memoryGuardDiagnosticDetails = List.copyOf(Objects.requireNonNull(memoryGuardDiagnosticDetails, "memoryGuardDiagnosticDetails"));
         targetArrays = List.copyOf(Objects.requireNonNull(targetArrays, "targetArrays"));
         if (targetArrays.isEmpty() || targetArrays.stream().anyMatch(name -> name == null || name.isBlank())) {
             throw new IllegalArgumentException("targetArrays must contain non-blank array names");
@@ -97,10 +94,16 @@ public record GpuIrAutoVectorizationRewriteCandidatePreview(
                 candidate.vectorType(),
                 vectorAccesses("write", candidate.targetArrays(), candidate.inductionVariable(), candidate.startInclusive(), candidate.endExclusive()),
                 vectorAccesses("read", candidate.sourceArrays(), candidate.inductionVariable(), candidate.startInclusive(), candidate.endExclusive()),
-                candidate.memoryGuardDiagnostics(),
+                candidate.memoryGuardDiagnosticDetails(),
                 candidate.targetArrays(),
                 candidate.sourceArrays()
         );
+    }
+
+    public List<String> memoryGuardDiagnostics() {
+        return memoryGuardDiagnosticDetails.stream()
+                .map(GpuIrAutoVectorizationRewriteGuardDiagnostic::summary)
+                .toList();
     }
 
     private static List<String> vectorAccesses(
@@ -127,8 +130,9 @@ public record GpuIrAutoVectorizationRewriteCandidatePreview(
                 + " priorityScore=" + priorityScore
                 + " plannedWrites=" + plannedVectorWrites
                 + " plannedReads=" + plannedVectorReads
-                + (memoryGuardDiagnostics.isEmpty() ? "" : " memoryGuardDiagnostics=" + memoryGuardDiagnostics)
+                + (memoryGuardDiagnosticDetails.isEmpty() ? "" : " memoryGuardDiagnostics=" + memoryGuardDiagnostics())
                 + " targets=" + targetArrays
                 + " sources=" + sourceArrays;
     }
+
 }

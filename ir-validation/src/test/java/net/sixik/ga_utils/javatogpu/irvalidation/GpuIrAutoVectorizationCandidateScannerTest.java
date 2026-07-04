@@ -249,6 +249,10 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertFalse(aggregatePreview.hasWarnings());
         assertFalse(aggregatePreview.hasRejections());
         assertTrue(aggregatePreview.hasBlockingDiagnostics());
+        assertFalse(aggregatePreview.canApplyRewrite());
+        assertTrue(aggregatePreview.hasPolicyBlockedRewrite());
+        assertFalse(aggregatePreview.rewritePolicy().canRewrite());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, aggregatePreview.rewritePolicy().readiness());
         assertEquals(2, aggregatePreview.rewriteCandidateCount());
         assertEquals(0, aggregatePreview.warningCount());
         assertEquals(0, aggregatePreview.rejectionCount());
@@ -256,17 +260,39 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(java.util.Map.of(), aggregatePreview.warningFamilyCounts());
         assertEquals(java.util.Map.of("unknownx4", 1L, "unknownx8", 1L), aggregatePreview.vectorTypeCounts());
         assertTrue(aggregatePreview.firstBlockingDiagnosticSummary().orElseThrow().contains("unknown vector type"));
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE,
+                aggregatePreview.firstRewritePlanGuard().orElseThrow().family()
+        );
+        assertEquals(aggregatePreview.firstBlockingDiagnosticSummary().orElseThrow(), aggregatePreview.firstRewritePlanGuard().orElseThrow().summary());
         GpuIrAutoVectorizationRewritePlan rewritePlan = aggregatePreview.rewritePlan();
         assertTrue(rewritePlan.hasOperations());
         assertEquals(2, rewritePlan.candidateCount());
         assertTrue(rewritePlan.hasGuardDiagnostics());
         assertEquals(2, rewritePlan.rawInsertionPreviewCount());
         assertEquals(2, rewritePlan.rawReplacementPreviewCount());
+        assertEquals(2, rewritePlan.rawInsertionOperationCount());
+        assertEquals(2, rewritePlan.rawReplacementOperationCount());
         assertEquals(0, rewritePlan.insertionCount());
         assertEquals(0, rewritePlan.replacementCount());
         assertEquals(0, rewritePlan.operationCount());
+        assertFalse(rewritePlan.rewritePolicy().canRewrite());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, rewritePlan.rewritePolicy().readiness());
+        assertEquals(2, rewritePlan.rewritePolicy().blockingGuards().size());
+        assertEquals(GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE, rewritePlan.rewritePolicy().firstBlockingGuard().orElseThrow().family());
+        assertEquals(java.util.Map.of("unknownVectorType", 2L), rewritePlan.rewritePolicy().blockingGuardFamilyCounts());
+        assertTrue(rewritePlan.rewritePolicy().summary().contains("blockingGuardFamilies={unknownVectorType=2}"));
         assertTrue(rewritePlan.guardDiagnostics().get(0).contains("unknown vector type"));
+        assertEquals(rewritePlan.guardDiagnostics().get(0), rewritePlan.typedGuardDiagnostics().get(0).summary());
+        assertEquals(GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE, rewritePlan.typedGuardDiagnostics().get(0).family());
+        assertEquals("stmt[1]", rewritePlan.typedGuardDiagnostics().get(0).location());
         assertEquals(java.util.Map.of("unknownVectorType", 2L), rewritePlan.guardFamilyCounts());
+        assertEquals("stmt[1]", rewritePlan.insertionOperations().get(0).loopLocation());
+        assertEquals("unknownx8", rewritePlan.insertionOperations().get(0).vectorType());
+        assertEquals(List.of("read leftB[i=0..7]", "read rightB[i=0..7]", "read bitsB[i=0..7]"), rewritePlan.insertionOperations().get(0).plannedVectorReads());
+        assertEquals("stmt[1]", rewritePlan.replacementOperations().get(0).loopLocation());
+        assertEquals("i", rewritePlan.replacementOperations().get(0).inductionVariable());
+        assertEquals(List.of("write outB[i=0..7]", "write maskB[i=0..7]"), rewritePlan.replacementOperations().get(0).plannedVectorWrites());
         assertTrue(rewritePlan.insertionPreviews().get(0).contains("type=unknownx8"));
         assertTrue(rewritePlan.insertionPreviews().get(0).contains("read leftB[i=0..7]"));
         assertTrue(rewritePlan.replacementPreviews().get(0).contains("write outB[i=0..7]"));
@@ -274,6 +300,9 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(rewritePlan.summary().contains("unknownVectorType=2"));
         assertTrue(rewritePlan.summary().contains("guardDiagnostics"));
         assertTrue(aggregatePreview.summary().contains("rewriteCandidates=2"));
+        assertTrue(aggregatePreview.summary().contains("rewritePolicyCanRewrite=false"));
+        assertTrue(aggregatePreview.summary().contains("rewritePolicyBlockingGuards=2"));
+        assertTrue(aggregatePreview.summary().contains("canApplyRewrite=false"));
         assertTrue(aggregatePreview.summary().contains("rewritePlanOperations=0"));
         assertTrue(aggregatePreview.summary().contains("vectorTypes="));
         assertTrue(aggregatePreview.summary().contains("unknownx8=1"));
@@ -326,6 +355,180 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(java.util.Map.of("int4", 1L), report.preview().vectorTypeCounts());
         assertTrue(preview.summary().contains("scalarElementType=int"));
         assertTrue(preview.summary().contains("vectorType=int4"));
+
+        GpuIrAutoVectorizationRewritePolicy policy = report.preview().rewritePlan().rewritePolicy();
+        assertTrue(policy.canRewrite());
+        assertTrue(report.preview().canApplyRewrite());
+        assertFalse(report.preview().hasPolicyBlockedRewrite());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.READY, policy.readiness());
+        assertEquals(1, policy.candidateCount());
+        assertEquals(2, policy.plannedOperationCount());
+        assertTrue(policy.firstBlockingGuard().isEmpty());
+        assertTrue(report.preview().firstRewritePlanGuard().isEmpty());
+        assertEquals(java.util.Map.of(), policy.blockingGuardFamilyCounts());
+        assertTrue(policy.summary().contains("canRewrite=true"));
+    }
+
+    @Test
+    void rewritePlanGuardsBackendSpecificVectorWidthsBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(3, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertEquals(1, preview.rewriteCandidateCount());
+        assertEquals("int3", preview.rewriteCandidates().get(0).vectorType());
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("backend vector width x3"));
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType(preview.rewritePlan().guardDiagnostics().get(0))
+        );
+        assertEquals(
+                java.util.Map.of(GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH, 1L),
+                preview.rewritePlan().guardFamilyTypeCounts()
+        );
+        assertEquals(java.util.Map.of("backendVectorWidth", 1L), preview.rewritePlan().guardFamilyCounts());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, preview.rewriteReadiness());
+    }
+
+    @Test
+    void rewritePlanGuardsDoubleVectorsBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("left", "double[]"),
+                parameter("out", "double[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertEquals(1, preview.rewriteCandidateCount());
+        assertEquals("double4", preview.rewriteCandidates().get(0).vectorType());
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("backend double vector type double4"));
+        assertEquals(
+                java.util.Map.of(GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_DOUBLE_VECTOR, 1L),
+                preview.rewritePlan().guardFamilyTypeCounts()
+        );
+        assertEquals(java.util.Map.of("backendDoubleVector", 1L), preview.rewritePlan().guardFamilyCounts());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, preview.rewriteReadiness());
+    }
+
+    @Test
+    void rewritePlanGuardsMemoryAddressSpacesBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("input", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("input", "int[]", net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace.CONSTANT, false),
+                parameter("out", "int[]", net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace.LOCAL, false)
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertEquals(1, preview.rewriteCandidateCount());
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("target array `out` uses local memory address space")));
+        assertTrue(preview.rewritePlan().guardDiagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("source array `input` uses constant memory address space")));
+        assertEquals(
+                java.util.Map.of(GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE, 2L),
+                preview.rewritePlan().guardFamilyTypeCounts()
+        );
+        assertEquals(java.util.Map.of("memoryAddressSpace", 2L), preview.rewritePlan().guardFamilyCounts());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, preview.rewriteReadiness());
+    }
+
+    @Test
+    void rewritePlanGuardsReadOnlyGlobalParametersBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("input", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("input", "int[]", net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace.GLOBAL, true),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0)
+                .contains("source array `input` uses constant memory address space"));
+        assertEquals(java.util.Map.of("memoryAddressSpace", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void guardFamilyTypeClassifiesAllKnownRewriteGuards() {
+        GpuIrAutoVectorizationRewriteGuardDiagnostic parsed = GpuIrAutoVectorizationRewriteGuardDiagnostic.fromLegacySummary(
+                "guard stmt[0]: backend vector width x3 requires explicit ABI support before rewrite operations"
+        );
+        assertEquals("stmt[0]", parsed.location());
+        assertEquals("guard stmt[0]: backend vector width x3 requires explicit ABI support before rewrite operations", parsed.summary());
+        assertEquals(GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH, parsed.family());
+
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[0]: unknown vector type blocks rewrite operations")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[0]: backend vector width x3 requires explicit ABI support before rewrite operations")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_DOUBLE_VECTOR,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[0]: backend double vector type double4 requires explicit device capability support before rewrite operations")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[0]: source array `input` uses constant memory address space before vector rewrite policy is proven")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.TARGET_SOURCE_ALIAS,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[0]: target array `out` is also read by the candidate")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_SOURCE_WRITE,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[1]: previous statement stmt[0] writes source array `left`")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_TARGET_WRITE,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[0]: next statement stmt[1] writes target array `out`")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.CONTROL_FLOW_BOUNDARY,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[1]: previous statement stmt[0] is a control-flow boundary before vector rewrite safety is proven")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.EARLY_EXIT_BOUNDARY,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[1]: previous statement stmt[0] is an early-exit boundary before vector rewrite safety is proven")
+        );
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.OTHER,
+                GpuIrAutoVectorizationRewritePlan.guardFamilyType("guard stmt[0]: future guard family")
+        );
     }
 
     @Test
@@ -393,6 +596,10 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(preview.hasRewriteCandidates());
         assertEquals(1, preview.rewriteCandidateCount());
         assertTrue(preview.rewriteCandidates().get(0).memoryGuardDiagnostics().get(0).contains("previous statement stmt[0] writes source array `left`"));
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_SOURCE_WRITE,
+                preview.rewriteCandidates().get(0).memoryGuardDiagnosticDetails().get(0).family()
+        );
         assertTrue(preview.rewritePlan().hasGuardDiagnostics());
         assertEquals(0, preview.rewritePlan().operationCount());
         assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("previous statement stmt[0] writes source array `left`"));
@@ -416,6 +623,10 @@ class GpuIrAutoVectorizationCandidateScannerTest {
 
         assertTrue(preview.hasRewriteCandidates());
         assertTrue(preview.rewriteCandidates().get(0).memoryGuardDiagnostics().get(0).contains("next statement stmt[1] writes target array `out`"));
+        assertEquals(
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_TARGET_WRITE,
+                preview.rewriteCandidates().get(0).memoryGuardDiagnosticDetails().get(0).family()
+        );
         assertTrue(preview.rewritePlan().hasGuardDiagnostics());
         assertEquals(0, preview.rewritePlan().operationCount());
         assertEquals(java.util.Map.of("neighborTargetWrite", 1L), preview.rewritePlan().guardFamilyCounts());
@@ -768,6 +979,32 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 List.of(),
                 List.of()
         ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRewritePlan(
+                "kernel",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of("guard stmt[0]: unknown vector type blocks rewrite operations"),
+                List.of()
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRewritePlan(
+                "kernel",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of("guard stmt[0]: unknown vector type blocks rewrite operations"),
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH,
+                        "stmt[0]",
+                        "backend vector width x3 requires explicit ABI support before rewrite operations"
+                ))
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRewritePolicy(
+                "kernel",
+                0,
+                1,
+                List.of()
+        ));
     }
 
     private GpuIrForLoop fixedWidthLoop(int endExclusive, List<net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement> body) {
@@ -803,11 +1040,20 @@ class GpuIrAutoVectorizationCandidateScannerTest {
     }
 
     private net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter parameter(String name, String type) {
+        return parameter(name, type, net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace.GLOBAL, false);
+    }
+
+    private net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter parameter(
+            String name,
+            String type,
+            net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace addressSpace,
+            boolean constant
+    ) {
         return new net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter(
                 name,
                 type,
-                net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace.GLOBAL,
-                false,
+                addressSpace,
+                constant,
                 List.of()
         );
     }

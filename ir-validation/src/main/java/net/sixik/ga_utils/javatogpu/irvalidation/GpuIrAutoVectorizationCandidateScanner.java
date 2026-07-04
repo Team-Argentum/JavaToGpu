@@ -26,6 +26,8 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrWhileLoop;
+import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import java.util.ArrayList;
@@ -219,6 +221,15 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                     "requires one supported scalar element type across lane reads/writes; observed=" + arrayElementTypes
             );
         }
+        List<GpuIrAutoVectorizationRewriteGuardDiagnostic> memoryGuardDiagnostics = new ArrayList<>(blockMutationGuards(
+                location,
+                siblingStatements,
+                statementIndex,
+                locationPrefix,
+                targetArrays,
+                sourceArrays
+        ));
+        memoryGuardDiagnostics.addAll(memoryAddressSpaceGuards(location, targetArrays, sourceArrays, typeLookup));
         return ScanResult.accepted(new GpuIrAutoVectorizationCandidate(
                 location,
                 bounds.get().inductionVariable(),
@@ -231,14 +242,62 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 List.copyOf(repeatedTargetWarnings),
                 List.copyOf(crossLaneReadWarnings),
                 List.copyOf(nonLaneReadWarnings),
-                blockMutationGuards(location, siblingStatements, statementIndex, locationPrefix, targetArrays, sourceArrays),
+                memoryGuardDiagnostics,
                 assignmentCount,
                 scalarElementType.orElseThrow(),
                 vectorType(scalarElementType.orElseThrow(), bounds.get().laneCount())
         ));
     }
 
-    private List<String> blockMutationGuards(
+    private List<GpuIrAutoVectorizationRewriteGuardDiagnostic> memoryAddressSpaceGuards(
+            String location,
+            Set<String> targetArrays,
+            Set<String> sourceArrays,
+            TypeLookup typeLookup
+    ) {
+        List<GpuIrAutoVectorizationRewriteGuardDiagnostic> diagnostics = new ArrayList<>();
+        for (String targetArray : targetArrays) {
+            typeLookup.parameter(targetArray).ifPresent(parameter -> {
+                if (parameter.addressSpace() == GpuAddressSpace.CONSTANT || parameter.constant()) {
+                    diagnostics.add(rewriteGuard(
+                            GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                            location,
+                            "target array `" + targetArray
+                                    + "` uses read-only memory address space before vector rewrite safety is proven"
+                    ));
+                } else if (parameter.addressSpace() == GpuAddressSpace.LOCAL) {
+                    diagnostics.add(rewriteGuard(
+                            GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                            location,
+                            "target array `" + targetArray
+                                    + "` uses local memory address space before vector rewrite safety is proven"
+                    ));
+                }
+            });
+        }
+        for (String sourceArray : sourceArrays) {
+            typeLookup.parameter(sourceArray).ifPresent(parameter -> {
+                if (parameter.addressSpace() == GpuAddressSpace.CONSTANT || parameter.constant()) {
+                    diagnostics.add(rewriteGuard(
+                            GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                            location,
+                            "source array `" + sourceArray
+                                    + "` uses constant memory address space before vector rewrite policy is proven"
+                    ));
+                } else if (parameter.addressSpace() == GpuAddressSpace.LOCAL) {
+                    diagnostics.add(rewriteGuard(
+                            GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                            location,
+                            "source array `" + sourceArray
+                                    + "` uses local memory address space before vector rewrite policy is proven"
+                    ));
+                }
+            });
+        }
+        return diagnostics;
+    }
+
+    private List<GpuIrAutoVectorizationRewriteGuardDiagnostic> blockMutationGuards(
             String location,
             List<GpuIrStatement> statements,
             int statementIndex,
@@ -246,7 +305,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             Set<String> targetArrays,
             Set<String> sourceArrays
     ) {
-        List<String> diagnostics = new ArrayList<>();
+        List<GpuIrAutoVectorizationRewriteGuardDiagnostic> diagnostics = new ArrayList<>();
         for (int siblingIndex = 0; siblingIndex < statements.size(); siblingIndex++) {
             if (siblingIndex == statementIndex) {
                 continue;
@@ -258,7 +317,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
     }
 
     private void collectBlockMutationGuard(
-            List<String> diagnostics,
+            List<GpuIrAutoVectorizationRewriteGuardDiagnostic> diagnostics,
             String location,
             GpuIrStatement sibling,
             int siblingIndex,
@@ -268,13 +327,21 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             Set<String> sourceArrays
     ) {
         if (isEarlyExitBoundary(sibling)) {
-            diagnostics.add("guard " + location + ": " + side + " statement " + locationPrefix + "[" + siblingIndex + "]"
-                    + " is an early-exit boundary before vector rewrite safety is proven");
+            diagnostics.add(rewriteGuard(
+                    GpuIrAutoVectorizationRewriteGuardFamily.EARLY_EXIT_BOUNDARY,
+                    location,
+                    side + " statement " + locationPrefix + "[" + siblingIndex + "]"
+                            + " is an early-exit boundary before vector rewrite safety is proven"
+            ));
             return;
         }
         if (isControlFlowBoundary(sibling)) {
-            diagnostics.add("guard " + location + ": " + side + " statement " + locationPrefix + "[" + siblingIndex + "]"
-                    + " is a control-flow boundary before vector rewrite safety is proven");
+            diagnostics.add(rewriteGuard(
+                    GpuIrAutoVectorizationRewriteGuardFamily.CONTROL_FLOW_BOUNDARY,
+                    location,
+                    side + " statement " + locationPrefix + "[" + siblingIndex + "]"
+                            + " is a control-flow boundary before vector rewrite safety is proven"
+            ));
             return;
         }
         if (!(sibling instanceof GpuIrAssignment assignment) || !(assignment.target() instanceof GpuIrArrayAccess target)) {
@@ -283,13 +350,27 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         String arrayName = target.arrayName();
         String neighborLocation = locationPrefix + "[" + siblingIndex + "]";
         if (sourceArrays.contains(arrayName)) {
-            diagnostics.add("guard " + location + ": " + side + " statement " + neighborLocation
-                    + " writes source array `" + arrayName + "`");
+            diagnostics.add(rewriteGuard(
+                    GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_SOURCE_WRITE,
+                    location,
+                    side + " statement " + neighborLocation + " writes source array `" + arrayName + "`"
+            ));
         }
         if (targetArrays.contains(arrayName)) {
-            diagnostics.add("guard " + location + ": " + side + " statement " + neighborLocation
-                    + " writes target array `" + arrayName + "`");
+            diagnostics.add(rewriteGuard(
+                    GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_TARGET_WRITE,
+                    location,
+                    side + " statement " + neighborLocation + " writes target array `" + arrayName + "`"
+            ));
         }
+    }
+
+    private GpuIrAutoVectorizationRewriteGuardDiagnostic rewriteGuard(
+            GpuIrAutoVectorizationRewriteGuardFamily family,
+            String location,
+            String message
+    ) {
+        return new GpuIrAutoVectorizationRewriteGuardDiagnostic(family, location, message);
     }
 
     private boolean isEarlyExitBoundary(GpuIrStatement statement) {
@@ -552,6 +633,15 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 return Optional.empty();
             }
             return typeResolver.typeOf(method, arrayAccess);
+        }
+
+        Optional<ParsedGpuParameter> parameter(String name) {
+            if (method == null || method.parsedMethod() == null || method.parsedMethod().parameters() == null) {
+                return Optional.empty();
+            }
+            return method.parsedMethod().parameters().stream()
+                    .filter(parameter -> name.equals(parameter.name()))
+                    .findFirst();
         }
     }
 

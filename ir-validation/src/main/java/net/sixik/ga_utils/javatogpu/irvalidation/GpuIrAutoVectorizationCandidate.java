@@ -18,7 +18,7 @@ public record GpuIrAutoVectorizationCandidate(
         List<String> repeatedTargetWarnings,
         List<String> crossLaneReadWarnings,
         List<String> nonLaneReadWarnings,
-        List<String> memoryGuardDiagnostics,
+        List<GpuIrAutoVectorizationRewriteGuardDiagnostic> memoryGuardDiagnosticDetails,
         int assignmentCount,
         String scalarElementType,
         String vectorType
@@ -51,10 +51,7 @@ public record GpuIrAutoVectorizationCandidate(
         repeatedTargetWarnings = List.copyOf(Objects.requireNonNull(repeatedTargetWarnings, "repeatedTargetWarnings"));
         crossLaneReadWarnings = List.copyOf(Objects.requireNonNull(crossLaneReadWarnings, "crossLaneReadWarnings"));
         nonLaneReadWarnings = List.copyOf(Objects.requireNonNull(nonLaneReadWarnings, "nonLaneReadWarnings"));
-        memoryGuardDiagnostics = List.copyOf(Objects.requireNonNull(memoryGuardDiagnostics, "memoryGuardDiagnostics"));
-        if (memoryGuardDiagnostics.stream().anyMatch(diagnostic -> diagnostic == null || diagnostic.isBlank())) {
-            throw new IllegalArgumentException("memoryGuardDiagnostics must not contain blank entries");
-        }
+        memoryGuardDiagnosticDetails = List.copyOf(Objects.requireNonNull(memoryGuardDiagnosticDetails, "memoryGuardDiagnosticDetails"));
         if (assignmentCount <= 0) {
             throw new IllegalArgumentException("assignmentCount must be positive");
         }
@@ -94,7 +91,13 @@ public record GpuIrAutoVectorizationCandidate(
     }
 
     public boolean hasMemoryGuardDiagnostics() {
-        return !memoryGuardDiagnostics.isEmpty();
+        return !memoryGuardDiagnosticDetails.isEmpty();
+    }
+
+    public List<String> memoryGuardDiagnostics() {
+        return memoryGuardDiagnosticDetails.stream()
+                .map(GpuIrAutoVectorizationRewriteGuardDiagnostic::summary)
+                .toList();
     }
 
     /**
@@ -123,6 +126,7 @@ public record GpuIrAutoVectorizationCandidate(
                 + (repeatedTargetWarnings.isEmpty() ? "" : " repeatedTargetWarnings=" + repeatedTargetWarnings)
                 + (crossLaneReadWarnings.isEmpty() ? "" : " crossLaneReadWarnings=" + crossLaneReadWarnings)
                 + (nonLaneReadWarnings.isEmpty() ? "" : " nonLaneReadWarnings=" + nonLaneReadWarnings)
-                + (memoryGuardDiagnostics.isEmpty() ? "" : " memoryGuardDiagnostics=" + memoryGuardDiagnostics);
+                + (memoryGuardDiagnosticDetails.isEmpty() ? "" : " memoryGuardDiagnostics=" + memoryGuardDiagnostics());
     }
+
 }
