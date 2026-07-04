@@ -236,6 +236,8 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(2, ranked.size());
         assertEquals("stmt[1]", ranked.get(0).loopLocation());
         assertEquals(16, ranked.get(0).priorityScore());
+        assertEquals("unknown", ranked.get(0).scalarElementType());
+        assertEquals("unknownx8", ranked.get(0).vectorType());
         assertEquals("stmt[0]", ranked.get(1).loopLocation());
         assertEquals(4, ranked.get(1).priorityScore());
         assertTrue(ranked.stream().allMatch(GpuIrAutoVectorizationCandidate::isRewritePriorityCandidate));
@@ -251,8 +253,29 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(0, aggregatePreview.rejectionCount());
         assertEquals(2, aggregatePreview.totalDiagnosticCount());
         assertEquals(java.util.Map.of(), aggregatePreview.warningFamilyCounts());
+        assertEquals(java.util.Map.of("unknownx4", 1L, "unknownx8", 1L), aggregatePreview.vectorTypeCounts());
         assertTrue(aggregatePreview.firstBlockingDiagnosticSummary().isEmpty());
+        GpuIrAutoVectorizationRewritePlan rewritePlan = aggregatePreview.rewritePlan();
+        assertTrue(rewritePlan.hasOperations());
+        assertEquals(2, rewritePlan.candidateCount());
+        assertTrue(rewritePlan.hasGuardDiagnostics());
+        assertEquals(2, rewritePlan.rawInsertionPreviewCount());
+        assertEquals(2, rewritePlan.rawReplacementPreviewCount());
+        assertEquals(0, rewritePlan.insertionCount());
+        assertEquals(0, rewritePlan.replacementCount());
+        assertEquals(0, rewritePlan.operationCount());
+        assertTrue(rewritePlan.guardDiagnostics().get(0).contains("unknown vector type"));
+        assertEquals(java.util.Map.of("unknownVectorType", 2L), rewritePlan.guardFamilyCounts());
+        assertTrue(rewritePlan.insertionPreviews().get(0).contains("type=unknownx8"));
+        assertTrue(rewritePlan.insertionPreviews().get(0).contains("read leftB[i=0..7]"));
+        assertTrue(rewritePlan.replacementPreviews().get(0).contains("write outB[i=0..7]"));
+        assertTrue(rewritePlan.summary().contains("operations=0"));
+        assertTrue(rewritePlan.summary().contains("unknownVectorType=2"));
+        assertTrue(rewritePlan.summary().contains("guardDiagnostics"));
         assertTrue(aggregatePreview.summary().contains("rewriteCandidates=2"));
+        assertTrue(aggregatePreview.summary().contains("rewritePlanOperations=0"));
+        assertTrue(aggregatePreview.summary().contains("vectorTypes="));
+        assertTrue(aggregatePreview.summary().contains("unknownx8=1"));
         GpuIrAutoVectorizationRewriteCandidatePreview preview = report.previewRewritePriorityCandidates().get(0);
         assertEquals("stmt[1]", preview.loopLocation());
         assertEquals("i", preview.inductionVariable());
@@ -262,13 +285,190 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(2, preview.assignmentCount());
         assertEquals(16, preview.priorityScore());
         assertEquals("x8", preview.vectorWidth());
+        assertEquals("unknown", preview.scalarElementType());
+        assertEquals("unknownx8", preview.vectorType());
         assertEquals(List.of("write outB[i=0..7]", "write maskB[i=0..7]"), preview.plannedVectorWrites());
         assertEquals(List.of("read leftB[i=0..7]", "read rightB[i=0..7]", "read bitsB[i=0..7]"), preview.plannedVectorReads());
         assertEquals(List.of("outB", "maskB"), preview.targetArrays());
         assertTrue(preview.summary().contains("rewrite candidate"));
         assertTrue(preview.summary().contains("vectorWidth=x8"));
+        assertTrue(preview.summary().contains("vectorType=unknownx8"));
         assertTrue(preview.summary().contains("laneRange=0..7"));
         assertTrue(report.summary().contains("rewritePreviews=2"));
+    }
+
+    @Test
+    void compiledMethodPreviewUsesResolvedScalarElementType() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )))
+        ));
+
+        GpuIrAutoVectorizationReport report = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("right", "int[]"),
+                parameter("out", "int[]")
+        ));
+
+        assertEquals(1, report.candidateCount());
+        GpuIrAutoVectorizationCandidate candidate = report.candidates().get(0);
+        assertEquals("int", candidate.scalarElementType());
+        assertEquals("int4", candidate.vectorType());
+        GpuIrAutoVectorizationRewriteCandidatePreview preview = report.previewRewritePriorityCandidates().get(0);
+        assertEquals("int", preview.scalarElementType());
+        assertEquals("int4", preview.vectorType());
+        assertEquals(java.util.Map.of("int4", 1L), report.preview().vectorTypeCounts());
+        assertTrue(preview.summary().contains("scalarElementType=int"));
+        assertTrue(preview.summary().contains("vectorType=int4"));
+    }
+
+    @Test
+    void compiledMethodRejectsMixedScalarElementTypesBeforeRewritePreview() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )))
+        ));
+
+        GpuIrAutoVectorizationReport report = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("right", "float[]"),
+                parameter("out", "int[]")
+        ));
+
+        assertFalse(report.hasCandidates());
+        assertTrue(report.hasRejections());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_ELEMENT_TYPE, report.rejections().get(0).reason());
+        assertTrue(report.rejections().get(0).summary().contains("left=int"));
+        assertTrue(report.rejections().get(0).summary().contains("right=float"));
+        assertTrue(report.rejections().get(0).summary().contains("out=int"));
+        assertFalse(report.preview().hasRewriteCandidates());
+        assertTrue(report.preview().hasRejections());
+    }
+
+    @Test
+    void compiledMethodRejectsUnknownArrayElementTypesBeforeRewritePreview() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("missing", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationReport report = scanner.scan(compiledMethod(method,
+                parameter("out", "int[]")
+        ));
+
+        assertFalse(report.hasCandidates());
+        assertTrue(report.hasRejections());
+        assertEquals(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_ELEMENT_TYPE, report.rejections().get(0).reason());
+        assertTrue(report.rejections().get(0).summary().contains("missing=null"));
+    }
+
+    @Test
+    void rewritePlanGuardsNeighboringSourceMutationsBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrArrayAccess("left", new GpuIrLiteral("0")), new GpuIrLiteral("7")),
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertEquals(1, preview.rewriteCandidateCount());
+        assertTrue(preview.rewriteCandidates().get(0).memoryGuardDiagnostics().get(0).contains("previous statement stmt[0] writes source array `left`"));
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("previous statement stmt[0] writes source array `left`"));
+        assertEquals(java.util.Map.of("neighborSourceWrite", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGuardsNeighboringTargetMutationsBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                ))),
+                new GpuIrAssignment(new GpuIrArrayAccess("out", new GpuIrLiteral("0")), new GpuIrLiteral("3"))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("left", "int[]"),
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertTrue(preview.rewriteCandidates().get(0).memoryGuardDiagnostics().get(0).contains("next statement stmt[1] writes target array `out`"));
+        assertTrue(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertEquals(java.util.Map.of("neighborTargetWrite", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGroupsTargetSourceAliasGuardFamilies() {
+        GpuIrAutoVectorizationRewriteCandidatePreview candidate = new GpuIrAutoVectorizationRewriteCandidatePreview(
+                "stmt[0]",
+                "i",
+                0,
+                4,
+                4,
+                1,
+                4,
+                "x4",
+                "int",
+                "int4",
+                List.of("write out[i=0..3]"),
+                List.of("read out[i=0..3]"),
+                List.of(),
+                List.of("out"),
+                List.of("out")
+        );
+
+        GpuIrAutoVectorizationRewritePlan plan = new GpuIrAutoVectorizationPreview(
+                "kernel",
+                List.of(candidate),
+                List.of(),
+                List.of()
+        ).rewritePlan();
+
+        assertTrue(plan.hasGuardDiagnostics());
+        assertEquals(0, plan.operationCount());
+        assertEquals(java.util.Map.of("targetSourceAlias", 1L), plan.guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGuardsTargetSourceAliasingBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationReport report = scanner.scan(compiledMethod(method,
+                parameter("out", "int[]")
+        ));
+
+        assertTrue(report.hasCandidates());
+        assertTrue(report.hasAliasWarnings());
+        assertFalse(report.preview().hasRewriteCandidates());
+        assertEquals(0, report.preview().rewritePlan().operationCount());
     }
 
     @Test
@@ -428,7 +628,10 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 List.of(),
                 List.of(),
                 List.of(),
-                1
+                List.of(),
+                1,
+                "int",
+                "int4"
         ));
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRejectionDiagnostic(
                 "",
@@ -452,7 +655,10 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 1,
                 0,
                 "x4",
+                "int",
+                "int4",
                 List.of("write out[i=0..3]"),
+                List.of(),
                 List.of(),
                 List.of("out"),
                 List.of()
@@ -460,6 +666,13 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationPreview(
                 "",
                 List.of(),
+                List.of(),
+                List.of()
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRewritePlan(
+                "kernel",
+                List.of(),
+                List.of("extra insertion"),
                 List.of(),
                 List.of()
         ));
@@ -471,6 +684,39 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 new GpuIrBinary("<", new GpuIrVariableRef("i"), new GpuIrLiteral(Integer.toString(endExclusive))),
                 new GpuIrAssignment(new GpuIrVariableRef("i"), new GpuIrBinary("+", new GpuIrVariableRef("i"), new GpuIrLiteral("1"))),
                 body
+        );
+    }
+
+    private net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod compiledMethod(
+            GpuIrMethod irMethod,
+            net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter... parameters
+    ) {
+        net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod parsedMethod = new net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod(
+                "KernelOwner",
+                "test.KernelOwner",
+                irMethod.name(),
+                "void",
+                List.of(parameters),
+                List.of(),
+                List.of(),
+                null,
+                false,
+                List.of(),
+                null,
+                "",
+                null,
+                false
+        );
+        return new net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod(parsedMethod, irMethod, "jtg_kernel", List.of());
+    }
+
+    private net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter parameter(String name, String type) {
+        return new net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter(
+                name,
+                type,
+                net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace.GLOBAL,
+                false,
+                List.of()
         );
     }
 

@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrCast;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrExpression;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrFieldAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrHelperCall;
@@ -11,6 +12,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrStructInit;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrTernary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrUnary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
+import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrDoWhileLoop;
@@ -20,10 +22,13 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrWhileLoop;
+import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -34,16 +39,36 @@ public final class GpuIrAutoVectorizationCandidateScanner {
     private static final Set<Integer> SUPPORTED_LANE_COUNTS = Set.of(2, 3, 4, 8, 16);
 
     private final GpuIrExpressionClassifier expressionClassifier;
+    private final GpuIrExpressionTypeResolver typeResolver;
 
     public GpuIrAutoVectorizationCandidateScanner() {
-        this(new GpuIrExpressionClassifier());
+        this(new GpuIrExpressionClassifier(), new GpuIrExpressionTypeResolver());
     }
 
     public GpuIrAutoVectorizationCandidateScanner(GpuIrExpressionClassifier expressionClassifier) {
+        this(expressionClassifier, new GpuIrExpressionTypeResolver());
+    }
+
+    public GpuIrAutoVectorizationCandidateScanner(
+            GpuIrExpressionClassifier expressionClassifier,
+            GpuIrExpressionTypeResolver typeResolver
+    ) {
         this.expressionClassifier = expressionClassifier;
+        this.typeResolver = typeResolver;
     }
 
     public GpuIrAutoVectorizationReport scan(GpuIrMethod method) {
+        return scan(method, TypeLookup.unknown());
+    }
+
+    public GpuIrAutoVectorizationReport scan(GpuIrCompiledMethod method) {
+        if (method == null) {
+            return scan((GpuIrMethod) null);
+        }
+        return scan(method.irMethod(), TypeLookup.compiled(method, typeResolver));
+    }
+
+    private GpuIrAutoVectorizationReport scan(GpuIrMethod method, TypeLookup typeLookup) {
         List<GpuIrAutoVectorizationCandidate> candidates = new ArrayList<>();
         List<GpuIrAutoVectorizationRejectionDiagnostic> rejections = new ArrayList<>();
         if (method == null) {
@@ -54,7 +79,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             ));
             return new GpuIrAutoVectorizationReport("<missing>", candidates, rejections);
         }
-        scanStatements(method.statements(), "stmt", candidates, rejections);
+        scanStatements(method.statements(), "stmt", candidates, rejections, typeLookup);
         return new GpuIrAutoVectorizationReport(method.name(), candidates, rejections);
     }
 
@@ -62,7 +87,8 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             List<GpuIrStatement> statements,
             String locationPrefix,
             List<GpuIrAutoVectorizationCandidate> candidates,
-            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
+            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
+            TypeLookup typeLookup
     ) {
         if (statements == null) {
             rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
@@ -73,15 +99,19 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             return;
         }
         for (int index = 0; index < statements.size(); index++) {
-            scanStatement(statements.get(index), locationPrefix + "[" + index + "]", candidates, rejections);
+            scanStatement(statements.get(index), locationPrefix + "[" + index + "]", statements, index, locationPrefix, candidates, rejections, typeLookup);
         }
     }
 
     private void scanStatement(
             GpuIrStatement statement,
             String location,
+            List<GpuIrStatement> siblingStatements,
+            int statementIndex,
+            String locationPrefix,
             List<GpuIrAutoVectorizationCandidate> candidates,
-            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
+            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
+            TypeLookup typeLookup
     ) {
         if (statement == null) {
             rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
@@ -90,17 +120,17 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                     "missing statement"
             ));
         } else if (statement instanceof GpuIrForLoop loop) {
-            ScanResult result = candidateFromLoop(location, loop);
+            ScanResult result = candidateFromLoop(location, loop, typeLookup, siblingStatements, statementIndex, locationPrefix);
             result.candidate().ifPresent(candidates::add);
             result.rejection().ifPresent(rejections::add);
-            scanStatements(loop.body(), location + ".body.stmt", candidates, rejections);
+            scanStatements(loop.body(), location + ".body.stmt", candidates, rejections, typeLookup);
         } else if (statement instanceof GpuIrIf gpuIf) {
-            scanStatements(gpuIf.thenBranch(), location + ".then.stmt", candidates, rejections);
-            scanStatements(gpuIf.elseBranch(), location + ".else.stmt", candidates, rejections);
+            scanStatements(gpuIf.thenBranch(), location + ".then.stmt", candidates, rejections, typeLookup);
+            scanStatements(gpuIf.elseBranch(), location + ".else.stmt", candidates, rejections, typeLookup);
         } else if (statement instanceof GpuIrWhileLoop loop) {
-            scanStatements(loop.body(), location + ".body.stmt", candidates, rejections);
+            scanStatements(loop.body(), location + ".body.stmt", candidates, rejections, typeLookup);
         } else if (statement instanceof GpuIrDoWhileLoop loop) {
-            scanStatements(loop.body(), location + ".body.stmt", candidates, rejections);
+            scanStatements(loop.body(), location + ".body.stmt", candidates, rejections, typeLookup);
         } else if (statement instanceof GpuIrSwitch gpuSwitch) {
             if (gpuSwitch.cases() == null) {
                 rejections.add(new GpuIrAutoVectorizationRejectionDiagnostic(
@@ -118,13 +148,20 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                             "missing switch case"
                     ));
                 } else {
-                    scanStatements(gpuSwitch.cases().get(caseIndex).statements(), location + ".case[" + caseIndex + "].stmt", candidates, rejections);
+                    scanStatements(gpuSwitch.cases().get(caseIndex).statements(), location + ".case[" + caseIndex + "].stmt", candidates, rejections, typeLookup);
                 }
             }
         }
     }
 
-    private ScanResult candidateFromLoop(String location, GpuIrForLoop loop) {
+    private ScanResult candidateFromLoop(
+            String location,
+            GpuIrForLoop loop,
+            TypeLookup typeLookup,
+            List<GpuIrStatement> siblingStatements,
+            int statementIndex,
+            String locationPrefix
+    ) {
         Optional<LoopBounds> bounds = loopBounds(loop);
         if (bounds.isEmpty()) {
             return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_LOOP_SHAPE, "requires int i = 0; i < laneCount; i = i + 1");
@@ -144,6 +181,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         LinkedHashSet<String> repeatedTargetWarnings = new LinkedHashSet<>();
         LinkedHashSet<String> crossLaneReadWarnings = new LinkedHashSet<>();
         LinkedHashSet<String> nonLaneReadWarnings = new LinkedHashSet<>();
+        LinkedHashMap<String, String> arrayElementTypes = new LinkedHashMap<>();
         int assignmentCount = 0;
         for (GpuIrStatement statement : loop.body()) {
             if (statement == null) {
@@ -159,14 +197,23 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             if (expressionClassifier.mayHaveSideEffects(assignment.value())) {
                 return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, "assignment value may have side effects");
             }
+            collectTypedArrayAccess(target, arrayElementTypes, typeLookup);
             if (!targetArrays.add(target.arrayName())) {
                 repeatedTargetWarnings.add("target array `" + target.arrayName() + "` is written more than once in the loop body");
             }
-            collectArrayReads(assignment.value(), bounds.get().inductionVariable(), sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(assignment.value(), bounds.get().inductionVariable(), sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
             assignmentCount++;
         }
         if (assignmentCount == 0 || targetArrays.isEmpty()) {
             return ScanResult.rejected(location, GpuIrAutoVectorizationRejectionReason.EMPTY_BODY, "loop body has no lane-wise assignments");
+        }
+        Optional<String> scalarElementType = scalarElementType(arrayElementTypes, typeLookup.requiresKnownTypes());
+        if (scalarElementType.isEmpty()) {
+            return ScanResult.rejected(
+                    location,
+                    GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_ELEMENT_TYPE,
+                    "requires one supported scalar element type across lane reads/writes; observed=" + arrayElementTypes
+            );
         }
         return ScanResult.accepted(new GpuIrAutoVectorizationCandidate(
                 location,
@@ -180,8 +227,77 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                 List.copyOf(repeatedTargetWarnings),
                 List.copyOf(crossLaneReadWarnings),
                 List.copyOf(nonLaneReadWarnings),
-                assignmentCount
+                neighboringMutationGuards(location, siblingStatements, statementIndex, locationPrefix, targetArrays, sourceArrays),
+                assignmentCount,
+                scalarElementType.orElseThrow(),
+                vectorType(scalarElementType.orElseThrow(), bounds.get().laneCount())
         ));
+    }
+
+    private List<String> neighboringMutationGuards(
+            String location,
+            List<GpuIrStatement> statements,
+            int statementIndex,
+            String locationPrefix,
+            Set<String> targetArrays,
+            Set<String> sourceArrays
+    ) {
+        List<String> diagnostics = new ArrayList<>();
+        collectNeighboringMutationGuard(diagnostics, location, statements, statementIndex - 1, locationPrefix, "previous", targetArrays, sourceArrays);
+        collectNeighboringMutationGuard(diagnostics, location, statements, statementIndex + 1, locationPrefix, "next", targetArrays, sourceArrays);
+        return diagnostics;
+    }
+
+    private void collectNeighboringMutationGuard(
+            List<String> diagnostics,
+            String location,
+            List<GpuIrStatement> statements,
+            int neighborIndex,
+            String locationPrefix,
+            String side,
+            Set<String> targetArrays,
+            Set<String> sourceArrays
+    ) {
+        if (neighborIndex < 0 || neighborIndex >= statements.size()) {
+            return;
+        }
+        GpuIrStatement neighbor = statements.get(neighborIndex);
+        if (!(neighbor instanceof GpuIrAssignment assignment) || !(assignment.target() instanceof GpuIrArrayAccess target)) {
+            return;
+        }
+        String arrayName = target.arrayName();
+        String neighborLocation = locationPrefix + "[" + neighborIndex + "]";
+        if (sourceArrays.contains(arrayName)) {
+            diagnostics.add("guard " + location + ": " + side + " statement " + neighborLocation
+                    + " writes source array `" + arrayName + "`");
+        }
+        if (targetArrays.contains(arrayName)) {
+            diagnostics.add("guard " + location + ": " + side + " statement " + neighborLocation
+                    + " writes target array `" + arrayName + "`");
+        }
+    }
+
+    private Optional<String> scalarElementType(Map<String, String> arrayElementTypes, boolean requiresKnownTypes) {
+        if (requiresKnownTypes && arrayElementTypes.values().stream().anyMatch(type -> type == null || type.isBlank())) {
+            return Optional.empty();
+        }
+        LinkedHashSet<String> knownTypes = new LinkedHashSet<>(arrayElementTypes.values());
+        knownTypes.removeIf(type -> type == null || type.isBlank());
+        if (knownTypes.isEmpty()) {
+            return requiresKnownTypes ? Optional.empty() : Optional.of("unknown");
+        }
+        if (knownTypes.size() != 1) {
+            return Optional.empty();
+        }
+        String type = GpuTypeSupport.declaredType(knownTypes.iterator().next());
+        if (!GpuTypeSupport.isSupportedScalarType(type) || "boolean".equals(type)) {
+            return Optional.empty();
+        }
+        return Optional.of(type);
+    }
+
+    private String vectorType(String scalarElementType, int laneCount) {
+        return "unknown".equals(scalarElementType) ? "unknownx" + laneCount : scalarElementType + laneCount;
     }
 
     private List<String> aliasWarnings(Set<String> targetArrays, Set<String> sourceArrays) {
@@ -199,13 +315,16 @@ public final class GpuIrAutoVectorizationCandidateScanner {
             String inductionVariable,
             Set<String> sourceArrays,
             Set<String> crossLaneReadWarnings,
-            Set<String> nonLaneReadWarnings
+            Set<String> nonLaneReadWarnings,
+            Map<String, String> arrayElementTypes,
+            TypeLookup typeLookup
     ) {
         if (expression == null) {
             return;
         }
         if (expression instanceof GpuIrArrayAccess arrayAccess) {
             sourceArrays.add(arrayAccess.arrayName());
+            collectTypedArrayAccess(arrayAccess, arrayElementTypes, typeLookup);
             Optional<Integer> laneRelativeOffset = laneRelativeOffset(arrayAccess.index(), inductionVariable);
             if (laneRelativeOffset.isPresent() && laneRelativeOffset.get() != 0) {
                 crossLaneReadWarnings.add("array `" + arrayAccess.arrayName()
@@ -216,41 +335,51 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                         + "` is read with non-lane index " + indexSummary(arrayAccess.index())
                         + " instead of `" + inductionVariable + "`");
             }
-            collectArrayReads(arrayAccess.index(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(arrayAccess.index(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
         } else if (expression instanceof GpuIrBinary binary) {
-            collectArrayReads(binary.left(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
-            collectArrayReads(binary.right(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(binary.left(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
+            collectArrayReads(binary.right(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
         } else if (expression instanceof GpuIrUnary unary) {
-            collectArrayReads(unary.operand(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(unary.operand(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
+        } else if (expression instanceof GpuIrCast cast) {
+            collectArrayReads(cast.expression(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
         } else if (expression instanceof GpuIrTernary ternary) {
-            collectArrayReads(ternary.condition(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
-            collectArrayReads(ternary.whenTrue(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
-            collectArrayReads(ternary.whenFalse(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(ternary.condition(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
+            collectArrayReads(ternary.whenTrue(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
+            collectArrayReads(ternary.whenFalse(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
         } else if (expression instanceof GpuIrFieldAccess fieldAccess) {
-            collectArrayReads(fieldAccess.target(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(fieldAccess.target(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
         } else if (expression instanceof GpuIrStructInit structInit) {
             if (structInit.arguments() == null) {
                 return;
             }
             for (GpuIrExpression argument : structInit.arguments()) {
-                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
             }
         } else if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
-            collectArrayReads(intrinsicCall.receiver(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+            collectArrayReads(intrinsicCall.receiver(), inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
             if (intrinsicCall.arguments() == null) {
                 return;
             }
             for (GpuIrExpression argument : intrinsicCall.arguments()) {
-                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
             }
         } else if (expression instanceof GpuIrHelperCall helperCall) {
             if (helperCall.arguments() == null) {
                 return;
             }
             for (GpuIrExpression argument : helperCall.arguments()) {
-                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings);
+                collectArrayReads(argument, inductionVariable, sourceArrays, crossLaneReadWarnings, nonLaneReadWarnings, arrayElementTypes, typeLookup);
             }
         }
+    }
+
+    private void collectTypedArrayAccess(
+            GpuIrArrayAccess arrayAccess,
+            Map<String, String> arrayElementTypes,
+            TypeLookup typeLookup
+    ) {
+        arrayElementTypes.putIfAbsent(arrayAccess.arrayName(), typeLookup.elementType(arrayAccess).orElse(null));
     }
 
     private Optional<Integer> laneRelativeOffset(GpuIrExpression index, String inductionVariable) {
@@ -353,6 +482,27 @@ public final class GpuIrAutoVectorizationCandidateScanner {
     private record LoopBounds(String inductionVariable, int startInclusive, int endExclusive) {
         int laneCount() {
             return endExclusive - startInclusive;
+        }
+    }
+
+    private record TypeLookup(GpuIrCompiledMethod method, GpuIrExpressionTypeResolver typeResolver) {
+        static TypeLookup unknown() {
+            return new TypeLookup(null, null);
+        }
+
+        static TypeLookup compiled(GpuIrCompiledMethod method, GpuIrExpressionTypeResolver typeResolver) {
+            return new TypeLookup(method, typeResolver);
+        }
+
+        boolean requiresKnownTypes() {
+            return method != null;
+        }
+
+        Optional<String> elementType(GpuIrArrayAccess arrayAccess) {
+            if (method == null || typeResolver == null) {
+                return Optional.empty();
+            }
+            return typeResolver.typeOf(method, arrayAccess);
         }
     }
 

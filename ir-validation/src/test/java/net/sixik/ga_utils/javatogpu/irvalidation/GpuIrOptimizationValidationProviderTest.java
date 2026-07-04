@@ -15,7 +15,9 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvid
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRequest;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
+import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -153,7 +155,11 @@ class GpuIrOptimizationValidationProviderTest {
                                 )
                         )),
                         laneAssignment("scratch", arrayRead("input", new GpuIrVariableRef("j")))
-                ))))),
+                )))), List.of(
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]"),
+                        parameter("scratch", "int[]")
+                )),
                 List.of(),
                 List.of(),
                 true,
@@ -171,6 +177,66 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.repeatedTarget")));
         assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.crossLaneRead")));
         assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.nonLaneRead")));
+    }
+
+    @Test
+    void reportEntryIncludesAutoVectorizationRewritePlanCounters() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(fixedWidthLoop(4, List.of(
+                        laneAssignment("out", arrayRead("input", new GpuIrVariableRef("i")))
+                )))), List.of(
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]")
+                )),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanCandidates")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanInsertions")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanReplacements")));
+        assertTrue("2".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
+        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationVectorType.int4")));
+    }
+
+    @Test
+    void reportEntryIncludesAutoVectorizationRewritePlanGuardFamilies() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(
+                        new GpuIrAssignment(arrayRead("input", new GpuIrLiteral("0")), new GpuIrLiteral("7")),
+                        fixedWidthLoop(4, List.of(
+                                laneAssignment("out", arrayRead("input", new GpuIrVariableRef("i")))
+                        ))
+                )), List.of(
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]")
+                )),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationCandidates")));
+        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationRewritePlanOperations")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuards")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRewritePlanGuardFamily.neighborSourceWrite")));
     }
 
     @Test
@@ -232,16 +298,24 @@ class GpuIrOptimizationValidationProviderTest {
     }
 
     private GpuIrCompiledMethod method(GpuIrMethod irMethod) {
-        return new GpuIrCompiledMethod(parsedMethod(irMethod.name()), irMethod, "jtg_" + irMethod.name(), List.of());
+        return method(irMethod, List.of());
+    }
+
+    private GpuIrCompiledMethod method(GpuIrMethod irMethod, List<ParsedGpuParameter> parameters) {
+        return new GpuIrCompiledMethod(parsedMethod(irMethod.name(), parameters), irMethod, "jtg_" + irMethod.name(), List.of());
     }
 
     private ParsedGpuMethod parsedMethod(String name) {
+        return parsedMethod(name, List.of());
+    }
+
+    private ParsedGpuMethod parsedMethod(String name, List<ParsedGpuParameter> parameters) {
         return new ParsedGpuMethod(
                 "Owner",
                 "test.Owner",
                 name,
                 "void",
-                List.of(),
+                parameters,
                 List.of(),
                 List.of(),
                 null,
@@ -252,5 +326,9 @@ class GpuIrOptimizationValidationProviderTest {
                 null,
                 false
         );
+    }
+
+    private ParsedGpuParameter parameter(String name, String type) {
+        return new ParsedGpuParameter(name, type, GpuAddressSpace.GLOBAL, false, List.of());
     }
 }

@@ -52,6 +52,19 @@ public record GpuIrAutoVectorizationPreview(
         return rewriteCandidateCount() + warningCount() + rejectionCount();
     }
 
+    public GpuIrAutoVectorizationRewritePlan rewritePlan() {
+        return GpuIrAutoVectorizationRewritePlan.from(this);
+    }
+
+    public Map<String, Long> vectorTypeCounts() {
+        return rewriteCandidates.stream()
+                .collect(Collectors.groupingBy(
+                        GpuIrAutoVectorizationRewriteCandidatePreview::vectorType,
+                        java.util.LinkedHashMap::new,
+                        Collectors.counting()
+                ));
+    }
+
     public boolean hasBlockingDiagnostics() {
         return hasWarnings() || hasRejections();
     }
@@ -94,6 +107,8 @@ public record GpuIrAutoVectorizationPreview(
     public String summary() {
         return "auto-vectorization preview method=" + methodName
                 + " rewriteCandidates=" + rewriteCandidateCount()
+                + " rewritePlanOperations=" + rewritePlan().operationCount()
+                + (hasRewriteCandidates() ? " vectorTypes=" + vectorTypeCounts() : "")
                 + " warnings=" + warningCount()
                 + " totalDiagnostics=" + totalDiagnosticCount()
                 + (hasWarnings() ? " warningFamilies=" + warningFamilyCounts() : "")

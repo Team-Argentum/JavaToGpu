@@ -59,6 +59,24 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("autoVectorizationCandidates", Integer.toString(report.autoVectorizationRewriteCandidateCount()));
         values.put("autoVectorizationWarnings", Integer.toString(report.autoVectorizationWarningCount()));
         values.put("autoVectorizationRejections", Integer.toString(report.autoVectorizationRejectionCount()));
+        GpuIrAutoVectorizationRewritePlan autoVectorizationRewritePlan = report.autoVectorizationPreview().rewritePlan();
+        values.put("autoVectorizationRewritePlanCandidates", Integer.toString(autoVectorizationRewritePlan.candidateCount()));
+        values.put("autoVectorizationRewritePlanInsertions", Integer.toString(autoVectorizationRewritePlan.insertionCount()));
+        values.put("autoVectorizationRewritePlanReplacements", Integer.toString(autoVectorizationRewritePlan.replacementCount()));
+        values.put("autoVectorizationRewritePlanOperations", Integer.toString(autoVectorizationRewritePlan.operationCount()));
+        values.put("autoVectorizationRewritePlanGuards", Integer.toString(autoVectorizationRewritePlan.guardDiagnostics().size()));
+        autoVectorizationRewritePlan.guardFamilyCounts().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> values.put(
+                        "autoVectorizationRewritePlanGuardFamily." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
+        report.autoVectorizationPreview().vectorTypeCounts().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> values.put(
+                        "autoVectorizationVectorType." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
         report.autoVectorizationPreview().warningFamilyCounts().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> values.put(

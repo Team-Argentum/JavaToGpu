@@ -65,8 +65,15 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertFalse(preview.hasBlockingDiagnostics());
         assertEquals(1, preview.rewriteCandidateCount());
         assertEquals("x4", preview.rewriteCandidates().get(0).vectorWidth());
+        assertEquals("int", preview.rewriteCandidates().get(0).scalarElementType());
+        assertEquals("int4", preview.rewriteCandidates().get(0).vectorType());
+        assertEquals(java.util.Map.of("int4", 1L), preview.vectorTypeCounts());
         assertEquals(List.of("write out[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorWrites());
         assertEquals(List.of("read left[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorReads());
+        assertEquals(2, preview.rewritePlan().operationCount());
+        assertFalse(preview.rewritePlan().hasGuardDiagnostics());
+        assertTrue(preview.rewritePlan().insertionPreviews().get(0).contains("type=int4"));
+        assertTrue(preview.rewritePlan().replacementPreviews().get(0).contains("write out[i=0..3]"));
         assertEquals(0, preview.warningCount());
         assertEquals(0, preview.rejectionCount());
         assertEquals(1, preview.totalDiagnosticCount());
@@ -246,7 +253,10 @@ class GpuIrAutoVectorizationPlanningPassTest {
                 List.of(
                         new ParsedGpuParameter("left", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
                         new ParsedGpuParameter("right", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
-                        new ParsedGpuParameter("out", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
+                        new ParsedGpuParameter("out", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
+                        new ParsedGpuParameter("cleanOutA", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
+                        new ParsedGpuParameter("cleanOutB", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
+                        new ParsedGpuParameter("warnedOut", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
                 ),
                 List.of(),
                 List.of(),

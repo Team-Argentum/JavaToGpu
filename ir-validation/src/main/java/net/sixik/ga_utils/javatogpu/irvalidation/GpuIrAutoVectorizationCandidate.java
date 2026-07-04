@@ -18,7 +18,10 @@ public record GpuIrAutoVectorizationCandidate(
         List<String> repeatedTargetWarnings,
         List<String> crossLaneReadWarnings,
         List<String> nonLaneReadWarnings,
-        int assignmentCount
+        List<String> memoryGuardDiagnostics,
+        int assignmentCount,
+        String scalarElementType,
+        String vectorType
 ) {
     public GpuIrAutoVectorizationCandidate {
         if (loopLocation == null || loopLocation.isBlank()) {
@@ -48,8 +51,18 @@ public record GpuIrAutoVectorizationCandidate(
         repeatedTargetWarnings = List.copyOf(Objects.requireNonNull(repeatedTargetWarnings, "repeatedTargetWarnings"));
         crossLaneReadWarnings = List.copyOf(Objects.requireNonNull(crossLaneReadWarnings, "crossLaneReadWarnings"));
         nonLaneReadWarnings = List.copyOf(Objects.requireNonNull(nonLaneReadWarnings, "nonLaneReadWarnings"));
+        memoryGuardDiagnostics = List.copyOf(Objects.requireNonNull(memoryGuardDiagnostics, "memoryGuardDiagnostics"));
+        if (memoryGuardDiagnostics.stream().anyMatch(diagnostic -> diagnostic == null || diagnostic.isBlank())) {
+            throw new IllegalArgumentException("memoryGuardDiagnostics must not contain blank entries");
+        }
         if (assignmentCount <= 0) {
             throw new IllegalArgumentException("assignmentCount must be positive");
+        }
+        if (scalarElementType == null || scalarElementType.isBlank()) {
+            throw new IllegalArgumentException("scalarElementType must not be blank");
+        }
+        if (vectorType == null || vectorType.isBlank()) {
+            throw new IllegalArgumentException("vectorType must not be blank");
         }
     }
 
@@ -80,6 +93,10 @@ public record GpuIrAutoVectorizationCandidate(
                 + nonLaneReadWarnings.size();
     }
 
+    public boolean hasMemoryGuardDiagnostics() {
+        return !memoryGuardDiagnostics.isEmpty();
+    }
+
     /**
      * Conservative diagnostic score for ranking candidates before any mutating vector rewrite exists.
      */
@@ -98,11 +115,14 @@ public record GpuIrAutoVectorizationCandidate(
     public String summary() {
         return "loop " + loopLocation + " lanes=" + laneCount + " induction=" + inductionVariable
                 + " targets=" + targetArrays + " sources=" + sourceArrays
+                + " scalarElementType=" + scalarElementType
+                + " vectorType=" + vectorType
                 + " priorityScore=" + priorityScore()
                 + (warningCount() == 0 ? "" : " warningCount=" + warningCount())
                 + (aliasWarnings.isEmpty() ? "" : " aliasWarnings=" + aliasWarnings)
                 + (repeatedTargetWarnings.isEmpty() ? "" : " repeatedTargetWarnings=" + repeatedTargetWarnings)
                 + (crossLaneReadWarnings.isEmpty() ? "" : " crossLaneReadWarnings=" + crossLaneReadWarnings)
-                + (nonLaneReadWarnings.isEmpty() ? "" : " nonLaneReadWarnings=" + nonLaneReadWarnings);
+                + (nonLaneReadWarnings.isEmpty() ? "" : " nonLaneReadWarnings=" + nonLaneReadWarnings)
+                + (memoryGuardDiagnostics.isEmpty() ? "" : " memoryGuardDiagnostics=" + memoryGuardDiagnostics);
     }
 }

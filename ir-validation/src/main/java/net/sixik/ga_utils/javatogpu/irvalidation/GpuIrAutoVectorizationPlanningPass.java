@@ -47,9 +47,9 @@ public final class GpuIrAutoVectorizationPlanningPass implements GpuIrPass {
 
     public GpuIrAutoVectorizationReport scan(GpuIrPassContext context) {
         if (context == null || context.method() == null) {
-            return scanner.scan(null);
+            return scanner.scan((net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod) null);
         }
-        return scanner.scan(context.method().irMethod());
+        return scanner.scan(context.method());
     }
 
     public GpuIrAutoVectorizationPreview preview(GpuIrPassContext context) {

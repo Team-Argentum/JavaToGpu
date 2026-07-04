@@ -20,5 +20,8 @@ public enum GpuIrAutoVectorizationRejectionReason {
     NON_LANE_TARGET,
 
     // The assignment value may have side effects and cannot be duplicated/reordered safely.
-    SIDE_EFFECTING_VALUE
+    SIDE_EFFECTING_VALUE,
+
+    // Typed preview could not prove one stable scalar element type for the future vector shape.
+    UNSUPPORTED_ELEMENT_TYPE
 }

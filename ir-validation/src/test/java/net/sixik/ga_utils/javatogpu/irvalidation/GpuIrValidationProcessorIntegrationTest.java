@@ -125,10 +125,83 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue(reportContainsMethod(report, "first", "0"));
         assertTrue(reportContainsMethod(report, "second", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationCandidates", "1"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanCandidates", "1"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanInsertions", "1"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanReplacements", "1"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanOperations", "2"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRewritePlanGuards", "0"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationVectorType.int4", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRejections", "0"));
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationCandidates", "0"));
+        assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRewritePlanOperations", "0"));
+        assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRewritePlanGuards", "0"));
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejections", "1"));
         assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1"));
+    }
+
+    @Test
+    void diagnosticModeReportCountsUnsupportedElementTypeRejections() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                "quiet",
+                "reports/javatogpu-ir-validation.properties",
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void mixed(@GPUGlobal int[] left, @GPUGlobal float[] right, @GPUGlobal int[] output) {
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = left[i] + (int) right[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
+
+        assertTrue("1".equals(report.getProperty("entry.count")));
+        assertTrue("mixed".equals(report.getProperty("entry.0.methodName")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejections")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejectionReason.UNSUPPORTED_ELEMENT_TYPE")));
+    }
+
+    @Test
+    void diagnosticModeReportCountsRewritePlanGuardFamilies() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                "quiet",
+                "reports/javatogpu-ir-validation.properties",
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void guarded(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                                output[0] = 1;
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
+
+        assertTrue("1".equals(report.getProperty("entry.count")));
+        assertTrue("guarded".equals(report.getProperty("entry.0.methodName")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationCandidates")));
+        assertTrue("0".equals(report.getProperty("entry.0.autoVectorizationRewritePlanOperations")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuards")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRewritePlanGuardFamily.neighborTargetWrite")));
     }
 
     private CompilationResult compileWithIrValidationMode(String mode, String diagnosticPolicy) throws IOException {
