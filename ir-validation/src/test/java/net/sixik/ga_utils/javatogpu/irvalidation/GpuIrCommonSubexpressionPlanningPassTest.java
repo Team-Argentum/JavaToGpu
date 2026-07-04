@@ -5,7 +5,6 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
-import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPass;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassContext;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
@@ -16,7 +15,6 @@ import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.ServiceLoader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -25,16 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuIrCommonSubexpressionPlanningPassTest {
     private final GpuIrCommonSubexpressionPlanningPass pass = new GpuIrCommonSubexpressionPlanningPass();
-
-    @Test
-    void moduleRegistersPlanningPassThroughServiceLoader() {
-        List<GpuIrPass> passes = ServiceLoader.load(GpuIrPass.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .toList();
-
-        assertTrue(passes.stream().anyMatch(GpuIrCommonSubexpressionPlanningPass.class::isInstance));
-    }
 
     @Test
     void runBuildsPlansWithoutMutatingIr() {

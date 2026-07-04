@@ -38,7 +38,7 @@ artifactId: javatogpu-ir-validation
 version: 0.1.0-alpha.1
 ```
 
-It contributes compiler IR passes through Java `ServiceLoader`. Users add it to the annotation-processor path when they want extra lowered-IR safety checks before OpenCL emission.
+It contributes an optional compiler IR validation provider through Java `ServiceLoader`. Users add it to the annotation-processor path and enable `-Ajavatogpu.irValidation=diagnostic`, `strictSafety`, or `strictOptimizer` when they want extra lowered-IR checks before OpenCL emission.
 
 ## Release Dependency Baseline
 
@@ -163,6 +163,10 @@ dependencies {
     annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1' // optional strict IR checks
 
     runtimeOnly 'org.lwjgl:lwjgl::natives-windows'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
 }
 ```
 

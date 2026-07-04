@@ -27,9 +27,13 @@ Optional strict IR validation can be enabled by adding:
 dependencies {
     annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
 }
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+}
 ```
 
-The extra artifact validates lowered IR before OpenCL emission and is intended for CI, compiler development, and safety-focused builds. See [IR Validation](IR-Validation.md) for details about the strict validator and the read-only CSE planning pass.
+The extra artifact provides lowered-IR validation and read-only optimizer diagnostics, while the compiler option chooses how aggressively builds should react. See [IR Validation](IR-Validation.md) for details about `diagnostic`, `strictSafety`, and `strictOptimizer` modes.
 
 ## Write A Kernel
 

@@ -4,6 +4,8 @@ The `javatogpu-ir-validation` artifact is an optional strict-build module for co
 
 It plugs into JavaToGpu through Java `ServiceLoader` and runs extra lowered-IR checks before OpenCL emission. The main `javatogpu` artifact stays lightweight; users opt in by adding the validation artifact to the annotation-processor path.
 
+The artifact is intentionally inert unless the compiler option `javatogpu.irValidation` is enabled, so projects can keep it on a CI annotation-processor path without changing normal local builds.
+
 ## Add The Module
 
 Use the same version as the main JavaToGpu artifact:
@@ -16,7 +18,13 @@ dependencies {
     // Optional: stricter lowered-IR validation and read-only optimizer planning checks.
     annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
 }
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+}
 ```
+
+Use `diagnostic` first when adopting the module. It runs the unified validation pipeline without failing builds for optimizer diagnostics.
 
 ## What It Checks
 
@@ -31,11 +39,11 @@ The strict validator currently checks the lowered IR for issues that should be c
 - Non-positive literal private-array sizes.
 - Pure expression statements that have no observable side effect.
 
-## CSE Planning Pass
+## Unified Pipeline
 
-The module also registers a no-op common-subexpression planning pass.
+The module registers a `GpuIrValidationProvider` through Java `ServiceLoader`. When `javatogpu.irValidation` is enabled, the compiler invokes a unified read-only pipeline for every lowered helper and entry-point method.
 
-That pass is intentionally read-only. It builds a CSE planning report during strict validation builds, but it does not rewrite IR or change generated OpenCL. The goal is to harden optimizer analysis before real transformations are enabled.
+That pipeline combines safety validation, CSE planning preview, and auto-vectorization preview. It is intentionally read-only: it does not rewrite IR or change generated OpenCL. The goal is to harden optimizer analysis before real transformations are enabled.
 
 Current planning stages include:
 
@@ -50,27 +58,40 @@ Current planning stages include:
 
 ## Planning Modes
 
-The registered pass defaults to diagnostic mode:
+Compiler builds can select one of these annotation-processor option values:
 
 ```text
-DIAGNOSTIC_ONLY
+off
+diagnostic
+strictSafety
+strictOptimizer
 ```
 
-In that mode it computes the planning report but never fails a build because a candidate was skipped. This is the safe default for public alpha users.
+`off` is the default and skips optional validation providers.
 
-The module also has an opt-in hardening mode for tests and future compiler work:
+`diagnostic` runs safety validation plus read-only CSE and auto-vectorization previews. It is the safest first opt-in mode for public alpha users.
 
-```text
-STRICT_FAIL_ON_SKIPPED_CANDIDATES
+`strictSafety` fails builds when lowered-IR safety validation fails.
+
+`strictOptimizer` fails builds when safety validation fails or optimizer diagnostics report skipped CSE candidates, auto-vectorization warnings, or rejected vectorization shapes.
+
+Example strict CI configuration:
+
+```groovy
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=strictSafety'
+}
 ```
 
-That mode can fail when the planner sees skipped candidates, with reasons such as:
+Optimizer diagnostics can include reasons such as:
 
 - `NOT_LOCAL_REUSE`
 - `CONTROL_FLOW_BOUNDARY`
 - `MUTATED_BETWEEN_OCCURRENCES`
+- `UNSUPPORTED_LANE_COUNT`
+- `SIDE_EFFECTING_VALUE`
 
-Strict planning mode is not enabled by the default `ServiceLoader` registration. Use it directly in tests or internal compiler experiments when you want to validate optimizer assumptions aggressively.
+Use `strictOptimizer` mainly for compiler development and internal hardening. It is expected to be conservative while optimizer analysis is still maturing.
 
 ## When To Enable It
 

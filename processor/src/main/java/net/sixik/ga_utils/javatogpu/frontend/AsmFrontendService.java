@@ -9,6 +9,8 @@ import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
@@ -23,15 +25,26 @@ public final class AsmFrontendService {
     private final AsmExpressionLifter lifter;
     private final OpenClKernelEmitter emitter;
     private final GpuIrPassRunner passRunner;
+    private final GpuIrValidationRunner validationRunner;
 
     public AsmFrontendService(
             AsmExpressionLifter lifter,
             OpenClKernelEmitter emitter,
             GpuIrPassRunner passRunner
     ) {
+        this(lifter, emitter, passRunner, GpuIrValidationRunner.disabled());
+    }
+
+    public AsmFrontendService(
+            AsmExpressionLifter lifter,
+            OpenClKernelEmitter emitter,
+            GpuIrPassRunner passRunner,
+            GpuIrValidationRunner validationRunner
+    ) {
         this.lifter = lifter;
         this.emitter = emitter;
         this.passRunner = passRunner;
+        this.validationRunner = validationRunner;
     }
 
     public AsmFrontendService(
@@ -46,10 +59,15 @@ public final class AsmFrontendService {
     }
 
     public static AsmFrontendService create(GpuIntrinsicDatabase intrinsicDatabase) {
+        return create(intrinsicDatabase, GpuIrValidationMode.OFF);
+    }
+
+    public static AsmFrontendService create(GpuIntrinsicDatabase intrinsicDatabase, GpuIrValidationMode validationMode) {
         return new AsmFrontendService(
                 new AsmExpressionLifter(intrinsicDatabase),
                 new OpenClKernelEmitter(),
-                GpuIrPassRunner.loadFromServiceLoader()
+                GpuIrPassRunner.loadFromServiceLoader(),
+                GpuIrValidationRunner.loadFromServiceLoader(validationMode)
         );
     }
 
@@ -112,6 +130,7 @@ public final class AsmFrontendService {
                 kernelResult.helperDependencies()
         );
         passRunner.run(compiledKernel, compiledMethods, structs);
+        validationRunner.run(compiledKernel, compiledMethods, structs);
 
         return emitter.emitProgram(
                 compiledKernel,

@@ -63,11 +63,15 @@ For strict compiler builds, add the optional IR validation module to the annotat
 dependencies {
     annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
 }
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+}
 ```
 
-That module plugs into the compiler through Java `ServiceLoader` and validates lowered IR before OpenCL emission.
+That module plugs into the compiler through Java `ServiceLoader`, but remains inactive until `javatogpu.irValidation` is enabled. Supported modes are `diagnostic`, `strictSafety`, and `strictOptimizer`.
 
-See [IR Validation](docs/IR-Validation.md) for the strict validator, no-op CSE planning pass, and diagnostic vs strict planning modes.
+See [IR Validation](docs/IR-Validation.md) for the strict validator, read-only optimizer planning reports, and diagnostic vs strict build modes.
 
 Write a restricted Java kernel:
 

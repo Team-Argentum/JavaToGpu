@@ -12,6 +12,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendService;
 import net.sixik.ga_utils.javatogpu.frontend.GpuStructAliasRegistry;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
@@ -102,7 +103,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     @Override
     public Set<String> getSupportedOptions() {
-        return Set.of("javatogpu.debugAbi");
+        return Set.of("javatogpu.debugAbi", "javatogpu.irValidation");
     }
 
     @Override
@@ -173,7 +174,8 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                     );
                 }
                 GpuFrontendService frontendService = GpuFrontendService.create(
-                        GpuIntrinsicDatabase.createDefault(intrinsics, TARGET_BACKEND)
+                        GpuIntrinsicDatabase.createDefault(intrinsics, TARGET_BACKEND),
+                        irValidationMode()
                 );
                 String kernelSource = frontendService.validateLowerAndEmit(kernelMethod, helpers, structs);
                 writeKernelResource(method, kernelSource);
@@ -1500,6 +1502,10 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private boolean debugAbiEnabled() {
         return Boolean.parseBoolean(processingEnv.getOptions().getOrDefault("javatogpu.debugAbi", "false"));
+    }
+
+    private GpuIrValidationMode irValidationMode() {
+        return GpuIrValidationMode.parse(processingEnv.getOptions().get("javatogpu.irValidation"));
     }
 
     private String buildAbiHintMessage(ParsedGpuMethod kernelMethod, List<ParsedGpuStruct> structs) {

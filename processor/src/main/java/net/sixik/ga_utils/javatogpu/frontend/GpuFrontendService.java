@@ -6,6 +6,8 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.lowering.GpuIrLowerer;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
@@ -27,6 +29,7 @@ public final class GpuFrontendService {
     private final GpuIrLowerer lowerer;
     private final OpenClKernelEmitter emitter;
     private final GpuIrPassRunner passRunner;
+    private final GpuIrValidationRunner validationRunner;
 
     public GpuFrontendService(
             GpuMethodParser parser,
@@ -35,11 +38,30 @@ public final class GpuFrontendService {
             OpenClKernelEmitter emitter,
             GpuIrPassRunner passRunner
     ) {
+        this(
+                parser,
+                validator,
+                lowerer,
+                emitter,
+                passRunner,
+                GpuIrValidationRunner.disabled()
+        );
+    }
+
+    public GpuFrontendService(
+            GpuMethodParser parser,
+            GpuSubsetValidator validator,
+            GpuIrLowerer lowerer,
+            OpenClKernelEmitter emitter,
+            GpuIrPassRunner passRunner,
+            GpuIrValidationRunner validationRunner
+    ) {
         this.parser = parser;
         this.validator = validator;
         this.lowerer = lowerer;
         this.emitter = emitter;
         this.passRunner = passRunner;
+        this.validationRunner = validationRunner;
     }
 
     public GpuFrontendService(
@@ -56,12 +78,17 @@ public final class GpuFrontendService {
     }
 
     public static GpuFrontendService create(GpuIntrinsicDatabase intrinsicDatabase) {
+        return create(intrinsicDatabase, GpuIrValidationMode.OFF);
+    }
+
+    public static GpuFrontendService create(GpuIntrinsicDatabase intrinsicDatabase, GpuIrValidationMode validationMode) {
         return new GpuFrontendService(
                 new GpuMethodParser(),
                 new GpuSubsetValidator(intrinsicDatabase),
                 new GpuIrLowerer(intrinsicDatabase),
                 new OpenClKernelEmitter(),
-                GpuIrPassRunner.loadFromServiceLoader()
+                GpuIrPassRunner.loadFromServiceLoader(),
+                GpuIrValidationRunner.loadFromServiceLoader(validationMode)
         );
     }
 
@@ -79,7 +106,9 @@ public final class GpuFrontendService {
     public String parseValidateLowerAndEmit(String methodSource) {
         ParsedGpuMethod method = parseAndValidate(methodSource);
         GpuIrMethod irMethod = lowerer.lower(method);
-        passRunner.run(new GpuIrCompiledMethod(method, irMethod, method.name(), List.of()), List.of(), List.of());
+        GpuIrCompiledMethod compiledMethod = new GpuIrCompiledMethod(method, irMethod, method.name(), List.of());
+        passRunner.run(compiledMethod, List.of(), List.of());
+        validationRunner.run(compiledMethod, List.of(), List.of());
         return emitter.emit(method, irMethod);
     }
 
@@ -109,6 +138,7 @@ public final class GpuFrontendService {
         List<GpuIrCompiledMethod> compiledHelpers = compiledMethods.subList(0, helperMethods.size());
         GpuIrCompiledMethod compiledKernel = compiledMethods.get(compiledMethods.size() - 1);
         passRunner.run(compiledKernel, compiledHelpers, relevantStructs);
+        validationRunner.run(compiledKernel, compiledHelpers, relevantStructs);
         return emitter.emitProgram(
                 compiledKernel,
                 GpuProgramAssemblySupport.selectReachableHelpers(
