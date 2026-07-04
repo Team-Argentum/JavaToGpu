@@ -255,11 +255,19 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(aggregatePreview.summary().contains("rewriteCandidates=2"));
         GpuIrAutoVectorizationRewriteCandidatePreview preview = report.previewRewritePriorityCandidates().get(0);
         assertEquals("stmt[1]", preview.loopLocation());
+        assertEquals("i", preview.inductionVariable());
+        assertEquals(0, preview.startInclusive());
+        assertEquals(8, preview.endExclusive());
         assertEquals(8, preview.laneCount());
         assertEquals(2, preview.assignmentCount());
         assertEquals(16, preview.priorityScore());
+        assertEquals("x8", preview.vectorWidth());
+        assertEquals(List.of("write outB[i=0..7]", "write maskB[i=0..7]"), preview.plannedVectorWrites());
+        assertEquals(List.of("read leftB[i=0..7]", "read rightB[i=0..7]", "read bitsB[i=0..7]"), preview.plannedVectorReads());
         assertEquals(List.of("outB", "maskB"), preview.targetArrays());
         assertTrue(preview.summary().contains("rewrite candidate"));
+        assertTrue(preview.summary().contains("vectorWidth=x8"));
+        assertTrue(preview.summary().contains("laneRange=0..7"));
         assertTrue(report.summary().contains("rewritePreviews=2"));
     }
 
@@ -437,9 +445,15 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         ));
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRewriteCandidatePreview(
                 "stmt[0]",
+                "i",
+                0,
+                4,
                 4,
                 1,
                 0,
+                "x4",
+                List.of("write out[i=0..3]"),
+                List.of(),
                 List.of("out"),
                 List.of()
         ));

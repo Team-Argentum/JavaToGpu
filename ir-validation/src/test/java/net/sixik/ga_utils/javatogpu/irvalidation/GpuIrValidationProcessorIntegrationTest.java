@@ -86,6 +86,49 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("ok".equals(report.getProperty("entry.0.safety")));
         assertTrue("1".equals(report.getProperty("entry.0.optimizerDiagnostics")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejections")));
+        assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT")));
+    }
+
+    @Test
+    void diagnosticModeWritesMultipleReportEntriesForMultipleGpuMethods() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                "quiet",
+                "reports/javatogpu-ir-validation.properties",
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void first(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                                for (int i = 0; i < 4; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void second(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                                for (int i = 0; i < 5; i++) {
+                                    output[i] = input[i];
+                                }
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
+
+        assertTrue("2".equals(report.getProperty("entry.count")));
+        assertTrue(reportContainsMethod(report, "first", "0"));
+        assertTrue(reportContainsMethod(report, "second", "1"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationCandidates", "1"));
+        assertTrue(reportContainsMethodCounter(report, "first", "autoVectorizationRejections", "0"));
+        assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationCandidates", "0"));
+        assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejections", "1"));
+        assertTrue(reportContainsMethodCounter(report, "second", "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1"));
     }
 
     private CompilationResult compileWithIrValidationMode(String mode, String diagnosticPolicy) throws IOException {
@@ -97,25 +140,19 @@ class GpuIrValidationProcessorIntegrationTest {
             String diagnosticPolicy,
             String reportPath
     ) throws IOException {
+        return compileWithIrValidationMode(mode, diagnosticPolicy, reportPath, defaultSource());
+    }
+
+    private CompilationResult compileWithIrValidationMode(
+            String mode,
+            String diagnosticPolicy,
+            String reportPath,
+            String source
+    ) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-ir-validation-classes");
         Path generatedOutputDir = Files.createTempDirectory("javatogpu-ir-validation-generated");
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-
-        String source = """
-                package sample;
-
-                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
-
-                public class Demo {
-                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
-                    void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
-                        for (int i = 0; i < 5; i++) {
-                            output[i] = input[i];
-                        }
-                    }
-                }
-                """;
 
         try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
             List<String> options = new java.util.ArrayList<>(List.of(
@@ -141,6 +178,56 @@ class GpuIrValidationProcessorIntegrationTest {
             task.setProcessors(List.of(new GpuCompilerProcessor()));
             return new CompilationResult(Boolean.TRUE.equals(task.call()), generatedOutputDir, diagnosticMessages(diagnostics));
         }
+    }
+
+    private String defaultSource() {
+        return """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal int[] input, @GPUGlobal int[] output) {
+                        for (int i = 0; i < 5; i++) {
+                            output[i] = input[i];
+                        }
+                    }
+                }
+                """;
+    }
+
+    private Properties loadReport(Path reportPath) throws IOException {
+        assertTrue(Files.exists(reportPath));
+        Properties report = new Properties();
+        try (var reader = Files.newBufferedReader(reportPath)) {
+            report.load(reader);
+        }
+        return report;
+    }
+
+    private boolean reportContainsMethod(Properties report, String methodName, String optimizerDiagnostics) {
+        for (int index = 0; index < Integer.parseInt(report.getProperty("entry.count")); index++) {
+            if (methodName.equals(report.getProperty("entry." + index + ".methodName"))
+                    && optimizerDiagnostics.equals(report.getProperty("entry." + index + ".optimizerDiagnostics"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean reportContainsMethodCounter(
+            Properties report,
+            String methodName,
+            String counterName,
+            String expectedValue
+    ) {
+        for (int index = 0; index < Integer.parseInt(report.getProperty("entry.count")); index++) {
+            if (methodName.equals(report.getProperty("entry." + index + ".methodName"))) {
+                return expectedValue.equals(report.getProperty("entry." + index + "." + counterName));
+            }
+        }
+        return false;
     }
 
     private String diagnosticMessages(DiagnosticCollector<JavaFileObject> diagnostics) {

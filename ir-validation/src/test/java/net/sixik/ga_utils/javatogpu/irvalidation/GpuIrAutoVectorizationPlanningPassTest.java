@@ -64,6 +64,9 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(preview.hasRewriteCandidates());
         assertFalse(preview.hasBlockingDiagnostics());
         assertEquals(1, preview.rewriteCandidateCount());
+        assertEquals("x4", preview.rewriteCandidates().get(0).vectorWidth());
+        assertEquals(List.of("write out[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorWrites());
+        assertEquals(List.of("read left[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorReads());
         assertEquals(0, preview.warningCount());
         assertEquals(0, preview.rejectionCount());
         assertEquals(1, preview.totalDiagnosticCount());

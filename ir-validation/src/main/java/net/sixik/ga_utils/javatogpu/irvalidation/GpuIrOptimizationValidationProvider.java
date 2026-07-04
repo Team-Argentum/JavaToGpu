@@ -59,6 +59,18 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("autoVectorizationCandidates", Integer.toString(report.autoVectorizationRewriteCandidateCount()));
         values.put("autoVectorizationWarnings", Integer.toString(report.autoVectorizationWarningCount()));
         values.put("autoVectorizationRejections", Integer.toString(report.autoVectorizationRejectionCount()));
+        report.autoVectorizationPreview().warningFamilyCounts().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> values.put(
+                        "autoVectorizationWarningFamily." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
+        report.autoVectorizationPreview().rejectionReasonCounts().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> values.put(
+                        "autoVectorizationRejectionReason." + entry.getKey().name(),
+                        Long.toString(entry.getValue())
+                ));
         report.safetyError().ifPresent(error -> values.put("safetyError", error));
         return new GpuIrValidationReportEntry("optimization-validation", report.methodName(), request.entryPoint(), values);
     }

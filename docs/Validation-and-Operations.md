@@ -26,7 +26,7 @@ Current local evidence proves the available NVIDIA path. Intel and AMD remain fu
 
 ## Strict IR Validation
 
-For compiler-development or CI builds, add the optional `javatogpu-ir-validation` artifact to the annotation-processor path and enable `-Ajavatogpu.irValidation=diagnostic`, `strictSafety`, or `strictOptimizer`. It runs additional lowered-IR validation before OpenCL emission and includes read-only CSE / auto-vectorization planning reports without rewriting IR. `-Ajavatogpu.irValidationDiagnostics=quiet|summary|detailed` controls javac note verbosity in diagnostic mode. `-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties` writes a machine-readable CI artifact with safety/CSE/vectorization counters. Strict modes fail the build on the configured validation boundary with detailed optimizer context.
+For compiler-development or CI builds, add the optional `javatogpu-ir-validation` artifact to the annotation-processor path and enable `-Ajavatogpu.irValidation=diagnostic`, `strictSafety`, or `strictOptimizer`. It runs additional lowered-IR validation before OpenCL emission and includes read-only CSE / auto-vectorization planning reports without rewriting IR. `-Ajavatogpu.irValidationDiagnostics=quiet|summary|detailed` controls javac note verbosity in diagnostic mode. `-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties` writes a machine-readable CI artifact with safety/CSE/vectorization counters plus auto-vectorization warning-family and rejection-reason counters. Strict modes fail the build on the configured validation boundary with detailed optimizer context.
 
 See [IR Validation](IR-Validation.md) for setup, checks, planning modes, and current limitations.
 

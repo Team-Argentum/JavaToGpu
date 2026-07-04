@@ -8,9 +8,15 @@ import java.util.Objects;
  */
 public record GpuIrAutoVectorizationRewriteCandidatePreview(
         String loopLocation,
+        String inductionVariable,
+        int startInclusive,
+        int endExclusive,
         int laneCount,
         int assignmentCount,
         int priorityScore,
+        String vectorWidth,
+        List<String> plannedVectorWrites,
+        List<String> plannedVectorReads,
         List<String> targetArrays,
         List<String> sourceArrays
 ) {
@@ -18,14 +24,37 @@ public record GpuIrAutoVectorizationRewriteCandidatePreview(
         if (loopLocation == null || loopLocation.isBlank()) {
             throw new IllegalArgumentException("loopLocation must not be blank");
         }
+        if (inductionVariable == null || inductionVariable.isBlank()) {
+            throw new IllegalArgumentException("inductionVariable must not be blank");
+        }
+        if (startInclusive < 0) {
+            throw new IllegalArgumentException("startInclusive must be non-negative");
+        }
+        if (endExclusive <= startInclusive) {
+            throw new IllegalArgumentException("endExclusive must be greater than startInclusive");
+        }
         if (laneCount <= 0) {
             throw new IllegalArgumentException("laneCount must be positive");
+        }
+        if (laneCount != endExclusive - startInclusive) {
+            throw new IllegalArgumentException("laneCount must match the lane range");
         }
         if (assignmentCount <= 0) {
             throw new IllegalArgumentException("assignmentCount must be positive");
         }
         if (priorityScore <= 0) {
             throw new IllegalArgumentException("priorityScore must be positive");
+        }
+        if (vectorWidth == null || vectorWidth.isBlank()) {
+            throw new IllegalArgumentException("vectorWidth must not be blank");
+        }
+        plannedVectorWrites = List.copyOf(Objects.requireNonNull(plannedVectorWrites, "plannedVectorWrites"));
+        if (plannedVectorWrites.isEmpty() || plannedVectorWrites.stream().anyMatch(name -> name == null || name.isBlank())) {
+            throw new IllegalArgumentException("plannedVectorWrites must contain non-blank entries");
+        }
+        plannedVectorReads = List.copyOf(Objects.requireNonNull(plannedVectorReads, "plannedVectorReads"));
+        if (plannedVectorReads.stream().anyMatch(name -> name == null || name.isBlank())) {
+            throw new IllegalArgumentException("plannedVectorReads must not contain blank entries");
         }
         targetArrays = List.copyOf(Objects.requireNonNull(targetArrays, "targetArrays"));
         if (targetArrays.isEmpty() || targetArrays.stream().anyMatch(name -> name == null || name.isBlank())) {
@@ -44,19 +73,42 @@ public record GpuIrAutoVectorizationRewriteCandidatePreview(
         }
         return new GpuIrAutoVectorizationRewriteCandidatePreview(
                 candidate.loopLocation(),
+                candidate.inductionVariable(),
+                candidate.startInclusive(),
+                candidate.endExclusive(),
                 candidate.laneCount(),
                 candidate.assignmentCount(),
                 candidate.priorityScore(),
+                "x" + candidate.laneCount(),
+                vectorAccesses("write", candidate.targetArrays(), candidate.inductionVariable(), candidate.startInclusive(), candidate.endExclusive()),
+                vectorAccesses("read", candidate.sourceArrays(), candidate.inductionVariable(), candidate.startInclusive(), candidate.endExclusive()),
                 candidate.targetArrays(),
                 candidate.sourceArrays()
         );
     }
 
+    private static List<String> vectorAccesses(
+            String accessKind,
+            List<String> arrays,
+            String inductionVariable,
+            int startInclusive,
+            int endExclusive
+    ) {
+        return arrays.stream()
+                .map(array -> accessKind + " " + array + "[" + inductionVariable + "=" + startInclusive + ".." + (endExclusive - 1) + "]")
+                .toList();
+    }
+
     public String summary() {
         return "auto-vectorization rewrite candidate at " + loopLocation
+                + " induction=" + inductionVariable
+                + " laneRange=" + startInclusive + ".." + (endExclusive - 1)
                 + " lanes=" + laneCount
+                + " vectorWidth=" + vectorWidth
                 + " assignments=" + assignmentCount
                 + " priorityScore=" + priorityScore
+                + " plannedWrites=" + plannedVectorWrites
+                + " plannedReads=" + plannedVectorReads
                 + " targets=" + targetArrays
                 + " sources=" + sourceArrays;
     }

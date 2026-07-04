@@ -6,10 +6,13 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRequest;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
@@ -114,6 +117,63 @@ class GpuIrOptimizationValidationProviderTest {
     }
 
     @Test
+    void reportEntryIncludesAutoVectorizationRejectionReasonCounts() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(fixedWidthLoop(5, List.of(
+                        laneAssignment("out", arrayRead("input", new GpuIrVariableRef("i")))
+                ))))),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRejections")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT")));
+    }
+
+    @Test
+    void reportEntryIncludesAutoVectorizationWarningFamilyCounts() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(fixedWidthLoop(4, List.of(
+                        laneAssignment("out", arrayRead("out", new GpuIrVariableRef("i"))),
+                        laneAssignment("out", arrayRead(
+                                "input",
+                                new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary(
+                                        "+",
+                                        new GpuIrVariableRef("i"),
+                                        new GpuIrLiteral("1")
+                                )
+                        )),
+                        laneAssignment("scratch", arrayRead("input", new GpuIrVariableRef("j")))
+                ))))),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertTrue("0".equals(entries.get(0).values().get("autoVectorizationCandidates")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarnings")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.alias")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.repeatedTarget")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.crossLaneRead")));
+        assertTrue("1".equals(entries.get(0).values().get("autoVectorizationWarningFamily.nonLaneRead")));
+    }
+
+    @Test
     void strictSafetyModeFailsBuildForSafetyDiagnostics() {
         GpuIrValidationRequest request = request(GpuIrValidationMode.STRICT_SAFETY, brokenMethod());
 
@@ -134,6 +194,37 @@ class GpuIrOptimizationValidationProviderTest {
                 new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")),
                 new GpuIrAssignment(new GpuIrVariableRef("value"), new GpuIrLiteral("1"))
         )));
+    }
+
+    private GpuIrForLoop fixedWidthLoop(int endExclusive, List<GpuIrStatement> body) {
+        return new GpuIrForLoop(
+                new GpuIrVariableDeclaration("int", "i", new GpuIrLiteral("0")),
+                new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary(
+                        "<",
+                        new GpuIrVariableRef("i"),
+                        new GpuIrLiteral(Integer.toString(endExclusive))
+                ),
+                new GpuIrAssignment(
+                        new GpuIrVariableRef("i"),
+                        new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary(
+                                "+",
+                                new GpuIrVariableRef("i"),
+                                new GpuIrLiteral("1")
+                        )
+                ),
+                body
+        );
+    }
+
+    private GpuIrAssignment laneAssignment(String arrayName, net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrExpression value) {
+        return new GpuIrAssignment(arrayRead(arrayName, new GpuIrVariableRef("i")), value);
+    }
+
+    private net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess arrayRead(
+            String arrayName,
+            net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrExpression index
+    ) {
+        return new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess(arrayName, index);
     }
 
     private GpuIrValidationRequest request(GpuIrValidationMode mode, GpuIrCompiledMethod method) {
