@@ -267,7 +267,10 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
+        assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "true");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.neighborSourceWrite", "1");
         assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "writes source array `input`");
@@ -300,7 +303,10 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
+        assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "true");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.controlFlowBoundary", "1");
         assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "control-flow boundary");
@@ -332,7 +338,10 @@ class GpuIrOptimizationValidationProviderTest {
         provider.validate(request);
 
         assertEntryValue(entries, "autoVectorizationCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
+        assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "1");
+        assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "true");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuards", "1");
         assertEntryValue(entries, "autoVectorizationRewritePlanGuardFamily.earlyExitBoundary", "1");
         assertEntryValueContains(entries, "autoVectorizationFirstBlockingDiagnostic", "early-exit boundary");

@@ -70,8 +70,13 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertEquals(java.util.Map.of("int4", 1L), preview.vectorTypeCounts());
         assertEquals(List.of("write out[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorWrites());
         assertEquals(List.of("read left[i=0..3]"), preview.rewriteCandidates().get(0).plannedVectorReads());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.READY, preview.rewriteReadiness());
         assertEquals(2, preview.rewritePlan().operationCount());
         assertFalse(preview.rewritePlan().hasGuardDiagnostics());
+        assertEquals(0, preview.rewritePlan().blockedCandidateCount());
+        assertFalse(preview.rewritePlan().hasBlockedCandidates());
+        assertEquals(0, preview.rewriteBlockedCandidateCount());
+        assertFalse(preview.hasRewriteBlockedCandidates());
         assertTrue(preview.rewritePlan().insertionPreviews().get(0).contains("type=int4"));
         assertTrue(preview.rewritePlan().replacementPreviews().get(0).contains("write out[i=0..3]"));
         assertEquals(0, preview.warningCount());
@@ -82,6 +87,8 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(preview.firstBlockingDiagnosticFamily().isEmpty());
         assertEquals(irMethod.statements(), context.method().irMethod().statements());
         assertTrue(preview.summary().contains("rewriteCandidates=1"));
+        assertTrue(preview.summary().contains("rewriteReadiness=ready"));
+        assertTrue(preview.summary().contains("rewriteBlockedCandidates=0"));
     }
 
     @Test
@@ -146,6 +153,7 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(exception.getMessage().contains("auto-vectorization warning"));
         assertTrue(exception.getMessage().contains("crossLaneReadWarnings"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_WARNING, preview.rewriteReadiness());
         assertEquals("warning.crossLaneRead", preview.firstBlockingDiagnosticFamily().orElseThrow());
     }
 
@@ -174,6 +182,7 @@ class GpuIrAutoVectorizationPlanningPassTest {
         assertTrue(exception.getMessage().contains("UNSUPPORTED_LANE_COUNT"));
         assertTrue(exception.getMessage().contains("laneCount=5"));
         assertTrue(exception.getMessage().contains("stmt[0]"));
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.REJECTED, preview.rewriteReadiness());
         assertEquals("rejection.UNSUPPORTED_LANE_COUNT", preview.firstBlockingDiagnosticFamily().orElseThrow());
     }
 

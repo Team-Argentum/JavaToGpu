@@ -106,6 +106,16 @@ public record GpuIrAutoVectorizationRewritePlan(
         return insertionCount() + replacementCount();
     }
 
+    public int blockedCandidateCount() {
+        return (int) candidates.stream()
+                .filter(candidate -> !guardDiagnostics(candidate).isEmpty())
+                .count();
+    }
+
+    public boolean hasBlockedCandidates() {
+        return blockedCandidateCount() > 0;
+    }
+
     public boolean hasGuardDiagnostics() {
         return !guardDiagnostics.isEmpty();
     }
@@ -152,6 +162,7 @@ public record GpuIrAutoVectorizationRewritePlan(
     public String summary() {
         return "auto-vectorization rewrite plan method=" + methodName
                 + " candidates=" + candidateCount()
+                + " blockedCandidates=" + blockedCandidateCount()
                 + " insertions=" + insertionCount()
                 + " replacements=" + replacementCount()
                 + " operations=" + operationCount()

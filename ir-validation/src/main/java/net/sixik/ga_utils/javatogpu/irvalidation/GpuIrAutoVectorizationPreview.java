@@ -64,6 +64,30 @@ public record GpuIrAutoVectorizationPreview(
         return rewritePlanGuardCount() > 0;
     }
 
+    public int rewriteBlockedCandidateCount() {
+        return rewritePlan().blockedCandidateCount();
+    }
+
+    public boolean hasRewriteBlockedCandidates() {
+        return rewriteBlockedCandidateCount() > 0;
+    }
+
+    public GpuIrAutoVectorizationRewriteReadiness rewriteReadiness() {
+        if (hasRejections()) {
+            return GpuIrAutoVectorizationRewriteReadiness.REJECTED;
+        }
+        if (hasWarnings()) {
+            return GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_WARNING;
+        }
+        if (hasRewriteBlockedCandidates()) {
+            return GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD;
+        }
+        if (hasRewriteCandidates()) {
+            return GpuIrAutoVectorizationRewriteReadiness.READY;
+        }
+        return GpuIrAutoVectorizationRewriteReadiness.NONE;
+    }
+
     public Map<String, Long> vectorTypeCounts() {
         return rewriteCandidates.stream()
                 .collect(Collectors.groupingBy(
@@ -147,6 +171,8 @@ public record GpuIrAutoVectorizationPreview(
     public String summary() {
         return "auto-vectorization preview method=" + methodName
                 + " rewriteCandidates=" + rewriteCandidateCount()
+                + " rewriteReadiness=" + rewriteReadiness().artifactValue()
+                + " rewriteBlockedCandidates=" + rewriteBlockedCandidateCount()
                 + " rewritePlanOperations=" + rewritePlan().operationCount()
                 + " rewritePlanGuards=" + rewritePlanGuardCount()
                 + (hasRewritePlanGuardDiagnostics() ? " rewritePlanGuardFamilies=" + rewritePlan().guardFamilyCounts() : "")
