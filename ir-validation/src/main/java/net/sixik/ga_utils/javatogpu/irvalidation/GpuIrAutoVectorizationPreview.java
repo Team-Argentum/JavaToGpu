@@ -76,6 +76,13 @@ public record GpuIrAutoVectorizationPreview(
         );
     }
 
+    /**
+     * Single aggregate proof object for future rewrite gates.
+     */
+    public GpuIrAutoVectorizationProofBundle proofBundle() {
+        return GpuIrAutoVectorizationProofBundle.of(rewritePlanProofSummary());
+    }
+
     public int rewritePlanGuardCount() {
         return rewritePlan().guardDiagnostics().size();
     }

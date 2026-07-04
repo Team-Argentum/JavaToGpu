@@ -107,6 +107,9 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.putAll(report.autoVectorizationPreview()
                 .rewritePlanProofSummary()
                 .artifactFields("autoVectorizationProofRewritePlan"));
+        values.putAll(report.autoVectorizationPreview()
+                .proofBundle()
+                .artifactFields("autoVectorizationProofBundle"));
         report.autoVectorizationPreview().vectorTypeCounts().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> values.put(

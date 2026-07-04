@@ -810,6 +810,16 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(java.util.Map.of("memoryAddressSpace", 1L), summary.guardFamilyCounts());
         assertEquals("2", summary.artifactFields("autoVectorizationProofRewritePlan")
                 .get("autoVectorizationProofRewritePlanDiagnostics"));
+
+        GpuIrAutoVectorizationProofBundle bundle = preview.proofBundle();
+
+        assertFalse(bundle.rewriteSafe());
+        assertEquals(1, bundle.summaries().size());
+        assertEquals(List.of("rewritePlan"), bundle.proofKinds());
+        assertEquals(1, bundle.warningCount());
+        assertEquals(1, bundle.guardDiagnosticCount());
+        assertEquals(2, bundle.diagnosticCount());
+        assertEquals(java.util.Map.of("memoryAddressSpace", 1L), bundle.guardFamilyCounts());
     }
 
     @Test

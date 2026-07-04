@@ -33,8 +33,11 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunSuccessful=false"));
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunDiagnostics=1"));
         assertTrue(report.compactSummary().contains("autoVectorizationResolvedRewriteOperations=0"));
+        assertTrue(report.compactSummary().contains("autoVectorizationProofBundleRewriteSafe=true"));
+        assertTrue(report.compactSummary().contains("autoVectorizationProofBundleDiagnostics=0"));
         assertTrue(report.detailedSummary().contains("autoVectorizationRewriteDryRun={"));
         assertTrue(report.detailedSummary().contains("autoVectorizationResolvedRewriteOperations={"));
+        assertTrue(report.detailedSummary().contains("autoVectorizationProofBundle={"));
         assertTrue(report.detailedSummary().contains("successful=false"));
         assertTrue(report.detailedSummary().contains("replacement loopLocation expected=stmt[0] actual=stmt[1]"));
     }

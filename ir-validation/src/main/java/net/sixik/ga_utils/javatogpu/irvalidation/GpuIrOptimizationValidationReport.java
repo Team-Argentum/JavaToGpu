@@ -123,6 +123,8 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationWarnings=" + autoVectorizationWarningCount()
                 + " autoVectorizationRejections=" + autoVectorizationRejectionCount()
                 + " autoVectorizationRewritePlanGuards=" + autoVectorizationPreview.rewritePlanGuardCount()
+                + " autoVectorizationProofBundleRewriteSafe=" + autoVectorizationPreview.proofBundle().rewriteSafe()
+                + " autoVectorizationProofBundleDiagnostics=" + autoVectorizationPreview.proofBundle().diagnosticCount()
                 + (autoVectorizationPreview.hasRewritePlanGuardDiagnostics()
                 ? " autoVectorizationRewritePlanGuardFamilies=" + autoVectorizationPreview.rewritePlan().guardFamilyCounts()
                 : "");
@@ -140,6 +142,7 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationRewritePolicy={" + autoVectorizationPreview.rewritePolicy().summary() + "}"
                 + " autoVectorizationRewriteDryRun={" + autoVectorizationRewriteDryRunReport.summary() + "}"
                 + " autoVectorizationResolvedRewriteOperations={" + autoVectorizationResolvedRewriteOperations.summary() + "}"
+                + " autoVectorizationProofBundle={" + autoVectorizationPreview.proofBundle().summaryLine() + "}"
                 + " autoVectorization={" + autoVectorizationPreview.summary() + "}";
     }
 

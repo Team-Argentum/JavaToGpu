@@ -87,6 +87,8 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunReadiness=skipped")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunSuccessful=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunDiagnostics=1")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleRewriteSafe=true")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleDiagnostics=0")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("unknown variable reference: missing")));
     }
 
@@ -119,6 +121,8 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationHasPolicyBlockedRewrite=true")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicyCanRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicyBlockingGuards=1")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleRewriteSafe=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleDiagnostics=1")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePlanGuardFamilies={controlFlowBoundary=1}")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("firstRewritePlanGuard")));
     }
@@ -159,6 +163,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("unknown variable reference: missing")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cse={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicy={")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundle={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorization={")));
     }
 
@@ -307,6 +312,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationProofRewritePlanWarnings", "0");
         assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardDiagnostics", "0");
         assertEntryValue(entries, "autoVectorizationProofRewritePlanDiagnostics", "0");
+        assertProofBundleFields(entries, "true", "0", "0", "0", null);
         assertEntryValue(entries, "autoVectorizationRewritePolicyCanRewrite", "true");
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "ready");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
@@ -359,6 +365,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationProofRewritePlanDiagnostics", "1");
         assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardFamily.neighborSourceWrite", "1");
         assertEntryValueContains(entries, "autoVectorizationProofRewritePlanSummary", "guardFamilies={neighborSourceWrite=1}");
+        assertProofBundleFields(entries, "false", "0", "1", "1", "neighborSourceWrite");
         assertEntryValue(entries, "autoVectorizationRewritePolicyCanRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
@@ -571,6 +578,26 @@ class GpuIrOptimizationValidationProviderTest {
     private void assertEntryValueContains(List<GpuIrValidationReportEntry> entries, String key, String expectedFragment) {
         String actualValue = firstEntryValue(entries, key);
         assertTrue(actualValue != null && actualValue.contains(expectedFragment));
+    }
+
+    private void assertProofBundleFields(
+            List<GpuIrValidationReportEntry> entries,
+            String rewriteSafe,
+            String warnings,
+            String guardDiagnostics,
+            String diagnostics,
+            String guardFamily
+    ) {
+        assertEntryValue(entries, "autoVectorizationProofBundleProofs", "1");
+        assertEntryValue(entries, "autoVectorizationProofBundleKinds", "rewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofBundleRewriteSafe", rewriteSafe);
+        assertEntryValue(entries, "autoVectorizationProofBundleWarnings", warnings);
+        assertEntryValue(entries, "autoVectorizationProofBundleGuardDiagnostics", guardDiagnostics);
+        assertEntryValue(entries, "autoVectorizationProofBundleDiagnostics", diagnostics);
+        if (guardFamily != null) {
+            assertEntryValue(entries, "autoVectorizationProofBundleGuardFamily." + guardFamily, "1");
+            assertEntryValueContains(entries, "autoVectorizationProofBundleSummary", "guardFamilies={" + guardFamily + "=1}");
+        }
     }
 
     private String firstEntryValue(List<GpuIrValidationReportEntry> entries, String key) {

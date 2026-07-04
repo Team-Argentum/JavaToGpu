@@ -74,6 +74,92 @@ class GpuIrAutoVectorizationProofSummaryTest {
     }
 
     @Test
+    void proofSurfacesExposeSameBaseArtifactContract() {
+        GpuIrAutoVectorizationProofSummary rewritePlan = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "rewritePlan",
+                "kernel",
+                1,
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                        "stmt[0]",
+                        "source array `input` uses constant memory address space"
+                ))
+        );
+        GpuIrAutoVectorizationMemoryLegalityReport memoryLegality = new GpuIrAutoVectorizationMemoryLegalityReport(
+                "stmt[0]",
+                List.of("out"),
+                List.of("input"),
+                List.of("target array `out` is also read in the loop body"),
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                        "stmt[0]",
+                        "source array `input` uses constant memory address space"
+                ))
+        );
+        GpuIrAutoVectorizationControlFlowBoundaryReport controlFlowBoundary = new GpuIrAutoVectorizationControlFlowBoundaryReport(
+                "stmt[1]",
+                "stmt[0]",
+                "previous",
+                GpuIrAutoVectorizationControlFlowBoundaryKind.CONTROL_FLOW_BOUNDARY
+        );
+
+        assertBaseArtifactContract(rewritePlan.artifactFields("autoVectorizationProofRewritePlan"), "autoVectorizationProofRewritePlan");
+        assertBaseArtifactContract(memoryLegality.artifactFields(), "autoVectorizationProofMemoryLegality");
+        assertBaseArtifactContract(controlFlowBoundary.artifactFields(), "autoVectorizationProofControlFlowBoundary");
+    }
+
+    @Test
+    void proofBundleAggregatesMultipleProofSurfaces() {
+        GpuIrAutoVectorizationProofSummary rewritePlan = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "rewritePlan",
+                "kernel",
+                1,
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                        "stmt[0]",
+                        "source array `input` uses constant memory address space"
+                ))
+        );
+        GpuIrAutoVectorizationProofSummary controlFlow = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "controlFlowBoundary",
+                "stmt[1]",
+                0,
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.CONTROL_FLOW_BOUNDARY,
+                        "stmt[1]",
+                        "previous statement stmt[0] is a control-flow boundary"
+                ))
+        );
+        GpuIrAutoVectorizationProofSummary memory = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "memoryLegality",
+                "stmt[0]",
+                0,
+                List.of()
+        );
+
+        GpuIrAutoVectorizationProofBundle bundle = GpuIrAutoVectorizationProofBundle.of(rewritePlan, controlFlow, memory);
+        Map<String, String> fields = bundle.artifactFields();
+
+        assertFalse(bundle.rewriteSafe());
+        assertTrue(bundle.hasDiagnostics());
+        assertEquals(1, bundle.warningCount());
+        assertEquals(2, bundle.guardDiagnosticCount());
+        assertEquals(3, bundle.diagnosticCount());
+        assertEquals(List.of("rewritePlan", "controlFlowBoundary", "memoryLegality"), bundle.proofKinds());
+        assertEquals(Map.of(
+                GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE, 1L,
+                GpuIrAutoVectorizationRewriteGuardFamily.CONTROL_FLOW_BOUNDARY, 1L
+        ), bundle.guardFamilyTypeCounts());
+        assertEquals("3", fields.get("autoVectorizationProofBundleProofs"));
+        assertEquals("rewritePlan,controlFlowBoundary,memoryLegality", fields.get("autoVectorizationProofBundleKinds"));
+        assertEquals("false", fields.get("autoVectorizationProofBundleRewriteSafe"));
+        assertEquals("3", fields.get("autoVectorizationProofBundleDiagnostics"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.memoryAddressSpace"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.controlFlowBoundary"));
+        assertTrue(bundle.summaryLine().contains("proofs=3"));
+    }
+
+    @Test
     void returnsImmutableGuardFamilyCountsAndRejectsInvalidMetadata() {
         GpuIrAutoVectorizationProofSummary summary = GpuIrAutoVectorizationProofSummary.fromGuards(
                 "memoryLegality",
@@ -110,5 +196,17 @@ class GpuIrAutoVectorizationProofSummaryTest {
                 0,
                 Map.of()
         ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationProofBundle(List.of()));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationProofBundle(java.util.Arrays.asList(summary, null)));
+    }
+
+    private void assertBaseArtifactContract(Map<String, String> fields, String prefix) {
+        assertTrue(fields.containsKey(prefix + "Kind"));
+        assertTrue(fields.containsKey(prefix + "Location"));
+        assertTrue(fields.containsKey(prefix + "RewriteSafe"));
+        assertTrue(fields.containsKey(prefix + "Warnings"));
+        assertTrue(fields.containsKey(prefix + "GuardDiagnostics"));
+        assertTrue(fields.containsKey(prefix + "Diagnostics"));
+        assertTrue(fields.containsKey(prefix + "Summary"));
     }
 }
