@@ -163,6 +163,16 @@ The registry artifact is deliberately separate from the normal provider report. 
 
 `GpuIrOptimizationValidationOptimizerEnablementPolicyDecision` is the read-only policy layer above the handoff report. A clean handoff can allow an optimizer enablement review through `optimizerEnablementPolicyAllowOptimizerEnablementReview=true`, but `optimizerEnablementPolicyProductionMutationEnabled` remains `false` until a future explicit production policy is added. Blocked handoffs export `optimizerEnablementPolicyVerdict=blocked/handoffNotReady`, first-blocking reason, first remaining work, and CI summary text, so tooling can separate "ready for review" from "safe to mutate production IR".
 
+`GpuIrOptimizationValidationOptimizerEnablementArtifact` is the typed read-only bundle for that full CI/tooling chain. It keeps the validation-rule artifact, acceptance decision, optimizer-readiness handoff, and enablement policy in one immutable object, then exports the same `validationRules*`, `validationRulesAcceptance*`, `optimizerReadinessHandoff*`, and `optimizerEnablementPolicy*` fields. `GpuIrOptimizationValidationRuleArtifactFields.optimizerEnablementArtifactFields(...)` and `putOptimizerEnablementArtifactFields(...)` provide the default map-facing aliases while preserving the older `fieldsWithAcceptanceHandoffAndPolicy(...)` helper.
+
+`GpuIrOptimizationValidationOptimizerEnablementArtifactRunner` is the matching detached smoke runner. It starts from an already-created `GpuIrOptimizationValidationReport`, evaluates an explicit validation-rule registry, and returns the typed enablement artifact or its `.properties`-friendly field map. Like the lower-level rule artifact runner, it is opt-in tooling only and does not connect the normal compiler validation path to optimizer mutation.
+
+`GpuIrOptimizationValidationOptimizerEnablementGateReport` is the first read-only aggregate gate above those artifacts. It combines CSE literal-promotion readiness, auto-vectorization prototype readiness, and the conservative optimizer enablement policy into one `optimizerEnablementGate*` verdict with blocker counts, first blocker, remaining work, and CI summary text. A blocked CSE or auto-vectorization readiness layer fails the gate before policy review; a clean review still reports `reviewReady/productionMutationDisabled` until a future explicit production mutation switch is implemented.
+
+`GpuIrOptimizationValidationOptimizerValidationBundle` is the typed read-only object intended for future A1/A2 production-enable checks. It keeps the original validation report, the full optimizer enablement artifact, the aggregate enablement gate, and the production preflight decision together, then exports `optimizerValidationBundle*` rollup fields plus the nested `validationRules*`, `optimizerEnablementPolicy*`, `optimizerEnablementGate*`, and `optimizerProductionPreflight*` fields. The detached runner exposes it through `runBundle(...)` and `runBundleFields(...)`.
+
+`GpuIrOptimizationValidationProductionEnablementPreflightDecision` is the final read-only A1/A2 preflight layer above the bundle. It classifies the current bundle as `blocked/optimizerValidationBundleNotReady`, `reviewReady/productionMutationDisabled`, or `ready/productionMutationEnabled`, exports compact `optimizerProductionPreflight*` fields, and never flips production mutation by itself. Tooling can use this as the future production-enable handoff point without coupling it to normal compiler validation.
+
 `GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry()` adds a separate opt-in rule pack for runtime-equivalence evidence checks. It is not part of `defaultRegistry()` and is not connected to normal compiler validation. The default pack currently contains `cse.literalRuntimeEquivalenceEvidence`, which warns when literal CSE preview candidates exist without successful runtime-equivalence evidence, and `cse.literalPromotionRuntimeEquivalenceGate`, which blocks promotion-oriented artifacts when preview candidates exist but runtime-equivalence evidence is missing or failed. Callers that also have explicit auto-vectorization prototype pre/post evidence can use `runtimeEquivalenceEvidenceRegistry(prePostReport)` or `autoVectorizationPrototypePrePostRuntimeEquivalenceRegistry(prePostReport)` to include `autoVectorization.prototypePrePostRuntimeEquivalenceEvidence` and `autoVectorization.prototypePrePostRuntimeEquivalenceGate`; those rules warn/block when prototype rewrite candidates exist but pre/post runtime-equivalence evidence is missing or failed. The rule metadata exports literal preview counts, auto-vectorization rewrite counts, runtime-equivalence success/diagnostic metadata, readiness verdicts, blocking reasons plus blocker counts, applied rewrite-family counters, and remaining-work hints plus remaining-work counts through normal rule-result metadata.
 
 Rule-result metadata exports now include both `MetadataCount` and `MetadataPresent`, giving CI/tooling a stable metadata-shape check without parsing nested `Metadata.*` keys.
@@ -189,10 +199,26 @@ GpuIrOptimizationValidationRuleArtifactReport combined =
         );
 
 Map<String, String> ciFields =
-        GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceHandoffAndPolicy(combined);
+        GpuIrOptimizationValidationRuleArtifactFields.optimizerEnablementArtifactFields(combined);
+
+Map<String, String> smokeFields =
+        new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runArtifactFields(validationReport);
+
+Map<String, String> gateFields =
+        new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runGateFields(validationReport);
+
+Map<String, String> bundleFields =
+        new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runBundleFields(validationReport);
+
+Map<String, String> preflightFields =
+        new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runProductionPreflightFields(validationReport);
 ```
 
-For CI, read `validationRulesVerdict`, `validationRulesWarningRuleIndex`, `validationRulesBlockingRuleIndex`, `validationRulesAcceptanceAccepted`, `validationRulesAcceptanceReason`, `optimizerReadinessHandoffReadyForOptimizerEnablement`, `optimizerReadinessHandoffVerdict`, `optimizerReadinessHandoffBlockingReasons`, `optimizerEnablementPolicyAllowOptimizerEnablementReview`, `optimizerEnablementPolicyProductionMutationEnabled`, and the nested `validationRulesRegistryResult.*.Metadata.*` evidence fields first. This avoids parsing long summary strings, keeps runtime-evidence gating opt-in, and lets tooling fail closed before future optimizer enablement review.
+For CI, read `validationRulesVerdict`, `validationRulesWarningRuleIndex`, `validationRulesBlockingRuleIndex`, `validationRulesAcceptanceAccepted`, `validationRulesAcceptanceReason`, `optimizerReadinessHandoffReadyForOptimizerEnablement`, `optimizerReadinessHandoffVerdict`, `optimizerReadinessHandoffBlockingReasons`, `optimizerEnablementPolicyAllowOptimizerEnablementReview`, `optimizerEnablementPolicyProductionMutationEnabled`, `optimizerEnablementGateVerdict`, `optimizerEnablementGateReadyForProductionMutation`, `optimizerEnablementGateFirstBlockingReason`, `optimizerValidationBundleVerdict`, `optimizerValidationBundleReadyForProductionMutation`, `optimizerValidationBundleGateFirstBlockingReason`, `optimizerProductionPreflightVerdict`, `optimizerProductionPreflightBlocked`, `optimizerProductionPreflightReviewReady`, `optimizerProductionPreflightFirstBlockingReason`, and the nested `validationRulesRegistryResult.*.Metadata.*` evidence fields first. This avoids parsing long summary strings, keeps runtime-evidence gating opt-in, and lets tooling fail closed before future optimizer enablement review.
 
 `cseSimpleArithmeticLiteralPromotionReadiness*` sits above the checklist as a compact CI rollup, exporting one verdict, blocker counters, first blocker, remaining-work list, and `CiSummaryLine` across typed numeric blockers, runtime-equivalence evidence, preview-only fingerprint blast radius, production fingerprint disablement, and production mutation disablement.
 

@@ -260,6 +260,116 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("enableProductionMutationPolicy", fields.get("optimizerEnablementPolicyFirstRemainingWork"));
     }
 
+    @Test
+    void optimizerEnablementGateKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("gateContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runGateFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerEnablementGateMethod",
+                "optimizerEnablementGateVerdict",
+                "optimizerEnablementGateReadyForProductionMutation",
+                "optimizerEnablementGateCseReadyForProductionMutation",
+                "optimizerEnablementGateAutoVectorizationReadyForPrototypeRewrite",
+                "optimizerEnablementGateOptimizerEnablementReviewAllowed",
+                "optimizerEnablementGateProductionMutationEnabled",
+                "optimizerEnablementGateCseVerdict",
+                "optimizerEnablementGateAutoVectorizationVerdict",
+                "optimizerEnablementGateOptimizerEnablementPolicyVerdict",
+                "optimizerEnablementGateBlockingReasons",
+                "optimizerEnablementGateBlockingReasonCount",
+                "optimizerEnablementGateRemainingWork",
+                "optimizerEnablementGateRemainingWorkCount",
+                "optimizerEnablementGateFirstBlockingReason",
+                "optimizerEnablementGateFirstRemainingWork",
+                "optimizerEnablementGateCiSummaryLine"
+        ));
+        assertEquals("gateContractKernel", fields.get("optimizerEnablementGateMethod"));
+        assertEquals("notReady/cseBlocked", fields.get("optimizerEnablementGateVerdict"));
+        assertEquals("false", fields.get("optimizerEnablementGateReadyForProductionMutation"));
+        assertEquals("false", fields.get("optimizerEnablementGateCseReadyForProductionMutation"));
+        assertEquals("false", fields.get("optimizerEnablementGateAutoVectorizationReadyForPrototypeRewrite"));
+        assertEquals("true", fields.get("optimizerEnablementGateOptimizerEnablementReviewAllowed"));
+        assertEquals("false", fields.get("optimizerEnablementGateProductionMutationEnabled"));
+        assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerEnablementGateFirstBlockingReason"));
+        assertEquals("collectPreviewCandidates", fields.get("optimizerEnablementGateFirstRemainingWork"));
+    }
+
+    @Test
+    void optimizerValidationBundleKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("bundleContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runBundleFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerValidationBundleMethod",
+                "optimizerValidationBundleVerdict",
+                "optimizerValidationBundleReadyForProductionMutation",
+                "optimizerValidationBundleProductionMutationEnabled",
+                "optimizerValidationBundleValidationHasSafetyError",
+                "optimizerValidationBundleValidationHasOptimizerDiagnostics",
+                "optimizerValidationBundleRuleArtifactVerdict",
+                "optimizerValidationBundleRuleArtifactAccepted",
+                "optimizerValidationBundleEnablementPolicyVerdict",
+                "optimizerValidationBundleGateFirstBlockingReason",
+                "optimizerValidationBundleGateFirstRemainingWork",
+                "optimizerValidationBundleCiSummaryLine",
+                "validationRulesMethod",
+                "validationRulesAcceptanceAccepted",
+                "optimizerEnablementPolicyProductionMutationEnabled",
+                "optimizerEnablementGateVerdict",
+                "optimizerEnablementGateReadyForProductionMutation",
+                "optimizerProductionPreflightVerdict",
+                "optimizerProductionPreflightBlocked",
+                "optimizerProductionPreflightFirstBlockingReason"
+        ));
+        assertEquals("bundleContractKernel", fields.get("optimizerValidationBundleMethod"));
+        assertEquals("notReady/cseBlocked", fields.get("optimizerValidationBundleVerdict"));
+        assertEquals("false", fields.get("optimizerValidationBundleReadyForProductionMutation"));
+        assertEquals("false", fields.get("optimizerValidationBundleProductionMutationEnabled"));
+        assertEquals("pass", fields.get("optimizerValidationBundleRuleArtifactVerdict"));
+        assertEquals("true", fields.get("optimizerValidationBundleRuleArtifactAccepted"));
+        assertEquals("reviewAllowed/productionMutationDisabled", fields.get("optimizerValidationBundleEnablementPolicyVerdict"));
+        assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerValidationBundleGateFirstBlockingReason"));
+        assertEquals("collectPreviewCandidates", fields.get("optimizerValidationBundleGateFirstRemainingWork"));
+        assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionPreflightVerdict"));
+        assertEquals("true", fields.get("optimizerProductionPreflightBlocked"));
+        assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerProductionPreflightFirstBlockingReason"));
+    }
+
+    @Test
+    void optimizerProductionPreflightKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("preflightContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runProductionPreflightFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerProductionPreflightMethod",
+                "optimizerProductionPreflightVerdict",
+                "optimizerProductionPreflightBlocked",
+                "optimizerProductionPreflightReviewReady",
+                "optimizerProductionPreflightReadyForProductionMutation",
+                "optimizerProductionPreflightProductionMutationEnabled",
+                "optimizerProductionPreflightBundleVerdict",
+                "optimizerProductionPreflightFirstBlockingReason",
+                "optimizerProductionPreflightFirstRemainingWork",
+                "optimizerProductionPreflightCiSummaryLine"
+        ));
+        assertEquals("preflightContractKernel", fields.get("optimizerProductionPreflightMethod"));
+        assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionPreflightVerdict"));
+        assertEquals("true", fields.get("optimizerProductionPreflightBlocked"));
+        assertEquals("false", fields.get("optimizerProductionPreflightReviewReady"));
+        assertEquals("false", fields.get("optimizerProductionPreflightReadyForProductionMutation"));
+        assertEquals("false", fields.get("optimizerProductionPreflightProductionMutationEnabled"));
+        assertEquals("notReady/cseBlocked", fields.get("optimizerProductionPreflightBundleVerdict"));
+        assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerProductionPreflightFirstBlockingReason"));
+        assertEquals("collectPreviewCandidates", fields.get("optimizerProductionPreflightFirstRemainingWork"));
+    }
+
     private static void assertContainsKeys(Map<String, String> fields, Set<String> expectedKeys) {
         assertTrue(fields.keySet().containsAll(expectedKeys), () -> "missing artifact keys: "
                 + expectedKeys.stream()

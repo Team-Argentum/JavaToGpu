@@ -146,27 +146,27 @@ public final class GpuIrOptimizationValidationRuleArtifactFields {
     public static Map<String, String> fieldsWithAcceptanceHandoffAndPolicy(
             GpuIrOptimizationValidationRuleArtifactReport report
     ) {
-        return fieldsWithAcceptanceHandoffAndPolicy(
-                DEFAULT_PREFIX,
-                DEFAULT_ACCEPTANCE_PREFIX,
-                DEFAULT_HANDOFF_PREFIX,
-                DEFAULT_ENABLEMENT_POLICY_PREFIX,
-                report
-        );
+        return optimizerEnablementArtifactFields(report);
     }
 
     public static Map<String, String> fieldsWithAcceptanceHandoffAndPolicy(
             GpuIrOptimizationValidationRuleArtifactReport report,
             GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport
     ) {
-        return fieldsWithAcceptanceHandoffAndPolicy(
-                DEFAULT_PREFIX,
-                DEFAULT_ACCEPTANCE_PREFIX,
-                DEFAULT_HANDOFF_PREFIX,
-                DEFAULT_ENABLEMENT_POLICY_PREFIX,
-                report,
-                consistencyReport
-        );
+        return optimizerEnablementArtifactFields(report, consistencyReport);
+    }
+
+    public static Map<String, String> optimizerEnablementArtifactFields(
+            GpuIrOptimizationValidationRuleArtifactReport report
+    ) {
+        return GpuIrOptimizationValidationOptimizerEnablementArtifact.from(report).artifactFields();
+    }
+
+    public static Map<String, String> optimizerEnablementArtifactFields(
+            GpuIrOptimizationValidationRuleArtifactReport report,
+            GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport
+    ) {
+        return GpuIrOptimizationValidationOptimizerEnablementArtifact.from(report, consistencyReport).artifactFields();
     }
 
     public static Map<String, String> fieldsWithAcceptanceHandoffAndPolicy(
@@ -425,14 +425,7 @@ public final class GpuIrOptimizationValidationRuleArtifactFields {
             Map<String, String> values,
             GpuIrOptimizationValidationRuleArtifactReport report
     ) {
-        putFieldsWithAcceptanceHandoffAndPolicy(
-                values,
-                DEFAULT_PREFIX,
-                DEFAULT_ACCEPTANCE_PREFIX,
-                DEFAULT_HANDOFF_PREFIX,
-                DEFAULT_ENABLEMENT_POLICY_PREFIX,
-                report
-        );
+        putOptimizerEnablementArtifactFields(values, report);
     }
 
     public static void putFieldsWithAcceptanceHandoffAndPolicy(
@@ -440,15 +433,22 @@ public final class GpuIrOptimizationValidationRuleArtifactFields {
             GpuIrOptimizationValidationRuleArtifactReport report,
             GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport
     ) {
-        putFieldsWithAcceptanceHandoffAndPolicy(
-                values,
-                DEFAULT_PREFIX,
-                DEFAULT_ACCEPTANCE_PREFIX,
-                DEFAULT_HANDOFF_PREFIX,
-                DEFAULT_ENABLEMENT_POLICY_PREFIX,
-                report,
-                consistencyReport
-        );
+        putOptimizerEnablementArtifactFields(values, report, consistencyReport);
+    }
+
+    public static void putOptimizerEnablementArtifactFields(
+            Map<String, String> values,
+            GpuIrOptimizationValidationRuleArtifactReport report
+    ) {
+        GpuIrOptimizationValidationOptimizerEnablementArtifact.from(report).putArtifactFields(values);
+    }
+
+    public static void putOptimizerEnablementArtifactFields(
+            Map<String, String> values,
+            GpuIrOptimizationValidationRuleArtifactReport report,
+            GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport
+    ) {
+        GpuIrOptimizationValidationOptimizerEnablementArtifact.from(report, consistencyReport).putArtifactFields(values);
     }
 
     public static void putFieldsWithAcceptanceHandoffAndPolicy(

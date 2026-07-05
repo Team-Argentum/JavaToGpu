@@ -202,6 +202,23 @@ class GpuIrOptimizationValidationRuleArtifactFieldsTest {
     }
 
     @Test
+    void optimizerEnablementArtifactFieldsExposeSameDefaultCombinedSurface() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("policyArtifactAliasKernel"));
+
+        Map<String, String> aliasFields = GpuIrOptimizationValidationRuleArtifactFields
+                .optimizerEnablementArtifactFields(report);
+        Map<String, String> combinedFields = GpuIrOptimizationValidationRuleArtifactFields
+                .fieldsWithAcceptanceHandoffAndPolicy(report);
+
+        assertEquals(combinedFields, aliasFields);
+        assertEquals("policyArtifactAliasKernel", aliasFields.get("validationRulesMethod"));
+        assertEquals("true", aliasFields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", aliasFields.get("optimizerReadinessHandoffReadyForOptimizerEnablement"));
+        assertEquals("reviewAllowed/productionMutationDisabled", aliasFields.get("optimizerEnablementPolicyVerdict"));
+    }
+
+    @Test
     void combinedFieldsWithPolicyCanRejectExplicitConsistencyDrift() {
         GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
                 .run(validationReport("policyDriftKernel"));
