@@ -25,13 +25,13 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactConsistencyReportTe
         assertEquals("consistent", report.verdict());
         assertTrue(report.consistent());
         assertFalse(report.hasFailures());
-        assertEquals(12, report.checkCount());
+        assertEquals(14, report.checkCount());
         assertEquals(0, report.failedCheckCount());
         assertEquals(List.of(), report.failedChecks());
-        assertEquals("literal artifact consistency check passed: 12 checks", report.ciSummaryLine());
+        assertEquals("literal artifact consistency check passed: 14 checks", report.ciSummaryLine());
         assertEquals("consistent", fields.get("literalArtifactConsistencyVerdict"));
         assertEquals("true", fields.get("literalArtifactConsistencyConsistent"));
-        assertEquals("12", fields.get("literalArtifactConsistencyChecks"));
+        assertEquals("14", fields.get("literalArtifactConsistencyChecks"));
         assertEquals("0", fields.get("literalArtifactConsistencyFailedChecks"));
         assertEquals("[]", fields.get("literalArtifactConsistencyFailedCheckList"));
         assertEquals("{}", fields.get("literalArtifactConsistencyFailedCheckCounts"));

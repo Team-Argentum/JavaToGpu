@@ -120,7 +120,7 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceRunnerTes
         assertEquals("true", fields.get("literalArtifactRuntimeEquivalence.Successful"));
         assertEquals("[fingerprintIntegrationDisabled]", fields.get("literalArtifactGate.BlockingReasons"));
         assertEquals("consistent", fields.get("literalArtifactConsistency.Verdict"));
-        assertEquals("literal artifact consistency check passed: 12 checks", fields.get("literalArtifactConsistency.CiSummaryLine"));
+        assertEquals("literal artifact consistency check passed: 14 checks", fields.get("literalArtifactConsistency.CiSummaryLine"));
         assertTrue(fields.get("literalArtifactSummary").contains("runtimeEquivalenceSuccessful=true"));
     }
 
@@ -167,6 +167,35 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceRunnerTes
         assertEquals(0, report.canonicalizationReport().candidateCount());
         assertTrue(report.diagnostics().contains("literal canonicalization preview has no candidates"));
         assertTrue(report.diagnostics().contains("literal canonicalization numeric semantics proof is not fully proven"));
+    }
+
+    @Test
+    void reportsFailedEvidenceWhenRunnerHitsUnsupportedExpression() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("+",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrLiteral("1"))
+                )),
+                new GpuIrAssignment(new GpuIrVariableRef("out"), new GpuIrBinary("%",
+                        new GpuIrVariableRef("first"),
+                        new GpuIrLiteral("2"))),
+                new GpuIrReturn(new GpuIrVariableRef("out"))
+        ));
+
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport report = runner.run(
+                compiledMethod(method),
+                List.of(inputCase("case-unsupported", Map.of("x", 8, "y", 2, "out", 0))),
+                List.of("out", "return")
+        );
+        Map<String, String> fields = report.artifactFields("literalRuntime");
+
+        assertFalse(report.successful());
+        assertEquals("notProven", report.readiness());
+        assertEquals(1, report.diagnosticCount());
+        assertTrue(report.firstDiagnostic().orElseThrow().contains("case case-unsupported execution failed"));
+        assertTrue(report.firstDiagnostic().orElseThrow().contains("Unsupported literal runtime-equivalence binary operator: %"));
+        assertEquals(report.firstDiagnostic().orElseThrow(), fields.get("literalRuntimeFirstDiagnostic"));
+        assertEquals(report.firstDiagnostic().orElseThrow(), fields.get("literalRuntimeDiagnostic.0"));
     }
 
     @Test

@@ -80,6 +80,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("ir optimization validation method=broken")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("safety=failed")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("optimizerDiagnostics=0")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("runtimeEquivalenceDiagnosticFamilyCounts={other=1}")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpressionProvenCandidates=0")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpressionHasEvidence=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseRewritePolicyCanRewrite=false")));
@@ -208,6 +209,10 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
         assertEntryValue(entries, "optimizerGatePolicySource", "none");
         assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
+        assertEntryValue(entries, "runtimeEquivalenceDiagnostics", "1");
+        assertEntryValue(entries, "hasRuntimeEquivalenceDiagnostics", "true");
+        assertEntryValue(entries, "runtimeEquivalenceDiagnosticFamilyCounts", "{other=1}");
+        assertEntryValue(entries, "runtimeEquivalenceDiagnosticFamily.other", "1");
         assertEntryValue(entries, "cseSkippedDominanceStatusCounts", "{}");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "none");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
@@ -287,6 +292,8 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalenceComparedOutputs", "0");
         assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalenceDiagnostics", "1");
         assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalenceHasDiagnostics", "true");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalenceDiagnosticFamilyCounts", "{other=1}");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalenceDiagnosticFamily.other", "1");
         assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalencePreviewCandidates", "2");
         assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalenceUniqueCanonicalKeys", "2");
         assertEntryValue(entries, "cseSimpleArithmeticLiteralRuntimeEquivalenceNumericSemanticsFullyProven", "true");

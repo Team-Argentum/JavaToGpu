@@ -34,6 +34,7 @@ class GpuIrAutoVectorizationPrototypeArtifactReportTest {
         assertEquals("true", fields.get("autoVectorizationPrototypeArtifactHasAppliedRewrites"));
         assertEquals("true", fields.get("autoVectorizationPrototypeArtifactRuntimeEquivalenceSuccessful"));
         assertEquals("0", fields.get("autoVectorizationPrototypeArtifactRuntimeEquivalenceDiagnostics"));
+        assertEquals("{}", fields.get("autoVectorizationPrototypeArtifactRuntimeEquivalenceDiagnosticFamilyCounts"));
         assertTrue(fields.get("autoVectorizationPrototypeArtifactSummary").contains("method=kernel"));
         assertTrue(fields.get("autoVectorizationPrototypeArtifactSummary").contains("inputCases=2"));
         assertEquals("1", fields.get("autoVectorizationPrototypeArtifactRewrite.AppliedRewrites"));
@@ -83,7 +84,7 @@ class GpuIrAutoVectorizationPrototypeArtifactReportTest {
                         rewriteReport(),
                         1,
                         List.of("out"),
-                        List.of("out differs at lane 3")
+                        List.of("case case-a output out differs at lane 3")
                 )
         );
 
@@ -94,9 +95,13 @@ class GpuIrAutoVectorizationPrototypeArtifactReportTest {
         assertEquals("false", fields.get("prototypeArtifact.Successful"));
         assertEquals("false", fields.get("prototypeArtifact.RuntimeEquivalenceSuccessful"));
         assertEquals("1", fields.get("prototypeArtifact.RuntimeEquivalenceDiagnostics"));
+        assertEquals("{outputDiffers=1}", fields.get("prototypeArtifact.RuntimeEquivalenceDiagnosticFamilyCounts"));
+        assertEquals("1", fields.get("prototypeArtifact.RuntimeEquivalenceDiagnosticFamily.outputDiffers"));
         assertTrue(fields.get("prototypeArtifact.Summary").contains("diagnostics=1"));
         assertEquals("false", fields.get("prototypeArtifact.RuntimeEquivalence.Successful"));
-        assertEquals("out differs at lane 3", fields.get("prototypeArtifact.RuntimeEquivalence.FirstDiagnostic"));
+        assertEquals("case case-a output out differs at lane 3", fields.get("prototypeArtifact.RuntimeEquivalence.FirstDiagnostic"));
+        assertEquals("case case-a output out differs at lane 3", fields.get("prototypeArtifact.RuntimeEquivalence.AllDiagnostics"));
+        assertEquals("case case-a output out differs at lane 3", fields.get("prototypeArtifact.RuntimeEquivalence.Diagnostic.0"));
         assertTrue(report.summary().contains("successful=false"));
         assertTrue(report.summary().contains("diagnostics=1"));
     }

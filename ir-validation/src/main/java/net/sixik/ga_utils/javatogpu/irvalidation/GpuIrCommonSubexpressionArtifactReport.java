@@ -78,6 +78,11 @@ public record GpuIrCommonSubexpressionArtifactReport(
         values.put(prefix + "Skipped", Integer.toString(skippedCount()));
         values.put(prefix + "RuntimeEquivalenceSuccessful", Boolean.toString(runtimeEquivalenceReport.successful()));
         values.put(prefix + "RuntimeEquivalenceDiagnostics", Integer.toString(runtimeEquivalenceReport.diagnosticCount()));
+        GpuIrRuntimeEquivalenceDiagnosticFamilies.putArtifactFields(
+                values,
+                prefix + "RuntimeEquivalence",
+                runtimeEquivalenceReport.diagnostics()
+        );
         values.put(prefix + "Summary", artifactSummary().summaryLine());
         values.putAll(snapshot.artifactFields(prefix + "Snapshot."));
         values.putAll(runtimeEquivalenceReport.artifactFields(prefix + "RuntimeEquivalence."));

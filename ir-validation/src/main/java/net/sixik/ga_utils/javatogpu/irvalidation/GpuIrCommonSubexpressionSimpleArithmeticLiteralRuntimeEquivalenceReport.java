@@ -131,12 +131,19 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceR
         values.put(prefix + "ComparedOutputNames", String.join(",", comparedOutputs));
         values.put(prefix + "Diagnostics", Integer.toString(diagnosticCount()));
         values.put(prefix + "HasDiagnostics", Boolean.toString(hasDiagnostics()));
+        GpuIrRuntimeEquivalenceDiagnosticFamilies.putArtifactFields(values, prefix, diagnostics);
         values.put(prefix + "PreviewCandidates", Integer.toString(canonicalizationReport.candidateCount()));
         values.put(prefix + "UniqueCanonicalKeys", Integer.toString(canonicalizationReport.uniqueCanonicalKeyCount()));
         values.put(prefix + "NumericSemanticsFullyProven", Boolean.toString(numericSemanticsProofReport.fullyProven()));
         values.put(prefix + "NumericSemanticsReadiness", numericSemanticsProofReport.readiness());
         values.put(prefix + "CanonicalKeyCounts", mapSummary(canonicalizationReport.canonicalKeyCounts()));
-        firstDiagnostic().ifPresent(diagnostic -> values.put(prefix + "FirstDiagnostic", diagnostic));
+        if (hasDiagnostics()) {
+            values.put(prefix + "FirstDiagnostic", diagnostics.get(0));
+            values.put(prefix + "AllDiagnostics", String.join(" | ", diagnostics));
+            for (int index = 0; index < diagnostics.size(); index++) {
+                values.put(prefix + "Diagnostic." + index, diagnostics.get(index));
+            }
+        }
         return Collections.unmodifiableMap(values);
     }
 

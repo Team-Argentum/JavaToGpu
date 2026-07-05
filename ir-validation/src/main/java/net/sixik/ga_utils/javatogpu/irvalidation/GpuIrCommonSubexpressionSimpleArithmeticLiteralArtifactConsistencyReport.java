@@ -55,7 +55,7 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactConsistency
                 artifactReport.canonicalizationReport().methodName(),
                 consistent ? VERDICT_OK : VERDICT_FAILED,
                 consistent,
-                12,
+                14,
                 failedChecks.size(),
                 failedChecks
         );
@@ -152,6 +152,8 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactConsistency
         check(decisionReport.numericSemanticsFullyProven() == numericProofReport.fullyProven(), "decisionNumericProof", failures);
         check(parityReport.evidenceComplete() == decisionReport.evidenceComplete(), "parityDecisionEvidenceComplete", failures);
         check(summary.runtimeEquivalenceSuccessful() == runtimeReport.successful(), "summaryRuntimeSuccessful", failures);
+        check(summary.diagnosticCount() == runtimeReport.diagnosticCount(), "summaryRuntimeDiagnosticCount", failures);
+        check(summary.firstDiagnostic().equals(runtimeReport.firstDiagnostic().orElse("")), "summaryRuntimeFirstDiagnostic", failures);
         return List.copyOf(failures);
     }
 
@@ -175,6 +177,8 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactConsistency
             case "decisionNumericProof" -> "fingerprint decision and numeric proof report disagree on proof status";
             case "parityDecisionEvidenceComplete" -> "fingerprint parity and decision report disagree on evidence completeness";
             case "summaryRuntimeSuccessful" -> "artifact summary and runtime-equivalence report disagree on success";
+            case "summaryRuntimeDiagnosticCount" -> "artifact summary and runtime-equivalence report disagree on diagnostic count";
+            case "summaryRuntimeFirstDiagnostic" -> "artifact summary and runtime-equivalence report disagree on first diagnostic";
             default -> "unknown literal artifact drift: " + failedCheck;
         };
     }

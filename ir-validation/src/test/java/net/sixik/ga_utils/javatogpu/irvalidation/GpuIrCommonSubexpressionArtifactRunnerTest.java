@@ -240,6 +240,30 @@ class GpuIrCommonSubexpressionArtifactRunnerTest {
     }
 
     @Test
+    void reportsFailedEquivalenceWhenRunnerHitsUnsupportedExpression() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("%",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrVariableRef("y"))),
+                new GpuIrReturn(new GpuIrVariableRef("outA"))
+        ));
+
+        GpuIrCommonSubexpressionArtifactReport report = runner.run(
+                compiledMethod(method),
+                List.of(inputCase("case-unsupported", Map.of("x", 8, "y", 2, "outA", 0))),
+                List.of("outA", "return")
+        );
+        Map<String, String> fields = report.artifactFields("cseRun.");
+
+        assertFalse(report.successful());
+        assertEquals(1, report.diagnosticCount());
+        assertTrue(report.runtimeEquivalenceReport().firstDiagnostic().contains("case case-unsupported execution failed"));
+        assertTrue(report.runtimeEquivalenceReport().firstDiagnostic().contains("Unsupported CSE equivalence binary operator: %"));
+        assertEquals(report.runtimeEquivalenceReport().firstDiagnostic(), fields.get("cseRun.RuntimeEquivalence.FirstDiagnostic"));
+        assertEquals(report.runtimeEquivalenceReport().firstDiagnostic(), fields.get("cseRun.RuntimeEquivalence.Diagnostic.0"));
+    }
+
+    @Test
     void rejectsInvalidRunnerInputs() {
         GpuIrMethod method = new GpuIrMethod("kernel", List.of(
                 new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrLiteral("1"))

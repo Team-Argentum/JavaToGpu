@@ -65,6 +65,11 @@ public record GpuIrAutoVectorizationPrototypeArtifactReport(
         values.put(prefix + "HasAppliedRewrites", Boolean.toString(hasAppliedRewrites()));
         values.put(prefix + "RuntimeEquivalenceSuccessful", Boolean.toString(runtimeEquivalenceReport.successful()));
         values.put(prefix + "RuntimeEquivalenceDiagnostics", Integer.toString(runtimeEquivalenceReport.diagnosticCount()));
+        GpuIrRuntimeEquivalenceDiagnosticFamilies.putArtifactFields(
+                values,
+                prefix + "RuntimeEquivalence",
+                runtimeEquivalenceReport.diagnostics()
+        );
         values.put(prefix + "Summary", artifactSummary().summaryLine());
         values.putAll(rewriteReport().artifactFields(prefix + "Rewrite."));
         values.putAll(runtimeEquivalenceReport.artifactFields(prefix + "RuntimeEquivalence."));

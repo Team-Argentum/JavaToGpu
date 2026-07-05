@@ -34,12 +34,15 @@ class GpuIrCommonSubexpressionRuntimeEquivalenceReportTest {
         assertEquals("outA", fields.get("cseRuntimeEquivalenceComparedOutputNames"));
         assertEquals("0", fields.get("cseRuntimeEquivalenceDiagnostics"));
         assertEquals("false", fields.get("cseRuntimeEquivalenceHasDiagnostics"));
+        assertEquals("{}", fields.get("cseRuntimeEquivalenceDiagnosticFamilyCounts"));
         assertEquals("1", fields.get("cseRuntimeEquivalencePlans"));
         assertEquals("1", fields.get("cseRuntimeEquivalenceInsertions"));
         assertEquals("1", fields.get("cseRuntimeEquivalenceReplacements"));
         assertEquals("0", fields.get("cseRuntimeEquivalenceSkipped"));
         assertEquals("{}", fields.get("cseRuntimeEquivalenceSkippedDominanceStatusCounts"));
         assertFalse(fields.containsKey("cseRuntimeEquivalenceFirstDiagnostic"));
+        assertFalse(fields.containsKey("cseRuntimeEquivalenceAllDiagnostics"));
+        assertFalse(fields.containsKey("cseRuntimeEquivalenceDiagnostic.0"));
         assertTrue(report.summary().contains("successful=true"));
         assertTrue(report.summary().contains("replacements=1"));
     }
@@ -68,13 +71,45 @@ class GpuIrCommonSubexpressionRuntimeEquivalenceReportTest {
         assertEquals("outA", fields.get("cseEquivalence.ComparedOutputNames"));
         assertEquals("1", fields.get("cseEquivalence.Diagnostics"));
         assertEquals("true", fields.get("cseEquivalence.HasDiagnostics"));
+        assertEquals("{outputDiffers=1}", fields.get("cseEquivalence.DiagnosticFamilyCounts"));
+        assertEquals("1", fields.get("cseEquivalence.DiagnosticFamily.outputDiffers"));
         assertEquals("case 1 output outA differs", fields.get("cseEquivalence.FirstDiagnostic"));
+        assertEquals("case 1 output outA differs", fields.get("cseEquivalence.AllDiagnostics"));
+        assertEquals("case 1 output outA differs", fields.get("cseEquivalence.Diagnostic.0"));
         assertEquals("0", fields.get("cseEquivalence.Plans"));
         assertEquals("1", fields.get("cseEquivalence.Skipped"));
         assertEquals("{requiresLocalExpressionDominance=1}", fields.get("cseEquivalence.SkippedDominanceStatusCounts"));
         assertEquals("1", fields.get("cseEquivalence.SkippedDominanceStatus.requiresLocalExpressionDominance"));
         assertTrue(report.summary().contains("successful=false"));
         assertTrue(report.summary().contains("firstDiagnostic=case 1 output outA differs"));
+    }
+
+    @Test
+    void exposesJoinedAndIndexedDiagnosticsForFailedRuntimeEquivalenceArtifacts() {
+        GpuIrCommonSubexpressionRuntimeEquivalenceReport report =
+                GpuIrCommonSubexpressionRuntimeEquivalenceReport.failed(
+                        skippedRewritePlanReport(),
+                        2,
+                        List.of("outA", "outB"),
+                        List.of(
+                                "case 0 output outA differs",
+                                "case 1 output outB is missing"
+                        )
+                );
+
+        Map<String, String> fields = report.artifactFields("cseEquivalence.");
+
+        assertEquals(2, report.diagnosticCount());
+        assertEquals("case 0 output outA differs", report.firstDiagnostic());
+        assertEquals(
+                "case 0 output outA differs | case 1 output outB is missing",
+                fields.get("cseEquivalence.AllDiagnostics")
+        );
+        assertEquals("{outputDiffers=1,missingOutput=1}", fields.get("cseEquivalence.DiagnosticFamilyCounts"));
+        assertEquals("1", fields.get("cseEquivalence.DiagnosticFamily.outputDiffers"));
+        assertEquals("1", fields.get("cseEquivalence.DiagnosticFamily.missingOutput"));
+        assertEquals("case 0 output outA differs", fields.get("cseEquivalence.Diagnostic.0"));
+        assertEquals("case 1 output outB is missing", fields.get("cseEquivalence.Diagnostic.1"));
     }
 
     @Test
@@ -91,6 +126,8 @@ class GpuIrCommonSubexpressionRuntimeEquivalenceReportTest {
         assertFalse(report.successful());
         assertTrue(report.equivalent());
         assertEquals("diagnostic emitted by external runner", report.firstDiagnostic());
+        assertEquals("{other=1}", report.artifactFields("cseEquivalence.").get("cseEquivalence.DiagnosticFamilyCounts"));
+        assertEquals("1", report.artifactFields("cseEquivalence.").get("cseEquivalence.DiagnosticFamily.other"));
     }
 
     @Test

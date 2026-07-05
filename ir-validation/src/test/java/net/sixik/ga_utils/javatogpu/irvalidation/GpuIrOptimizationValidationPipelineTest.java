@@ -84,6 +84,8 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(report.compactSummary().contains("optimizerGateFamily=guard.earlyExitBoundary"));
         assertTrue(report.compactSummary().contains("optimizerGateSourceCounts={autoVectorization=1}"));
         assertTrue(report.compactSummary().contains("optimizerGateFamilyCounts={guard.earlyExitBoundary=1}"));
+        assertTrue(report.compactSummary().contains("runtimeEquivalenceDiagnosticFamilyCounts={other=1}"));
+        assertTrue(report.detailedSummary().contains("runtimeEquivalenceDiagnosticFamilyCounts={other=1}"));
         assertTrue(report.compactSummary().contains("cseInsertions=1"));
         assertTrue(report.compactSummary().contains("cseLocalExpressionProvenCandidates=0"));
         assertTrue(report.compactSummary().contains("cseLocalExpressionHasEvidence=false"));

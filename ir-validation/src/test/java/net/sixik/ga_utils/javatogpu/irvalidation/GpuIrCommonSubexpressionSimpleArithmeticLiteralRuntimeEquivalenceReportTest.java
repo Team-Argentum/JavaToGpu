@@ -43,6 +43,7 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReportTes
         assertEquals("out", fields.get("literalRuntimeComparedOutputNames"));
         assertEquals("0", fields.get("literalRuntimeDiagnostics"));
         assertEquals("false", fields.get("literalRuntimeHasDiagnostics"));
+        assertEquals("{}", fields.get("literalRuntimeDiagnosticFamilyCounts"));
         assertEquals("2", fields.get("literalRuntimePreviewCandidates"));
         assertEquals("2", fields.get("literalRuntimeUniqueCanonicalKeys"));
         assertEquals("true", fields.get("literalRuntimeNumericSemanticsFullyProven"));
@@ -50,6 +51,8 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReportTes
         assertTrue(fields.get("literalRuntimeCanonicalKeyCounts").contains("literal_assoc_preview(plus:int,int,int;literals=1)=1"));
         assertTrue(fields.get("literalRuntimeCanonicalKeyCounts").contains("literal_assoc_preview(times:int,int,int;literals=2)=1"));
         assertFalse(fields.containsKey("literalRuntimeFirstDiagnostic"));
+        assertFalse(fields.containsKey("literalRuntimeAllDiagnostics"));
+        assertFalse(fields.containsKey("literalRuntimeDiagnostic.0"));
         assertTrue(report.summary().contains("successful=true"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
     }
@@ -77,7 +80,43 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReportTes
         assertEquals("0", fields.get("literalRuntimeComparedOutputs"));
         assertEquals("1", fields.get("literalRuntimeDiagnostics"));
         assertEquals("true", fields.get("literalRuntimeHasDiagnostics"));
+        assertEquals("{other=1}", fields.get("literalRuntimeDiagnosticFamilyCounts"));
+        assertEquals("1", fields.get("literalRuntimeDiagnosticFamily.other"));
         assertEquals("literal canonicalization runtime equivalence not run", fields.get("literalRuntimeFirstDiagnostic"));
+        assertEquals("literal canonicalization runtime equivalence not run", fields.get("literalRuntimeAllDiagnostics"));
+        assertEquals("literal canonicalization runtime equivalence not run", fields.get("literalRuntimeDiagnostic.0"));
+    }
+
+    @Test
+    void exposesJoinedAndIndexedDiagnosticsForFailedRuntimeEquivalenceArtifacts() {
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport canonicalizationReport = mixedCanonicalizationReport();
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericProof =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.from(canonicalizationReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport report =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport.failed(
+                        canonicalizationReport,
+                        numericProof,
+                        2,
+                        List.of("out", "mask"),
+                        List.of(
+                                "case case-a output out differs",
+                                "case case-b output mask is missing"
+                        )
+                );
+
+        Map<String, String> fields = report.artifactFields("literalRuntime");
+
+        assertEquals(2, report.diagnosticCount());
+        assertEquals("case case-a output out differs", report.firstDiagnostic().orElseThrow());
+        assertEquals(
+                "case case-a output out differs | case case-b output mask is missing",
+                fields.get("literalRuntimeAllDiagnostics")
+        );
+        assertEquals("{outputDiffers=1,missingOutput=1}", fields.get("literalRuntimeDiagnosticFamilyCounts"));
+        assertEquals("1", fields.get("literalRuntimeDiagnosticFamily.outputDiffers"));
+        assertEquals("1", fields.get("literalRuntimeDiagnosticFamily.missingOutput"));
+        assertEquals("case case-a output out differs", fields.get("literalRuntimeDiagnostic.0"));
+        assertEquals("case case-b output mask is missing", fields.get("literalRuntimeDiagnostic.1"));
     }
 
     @Test
@@ -99,6 +138,8 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReportTes
         assertTrue(report.equivalent());
         assertEquals("notProven", report.readiness());
         assertEquals("diagnostic from external literal runtime runner", report.firstDiagnostic().orElseThrow());
+        assertEquals("{other=1}", report.artifactFields("literalRuntime").get("literalRuntimeDiagnosticFamilyCounts"));
+        assertEquals("1", report.artifactFields("literalRuntime").get("literalRuntimeDiagnosticFamily.other"));
     }
 
     @Test

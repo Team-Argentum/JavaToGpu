@@ -124,6 +124,132 @@ class GpuIrAutoVectorizationPrototypeArtifactRunnerTest {
     }
 
     @Test
+    void readinessReadyPreviewProducesSuccessfulMultiOutputPrototypeEquivalenceArtifact() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )))
+        ));
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method)).preview();
+        GpuIrAutoVectorizationRewriteApplicator applicator = new GpuIrAutoVectorizationRewriteApplicator();
+        GpuIrAutoVectorizationArtifactSnapshot snapshot = new GpuIrAutoVectorizationArtifactSnapshot(
+                preview,
+                applicator.dryRun(method, preview.rewritePlan()),
+                applicator.resolveOperations(method, preview.rewritePlan())
+        );
+
+        assertEquals("readyForPrototypeRewrite", snapshot.readinessSummaryReport().verdict());
+
+        GpuIrAutoVectorizationPrototypeArtifactReport report = runner.run(
+                method,
+                preview,
+                List.of(
+                        inputCase("case-a",
+                                new int[]{7, -2, 13, 99},
+                                new int[]{1, 4, -3, 11},
+                                new int[]{0, 0, 0, 0}
+                        ),
+                        inputCase("case-b",
+                                new int[]{0, 8, -5, 2},
+                                new int[]{42, -8, 5, 3},
+                                new int[]{9, 9, 9, 9}
+                        )
+                ),
+                List.of("out", "right")
+        );
+        Map<String, String> fields = report.artifactFields();
+
+        assertTrue(report.successful());
+        assertEquals(0, report.diagnosticCount());
+        assertArtifactField(fields, "RuntimeEquivalence.Successful", "true");
+        assertArtifactField(fields, "RuntimeEquivalence.ComparedOutputs", "2");
+        assertArtifactField(fields, "RuntimeEquivalence.ComparedOutputNames", "out,right");
+        assertArtifactField(fields, "RuntimeEquivalence.InputCases", "2");
+    }
+
+    @Test
+    void multiOutputPrototypeEquivalenceArtifactReportsMissingComparedOutput() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )))
+        ));
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method)).preview();
+
+        GpuIrAutoVectorizationPrototypeArtifactReport report = runner.run(
+                method,
+                preview,
+                List.of(inputCase("case-missing-output",
+                        new int[]{7, -2, 13, 99},
+                        new int[]{1, 4, -3, 11},
+                        new int[]{0, 0, 0, 0}
+                )),
+                List.of("out", "missingOut")
+        );
+        Map<String, String> fields = report.artifactFields();
+
+        assertFalse(report.successful());
+        assertEquals(1, report.diagnosticCount());
+        assertArtifactField(fields, "RuntimeEquivalence.Successful", "false");
+        assertArtifactField(fields, "RuntimeEquivalence.ComparedOutputs", "2");
+        assertArtifactField(fields, "RuntimeEquivalence.ComparedOutputNames", "out,missingOut");
+        assertTrue(report.runtimeEquivalenceReport().firstDiagnostic().contains("case case-missing-output output missingOut is missing"));
+    }
+
+    @Test
+    void multiCasePrototypeEquivalenceArtifactAggregatesComparedOutputDiagnostics() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrBinary("+",
+                                new GpuIrArrayAccess("left", new GpuIrVariableRef("i")),
+                                new GpuIrArrayAccess("right", new GpuIrVariableRef("i"))
+                        )
+                )))
+        ));
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method)).preview();
+
+        GpuIrAutoVectorizationPrototypeArtifactReport report = runner.run(
+                method,
+                preview,
+                List.of(
+                        inputCase("case-a",
+                                new int[]{7, -2, 13, 99},
+                                new int[]{1, 4, -3, 11},
+                                new int[]{0, 0, 0, 0}
+                        ),
+                        inputCase("case-b",
+                                new int[]{0, 8, -5, 2},
+                                new int[]{42, -8, 5, 3},
+                                new int[]{9, 9, 9, 9}
+                        )
+                ),
+                List.of("missingA", "missingB")
+        );
+        Map<String, String> fields = report.artifactFields();
+
+        assertFalse(report.successful());
+        assertEquals(4, report.diagnosticCount());
+        assertArtifactField(fields, "RuntimeEquivalence.Successful", "false");
+        assertArtifactField(fields, "RuntimeEquivalence.InputCases", "2");
+        assertArtifactField(fields, "RuntimeEquivalence.ComparedOutputs", "2");
+        assertArtifactField(fields, "RuntimeEquivalence.Diagnostics", "4");
+        assertArtifactField(fields, "RuntimeEquivalence.FirstDiagnostic", "case case-a output missingA is missing");
+        assertArtifactField(fields, "RuntimeEquivalence.AllDiagnostics", "case case-a output missingA is missing | case case-a output missingB is missing | case case-b output missingA is missing | case case-b output missingB is missing");
+        assertArtifactField(fields, "RuntimeEquivalence.Diagnostic.0", "case case-a output missingA is missing");
+        assertArtifactField(fields, "RuntimeEquivalence.Diagnostic.3", "case case-b output missingB is missing");
+        assertEquals("case case-b output missingB is missing", report.runtimeEquivalenceReport().diagnostics().get(3));
+    }
+
+    @Test
     void warningBlockedPreviewDoesNotReportReadyForPrototypeEquivalenceBridge() {
         GpuIrMethod method = new GpuIrMethod("kernel", List.of(
                 fixedWidthLoop(4, List.of(new GpuIrAssignment(
@@ -154,6 +280,44 @@ class GpuIrAutoVectorizationPrototypeArtifactRunnerTest {
                         new int[]{7, -2, 13, 99},
                         new int[]{1, 4, -3, 11},
                         new int[]{0, 0, 0, 0}
+                )),
+                List.of("out")
+        ));
+
+        assertTrue(exception.getMessage().contains("Auto-vectorization rewrite cannot be applied"));
+    }
+
+    @Test
+    void guardBlockedPreviewDoesNotReportReadyForPrototypeEquivalenceBridge() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(3, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("left", new GpuIrVariableRef("i"))
+                )))
+        ));
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method)).preview();
+        GpuIrAutoVectorizationRewriteApplicator applicator = new GpuIrAutoVectorizationRewriteApplicator();
+        GpuIrAutoVectorizationArtifactSnapshot snapshot = new GpuIrAutoVectorizationArtifactSnapshot(
+                preview,
+                applicator.dryRun(method, preview.rewritePlan()),
+                applicator.resolveOperations(method, preview.rewritePlan())
+        );
+        GpuIrAutoVectorizationReadinessSummaryReport readiness = snapshot.readinessSummaryReport();
+
+        assertEquals("notReady/rewriteGuards", readiness.verdict());
+        assertFalse(readiness.readyForPrototypeRewrite());
+        assertTrue(readiness.blockingReasons().contains("rewritePlanGuardsPresent"));
+        assertTrue(readiness.blockingReasons().contains("proofBundleNotRewriteSafe"));
+        assertTrue(readiness.remainingWork().contains("clearRewritePlanGuards"));
+        assertTrue(readiness.remainingWork().contains("clearProofBundleBlockers"));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> runner.run(
+                method,
+                preview,
+                List.of(inputCase("case-guard",
+                        new int[]{7, -2, 13},
+                        new int[]{1, 4, -3},
+                        new int[]{0, 0, 0}
                 )),
                 List.of("out")
         ));

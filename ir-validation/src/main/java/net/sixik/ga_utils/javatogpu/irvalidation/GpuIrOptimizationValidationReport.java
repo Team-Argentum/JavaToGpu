@@ -288,6 +288,7 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSimpleArithmeticLiteralRuntimeEquivalenceReadiness=" + commonSubexpressionLiteralRuntimeEquivalenceReport.readiness()
                 + " cseSimpleArithmeticLiteralRuntimeEquivalenceSuccessful=" + commonSubexpressionLiteralRuntimeEquivalenceReport.successful()
                 + " cseSimpleArithmeticLiteralRuntimeEquivalenceDiagnostics=" + commonSubexpressionLiteralRuntimeEquivalenceReport.diagnosticCount()
+                + " runtimeEquivalenceDiagnosticFamilyCounts=" + runtimeEquivalenceDiagnosticFamilyCountsSummary()
                 + " cseSimpleArithmeticLiteralCanonicalizationGateReadiness=" + commonSubexpressionLiteralCanonicalizationGate.readiness()
                 + " cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint=" + commonSubexpressionLiteralCanonicalizationGate.canPromoteToFingerprint()
                 + " cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons=" + commonSubexpressionLiteralCanonicalizationGate.blockingReasons()
@@ -378,6 +379,7 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSimpleArithmeticLiteralNumericSemanticsProof={" + commonSubexpressionLiteralNumericSemanticsProofReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralTypedNumericBlockers={" + commonSubexpressionLiteralTypedNumericBlockerSummaryReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralRuntimeEquivalence={" + commonSubexpressionLiteralRuntimeEquivalenceReport.summary() + "}"
+                + " runtimeEquivalenceDiagnosticFamilyCounts=" + runtimeEquivalenceDiagnosticFamilyCountsSummary()
                 + " cseSimpleArithmeticLiteralCanonicalizationGate={" + commonSubexpressionLiteralCanonicalizationGate.summary() + "}"
                 + " cseSimpleArithmeticLiteralFingerprintDecision={" + commonSubexpressionLiteralFingerprintDecisionReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralFingerprintParity={" + commonSubexpressionLiteralFingerprintParityReport.summary() + "}"
@@ -402,5 +404,11 @@ public record GpuIrOptimizationValidationReport(
 
     public String summary() {
         return detailedSummary();
+    }
+
+    public String runtimeEquivalenceDiagnosticFamilyCountsSummary() {
+        return GpuIrRuntimeEquivalenceDiagnosticFamilies.countsSummary(
+                commonSubexpressionLiteralRuntimeEquivalenceReport.diagnostics()
+        );
     }
 }

@@ -36,6 +36,7 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactReportTest {
         assertEquals("true", fields.get("literalArtifactNumericSemanticsFullyProven"));
         assertEquals("true", fields.get("literalArtifactRuntimeEquivalenceSuccessful"));
         assertEquals("0", fields.get("literalArtifactRuntimeEquivalenceDiagnostics"));
+        assertEquals("{}", fields.get("literalArtifactRuntimeEquivalenceDiagnosticFamilyCounts"));
         assertEquals("false", fields.get("literalArtifactGateCanPromoteToFingerprint"));
         assertEquals("blockedPreview", fields.get("literalArtifactGateReadiness"));
         assertEquals("[fingerprintIntegrationDisabled]", fields.get("literalArtifactGateBlockingReasons"));
@@ -45,7 +46,7 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactReportTest {
         assertEquals("2", fields.get("literalArtifactFingerprintParityPreviewOnlyKeys"));
         assertEquals("consistent", fields.get("literalArtifactConsistency.Verdict"));
         assertEquals("true", fields.get("literalArtifactConsistency.Consistent"));
-        assertEquals("literal artifact consistency check passed: 12 checks", fields.get("literalArtifactConsistency.CiSummaryLine"));
+        assertEquals("literal artifact consistency check passed: 14 checks", fields.get("literalArtifactConsistency.CiSummaryLine"));
         assertEquals("2", fields.get("literalArtifactCanonicalization.Candidates"));
         assertEquals("true", fields.get("literalArtifactNumericSemanticsProof.FullyProven"));
         assertEquals("true", fields.get("literalArtifactRuntimeEquivalence.Successful"));
@@ -79,12 +80,16 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactReportTest {
         assertEquals("false", fields.get("literalArtifactSuccessful"));
         assertEquals("false", fields.get("literalArtifactRuntimeEquivalenceSuccessful"));
         assertEquals("1", fields.get("literalArtifactRuntimeEquivalenceDiagnostics"));
+        assertEquals("{outputDiffers=1}", fields.get("literalArtifactRuntimeEquivalenceDiagnosticFamilyCounts"));
+        assertEquals("1", fields.get("literalArtifactRuntimeEquivalenceDiagnosticFamily.outputDiffers"));
+        assertEquals("case case-a output out differs", fields.get("literalArtifactRuntimeEquivalence.AllDiagnostics"));
+        assertEquals("case case-a output out differs", fields.get("literalArtifactRuntimeEquivalence.Diagnostic.0"));
         assertEquals("[runtimeEquivalenceNotProven,fingerprintIntegrationDisabled]", fields.get("literalArtifactGateBlockingReasons"));
         assertEquals("blockedPreview", fields.get("literalArtifactFingerprintDecisionReadiness"));
         assertEquals("[runtimeEquivalenceNotProven,productionFingerprintIntegrationDisabled]", fields.get("literalArtifactFingerprintDecision.BlockingReasons"));
         assertEquals("previewOnly", fields.get("literalArtifactFingerprintParityReadiness"));
         assertEquals("consistent", fields.get("literalArtifactConsistency.Verdict"));
-        assertEquals("literal artifact consistency check passed: 12 checks", fields.get("literalArtifactConsistency.CiSummaryLine"));
+        assertEquals("literal artifact consistency check passed: 14 checks", fields.get("literalArtifactConsistency.CiSummaryLine"));
         assertTrue(fields.get("literalArtifactSummary").contains("firstDiagnostic=case case-a output out differs"));
     }
 

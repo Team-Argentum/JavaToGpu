@@ -34,6 +34,7 @@ class GpuIrCommonSubexpressionArtifactReportTest {
         assertEquals("1", fields.get("cseArtifactSkipped"));
         assertEquals("true", fields.get("cseArtifactRuntimeEquivalenceSuccessful"));
         assertEquals("0", fields.get("cseArtifactRuntimeEquivalenceDiagnostics"));
+        assertEquals("{}", fields.get("cseArtifactRuntimeEquivalenceDiagnosticFamilyCounts"));
         assertTrue(fields.get("cseArtifactSummary").contains("inputCases=3"));
         assertTrue(fields.get("cseArtifactSummary").contains("skippedDominanceStatusCounts={requiresLocalExpressionDominance=1}"));
         assertEquals("1", fields.get("cseArtifactSnapshot.Insertions"));
@@ -91,9 +92,13 @@ class GpuIrCommonSubexpressionArtifactReportTest {
         assertEquals("false", fields.get("cseRun.Successful"));
         assertEquals("false", fields.get("cseRun.RuntimeEquivalenceSuccessful"));
         assertEquals("1", fields.get("cseRun.RuntimeEquivalenceDiagnostics"));
+        assertEquals("{outputDiffers=1}", fields.get("cseRun.RuntimeEquivalenceDiagnosticFamilyCounts"));
+        assertEquals("1", fields.get("cseRun.RuntimeEquivalenceDiagnosticFamily.outputDiffers"));
         assertTrue(fields.get("cseRun.Summary").contains("diagnostics=1"));
         assertEquals("false", fields.get("cseRun.RuntimeEquivalence.Successful"));
         assertEquals("case 0 output outA differs", fields.get("cseRun.RuntimeEquivalence.FirstDiagnostic"));
+        assertEquals("case 0 output outA differs", fields.get("cseRun.RuntimeEquivalence.AllDiagnostics"));
+        assertEquals("case 0 output outA differs", fields.get("cseRun.RuntimeEquivalence.Diagnostic.0"));
         assertTrue(report.summary().contains("successful=false"));
         assertTrue(report.summary().contains("firstDiagnostic=case 0 output outA differs"));
     }

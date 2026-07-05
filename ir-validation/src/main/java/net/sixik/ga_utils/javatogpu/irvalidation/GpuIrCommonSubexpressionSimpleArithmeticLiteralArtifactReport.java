@@ -90,6 +90,11 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralArtifactReport(
         values.put(prefix + "NumericSemanticsFullyProven", Boolean.toString(numericSemanticsProofReport.fullyProven()));
         values.put(prefix + "RuntimeEquivalenceSuccessful", Boolean.toString(runtimeEquivalenceReport.successful()));
         values.put(prefix + "RuntimeEquivalenceDiagnostics", Integer.toString(runtimeEquivalenceReport.diagnosticCount()));
+        GpuIrRuntimeEquivalenceDiagnosticFamilies.putArtifactFields(
+                values,
+                prefix + "RuntimeEquivalence",
+                runtimeEquivalenceReport.diagnostics()
+        );
         values.put(prefix + "GateCanPromoteToFingerprint", Boolean.toString(canonicalizationGate.canPromoteToFingerprint()));
         values.put(prefix + "GateReadiness", canonicalizationGate.readiness());
         values.put(prefix + "GateBlockingReasons", blockingReasonSummary());

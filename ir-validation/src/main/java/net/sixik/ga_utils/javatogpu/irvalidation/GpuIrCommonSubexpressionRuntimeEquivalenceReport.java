@@ -99,8 +99,13 @@ public record GpuIrCommonSubexpressionRuntimeEquivalenceReport(
         values.put(prefix + "ComparedOutputNames", String.join(",", comparedOutputs));
         values.put(prefix + "Diagnostics", Integer.toString(diagnosticCount()));
         values.put(prefix + "HasDiagnostics", Boolean.toString(hasDiagnostics()));
+        GpuIrRuntimeEquivalenceDiagnosticFamilies.putArtifactFields(values, prefix, diagnostics);
         if (hasDiagnostics()) {
             values.put(prefix + "FirstDiagnostic", firstDiagnostic());
+            values.put(prefix + "AllDiagnostics", String.join(" | ", diagnostics));
+            for (int index = 0; index < diagnostics.size(); index++) {
+                values.put(prefix + "Diagnostic." + index, diagnostics.get(index));
+            }
         }
         values.put(prefix + "Plans", Integer.toString(rewritePlanReport.plans().size()));
         values.put(prefix + "Insertions", Integer.toString(rewritePlanReport.insertionCount()));
