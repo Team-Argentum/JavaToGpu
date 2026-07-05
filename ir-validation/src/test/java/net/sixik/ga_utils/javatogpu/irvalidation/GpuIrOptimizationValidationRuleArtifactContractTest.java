@@ -1,0 +1,130 @@
+package net.sixik.ga_utils.javatogpu.irvalidation;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.rule;
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.validationReport;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class GpuIrOptimizationValidationRuleArtifactContractTest {
+    @Test
+    void defaultArtifactKeepsStableTopLevelExportKeys() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("contractKernel"));
+
+        Map<String, String> fields = report.artifactFields();
+
+        // These keys are the compact contract that external CI/report tooling can rely on first.
+        assertContainsKeys(fields, Set.of(
+                "validationRulesMethod",
+                "validationRulesVerdict",
+                "validationRulesPassed",
+                "validationRulesRules",
+                "validationRulesResults",
+                "validationRulesFailed",
+                "validationRulesHasFailures",
+                "validationRulesWarnings",
+                "validationRulesHasWarnings",
+                "validationRulesBlocking",
+                "validationRulesHasBlockingResults",
+                "validationRulesFailedRuleIds",
+                "validationRulesWarningRuleIds",
+                "validationRulesBlockingRuleIds",
+                "validationRulesRuleIndex",
+                "validationRulesWarningRuleIndex",
+                "validationRulesBlockingRuleIndex",
+                "validationRulesStatusCounts",
+                "validationRulesRuleFamilyCounts",
+                "validationRulesWarningRuleFamilyCounts",
+                "validationRulesBlockingRuleFamilyCounts",
+                "validationRulesFailedRuleFamilyCounts",
+                "validationRulesSummary",
+                "validationRulesCiSummaryLine"
+        ));
+        assertContainsKeys(fields, Set.of(
+                "validationRulesRegistryPassed",
+                "validationRulesRegistryRuleIndex",
+                "validationRulesRegistryWarningRuleIndex",
+                "validationRulesRegistryBlockingRuleIndex",
+                "validationRulesRegistryResult.0.RuleId",
+                "validationRulesRegistryResult.0.Passed",
+                "validationRulesRegistryResult.0.Status",
+                "validationRulesRegistryResult.0.Blocking",
+                "validationRulesConsistency.Consistent",
+                "validationRulesConsistency.Checks",
+                "validationRulesConsistency.FailedChecks",
+                "validationRulesConsistency.FailedCheckList",
+                "validationRulesConsistency.CiSummaryLine"
+        ));
+
+        assertEquals("contractKernel", fields.get("validationRulesMethod"));
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals(
+                "[safety.clean=pass,optimizer.noBlockingDiagnostics=pass,optimizer.advisoryDiagnostics=pass]",
+                fields.get("validationRulesRuleIndex")
+        );
+        assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+        assertFalse(fields.containsKey("validationRulesFirstFailedRuleId"));
+        assertFalse(fields.containsKey("validationRulesFirstWarningRuleId"));
+        assertFalse(fields.containsKey("validationRulesFirstBlockingRuleId"));
+    }
+
+    @Test
+    void warningAndBlockingArtifactsKeepStableFirstResultExportKeys() {
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRuleRegistry.of(List.of(
+                rule("optimizer.warning", context -> GpuIrOptimizationValidationRuleResult.warned(
+                        "optimizer.warning",
+                        "non-blocking optimizer signal"
+                )),
+                rule("safety.failure", context -> GpuIrOptimizationValidationRuleResult.failed(
+                        "safety.failure",
+                        "blocking safety issue",
+                        Map.of("family", "safety")
+                ))
+        ));
+
+        GpuIrOptimizationValidationRuleArtifactReport report = GpuIrOptimizationValidationRuleArtifactReport.evaluate(
+                validationReport("mixedContractKernel"),
+                registry
+        );
+        Map<String, String> fields = report.artifactFields();
+
+        assertEquals("fail", fields.get("validationRulesVerdict"));
+        assertEquals("false", fields.get("validationRulesPassed"));
+        assertEquals("optimizer.warning", fields.get("validationRulesWarningRuleIds"));
+        assertEquals("safety.failure", fields.get("validationRulesFailedRuleIds"));
+        assertEquals("safety.failure", fields.get("validationRulesBlockingRuleIds"));
+        assertEquals("optimizer.warning", fields.get("validationRulesFirstWarningRuleId"));
+        assertEquals("warn", fields.get("validationRulesFirstWarningStatus"));
+        assertEquals("false", fields.get("validationRulesFirstWarningBlocking"));
+        assertEquals("non-blocking optimizer signal", fields.get("validationRulesFirstWarningMessage"));
+        assertEquals("safety.failure", fields.get("validationRulesFirstFailedRuleId"));
+        assertEquals("fail", fields.get("validationRulesFirstFailedStatus"));
+        assertEquals("true", fields.get("validationRulesFirstFailedBlocking"));
+        assertEquals("blocking safety issue", fields.get("validationRulesFirstFailedMessage"));
+        assertEquals("safety.failure", fields.get("validationRulesFirstBlockingRuleId"));
+        assertEquals("fail", fields.get("validationRulesFirstBlockingStatus"));
+        assertEquals("true", fields.get("validationRulesFirstBlockingBlocking"));
+        assertEquals("blocking safety issue", fields.get("validationRulesFirstBlockingMessage"));
+        assertEquals("[optimizer.warning=warn]", fields.get("validationRulesWarningRuleIndex"));
+        assertEquals("[safety.failure=fail]", fields.get("validationRulesBlockingRuleIndex"));
+        assertEquals("{warn=1,fail=1}", fields.get("validationRulesStatusCounts"));
+        assertEquals("{optimizer=1}", fields.get("validationRulesWarningRuleFamilyCounts"));
+        assertEquals("{safety=1}", fields.get("validationRulesBlockingRuleFamilyCounts"));
+        assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+    }
+
+    private static void assertContainsKeys(Map<String, String> fields, Set<String> expectedKeys) {
+        assertTrue(fields.keySet().containsAll(expectedKeys), () -> "missing artifact keys: "
+                + expectedKeys.stream()
+                .filter(key -> !fields.containsKey(key))
+                .toList());
+    }
+}
