@@ -456,6 +456,14 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("{}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofBlockedReasonCounts")));
         assertTrue("{plus:int,int,int=2}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts")));
         assertTrue("{}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts")));
+        assertTrue("2".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCandidates")));
+        assertTrue("true".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationHasCandidates")));
+        assertTrue("preview".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationReadiness")));
+        assertTrue("1".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys")));
+        assertTrue("{plus:int,int,int=2}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationOperatorTypeCounts")));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts").contains("literal_assoc_preview(plus:int,int,int;literals=1)=2"));
+        assertTrue("literal_assoc_preview(plus:int,int,int;literals=1)".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationFirstCanonicalKey")));
+        assertLiteralCanonicalizationGateBlockedPreview(report, "2", "1");
         assertTrue("stmt[0].initializer".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeLocation")));
         assertTrue("+".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeOperator")));
         assertTrue("plus:int,int,int".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeOperatorTypeKey")));
@@ -504,11 +512,111 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("true".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofHasSafeCandidates")));
         assertTrue("{times:int,int,int=2}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts")));
         assertTrue("{}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts")));
+        assertTrue("2".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCandidates")));
+        assertTrue("preview".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationReadiness")));
+        assertTrue("1".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys")));
+        assertTrue("{times:int,int,int=2}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationOperatorTypeCounts")));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts").contains("literal_assoc_preview(times:int,int,int;literals=2)=2"));
+        assertTrue("literal_assoc_preview(times:int,int,int;literals=2)".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationFirstCanonicalKey")));
         assertTrue("stmt[0].initializer".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeLocation")));
         assertTrue("*".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeOperator")));
         assertTrue("times:int,int,int".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeOperatorTypeKey")));
         assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeOperandTypes").contains("int"));
         assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofFirstSafeLiteralSources").contains("2"));
+        assertCseCounts(report, "0", "0", "0");
+        assertNoAutoVectorizationActivity(report);
+    }
+
+    @Test
+    void diagnosticModeReportKeepsMixedLiteralCanonicalizationPreviewKeysSeparate() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                "quiet",
+                "reports/javatogpu-ir-validation.properties",
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void mixedLiteralCanonicalization(int x, int y, @GPUGlobal int[] output) {
+                                int plusFirst = x + (y + 1);
+                                int plusSecond = (1 + x) + y;
+                                int timesFirst = x * (y * 2);
+                                int timesSecond = (2 * x) * y;
+                                output[0] = plusFirst + plusSecond + timesFirst + timesSecond;
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
+
+        assertSingleMethodReport(report, "mixedLiteralCanonicalization");
+        assertNoOptimizerGate(report);
+        assertNoCseRewritePolicyPlan(report);
+        assertNoReferenceOnlySimpleArithmeticProof(report);
+        assertTrue("4".equals(report.getProperty("entry.0.cseSimpleArithmeticNumericBoundaryBlockedCandidates")));
+        assertTrue("4".equals(report.getProperty("entry.0.cseSimpleArithmeticNumericBoundaryLiteralOperands")));
+        assertTrue("0".equals(report.getProperty("entry.0.cseSimpleArithmeticNumericBoundaryCastOperands")));
+        assertTrue("{literalOperand=4}".equals(report.getProperty("entry.0.cseSimpleArithmeticNumericBoundaryBlockedReasonCounts")));
+        assertTrue("4".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofCandidates")));
+        assertTrue("4".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofSafeCandidates")));
+        assertTrue("0".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofBlockedCandidates")));
+        assertTrue("true".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofHasSafeCandidates")));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts").contains("plus:int,int,int=2"));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts").contains("times:int,int,int=2"));
+        assertTrue("{}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts")));
+        assertTrue("4".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCandidates")));
+        assertTrue("preview".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationReadiness")));
+        assertTrue("2".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys")));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationOperatorTypeCounts").contains("plus:int,int,int=2"));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationOperatorTypeCounts").contains("times:int,int,int=2"));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts").contains("literal_assoc_preview(plus:int,int,int;literals=1)=2"));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts").contains("literal_assoc_preview(times:int,int,int;literals=2)=2"));
+        assertCseCounts(report, "0", "0", "0");
+        assertNoAutoVectorizationActivity(report);
+    }
+
+    @Test
+    void diagnosticModeReportUsesLoweredLiteralSourcesInCanonicalizationPreviewKeys() throws IOException {
+        CompilationResult result = compileWithIrValidationMode(
+                "diagnostic",
+                "quiet",
+                "reports/javatogpu-ir-validation.properties",
+                """
+                        package sample;
+
+                        import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                        public class Demo {
+                            @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                            void loweredLiteralCanonicalization(int x, int y, @GPUGlobal int[] output) {
+                                int decimalFirst = x + (y + 1_000);
+                                int decimalSecond = (1_000 + x) + y;
+                                int hexFirst = x + (y + 0x10);
+                                int hexSecond = (0x10 + x) + y;
+                                output[0] = decimalFirst + decimalSecond + hexFirst + hexSecond;
+                            }
+                        }
+                        """
+        );
+
+        assertTrue(result.success(), result.diagnosticMessages());
+        Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
+
+        assertSingleMethodReport(report, "loweredLiteralCanonicalization");
+        assertNoOptimizerGate(report);
+        assertNoCseRewritePolicyPlan(report);
+        assertNoReferenceOnlySimpleArithmeticProof(report);
+        assertTrue("4".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCandidates")));
+        assertTrue("preview".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationReadiness")));
+        assertTrue("2".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys")));
+        assertTrue("{plus:int,int,int=4}".equals(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationOperatorTypeCounts")));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts").contains("literal_assoc_preview(plus:int,int,int;literals=1000)=2"));
+        assertTrue(report.getProperty("entry.0.cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts").contains("literal_assoc_preview(plus:int,int,int;literals=16)=2"));
         assertCseCounts(report, "0", "0", "0");
         assertNoAutoVectorizationActivity(report);
     }
@@ -1011,6 +1119,43 @@ class GpuIrValidationProcessorIntegrationTest {
         assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralProofBlockedBoundary", "nonIntOrCastLiteralArithmetic");
         assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts", "{}");
         assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts", "{}");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationCandidates", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationHasCandidates", "false");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationReadiness", "none");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationOperatorTypeCounts", "{}");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts", "{}");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofCandidates", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofProvenCandidates", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofBlockedCandidates", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofFullyProven", "false");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofReadiness", "none");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofProvenOperatorTypeCounts", "{}");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofBlockedReasonCounts", "{}");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint", "false");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateReadiness", "none");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGatePreviewCandidates", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateUniqueCanonicalKeys", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateBlocksRewriteReadiness", "false");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons", "[noPreviewCandidates]");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasonCount", "1");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateFirstBlockingReason", "noPreviewCandidates");
+    }
+
+    private void assertLiteralCanonicalizationGateBlockedPreview(Properties report, String previewCandidates, String uniqueCanonicalKeys) {
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint", "false");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateReadiness", "blockedPreview");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGatePreviewCandidates", previewCandidates);
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateUniqueCanonicalKeys", uniqueCanonicalKeys);
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateBlocksRewriteReadiness", "true");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons", "[runtimeEquivalenceNotProven,fingerprintIntegrationDisabled]");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasonCount", "2");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralCanonicalizationGateFirstBlockingReason", "runtimeEquivalenceNotProven");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofCandidates", previewCandidates);
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofProvenCandidates", previewCandidates);
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofBlockedCandidates", "0");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofFullyProven", "true");
+        assertEntryValue(report, "entry.0.cseSimpleArithmeticLiteralNumericSemanticsProofReadiness", "proven");
     }
 
     private void assertCseCounts(Properties report, String insertions, String replacements, String skipped) {

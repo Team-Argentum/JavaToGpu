@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuIrAutoVectorizationArtifactSnapshotTest {
@@ -42,6 +43,7 @@ class GpuIrAutoVectorizationArtifactSnapshotTest {
                 resolvedOperations
         );
         Map<String, String> fields = snapshot.artifactFields("autoVectorization");
+        Map<String, String> defaultFields = snapshot.artifactFields();
 
         assertEquals(1, snapshot.candidateCount());
         assertEquals(0, snapshot.warningCount());
@@ -76,10 +78,22 @@ class GpuIrAutoVectorizationArtifactSnapshotTest {
         assertEquals("2", fields.get("autoVectorizationProofBundleProofs"));
         assertEquals("true", fields.get("autoVectorizationProofBundleRewriteSafe"));
         assertEquals("0", fields.get("autoVectorizationProofBundleDiagnostics"));
+        assertEquals("{int4=1}", fields.get("autoVectorizationVectorTypeCounts"));
+        assertEquals("1", fields.get("autoVectorizationUniqueVectorTypes"));
         assertEquals("1", fields.get("autoVectorizationVectorType.int4"));
+        assertEquals("{}", fields.get("autoVectorizationWarningFamilyCounts"));
+        assertEquals("0", fields.get("autoVectorizationUniqueWarningFamilies"));
+        assertEquals("{}", fields.get("autoVectorizationRejectionReasonCounts"));
+        assertEquals("0", fields.get("autoVectorizationUniqueRejectionReasons"));
+        assertEquals("1", defaultFields.get("autoVectorizationCandidates"));
+        assertEquals("{int4=1}", defaultFields.get("autoVectorizationVectorTypeCounts"));
+        assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
         assertTrue(fields.get("autoVectorizationResolvedRewriteFirstInsertion").contains("stmt[0]"));
         assertTrue(fields.get("autoVectorizationResolvedRewriteFirstReplacement").contains("stmt[0]"));
         assertTrue(snapshot.summary().contains("auto-vectorization artifact snapshot"));
+        assertTrue(snapshot.summary().contains("uniqueVectorTypes=1"));
+        assertTrue(snapshot.summary().contains("uniqueWarningFamilies=0"));
+        assertTrue(snapshot.summary().contains("uniqueRejectionReasons=0"));
         assertTrue(snapshot.summary().contains("resolvedRewriteOperations=2"));
     }
 

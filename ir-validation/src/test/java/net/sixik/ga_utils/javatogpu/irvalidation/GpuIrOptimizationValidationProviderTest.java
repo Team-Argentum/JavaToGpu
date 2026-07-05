@@ -226,6 +226,65 @@ class GpuIrOptimizationValidationProviderTest {
     }
 
     @Test
+    void reportEntryIncludesLiteralCanonicalizationUniqueKeyCount() {
+        List<GpuIrValidationReportEntry> entries = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("kernel", List.of(
+                        new GpuIrVariableDeclaration("int", "x", new GpuIrLiteral("3")),
+                        new GpuIrVariableDeclaration("int", "y", new GpuIrLiteral("4")),
+                        new GpuIrVariableDeclaration(
+                                "int",
+                                "plusOne",
+                                new GpuIrBinary(
+                                        "+",
+                                        new GpuIrVariableRef("x"),
+                                        new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrLiteral("1"))
+                                )
+                        ),
+                        new GpuIrVariableDeclaration(
+                                "int",
+                                "plusTwo",
+                                new GpuIrBinary(
+                                        "+",
+                                        new GpuIrVariableRef("x"),
+                                        new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrLiteral("2"))
+                                )
+                        )
+                ))),
+                List.of(),
+                List.of(),
+                false,
+                GpuIrValidationMode.DIAGNOSTIC,
+                GpuIrValidationDiagnosticPolicy.QUIET,
+                ignored -> { },
+                entries::add
+        );
+
+        provider.validate(request);
+
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationCandidates", "2");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationReadiness", "preview");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys", "2");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationOperatorTypeCounts", "{plus:int,int,int=2}");
+        assertEntryValueContains(entries, "cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts", "literal_assoc_preview(plus:int,int,int;literals=1)=1");
+        assertEntryValueContains(entries, "cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts", "literal_assoc_preview(plus:int,int,int;literals=2)=1");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralNumericSemanticsProofCandidates", "2");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralNumericSemanticsProofProvenCandidates", "2");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralNumericSemanticsProofBlockedCandidates", "0");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralNumericSemanticsProofFullyProven", "true");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralNumericSemanticsProofReadiness", "proven");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralNumericSemanticsProofProvenOperatorTypeCounts", "{plus:int,int,int=2}");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint", "false");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGateReadiness", "blockedPreview");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGatePreviewCandidates", "2");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGateUniqueCanonicalKeys", "2");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGateBlocksRewriteReadiness", "true");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons", "[runtimeEquivalenceNotProven,fingerprintIntegrationDisabled]");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasonCount", "2");
+        assertEntryValue(entries, "cseSimpleArithmeticLiteralCanonicalizationGateFirstBlockingReason", "runtimeEquivalenceNotProven");
+    }
+
+    @Test
     void reportEntryIncludesAutoVectorizationRejectionReasonCounts() {
         List<GpuIrValidationReportEntry> entries = new ArrayList<>();
         GpuIrValidationRequest request = new GpuIrValidationRequest(
@@ -264,6 +323,8 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationHasPolicyBlockedRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
         assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
+        assertEntryValue(entries, "autoVectorizationRejectionReasonCounts", "{UNSUPPORTED_LANE_COUNT=1}");
+        assertEntryValue(entries, "autoVectorizationUniqueRejectionReasons", "1");
         assertEntryValue(entries, "autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT", "1");
         assertEntryValue(entries, "autoVectorizationFirstBlockingDiagnosticFamily", "rejection.UNSUPPORTED_LANE_COUNT");
     }
@@ -330,6 +391,8 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationHasPolicyBlockedRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewriteBlockedCandidates", "0");
         assertEntryValue(entries, "autoVectorizationHasRewriteBlockedCandidates", "false");
+        assertEntryValue(entries, "autoVectorizationWarningFamilyCounts", "{alias=1,crossLaneRead=1,nonLaneRead=1,repeatedTarget=1}");
+        assertEntryValue(entries, "autoVectorizationUniqueWarningFamilies", "4");
         assertEntryValue(entries, "autoVectorizationWarningFamily.alias", "1");
         assertEntryValue(entries, "autoVectorizationWarningFamily.repeatedTarget", "1");
         assertEntryValue(entries, "autoVectorizationWarningFamily.crossLaneRead", "1");
@@ -366,6 +429,9 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "optimizerGateFamilyCounts", "{}");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "ready");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "true");
+        assertEntryValue(entries, "autoVectorizationVectorTypeCounts", "{int4=1}");
+        assertEntryValue(entries, "autoVectorizationUniqueVectorTypes", "1");
+        assertEntryValue(entries, "autoVectorizationVectorType.int4", "1");
         assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "allow");
         assertEntryValue(entries, "autoVectorizationProofDecisionAllowRewrite", "true");
         assertEntryValue(entries, "autoVectorizationProofDecisionBlockingProofKinds", "");

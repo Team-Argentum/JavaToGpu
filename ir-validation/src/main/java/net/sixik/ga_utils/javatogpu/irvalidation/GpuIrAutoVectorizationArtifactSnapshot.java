@@ -107,18 +107,24 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
                 ));
         values.putAll(preview.rewritePlanProofSummary().artifactFields(prefix + "ProofRewritePlan"));
         values.putAll(preview.proofBundle().artifactFields(prefix + "ProofBundle"));
+        values.put(prefix + "VectorTypeCounts", mapSummary(preview.vectorTypeCounts()));
+        values.put(prefix + "UniqueVectorTypes", Integer.toString(preview.vectorTypeCounts().size()));
         preview.vectorTypeCounts().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> values.put(
                         prefix + "VectorType." + entry.getKey(),
                         Long.toString(entry.getValue())
                 ));
+        values.put(prefix + "WarningFamilyCounts", mapSummary(preview.warningFamilyCounts()));
+        values.put(prefix + "UniqueWarningFamilies", Integer.toString(preview.warningFamilyCounts().size()));
         preview.warningFamilyCounts().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> values.put(
                         prefix + "WarningFamily." + entry.getKey(),
                         Long.toString(entry.getValue())
                 ));
+        values.put(prefix + "RejectionReasonCounts", rejectionReasonSummary(preview.rejectionReasonCounts()));
+        values.put(prefix + "UniqueRejectionReasons", Integer.toString(preview.rejectionReasonCounts().size()));
         preview.rejectionReasonCounts().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> values.put(
@@ -140,8 +146,25 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
                 + " canApplyRewrite=" + preview.canApplyRewrite()
                 + " rewritePlanOperations=" + rewritePlan().operationCount()
                 + " rewritePlanGuards=" + rewritePlan().guardDiagnostics().size()
+                + " uniqueVectorTypes=" + preview.vectorTypeCounts().size()
+                + " uniqueWarningFamilies=" + preview.warningFamilyCounts().size()
+                + " uniqueRejectionReasons=" + preview.rejectionReasonCounts().size()
                 + " dryRunReadiness=" + dryRunReport.readiness().artifactValue()
                 + " dryRunSuccessful=" + dryRunReport.successful()
                 + " resolvedRewriteOperations=" + resolvedRewriteOperations.operationCount();
+    }
+
+    private static String mapSummary(Map<String, Long> counts) {
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
+
+    private static String rejectionReasonSummary(Map<GpuIrAutoVectorizationRejectionReason, Long> counts) {
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey().name() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(",", "{", "}"));
     }
 }

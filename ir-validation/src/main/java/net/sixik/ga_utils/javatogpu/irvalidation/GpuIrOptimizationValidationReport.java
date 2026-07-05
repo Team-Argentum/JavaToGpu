@@ -13,6 +13,9 @@ public record GpuIrOptimizationValidationReport(
         GpuIrCommonSubexpressionRewritePreview commonSubexpressionPreview,
         GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport commonSubexpressionNumericBoundaryReport,
         GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport commonSubexpressionLiteralCanonicalizationReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport commonSubexpressionLiteralNumericSemanticsProofReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate commonSubexpressionLiteralCanonicalizationGate,
         GpuIrAutoVectorizationPreview autoVectorizationPreview,
         GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport,
         GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations
@@ -25,6 +28,9 @@ public record GpuIrOptimizationValidationReport(
         commonSubexpressionPreview = Objects.requireNonNull(commonSubexpressionPreview, "commonSubexpressionPreview");
         commonSubexpressionNumericBoundaryReport = Objects.requireNonNull(commonSubexpressionNumericBoundaryReport, "commonSubexpressionNumericBoundaryReport");
         commonSubexpressionLiteralProofReport = Objects.requireNonNull(commonSubexpressionLiteralProofReport, "commonSubexpressionLiteralProofReport");
+        commonSubexpressionLiteralCanonicalizationReport = Objects.requireNonNull(commonSubexpressionLiteralCanonicalizationReport, "commonSubexpressionLiteralCanonicalizationReport");
+        commonSubexpressionLiteralNumericSemanticsProofReport = Objects.requireNonNull(commonSubexpressionLiteralNumericSemanticsProofReport, "commonSubexpressionLiteralNumericSemanticsProofReport");
+        commonSubexpressionLiteralCanonicalizationGate = Objects.requireNonNull(commonSubexpressionLiteralCanonicalizationGate, "commonSubexpressionLiteralCanonicalizationGate");
         autoVectorizationPreview = Objects.requireNonNull(autoVectorizationPreview, "autoVectorizationPreview");
         autoVectorizationRewriteDryRunReport = Objects.requireNonNull(autoVectorizationRewriteDryRunReport, "autoVectorizationRewriteDryRunReport");
         autoVectorizationResolvedRewriteOperations = Objects.requireNonNull(autoVectorizationResolvedRewriteOperations, "autoVectorizationResolvedRewriteOperations");
@@ -72,6 +78,18 @@ public record GpuIrOptimizationValidationReport(
 
     public GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport() {
         return commonSubexpressionLiteralProofReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport commonSubexpressionLiteralCanonicalizationReport() {
+        return commonSubexpressionLiteralCanonicalizationReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport commonSubexpressionLiteralNumericSemanticsProofReport() {
+        return commonSubexpressionLiteralNumericSemanticsProofReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate commonSubexpressionLiteralCanonicalizationGate() {
+        return commonSubexpressionLiteralCanonicalizationGate;
     }
 
     public Optional<GpuIrCommonSubexpressionSkippedDiagnostic> firstCommonSubexpressionSkippedDiagnostic() {
@@ -196,6 +214,17 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSimpleArithmeticLiteralProofHasSafeCandidates=" + commonSubexpressionLiteralProofReport.hasSafeCandidates()
                 + " cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts=" + commonSubexpressionLiteralProofReport.safeOperatorTypeCounts()
                 + " cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts=" + commonSubexpressionLiteralProofReport.blockedOperatorTypeCounts()
+                + " cseSimpleArithmeticLiteralCanonicalizationCandidates=" + commonSubexpressionLiteralCanonicalizationReport.candidateCount()
+                + " cseSimpleArithmeticLiteralCanonicalizationReadiness=" + commonSubexpressionLiteralCanonicalizationReport.readiness()
+                + " cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys=" + commonSubexpressionLiteralCanonicalizationReport.uniqueCanonicalKeyCount()
+                + " cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts=" + commonSubexpressionLiteralCanonicalizationReport.canonicalKeyCounts()
+                + " cseSimpleArithmeticLiteralNumericSemanticsProofReadiness=" + commonSubexpressionLiteralNumericSemanticsProofReport.readiness()
+                + " cseSimpleArithmeticLiteralNumericSemanticsProofFullyProven=" + commonSubexpressionLiteralNumericSemanticsProofReport.fullyProven()
+                + " cseSimpleArithmeticLiteralNumericSemanticsProofProvenCandidates=" + commonSubexpressionLiteralNumericSemanticsProofReport.provenCandidateCount()
+                + " cseSimpleArithmeticLiteralNumericSemanticsProofBlockedCandidates=" + commonSubexpressionLiteralNumericSemanticsProofReport.blockedCandidateCount()
+                + " cseSimpleArithmeticLiteralCanonicalizationGateReadiness=" + commonSubexpressionLiteralCanonicalizationGate.readiness()
+                + " cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint=" + commonSubexpressionLiteralCanonicalizationGate.canPromoteToFingerprint()
+                + " cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons=" + commonSubexpressionLiteralCanonicalizationGate.blockingReasons()
                 + " cseRewritePolicyCanRewrite=" + commonSubexpressionArtifactSnapshot().rewritePolicy().canRewrite()
                 + " cseRewritePolicyReadiness=" + commonSubexpressionArtifactSnapshot().rewritePolicy().readiness().artifactValue()
                 + " cseRewritePolicyBlockingSkippedCandidates=" + commonSubexpressionArtifactSnapshot().rewritePolicy().blockingSkippedCandidateCount()
@@ -205,6 +234,12 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationCandidates=" + autoVectorizationRewriteCandidateCount()
                 + " autoVectorizationRewriteReadiness=" + autoVectorizationPreview.rewriteReadiness().artifactValue()
                 + " autoVectorizationCanApplyRewrite=" + autoVectorizationPreview.canApplyRewrite()
+                + " autoVectorizationVectorTypeCounts=" + autoVectorizationPreview.vectorTypeCounts()
+                + " autoVectorizationUniqueVectorTypes=" + autoVectorizationPreview.vectorTypeCounts().size()
+                + " autoVectorizationWarningFamilyCounts=" + autoVectorizationPreview.warningFamilyCounts()
+                + " autoVectorizationUniqueWarningFamilies=" + autoVectorizationPreview.warningFamilyCounts().size()
+                + " autoVectorizationRejectionReasonCounts=" + autoVectorizationPreview.rejectionReasonCounts()
+                + " autoVectorizationUniqueRejectionReasons=" + autoVectorizationPreview.rejectionReasonCounts().size()
                 + " autoVectorizationProofDecision=" + autoVectorizationPreview.proofDecision().status().artifactValue()
                 + " autoVectorizationProofDecisionAllowRewrite=" + autoVectorizationPreview.proofDecision().allowRewrite()
                 + (autoVectorizationPreview.proofDecision().blockingProofKinds().isEmpty()
@@ -247,6 +282,9 @@ public record GpuIrOptimizationValidationReport(
                 + " cseLocalExpression={" + commonSubexpressionLocalExpressionDominanceReport().summary() + "}"
                 + " cseSimpleArithmeticNumericBoundary={" + commonSubexpressionNumericBoundaryReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralProof={" + commonSubexpressionLiteralProofReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralCanonicalization={" + commonSubexpressionLiteralCanonicalizationReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralNumericSemanticsProof={" + commonSubexpressionLiteralNumericSemanticsProofReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralCanonicalizationGate={" + commonSubexpressionLiteralCanonicalizationGate.summary() + "}"
                 + " cseRewritePolicy={" + commonSubexpressionArtifactSnapshot().rewritePolicy().summary() + "}"
                 + firstCommonSubexpressionSkippedDominanceSummary()
                 .map(summary -> " cseFirstSkippedDominance={" + summary + "}")

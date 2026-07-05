@@ -62,6 +62,7 @@ class GpuIrAutoVectorizationProofSummaryTest {
         );
 
         Map<String, String> fields = summary.artifactFields("autoVectorizationProofRewritePlan");
+        Map<String, String> defaultFields = summary.artifactFields();
 
         assertEquals("rewritePlan", fields.get("autoVectorizationProofRewritePlanKind"));
         assertEquals("kernel", fields.get("autoVectorizationProofRewritePlanLocation"));
@@ -71,6 +72,10 @@ class GpuIrAutoVectorizationProofSummaryTest {
         assertEquals("2", fields.get("autoVectorizationProofRewritePlanDiagnostics"));
         assertEquals("1", fields.get("autoVectorizationProofRewritePlanGuardFamily.controlFlowBoundary"));
         assertTrue(fields.get("autoVectorizationProofRewritePlanSummary").contains("kind=rewritePlan"));
+        assertEquals("rewritePlan", defaultFields.get("autoVectorizationProofKind"));
+        assertEquals("kernel", defaultFields.get("autoVectorizationProofLocation"));
+        assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
+        assertThrows(UnsupportedOperationException.class, () -> defaultFields.put("x", "y"));
     }
 
     @Test
@@ -139,6 +144,7 @@ class GpuIrAutoVectorizationProofSummaryTest {
 
         GpuIrAutoVectorizationProofBundle bundle = GpuIrAutoVectorizationProofBundle.of(rewritePlan, controlFlow, memory);
         Map<String, String> fields = bundle.artifactFields();
+        Map<String, String> customFields = bundle.artifactFields("proofBundle");
 
         assertFalse(bundle.rewriteSafe());
         assertTrue(bundle.hasDiagnostics());
@@ -190,11 +196,15 @@ class GpuIrAutoVectorizationProofSummaryTest {
         assertTrue(fields.get("autoVectorizationProofBundleFirstUnsafeProofSummary").contains("kind=rewritePlan"));
         assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.memoryAddressSpace"));
         assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.controlFlowBoundary"));
+        assertEquals("3", customFields.get("proofBundleProofs"));
+        assertEquals("rewritePlan,controlFlowBoundary,memoryLegality", customFields.get("proofBundleKinds"));
         assertTrue(bundle.summaryLine().contains("proofs=3"));
         assertTrue(bundle.summaryLine().contains("unsafeProofs=2"));
         assertTrue(bundle.summaryLine().contains("unsafeProofKindCounts={rewritePlan=1, controlFlowBoundary=1}"));
         assertTrue(bundle.summaryLine().contains("decision=blockedByMultipleProofs"));
         assertTrue(bundle.summaryLine().contains("firstUnsafeProof=rewritePlan@kernel"));
+        assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
+        assertThrows(UnsupportedOperationException.class, () -> customFields.put("x", "y"));
     }
 
     @Test

@@ -41,10 +41,13 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         );
 
         Map<String, String> fields = snapshot.artifactFields("cse");
+        Map<String, String> defaultFields = snapshot.artifactFields();
 
         assertEquals("1", fields.get("cseInsertions"));
         assertEquals("1", fields.get("cseReplacements"));
         assertEquals("1", fields.get("cseSkipped"));
+        assertEquals("1", defaultFields.get("cseInsertions"));
+        assertEquals("{requiresLocalExpressionDominance=1}", defaultFields.get("cseSkippedDominanceStatusCounts"));
         assertEquals("NO_DOMINATING_FIRST_OCCURRENCE", fields.get("cseFirstSkippedReason"));
         assertEquals("requiresLocalExpressionDominance", fields.get("cseFirstSkippedDominanceStatus"));
         assertTrue(fields.get("cseFirstSkippedDominanceSummary").contains("dominance=requiresLocalExpressionDominance"));
@@ -71,6 +74,7 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         assertTrue(snapshot.summary().contains("simpleArithmeticProof={"));
         assertTrue(snapshot.summary().contains("rewritePolicy={"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
+        assertThrows(UnsupportedOperationException.class, () -> defaultFields.put("x", "y"));
     }
 
     @Test

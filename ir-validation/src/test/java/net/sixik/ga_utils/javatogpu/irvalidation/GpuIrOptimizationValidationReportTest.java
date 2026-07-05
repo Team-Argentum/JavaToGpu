@@ -19,6 +19,11 @@ class GpuIrOptimizationValidationReportTest {
                 new GpuIrCommonSubexpressionRewritePreview(List.of(), List.of(), List.of()),
                 GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.empty("kernel"),
                 GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.empty("kernel"),
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.empty("kernel"),
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.empty("kernel"),
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(
+                        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.empty("kernel")
+                ),
                 new GpuIrAutoVectorizationPreview("kernel", List.of(), List.of(), List.of()),
                 GpuIrAutoVectorizationRewriteDryRunReport.failed(
                         "kernel",
@@ -47,11 +52,28 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofHasSafeCandidates=false"));
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts={}"));
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts={}"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationUniqueCanonicalKeys=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationCanonicalKeyCounts={}"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProofReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProofFullyProven=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProofProvenCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProofBlockedCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGateReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons=[noPreviewCandidates]"));
         assertTrue(report.compactSummary().contains("cseRewritePolicyCanRewrite=false"));
         assertTrue(report.compactSummary().contains("cseRewritePolicyReadiness=none"));
         assertTrue(report.compactSummary().contains("cseRewritePolicyBlockingSkippedCandidates=0"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofDecision=allow"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofDecisionAllowRewrite=true"));
+        assertTrue(report.compactSummary().contains("autoVectorizationVectorTypeCounts={}"));
+        assertTrue(report.compactSummary().contains("autoVectorizationUniqueVectorTypes=0"));
+        assertTrue(report.compactSummary().contains("autoVectorizationWarningFamilyCounts={}"));
+        assertTrue(report.compactSummary().contains("autoVectorizationUniqueWarningFamilies=0"));
+        assertTrue(report.compactSummary().contains("autoVectorizationRejectionReasonCounts={}"));
+        assertTrue(report.compactSummary().contains("autoVectorizationUniqueRejectionReasons=0"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofBundleRewriteSafe=true"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofBundleDiagnostics=0"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofBundleUnsafeProofs=0"));
@@ -62,6 +84,9 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.detailedSummary().contains("cseLocalExpression={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticNumericBoundary={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralProof={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralCanonicalization={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProof={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGate={"));
         assertTrue(report.detailedSummary().contains("cseRewritePolicy={"));
         assertTrue(report.detailedSummary().contains("CSE rewrite policy method=kernel"));
         assertTrue(report.detailedSummary().contains("successful=false"));

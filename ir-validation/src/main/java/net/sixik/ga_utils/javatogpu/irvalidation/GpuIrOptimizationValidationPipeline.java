@@ -58,6 +58,15 @@ public final class GpuIrOptimizationValidationPipeline {
         );
         GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport =
                 GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.from(commonSubexpressionNumericBoundaryReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport commonSubexpressionLiteralCanonicalizationReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.from(commonSubexpressionLiteralProofReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport commonSubexpressionLiteralNumericSemanticsProofReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.from(commonSubexpressionLiteralCanonicalizationReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate commonSubexpressionLiteralCanonicalizationGate =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport
+                );
         GpuIrAutoVectorizationPreview autoVectorizationPreview = autoVectorizationPlanningPass.preview(context);
         GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport = autoVectorizationRewriteDryRunReport(
                 context,
@@ -75,6 +84,9 @@ public final class GpuIrOptimizationValidationPipeline {
                 commonSubexpressionPreview,
                 commonSubexpressionNumericBoundaryReport,
                 commonSubexpressionLiteralProofReport,
+                commonSubexpressionLiteralCanonicalizationReport,
+                commonSubexpressionLiteralNumericSemanticsProofReport,
+                commonSubexpressionLiteralCanonicalizationGate,
                 autoVectorizationPreview,
                 autoVectorizationRewriteDryRunReport,
                 autoVectorizationResolvedRewriteOperations
