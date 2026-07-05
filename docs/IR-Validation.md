@@ -157,7 +157,36 @@ validationRulesConsistency.FailedChecks=0
 
 The registry artifact is deliberately separate from the normal provider report. Callers that want this surface should explicitly evaluate a `GpuIrOptimizationValidationRuleRegistry` or use `GpuIrOptimizationValidationRuleArtifactRunner`, then merge fields with `GpuIrOptimizationValidationRuleArtifactFields`.
 
-`GpuIrOptimizationValidationRuleArtifactAcceptance` is the small helper for CI consumers that only need an accept/reject decision. It accepts `pass` artifacts and also accepts `warn` artifacts as non-blocking follow-up work, but rejects artifacts with failing/blocking rule results. Its default `validationRulesAcceptance*` fields include `validationRulesAcceptanceAccepted`, `validationRulesAcceptanceRejected`, `validationRulesAcceptanceAcceptedWithWarnings`, `validationRulesAcceptanceReason`, first warning/failure/blocking rule ids, and `validationRulesAcceptanceCiSummaryLine`, so tooling does not need to parse `validationRulesSummary`.
+`GpuIrOptimizationValidationRuleArtifactAcceptance` is the small helper for CI consumers that only need an accept/reject decision. It accepts `pass` artifacts and also accepts `warn` artifacts as non-blocking follow-up work, but rejects artifacts with failing/blocking rule results. Its default `validationRulesAcceptance*` fields include `validationRulesAcceptanceAccepted`, `validationRulesAcceptanceRejected`, `validationRulesAcceptanceAcceptedWithWarnings`, `validationRulesAcceptanceReason`, first warning/failure/blocking rule ids, and `validationRulesAcceptanceCiSummaryLine`, so tooling does not need to parse `validationRulesSummary`. `GpuIrOptimizationValidationRuleArtifactFields` can now export acceptance-only fields with `acceptanceFields(...)` / `putAcceptanceFields(...)`, or merge the full rule artifact plus acceptance decision in one call with `fieldsWithAcceptance(...)` / `putFieldsWithAcceptance(...)`.
+
+`GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry()` adds a separate opt-in rule pack for runtime-equivalence evidence checks. It is not part of `defaultRegistry()` and is not connected to normal compiler validation. The default pack currently contains `cse.literalRuntimeEquivalenceEvidence`, which warns when literal CSE preview candidates exist without successful runtime-equivalence evidence, and `cse.literalPromotionRuntimeEquivalenceGate`, which blocks promotion-oriented artifacts when preview candidates exist but runtime-equivalence evidence is missing or failed. Callers that also have explicit auto-vectorization prototype pre/post evidence can use `runtimeEquivalenceEvidenceRegistry(prePostReport)` or `autoVectorizationPrototypePrePostRuntimeEquivalenceRegistry(prePostReport)` to include `autoVectorization.prototypePrePostRuntimeEquivalenceEvidence` and `autoVectorization.prototypePrePostRuntimeEquivalenceGate`; those rules warn/block when prototype rewrite candidates exist but pre/post runtime-equivalence evidence is missing or failed. The rule metadata exports literal preview counts, auto-vectorization rewrite counts, runtime-equivalence success/diagnostic metadata, readiness verdicts, blocking reasons, applied rewrite-family counters, and remaining-work hints through normal rule-result metadata.
+
+Use the runtime-evidence registries only from explicit artifact/tooling code. The default CSE-only registry checks the validation report's literal runtime-equivalence surface. The auto-vector-only registry needs an explicit `GpuIrAutoVectorizationPrototypePrePostRuntimeEquivalenceReport`. The combined registry keeps CSE rules first, then appends auto-vectorization pre/post rules:
+
+```java
+GpuIrOptimizationValidationRuleArtifactReport cseOnly =
+        GpuIrOptimizationValidationRuleArtifactReport.evaluate(
+                validationReport,
+                GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry()
+        );
+
+GpuIrOptimizationValidationRuleArtifactReport autoVectorOnly =
+        GpuIrOptimizationValidationRuleArtifactReport.evaluate(
+                validationReport,
+                GpuIrOptimizationValidationRules.autoVectorizationPrototypePrePostRuntimeEquivalenceRegistry(prePostReport)
+        );
+
+GpuIrOptimizationValidationRuleArtifactReport combined =
+        GpuIrOptimizationValidationRuleArtifactReport.evaluate(
+                validationReport,
+                GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry(prePostReport)
+        );
+
+Map<String, String> ciFields =
+        GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance(combined);
+```
+
+For CI, read `validationRulesVerdict`, `validationRulesWarningRuleIndex`, `validationRulesBlockingRuleIndex`, `validationRulesAcceptanceAccepted`, `validationRulesAcceptanceReason`, and the nested `validationRulesRegistryResult.*.Metadata.*` evidence fields first. This avoids parsing long summary strings and keeps runtime-evidence gating opt-in.
 
 `cseSimpleArithmeticLiteralPromotionReadiness*` sits above the checklist as a compact CI rollup, exporting one verdict, blocker counters, first blocker, remaining-work list, and `CiSummaryLine` across typed numeric blockers, runtime-equivalence evidence, preview-only fingerprint blast radius, production fingerprint disablement, and production mutation disablement.
 

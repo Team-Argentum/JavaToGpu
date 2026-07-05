@@ -13,7 +13,12 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrCommonSubexpressionSimpleArithmeticLiteralTestFixtures.canonicalizationReport;
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrCommonSubexpressionSimpleArithmeticLiteralTestFixtures.emptyCanonicalizationReport;
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.autoVectorizationPrePostEvidence;
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.emptyAutoVectorizationPrePostEvidence;
 import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.fixedWidthLoop;
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.reportWithLiteralEvidence;
 import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.validate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -143,4 +148,185 @@ class GpuIrOptimizationValidationRulesTest {
         assertEquals("1", fields.get("rulesResult.2.Metadata.cseInsertions"));
         assertEquals("1", fields.get("rulesResult.2.Metadata.cseReplacements"));
     }
+
+    @Test
+    void runtimeEquivalenceEvidenceRegistryPassesWhenNoLiteralCandidatesExist() {
+        GpuIrOptimizationValidationReport report = reportWithLiteralEvidence(
+                emptyCanonicalizationReport(),
+                false,
+                List.of()
+        );
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(2, results.size());
+        assertEquals("cse.literalRuntimeEquivalenceEvidence", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertEquals("cse.literalPromotionRuntimeEquivalenceGate", results.get(1).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(1).status());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.previewCandidates"));
+        assertEquals("none", fields.get("rulesResult.0.Metadata.runtimeEquivalenceReadiness"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.runtimeEquivalenceSuccessful"));
+        assertEquals("notReady/noPreviewCandidates", fields.get("rulesResult.1.Metadata.promotionReadinessVerdict"));
+        assertEquals("noPreviewCandidates,runtimeEquivalenceNotProven,productionFingerprintIntegrationDisabled,productionMutationDisabled", fields.get("rulesResult.1.Metadata.promotionBlockingReasons"));
+    }
+
+    @Test
+    void runtimeEquivalenceEvidenceRegistryWarnsAndBlocksWhenLiteralEvidenceIsMissing() {
+        GpuIrOptimizationValidationReport report = reportWithLiteralEvidence(
+                canonicalizationReport(),
+                false,
+                List.of()
+        );
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals("cse.literalRuntimeEquivalenceEvidence", results.get(0).ruleId());
+        assertTrue(results.get(0).passed());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.WARN, results.get(0).status());
+        assertFalse(results.get(0).blocking());
+        assertEquals("cse.literalPromotionRuntimeEquivalenceGate", results.get(1).ruleId());
+        assertFalse(results.get(1).passed());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.FAIL, results.get(1).status());
+        assertTrue(results.get(1).blocking());
+        assertEquals("false", fields.get("rulesPassed"));
+        assertEquals("2", fields.get("rulesResult.0.Metadata.previewCandidates"));
+        assertEquals("notProven", fields.get("rulesResult.0.Metadata.runtimeEquivalenceReadiness"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.runtimeEquivalenceSuccessful"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.runtimeEquivalenceDiagnostics"));
+        assertEquals("literal canonicalization runtime equivalence not run", fields.get("rulesResult.0.Metadata.runtimeEquivalenceFirstDiagnostic"));
+        assertEquals("notReady/runtimeMissing", fields.get("rulesResult.1.Metadata.promotionReadinessVerdict"));
+        assertEquals("false", fields.get("rulesResult.1.Metadata.promotionRuntimeEquivalenceSuccessful"));
+        assertEquals("runtimeEquivalenceNotProven", fields.get("rulesResult.1.Metadata.promotionFirstBlockingReason"));
+        assertEquals("runRuntimeEquivalenceEvidence", fields.get("rulesResult.1.Metadata.promotionFirstRemainingWork"));
+    }
+
+    @Test
+    void runtimeEquivalenceEvidenceRegistryPassesWhenLiteralEvidenceIsSuccessful() {
+        GpuIrOptimizationValidationReport report = reportWithLiteralEvidence(
+                canonicalizationReport(),
+                true,
+                List.of(
+                        "literal_assoc_preview(plus:int,int,int;literals=1)",
+                        "literal_assoc_preview(plus:int,int,int;literals=2)"
+                )
+        );
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(1).status());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("2", fields.get("rulesResult.0.Metadata.previewCandidates"));
+        assertEquals("proven", fields.get("rulesResult.0.Metadata.runtimeEquivalenceReadiness"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.runtimeEquivalenceSuccessful"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.numericSemanticsFullyProven"));
+        assertEquals("evidenceCompleteButProductionDisabled", fields.get("rulesResult.1.Metadata.promotionReadinessVerdict"));
+        assertEquals("true", fields.get("rulesResult.1.Metadata.promotionRuntimeEquivalenceSuccessful"));
+        assertEquals("productionFingerprintIntegrationDisabled,productionMutationDisabled", fields.get("rulesResult.1.Metadata.promotionBlockingReasons"));
+    }
+
+    @Test
+    void autoVectorizationPrePostRegistryPassesWhenNoPrototypeCandidatesExist() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .autoVectorizationPrototypePrePostRuntimeEquivalenceRegistry(emptyAutoVectorizationPrePostEvidence());
+
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(2, results.size());
+        assertEquals("autoVectorization.prototypePrePostRuntimeEquivalenceEvidence", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertEquals("autoVectorization.prototypePrePostRuntimeEquivalenceGate", results.get(1).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(1).status());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.preOptimizationRewriteCandidates"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.postOptimizationAppliedRewrites"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.prePostSuccessful"));
+        assertEquals("{}", fields.get("rulesResult.0.Metadata.runtimeEquivalenceDiagnosticFamilyCounts"));
+    }
+
+    @Test
+    void autoVectorizationPrePostRegistryWarnsAndBlocksWhenPrototypeEvidenceFails() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .autoVectorizationPrototypePrePostRuntimeEquivalenceRegistry(autoVectorizationPrePostEvidence(
+                        false,
+                        List.of("case case-a output out differs")
+                ));
+
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals("autoVectorization.prototypePrePostRuntimeEquivalenceEvidence", results.get(0).ruleId());
+        assertTrue(results.get(0).passed());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.WARN, results.get(0).status());
+        assertFalse(results.get(0).blocking());
+        assertEquals("autoVectorization.prototypePrePostRuntimeEquivalenceGate", results.get(1).ruleId());
+        assertFalse(results.get(1).passed());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.FAIL, results.get(1).status());
+        assertTrue(results.get(1).blocking());
+        assertEquals("false", fields.get("rulesPassed"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.preOptimizationRewriteCandidates"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.postOptimizationAppliedRewrites"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.prePostSuccessful"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.runtimeEquivalenceSuccessful"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.runtimeEquivalenceDiagnostics"));
+        assertEquals("{outputDiffers=1}", fields.get("rulesResult.0.Metadata.runtimeEquivalenceDiagnosticFamilyCounts"));
+        assertEquals("case case-a output out differs", fields.get("rulesResult.0.Metadata.runtimeEquivalenceFirstDiagnostic"));
+        assertEquals("{laneCopy=1,unaryLaneOp=0,binaryLaneOp=0,laneLiteralBinaryOp=0}", fields.get("rulesResult.0.Metadata.appliedRewriteFamilies"));
+    }
+
+    @Test
+    void autoVectorizationPrePostRegistryPassesWhenPrototypeEvidenceIsSuccessful() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .autoVectorizationPrototypePrePostRuntimeEquivalenceRegistry(autoVectorizationPrePostEvidence(true, List.of()));
+
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(1).status());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.prePostSuccessful"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.runtimeEquivalenceSuccessful"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.runtimeEquivalenceInputCases"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.runtimeEquivalenceComparedOutputs"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.runtimeEquivalenceDiagnostics"));
+        assertEquals("{laneCopy=1,unaryLaneOp=0,binaryLaneOp=0,laneLiteralBinaryOp=0}", fields.get("rulesResult.0.Metadata.appliedRewriteFamilies"));
+    }
+
+    @Test
+    void combinedRuntimeEvidenceRegistryIncludesLiteralAndAutoVectorizationRules() {
+        GpuIrOptimizationValidationReport report = reportWithLiteralEvidence(canonicalizationReport(), false, List.of());
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules.runtimeEquivalenceEvidenceRegistry(
+                autoVectorizationPrePostEvidence(false, List.of("case case-a output out differs"))
+        );
+
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(4, results.size());
+        assertEquals("cse.literalRuntimeEquivalenceEvidence", results.get(0).ruleId());
+        assertEquals("cse.literalPromotionRuntimeEquivalenceGate", results.get(1).ruleId());
+        assertEquals("autoVectorization.prototypePrePostRuntimeEquivalenceEvidence", results.get(2).ruleId());
+        assertEquals("autoVectorization.prototypePrePostRuntimeEquivalenceGate", results.get(3).ruleId());
+        assertEquals("false", fields.get("rulesPassed"));
+        assertEquals("warn", fields.get("rulesResult.0.Status"));
+        assertEquals("fail", fields.get("rulesResult.1.Status"));
+        assertEquals("warn", fields.get("rulesResult.2.Status"));
+        assertEquals("fail", fields.get("rulesResult.3.Status"));
+        assertEquals("[cse.literalRuntimeEquivalenceEvidence=warn,autoVectorization.prototypePrePostRuntimeEquivalenceEvidence=warn]", fields.get("rulesWarningRuleIndex"));
+        assertEquals("[cse.literalPromotionRuntimeEquivalenceGate=fail,autoVectorization.prototypePrePostRuntimeEquivalenceGate=fail]", fields.get("rulesBlockingRuleIndex"));
+    }
+
 }

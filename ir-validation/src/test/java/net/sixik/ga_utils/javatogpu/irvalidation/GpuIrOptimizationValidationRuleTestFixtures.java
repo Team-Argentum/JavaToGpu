@@ -8,6 +8,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassContext;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
@@ -61,6 +62,107 @@ final class GpuIrOptimizationValidationRuleTestFixtures {
                 return evaluator.apply(context);
             }
         };
+    }
+
+    static GpuIrOptimizationValidationReport reportWithLiteralEvidence(
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport canonicalization,
+            boolean runtimeSuccessful,
+            List<String> productionFingerprints
+    ) {
+        GpuIrOptimizationValidationReport baseReport = validate(new GpuIrMethod(canonicalization.methodName(), List.of(new GpuIrReturn(null))));
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralTestFixtures.EvidenceStack stack =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralTestFixtures.evidence(
+                        canonicalization,
+                        runtimeSuccessful,
+                        productionFingerprints
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport literalProof =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.empty(canonicalization.methodName());
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport consistency =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport.from(
+                        stack.enablement(),
+                        stack.preflight(),
+                        stack.operationPreview(),
+                        stack.promotionChecklist()
+                );
+        return new GpuIrOptimizationValidationReport(
+                baseReport.methodName(),
+                baseReport.safetyError(),
+                baseReport.commonSubexpressionPreview(),
+                baseReport.commonSubexpressionNumericBoundaryReport(),
+                literalProof,
+                canonicalization,
+                stack.numericProof(),
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport.from(
+                        literalProof,
+                        stack.numericProof()
+                ),
+                stack.runtimeEquivalence(),
+                stack.gate(),
+                stack.decision(),
+                stack.parity(),
+                stack.enablement(),
+                stack.preflight(),
+                stack.operationPreview(),
+                stack.promotionChecklist(),
+                stack.promotionReadiness(),
+                consistency,
+                baseReport.autoVectorizationPreview(),
+                baseReport.autoVectorizationRewriteDryRunReport(),
+                baseReport.autoVectorizationResolvedRewriteOperations()
+        );
+    }
+
+    static GpuIrAutoVectorizationPrototypePrePostRuntimeEquivalenceReport autoVectorizationPrePostEvidence(
+            boolean runtimeSuccessful,
+            List<String> diagnostics
+    ) {
+        GpuIrAutoVectorizationPrototypeRewriteReport rewriteReport = new GpuIrAutoVectorizationPrototypeRewriteReport(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                List.of(new GpuIrAutoVectorizationPrototypeAppliedRewrite(
+                        "stmt[0]",
+                        0,
+                        "int4",
+                        0,
+                        4,
+                        List.of("out"),
+                        List.of("left"),
+                        GpuIrAutoVectorizationPrototypeExpressionKind.LANE_COPY,
+                        "",
+                        ""
+                ))
+        );
+        GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport runtimeEquivalence = runtimeSuccessful
+                ? GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport.equivalent(
+                rewriteReport,
+                1,
+                List.of("out")
+        )
+                : GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport.failed(
+                rewriteReport,
+                1,
+                List.of("out"),
+                diagnostics
+        );
+        return new GpuIrAutoVectorizationPrototypePrePostRuntimeEquivalenceReport(
+                new GpuIrAutoVectorizationPrototypeArtifactReport(runtimeEquivalence)
+        );
+    }
+
+    static GpuIrAutoVectorizationPrototypePrePostRuntimeEquivalenceReport emptyAutoVectorizationPrePostEvidence() {
+        GpuIrAutoVectorizationPrototypeRewriteReport rewriteReport = new GpuIrAutoVectorizationPrototypeRewriteReport(
+                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                List.of()
+        );
+        return new GpuIrAutoVectorizationPrototypePrePostRuntimeEquivalenceReport(
+                new GpuIrAutoVectorizationPrototypeArtifactReport(
+                        GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport.equivalent(
+                                rewriteReport,
+                                0,
+                                List.of("out")
+                        )
+                )
+        );
     }
 
     static GpuIrCompiledMethod method(GpuIrMethod irMethod) {

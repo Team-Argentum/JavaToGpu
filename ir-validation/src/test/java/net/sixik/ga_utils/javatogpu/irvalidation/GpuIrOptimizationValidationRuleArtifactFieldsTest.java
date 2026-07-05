@@ -38,6 +38,62 @@ class GpuIrOptimizationValidationRuleArtifactFieldsTest {
     }
 
     @Test
+    void mergesDefaultValidationRuleAndAcceptanceFieldsIntoExistingMap() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("combinedKernel"));
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("existing", "preserved");
+
+        GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, report);
+
+        assertEquals("preserved", fields.get("existing"));
+        assertEquals("combinedKernel", fields.get("validationRulesMethod"));
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("combinedKernel", fields.get("validationRulesAcceptanceMethod"));
+        assertEquals("pass", fields.get("validationRulesAcceptanceVerdict"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("false", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("accepted/pass", fields.get("validationRulesAcceptanceReason"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("accepted=true"));
+    }
+
+    @Test
+    void returnsImmutableCombinedFieldsWithCustomPrefixes() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("customCombinedKernel"));
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance(
+                "rules.",
+                "rulesAcceptance.",
+                report
+        );
+
+        assertEquals("customCombinedKernel", fields.get("rules.Method"));
+        assertEquals("true", fields.get("rules.Passed"));
+        assertEquals("customCombinedKernel", fields.get("rulesAcceptance.Method"));
+        assertEquals("true", fields.get("rulesAcceptance.Accepted"));
+        assertEquals("accepted/pass", fields.get("rulesAcceptance.Reason"));
+        assertFalse(fields.containsKey("validationRulesPassed"));
+        assertFalse(fields.containsKey("validationRulesAcceptanceAccepted"));
+        assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
+    }
+
+    @Test
+    void returnsImmutableAcceptanceOnlyFields() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("acceptanceOnlyKernel"));
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.acceptanceFields(report);
+
+        assertEquals("acceptanceOnlyKernel", fields.get("validationRulesAcceptanceMethod"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("accepted/pass", fields.get("validationRulesAcceptanceReason"));
+        assertFalse(fields.containsKey("validationRulesPassed"));
+        assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
+    }
+
+    @Test
     void returnsImmutableFieldsWithCustomPrefix() {
         GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
                 .run(validationReport("customKernel"));
@@ -65,6 +121,16 @@ class GpuIrOptimizationValidationRuleArtifactFieldsTest {
         assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFields(fields, null));
         assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFields(fields, "", report));
         assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fields(" ", report));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putAcceptanceFields(null, report));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putAcceptanceFields(fields, null));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putAcceptanceFields(fields, "", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.acceptanceFields(" ", report));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(null, report));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, null));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, "", "acceptance.", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, "rules.", "", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance("", "acceptance.", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance("rules.", "", report));
     }
 
     @Test
