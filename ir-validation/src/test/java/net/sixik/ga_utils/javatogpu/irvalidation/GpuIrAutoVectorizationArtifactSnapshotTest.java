@@ -53,6 +53,10 @@ class GpuIrAutoVectorizationArtifactSnapshotTest {
         assertEquals("0", fields.get("autoVectorizationRejections"));
         assertEquals("ready", fields.get("autoVectorizationRewriteReadiness"));
         assertEquals("true", fields.get("autoVectorizationCanApplyRewrite"));
+        assertEquals("readyForPrototypeRewrite", fields.get("autoVectorizationReadinessVerdict"));
+        assertEquals("true", fields.get("autoVectorizationReadinessReadyForPrototypeRewrite"));
+        assertEquals("[]", fields.get("autoVectorizationReadinessBlockingReasons"));
+        assertEquals("auto-vectorization readiness ready", fields.get("autoVectorizationReadinessCiSummaryLine"));
         assertEquals("allow", fields.get("autoVectorizationProofDecisionStatus"));
         assertEquals("true", fields.get("autoVectorizationProofDecisionAllowRewrite"));
         assertEquals("", fields.get("autoVectorizationProofDecisionBlockingProofKinds"));
@@ -91,6 +95,7 @@ class GpuIrAutoVectorizationArtifactSnapshotTest {
         assertTrue(fields.get("autoVectorizationResolvedRewriteFirstInsertion").contains("stmt[0]"));
         assertTrue(fields.get("autoVectorizationResolvedRewriteFirstReplacement").contains("stmt[0]"));
         assertTrue(snapshot.summary().contains("auto-vectorization artifact snapshot"));
+        assertTrue(snapshot.summary().contains("readinessVerdict=readyForPrototypeRewrite"));
         assertTrue(snapshot.summary().contains("uniqueVectorTypes=1"));
         assertTrue(snapshot.summary().contains("uniqueWarningFamilies=0"));
         assertTrue(snapshot.summary().contains("uniqueRejectionReasons=0"));

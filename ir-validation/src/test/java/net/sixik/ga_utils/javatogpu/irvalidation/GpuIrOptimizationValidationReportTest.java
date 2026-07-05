@@ -13,17 +13,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GpuIrOptimizationValidationReportTest {
     @Test
     void summariesIncludeDryRunFailureDiagnostics() {
+        EmptyLiteralReports literalReports = emptyLiteralReports("kernel");
         GpuIrOptimizationValidationReport report = new GpuIrOptimizationValidationReport(
                 "kernel",
                 Optional.empty(),
                 new GpuIrCommonSubexpressionRewritePreview(List.of(), List.of(), List.of()),
                 GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.empty("kernel"),
                 GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.empty("kernel"),
-                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.empty("kernel"),
-                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.empty("kernel"),
-                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(
-                        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.empty("kernel")
-                ),
+                literalReports.canonicalizationReport(),
+                literalReports.numericSemanticsProofReport(),
+                literalReports.typedNumericBlockerSummaryReport(),
+                literalReports.runtimeEquivalenceReport(),
+                literalReports.canonicalizationGate(),
+                literalReports.fingerprintDecisionReport(),
+                literalReports.fingerprintParityReport(),
+                literalReports.enablementReport(),
+                literalReports.rewritePreflightReport(),
+                literalReports.rewriteOperationPreviewReport(),
+                literalReports.promotionChecklistReport(),
+                literalReports.promotionReadinessSummaryReport(),
+                literalReports.consistencyCheckReport(),
                 new GpuIrAutoVectorizationPreview("kernel", List.of(), List.of(), List.of()),
                 GpuIrAutoVectorizationRewriteDryRunReport.failed(
                         "kernel",
@@ -60,14 +69,46 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProofFullyProven=false"));
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProofProvenCandidates=0"));
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProofBlockedCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralTypedNumericBlockersReadiness=clear"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralTypedNumericBlockersTotal=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralTypedNumericBlockersFamilies={}"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRuntimeEquivalenceReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRuntimeEquivalenceSuccessful=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRuntimeEquivalenceDiagnostics=1"));
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGateReadiness=none"));
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint=false"));
         assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons=[noPreviewCandidates]"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralFingerprintDecisionReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralFingerprintDecisionReadyForProduction=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralFingerprintDecisionBlockingReasons=[noPreviewCandidates]"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralFingerprintParityReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralFingerprintParityPreviewOnlyKeys=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralFingerprintParityBlockers=[noPreviewCandidates, fingerprintDecisionNotReadyForProduction]"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralEnablementVerdict=notReady/noPreviewCandidates"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralEnablementBlockers=[noPreviewCandidates, fingerprintDecisionNotReadyForProduction]"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRewritePreflightReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRewritePreflightEligibleCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRewritePreflightBlockedCandidates=1"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRewriteOperationPreviewReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRewriteOperationPreviewEligibleOperations=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralRewriteOperationPreviewBlockedOperations=1"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralPromotionChecklistVerdict=notReady/noPreviewCandidates"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralPromotionChecklistReadyForProductionMutation=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralPromotionChecklistRemainingWorkCount=6"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralPromotionReadinessVerdict=notReady/noPreviewCandidates"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralPromotionReadinessReadyForProductionMutation=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralPromotionReadinessBlockingReasons=[noPreviewCandidates, runtimeEquivalenceNotProven, productionFingerprintIntegrationDisabled, productionMutationDisabled]"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralConsistencyCheckVerdict=consistent"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralConsistencyCheckConsistent=true"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralConsistencyCheckFailedChecks=0"));
         assertTrue(report.compactSummary().contains("cseRewritePolicyCanRewrite=false"));
         assertTrue(report.compactSummary().contains("cseRewritePolicyReadiness=none"));
         assertTrue(report.compactSummary().contains("cseRewritePolicyBlockingSkippedCandidates=0"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofDecision=allow"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofDecisionAllowRewrite=true"));
+        assertTrue(report.compactSummary().contains("autoVectorizationReadinessVerdict=notReady/noCandidates"));
+        assertTrue(report.compactSummary().contains("autoVectorizationReadinessReadyForPrototypeRewrite=false"));
+        assertTrue(report.compactSummary().contains("autoVectorizationReadinessBlockingReasons=[noRewriteCandidates, rewritePolicyBlocksRewrite, dryRunNotReady]"));
         assertTrue(report.compactSummary().contains("autoVectorizationVectorTypeCounts={}"));
         assertTrue(report.compactSummary().contains("autoVectorizationUniqueVectorTypes=0"));
         assertTrue(report.compactSummary().contains("autoVectorizationWarningFamilyCounts={}"));
@@ -81,12 +122,22 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.detailedSummary().contains("autoVectorizationRewriteDryRun={"));
         assertTrue(report.detailedSummary().contains("autoVectorizationResolvedRewriteOperations={"));
         assertTrue(report.detailedSummary().contains("autoVectorizationProofBundle={"));
+        assertTrue(report.detailedSummary().contains("autoVectorizationReadiness={"));
         assertTrue(report.detailedSummary().contains("cseLocalExpression={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticNumericBoundary={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralProof={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralCanonicalization={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralNumericSemanticsProof={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralTypedNumericBlockers={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralRuntimeEquivalence={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralCanonicalizationGate={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralFingerprintDecision={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralFingerprintParity={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralEnablement={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralRewritePreflight={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralRewriteOperationPreview={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralPromotionChecklist={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralConsistencyCheck={"));
         assertTrue(report.detailedSummary().contains("cseRewritePolicy={"));
         assertTrue(report.detailedSummary().contains("CSE rewrite policy method=kernel"));
         assertTrue(report.detailedSummary().contains("successful=false"));
@@ -136,5 +187,118 @@ class GpuIrOptimizationValidationReportTest {
         ));
 
         assertTrue(exception.getMessage().contains("ready dry-runs must not have diagnostics"));
+    }
+
+    private EmptyLiteralReports emptyLiteralReports(String methodName) {
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport canonicalizationReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.empty(methodName);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericSemanticsProofReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.empty(methodName);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport runtimeEquivalenceReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport.notRun(
+                        canonicalizationReport,
+                        numericSemanticsProofReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport typedNumericBlockerSummaryReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport.from(
+                        GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.empty(methodName),
+                        numericSemanticsProofReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate canonicalizationGate =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(
+                        canonicalizationReport,
+                        numericSemanticsProofReport,
+                        runtimeEquivalenceReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport fingerprintDecisionReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport.from(
+                        canonicalizationReport,
+                        numericSemanticsProofReport,
+                        runtimeEquivalenceReport,
+                        canonicalizationGate
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport fingerprintParityReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport.from(
+                        new GpuIrCommonSubexpressionArtifactSnapshot(
+                                methodName,
+                                new GpuIrCommonSubexpressionRewritePreview(List.of(), List.of(), List.of())
+                        ),
+                        canonicalizationReport,
+                        fingerprintDecisionReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport enablementReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport.from(
+                        canonicalizationReport,
+                        numericSemanticsProofReport,
+                        runtimeEquivalenceReport,
+                        fingerprintDecisionReport,
+                        fingerprintParityReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport rewritePreflightReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport.from(
+                        canonicalizationReport,
+                        numericSemanticsProofReport,
+                        runtimeEquivalenceReport,
+                        fingerprintParityReport,
+                        enablementReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport rewriteOperationPreviewReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport.from(
+                        rewritePreflightReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport promotionChecklistReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport.from(
+                        enablementReport,
+                        rewritePreflightReport,
+                        rewriteOperationPreviewReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport consistencyCheckReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport.from(
+                        enablementReport,
+                        rewritePreflightReport,
+                        rewriteOperationPreviewReport,
+                        promotionChecklistReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport promotionReadinessSummaryReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport.from(
+                        canonicalizationReport,
+                        typedNumericBlockerSummaryReport,
+                        runtimeEquivalenceReport,
+                        fingerprintDecisionReport,
+                        fingerprintParityReport,
+                        promotionChecklistReport
+                );
+        return new EmptyLiteralReports(
+                canonicalizationReport,
+                numericSemanticsProofReport,
+                typedNumericBlockerSummaryReport,
+                runtimeEquivalenceReport,
+                canonicalizationGate,
+                fingerprintDecisionReport,
+                fingerprintParityReport,
+                enablementReport,
+                rewritePreflightReport,
+                rewriteOperationPreviewReport,
+                promotionChecklistReport,
+                promotionReadinessSummaryReport,
+                consistencyCheckReport
+        );
+    }
+
+    private record EmptyLiteralReports(
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport canonicalizationReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericSemanticsProofReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport typedNumericBlockerSummaryReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport runtimeEquivalenceReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate canonicalizationGate,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport fingerprintDecisionReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport fingerprintParityReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport enablementReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport rewritePreflightReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport rewriteOperationPreviewReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport promotionChecklistReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport promotionReadinessSummaryReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport consistencyCheckReport
+    ) {
     }
 }

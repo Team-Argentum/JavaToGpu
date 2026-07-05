@@ -68,15 +68,34 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport
         assertEquals(2, proof.blockedCandidateCount());
         assertFalse(proof.fullyProven());
         assertEquals("blocked", proof.readiness());
-        assertEquals(Map.of("unsupportedOperator", 1L, "nonIntOperand", 1L), proof.blockedReasonCounts());
+        assertEquals(Map.of("unsupportedOperator", 1L, "longOperandOverflowSemanticsRequireProof", 1L), proof.blockedReasonCounts());
         assertEquals("2", fields.get("numericProofBlockedCandidates"));
         assertEquals("false", fields.get("numericProofFullyProven"));
         assertEquals("blocked", fields.get("numericProofReadiness"));
         assertEquals("unsupportedOperator", fields.get("numericProofFirstBlockedReason"));
+        assertEquals("only associative int literal + and * are inside the current numeric proof boundary", fields.get("numericProofFirstBlockedExplanation"));
         assertEquals("minus:int,int,int", fields.get("numericProofFirstBlockedOperatorTypeKey"));
         assertEquals("literal_assoc_preview(minus:int,int,int;literals=1)", fields.get("numericProofFirstBlockedCanonicalKey"));
         assertTrue(fields.get("numericProofBlockedReasonCounts").contains("unsupportedOperator=1"));
-        assertTrue(fields.get("numericProofBlockedReasonCounts").contains("nonIntOperand=1"));
+        assertTrue(fields.get("numericProofBlockedReasonCounts").contains("longOperandOverflowSemanticsRequireProof=1"));
+    }
+
+    @Test
+    void reportsFloatingOperandBoundaryForFutureTypedProofWork() {
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport report =
+                new GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport(
+                        "kernel",
+                        List.of(candidate("stmt[0].initializer", "+", "plus:double,double,double", "literal_assoc_preview(plus:double,double,double;literals=1.0)", List.of("double", "double", "double"), "1.0"))
+                );
+
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport proof =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.from(report);
+        Map<String, String> fields = proof.artifactFields("numericProof");
+
+        assertEquals(1, proof.blockedCandidateCount());
+        assertEquals(Map.of("floatingOperandSemanticsRequireProof", 1L), proof.blockedReasonCounts());
+        assertEquals("floatingOperandSemanticsRequireProof", fields.get("numericProofFirstBlockedReason"));
+        assertEquals("floating operands require precision, NaN, signed-zero, and backend-equivalence proof before canonicalization", fields.get("numericProofFirstBlockedExplanation"));
     }
 
     @Test

@@ -67,6 +67,33 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGateTest {
     }
 
     @Test
+    void removesRuntimeEquivalenceBlockerWhenEvidenceIsSuccessful() {
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport report =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.from(new GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport(
+                        "kernel",
+                        List.of(safeCandidate("stmt[0].initializer", "+", "1")),
+                        List.of()
+                ));
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericProof =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.from(report);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport runtimeEquivalence =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport.equivalent(
+                        report,
+                        numericProof,
+                        2,
+                        List.of("out")
+                );
+
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate gate =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(report, numericProof, runtimeEquivalence);
+
+        assertEquals("fingerprintIntegrationDisabled", gate.firstBlockingReason().orElseThrow());
+        assertEquals(List.of("fingerprintIntegrationDisabled"), gate.blockingReasons());
+        assertEquals(1, gate.blockingReasonCount());
+        assertTrue(gate.blocksRewriteReadiness());
+    }
+
+    @Test
     void reportsNoPromotionWorkWhenPreviewIsEmpty() {
         GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate gate =
                 GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(

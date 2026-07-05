@@ -15,7 +15,17 @@ public record GpuIrOptimizationValidationReport(
         GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport,
         GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport commonSubexpressionLiteralCanonicalizationReport,
         GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport commonSubexpressionLiteralNumericSemanticsProofReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport commonSubexpressionLiteralTypedNumericBlockerSummaryReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport commonSubexpressionLiteralRuntimeEquivalenceReport,
         GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate commonSubexpressionLiteralCanonicalizationGate,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport commonSubexpressionLiteralFingerprintDecisionReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport commonSubexpressionLiteralFingerprintParityReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport commonSubexpressionLiteralEnablementReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport commonSubexpressionLiteralRewritePreflightReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport commonSubexpressionLiteralRewriteOperationPreviewReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport commonSubexpressionLiteralPromotionChecklistReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport commonSubexpressionLiteralPromotionReadinessSummaryReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport commonSubexpressionLiteralConsistencyCheckReport,
         GpuIrAutoVectorizationPreview autoVectorizationPreview,
         GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport,
         GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations
@@ -30,7 +40,17 @@ public record GpuIrOptimizationValidationReport(
         commonSubexpressionLiteralProofReport = Objects.requireNonNull(commonSubexpressionLiteralProofReport, "commonSubexpressionLiteralProofReport");
         commonSubexpressionLiteralCanonicalizationReport = Objects.requireNonNull(commonSubexpressionLiteralCanonicalizationReport, "commonSubexpressionLiteralCanonicalizationReport");
         commonSubexpressionLiteralNumericSemanticsProofReport = Objects.requireNonNull(commonSubexpressionLiteralNumericSemanticsProofReport, "commonSubexpressionLiteralNumericSemanticsProofReport");
+        commonSubexpressionLiteralTypedNumericBlockerSummaryReport = Objects.requireNonNull(commonSubexpressionLiteralTypedNumericBlockerSummaryReport, "commonSubexpressionLiteralTypedNumericBlockerSummaryReport");
+        commonSubexpressionLiteralRuntimeEquivalenceReport = Objects.requireNonNull(commonSubexpressionLiteralRuntimeEquivalenceReport, "commonSubexpressionLiteralRuntimeEquivalenceReport");
         commonSubexpressionLiteralCanonicalizationGate = Objects.requireNonNull(commonSubexpressionLiteralCanonicalizationGate, "commonSubexpressionLiteralCanonicalizationGate");
+        commonSubexpressionLiteralFingerprintDecisionReport = Objects.requireNonNull(commonSubexpressionLiteralFingerprintDecisionReport, "commonSubexpressionLiteralFingerprintDecisionReport");
+        commonSubexpressionLiteralFingerprintParityReport = Objects.requireNonNull(commonSubexpressionLiteralFingerprintParityReport, "commonSubexpressionLiteralFingerprintParityReport");
+        commonSubexpressionLiteralEnablementReport = Objects.requireNonNull(commonSubexpressionLiteralEnablementReport, "commonSubexpressionLiteralEnablementReport");
+        commonSubexpressionLiteralRewritePreflightReport = Objects.requireNonNull(commonSubexpressionLiteralRewritePreflightReport, "commonSubexpressionLiteralRewritePreflightReport");
+        commonSubexpressionLiteralRewriteOperationPreviewReport = Objects.requireNonNull(commonSubexpressionLiteralRewriteOperationPreviewReport, "commonSubexpressionLiteralRewriteOperationPreviewReport");
+        commonSubexpressionLiteralPromotionChecklistReport = Objects.requireNonNull(commonSubexpressionLiteralPromotionChecklistReport, "commonSubexpressionLiteralPromotionChecklistReport");
+        commonSubexpressionLiteralPromotionReadinessSummaryReport = Objects.requireNonNull(commonSubexpressionLiteralPromotionReadinessSummaryReport, "commonSubexpressionLiteralPromotionReadinessSummaryReport");
+        commonSubexpressionLiteralConsistencyCheckReport = Objects.requireNonNull(commonSubexpressionLiteralConsistencyCheckReport, "commonSubexpressionLiteralConsistencyCheckReport");
         autoVectorizationPreview = Objects.requireNonNull(autoVectorizationPreview, "autoVectorizationPreview");
         autoVectorizationRewriteDryRunReport = Objects.requireNonNull(autoVectorizationRewriteDryRunReport, "autoVectorizationRewriteDryRunReport");
         autoVectorizationResolvedRewriteOperations = Objects.requireNonNull(autoVectorizationResolvedRewriteOperations, "autoVectorizationResolvedRewriteOperations");
@@ -88,8 +108,48 @@ public record GpuIrOptimizationValidationReport(
         return commonSubexpressionLiteralNumericSemanticsProofReport;
     }
 
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport commonSubexpressionLiteralTypedNumericBlockerSummaryReport() {
+        return commonSubexpressionLiteralTypedNumericBlockerSummaryReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport commonSubexpressionLiteralRuntimeEquivalenceReport() {
+        return commonSubexpressionLiteralRuntimeEquivalenceReport;
+    }
+
     public GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate commonSubexpressionLiteralCanonicalizationGate() {
         return commonSubexpressionLiteralCanonicalizationGate;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport commonSubexpressionLiteralFingerprintDecisionReport() {
+        return commonSubexpressionLiteralFingerprintDecisionReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport commonSubexpressionLiteralFingerprintParityReport() {
+        return commonSubexpressionLiteralFingerprintParityReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport commonSubexpressionLiteralEnablementReport() {
+        return commonSubexpressionLiteralEnablementReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport commonSubexpressionLiteralRewritePreflightReport() {
+        return commonSubexpressionLiteralRewritePreflightReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport commonSubexpressionLiteralRewriteOperationPreviewReport() {
+        return commonSubexpressionLiteralRewriteOperationPreviewReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport commonSubexpressionLiteralPromotionChecklistReport() {
+        return commonSubexpressionLiteralPromotionChecklistReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport commonSubexpressionLiteralPromotionReadinessSummaryReport() {
+        return commonSubexpressionLiteralPromotionReadinessSummaryReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport commonSubexpressionLiteralConsistencyCheckReport() {
+        return commonSubexpressionLiteralConsistencyCheckReport;
     }
 
     public Optional<GpuIrCommonSubexpressionSkippedDiagnostic> firstCommonSubexpressionSkippedDiagnostic() {
@@ -222,9 +282,38 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSimpleArithmeticLiteralNumericSemanticsProofFullyProven=" + commonSubexpressionLiteralNumericSemanticsProofReport.fullyProven()
                 + " cseSimpleArithmeticLiteralNumericSemanticsProofProvenCandidates=" + commonSubexpressionLiteralNumericSemanticsProofReport.provenCandidateCount()
                 + " cseSimpleArithmeticLiteralNumericSemanticsProofBlockedCandidates=" + commonSubexpressionLiteralNumericSemanticsProofReport.blockedCandidateCount()
+                + " cseSimpleArithmeticLiteralTypedNumericBlockersReadiness=" + commonSubexpressionLiteralTypedNumericBlockerSummaryReport.readiness()
+                + " cseSimpleArithmeticLiteralTypedNumericBlockersTotal=" + commonSubexpressionLiteralTypedNumericBlockerSummaryReport.totalBlockedCandidateCount()
+                + " cseSimpleArithmeticLiteralTypedNumericBlockersFamilies=" + commonSubexpressionLiteralTypedNumericBlockerSummaryReport.combinedBlockerCounts()
+                + " cseSimpleArithmeticLiteralRuntimeEquivalenceReadiness=" + commonSubexpressionLiteralRuntimeEquivalenceReport.readiness()
+                + " cseSimpleArithmeticLiteralRuntimeEquivalenceSuccessful=" + commonSubexpressionLiteralRuntimeEquivalenceReport.successful()
+                + " cseSimpleArithmeticLiteralRuntimeEquivalenceDiagnostics=" + commonSubexpressionLiteralRuntimeEquivalenceReport.diagnosticCount()
                 + " cseSimpleArithmeticLiteralCanonicalizationGateReadiness=" + commonSubexpressionLiteralCanonicalizationGate.readiness()
                 + " cseSimpleArithmeticLiteralCanonicalizationGateCanPromoteToFingerprint=" + commonSubexpressionLiteralCanonicalizationGate.canPromoteToFingerprint()
                 + " cseSimpleArithmeticLiteralCanonicalizationGateBlockingReasons=" + commonSubexpressionLiteralCanonicalizationGate.blockingReasons()
+                + " cseSimpleArithmeticLiteralFingerprintDecisionReadiness=" + commonSubexpressionLiteralFingerprintDecisionReport.readiness()
+                + " cseSimpleArithmeticLiteralFingerprintDecisionReadyForProduction=" + commonSubexpressionLiteralFingerprintDecisionReport.readyForProductionFingerprintIntegration()
+                + " cseSimpleArithmeticLiteralFingerprintDecisionBlockingReasons=" + commonSubexpressionLiteralFingerprintDecisionReport.blockingReasons()
+                + " cseSimpleArithmeticLiteralFingerprintParityReadiness=" + commonSubexpressionLiteralFingerprintParityReport.readiness()
+                + " cseSimpleArithmeticLiteralFingerprintParityPreviewOnlyKeys=" + commonSubexpressionLiteralFingerprintParityReport.previewOnlyKeyCount()
+                + " cseSimpleArithmeticLiteralFingerprintParityBlockers=" + commonSubexpressionLiteralFingerprintParityReport.blockers()
+                + " cseSimpleArithmeticLiteralEnablementVerdict=" + commonSubexpressionLiteralEnablementReport.verdict()
+                + " cseSimpleArithmeticLiteralEnablementBlockers=" + commonSubexpressionLiteralEnablementReport.blockers()
+                + " cseSimpleArithmeticLiteralRewritePreflightReadiness=" + commonSubexpressionLiteralRewritePreflightReport.readiness()
+                + " cseSimpleArithmeticLiteralRewritePreflightEligibleCandidates=" + commonSubexpressionLiteralRewritePreflightReport.eligibleCandidateCount()
+                + " cseSimpleArithmeticLiteralRewritePreflightBlockedCandidates=" + commonSubexpressionLiteralRewritePreflightReport.blockedCandidateCount()
+                + " cseSimpleArithmeticLiteralRewriteOperationPreviewReadiness=" + commonSubexpressionLiteralRewriteOperationPreviewReport.readiness()
+                + " cseSimpleArithmeticLiteralRewriteOperationPreviewEligibleOperations=" + commonSubexpressionLiteralRewriteOperationPreviewReport.eligibleOperationCount()
+                + " cseSimpleArithmeticLiteralRewriteOperationPreviewBlockedOperations=" + commonSubexpressionLiteralRewriteOperationPreviewReport.blockedOperationCount()
+                + " cseSimpleArithmeticLiteralPromotionChecklistVerdict=" + commonSubexpressionLiteralPromotionChecklistReport.verdict()
+                + " cseSimpleArithmeticLiteralPromotionChecklistReadyForProductionMutation=" + commonSubexpressionLiteralPromotionChecklistReport.readyForProductionMutation()
+                + " cseSimpleArithmeticLiteralPromotionChecklistRemainingWorkCount=" + commonSubexpressionLiteralPromotionChecklistReport.remainingWorkCount()
+                + " cseSimpleArithmeticLiteralPromotionReadinessVerdict=" + commonSubexpressionLiteralPromotionReadinessSummaryReport.verdict()
+                + " cseSimpleArithmeticLiteralPromotionReadinessReadyForProductionMutation=" + commonSubexpressionLiteralPromotionReadinessSummaryReport.readyForProductionMutation()
+                + " cseSimpleArithmeticLiteralPromotionReadinessBlockingReasons=" + commonSubexpressionLiteralPromotionReadinessSummaryReport.blockingReasons()
+                + " cseSimpleArithmeticLiteralConsistencyCheckVerdict=" + commonSubexpressionLiteralConsistencyCheckReport.verdict()
+                + " cseSimpleArithmeticLiteralConsistencyCheckConsistent=" + commonSubexpressionLiteralConsistencyCheckReport.consistent()
+                + " cseSimpleArithmeticLiteralConsistencyCheckFailedChecks=" + commonSubexpressionLiteralConsistencyCheckReport.failedCheckCount()
                 + " cseRewritePolicyCanRewrite=" + commonSubexpressionArtifactSnapshot().rewritePolicy().canRewrite()
                 + " cseRewritePolicyReadiness=" + commonSubexpressionArtifactSnapshot().rewritePolicy().readiness().artifactValue()
                 + " cseRewritePolicyBlockingSkippedCandidates=" + commonSubexpressionArtifactSnapshot().rewritePolicy().blockingSkippedCandidateCount()
@@ -245,6 +334,9 @@ public record GpuIrOptimizationValidationReport(
                 + (autoVectorizationPreview.proofDecision().blockingProofKinds().isEmpty()
                 ? ""
                 : " autoVectorizationProofDecisionBlockingKinds=" + autoVectorizationPreview.proofDecision().blockingProofKinds())
+                + " autoVectorizationReadinessVerdict=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().verdict()
+                + " autoVectorizationReadinessReadyForPrototypeRewrite=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().readyForPrototypeRewrite()
+                + " autoVectorizationReadinessBlockingReasons=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().blockingReasons()
                 + " autoVectorizationHasPolicyBlockedRewrite=" + autoVectorizationPreview.hasPolicyBlockedRewrite()
                 + " autoVectorizationRewritePolicyCanRewrite=" + autoVectorizationPreview.rewritePolicy().canRewrite()
                 + " autoVectorizationRewritePolicyBlockingGuards=" + autoVectorizationPreview.rewritePolicy().blockingGuards().size()
@@ -284,7 +376,17 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSimpleArithmeticLiteralProof={" + commonSubexpressionLiteralProofReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralCanonicalization={" + commonSubexpressionLiteralCanonicalizationReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralNumericSemanticsProof={" + commonSubexpressionLiteralNumericSemanticsProofReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralTypedNumericBlockers={" + commonSubexpressionLiteralTypedNumericBlockerSummaryReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralRuntimeEquivalence={" + commonSubexpressionLiteralRuntimeEquivalenceReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralCanonicalizationGate={" + commonSubexpressionLiteralCanonicalizationGate.summary() + "}"
+                + " cseSimpleArithmeticLiteralFingerprintDecision={" + commonSubexpressionLiteralFingerprintDecisionReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralFingerprintParity={" + commonSubexpressionLiteralFingerprintParityReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralEnablement={" + commonSubexpressionLiteralEnablementReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralRewritePreflight={" + commonSubexpressionLiteralRewritePreflightReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralRewriteOperationPreview={" + commonSubexpressionLiteralRewriteOperationPreviewReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralPromotionChecklist={" + commonSubexpressionLiteralPromotionChecklistReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralPromotionReadiness={" + commonSubexpressionLiteralPromotionReadinessSummaryReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralConsistencyCheck={" + commonSubexpressionLiteralConsistencyCheckReport.summary() + "}"
                 + " cseRewritePolicy={" + commonSubexpressionArtifactSnapshot().rewritePolicy().summary() + "}"
                 + firstCommonSubexpressionSkippedDominanceSummary()
                 .map(summary -> " cseFirstSkippedDominance={" + summary + "}")
@@ -293,6 +395,7 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationRewriteDryRun={" + autoVectorizationRewriteDryRunReport.summary() + "}"
                 + " autoVectorizationResolvedRewriteOperations={" + autoVectorizationResolvedRewriteOperations.summary() + "}"
                 + " autoVectorizationProofBundle={" + autoVectorizationPreview.proofBundle().summaryLine() + "}"
+                + " autoVectorizationReadiness={" + autoVectorizationArtifactSnapshot().readinessSummaryReport().summary() + "}"
                 + " autoVectorizationArtifacts={" + autoVectorizationArtifactSnapshot().summary() + "}"
                 + " autoVectorization={" + autoVectorizationPreview.summary() + "}";
     }

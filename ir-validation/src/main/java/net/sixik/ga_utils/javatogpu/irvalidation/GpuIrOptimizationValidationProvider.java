@@ -60,7 +60,17 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.putAll(report.commonSubexpressionLiteralProofReport().artifactFields("cseSimpleArithmeticLiteralProof"));
         values.putAll(report.commonSubexpressionLiteralCanonicalizationReport().artifactFields("cseSimpleArithmeticLiteralCanonicalization"));
         values.putAll(report.commonSubexpressionLiteralNumericSemanticsProofReport().artifactFields("cseSimpleArithmeticLiteralNumericSemanticsProof"));
+        values.putAll(report.commonSubexpressionLiteralTypedNumericBlockerSummaryReport().artifactFields("cseSimpleArithmeticLiteralTypedNumericBlockers"));
+        values.putAll(report.commonSubexpressionLiteralRuntimeEquivalenceReport().artifactFields("cseSimpleArithmeticLiteralRuntimeEquivalence"));
         values.putAll(report.commonSubexpressionLiteralCanonicalizationGate().artifactFields("cseSimpleArithmeticLiteralCanonicalizationGate"));
+        values.putAll(report.commonSubexpressionLiteralFingerprintDecisionReport().artifactFields("cseSimpleArithmeticLiteralFingerprintDecision"));
+        values.putAll(report.commonSubexpressionLiteralFingerprintParityReport().artifactFields("cseSimpleArithmeticLiteralFingerprintParity"));
+        values.putAll(report.commonSubexpressionLiteralEnablementReport().artifactFields("cseSimpleArithmeticLiteralEnablement"));
+        values.putAll(report.commonSubexpressionLiteralRewritePreflightReport().artifactFields("cseSimpleArithmeticLiteralRewritePreflight"));
+        values.putAll(report.commonSubexpressionLiteralRewriteOperationPreviewReport().artifactFields("cseSimpleArithmeticLiteralRewriteOperationPreview"));
+        values.putAll(report.commonSubexpressionLiteralPromotionChecklistReport().artifactFields("cseSimpleArithmeticLiteralPromotionChecklist"));
+        values.putAll(report.commonSubexpressionLiteralPromotionReadinessSummaryReport().artifactFields("cseSimpleArithmeticLiteralPromotionReadiness"));
+        values.putAll(report.commonSubexpressionLiteralConsistencyCheckReport().artifactFields("cseSimpleArithmeticLiteralConsistencyCheck"));
         values.putAll(report.autoVectorizationArtifactSnapshot().artifactFields("autoVectorization"));
         report.safetyError().ifPresent(error -> values.put("safetyError", error));
         return new GpuIrValidationReportEntry("optimization-validation", report.methodName(), request.entryPoint(), values);

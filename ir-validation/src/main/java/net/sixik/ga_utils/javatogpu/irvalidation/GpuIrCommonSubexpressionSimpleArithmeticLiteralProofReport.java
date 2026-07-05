@@ -154,6 +154,7 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport(
             values.put(prefix + "FirstBlockedLocation", candidate.location());
             values.put(prefix + "FirstBlockedOperator", candidate.operator());
             values.put(prefix + "FirstBlockedReason", candidate.reason());
+            values.put(prefix + "FirstBlockedExplanation", blockedReasonExplanation(candidate.reason()));
             values.put(prefix + "FirstBlockedOperatorTypeKey", candidate.operatorTypeKey());
             values.put(prefix + "FirstBlockedOperandTypes", listSummary(candidate.operandTypes()));
             values.put(prefix + "FirstBlockedLiteralSources", listSummary(candidate.literalSources()));
@@ -272,15 +273,52 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport(
             GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.BlockedCandidate candidate
     ) {
         if (!candidate.castTargets().isEmpty() || candidate.reason().contains("Cast")) {
-            return candidate.reason();
+            return "castRequiresExplicitNumericProof";
         }
-        if (candidate.literalSources().stream().anyMatch(source -> !isIntegerLiteral(source))) {
-            return "nonIntLiteral";
+        if (candidate.literalSources().stream().anyMatch(GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport::isLongLiteral)) {
+            return "longLiteralOverflowSemanticsRequireProof";
+        }
+        if (candidate.literalSources().stream().anyMatch(GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport::isFloatingLiteral)) {
+            return "floatingLiteralSemanticsRequireProof";
         }
         if (candidate.operandTypes().stream().anyMatch(type -> !"int".equals(type))) {
-            return "nonIntOperand";
+            return "nonIntOperandSemanticsRequireProof";
+        }
+        if (candidate.literalSources().stream().anyMatch(source -> !isIntegerLiteral(source))) {
+            return "unknownLiteralSemanticsRequireProof";
         }
         return "unsupportedLiteralArithmetic";
+    }
+
+    private static String blockedReasonExplanation(String reason) {
+        return switch (reason) {
+            case "castRequiresExplicitNumericProof" -> "casts can change narrowing, widening, sign, or precision semantics and require explicit proof before canonicalization";
+            case "longLiteralOverflowSemanticsRequireProof" -> "long literal arithmetic has wider overflow semantics than the current int-only proof boundary";
+            case "floatingLiteralSemanticsRequireProof" -> "floating-point literals require backend and precision proof before canonicalization";
+            case "nonIntOperandSemanticsRequireProof" -> "non-int operands are outside the current Java int literal plus/times proof boundary";
+            case "unknownLiteralSemanticsRequireProof" -> "literal spelling is outside the currently classified int/long/floating proof boundary";
+            case "unsupportedLiteralArithmetic" -> "literal arithmetic shape is not covered by the current proof boundary";
+            default -> "literal arithmetic blocked until typed numeric semantics are explicitly proven: " + reason;
+        };
+    }
+
+    private static boolean isLongLiteral(String sourceText) {
+        if (sourceText == null) {
+            return false;
+        }
+        return sourceText.replace("_", "").trim().toLowerCase(Locale.ROOT).endsWith("l");
+    }
+
+    private static boolean isFloatingLiteral(String sourceText) {
+        if (sourceText == null) {
+            return false;
+        }
+        String normalized = sourceText.replace("_", "").trim().toLowerCase(Locale.ROOT);
+        return normalized.endsWith("f")
+                || normalized.endsWith("d")
+                || normalized.contains(".")
+                || normalized.contains("e")
+                || normalized.contains("p");
     }
 
     private static boolean isIntegerLiteral(String sourceText) {

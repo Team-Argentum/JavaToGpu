@@ -108,12 +108,13 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReportTest {
         assertEquals(0, report.safeCandidateCount());
         assertEquals(1, report.blockedCandidateCount());
         assertFalse(report.hasSafeCandidates());
-        assertEquals(Map.of("nonIntLiteral", 1L), report.blockedReasonCounts());
-        assertEquals("nonIntLiteral", fields.get("literalProofFirstBlockedReason"));
+        assertEquals(Map.of("floatingLiteralSemanticsRequireProof", 1L), report.blockedReasonCounts());
+        assertEquals("floatingLiteralSemanticsRequireProof", fields.get("literalProofFirstBlockedReason"));
+        assertEquals("floating-point literals require backend and precision proof before canonicalization", fields.get("literalProofFirstBlockedExplanation"));
         assertEquals("plus:float,float,float", fields.get("literalProofFirstBlockedOperatorTypeKey"));
         assertEquals("float,float,float", fields.get("literalProofFirstBlockedOperandTypes"));
         assertEquals("1.0f", fields.get("literalProofFirstBlockedLiteralSources"));
-        assertEquals("1", fields.get("literalProofBlockedReason.nonIntLiteral"));
+        assertEquals("1", fields.get("literalProofBlockedReason.floatingLiteralSemanticsRequireProof"));
         assertEquals("{}", fields.get("literalProofSafeOperatorTypeCounts"));
         assertEquals("{plus:float,float,float=1}", fields.get("literalProofBlockedOperatorTypeCounts"));
     }
@@ -139,8 +140,9 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReportTest {
 
         assertEquals(0, report.safeCandidateCount());
         assertEquals(1, report.blockedCandidateCount());
-        assertEquals(Map.of("nonIntLiteral", 1L), report.blockedReasonCounts());
-        assertEquals("nonIntLiteral", fields.get("literalProofFirstBlockedReason"));
+        assertEquals(Map.of("longLiteralOverflowSemanticsRequireProof", 1L), report.blockedReasonCounts());
+        assertEquals("longLiteralOverflowSemanticsRequireProof", fields.get("literalProofFirstBlockedReason"));
+        assertEquals("long literal arithmetic has wider overflow semantics than the current int-only proof boundary", fields.get("literalProofFirstBlockedExplanation"));
         assertEquals("plus:long,long,long", fields.get("literalProofFirstBlockedOperatorTypeKey"));
         assertEquals("long,long,long", fields.get("literalProofFirstBlockedOperandTypes"));
         assertEquals("1L", fields.get("literalProofFirstBlockedLiteralSources"));
@@ -168,8 +170,9 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReportTest {
 
         assertEquals(0, report.safeCandidateCount());
         assertEquals(1, report.blockedCandidateCount());
-        assertEquals(Map.of("nonIntLiteral", 1L), report.blockedReasonCounts());
-        assertEquals("nonIntLiteral", fields.get("literalProofFirstBlockedReason"));
+        assertEquals(Map.of("floatingLiteralSemanticsRequireProof", 1L), report.blockedReasonCounts());
+        assertEquals("floatingLiteralSemanticsRequireProof", fields.get("literalProofFirstBlockedReason"));
+        assertEquals("floating-point literals require backend and precision proof before canonicalization", fields.get("literalProofFirstBlockedExplanation"));
         assertEquals("plus:double,double,double", fields.get("literalProofFirstBlockedOperatorTypeKey"));
         assertEquals("double,double,double", fields.get("literalProofFirstBlockedOperandTypes"));
         assertEquals("1.0", fields.get("literalProofFirstBlockedLiteralSources"));
@@ -197,8 +200,9 @@ class GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReportTest {
 
         assertEquals(0, report.safeCandidateCount());
         assertEquals(1, report.blockedCandidateCount());
-        assertEquals(Map.of("castOperand", 1L), report.blockedReasonCounts());
-        assertEquals("castOperand", fields.get("literalProofFirstBlockedReason"));
+        assertEquals(Map.of("castRequiresExplicitNumericProof", 1L), report.blockedReasonCounts());
+        assertEquals("castRequiresExplicitNumericProof", fields.get("literalProofFirstBlockedReason"));
+        assertEquals("casts can change narrowing, widening, sign, or precision semantics and require explicit proof before canonicalization", fields.get("literalProofFirstBlockedExplanation"));
         assertEquals("plus:int,int,int", fields.get("literalProofFirstBlockedOperatorTypeKey"));
         assertEquals("int", fields.get("literalProofFirstBlockedCastTargets"));
         assertEquals("long", fields.get("literalProofFirstBlockedCastSourceTypes"));

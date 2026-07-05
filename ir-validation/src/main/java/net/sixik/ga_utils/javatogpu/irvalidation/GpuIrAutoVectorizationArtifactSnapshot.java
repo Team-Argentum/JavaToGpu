@@ -47,11 +47,20 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
         return preview.rewritePolicy();
     }
 
+    public GpuIrAutoVectorizationReadinessSummaryReport readinessSummaryReport() {
+        return GpuIrAutoVectorizationReadinessSummaryReport.from(
+                preview,
+                dryRunReport,
+                resolvedRewriteOperations
+        );
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         Objects.requireNonNull(prefix, "prefix");
         Map<String, String> values = new LinkedHashMap<>();
         GpuIrAutoVectorizationRewritePlan plan = rewritePlan();
         GpuIrAutoVectorizationRewritePolicy policy = rewritePolicy();
+        GpuIrAutoVectorizationReadinessSummaryReport readinessSummary = readinessSummaryReport();
 
         values.put(prefix + "Candidates", Integer.toString(candidateCount()));
         values.put(prefix + "Warnings", Integer.toString(warningCount()));
@@ -60,6 +69,7 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
         values.put(prefix + "CanApplyRewrite", Boolean.toString(preview.canApplyRewrite()));
         values.putAll(preview.proofDecision().artifactFields(prefix + "ProofDecision"));
         values.put(prefix + "HasPolicyBlockedRewrite", Boolean.toString(preview.hasPolicyBlockedRewrite()));
+        values.putAll(readinessSummary.artifactFields(prefix + "Readiness"));
         values.put(prefix + "RewriteBlockedCandidates", Integer.toString(rewriteBlockedCandidateCount()));
         values.put(prefix + "HasRewriteBlockedCandidates", Boolean.toString(hasRewriteBlockedCandidates()));
         preview.firstBlockingDiagnosticSummary()
@@ -139,10 +149,13 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
     }
 
     public String summary() {
+        GpuIrAutoVectorizationReadinessSummaryReport readinessSummary = readinessSummaryReport();
         return "auto-vectorization artifact snapshot candidates=" + candidateCount()
                 + " warnings=" + warningCount()
                 + " rejections=" + rejectionCount()
                 + " rewriteReadiness=" + preview.rewriteReadiness().artifactValue()
+                + " readinessVerdict=" + readinessSummary.verdict()
+                + " readinessBlockers=" + readinessSummary.blockingReasons()
                 + " canApplyRewrite=" + preview.canApplyRewrite()
                 + " rewritePlanOperations=" + rewritePlan().operationCount()
                 + " rewritePlanGuards=" + rewritePlan().guardDiagnostics().size()

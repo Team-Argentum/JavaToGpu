@@ -62,10 +62,80 @@ public final class GpuIrOptimizationValidationPipeline {
                 GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.from(commonSubexpressionLiteralProofReport);
         GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport commonSubexpressionLiteralNumericSemanticsProofReport =
                 GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.from(commonSubexpressionLiteralCanonicalizationReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport commonSubexpressionLiteralTypedNumericBlockerSummaryReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport.from(
+                        commonSubexpressionLiteralProofReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport commonSubexpressionLiteralRuntimeEquivalenceReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport.notRun(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport
+                );
         GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate commonSubexpressionLiteralCanonicalizationGate =
                 GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(
                         commonSubexpressionLiteralCanonicalizationReport,
-                        commonSubexpressionLiteralNumericSemanticsProofReport
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport commonSubexpressionLiteralFingerprintDecisionReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralCanonicalizationGate
+                );
+        GpuIrCommonSubexpressionArtifactSnapshot commonSubexpressionArtifactSnapshot = new GpuIrCommonSubexpressionArtifactSnapshot(
+                methodName,
+                commonSubexpressionPreview
+        );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport commonSubexpressionLiteralFingerprintParityReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport.from(
+                        commonSubexpressionArtifactSnapshot,
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralFingerprintDecisionReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport commonSubexpressionLiteralEnablementReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralFingerprintDecisionReport,
+                        commonSubexpressionLiteralFingerprintParityReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport commonSubexpressionLiteralRewritePreflightReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralFingerprintParityReport,
+                        commonSubexpressionLiteralEnablementReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport commonSubexpressionLiteralRewriteOperationPreviewReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport.from(
+                        commonSubexpressionLiteralRewritePreflightReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport commonSubexpressionLiteralPromotionChecklistReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport.from(
+                        commonSubexpressionLiteralEnablementReport,
+                        commonSubexpressionLiteralRewritePreflightReport,
+                        commonSubexpressionLiteralRewriteOperationPreviewReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport commonSubexpressionLiteralPromotionReadinessSummaryReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralTypedNumericBlockerSummaryReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralFingerprintDecisionReport,
+                        commonSubexpressionLiteralFingerprintParityReport,
+                        commonSubexpressionLiteralPromotionChecklistReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport commonSubexpressionLiteralConsistencyCheckReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport.from(
+                        commonSubexpressionLiteralEnablementReport,
+                        commonSubexpressionLiteralRewritePreflightReport,
+                        commonSubexpressionLiteralRewriteOperationPreviewReport,
+                        commonSubexpressionLiteralPromotionChecklistReport
                 );
         GpuIrAutoVectorizationPreview autoVectorizationPreview = autoVectorizationPlanningPass.preview(context);
         GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport = autoVectorizationRewriteDryRunReport(
@@ -86,7 +156,17 @@ public final class GpuIrOptimizationValidationPipeline {
                 commonSubexpressionLiteralProofReport,
                 commonSubexpressionLiteralCanonicalizationReport,
                 commonSubexpressionLiteralNumericSemanticsProofReport,
+                commonSubexpressionLiteralTypedNumericBlockerSummaryReport,
+                commonSubexpressionLiteralRuntimeEquivalenceReport,
                 commonSubexpressionLiteralCanonicalizationGate,
+                commonSubexpressionLiteralFingerprintDecisionReport,
+                commonSubexpressionLiteralFingerprintParityReport,
+                commonSubexpressionLiteralEnablementReport,
+                commonSubexpressionLiteralRewritePreflightReport,
+                commonSubexpressionLiteralRewriteOperationPreviewReport,
+                commonSubexpressionLiteralPromotionChecklistReport,
+                commonSubexpressionLiteralPromotionReadinessSummaryReport,
+                commonSubexpressionLiteralConsistencyCheckReport,
                 autoVectorizationPreview,
                 autoVectorizationRewriteDryRunReport,
                 autoVectorizationResolvedRewriteOperations

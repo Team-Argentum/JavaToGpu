@@ -52,9 +52,22 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGat
             GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport report,
             GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericSemanticsProofReport
     ) {
+        return from(
+                report,
+                numericSemanticsProofReport,
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport.notRun(report, numericSemanticsProofReport)
+        );
+    }
+
+    public static GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate from(
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport report,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericSemanticsProofReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport runtimeEquivalenceReport
+    ) {
         Objects.requireNonNull(report, "report");
         Objects.requireNonNull(numericSemanticsProofReport, "numericSemanticsProofReport");
-        List<String> blockingReasons = blockingReasons(report, numericSemanticsProofReport);
+        Objects.requireNonNull(runtimeEquivalenceReport, "runtimeEquivalenceReport");
+        List<String> blockingReasons = blockingReasons(report, numericSemanticsProofReport, runtimeEquivalenceReport);
         return new GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate(
                 report.methodName(),
                 report.candidateCount(),
@@ -129,14 +142,18 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGat
 
     private static List<String> blockingReasons(
             GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport report,
-            GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericSemanticsProofReport
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport numericSemanticsProofReport,
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport runtimeEquivalenceReport
     ) {
         if (!report.hasCandidates()) {
             return List.of(REASON_NO_PREVIEW_CANDIDATES);
         }
-        if (numericSemanticsProofReport.fullyProven()) {
-            return List.of(REASON_RUNTIME_EQUIVALENCE, REASON_FINGERPRINT_DISABLED);
+        if (!numericSemanticsProofReport.fullyProven()) {
+            return List.of(REASON_NUMERIC_SEMANTICS, REASON_RUNTIME_EQUIVALENCE, REASON_FINGERPRINT_DISABLED);
         }
-        return List.of(REASON_NUMERIC_SEMANTICS, REASON_RUNTIME_EQUIVALENCE, REASON_FINGERPRINT_DISABLED);
+        if (runtimeEquivalenceReport.successful()) {
+            return List.of(REASON_FINGERPRINT_DISABLED);
+        }
+        return List.of(REASON_RUNTIME_EQUIVALENCE, REASON_FINGERPRINT_DISABLED);
     }
 }

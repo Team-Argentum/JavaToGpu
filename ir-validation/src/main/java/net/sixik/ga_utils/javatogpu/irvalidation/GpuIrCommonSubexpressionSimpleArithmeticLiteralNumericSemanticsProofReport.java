@@ -140,6 +140,7 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsPro
             values.put(prefix + "FirstBlockedLocation", candidate.location());
             values.put(prefix + "FirstBlockedOperator", candidate.operator());
             values.put(prefix + "FirstBlockedReason", candidate.reason());
+            values.put(prefix + "FirstBlockedExplanation", blockedReasonExplanation(candidate.reason()));
             values.put(prefix + "FirstBlockedOperatorTypeKey", candidate.operatorTypeKey());
             values.put(prefix + "FirstBlockedCanonicalKey", candidate.canonicalKey());
             values.put(prefix + "FirstBlockedSummary", candidate.summary());
@@ -281,12 +282,30 @@ public record GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsPro
             return "unsupportedOperator";
         }
         if (candidate.operandTypes().stream().anyMatch(type -> !"int".equals(type))) {
-            return "nonIntOperand";
+            if (candidate.operandTypes().stream().anyMatch("long"::equals)) {
+                return "longOperandOverflowSemanticsRequireProof";
+            }
+            if (candidate.operandTypes().stream().anyMatch(type -> "float".equals(type) || "double".equals(type))) {
+                return "floatingOperandSemanticsRequireProof";
+            }
+            return "nonIntOperandSemanticsRequireProof";
         }
         if (candidate.literalSources().isEmpty()) {
             return "missingLiteralSource";
         }
         return "unsupportedIntLiteralSemantics";
+    }
+
+    private static String blockedReasonExplanation(String reason) {
+        return switch (reason) {
+            case "unsupportedOperator" -> "only associative int literal + and * are inside the current numeric proof boundary";
+            case "longOperandOverflowSemanticsRequireProof" -> "long operands require explicit overflow and backend-equivalence proof before canonicalization";
+            case "floatingOperandSemanticsRequireProof" -> "floating operands require precision, NaN, signed-zero, and backend-equivalence proof before canonicalization";
+            case "nonIntOperandSemanticsRequireProof" -> "non-int operands are outside the current Java int literal plus/times proof boundary";
+            case "missingLiteralSource" -> "literal canonicalization proof requires at least one literal source";
+            case "unsupportedIntLiteralSemantics" -> "candidate is not covered by the current int literal numeric semantics proof";
+            default -> "literal numeric semantics blocked until explicitly proven: " + reason;
+        };
     }
 
     private static String mapSummary(Map<String, Long> counts) {
