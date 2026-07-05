@@ -171,7 +171,9 @@ class GpuIrOptimizationValidationRulesTest {
         assertEquals("none", fields.get("rulesResult.0.Metadata.runtimeEquivalenceReadiness"));
         assertEquals("false", fields.get("rulesResult.0.Metadata.runtimeEquivalenceSuccessful"));
         assertEquals("notReady/noPreviewCandidates", fields.get("rulesResult.1.Metadata.promotionReadinessVerdict"));
+        assertEquals("4", fields.get("rulesResult.1.Metadata.promotionBlockingReasonCount"));
         assertEquals("noPreviewCandidates,runtimeEquivalenceNotProven,productionFingerprintIntegrationDisabled,productionMutationDisabled", fields.get("rulesResult.1.Metadata.promotionBlockingReasons"));
+        assertEquals(Integer.toString(report.commonSubexpressionLiteralPromotionReadinessSummaryReport().remainingWork().size()), fields.get("rulesResult.1.Metadata.promotionRemainingWorkCount"));
     }
 
     @Test
@@ -202,6 +204,8 @@ class GpuIrOptimizationValidationRulesTest {
         assertEquals("literal canonicalization runtime equivalence not run", fields.get("rulesResult.0.Metadata.runtimeEquivalenceFirstDiagnostic"));
         assertEquals("notReady/runtimeMissing", fields.get("rulesResult.1.Metadata.promotionReadinessVerdict"));
         assertEquals("false", fields.get("rulesResult.1.Metadata.promotionRuntimeEquivalenceSuccessful"));
+        assertEquals(Integer.toString(report.commonSubexpressionLiteralPromotionReadinessSummaryReport().blockingReasons().size()), fields.get("rulesResult.1.Metadata.promotionBlockingReasonCount"));
+        assertEquals(Integer.toString(report.commonSubexpressionLiteralPromotionReadinessSummaryReport().remainingWork().size()), fields.get("rulesResult.1.Metadata.promotionRemainingWorkCount"));
         assertEquals("runtimeEquivalenceNotProven", fields.get("rulesResult.1.Metadata.promotionFirstBlockingReason"));
         assertEquals("runRuntimeEquivalenceEvidence", fields.get("rulesResult.1.Metadata.promotionFirstRemainingWork"));
     }
@@ -230,6 +234,8 @@ class GpuIrOptimizationValidationRulesTest {
         assertEquals("true", fields.get("rulesResult.0.Metadata.numericSemanticsFullyProven"));
         assertEquals("evidenceCompleteButProductionDisabled", fields.get("rulesResult.1.Metadata.promotionReadinessVerdict"));
         assertEquals("true", fields.get("rulesResult.1.Metadata.promotionRuntimeEquivalenceSuccessful"));
+        assertEquals("2", fields.get("rulesResult.1.Metadata.promotionBlockingReasonCount"));
+        assertEquals(Integer.toString(report.commonSubexpressionLiteralPromotionReadinessSummaryReport().remainingWork().size()), fields.get("rulesResult.1.Metadata.promotionRemainingWorkCount"));
         assertEquals("productionFingerprintIntegrationDisabled,productionMutationDisabled", fields.get("rulesResult.1.Metadata.promotionBlockingReasons"));
     }
 
@@ -277,6 +283,8 @@ class GpuIrOptimizationValidationRulesTest {
         assertEquals("false", fields.get("rulesPassed"));
         assertEquals("1", fields.get("rulesResult.0.Metadata.preOptimizationRewriteCandidates"));
         assertEquals("1", fields.get("rulesResult.0.Metadata.postOptimizationAppliedRewrites"));
+        assertEquals("2", fields.get("rulesResult.0.Metadata.autoVectorizationReadinessBlockingReasonCount"));
+        assertEquals("noRewriteCandidates,rewritePolicyBlocksRewrite", fields.get("rulesResult.0.Metadata.autoVectorizationReadinessBlockingReasons"));
         assertEquals("false", fields.get("rulesResult.0.Metadata.prePostSuccessful"));
         assertEquals("false", fields.get("rulesResult.0.Metadata.runtimeEquivalenceSuccessful"));
         assertEquals("1", fields.get("rulesResult.0.Metadata.runtimeEquivalenceDiagnostics"));

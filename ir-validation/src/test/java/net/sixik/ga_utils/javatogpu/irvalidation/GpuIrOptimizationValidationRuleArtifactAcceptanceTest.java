@@ -104,6 +104,41 @@ class GpuIrOptimizationValidationRuleArtifactAcceptanceTest {
     }
 
     @Test
+    void rejectsInconsistentArtifactsBeforeNormalAcceptanceDecision() {
+        GpuIrOptimizationValidationRuleArtifactReport report = GpuIrOptimizationValidationRuleArtifactReport.evaluate(
+                validationReport("inconsistentKernel"),
+                GpuIrOptimizationValidationRuleRegistry.of(List.of(rule(
+                        "safety.clean",
+                        context -> GpuIrOptimizationValidationRuleResult.passed("safety.clean", "clean")
+                )))
+        );
+        GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport =
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "inconsistentKernel",
+                        "inconsistent",
+                        false,
+                        14,
+                        1,
+                        List.of("summaryVerdict")
+                );
+
+        GpuIrOptimizationValidationRuleArtifactAcceptance acceptance =
+                GpuIrOptimizationValidationRuleArtifactAcceptance.from(report, consistencyReport);
+        Map<String, String> fields = acceptance.artifactFields();
+
+        assertFalse(acceptance.accepted());
+        assertTrue(acceptance.rejected());
+        assertFalse(acceptance.acceptedWithWarnings());
+        assertEquals("pass", acceptance.verdict());
+        assertEquals("rejected/inconsistentArtifact", acceptance.reason());
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("rejected/inconsistentArtifact", fields.get("validationRulesAcceptanceReason"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("consistency=false"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("firstConsistencyFailedCheck=summaryVerdict"));
+    }
+
+    @Test
     void rejectsInvalidInputsAndReturnsImmutableFields() {
         GpuIrOptimizationValidationRuleArtifactAcceptance acceptance = new GpuIrOptimizationValidationRuleArtifactAcceptance(
                 "kernel",
@@ -122,6 +157,32 @@ class GpuIrOptimizationValidationRuleArtifactAcceptanceTest {
         ));
         assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactAcceptance.from(
                 (GpuIrOptimizationValidationRuleArtifactSummary) null
+        ));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactAcceptance.from(
+                (GpuIrOptimizationValidationRuleArtifactReport) null,
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "kernel",
+                        "consistent",
+                        true,
+                        14,
+                        0,
+                        List.of()
+                )
+        ));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactAcceptance.from(
+                validationReportAcceptance("kernel"),
+                null
+        ));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactAcceptance.from(
+                validationReportAcceptance("kernel").artifactSummary(),
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "differentKernel",
+                        "consistent",
+                        true,
+                        14,
+                        0,
+                        List.of()
+                )
         ));
         assertThrows(IllegalArgumentException.class, () -> acceptance.artifactFields(""));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
@@ -155,5 +216,15 @@ class GpuIrOptimizationValidationRuleArtifactAcceptanceTest {
                 "",
                 "summary"
         ));
+    }
+
+    private static GpuIrOptimizationValidationRuleArtifactReport validationReportAcceptance(String methodName) {
+        return GpuIrOptimizationValidationRuleArtifactReport.evaluate(
+                validationReport(methodName),
+                GpuIrOptimizationValidationRuleRegistry.of(List.of(rule(
+                        "safety.clean",
+                        context -> GpuIrOptimizationValidationRuleResult.passed("safety.clean", "clean")
+                )))
+        );
     }
 }

@@ -50,11 +50,15 @@ class GpuIrOptimizationValidationRuleRegistryTest {
         assertEquals("true", fields.get("ruleRegistryResult.0.Passed"));
         assertEquals("pass", fields.get("ruleRegistryResult.0.Status"));
         assertEquals("false", fields.get("ruleRegistryResult.0.Blocking"));
+        assertEquals("1", fields.get("ruleRegistryResult.0.MetadataCount"));
+        assertEquals("true", fields.get("ruleRegistryResult.0.MetadataPresent"));
         assertEquals("kernel", fields.get("ruleRegistryResult.0.Metadata.method"));
         assertEquals("optimizer.clean", fields.get("ruleRegistryResult.1.RuleId"));
         assertEquals("false", fields.get("ruleRegistryResult.1.Passed"));
         assertEquals("fail", fields.get("ruleRegistryResult.1.Status"));
         assertEquals("true", fields.get("ruleRegistryResult.1.Blocking"));
+        assertEquals("1", fields.get("ruleRegistryResult.1.MetadataCount"));
+        assertEquals("true", fields.get("ruleRegistryResult.1.MetadataPresent"));
         assertEquals("false", fields.get("ruleRegistryResult.1.Metadata.hasOptimizerDiagnostics"));
         assertEquals("[safety.clean=pass,optimizer.clean=fail]", registry.ruleIndex(results));
         assertEquals("[optimizer.clean=fail]", registry.blockingRuleIndex(results));
@@ -192,6 +196,8 @@ class GpuIrOptimizationValidationRuleRegistryTest {
         assertEquals("true", fields.get("rule.Passed"));
         assertEquals("warn", fields.get("rule.Status"));
         assertEquals("false", fields.get("rule.Blocking"));
+        assertEquals("1", fields.get("rule.MetadataCount"));
+        assertEquals("true", fields.get("rule.MetadataPresent"));
         assertEquals("optimizer", fields.get("rule.Metadata.family"));
     }
 

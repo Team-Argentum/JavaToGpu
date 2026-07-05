@@ -24,6 +24,7 @@ public record GpuIrOptimizationValidationRuleArtifactAcceptance(
 ) {
     private static final String ACCEPTED_PASS = "accepted/pass";
     private static final String ACCEPTED_WITH_WARNINGS = "accepted/warningsPresent";
+    private static final String REJECTED_INCONSISTENT_ARTIFACT = "rejected/inconsistentArtifact";
     private static final String REJECTED_BLOCKING = "rejected/blockingResultsPresent";
     private static final String REJECTED_FAILURES = "rejected/failuresPresent";
 
@@ -47,13 +48,51 @@ public record GpuIrOptimizationValidationRuleArtifactAcceptance(
             GpuIrOptimizationValidationRuleArtifactReport report
     ) {
         Objects.requireNonNull(report, "report");
-        return from(report.artifactSummary());
+        return from(report, report.consistencyReport());
+    }
+
+    public static GpuIrOptimizationValidationRuleArtifactAcceptance from(
+            GpuIrOptimizationValidationRuleArtifactReport report,
+            GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport
+    ) {
+        Objects.requireNonNull(report, "report");
+        return from(report.artifactSummary(), consistencyReport);
     }
 
     public static GpuIrOptimizationValidationRuleArtifactAcceptance from(
             GpuIrOptimizationValidationRuleArtifactSummary summary
     ) {
         Objects.requireNonNull(summary, "summary");
+        return acceptedOrRejectedFromSummary(summary);
+    }
+
+    public static GpuIrOptimizationValidationRuleArtifactAcceptance from(
+            GpuIrOptimizationValidationRuleArtifactSummary summary,
+            GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport
+    ) {
+        Objects.requireNonNull(summary, "summary");
+        Objects.requireNonNull(consistencyReport, "consistencyReport");
+        if (!summary.methodName().equals(consistencyReport.methodName())) {
+            throw new IllegalArgumentException("consistency report method must match artifact summary method");
+        }
+        if (!consistencyReport.consistent()) {
+            return new GpuIrOptimizationValidationRuleArtifactAcceptance(
+                    summary.methodName(),
+                    summary.verdict(),
+                    false,
+                    REJECTED_INCONSISTENT_ARTIFACT,
+                    summary.firstBlockingRuleId(),
+                    summary.firstFailedRuleId(),
+                    summary.firstWarningRuleId(),
+                    inconsistentSummaryLine(summary, consistencyReport)
+            );
+        }
+        return acceptedOrRejectedFromSummary(summary);
+    }
+
+    private static GpuIrOptimizationValidationRuleArtifactAcceptance acceptedOrRejectedFromSummary(
+            GpuIrOptimizationValidationRuleArtifactSummary summary
+    ) {
         boolean accepted = summary.passed() && !summary.hasBlockingResults();
         String reason = reason(summary, accepted);
         return new GpuIrOptimizationValidationRuleArtifactAcceptance(
@@ -126,6 +165,18 @@ public record GpuIrOptimizationValidationRuleArtifactAcceptance(
                 + (summary.firstWarningRuleId().isBlank() ? "" : " firstWarningRuleId=" + summary.firstWarningRuleId())
                 + (summary.firstBlockingRuleId().isBlank() ? "" : " firstBlockingRuleId=" + summary.firstBlockingRuleId())
                 + (summary.firstFailedRuleId().isBlank() ? "" : " firstFailedRuleId=" + summary.firstFailedRuleId());
+    }
+
+    private static String inconsistentSummaryLine(
+            GpuIrOptimizationValidationRuleArtifactSummary summary,
+            GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport
+    ) {
+        return summaryLine(summary, false, REJECTED_INCONSISTENT_ARTIFACT)
+                + " consistency=false"
+                + " consistencyFailedChecks=" + consistencyReport.failedCheckCount()
+                + consistencyReport.firstFailedCheck()
+                .map(check -> " firstConsistencyFailedCheck=" + check)
+                .orElse("");
     }
 
     private static String requireNonBlank(String value, String name) {

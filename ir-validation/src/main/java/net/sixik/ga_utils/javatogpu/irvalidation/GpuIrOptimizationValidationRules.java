@@ -373,7 +373,9 @@ public final class GpuIrOptimizationValidationRules {
         metadata.put("promotionRuntimeEquivalenceDiagnostics", Integer.toString(
                 promotionReadiness.runtimeEquivalenceDiagnosticCount()
         ));
+        metadata.put("promotionBlockingReasonCount", Integer.toString(promotionReadiness.blockingReasons().size()));
         metadata.put("promotionBlockingReasons", String.join(",", promotionReadiness.blockingReasons()));
+        metadata.put("promotionRemainingWorkCount", Integer.toString(promotionReadiness.remainingWork().size()));
         metadata.put("promotionRemainingWork", String.join(",", promotionReadiness.remainingWork()));
         promotionReadiness.firstBlockingReason().ifPresent(reason ->
                 metadata.put("promotionFirstBlockingReason", reason)
@@ -396,6 +398,7 @@ public final class GpuIrOptimizationValidationRules {
         Map<String, String> metadata = baseMetadata(context);
         metadata.put("autoVectorizationReadinessVerdict", readiness.verdict());
         metadata.put("autoVectorizationReadyForPrototypeRewrite", Boolean.toString(readiness.readyForPrototypeRewrite()));
+        metadata.put("autoVectorizationReadinessBlockingReasonCount", Integer.toString(readiness.blockingReasons().size()));
         metadata.put("autoVectorizationReadinessBlockingReasons", String.join(",", readiness.blockingReasons()));
         readiness.firstBlockingReason().ifPresent(reason ->
                 metadata.put("autoVectorizationReadinessFirstBlockingReason", reason)

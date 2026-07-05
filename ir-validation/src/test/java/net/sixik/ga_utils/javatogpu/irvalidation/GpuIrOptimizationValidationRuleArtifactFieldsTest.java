@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.validationReport;
@@ -94,6 +95,166 @@ class GpuIrOptimizationValidationRuleArtifactFieldsTest {
     }
 
     @Test
+    void combinedFieldsCanRejectInconsistentArtifactsWithExplicitConsistencyReport() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("inconsistentFieldsKernel"));
+        GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport =
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "inconsistentFieldsKernel",
+                        "inconsistent",
+                        false,
+                        14,
+                        1,
+                        List.of("summaryVerdict")
+                );
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance(
+                report,
+                consistencyReport
+        );
+
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("rejected/inconsistentArtifact", fields.get("validationRulesAcceptanceReason"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("consistency=false"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("firstConsistencyFailedCheck=summaryVerdict"));
+    }
+
+    @Test
+    void defaultCombinedFieldsUseReportConsistencyAndAcceptCleanArtifacts() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("defaultConsistencyKernel"));
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance(report);
+
+        assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+        assertEquals("0", fields.get("validationRulesConsistency.FailedChecks"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("false", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("accepted/pass", fields.get("validationRulesAcceptanceReason"));
+        assertFalse(fields.get("validationRulesAcceptanceCiSummaryLine").contains("consistency=false"));
+    }
+
+    @Test
+    void combinedFieldsCanAlsoExportOptimizerReadinessHandoffFields() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("handoffKernel"));
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("existing", "preserved");
+
+        GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptanceAndHandoff(fields, report);
+
+        assertEquals("preserved", fields.get("existing"));
+        assertEquals("handoffKernel", fields.get("validationRulesMethod"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("handoffKernel", fields.get("optimizerReadinessHandoffMethod"));
+        assertEquals("readyForOptimizerEnablementReview", fields.get("optimizerReadinessHandoffVerdict"));
+        assertEquals("true", fields.get("optimizerReadinessHandoffReadyForOptimizerEnablement"));
+        assertEquals("0", fields.get("optimizerReadinessHandoffBlockingReasonCount"));
+    }
+
+    @Test
+    void combinedFieldsWithHandoffCanRejectExplicitConsistencyDrift() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("handoffDriftKernel"));
+        GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport =
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "handoffDriftKernel",
+                        "inconsistent",
+                        false,
+                        14,
+                        1,
+                        List.of("summaryVerdict")
+                );
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceAndHandoff(
+                report,
+                consistencyReport
+        );
+
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("rejected/inconsistentArtifact", fields.get("validationRulesAcceptanceReason"));
+        assertEquals("notReady/ruleArtifactRejected", fields.get("optimizerReadinessHandoffVerdict"));
+        assertEquals("false", fields.get("optimizerReadinessHandoffReadyForOptimizerEnablement"));
+        assertEquals("[ruleArtifactRejected,ruleArtifactInconsistent]", fields.get("optimizerReadinessHandoffBlockingReasons"));
+    }
+
+    @Test
+    void combinedFieldsCanAlsoExportOptimizerEnablementPolicyFields() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("policyKernel"));
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("existing", "preserved");
+
+        GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptanceHandoffAndPolicy(fields, report);
+
+        assertEquals("preserved", fields.get("existing"));
+        assertEquals("policyKernel", fields.get("validationRulesMethod"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", fields.get("optimizerReadinessHandoffReadyForOptimizerEnablement"));
+        assertEquals("reviewAllowed/productionMutationDisabled", fields.get("optimizerEnablementPolicyVerdict"));
+        assertEquals("true", fields.get("optimizerEnablementPolicyAllowOptimizerEnablementReview"));
+        assertEquals("false", fields.get("optimizerEnablementPolicyProductionMutationEnabled"));
+        assertEquals("enableProductionMutationPolicy", fields.get("optimizerEnablementPolicyFirstRemainingWork"));
+    }
+
+    @Test
+    void combinedFieldsWithPolicyCanRejectExplicitConsistencyDrift() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("policyDriftKernel"));
+        GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport =
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "policyDriftKernel",
+                        "inconsistent",
+                        false,
+                        14,
+                        1,
+                        List.of("summaryVerdict")
+                );
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceHandoffAndPolicy(
+                report,
+                consistencyReport
+        );
+
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("notReady/ruleArtifactRejected", fields.get("optimizerReadinessHandoffVerdict"));
+        assertEquals("blocked/handoffNotReady", fields.get("optimizerEnablementPolicyVerdict"));
+        assertEquals("false", fields.get("optimizerEnablementPolicyAllowOptimizerEnablementReview"));
+        assertEquals("false", fields.get("optimizerEnablementPolicyProductionMutationEnabled"));
+        assertEquals("ruleArtifactRejected", fields.get("optimizerEnablementPolicyFirstBlockingReason"));
+        assertEquals("produceAcceptedRuleArtifact", fields.get("optimizerEnablementPolicyFirstRemainingWork"));
+    }
+
+    @Test
+    void acceptanceOnlyFieldsCanRejectInconsistentArtifactsWithExplicitConsistencyReport() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("inconsistentAcceptanceOnlyKernel"));
+        GpuIrOptimizationValidationRuleArtifactConsistencyReport consistencyReport =
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "inconsistentAcceptanceOnlyKernel",
+                        "inconsistent",
+                        false,
+                        14,
+                        1,
+                        List.of("summaryPassed")
+                );
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.acceptanceFields(
+                report,
+                consistencyReport
+        );
+
+        assertEquals("inconsistentAcceptanceOnlyKernel", fields.get("validationRulesAcceptanceMethod"));
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("rejected/inconsistentArtifact", fields.get("validationRulesAcceptanceReason"));
+        assertFalse(fields.containsKey("validationRulesPassed"));
+    }
+
+    @Test
     void returnsImmutableFieldsWithCustomPrefix() {
         GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
                 .run(validationReport("customKernel"));
@@ -127,10 +288,23 @@ class GpuIrOptimizationValidationRuleArtifactFieldsTest {
         assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.acceptanceFields(" ", report));
         assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(null, report));
         assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, null));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, report, null));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putAcceptanceFields(fields, report, null));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putHandoffFields(fields, report, null));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptanceAndHandoff(fields, report, null));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putEnablementPolicyFields(fields, report, null));
+        assertThrows(NullPointerException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptanceHandoffAndPolicy(fields, report, null));
         assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, "", "acceptance.", report));
         assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.putFieldsWithAcceptance(fields, "rules.", "", report));
         assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance("", "acceptance.", report));
         assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance("rules.", "", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceAndHandoff("", "acceptance.", "handoff.", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceAndHandoff("rules.", "", "handoff.", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceAndHandoff("rules.", "acceptance.", "", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceHandoffAndPolicy("", "acceptance.", "handoff.", "policy.", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceHandoffAndPolicy("rules.", "", "handoff.", "policy.", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceHandoffAndPolicy("rules.", "acceptance.", "", "policy.", report));
+        assertThrows(IllegalArgumentException.class, () -> GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceHandoffAndPolicy("rules.", "acceptance.", "handoff.", "", report));
     }
 
     @Test

@@ -56,6 +56,8 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
                 "validationRulesRegistryResult.0.Passed",
                 "validationRulesRegistryResult.0.Status",
                 "validationRulesRegistryResult.0.Blocking",
+                "validationRulesRegistryResult.0.MetadataCount",
+                "validationRulesRegistryResult.0.MetadataPresent",
                 "validationRulesConsistency.Consistent",
                 "validationRulesConsistency.Checks",
                 "validationRulesConsistency.FailedChecks",
@@ -71,6 +73,8 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
                 fields.get("validationRulesRuleIndex")
         );
         assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+        assertEquals("2", fields.get("validationRulesRegistryResult.0.MetadataCount"));
+        assertEquals("true", fields.get("validationRulesRegistryResult.0.MetadataPresent"));
         assertFalse(fields.containsKey("validationRulesFirstFailedRuleId"));
         assertFalse(fields.containsKey("validationRulesFirstWarningRuleId"));
         assertFalse(fields.containsKey("validationRulesFirstBlockingRuleId"));
@@ -119,6 +123,141 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("{optimizer=1}", fields.get("validationRulesWarningRuleFamilyCounts"));
         assertEquals("{safety=1}", fields.get("validationRulesBlockingRuleFamilyCounts"));
         assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+    }
+
+    @Test
+    void combinedFieldsWithAcceptanceKeepStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("combinedContractKernel"));
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance(report);
+
+        // External CI consumers should be able to read one merged map without parsing summaries.
+        assertContainsKeys(fields, Set.of(
+                "validationRulesMethod",
+                "validationRulesVerdict",
+                "validationRulesPassed",
+                "validationRulesCiSummaryLine",
+                "validationRulesConsistency.Consistent",
+                "validationRulesConsistency.FailedChecks",
+                "validationRulesRegistryPassed",
+                "validationRulesRegistryResult.0.RuleId",
+                "validationRulesRegistryResult.0.MetadataCount",
+                "validationRulesRegistryResult.0.MetadataPresent",
+                "validationRulesAcceptanceMethod",
+                "validationRulesAcceptanceVerdict",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceRejected",
+                "validationRulesAcceptanceAcceptedWithWarnings",
+                "validationRulesAcceptanceReason",
+                "validationRulesAcceptanceCiSummaryLine"
+        ));
+        assertEquals("combinedContractKernel", fields.get("validationRulesMethod"));
+        assertEquals("combinedContractKernel", fields.get("validationRulesAcceptanceMethod"));
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("pass", fields.get("validationRulesAcceptanceVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("false", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("accepted/pass", fields.get("validationRulesAcceptanceReason"));
+        assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+        assertEquals("0", fields.get("validationRulesConsistency.FailedChecks"));
+    }
+
+    @Test
+    void combinedFieldsWithExplicitConsistencyReportRejectDriftedArtifactsFailClosed() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("driftedCombinedContractKernel"));
+        GpuIrOptimizationValidationRuleArtifactConsistencyReport driftedConsistencyReport =
+                new GpuIrOptimizationValidationRuleArtifactConsistencyReport(
+                        "driftedCombinedContractKernel",
+                        "inconsistent",
+                        false,
+                        14,
+                        1,
+                        List.of("summaryVerdict")
+                );
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptance(
+                report,
+                driftedConsistencyReport
+        );
+
+        // The rule artifact remains exported, but acceptance fails closed on the explicit drift report.
+        assertContainsKeys(fields, Set.of(
+                "validationRulesMethod",
+                "validationRulesVerdict",
+                "validationRulesPassed",
+                "validationRulesConsistency.Consistent",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceRejected",
+                "validationRulesAcceptanceReason",
+                "validationRulesAcceptanceCiSummaryLine"
+        ));
+        assertEquals("driftedCombinedContractKernel", fields.get("validationRulesMethod"));
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("rejected/inconsistentArtifact", fields.get("validationRulesAcceptanceReason"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("consistency=false"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("consistencyFailedChecks=1"));
+        assertTrue(fields.get("validationRulesAcceptanceCiSummaryLine").contains("firstConsistencyFailedCheck=summaryVerdict"));
+    }
+
+    @Test
+    void combinedFieldsWithAcceptanceAndHandoffKeepStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("handoffContractKernel"));
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceAndHandoff(report);
+
+        assertContainsKeys(fields, Set.of(
+                "validationRulesMethod",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceReason",
+                "optimizerReadinessHandoffMethod",
+                "optimizerReadinessHandoffVerdict",
+                "optimizerReadinessHandoffReadyForOptimizerEnablement",
+                "optimizerReadinessHandoffRuleArtifactAccepted",
+                "optimizerReadinessHandoffAcceptanceReason",
+                "optimizerReadinessHandoffBlockingReasonCount",
+                "optimizerReadinessHandoffRemainingWorkCount",
+                "optimizerReadinessHandoffCiSummaryLine"
+        ));
+        assertEquals("handoffContractKernel", fields.get("optimizerReadinessHandoffMethod"));
+        assertEquals("readyForOptimizerEnablementReview", fields.get("optimizerReadinessHandoffVerdict"));
+        assertEquals("true", fields.get("optimizerReadinessHandoffReadyForOptimizerEnablement"));
+        assertEquals("true", fields.get("optimizerReadinessHandoffRuleArtifactAccepted"));
+        assertEquals("accepted/pass", fields.get("optimizerReadinessHandoffAcceptanceReason"));
+    }
+
+    @Test
+    void combinedFieldsWithAcceptanceHandoffAndPolicyKeepStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationRuleArtifactReport report = new GpuIrOptimizationValidationRuleArtifactRunner()
+                .run(validationReport("policyContractKernel"));
+
+        Map<String, String> fields = GpuIrOptimizationValidationRuleArtifactFields.fieldsWithAcceptanceHandoffAndPolicy(report);
+
+        assertContainsKeys(fields, Set.of(
+                "validationRulesMethod",
+                "validationRulesAcceptanceAccepted",
+                "optimizerReadinessHandoffReadyForOptimizerEnablement",
+                "optimizerEnablementPolicyMethod",
+                "optimizerEnablementPolicyVerdict",
+                "optimizerEnablementPolicyAllowOptimizerEnablementReview",
+                "optimizerEnablementPolicyProductionMutationEnabled",
+                "optimizerEnablementPolicyHandoffVerdict",
+                "optimizerEnablementPolicyFirstRemainingWork",
+                "optimizerEnablementPolicyCiSummaryLine"
+        ));
+        assertEquals("policyContractKernel", fields.get("optimizerEnablementPolicyMethod"));
+        assertEquals("reviewAllowed/productionMutationDisabled", fields.get("optimizerEnablementPolicyVerdict"));
+        assertEquals("true", fields.get("optimizerEnablementPolicyAllowOptimizerEnablementReview"));
+        assertEquals("false", fields.get("optimizerEnablementPolicyProductionMutationEnabled"));
+        assertEquals("readyForOptimizerEnablementReview", fields.get("optimizerEnablementPolicyHandoffVerdict"));
+        assertEquals("enableProductionMutationPolicy", fields.get("optimizerEnablementPolicyFirstRemainingWork"));
     }
 
     private static void assertContainsKeys(Map<String, String> fields, Set<String> expectedKeys) {

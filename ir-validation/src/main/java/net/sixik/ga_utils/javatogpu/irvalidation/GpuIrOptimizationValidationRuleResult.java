@@ -117,6 +117,8 @@ public record GpuIrOptimizationValidationRuleResult(
         values.put(prefix + "Status", status.artifactValue());
         values.put(prefix + "Blocking", Boolean.toString(blocking()));
         values.put(prefix + "Message", message);
+        values.put(prefix + "MetadataCount", Integer.toString(metadata.size()));
+        values.put(prefix + "MetadataPresent", Boolean.toString(!metadata.isEmpty()));
         metadata.forEach((key, value) -> values.put(prefix + "Metadata." + key, value));
         return Collections.unmodifiableMap(values);
     }
