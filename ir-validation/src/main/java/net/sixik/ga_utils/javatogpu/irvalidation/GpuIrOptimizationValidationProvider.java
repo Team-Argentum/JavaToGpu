@@ -56,6 +56,8 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("optimizerDiagnostics", Integer.toString(report.optimizerDiagnosticCount()));
         values.put("hasOptimizerDiagnostics", Boolean.toString(report.hasOptimizerDiagnostics()));
         values.putAll(report.commonSubexpressionArtifactSnapshot().artifactFields("cse"));
+        values.putAll(report.commonSubexpressionNumericBoundaryReport().artifactFields("cseSimpleArithmeticNumericBoundary"));
+        values.putAll(report.commonSubexpressionLiteralProofReport().artifactFields("cseSimpleArithmeticLiteralProof"));
         values.putAll(report.autoVectorizationArtifactSnapshot().artifactFields("autoVectorization"));
         report.safetyError().ifPresent(error -> values.put("safetyError", error));
         return new GpuIrValidationReportEntry("optimization-validation", report.methodName(), request.entryPoint(), values);

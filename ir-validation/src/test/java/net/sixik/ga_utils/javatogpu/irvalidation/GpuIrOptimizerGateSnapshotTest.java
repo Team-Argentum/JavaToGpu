@@ -14,8 +14,8 @@ class GpuIrOptimizerGateSnapshotTest {
     void artifactFieldsExposeExplanationAndGroupedCounts() {
         GpuIrOptimizerGateSnapshot snapshot = new GpuIrOptimizerGateSnapshot(
                 GpuIrOptimizerGateExplanation.blocked("autoVectorization", "guard.memoryAddressSpace", "constant memory blocks rewrite"),
-                linkedCounts("autoVectorization", 1L, "cse", 2L),
-                linkedCounts("guard.memoryAddressSpace", 1L, "cse.CONTROL_FLOW_BOUNDARY", 2L)
+                linkedCounts("autoVectorization", 1L, "cseRewritePolicy", 2L),
+                linkedCounts("guard.memoryAddressSpace", 1L, "cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY", 2L)
         );
 
         Map<String, String> fields = snapshot.artifactFields("gate");
@@ -25,14 +25,14 @@ class GpuIrOptimizerGateSnapshotTest {
         assertEquals("guard.memoryAddressSpace", fields.get("gateFamily"));
         assertEquals("constant memory blocks rewrite", fields.get("gateSummary"));
         assertEquals(snapshot.compactSummary(), fields.get("gateCompactSummary"));
-        assertEquals("{autoVectorization=1,cse=2}", fields.get("gateSourceCounts"));
+        assertEquals("{autoVectorization=1,cseRewritePolicy=2}", fields.get("gateSourceCounts"));
         assertEquals("1", fields.get("gateSourceCount.autoVectorization"));
-        assertEquals("2", fields.get("gateSourceCount.cse"));
-        assertEquals("{guard.memoryAddressSpace=1,cse.CONTROL_FLOW_BOUNDARY=2}", fields.get("gateFamilyCounts"));
+        assertEquals("2", fields.get("gateSourceCount.cseRewritePolicy"));
+        assertEquals("{guard.memoryAddressSpace=1,cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY=2}", fields.get("gateFamilyCounts"));
         assertEquals("1", fields.get("gateFamilyCount.guard.memoryAddressSpace"));
-        assertEquals("2", fields.get("gateFamilyCount.cse.CONTROL_FLOW_BOUNDARY"));
-        assertTrue(snapshot.compactSummary().contains("sourceCounts={autoVectorization=1,cse=2}"));
-        assertTrue(snapshot.compactSummary().contains("familyCounts={guard.memoryAddressSpace=1,cse.CONTROL_FLOW_BOUNDARY=2}"));
+        assertEquals("2", fields.get("gateFamilyCount.cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY"));
+        assertTrue(snapshot.compactSummary().contains("sourceCounts={autoVectorization=1,cseRewritePolicy=2}"));
+        assertTrue(snapshot.compactSummary().contains("familyCounts={guard.memoryAddressSpace=1,cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY=2}"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
     }
 
@@ -51,8 +51,8 @@ class GpuIrOptimizerGateSnapshotTest {
 
         assertEquals("{safety=1}", snapshot.sourceCountsSummary());
         assertEquals("{safety.error=1}", snapshot.familyCountsSummary());
-        assertThrows(UnsupportedOperationException.class, () -> snapshot.sourceCounts().put("cse", 1L));
-        assertThrows(UnsupportedOperationException.class, () -> snapshot.familyCounts().put("cse.CONTROL_FLOW_BOUNDARY", 1L));
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.sourceCounts().put("cseRewritePolicy", 1L));
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.familyCounts().put("cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY", 1L));
     }
 
     @Test

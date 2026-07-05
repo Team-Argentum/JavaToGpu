@@ -36,13 +36,13 @@ public record GpuIrOptimizerGateExplanation(
                     autoVectorizationSummary.orElseThrow()
             );
         }
-        Optional<GpuIrCommonSubexpressionSkippedDiagnostic> firstCseSkip = report.commonSubexpressionPreview()
-                .skippedDiagnostics()
-                .stream()
-                .findFirst();
-        if (firstCseSkip.isPresent()) {
-            GpuIrCommonSubexpressionSkippedDiagnostic diagnostic = firstCseSkip.orElseThrow();
-            return blocked("cse", "cse." + diagnostic.reason().name(), diagnostic.summary());
+        GpuIrCommonSubexpressionRewritePolicy csePolicy = report.commonSubexpressionArtifactSnapshot().rewritePolicy();
+        if (csePolicy.hasBlockingSkippedCandidates()) {
+            return blocked(
+                    "cseRewritePolicy",
+                    "cseRewritePolicy." + csePolicy.readiness().artifactValue(),
+                    csePolicy.firstBlockingSkippedCandidate().orElseThrow().diagnostic().summary()
+            );
         }
         return allowed();
     }

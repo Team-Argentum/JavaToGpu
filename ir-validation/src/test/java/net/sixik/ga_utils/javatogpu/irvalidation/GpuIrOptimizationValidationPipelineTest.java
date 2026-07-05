@@ -127,6 +127,39 @@ class GpuIrOptimizationValidationPipelineTest {
     }
 
     @Test
+    void cseRewritePolicyBecomesFirstGateWhenOnlyCseBlocks() {
+        GpuIrPassContext context = context(method(new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrLiteral("1"))),
+                new GpuIrAssignment(new GpuIrVariableRef("z"), new GpuIrLiteral("7")),
+                new GpuIrVariableDeclaration("int", "second", new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrLiteral("1"))),
+                new GpuIrReturn(null)
+        ))));
+
+        GpuIrOptimizationValidationReport report = pipeline.validate(context);
+
+        assertFalse(report.hasSafetyError());
+        assertFalse(report.hasAutoVectorizationDiagnostics());
+        assertTrue(report.hasCommonSubexpressionDiagnostics());
+        assertTrue(report.optimizerGateExplanation().blocked());
+        assertEquals("cseRewritePolicy", report.optimizerGateExplanation().source());
+        assertEquals("cseRewritePolicy.blockedBySkippedCandidate", report.optimizerGateExplanation().family());
+        assertEquals(java.util.Map.of("cseRewritePolicy", 1L), report.optimizerGateSourceCounts());
+        assertEquals(java.util.Map.of(
+                "cseRewritePolicy.blockedBySkippedCandidate", 1L,
+                "cseRewritePolicy.skipReason.MUTATED_BETWEEN_OCCURRENCES", 1L,
+                "cseRewritePolicy.dominance.topLevelDownstreamReplacements", 1L
+        ), report.optimizerGateFamilyCounts());
+        assertEquals(GpuIrCommonSubexpressionRewriteReadiness.BLOCKED_BY_SKIPPED_CANDIDATE,
+                report.commonSubexpressionArtifactSnapshot().rewritePolicy().readiness());
+        assertFalse(report.commonSubexpressionArtifactSnapshot().rewritePolicy().canRewrite());
+        assertEquals(1, report.optimizerDiagnosticCount());
+        assertTrue(report.compactSummary().contains("optimizerGateSource=cseRewritePolicy"));
+        assertTrue(report.compactSummary().contains("optimizerGateFamily=cseRewritePolicy.blockedBySkippedCandidate"));
+        assertTrue(report.compactSummary().contains("optimizerGateSourceCounts={cseRewritePolicy=1}"));
+        assertTrue(report.compactSummary().contains("cseRewritePolicyReadiness=blockedBySkippedCandidate"));
+    }
+
+    @Test
     void strictSafetyModeFailsOnlyOnSafetyErrors() {
         GpuIrOptimizationValidationPipeline strictPipeline = new GpuIrOptimizationValidationPipeline(
                 GpuIrOptimizationValidationMode.STRICT_FAIL_ON_SAFETY_ERROR
@@ -166,8 +199,8 @@ class GpuIrOptimizationValidationPipelineTest {
         assertTrue(exception.getMessage().contains("IR optimization validation failed for kernel"));
         assertTrue(exception.getMessage().contains("optimizer gate policy mode=STRICT_FAIL_ON_OPTIMIZER_DIAGNOSTICS blocked=true source=autoVectorization family=rejection.UNSUPPORTED_LANE_COUNT"));
         assertTrue(exception.getMessage().contains("optimizer gate blocked=true source=autoVectorization family=rejection.UNSUPPORTED_LANE_COUNT"));
-        assertTrue(exception.getMessage().contains("optimizerGateSourceCounts={autoVectorization=1,cse=1}"));
-        assertTrue(exception.getMessage().contains("optimizerGateFamilyCounts={rejection.UNSUPPORTED_LANE_COUNT=1,cse.MUTATED_BETWEEN_OCCURRENCES=1}"));
+        assertTrue(exception.getMessage().contains("optimizerGateSourceCounts={autoVectorization=1,cseRewritePolicy=1}"));
+        assertTrue(exception.getMessage().contains("optimizerGateFamilyCounts={rejection.UNSUPPORTED_LANE_COUNT=1,cseRewritePolicy.blockedBySkippedCandidate=1,cseRewritePolicy.skipReason.MUTATED_BETWEEN_OCCURRENCES=1,cseRewritePolicy.dominance.topLevelDownstreamReplacements=1}"));
         assertTrue(exception.getMessage().contains("cseFirstSkippedDominance={MUTATED_BETWEEN_OCCURRENCES dominance=topLevelDownstreamReplacements"));
         assertTrue(exception.getMessage().contains("optimizerDiagnostics=2"));
         assertTrue(exception.getMessage().contains("MUTATED_BETWEEN_OCCURRENCES"));

@@ -89,6 +89,106 @@ class GpuIrCommonSubexpressionArtifactRunnerTest {
     }
 
     @Test
+    void runsCseRewriteAcrossNestedSimpleArithmeticCanonicalExpressions() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("+",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrVariableRef("z"))
+                )),
+                new GpuIrVariableDeclaration("int", "second", new GpuIrBinary("+",
+                        new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrVariableRef("x")),
+                        new GpuIrVariableRef("y")
+                )),
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+",
+                        new GpuIrVariableRef("first"),
+                        new GpuIrVariableRef("second")
+                )),
+                new GpuIrReturn(new GpuIrVariableRef("outA"))
+        ));
+        GpuIrCommonSubexpressionArtifactRunner canonicalRunner = new GpuIrCommonSubexpressionArtifactRunner(
+                GpuIrCommonSubexpressionScanner.optimizerFocused(),
+                new GpuIrCommonSubexpressionRewritePlanner(),
+                new GpuIrCommonSubexpressionRewriteApplicator()
+        );
+
+        GpuIrCommonSubexpressionArtifactReport report = canonicalRunner.run(
+                compiledMethod(method, List.of(parameter("x"), parameter("y"), parameter("z"), parameter("outA"))),
+                List.of(
+                        inputCase("positive", Map.of("x", 2, "y", 3, "z", 5, "outA", 0)),
+                        inputCase("mixed", Map.of("x", -7, "y", 11, "z", 4, "outA", 100)),
+                        inputCase("zero", Map.of("x", 0, "y", 0, "z", 0, "outA", -1))
+                ),
+                List.of("outA", "return")
+        );
+
+        Map<String, String> fields = report.artifactFields();
+
+        assertTrue(report.successful());
+        assertEquals(1, report.insertionCount());
+        assertEquals(1, report.replacementCount());
+        assertEquals(0, report.skippedCount());
+        assertEquals(0, report.diagnosticCount());
+        assertTrue(report.snapshot().preview().insertions().get(0).fingerprint().startsWith("binary_assoc_simple(+"));
+        assertEquals("true", fields.get("cseArtifactSuccessful"));
+        assertEquals("3", fields.get("cseArtifactRuntimeEquivalence.InputCases"));
+        assertEquals("outA,return", fields.get("cseArtifactRuntimeEquivalence.ComparedOutputNames"));
+        assertEquals("1", fields.get("cseArtifactRuntimeEquivalence.Plans"));
+        assertEquals("1", fields.get("cseArtifactRuntimeEquivalence.Replacements"));
+        assertEquals("ready", fields.get("cseArtifactSnapshot.RewritePolicyReadiness"));
+        assertEquals("true", fields.get("cseArtifactSnapshot.RewritePolicyCanRewrite"));
+    }
+
+    @Test
+    void runsCseRewriteAcrossNestedSimpleMultiplicationCanonicalExpressions() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("*",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrBinary("*", new GpuIrVariableRef("y"), new GpuIrVariableRef("z"))
+                )),
+                new GpuIrVariableDeclaration("int", "second", new GpuIrBinary("*",
+                        new GpuIrBinary("*", new GpuIrVariableRef("z"), new GpuIrVariableRef("x")),
+                        new GpuIrVariableRef("y")
+                )),
+                new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+",
+                        new GpuIrVariableRef("first"),
+                        new GpuIrVariableRef("second")
+                )),
+                new GpuIrReturn(new GpuIrVariableRef("outA"))
+        ));
+        GpuIrCommonSubexpressionArtifactRunner canonicalRunner = new GpuIrCommonSubexpressionArtifactRunner(
+                GpuIrCommonSubexpressionScanner.optimizerFocused(),
+                new GpuIrCommonSubexpressionRewritePlanner(),
+                new GpuIrCommonSubexpressionRewriteApplicator()
+        );
+
+        GpuIrCommonSubexpressionArtifactReport report = canonicalRunner.run(
+                compiledMethod(method, List.of(parameter("x"), parameter("y"), parameter("z"), parameter("outA"))),
+                List.of(
+                        inputCase("positive", Map.of("x", 2, "y", 3, "z", 5, "outA", 0)),
+                        inputCase("mixed", Map.of("x", -7, "y", 11, "z", 4, "outA", 100)),
+                        inputCase("zero", Map.of("x", 0, "y", 9, "z", 3, "outA", -1))
+                ),
+                List.of("outA", "return")
+        );
+
+        Map<String, String> fields = report.artifactFields();
+
+        assertTrue(report.successful());
+        assertEquals(1, report.insertionCount());
+        assertEquals(1, report.replacementCount());
+        assertEquals(0, report.skippedCount());
+        assertEquals(0, report.diagnosticCount());
+        assertTrue(report.snapshot().preview().insertions().get(0).fingerprint().startsWith("binary_assoc_simple(*"));
+        assertEquals("true", fields.get("cseArtifactSuccessful"));
+        assertEquals("3", fields.get("cseArtifactRuntimeEquivalence.InputCases"));
+        assertEquals("outA,return", fields.get("cseArtifactRuntimeEquivalence.ComparedOutputNames"));
+        assertEquals("1", fields.get("cseArtifactRuntimeEquivalence.Plans"));
+        assertEquals("1", fields.get("cseArtifactRuntimeEquivalence.Replacements"));
+        assertEquals("ready", fields.get("cseArtifactSnapshot.RewritePolicyReadiness"));
+        assertEquals("true", fields.get("cseArtifactSnapshot.RewritePolicyCanRewrite"));
+    }
+
+    @Test
     void reportsFailedEquivalenceWhenComparedOutputIsMissing() {
         GpuIrMethod method = new GpuIrMethod("kernel", List.of(
                 new GpuIrAssignment(new GpuIrVariableRef("outA"), new GpuIrBinary("+",
@@ -170,17 +270,21 @@ class GpuIrCommonSubexpressionArtifactRunnerTest {
     }
 
     private GpuIrCompiledMethod compiledMethod(GpuIrMethod method) {
+        return compiledMethod(method, List.of(
+                parameter("x"),
+                parameter("y"),
+                parameter("outA"),
+                parameter("outB")
+        ));
+    }
+
+    private GpuIrCompiledMethod compiledMethod(GpuIrMethod method, List<ParsedGpuParameter> parameters) {
         ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
                 "KernelOwner",
                 "test.KernelOwner",
                 method.name(),
                 "void",
-                List.of(
-                        parameter("x"),
-                        parameter("y"),
-                        parameter("outA"),
-                        parameter("outB")
-                ),
+                parameters,
                 List.of(),
                 List.of(),
                 null,

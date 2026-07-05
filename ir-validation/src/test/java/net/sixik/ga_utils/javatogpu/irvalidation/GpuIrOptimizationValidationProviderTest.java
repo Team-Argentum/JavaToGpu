@@ -82,6 +82,9 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("optimizerDiagnostics=0")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpressionProvenCandidates=0")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpressionHasEvidence=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseRewritePolicyCanRewrite=false")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseRewritePolicyReadiness=none")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseRewritePolicyBlockingSkippedCandidates=0")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteReadiness=none")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationCanApplyRewrite=false")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofDecision=allow")));
@@ -170,6 +173,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("unknown variable reference: missing")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cse={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseLocalExpression={")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("cseRewritePolicy={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicy={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundle={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorization={")));
@@ -302,12 +306,14 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "optimizerGateBlocked", "true");
         assertEntryValue(entries, "optimizerGateSource", "autoVectorization");
         assertEntryValue(entries, "optimizerGateFamily", "warning.alias");
-        assertEntryValue(entries, "optimizerGateSourceCounts", "{autoVectorization=1,cse=2}");
+        assertEntryValue(entries, "optimizerGateSourceCounts", "{autoVectorization=1,cseRewritePolicy=2}");
         assertEntryValue(entries, "optimizerGateSourceCount.autoVectorization", "1");
-        assertEntryValue(entries, "optimizerGateSourceCount.cse", "2");
-        assertEntryValue(entries, "optimizerGateFamilyCounts", "{warning.alias=1,warning.repeatedTarget=1,warning.crossLaneRead=1,warning.nonLaneRead=1,cse.CONTROL_FLOW_BOUNDARY=2}");
+        assertEntryValue(entries, "optimizerGateSourceCount.cseRewritePolicy", "2");
+        assertEntryValue(entries, "optimizerGateFamilyCounts", "{warning.alias=1,warning.repeatedTarget=1,warning.crossLaneRead=1,warning.nonLaneRead=1,cseRewritePolicy.blockedBySkippedCandidate=1,cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY=2,cseRewritePolicy.dominance.requiresLocalExpressionDominance=1,cseRewritePolicy.dominance.localExpressionDownstreamReplacements=1}");
         assertEntryValue(entries, "optimizerGateFamilyCount.warning.alias", "1");
-        assertEntryValue(entries, "optimizerGateFamilyCount.cse.CONTROL_FLOW_BOUNDARY", "2");
+        assertEntryValue(entries, "optimizerGateFamilyCount.cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY", "2");
+        assertEntryValue(entries, "optimizerGateFamilyCount.cseRewritePolicy.dominance.requiresLocalExpressionDominance", "1");
+        assertEntryValue(entries, "optimizerGateFamilyCount.cseRewritePolicy.dominance.localExpressionDownstreamReplacements", "1");
         assertEntryValue(entries, "optimizerGatePolicyMode", "DIAGNOSTIC_ONLY");
         assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
         assertEntryValue(entries, "optimizerGatePolicySource", "none");

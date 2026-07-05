@@ -38,6 +38,8 @@ class GpuIrCommonSubexpressionArtifactReportTest {
         assertTrue(fields.get("cseArtifactSummary").contains("skippedDominanceStatusCounts={requiresLocalExpressionDominance=1}"));
         assertEquals("1", fields.get("cseArtifactSnapshot.Insertions"));
         assertEquals("1", fields.get("cseArtifactSnapshot.LocalExpressionProvenCandidates"));
+        assertEquals("blockedBySkippedCandidate", fields.get("cseArtifactSnapshot.RewritePolicyReadiness"));
+        assertEquals("false", fields.get("cseArtifactSnapshot.RewritePolicyCanRewrite"));
         assertEquals("true", fields.get("cseArtifactRuntimeEquivalence.Successful"));
         assertEquals("outA", fields.get("cseArtifactRuntimeEquivalence.ComparedOutputNames"));
         assertEquals("1", fields.get("cseArtifactRuntimeEquivalence.SkippedDominanceStatus.requiresLocalExpressionDominance"));

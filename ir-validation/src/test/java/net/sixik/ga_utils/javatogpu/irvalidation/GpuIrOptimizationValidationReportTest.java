@@ -17,6 +17,8 @@ class GpuIrOptimizationValidationReportTest {
                 "kernel",
                 Optional.empty(),
                 new GpuIrCommonSubexpressionRewritePreview(List.of(), List.of(), List.of()),
+                GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.empty("kernel"),
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.empty("kernel"),
                 new GpuIrAutoVectorizationPreview("kernel", List.of(), List.of(), List.of()),
                 GpuIrAutoVectorizationRewriteDryRunReport.failed(
                         "kernel",
@@ -37,6 +39,17 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.compactSummary().contains("cseLocalExpressionProvenReplacements=0"));
         assertTrue(report.compactSummary().contains("cseLocalExpressionBlockedCandidates=0"));
         assertTrue(report.compactSummary().contains("cseLocalExpressionHasEvidence=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticNumericBoundaryBlockedCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticNumericBoundaryLiteralOperands=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticNumericBoundaryCastOperands=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofSafeCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofBlockedCandidates=0"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofHasSafeCandidates=false"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts={}"));
+        assertTrue(report.compactSummary().contains("cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts={}"));
+        assertTrue(report.compactSummary().contains("cseRewritePolicyCanRewrite=false"));
+        assertTrue(report.compactSummary().contains("cseRewritePolicyReadiness=none"));
+        assertTrue(report.compactSummary().contains("cseRewritePolicyBlockingSkippedCandidates=0"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofDecision=allow"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofDecisionAllowRewrite=true"));
         assertTrue(report.compactSummary().contains("autoVectorizationProofBundleRewriteSafe=true"));
@@ -47,6 +60,10 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.detailedSummary().contains("autoVectorizationResolvedRewriteOperations={"));
         assertTrue(report.detailedSummary().contains("autoVectorizationProofBundle={"));
         assertTrue(report.detailedSummary().contains("cseLocalExpression={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticNumericBoundary={"));
+        assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralProof={"));
+        assertTrue(report.detailedSummary().contains("cseRewritePolicy={"));
+        assertTrue(report.detailedSummary().contains("CSE rewrite policy method=kernel"));
         assertTrue(report.detailedSummary().contains("successful=false"));
         assertTrue(report.detailedSummary().contains("replacement loopLocation expected=stmt[0] actual=stmt[1]"));
     }

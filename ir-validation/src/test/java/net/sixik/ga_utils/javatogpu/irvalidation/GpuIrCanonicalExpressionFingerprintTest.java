@@ -37,6 +37,64 @@ class GpuIrCanonicalExpressionFingerprintTest {
     }
 
     @Test
+    void simpleAssociativeArithmeticExpressionsShareCanonicalFingerprint() {
+        GpuIrBinary left = new GpuIrBinary("+",
+                new GpuIrVariableRef("a"),
+                new GpuIrBinary("+", new GpuIrVariableRef("b"), new GpuIrVariableRef("c"))
+        );
+        GpuIrBinary right = new GpuIrBinary("+",
+                new GpuIrBinary("+", new GpuIrVariableRef("c"), new GpuIrVariableRef("a")),
+                new GpuIrVariableRef("b")
+        );
+
+        assertEquals(fingerprint.fingerprint(left), fingerprint.fingerprint(right));
+        assertTrue(fingerprint.fingerprint(left).orElseThrow().startsWith("binary_assoc_simple(+"));
+    }
+
+    @Test
+    void simpleAssociativeMultiplicationExpressionsShareCanonicalFingerprint() {
+        GpuIrBinary left = new GpuIrBinary("*",
+                new GpuIrVariableRef("a"),
+                new GpuIrBinary("*", new GpuIrVariableRef("b"), new GpuIrVariableRef("c"))
+        );
+        GpuIrBinary right = new GpuIrBinary("*",
+                new GpuIrBinary("*", new GpuIrVariableRef("c"), new GpuIrVariableRef("a")),
+                new GpuIrVariableRef("b")
+        );
+
+        assertEquals(fingerprint.fingerprint(left), fingerprint.fingerprint(right));
+        assertTrue(fingerprint.fingerprint(left).orElseThrow().startsWith("binary_assoc_simple(*"));
+    }
+
+    @Test
+    void arithmeticAssociativityRefusesLiteralOperandsUntilNumericSemanticsAreProven() {
+        GpuIrBinary left = new GpuIrBinary("+",
+                new GpuIrVariableRef("a"),
+                new GpuIrBinary("+", new GpuIrVariableRef("b"), new GpuIrVariableRef("c"))
+        );
+        GpuIrBinary right = new GpuIrBinary("+",
+                new GpuIrBinary("+", new GpuIrVariableRef("c"), new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral("1")),
+                new GpuIrVariableRef("b")
+        );
+
+        assertNotEquals(fingerprint.fingerprint(left), fingerprint.fingerprint(right));
+    }
+
+    @Test
+    void multiplicationAssociativityRefusesLiteralOperandsUntilNumericSemanticsAreProven() {
+        GpuIrBinary left = new GpuIrBinary("*",
+                new GpuIrVariableRef("a"),
+                new GpuIrBinary("*", new GpuIrVariableRef("b"), new GpuIrVariableRef("c"))
+        );
+        GpuIrBinary right = new GpuIrBinary("*",
+                new GpuIrBinary("*", new GpuIrVariableRef("c"), new net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral("2")),
+                new GpuIrVariableRef("b")
+        );
+
+        assertNotEquals(fingerprint.fingerprint(left), fingerprint.fingerprint(right));
+    }
+
+    @Test
     void mixedBitwiseOperatorsKeepNestedShape() {
         GpuIrBinary left = new GpuIrBinary("&",
                 new GpuIrVariableRef("a"),

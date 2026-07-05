@@ -66,7 +66,9 @@ public record GpuIrOptimizerGateSnapshot(
         Map<String, Long> counts = new java.util.LinkedHashMap<>();
         putPositive(counts, "safety", report.hasSafetyError() ? 1 : 0);
         putPositive(counts, "autoVectorization", autoVectorizationGateCount(report));
-        putPositive(counts, "cse", report.commonSubexpressionSkippedCount());
+        putPositive(counts, "cseRewritePolicy", report.commonSubexpressionArtifactSnapshot()
+                .rewritePolicy()
+                .blockingSkippedCandidateCount());
         return counts;
     }
 
@@ -84,8 +86,14 @@ public record GpuIrOptimizerGateSnapshot(
         if (autoVectorizationProofOnlyGateCount(report) > 0) {
             putPositive(counts, "proofDecision." + report.autoVectorizationPreview().proofDecision().status().artifactValue(), 1);
         }
-        report.commonSubexpressionPreview().skippedReasonCounts()
-                .forEach((reason, count) -> putPositive(counts, "cse." + reason.name(), count));
+        GpuIrCommonSubexpressionRewritePolicy csePolicy = report.commonSubexpressionArtifactSnapshot().rewritePolicy();
+        if (csePolicy.hasBlockingSkippedCandidates()) {
+            putPositive(counts, "cseRewritePolicy." + csePolicy.readiness().artifactValue(), 1);
+        }
+        csePolicy.blockingSkipReasonCounts()
+                .forEach((reason, count) -> putPositive(counts, "cseRewritePolicy.skipReason." + reason, count));
+        csePolicy.blockingDominanceStatusCounts()
+                .forEach((status, count) -> putPositive(counts, "cseRewritePolicy.dominance." + status, count));
         return counts;
     }
 

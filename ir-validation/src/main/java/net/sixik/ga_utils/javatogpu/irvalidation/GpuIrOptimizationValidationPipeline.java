@@ -51,6 +51,13 @@ public final class GpuIrOptimizationValidationPipeline {
         String methodName = methodName(context);
         Optional<String> safetyError = safetyError(context);
         GpuIrCommonSubexpressionRewritePreview commonSubexpressionPreview = commonSubexpressionPreview(context, safetyError);
+        GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport commonSubexpressionNumericBoundaryReport = commonSubexpressionNumericBoundaryReport(
+                context,
+                safetyError,
+                methodName
+        );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.from(commonSubexpressionNumericBoundaryReport);
         GpuIrAutoVectorizationPreview autoVectorizationPreview = autoVectorizationPlanningPass.preview(context);
         GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport = autoVectorizationRewriteDryRunReport(
                 context,
@@ -66,6 +73,8 @@ public final class GpuIrOptimizationValidationPipeline {
                 methodName,
                 safetyError,
                 commonSubexpressionPreview,
+                commonSubexpressionNumericBoundaryReport,
+                commonSubexpressionLiteralProofReport,
                 autoVectorizationPreview,
                 autoVectorizationRewriteDryRunReport,
                 autoVectorizationResolvedRewriteOperations
@@ -95,6 +104,17 @@ public final class GpuIrOptimizationValidationPipeline {
 
     private GpuIrCommonSubexpressionRewritePreview emptyCommonSubexpressionPreview() {
         return new GpuIrCommonSubexpressionRewritePreview(List.of(), List.of(), List.of());
+    }
+
+    private GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport commonSubexpressionNumericBoundaryReport(
+            GpuIrPassContext context,
+            Optional<String> safetyError,
+            String methodName
+    ) {
+        if (safetyError.isPresent() || context == null || context.method() == null || context.method().irMethod() == null) {
+            return GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.empty(methodName);
+        }
+        return GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.from(context.method());
     }
 
     private GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport(

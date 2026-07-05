@@ -25,6 +25,7 @@ public final class GpuIrCanonicalExpressionFingerprint {
     // Keep this list narrow until value-type/overflow semantics are explicitly validated.
     private static final Set<String> COMMUTATIVE_OPERATORS = Set.of("+", "*", "&", "|", "^", "==", "!=");
     private static final Set<String> ASSOCIATIVE_BITWISE_OPERATORS = Set.of("&", "|", "^");
+    private static final Set<String> SIMPLE_ASSOCIATIVE_ARITHMETIC_OPERATORS = Set.of("+", "*");
 
     private final GpuIrExpressionClassifier classifier;
 
@@ -88,6 +89,11 @@ public final class GpuIrCanonicalExpressionFingerprint {
         if (ASSOCIATIVE_BITWISE_OPERATORS.contains(binary.operator())) {
             return associativeBitwiseFingerprint(binary.operator(), binary);
         }
+        if (SIMPLE_ASSOCIATIVE_ARITHMETIC_OPERATORS.contains(binary.operator())
+                && hasNestedSameOperator(binary.operator(), binary)
+                && isSimpleAssociativeArithmetic(binary.operator(), binary)) {
+            return associativeArithmeticFingerprint(binary.operator(), binary);
+        }
         String left = fingerprintPure(binary.left());
         String right = fingerprintPure(binary.right());
         if (COMMUTATIVE_OPERATORS.contains(binary.operator()) && left.compareTo(right) > 0) {
@@ -106,6 +112,13 @@ public final class GpuIrCanonicalExpressionFingerprint {
         return "binary_assoc(" + escape(operator) + "," + String.join(",", operands) + ")";
     }
 
+    private String associativeArithmeticFingerprint(String operator, GpuIrBinary binary) {
+        List<String> operands = associativeArithmeticOperands(operator, binary).stream()
+                .sorted()
+                .toList();
+        return "binary_assoc_simple(" + escape(operator) + "," + String.join(",", operands) + ")";
+    }
+
     private List<String> associativeOperands(String operator, GpuIrExpression expression) {
         if (expression instanceof GpuIrBinary binary && operator.equals(binary.operator())) {
             // Flatten only the exact same bitwise operator; mixed operators keep their nested shape.
@@ -115,6 +128,46 @@ public final class GpuIrCanonicalExpressionFingerprint {
             ).toList();
         }
         return List.of(fingerprintPure(expression));
+    }
+
+    private List<String> associativeArithmeticOperands(String operator, GpuIrExpression expression) {
+        if (expression instanceof GpuIrBinary binary && operator.equals(binary.operator())) {
+            // Arithmetic associativity is only used for simple reference-only trees until numeric semantics are proven.
+            return java.util.stream.Stream.concat(
+                    associativeArithmeticOperands(operator, binary.left()).stream(),
+                    associativeArithmeticOperands(operator, binary.right()).stream()
+            ).toList();
+        }
+        return List.of(fingerprintPure(expression));
+    }
+
+    private boolean isSimpleAssociativeArithmetic(String operator, GpuIrExpression expression) {
+        if (expression instanceof GpuIrBinary binary && operator.equals(binary.operator())) {
+            return isSimpleAssociativeArithmetic(operator, binary.left())
+                    && isSimpleAssociativeArithmetic(operator, binary.right());
+        }
+        return isReferenceOnlyExpression(expression);
+    }
+
+    private boolean hasNestedSameOperator(String operator, GpuIrBinary binary) {
+        return isSameOperatorBinary(operator, binary.left()) || isSameOperatorBinary(operator, binary.right());
+    }
+
+    private boolean isSameOperatorBinary(String operator, GpuIrExpression expression) {
+        return expression instanceof GpuIrBinary binary && operator.equals(binary.operator());
+    }
+
+    private boolean isReferenceOnlyExpression(GpuIrExpression expression) {
+        if (expression instanceof GpuIrVariableRef) {
+            return true;
+        }
+        if (expression instanceof GpuIrArrayAccess arrayAccess) {
+            return isReferenceOnlyExpression(arrayAccess.index());
+        }
+        if (expression instanceof GpuIrFieldAccess fieldAccess) {
+            return isReferenceOnlyExpression(fieldAccess.target());
+        }
+        return false;
     }
 
     private String receiverFingerprint(GpuIrIntrinsicCall intrinsicCall) {

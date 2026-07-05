@@ -24,7 +24,7 @@ public record GpuIrCommonSubexpressionArtifactReport(
             GpuIrCommonSubexpressionRuntimeEquivalenceReport runtimeEquivalenceReport
     ) {
         this(
-                new GpuIrCommonSubexpressionArtifactSnapshot(runtimeEquivalenceReport.rewritePlanReport().preview()),
+                new GpuIrCommonSubexpressionArtifactSnapshot("unknown", runtimeEquivalenceReport.rewritePlanReport()),
                 runtimeEquivalenceReport
         );
     }

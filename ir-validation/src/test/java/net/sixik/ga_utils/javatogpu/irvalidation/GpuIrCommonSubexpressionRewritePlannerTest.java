@@ -298,6 +298,41 @@ class GpuIrCommonSubexpressionRewritePlannerTest {
     }
 
     @Test
+    void plansNestedSimpleArithmeticCanonicalCandidatesIntoReadOnlyArtifacts() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("+",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrVariableRef("z"))
+                )),
+                new GpuIrVariableDeclaration("int", "second", new GpuIrBinary("+",
+                        new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrVariableRef("x")),
+                        new GpuIrVariableRef("y")
+                ))
+        ));
+        GpuIrCommonSubexpressionReport report = GpuIrCommonSubexpressionScanner.canonical().scan(method);
+
+        GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(method, report);
+        GpuIrCommonSubexpressionArtifactSnapshot snapshot = new GpuIrCommonSubexpressionArtifactSnapshot("kernel", planReport);
+
+        assertEquals(1, planReport.plans().size());
+        assertEquals(0, planReport.skippedCandidateCount());
+        assertEquals(1, planReport.insertionCount());
+        assertEquals(1, planReport.replacementEditCount());
+        assertTrue(planReport.plans().get(0).fingerprint().startsWith("binary_assoc_simple(+"));
+        assertEquals("stmt[0].initializer", planReport.plans().get(0).insertionAnchorLocation());
+        assertEquals(List.of("stmt[1].initializer"), planReport.plans().get(0).replacementLocationsAfterAnchor());
+        assertTrue(snapshot.rewritePolicy().canRewrite());
+        assertEquals(GpuIrCommonSubexpressionRewriteReadiness.READY, snapshot.rewritePolicy().readiness());
+        assertTrue(snapshot.simpleArithmeticProofReport().hasProofs());
+        assertEquals(1, snapshot.simpleArithmeticProofReport().provenCandidateCount());
+        assertEquals(1, snapshot.simpleArithmeticProofReport().provenReplacementCount());
+        assertEquals("true", snapshot.artifactFields("cse").get("cseRewritePolicyCanRewrite"));
+        assertEquals("ready", snapshot.artifactFields("cse").get("cseRewritePolicyReadiness"));
+        assertEquals("true", snapshot.artifactFields("cse").get("cseSimpleArithmeticProofHasProofs"));
+        assertEquals("referenceOnlyNestedArithmetic", snapshot.artifactFields("cse").get("cseSimpleArithmeticProofProofBoundary"));
+    }
+
+    @Test
     void skipsSameStatementNestedCandidatesWhenLocalPathsMoveBackwards() {
         GpuIrMethod method = new GpuIrMethod("kernel", List.of(
                 new GpuIrAssignment(new GpuIrVariableRef("out"), new GpuIrBinary("+",

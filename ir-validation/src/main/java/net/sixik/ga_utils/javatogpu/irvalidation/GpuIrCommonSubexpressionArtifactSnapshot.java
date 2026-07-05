@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -10,10 +11,36 @@ import java.util.Optional;
  * Read-only CSE artifact snapshot for validation reports and CI exports.
  */
 public record GpuIrCommonSubexpressionArtifactSnapshot(
-        GpuIrCommonSubexpressionRewritePreview preview
+        GpuIrCommonSubexpressionRewritePreview preview,
+        GpuIrCommonSubexpressionRewritePolicy rewritePolicy
 ) {
+    public GpuIrCommonSubexpressionArtifactSnapshot(GpuIrCommonSubexpressionRewritePreview preview) {
+        this("unknown", preview);
+    }
+
+    public GpuIrCommonSubexpressionArtifactSnapshot(
+            String methodName,
+            GpuIrCommonSubexpressionRewritePreview preview
+    ) {
+        this(preview, new GpuIrCommonSubexpressionRewritePolicy(
+                methodName,
+                preview.insertionCount(),
+                preview.insertionCount(),
+                preview.replacementEditCount(),
+                skippedCandidates(preview)
+        ));
+    }
+
+    public GpuIrCommonSubexpressionArtifactSnapshot(
+            String methodName,
+            GpuIrCommonSubexpressionRewritePlanReport planReport
+    ) {
+        this(planReport.preview(), GpuIrCommonSubexpressionRewritePolicy.from(methodName, planReport));
+    }
+
     public GpuIrCommonSubexpressionArtifactSnapshot {
         preview = Objects.requireNonNull(preview, "preview");
+        rewritePolicy = Objects.requireNonNull(rewritePolicy, "rewritePolicy");
     }
 
     public int insertionCount() {
@@ -48,6 +75,10 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
         return new GpuIrCommonSubexpressionLocalExpressionDominanceReport(preview);
     }
 
+    public GpuIrCommonSubexpressionSimpleArithmeticProofReport simpleArithmeticProofReport() {
+        return GpuIrCommonSubexpressionSimpleArithmeticProofReport.from(preview);
+    }
+
     public String skippedDominanceStatusCountsSummary() {
         return dominanceStatusCountsSummary(skippedDominanceStatusCounts());
     }
@@ -69,8 +100,10 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
                 .forEach(entry -> values.put(
                         prefix + "SkippedDominanceStatus." + entry.getKey().artifactValue(),
                         Long.toString(entry.getValue())
-                ));
+        ));
         values.putAll(localExpressionDominanceReport().artifactFields(prefix + "LocalExpression"));
+        values.putAll(simpleArithmeticProofReport().artifactFields(prefix + "SimpleArithmeticProof"));
+        values.putAll(rewritePolicy.artifactFields(prefix + "RewritePolicy"));
         return Collections.unmodifiableMap(values);
     }
 
@@ -84,9 +117,29 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
                 + " skipped=" + skippedCount()
                 + " skippedDominanceStatusCounts=" + skippedDominanceStatusCountsSummary()
                 + " localExpression={" + localExpressionDominanceReport().summary() + "}"
+                + " simpleArithmeticProof={" + simpleArithmeticProofReport().summary() + "}"
+                + " rewritePolicy={" + rewritePolicy.summary() + "}"
                 + firstSkippedDominanceStatus()
                 .map(status -> " firstSkippedDominanceStatus=" + status.artifactValue())
                 .orElse("");
+    }
+
+    private static List<GpuIrCommonSubexpressionSkippedCandidate> skippedCandidates(
+            GpuIrCommonSubexpressionRewritePreview preview
+    ) {
+        return preview.skippedDiagnostics().stream()
+                .map(diagnostic -> new GpuIrCommonSubexpressionSkippedCandidate(
+                        new GpuIrCommonSubexpression(
+                                diagnostic.fingerprint(),
+                                diagnostic.occurrenceCount(),
+                                diagnostic.locations()
+                        ),
+                        diagnostic.kind(),
+                        diagnostic.scope(),
+                        diagnostic.reason(),
+                        diagnostic.dominanceStatus()
+                ))
+                .toList();
     }
 
     private static String dominanceStatusCountsSummary(Map<GpuIrCommonSubexpressionDominanceStatus, Long> counts) {

@@ -11,6 +11,8 @@ public record GpuIrOptimizationValidationReport(
         String methodName,
         Optional<String> safetyError,
         GpuIrCommonSubexpressionRewritePreview commonSubexpressionPreview,
+        GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport commonSubexpressionNumericBoundaryReport,
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport,
         GpuIrAutoVectorizationPreview autoVectorizationPreview,
         GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport,
         GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations
@@ -21,6 +23,8 @@ public record GpuIrOptimizationValidationReport(
         }
         safetyError = Objects.requireNonNull(safetyError, "safetyError");
         commonSubexpressionPreview = Objects.requireNonNull(commonSubexpressionPreview, "commonSubexpressionPreview");
+        commonSubexpressionNumericBoundaryReport = Objects.requireNonNull(commonSubexpressionNumericBoundaryReport, "commonSubexpressionNumericBoundaryReport");
+        commonSubexpressionLiteralProofReport = Objects.requireNonNull(commonSubexpressionLiteralProofReport, "commonSubexpressionLiteralProofReport");
         autoVectorizationPreview = Objects.requireNonNull(autoVectorizationPreview, "autoVectorizationPreview");
         autoVectorizationRewriteDryRunReport = Objects.requireNonNull(autoVectorizationRewriteDryRunReport, "autoVectorizationRewriteDryRunReport");
         autoVectorizationResolvedRewriteOperations = Objects.requireNonNull(autoVectorizationResolvedRewriteOperations, "autoVectorizationResolvedRewriteOperations");
@@ -55,11 +59,19 @@ public record GpuIrOptimizationValidationReport(
     }
 
     public GpuIrCommonSubexpressionArtifactSnapshot commonSubexpressionArtifactSnapshot() {
-        return new GpuIrCommonSubexpressionArtifactSnapshot(commonSubexpressionPreview);
+        return new GpuIrCommonSubexpressionArtifactSnapshot(methodName, commonSubexpressionPreview);
     }
 
     public GpuIrCommonSubexpressionLocalExpressionDominanceReport commonSubexpressionLocalExpressionDominanceReport() {
         return commonSubexpressionArtifactSnapshot().localExpressionDominanceReport();
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport commonSubexpressionNumericBoundaryReport() {
+        return commonSubexpressionNumericBoundaryReport;
+    }
+
+    public GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport() {
+        return commonSubexpressionLiteralProofReport;
     }
 
     public Optional<GpuIrCommonSubexpressionSkippedDiagnostic> firstCommonSubexpressionSkippedDiagnostic() {
@@ -176,6 +188,17 @@ public record GpuIrOptimizationValidationReport(
                 + " cseLocalExpressionProvenReplacements=" + commonSubexpressionLocalExpressionDominanceReport().provenReplacementCount()
                 + " cseLocalExpressionBlockedCandidates=" + commonSubexpressionLocalExpressionDominanceReport().blockedCandidateCount()
                 + " cseLocalExpressionHasEvidence=" + commonSubexpressionLocalExpressionDominanceReport().hasLocalExpressionEvidence()
+                + " cseSimpleArithmeticNumericBoundaryBlockedCandidates=" + commonSubexpressionNumericBoundaryReport.blockedCandidateCount()
+                + " cseSimpleArithmeticNumericBoundaryLiteralOperands=" + commonSubexpressionNumericBoundaryReport.literalOperandCount()
+                + " cseSimpleArithmeticNumericBoundaryCastOperands=" + commonSubexpressionNumericBoundaryReport.castOperandCount()
+                + " cseSimpleArithmeticLiteralProofSafeCandidates=" + commonSubexpressionLiteralProofReport.safeCandidateCount()
+                + " cseSimpleArithmeticLiteralProofBlockedCandidates=" + commonSubexpressionLiteralProofReport.blockedCandidateCount()
+                + " cseSimpleArithmeticLiteralProofHasSafeCandidates=" + commonSubexpressionLiteralProofReport.hasSafeCandidates()
+                + " cseSimpleArithmeticLiteralProofSafeOperatorTypeCounts=" + commonSubexpressionLiteralProofReport.safeOperatorTypeCounts()
+                + " cseSimpleArithmeticLiteralProofBlockedOperatorTypeCounts=" + commonSubexpressionLiteralProofReport.blockedOperatorTypeCounts()
+                + " cseRewritePolicyCanRewrite=" + commonSubexpressionArtifactSnapshot().rewritePolicy().canRewrite()
+                + " cseRewritePolicyReadiness=" + commonSubexpressionArtifactSnapshot().rewritePolicy().readiness().artifactValue()
+                + " cseRewritePolicyBlockingSkippedCandidates=" + commonSubexpressionArtifactSnapshot().rewritePolicy().blockingSkippedCandidateCount()
                 + firstCommonSubexpressionSkippedDominanceStatus()
                 .map(status -> " cseFirstSkippedDominanceStatus=" + status.artifactValue())
                 .orElse("")
@@ -222,6 +245,9 @@ public record GpuIrOptimizationValidationReport(
                 + " cse={" + commonSubexpressionPreview.summary() + "}"
                 + " cseArtifacts={" + commonSubexpressionArtifactSnapshot().summary() + "}"
                 + " cseLocalExpression={" + commonSubexpressionLocalExpressionDominanceReport().summary() + "}"
+                + " cseSimpleArithmeticNumericBoundary={" + commonSubexpressionNumericBoundaryReport.summary() + "}"
+                + " cseSimpleArithmeticLiteralProof={" + commonSubexpressionLiteralProofReport.summary() + "}"
+                + " cseRewritePolicy={" + commonSubexpressionArtifactSnapshot().rewritePolicy().summary() + "}"
                 + firstCommonSubexpressionSkippedDominanceSummary()
                 .map(summary -> " cseFirstSkippedDominance={" + summary + "}")
                 .orElse("")
