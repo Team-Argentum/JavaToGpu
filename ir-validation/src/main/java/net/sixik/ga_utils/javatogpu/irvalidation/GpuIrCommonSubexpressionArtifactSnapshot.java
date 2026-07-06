@@ -79,8 +79,16 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
         return GpuIrCommonSubexpressionSimpleArithmeticProofReport.from(preview);
     }
 
+    public GpuIrCommonSubexpressionControlFlowRegionSummaryReport controlFlowRegionSummaryReport() {
+        return GpuIrCommonSubexpressionControlFlowRegionSummaryReport.from(preview);
+    }
+
     public GpuIrCommonSubexpressionLayerReadinessSummaryReport layerReadinessSummaryReport() {
         return GpuIrCommonSubexpressionLayerReadinessSummaryReport.from(preview, rewritePolicy);
+    }
+
+    public GpuIrCommonSubexpressionRewriteBlockerExplanation rewriteBlockerExplanation() {
+        return rewritePolicy.blockerExplanation();
     }
 
     public String skippedDominanceStatusCountsSummary() {
@@ -107,7 +115,9 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
         ));
         values.putAll(localExpressionDominanceReport().artifactFields(prefix + "LocalExpression"));
         values.putAll(simpleArithmeticProofReport().artifactFields(prefix + "SimpleArithmeticProof"));
+        values.putAll(controlFlowRegionSummaryReport().artifactFields(prefix + "ControlFlowRegion"));
         values.putAll(rewritePolicy.artifactFields(prefix + "RewritePolicy"));
+        values.putAll(rewriteBlockerExplanation().artifactFields(prefix + "RewriteBlocker"));
         values.putAll(layerReadinessSummaryReport().artifactFields(prefix + "LayerReadiness"));
         return Collections.unmodifiableMap(values);
     }
@@ -123,7 +133,9 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
                 + " skippedDominanceStatusCounts=" + skippedDominanceStatusCountsSummary()
                 + " localExpression={" + localExpressionDominanceReport().summary() + "}"
                 + " simpleArithmeticProof={" + simpleArithmeticProofReport().summary() + "}"
+                + " controlFlowRegion={" + controlFlowRegionSummaryReport().summary() + "}"
                 + " rewritePolicy={" + rewritePolicy.summary() + "}"
+                + " rewriteBlocker={" + rewriteBlockerExplanation().summary() + "}"
                 + " layerReadiness={" + layerReadinessSummaryReport().summary() + "}"
                 + firstSkippedDominanceStatus()
                 .map(status -> " firstSkippedDominanceStatus=" + status.artifactValue())

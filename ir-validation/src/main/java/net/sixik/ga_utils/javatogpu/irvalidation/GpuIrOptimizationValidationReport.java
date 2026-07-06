@@ -251,6 +251,10 @@ public record GpuIrOptimizationValidationReport(
         return GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport.from(this);
     }
 
+    public GpuIrOptimizationValidationOptimizerBlockerIndex optimizerBlockerIndex() {
+        return GpuIrOptimizationValidationOptimizerBlockerIndex.from(this);
+    }
+
     /**
      * Short one-line summary intended for javac diagnostics and CI logs.
      */
@@ -262,6 +266,9 @@ public record GpuIrOptimizationValidationReport(
                 + " optimizerGateFamily=" + optimizerGateExplanation().family()
                 + " optimizerGateSourceCounts=" + optimizerGateSourceCountsSummary()
                 + " optimizerGateFamilyCounts=" + optimizerGateFamilyCountsSummary()
+                + " optimizerBlockerSource=" + optimizerBlockerIndex().source()
+                + " optimizerBlockerFamily=" + optimizerBlockerIndex().family()
+                + " optimizerBlockerRemainingWork=" + optimizerBlockerIndex().remainingWork()
                 + " optimizerDiagnostics=" + optimizerDiagnosticCount()
                 + " cseInsertions=" + commonSubexpressionInsertionCount()
                 + " cseReplacements=" + commonSubexpressionReplacementCount()
@@ -322,6 +329,9 @@ public record GpuIrOptimizationValidationReport(
                 + " cseRewritePolicyCanRewrite=" + commonSubexpressionArtifactSnapshot().rewritePolicy().canRewrite()
                 + " cseRewritePolicyReadiness=" + commonSubexpressionArtifactSnapshot().rewritePolicy().readiness().artifactValue()
                 + " cseRewritePolicyBlockingSkippedCandidates=" + commonSubexpressionArtifactSnapshot().rewritePolicy().blockingSkippedCandidateCount()
+                + " cseRewriteBlockerVerdict=" + commonSubexpressionArtifactSnapshot().rewriteBlockerExplanation().verdict()
+                + " cseRewriteBlockerFirstFamily=" + commonSubexpressionArtifactSnapshot().rewriteBlockerExplanation().firstBlockerFamily()
+                + " cseRewriteBlockerFirstRemainingWork=" + commonSubexpressionArtifactSnapshot().rewriteBlockerExplanation().firstRemainingWork()
                 + firstCommonSubexpressionSkippedDominanceStatus()
                 .map(status -> " cseFirstSkippedDominanceStatus=" + status.artifactValue())
                 .orElse("")
@@ -342,6 +352,9 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationReadinessVerdict=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().verdict()
                 + " autoVectorizationReadinessReadyForPrototypeRewrite=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().readyForPrototypeRewrite()
                 + " autoVectorizationReadinessBlockingReasons=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().blockingReasons()
+                + " autoVectorizationBlockerVerdict=" + autoVectorizationArtifactSnapshot().blockerExplanation().verdict()
+                + " autoVectorizationBlockerFirstFamily=" + autoVectorizationArtifactSnapshot().blockerExplanation().firstBlockerFamily()
+                + " autoVectorizationBlockerFirstRemainingWork=" + autoVectorizationArtifactSnapshot().blockerExplanation().firstRemainingWork()
                 + " optimizerLayerReadinessVerdict=" + optimizerLayerReadinessSummaryReport().verdict()
                 + " optimizerLayerReadinessBlockingLayers=" + optimizerLayerReadinessSummaryReport().blockingLayers()
                 + " autoVectorizationHasPolicyBlockedRewrite=" + autoVectorizationPreview.hasPolicyBlockedRewrite()
@@ -375,6 +388,7 @@ public record GpuIrOptimizationValidationReport(
                 + " optimizerGate={" + optimizerGateSnapshot().compactSummary() + "}"
                 + " optimizerGateSourceCounts=" + optimizerGateSourceCountsSummary()
                 + " optimizerGateFamilyCounts=" + optimizerGateFamilyCountsSummary()
+                + " optimizerBlocker={" + optimizerBlockerIndex().summary() + "}"
                 + " optimizerDiagnostics=" + optimizerDiagnosticCount()
                 + " cse={" + commonSubexpressionPreview.summary() + "}"
                 + " cseArtifacts={" + commonSubexpressionArtifactSnapshot().summary() + "}"
@@ -396,6 +410,7 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSimpleArithmeticLiteralPromotionReadiness={" + commonSubexpressionLiteralPromotionReadinessSummaryReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralConsistencyCheck={" + commonSubexpressionLiteralConsistencyCheckReport.summary() + "}"
                 + " cseRewritePolicy={" + commonSubexpressionArtifactSnapshot().rewritePolicy().summary() + "}"
+                + " cseRewriteBlocker={" + commonSubexpressionArtifactSnapshot().rewriteBlockerExplanation().summary() + "}"
                 + " optimizerLayerReadiness={" + optimizerLayerReadinessSummaryReport().summary() + "}"
                 + firstCommonSubexpressionSkippedDominanceSummary()
                 .map(summary -> " cseFirstSkippedDominance={" + summary + "}")
@@ -405,6 +420,7 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationResolvedRewriteOperations={" + autoVectorizationResolvedRewriteOperations.summary() + "}"
                 + " autoVectorizationProofBundle={" + autoVectorizationPreview.proofBundle().summaryLine() + "}"
                 + " autoVectorizationReadiness={" + autoVectorizationArtifactSnapshot().readinessSummaryReport().summary() + "}"
+                + " autoVectorizationBlocker={" + autoVectorizationArtifactSnapshot().blockerExplanation().summary() + "}"
                 + " autoVectorizationArtifacts={" + autoVectorizationArtifactSnapshot().summary() + "}"
                 + " autoVectorization={" + autoVectorizationPreview.summary() + "}";
     }

@@ -49,6 +49,9 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunSuccessful=false"));
         assertTrue(report.compactSummary().contains("autoVectorizationRewriteDryRunDiagnostics=1"));
         assertTrue(report.compactSummary().contains("autoVectorizationResolvedRewriteOperations=0"));
+        assertTrue(report.compactSummary().contains("optimizerBlockerSource=autoVectorization"));
+        assertTrue(report.compactSummary().contains("optimizerBlockerFamily=candidateDiscovery.noRewriteCandidates"));
+        assertTrue(report.compactSummary().contains("optimizerBlockerRemainingWork=collectRewriteCandidates"));
         assertTrue(report.compactSummary().contains("cseLocalExpressionProvenCandidates=0"));
         assertTrue(report.compactSummary().contains("cseLocalExpressionProvenReplacements=0"));
         assertTrue(report.compactSummary().contains("cseLocalExpressionBlockedCandidates=0"));
@@ -122,6 +125,8 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.compactSummary().contains("autoVectorizationProofBundleUnsafeProofs=0"));
         assertFalse(report.compactSummary().contains("autoVectorizationProofBundleFirstUnsafeProof="));
         assertTrue(report.detailedSummary().contains("autoVectorizationRewriteDryRun={"));
+        assertTrue(report.detailedSummary().contains("optimizerBlocker={"));
+        assertTrue(report.detailedSummary().contains("optimizer blocker method=kernel"));
         assertTrue(report.detailedSummary().contains("autoVectorizationResolvedRewriteOperations={"));
         assertTrue(report.detailedSummary().contains("autoVectorizationProofBundle={"));
         assertTrue(report.detailedSummary().contains("autoVectorizationReadiness={"));

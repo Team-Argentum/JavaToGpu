@@ -286,10 +286,54 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("false".equals(report.getProperty("entry.0.cseRewritePolicyCanRewrite")));
         assertTrue("none".equals(report.getProperty("entry.0.cseRewritePolicyReadiness")));
         assertTrue("0".equals(report.getProperty("entry.0.cseRewritePolicyBlockingSkippedCandidates")));
+        assertEntryValue(report, "entry.0.cseControlFlowRegionReadiness", "clear");
+        assertEntryValue(report, "entry.0.cseControlFlowRegionBlocked", "false");
+        assertEntryValue(report, "entry.0.cseControlFlowRegionBlockedCandidates", "0");
+        assertEntryValue(report, "entry.0.cseControlFlowRegionFirstRemainingWork", "none");
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejections")));
         assertTrue("1".equals(report.getProperty("entry.0.autoVectorizationRejectionReason.UNSUPPORTED_LANE_COUNT")));
         assertTrue(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnostic").contains("UNSUPPORTED_LANE_COUNT"));
         assertTrue("rejection.UNSUPPORTED_LANE_COUNT".equals(report.getProperty("entry.0.autoVectorizationFirstBlockingDiagnosticFamily")));
+        assertEntryValue(report, "entry.0.optimizerLayerReadinessBaselineCiMethod", "kernel");
+        assertEntryValue(report, "entry.0.optimizerLayerReadinessBaselineCiOutcome", "unchanged");
+        assertEntryValue(report, "entry.0.optimizerLayerReadinessBaselineCiDecision", "accepted/noRegression");
+        assertEntryValue(report, "entry.0.optimizerLayerReadinessBaselineCiFailBuild", "false");
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineSnapshotMethod", "kernel");
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineSnapshotVerdict", "blocked");
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineSnapshotSource", report.getProperty("entry.0.optimizerBlockerSource"));
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineSnapshotFamily", report.getProperty("entry.0.optimizerBlockerFamily"));
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineSnapshotRemainingWork", report.getProperty("entry.0.optimizerBlockerRemainingWork"));
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineComparisonMethod", "kernel");
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineComparisonOutcome", "unchanged");
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineComparisonBaselineScore", "3");
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineComparisonCurrentScore", "3");
+        assertEntryValue(report, "entry.0.optimizerBlockerBaselineComparisonScoreDelta", "0");
+        assertEntryValue(
+                report,
+                "entry.0.optimizerBlockerBaselineComparisonSourceTransition",
+                report.getProperty("entry.0.optimizerBlockerSource") + "->" + report.getProperty("entry.0.optimizerBlockerSource")
+        );
+        assertEntryValue(
+                report,
+                "entry.0.optimizerBlockerBaselineComparisonFamilyTransition",
+                report.getProperty("entry.0.optimizerBlockerFamily") + "->" + report.getProperty("entry.0.optimizerBlockerFamily")
+        );
+        assertEntryValue(
+                report,
+                "entry.0.optimizerBlockerBaselineComparisonRemainingWorkTransition",
+                report.getProperty("entry.0.optimizerBlockerRemainingWork") + "->" + report.getProperty("entry.0.optimizerBlockerRemainingWork")
+        );
+        assertEntryValue(report, "entry.0.optimizerProductionReadinessMethod", "kernel");
+        assertEntryValue(report, "entry.0.optimizerProductionReadinessVerdict", "blocked/productionSwitchNotReady");
+        assertEntryValue(report, "entry.0.optimizerProductionReadinessBlocked", "true");
+        assertEntryValue(report, "entry.0.optimizerProductionReadinessFirstBlockingStage", "validationBundle");
+        assertEntryValue(
+                report,
+                "entry.0.optimizerProductionReadinessStageVerdicts",
+                "{bundle=notReady/cseBlocked,preflight=blocked/optimizerValidationBundleNotReady,switch=blocked/preflightNotReady,promotionConfidence=blocked/productionSwitchNotReady}"
+        );
+        assertEntryValue(report, "entry.0.optimizerProductionReadinessAcceptance.Accepted", "false");
+        assertEntryValue(report, "entry.0.optimizerProductionReadinessAcceptance.Reason", "rejected/productionReadinessBlocked");
     }
 
     @Test
@@ -328,6 +372,9 @@ class GpuIrValidationProcessorIntegrationTest {
         assertTrue("false".equals(report.getProperty("entry.0.cseRewritePolicyCanRewrite")));
         assertTrue("blockedBySkippedCandidate".equals(report.getProperty("entry.0.cseRewritePolicyReadiness")));
         assertTrue("1".equals(report.getProperty("entry.0.cseRewritePolicyBlockingSkippedCandidates")));
+        assertEntryValue(report, "entry.0.cseControlFlowRegionReadiness", "clear");
+        assertEntryValue(report, "entry.0.cseControlFlowRegionBlocked", "false");
+        assertEntryValue(report, "entry.0.cseControlFlowRegionBlockedCandidates", "0");
         assertTrue("{MUTATED_BETWEEN_OCCURRENCES=1}".equals(report.getProperty("entry.0.cseRewritePolicyBlockingSkipReasonCounts")));
         assertTrue("1".equals(report.getProperty("entry.0.cseRewritePolicyBlockingSkipReason.MUTATED_BETWEEN_OCCURRENCES")));
         assertTrue("{topLevelDownstreamReplacements=1}".equals(report.getProperty("entry.0.cseRewritePolicyBlockingDominanceStatusCounts")));

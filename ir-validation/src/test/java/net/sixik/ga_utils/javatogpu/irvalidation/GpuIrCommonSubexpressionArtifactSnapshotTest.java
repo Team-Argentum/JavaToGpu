@@ -64,12 +64,18 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         assertEquals("0", fields.get("cseSimpleArithmeticProofProvenInsertions"));
         assertEquals("0", fields.get("cseSimpleArithmeticProofProvenReplacements"));
         assertEquals("false", fields.get("cseSimpleArithmeticProofHasProofs"));
+        assertEquals("clear", fields.get("cseControlFlowRegionReadiness"));
+        assertEquals("0", fields.get("cseControlFlowRegionBlockedCandidates"));
         assertEquals("referenceOnlyNestedArithmetic", fields.get("cseSimpleArithmeticProofProofBoundary"));
         assertEquals("literalsAndCastsRequireTypedNumericProof", fields.get("cseSimpleArithmeticProofBlockedBoundary"));
         assertEquals("false", fields.get("cseRewritePolicyCanRewrite"));
         assertEquals("blockedBySkippedCandidate", fields.get("cseRewritePolicyReadiness"));
         assertEquals("1", fields.get("cseRewritePolicyBlockingSkippedCandidates"));
         assertEquals("NO_DOMINATING_FIRST_OCCURRENCE", fields.get("cseRewritePolicyFirstBlockingSkippedReason"));
+        assertEquals("blocked", fields.get("cseRewriteBlockerVerdict"));
+        assertEquals("skipReason.NO_DOMINATING_FIRST_OCCURRENCE", fields.get("cseRewriteBlockerFirstFamily"));
+        assertEquals("proveDominatingAnchorForAllReplacements", fields.get("cseRewriteBlockerFirstRemainingWork"));
+        assertTrue(fields.get("cseRewriteBlockerFirstHint").contains("production rewrite"));
         assertEquals("blocked", fields.get("cseLayerReadinessVerdict"));
         assertEquals("false", fields.get("cseLayerReadinessAllLayersReady"));
         assertEquals("true", fields.get("cseLayerReadinessHasBlockingLayers"));
@@ -97,6 +103,7 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         assertTrue(snapshot.summary().contains("firstSkippedDominanceStatus=requiresLocalExpressionDominance"));
         assertTrue(snapshot.summary().contains("localExpression={"));
         assertTrue(snapshot.summary().contains("simpleArithmeticProof={"));
+        assertTrue(snapshot.summary().contains("controlFlowRegion={"));
         assertTrue(snapshot.summary().contains("rewritePolicy={"));
         assertTrue(snapshot.summary().contains("layerReadiness={"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
@@ -168,6 +175,8 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         assertEquals("false", fields.get("cseLocalExpressionHasEvidence"));
         assertEquals("0", fields.get("cseSimpleArithmeticProofProvenCandidates"));
         assertEquals("false", fields.get("cseSimpleArithmeticProofHasProofs"));
+        assertEquals("clear", fields.get("cseControlFlowRegionReadiness"));
+        assertEquals("0", fields.get("cseControlFlowRegionBlockedCandidates"));
         assertEquals("none", fields.get("cseRewritePolicyReadiness"));
         assertEquals("false", fields.get("cseRewritePolicyCanRewrite"));
         assertEquals("noRewriteWork", fields.get("cseLayerReadinessVerdict"));

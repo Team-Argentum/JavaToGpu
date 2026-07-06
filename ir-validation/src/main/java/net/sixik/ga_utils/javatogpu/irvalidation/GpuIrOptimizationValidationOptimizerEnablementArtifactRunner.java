@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -325,6 +326,98 @@ public final class GpuIrOptimizationValidationOptimizerEnablementArtifactRunner 
             GpuIrOptimizationValidationReport validationReport
     ) {
         return runOptimizerGateSnapshot(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerBlockerIndex runOptimizerBlockerIndex(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        Objects.requireNonNull(validationReport, "validationReport");
+        return validationReport.optimizerBlockerIndex();
+    }
+
+    public Map<String, String> runOptimizerBlockerIndexFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerBlockerIndex(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot runOptimizerBlockerBaselineSnapshot(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot.from(
+                runOptimizerBlockerIndex(validationReport)
+        );
+    }
+
+    public Map<String, String> runOptimizerBlockerBaselineSnapshotFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerBlockerBaselineSnapshot(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerBlockerBaselineComparisonReport runOptimizerBlockerBaselineComparison(
+            GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Objects.requireNonNull(baseline, "baseline");
+        return GpuIrOptimizationValidationOptimizerBlockerBaselineComparisonReport.from(
+                baseline,
+                runOptimizerBlockerIndex(currentValidationReport)
+        );
+    }
+
+    public GpuIrOptimizationValidationOptimizerBlockerBaselineComparisonReport runOptimizerBlockerBaselineComparison(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerBlockerBaselineComparison(
+                GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot.fromArtifactFields(baselineFields),
+                currentValidationReport
+        );
+    }
+
+    public Map<String, String> runOptimizerBlockerBaselineComparisonFields(
+            GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerBlockerBaselineComparison(baseline, currentValidationReport).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerBlockerBaselineComparisonFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerBlockerBaselineComparison(baselineFields, currentValidationReport).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerReadinessAndBlockerBaselineCiFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot readinessBaseline,
+            GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot blockerBaseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Objects.requireNonNull(readinessBaseline, "readinessBaseline");
+        Objects.requireNonNull(blockerBaseline, "blockerBaseline");
+        Objects.requireNonNull(currentValidationReport, "currentValidationReport");
+
+        Map<String, String> values = new LinkedHashMap<>();
+        values.putAll(runOptimizerLayerReadinessBaselineCiFields(readinessBaseline, currentValidationReport));
+        values.putAll(runOptimizerBlockerBaselineSnapshotFields(currentValidationReport));
+        values.putAll(runOptimizerBlockerBaselineComparisonFields(blockerBaseline, currentValidationReport));
+        return Map.copyOf(values);
+    }
+
+    public Map<String, String> runOptimizerReadinessAndBlockerBaselineCiFields(
+            Map<String, String> readinessBaselineFields,
+            Map<String, String> blockerBaselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Objects.requireNonNull(readinessBaselineFields, "readinessBaselineFields");
+        Objects.requireNonNull(blockerBaselineFields, "blockerBaselineFields");
+        return runOptimizerReadinessAndBlockerBaselineCiFields(
+                GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot.fromArtifactFields(readinessBaselineFields),
+                GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot.fromArtifactFields(blockerBaselineFields),
+                currentValidationReport
+        );
     }
 
     public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot runOptimizerLayerReadinessBaselineSnapshot(

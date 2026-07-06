@@ -80,6 +80,13 @@ class GpuIrCommonSubexpressionRewritePolicyTest {
         assertEquals("NO_DOMINATING_FIRST_OCCURRENCE", fields.get("cseRewritePolicyFirstBlockingSkippedReason"));
         assertEquals("requiresLocalExpressionDominance", fields.get("cseRewritePolicyFirstBlockingSkippedDominanceStatus"));
         assertTrue(fields.get("cseRewritePolicyFirstBlockingSkippedSummary").contains("requiresLocalExpressionDominance"));
+        assertEquals("blocked", fields.get("cseRewritePolicyBlockerExplanationVerdict"));
+        assertEquals("skipReason.NO_DOMINATING_FIRST_OCCURRENCE", fields.get("cseRewritePolicyBlockerExplanationFirstFamily"));
+        assertEquals(
+                "proveDominatingAnchorForAllReplacements",
+                fields.get("cseRewritePolicyBlockerExplanationFirstRemainingWork")
+        );
+        assertTrue(fields.get("cseRewritePolicyBlockerExplanationFirstHint").contains("addLocalExpressionDominanceProof"));
     }
 
     @Test

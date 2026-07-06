@@ -1168,6 +1168,112 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
     }
 
     @Test
+    void optimizerReadinessAndBlockerBaselineCiKeepsStableConsumptionKeys() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        GpuIrOptimizationValidationReport baselineReport = validationReport("combinedBaselineContractKernel");
+        Map<String, String> readinessBaselineFields = runner.runOptimizerLayerReadinessBaselineSnapshotFields(
+                baselineReport
+        );
+        Map<String, String> blockerBaselineFields = runner.runOptimizerBlockerBaselineSnapshotFields(
+                baselineReport
+        );
+
+        Map<String, String> fields = runner.runOptimizerReadinessAndBlockerBaselineCiFields(
+                readinessBaselineFields,
+                blockerBaselineFields,
+                validationReport("combinedBaselineContractKernel")
+        );
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerLayerReadinessBaselineComparisonMethod",
+                "optimizerLayerReadinessBaselineComparisonOutcome",
+                "optimizerLayerReadinessBaselineCiMethod",
+                "optimizerLayerReadinessBaselineCiOutcome",
+                "optimizerLayerReadinessBaselineCiDecision",
+                "optimizerLayerReadinessBaselineCiFailBuild",
+                "optimizerBlockerBaselineSnapshotMethod",
+                "optimizerBlockerBaselineSnapshotVerdict",
+                "optimizerBlockerBaselineSnapshotSource",
+                "optimizerBlockerBaselineSnapshotFamily",
+                "optimizerBlockerBaselineSnapshotRemainingWork",
+                "optimizerBlockerBaselineComparisonMethod",
+                "optimizerBlockerBaselineComparisonOutcome",
+                "optimizerBlockerBaselineComparisonBaselineScore",
+                "optimizerBlockerBaselineComparisonCurrentScore",
+                "optimizerBlockerBaselineComparisonScoreDelta",
+                "optimizerBlockerBaselineComparisonSourceTransition",
+                "optimizerBlockerBaselineComparisonFamilyTransition",
+                "optimizerBlockerBaselineComparisonRemainingWorkTransition"
+        ));
+        assertEquals("combinedBaselineContractKernel", fields.get("optimizerLayerReadinessBaselineCiMethod"));
+        assertEquals("unchanged", fields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("accepted/noRegression", fields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("false", fields.get("optimizerLayerReadinessBaselineCiFailBuild"));
+        assertEquals("combinedBaselineContractKernel", fields.get("optimizerBlockerBaselineSnapshotMethod"));
+        assertEquals("blocked", fields.get("optimizerBlockerBaselineSnapshotVerdict"));
+        assertEquals("autoVectorization", fields.get("optimizerBlockerBaselineSnapshotSource"));
+        assertEquals("candidateDiscovery.noRewriteCandidates", fields.get("optimizerBlockerBaselineSnapshotFamily"));
+        assertEquals("collectRewriteCandidates", fields.get("optimizerBlockerBaselineSnapshotRemainingWork"));
+        assertEquals("combinedBaselineContractKernel", fields.get("optimizerBlockerBaselineComparisonMethod"));
+        assertEquals("unchanged", fields.get("optimizerBlockerBaselineComparisonOutcome"));
+        assertEquals("3", fields.get("optimizerBlockerBaselineComparisonBaselineScore"));
+        assertEquals("3", fields.get("optimizerBlockerBaselineComparisonCurrentScore"));
+        assertEquals("0", fields.get("optimizerBlockerBaselineComparisonScoreDelta"));
+        assertEquals("autoVectorization->autoVectorization", fields.get("optimizerBlockerBaselineComparisonSourceTransition"));
+        assertEquals(
+                "candidateDiscovery.noRewriteCandidates->candidateDiscovery.noRewriteCandidates",
+                fields.get("optimizerBlockerBaselineComparisonFamilyTransition")
+        );
+        assertEquals(
+                "collectRewriteCandidates->collectRewriteCandidates",
+                fields.get("optimizerBlockerBaselineComparisonRemainingWorkTransition")
+        );
+    }
+
+    @Test
+    void optimizerReadinessAndBlockerBaselineCiDetectsHistoryRegression() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        GpuIrOptimizationValidationReport baselineReport = validationReport("combinedBaselineRegressionContractKernel");
+        Map<String, String> readinessBaselineFields = runner.runOptimizerLayerReadinessBaselineSnapshotFields(
+                baselineReport
+        );
+        Map<String, String> blockerBaselineFields = runner.runOptimizerBlockerBaselineSnapshotFields(
+                baselineReport
+        );
+        GpuIrOptimizationValidationReport regressedCurrent = validate(new GpuIrMethod(
+                "combinedBaselineRegressionContractKernel",
+                List.of(new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")))
+        ));
+
+        Map<String, String> fields = runner.runOptimizerReadinessAndBlockerBaselineCiFields(
+                readinessBaselineFields,
+                blockerBaselineFields,
+                regressedCurrent
+        );
+
+        assertEquals("combinedBaselineRegressionContractKernel", fields.get("optimizerLayerReadinessBaselineCiMethod"));
+        assertEquals("regressed", fields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("fail/regressionDetected", fields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("true", fields.get("optimizerLayerReadinessBaselineCiFailBuild"));
+        assertEquals("2", fields.get("optimizerLayerReadinessBaselineCiBlockingLayerDelta"));
+        assertEquals("safety", fields.get("optimizerLayerReadinessBaselineCiFirstRegressedLayer"));
+        assertEquals("combinedBaselineRegressionContractKernel", fields.get("optimizerBlockerBaselineComparisonMethod"));
+        assertEquals("regressed", fields.get("optimizerBlockerBaselineComparisonOutcome"));
+        assertEquals("true", fields.get("optimizerBlockerBaselineComparisonRegressed"));
+        assertEquals("3", fields.get("optimizerBlockerBaselineComparisonBaselineScore"));
+        assertEquals("1", fields.get("optimizerBlockerBaselineComparisonCurrentScore"));
+        assertEquals("-2", fields.get("optimizerBlockerBaselineComparisonScoreDelta"));
+        assertEquals("source", fields.get("optimizerBlockerBaselineComparisonFirstChangedDimension"));
+        assertEquals("autoVectorization->safety", fields.get("optimizerBlockerBaselineComparisonSourceTransition"));
+        assertEquals(
+                "candidateDiscovery.noRewriteCandidates->safety.validationError",
+                fields.get("optimizerBlockerBaselineComparisonFamilyTransition")
+        );
+    }
+
+    @Test
     void optimizerPromotionConfidenceKeepsStableCiConsumptionKeys() {
         GpuIrOptimizationValidationReport report = validationReport("promotionContractKernel");
 
@@ -1617,6 +1723,8 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
                 "optimizerProductionReadinessPromotionConfidenceVerdict",
                 "optimizerProductionReadinessBlockingReasons",
                 "optimizerProductionReadinessBlockingReasonCount",
+                "optimizerProductionReadinessFirstBlockingStage",
+                "optimizerProductionReadinessStageVerdicts",
                 "optimizerProductionReadinessRemainingWork",
                 "optimizerProductionReadinessRemainingWorkCount",
                 "optimizerProductionReadinessFirstBlockingReason",
@@ -1654,6 +1762,11 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionReadinessPreflightVerdict"));
         assertEquals("blocked/preflightNotReady", fields.get("optimizerProductionReadinessSwitchVerdict"));
         assertEquals("blocked/productionSwitchNotReady", fields.get("optimizerProductionReadinessPromotionConfidenceVerdict"));
+        assertEquals("validationBundle", fields.get("optimizerProductionReadinessFirstBlockingStage"));
+        assertEquals(
+                "{bundle=notReady/cseBlocked,preflight=blocked/optimizerValidationBundleNotReady,switch=blocked/preflightNotReady,promotionConfidence=blocked/productionSwitchNotReady}",
+                fields.get("optimizerProductionReadinessStageVerdicts")
+        );
         assertEquals("productionMutationSwitchNotReady", fields.get("optimizerProductionReadinessFirstBlockingReason"));
         assertEquals("collectPreviewCandidates", fields.get("optimizerProductionReadinessFirstRemainingWork"));
         assertEquals("true", fields.get("optimizerProductionReadinessConsistent"));

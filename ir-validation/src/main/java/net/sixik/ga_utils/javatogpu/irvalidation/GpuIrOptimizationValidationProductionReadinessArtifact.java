@@ -115,6 +115,25 @@ public record GpuIrOptimizationValidationProductionReadinessArtifact(
         return blockingReasons().stream().findFirst();
     }
 
+    public String firstBlockingStage() {
+        if (!bundle.readyForProductionMutation()) {
+            return "validationBundle";
+        }
+        if (preflight.blocked()) {
+            return "productionPreflight";
+        }
+        if (!switchContract.productionMutationEnabled()) {
+            return "productionSwitch";
+        }
+        if (!promotionConfidence.runtimeConfidenceStable()) {
+            return "runtimeConfidence";
+        }
+        if (!promotionAllowed()) {
+            return "promotionConfidence";
+        }
+        return "none";
+    }
+
     public List<String> remainingWork() {
         LinkedHashSet<String> work = new LinkedHashSet<>();
         promotionConfidence.remainingWork().forEach(work::add);
@@ -161,6 +180,8 @@ public record GpuIrOptimizationValidationProductionReadinessArtifact(
         values.put(prefix + "PromotionConfidenceVerdict", promotionConfidenceVerdict());
         values.put(prefix + "BlockingReasons", listSummary(blockingReasons()));
         values.put(prefix + "BlockingReasonCount", Integer.toString(blockingReasonCount()));
+        values.put(prefix + "FirstBlockingStage", firstBlockingStage());
+        values.put(prefix + "StageVerdicts", stageVerdicts());
         values.put(prefix + "RemainingWork", listSummary(remainingWork()));
         values.put(prefix + "RemainingWorkCount", Integer.toString(remainingWorkCount()));
         firstBlockingReason().ifPresent(reason -> values.put(prefix + "FirstBlockingReason", reason));
@@ -184,6 +205,7 @@ public record GpuIrOptimizationValidationProductionReadinessArtifact(
                 + " reviewReady=" + reviewReady()
                 + " productionMutationEnabled=" + productionMutationEnabled()
                 + " promotionAllowed=" + promotionAllowed()
+                + " firstBlockingStage=" + firstBlockingStage()
                 + firstBlockingReason().map(reason -> " firstBlockingReason=" + reason).orElse("")
                 + " firstRemainingWork=" + firstRemainingWork().orElse("none");
     }
@@ -195,8 +217,17 @@ public record GpuIrOptimizationValidationProductionReadinessArtifact(
                 + " preflightVerdict=" + preflightVerdict()
                 + " switchVerdict=" + switchVerdict()
                 + " promotionConfidenceVerdict=" + promotionConfidenceVerdict()
+                + " firstBlockingStage=" + firstBlockingStage()
                 + " blockingReasons=" + listSummary(blockingReasons())
                 + " remainingWork=" + listSummary(remainingWork());
+    }
+
+    private String stageVerdicts() {
+        return "{bundle=" + bundleVerdict()
+                + ",preflight=" + preflightVerdict()
+                + ",switch=" + switchVerdict()
+                + ",promotionConfidence=" + promotionConfidenceVerdict()
+                + "}";
     }
 
     private static String listSummary(List<String> values) {

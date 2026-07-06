@@ -20,6 +20,50 @@ import java.util.Map;
  * method would break normal example compilation.</p>
  */
 public final class IrAnalysisExamples {
+    private static final List<IrOptimizerBlockerRow> OPTIMIZER_BLOCKER_ROWS = List.of(
+            new IrOptimizerBlockerRow(
+                    "irPassesCleanly",
+                    "autoVectorization",
+                    "candidateDiscovery.noRewriteCandidates",
+                    "collectRewriteCandidates",
+                    "Safety passes; optimizer readiness is still read-only until a supported fixed-width vector candidate is proven."
+            ),
+            new IrOptimizerBlockerRow(
+                    "irPassesButNeedsOptimizerEvidence",
+                    "cseRewritePolicy",
+                    "skipReason.NOT_LOCAL_REUSE",
+                    "proveLocalReuseOrKeepExpressionInline",
+                    "Safety passes, but the repeated intrinsic expression still needs CSE reuse evidence before mutation."
+            ),
+            new IrOptimizerBlockerRow(
+                    "rejectedObjectAllocation",
+                    "safety",
+                    "safety.validationError",
+                    "fixIrSafetyError",
+                    "Rejected example: object/String allocation must be removed before optimizer readiness matters."
+            )
+    );
+
+    private static final List<IrProductionReadinessRow> PRODUCTION_READINESS_ROWS = List.of(
+            new IrProductionReadinessRow(
+                    "irPassesCleanly",
+                    "validationBundle",
+                    "blocked/productionSwitchNotReady",
+                    "This example is safe to compile, but production optimizer mutation is still blocked by validation-bundle readiness."
+            ),
+            new IrProductionReadinessRow(
+                    "irPassesButNeedsOptimizerEvidence",
+                    "validationBundle",
+                    "blocked/productionSwitchNotReady",
+                    "This example is a good analysis target: the chain stops before production switch review until optimizer evidence improves."
+            ),
+            new IrProductionReadinessRow(
+                    "rejectedObjectAllocation",
+                    "safety",
+                    "rejected/sourceCannotLower",
+                    "Rejected source does not reach production-readiness analysis; fix the safety error first."
+            )
+    );
 
     private IrAnalysisExamples() {
     }
@@ -56,9 +100,66 @@ public final class IrAnalysisExamples {
                   needs-work: irPassesButNeedsOptimizerEvidence(...)
                     - should pass safety validation, but optimizer readiness may stay blocked until
                       CSE / auto-vectorization evidence is strong enough for production mutation.
+                  production-readiness: see renderProductionReadinessStageTable()
+                    - shows the first stage that blocks future optimizer production promotion.
                   rejected: see renderRejectedKernelDiagnostic()
                     - intentionally kept as a diagnostic sample so examples-app still compiles.
                 """;
+    }
+
+    public static String renderOptimizerBlockerTable() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("IR optimizer blocker quick view:\n");
+        builder.append(String.format(
+                "%s | %s | %s | %s%n",
+                pad("method", 36),
+                pad("source", 18),
+                pad("family", 40),
+                "next work"
+        ));
+        builder.append("-".repeat(120)).append('\n');
+        for (IrOptimizerBlockerRow row : OPTIMIZER_BLOCKER_ROWS) {
+            builder.append(String.format(
+                    "%s | %s | %s | %s%n",
+                    pad(row.method(), 36),
+                    pad(row.source(), 18),
+                    pad(row.family(), 40),
+                    row.remainingWork()
+            ));
+            builder.append("  hint: ").append(row.hint()).append('\n');
+        }
+        return builder.toString();
+    }
+
+    public static String renderProductionReadinessStageTable() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("IR production-readiness stage quick view:\n");
+        builder.append(String.format(
+                "%s | %s | %s | %s%n",
+                pad("method", 36),
+                pad("first blocking stage", 24),
+                pad("verdict", 38),
+                "note"
+        ));
+        builder.append("-".repeat(132)).append('\n');
+        for (IrProductionReadinessRow row : PRODUCTION_READINESS_ROWS) {
+            builder.append(String.format(
+                    "%s | %s | %s | %s%n",
+                    pad(row.method(), 36),
+                    pad(row.firstBlockingStage(), 24),
+                    pad(row.verdict(), 38),
+                    row.note()
+            ));
+        }
+        return builder.toString();
+    }
+
+    static List<IrOptimizerBlockerRow> optimizerBlockerRows() {
+        return OPTIMIZER_BLOCKER_ROWS;
+    }
+
+    static List<IrProductionReadinessRow> productionReadinessRows() {
+        return PRODUCTION_READINESS_ROWS;
     }
 
     public static String renderRejectedKernelDiagnostic() {
@@ -102,5 +203,29 @@ public final class IrAnalysisExamples {
         );
 
         return new GpuDiagnosticRenderer().render(diagnostic, sourceLines);
+    }
+
+    private static String pad(String value, int width) {
+        if (value.length() >= width) {
+            return value;
+        }
+        return value + " ".repeat(width - value.length());
+    }
+
+    record IrOptimizerBlockerRow(
+            String method,
+            String source,
+            String family,
+            String remainingWork,
+            String hint
+    ) {
+    }
+
+    record IrProductionReadinessRow(
+            String method,
+            String firstBlockingStage,
+            String verdict,
+            String note
+    ) {
     }
 }

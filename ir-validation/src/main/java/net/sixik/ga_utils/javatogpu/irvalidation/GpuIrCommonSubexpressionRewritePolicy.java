@@ -141,6 +141,10 @@ public record GpuIrCommonSubexpressionRewritePolicy(
         return GpuIrCommonSubexpressionRewriteReadiness.READY;
     }
 
+    public GpuIrCommonSubexpressionRewriteBlockerExplanation blockerExplanation() {
+        return GpuIrCommonSubexpressionRewriteBlockerExplanation.from(this);
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalArgumentException("prefix must not be blank");
@@ -164,6 +168,7 @@ public record GpuIrCommonSubexpressionRewritePolicy(
                 values.put(prefix + "BlockingSkipReason." + reason, Long.toString(count)));
         blockingDominanceStatusCounts().forEach((status, count) ->
                 values.put(prefix + "BlockingDominanceStatus." + status, Long.toString(count)));
+        values.putAll(blockerExplanation().artifactFields(prefix + "BlockerExplanation"));
         return Collections.unmodifiableMap(values);
     }
 
@@ -181,6 +186,7 @@ public record GpuIrCommonSubexpressionRewritePolicy(
                 + " blockingSkippedCandidates=" + blockingSkippedCandidateCount()
                 + (hasBlockingSkippedCandidates() ? " blockingSkipReasons=" + blockingSkipReasonCounts() : "")
                 + (hasBlockingSkippedCandidates() ? " blockingDominanceStatuses=" + blockingDominanceStatusCounts() : "")
+                + " blockerExplanation={" + blockerExplanation().ciSummaryLine() + "}"
                 + firstBlockingSkippedCandidate()
                 .map(candidate -> " firstBlockingSkipped=" + candidate.diagnostic().summary())
                 .orElse("");

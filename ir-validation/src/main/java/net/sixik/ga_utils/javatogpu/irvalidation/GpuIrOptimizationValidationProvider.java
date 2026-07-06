@@ -53,6 +53,15 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.put("hasSafetyError", Boolean.toString(report.hasSafetyError()));
         values.putAll(report.optimizerGateSnapshot().artifactFields("optimizerGate"));
         values.putAll(report.optimizerGatePolicyDecision(mode(request.mode())).artifactFields("optimizerGatePolicy"));
+        values.putAll(report.optimizerBlockerIndex().artifactFields("optimizerBlocker"));
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner optimizerRunner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        values.putAll(optimizerRunner.runOptimizerReadinessAndBlockerBaselineCiFields(
+                optimizerRunner.runOptimizerLayerReadinessBaselineSnapshot(report),
+                optimizerRunner.runOptimizerBlockerBaselineSnapshot(report),
+                report
+        ));
+        values.putAll(optimizerRunner.runProductionReadinessArtifactFields(report));
         values.put("optimizerDiagnostics", Integer.toString(report.optimizerDiagnosticCount()));
         values.put("hasOptimizerDiagnostics", Boolean.toString(report.hasOptimizerDiagnostics()));
         values.putAll(report.optimizerLayerReadinessSummaryReport().artifactFields("optimizerLayerReadiness"));

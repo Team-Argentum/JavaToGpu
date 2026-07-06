@@ -56,6 +56,9 @@ class GpuIrAutoVectorizationArtifactSnapshotTest {
         assertEquals("readyForPrototypeRewrite", fields.get("autoVectorizationReadinessVerdict"));
         assertEquals("true", fields.get("autoVectorizationReadinessReadyForPrototypeRewrite"));
         assertEquals("[]", fields.get("autoVectorizationReadinessBlockingReasons"));
+        assertEquals("ready", fields.get("autoVectorizationBlockerVerdict"));
+        assertEquals("none", fields.get("autoVectorizationBlockerFirstFamily"));
+        assertEquals("none", fields.get("autoVectorizationBlockerFirstRemainingWork"));
         assertEquals("auto-vectorization readiness ready", fields.get("autoVectorizationReadinessCiSummaryLine"));
         assertEquals("allow", fields.get("autoVectorizationProofDecisionStatus"));
         assertEquals("true", fields.get("autoVectorizationProofDecisionAllowRewrite"));

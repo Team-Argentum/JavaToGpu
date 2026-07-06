@@ -35,11 +35,17 @@ class GpuIrOptimizationValidationProductionReadinessArtifactTest {
         assertEquals("blocked/preflightNotReady", artifact.switchVerdict());
         assertEquals("blocked/productionSwitchNotReady", artifact.promotionConfidenceVerdict());
         assertEquals("productionMutationSwitchNotReady", artifact.firstBlockingReason().orElseThrow());
+        assertEquals("validationBundle", artifact.firstBlockingStage());
         assertTrue(artifact.remainingWork().contains("collectPreviewCandidates"));
         assertTrue(artifact.remainingWork().contains("stabilizeA1A2RuntimeEquivalenceHistory"));
         assertEquals("productionReadinessKernel", fields.get("optimizerProductionReadinessMethod"));
         assertEquals("blocked/productionSwitchNotReady", fields.get("optimizerProductionReadinessVerdict"));
         assertEquals("true", fields.get("optimizerProductionReadinessBlocked"));
+        assertEquals("validationBundle", fields.get("optimizerProductionReadinessFirstBlockingStage"));
+        assertEquals(
+                "{bundle=notReady/cseBlocked,preflight=blocked/optimizerValidationBundleNotReady,switch=blocked/preflightNotReady,promotionConfidence=blocked/productionSwitchNotReady}",
+                fields.get("optimizerProductionReadinessStageVerdicts")
+        );
         assertEquals("true", fields.get("optimizerProductionReadinessConsistency.Consistent"));
         assertEquals("0", fields.get("optimizerProductionReadinessConsistency.FailedChecks"));
         assertEquals("productionMutationSwitchNotReady", fields.get("optimizerProductionReadinessFirstBlockingReason"));
@@ -182,6 +188,7 @@ class GpuIrOptimizationValidationProductionReadinessArtifactTest {
         assertEquals("blocked/productionSwitchNotReady", artifact.verdict());
         assertEquals("productionReadinessRunnerKernel", fields.get("optimizerProductionReadinessMethod"));
         assertEquals("blocked/productionSwitchNotReady", fields.get("optimizerProductionReadinessVerdict"));
+        assertEquals("validationBundle", fields.get("optimizerProductionReadinessFirstBlockingStage"));
         assertEquals("productionMutationSwitchNotReady", fields.get("optimizerProductionReadinessFirstBlockingReason"));
     }
 

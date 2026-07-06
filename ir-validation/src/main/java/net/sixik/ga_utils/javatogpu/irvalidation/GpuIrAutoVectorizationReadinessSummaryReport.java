@@ -183,6 +183,10 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
                 ));
     }
 
+    public GpuIrAutoVectorizationBlockerExplanation blockerExplanation() {
+        return GpuIrAutoVectorizationBlockerExplanation.from(this);
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalArgumentException("prefix must not be blank");
@@ -216,6 +220,7 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
         values.put(prefix + "RemainingWorkCount", Integer.toString(remainingWorkCount()));
         firstBlockingReason().ifPresent(reason -> values.put(prefix + "FirstBlockingReason", reason));
         firstRemainingWork().ifPresent(work -> values.put(prefix + "FirstRemainingWork", work));
+        values.putAll(blockerExplanation().artifactFields(prefix + "Blocker"));
         values.put(prefix + "CiSummaryLine", ciSummaryLine());
         values.put(prefix + "Summary", summary());
         return Collections.unmodifiableMap(values);
@@ -249,7 +254,8 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
                 + " dryRunDiagnostics=" + dryRunDiagnosticCount
                 + " resolvedRewriteOperations=" + resolvedRewriteOperationCount
                 + " blockingReasons=" + listSummary(blockingReasons)
-                + " remainingWork=" + listSummary(remainingWork);
+                + " remainingWork=" + listSummary(remainingWork)
+                + " blockerExplanation={" + blockerExplanation().ciSummaryLine() + "}";
     }
 
     private static String verdict(

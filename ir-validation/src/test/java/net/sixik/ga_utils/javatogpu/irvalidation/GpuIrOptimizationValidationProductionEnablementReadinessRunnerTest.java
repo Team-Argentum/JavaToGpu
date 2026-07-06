@@ -397,6 +397,90 @@ class GpuIrOptimizationValidationProductionEnablementReadinessRunnerTest {
     }
 
     @Test
+    void canStoreAndCompareOptimizerBlockerBaselineFieldsForCiConsumers() {
+        GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
+                new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
+        Map<String, String> baselineFields = runner.runOptimizerBlockerBaselineSnapshotFields(
+                validationReport("optimizerBlockerBaselineKernel")
+        );
+
+        Map<String, String> comparisonFields = runner.runOptimizerBlockerBaselineComparisonFields(
+                baselineFields,
+                validationReport("optimizerBlockerBaselineKernel")
+        );
+
+        assertEquals("optimizerBlockerBaselineKernel", baselineFields.get("optimizerBlockerBaselineSnapshotMethod"));
+        assertEquals("blocked", baselineFields.get("optimizerBlockerBaselineSnapshotVerdict"));
+        assertEquals("autoVectorization", baselineFields.get("optimizerBlockerBaselineSnapshotSource"));
+        assertEquals("candidateDiscovery.noRewriteCandidates", baselineFields.get("optimizerBlockerBaselineSnapshotFamily"));
+        assertEquals("optimizerBlockerBaselineKernel", comparisonFields.get("optimizerBlockerBaselineComparisonMethod"));
+        assertEquals("unchanged", comparisonFields.get("optimizerBlockerBaselineComparisonOutcome"));
+        assertEquals("3", comparisonFields.get("optimizerBlockerBaselineComparisonBaselineScore"));
+        assertEquals("3", comparisonFields.get("optimizerBlockerBaselineComparisonCurrentScore"));
+        assertEquals("0", comparisonFields.get("optimizerBlockerBaselineComparisonScoreDelta"));
+        assertEquals("autoVectorization->autoVectorization", comparisonFields.get("optimizerBlockerBaselineComparisonSourceTransition"));
+    }
+
+    @Test
+    void canCompareOptimizerBlockerBaselineRegressionForCiConsumers() {
+        GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
+                new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
+        GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot baseline = new GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot(
+                "optimizerBlockerRegressionKernel",
+                "blocked",
+                "autoVectorization",
+                "candidateDiscovery.noRewriteCandidates",
+                "collectRewriteCandidates"
+        );
+
+        Map<String, String> fields = runner.runOptimizerBlockerBaselineComparisonFields(
+                baseline,
+                cseBlockedReport("optimizerBlockerRegressionKernel")
+        );
+
+        assertEquals("optimizerBlockerRegressionKernel", fields.get("optimizerBlockerBaselineComparisonMethod"));
+        assertEquals("regressed", fields.get("optimizerBlockerBaselineComparisonOutcome"));
+        assertEquals("3", fields.get("optimizerBlockerBaselineComparisonBaselineScore"));
+        assertEquals("2", fields.get("optimizerBlockerBaselineComparisonCurrentScore"));
+        assertEquals("-1", fields.get("optimizerBlockerBaselineComparisonScoreDelta"));
+        assertEquals("autoVectorization->cseRewritePolicy", fields.get("optimizerBlockerBaselineComparisonSourceTransition"));
+        assertEquals("source", fields.get("optimizerBlockerBaselineComparisonFirstChangedDimension"));
+    }
+
+    @Test
+    void canExportCombinedReadinessAndBlockerBaselineCiFieldsForCiConsumers() {
+        GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
+                new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
+        GpuIrOptimizationValidationReport baselineReport = validationReport("optimizerCombinedBaselineKernel");
+        Map<String, String> readinessBaselineFields = runner.runOptimizerLayerReadinessBaselineSnapshotFields(
+                baselineReport
+        );
+        Map<String, String> blockerBaselineFields = runner.runOptimizerBlockerBaselineSnapshotFields(
+                baselineReport
+        );
+
+        Map<String, String> fields = runner.runOptimizerReadinessAndBlockerBaselineCiFields(
+                readinessBaselineFields,
+                blockerBaselineFields,
+                validationReport("optimizerCombinedBaselineKernel")
+        );
+
+        assertEquals("optimizerCombinedBaselineKernel", fields.get("optimizerLayerReadinessBaselineCiMethod"));
+        assertEquals("unchanged", fields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("accepted/noRegression", fields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("false", fields.get("optimizerLayerReadinessBaselineCiFailBuild"));
+        assertEquals("optimizerCombinedBaselineKernel", fields.get("optimizerBlockerBaselineSnapshotMethod"));
+        assertEquals("blocked", fields.get("optimizerBlockerBaselineSnapshotVerdict"));
+        assertEquals("autoVectorization", fields.get("optimizerBlockerBaselineSnapshotSource"));
+        assertEquals("optimizerCombinedBaselineKernel", fields.get("optimizerBlockerBaselineComparisonMethod"));
+        assertEquals("unchanged", fields.get("optimizerBlockerBaselineComparisonOutcome"));
+        assertEquals("3", fields.get("optimizerBlockerBaselineComparisonBaselineScore"));
+        assertEquals("3", fields.get("optimizerBlockerBaselineComparisonCurrentScore"));
+        assertEquals("0", fields.get("optimizerBlockerBaselineComparisonScoreDelta"));
+        assertEquals("autoVectorization->autoVectorization", fields.get("optimizerBlockerBaselineComparisonSourceTransition"));
+    }
+
+    @Test
     void canStoreAndCompareOptimizerLayerReadinessBaselineFieldsForCiConsumers() {
         GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
                 new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
@@ -697,6 +781,19 @@ class GpuIrOptimizationValidationProductionEnablementReadinessRunnerTest {
         assertThrows(NullPointerException.class, () -> runner.runCiGateIndexFields(null));
         assertThrows(NullPointerException.class, () -> runner.runOptimizerGateSnapshot(null));
         assertThrows(NullPointerException.class, () -> runner.runOptimizerGateSnapshotFields(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerIndex(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerIndexFields(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerBaselineSnapshot(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerBaselineSnapshotFields(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerBaselineComparison((GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot) null, validationReport("nullBlockerBaselineComparisonKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerBaselineComparison((Map<String, String>) null, validationReport("nullBlockerBaselineComparisonFieldsKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerBaselineComparisonFields((GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot) null, validationReport("nullBlockerBaselineComparisonResultKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerBlockerBaselineComparisonFields((Map<String, String>) null, validationReport("nullBlockerBaselineComparisonResultFieldsKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerReadinessAndBlockerBaselineCiFields((GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot) null, runner.runOptimizerBlockerBaselineSnapshot(validationReport("nullCombinedBlockerBaselineKernel")), validationReport("nullCombinedReadinessBaselineKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerReadinessAndBlockerBaselineCiFields(runner.runOptimizerLayerReadinessBaselineSnapshot(validationReport("nullCombinedReadinessBaselineKernel")), (GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot) null, validationReport("nullCombinedBlockerBaselineKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerReadinessAndBlockerBaselineCiFields(runner.runOptimizerLayerReadinessBaselineSnapshot(validationReport("nullCombinedReadinessBaselineKernel")), runner.runOptimizerBlockerBaselineSnapshot(validationReport("nullCombinedBlockerBaselineKernel")), null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerReadinessAndBlockerBaselineCiFields((Map<String, String>) null, runner.runOptimizerBlockerBaselineSnapshotFields(validationReport("nullCombinedBlockerBaselineFieldsKernel")), validationReport("nullCombinedReadinessBaselineFieldsKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerReadinessAndBlockerBaselineCiFields(runner.runOptimizerLayerReadinessBaselineSnapshotFields(validationReport("nullCombinedReadinessBaselineFieldsKernel")), (Map<String, String>) null, validationReport("nullCombinedBlockerBaselineFieldsKernel")));
         assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadinessBaselineSnapshot(null));
         assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadinessBaselineSnapshotFields(null));
         assertThrows(NullPointerException.class, () -> runner.saveOptimizerLayerReadinessBaselineSnapshot(null, validationReport("nullReadinessBaselinePathKernel")));

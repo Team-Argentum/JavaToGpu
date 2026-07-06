@@ -55,6 +55,10 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
         );
     }
 
+    public GpuIrAutoVectorizationBlockerExplanation blockerExplanation() {
+        return readinessSummaryReport().blockerExplanation();
+    }
+
     public GpuIrAutoVectorizationProofLayerReadinessSummaryReport proofLayerReadinessSummaryReport() {
         return GpuIrAutoVectorizationProofLayerReadinessSummaryReport.from(preview.proofBundle());
     }
@@ -74,6 +78,7 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
         values.putAll(preview.proofDecision().artifactFields(prefix + "ProofDecision"));
         values.put(prefix + "HasPolicyBlockedRewrite", Boolean.toString(preview.hasPolicyBlockedRewrite()));
         values.putAll(readinessSummary.artifactFields(prefix + "Readiness"));
+        values.putAll(blockerExplanation().artifactFields(prefix + "Blocker"));
         values.put(prefix + "RewriteBlockedCandidates", Integer.toString(rewriteBlockedCandidateCount()));
         values.put(prefix + "HasRewriteBlockedCandidates", Boolean.toString(hasRewriteBlockedCandidates()));
         preview.firstBlockingDiagnosticSummary()
@@ -161,6 +166,7 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
                 + " rewriteReadiness=" + preview.rewriteReadiness().artifactValue()
                 + " readinessVerdict=" + readinessSummary.verdict()
                 + " readinessBlockers=" + readinessSummary.blockingReasons()
+                + " blockerExplanation={" + blockerExplanation().ciSummaryLine() + "}"
                 + " canApplyRewrite=" + preview.canApplyRewrite()
                 + " rewritePlanOperations=" + rewritePlan().operationCount()
                 + " rewritePlanGuards=" + rewritePlan().guardDiagnostics().size()

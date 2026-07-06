@@ -45,6 +45,9 @@ class GpuIrAutoVectorizationReadinessSummaryReportTest {
         assertEquals("false", fields.get("autoReadinessReadyForPrototypeRewrite"));
         assertEquals("3", fields.get("autoReadinessBlockingReasonCount"));
         assertEquals("{noRewriteCandidates=1,rewritePolicyBlocksRewrite=1,dryRunNotReady=1}", fields.get("autoReadinessBlockingReasonCounts"));
+        assertEquals("blocked", fields.get("autoReadinessBlockerVerdict"));
+        assertEquals("candidateDiscovery.noRewriteCandidates", fields.get("autoReadinessBlockerFirstFamily"));
+        assertEquals("collectRewriteCandidates", fields.get("autoReadinessBlockerFirstRemainingWork"));
         assertEquals("auto-vectorization readiness notReady/noCandidates blockers=3 first=noRewriteCandidates", fields.get("autoReadinessCiSummaryLine"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
     }
@@ -152,6 +155,8 @@ class GpuIrAutoVectorizationReadinessSummaryReportTest {
         assertTrue(report.readyForPrototypeRewrite());
         assertEquals(0, report.blockingReasonCount());
         assertEquals(0, report.remainingWorkCount());
+        assertEquals("ready", report.blockerExplanation().verdict());
+        assertEquals("none", report.blockerExplanation().firstBlockerFamily());
         assertEquals("auto-vectorization readiness ready", report.ciSummaryLine());
     }
 

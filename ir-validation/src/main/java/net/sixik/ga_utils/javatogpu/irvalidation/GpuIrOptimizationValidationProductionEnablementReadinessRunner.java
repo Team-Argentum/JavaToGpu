@@ -205,6 +205,82 @@ public final class GpuIrOptimizationValidationProductionEnablementReadinessRunne
         return runOptimizerGateSnapshot(validationReport).artifactFields();
     }
 
+    public GpuIrOptimizationValidationOptimizerBlockerIndex runOptimizerBlockerIndex(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerBlockerIndex(validationReport);
+    }
+
+    public Map<String, String> runOptimizerBlockerIndexFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerBlockerIndex(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot runOptimizerBlockerBaselineSnapshot(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerBlockerBaselineSnapshot(validationReport);
+    }
+
+    public Map<String, String> runOptimizerBlockerBaselineSnapshotFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerBlockerBaselineSnapshot(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerBlockerBaselineComparisonReport runOptimizerBlockerBaselineComparison(
+            GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerBlockerBaselineComparison(baseline, currentValidationReport);
+    }
+
+    public GpuIrOptimizationValidationOptimizerBlockerBaselineComparisonReport runOptimizerBlockerBaselineComparison(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerBlockerBaselineComparison(baselineFields, currentValidationReport);
+    }
+
+    public Map<String, String> runOptimizerBlockerBaselineComparisonFields(
+            GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerBlockerBaselineComparison(baseline, currentValidationReport).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerBlockerBaselineComparisonFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerBlockerBaselineComparison(baselineFields, currentValidationReport).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerReadinessAndBlockerBaselineCiFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot readinessBaseline,
+            GpuIrOptimizationValidationOptimizerBlockerBaselineSnapshot blockerBaseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerReadinessAndBlockerBaselineCiFields(
+                readinessBaseline,
+                blockerBaseline,
+                currentValidationReport
+        );
+    }
+
+    public Map<String, String> runOptimizerReadinessAndBlockerBaselineCiFields(
+            Map<String, String> readinessBaselineFields,
+            Map<String, String> blockerBaselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerReadinessAndBlockerBaselineCiFields(
+                readinessBaselineFields,
+                blockerBaselineFields,
+                currentValidationReport
+        );
+    }
+
     public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot runOptimizerLayerReadinessBaselineSnapshot(
             GpuIrOptimizationValidationReport validationReport
     ) {
