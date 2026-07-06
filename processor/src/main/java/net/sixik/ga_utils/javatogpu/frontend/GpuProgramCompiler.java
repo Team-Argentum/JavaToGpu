@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReport;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReportIO;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReporter;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmValidationConfig;
@@ -12,6 +13,8 @@ import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import org.objectweb.asm.tree.ClassNode;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -117,6 +120,85 @@ public final class GpuProgramCompiler {
 
     public AsmFrontendFailureReport reportStructuredAsmClass(ClassNode classNode, AsmValidationConfig config) {
         return asmFailureReporter.reportClass(classNode, config);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClass(byte[] classBytes) {
+        return asmFailureReporter.reportClass(classBytes);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClass(byte[] classBytes, AsmValidationConfig config) {
+        return asmFailureReporter.reportClass(classBytes, config);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClassFile(Path classFile) {
+        return asmFailureReporter.reportClassFile(classFile);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClassFile(Path classFile, AsmValidationConfig config) {
+        return asmFailureReporter.reportClassFile(classFile, config);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClassDirectory(Path classDirectory) {
+        return asmFailureReporter.reportClassDirectory(classDirectory);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClassDirectory(Path classDirectory, AsmValidationConfig config) {
+        return asmFailureReporter.reportClassDirectory(classDirectory, config);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmJar(Path jarFile) {
+        return asmFailureReporter.reportJar(jarFile);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmJar(Path jarFile, AsmValidationConfig config) {
+        return asmFailureReporter.reportJar(jarFile, config);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmArtifact(Path artifact) {
+        return asmFailureReporter.reportArtifact(artifact);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmArtifact(Path artifact, AsmValidationConfig config) {
+        return asmFailureReporter.reportArtifact(artifact, config);
+    }
+
+    public AsmFrontendFailureReport writeStructuredAsmArtifactReport(Path artifact, Path reportFile) throws IOException {
+        AsmFrontendFailureReport report = reportStructuredAsmArtifact(artifact);
+        AsmFrontendFailureReportIO.write(reportFile, report);
+        return report;
+    }
+
+    public AsmFrontendFailureReport writeStructuredAsmArtifactReport(
+            Path artifact,
+            Path reportFile,
+            AsmValidationConfig config
+    ) throws IOException {
+        AsmFrontendFailureReport report = reportStructuredAsmArtifact(artifact, config);
+        AsmFrontendFailureReportIO.write(reportFile, report);
+        return report;
+    }
+
+    public AsmFrontendFailureReport requireStructuredAsmArtifact(Path artifact) {
+        return reportStructuredAsmArtifact(artifact).requireSuccessful();
+    }
+
+    public AsmFrontendFailureReport requireStructuredAsmArtifact(Path artifact, AsmValidationConfig config) {
+        return reportStructuredAsmArtifact(artifact, config).requireSuccessful();
+    }
+
+    public AsmFrontendFailureReport writeAndRequireStructuredAsmArtifactReport(
+            Path artifact,
+            Path reportFile
+    ) throws IOException {
+        return writeStructuredAsmArtifactReport(artifact, reportFile).requireSuccessful();
+    }
+
+    public AsmFrontendFailureReport writeAndRequireStructuredAsmArtifactReport(
+            Path artifact,
+            Path reportFile,
+            AsmValidationConfig config
+    ) throws IOException {
+        return writeStructuredAsmArtifactReport(artifact, reportFile, config).requireSuccessful();
     }
 
     public GpuIrMethod liftStructuredAsm(

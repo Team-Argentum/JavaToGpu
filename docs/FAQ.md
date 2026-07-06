@@ -36,7 +36,7 @@ No. Keep arrays as kernel parameters or model packed layouts with explicit offse
 
 No. The ASM frontend expects a canonical supported subset emitted intentionally by tooling you control.
 
-If you are integrating an external bytecode generator, run `GpuProgramCompiler.reportStructuredAsm(...)` or `reportStructuredAsmClass(...)` first. It reports unsupported bytecode families and machine-readable `asmFailure.*` metadata without attempting to compile the method.
+If you are integrating an external bytecode generator, run `GpuProgramCompiler.reportStructuredAsm(...)`, `reportStructuredAsmClass(...)`, or `reportStructuredAsmArtifact(...)` first. It reports unsupported bytecode families and machine-readable `asmFailure.*` metadata without attempting to compile the method. Artifact preflight auto-detects directories, `.class` files, and `.jar` files. In CI, use `writeAndRequireStructuredAsmArtifactReport(...)` so the `.properties` report is saved before the build fails on unsupported bytecode.
 
 ## How do I handle optional GPU execution?
 

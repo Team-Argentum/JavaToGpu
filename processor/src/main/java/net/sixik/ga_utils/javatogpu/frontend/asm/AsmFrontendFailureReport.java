@@ -53,6 +53,17 @@ public record AsmFrontendFailureReport(
                 + failures.get(0).summary();
     }
 
+    public AsmFrontendFailureReport requireSuccessful() {
+        if (successful()) {
+            return this;
+        }
+        AsmFrontendFailureMetadata firstFailure = failures.get(0);
+        throw new AsmFrontendException(
+                summaryLine() + "; summaries=" + String.join(" | ", summaries()),
+                firstFailure
+        );
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         String safePrefix = prefix == null || prefix.isBlank() ? "asmFailureReport" : prefix;
         java.util.LinkedHashMap<String, String> fields = new java.util.LinkedHashMap<>();

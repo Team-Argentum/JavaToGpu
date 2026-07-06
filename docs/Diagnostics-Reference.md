@@ -19,7 +19,7 @@ AsmFrontendFailureReport report = GpuProgramCompiler.createDefault()
         .reportStructuredAsm(List.of(kernelMethod, helperMethod));
 ```
 
-For whole-class bytecode preflight, use `reportStructuredAsmClass(classNode)`. It scans ordinary class methods, skips JVM lifecycle methods such as `<init>` and `<clinit>`, and returns the same report shape.
+For whole-class bytecode preflight, use `reportStructuredAsmClass(classNode)`, `reportStructuredAsmClass(byte[])`, `reportStructuredAsmClassFile(path)`, `reportStructuredAsmClassDirectory(path)`, `reportStructuredAsmJar(path)`, or the generic `reportStructuredAsmArtifact(path)`. These scan ordinary class methods, skip JVM lifecycle methods such as `<init>` and `<clinit>`, and return the same report shape. Directory preflight walks `.class` files recursively in stable path order, while jar preflight reads `.class` entries in stable entry-name order; both aggregate every failure into one report. Artifact preflight auto-detects directories, `.class` files, and `.jar` files before delegating to the matching mode.
 
 Useful report fields:
 
@@ -27,6 +27,9 @@ Useful report fields:
 - `report.familyCounts()` groups failures by stable families such as `arrayLength`, `methodInvocation`, `methodDescriptor`, `fieldAccess`, and `exceptionControlFlow`.
 - `report.summaries()` returns compact one-line messages such as `arrayLength sample/Kernel.kernel([F)I instruction=2 opcode=ARRAYLENGTH`.
 - `report.artifactFields("asmReport")` exports machine-readable fields for CI or UI integrations.
+- `compiler.writeStructuredAsmArtifactReport(inputPath, reportPath)` writes those fields to a `.properties` file using the default `asmReport.*` prefix.
+- `report.requireSuccessful()` and `compiler.writeAndRequireStructuredAsmArtifactReport(inputPath, reportPath)` throw `AsmFrontendException` when unsupported bytecode is present, while keeping first-failure metadata attached.
+- For Gradle CI, call `writeAndRequireStructuredAsmArtifactReport(...)` from a small `JavaExec` helper after `classes` or `jar`; the report is still written before the build fails.
 
 When source information is available, `AsmFrontendDiagnosticAdapter` can render `AsmFrontendException` as a Rust-like source snippet while preserving the same `asmFailure.*` metadata fields for tooling.
 

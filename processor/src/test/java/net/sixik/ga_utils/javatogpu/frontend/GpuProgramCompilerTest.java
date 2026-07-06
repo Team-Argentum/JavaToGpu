@@ -16,7 +16,13 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -212,25 +218,169 @@ class GpuProgramCompilerTest {
 
     @Test
     void reportsStructuredAsmClassFailuresThroughUnifiedFacade() {
-        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-        writer.visit(Opcodes.V1_6, Opcodes.ACC_PUBLIC, DEMO_OWNER, null, "java/lang/Object", null);
-        MethodVisitor methodVisitor = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "arrayLengthKernel", "([F)I", null, null);
-        methodVisitor.visitCode();
-        methodVisitor.visitVarInsn(Opcodes.ALOAD, 0);
-        methodVisitor.visitInsn(Opcodes.ARRAYLENGTH);
-        methodVisitor.visitInsn(Opcodes.IRETURN);
-        methodVisitor.visitMaxs(0, 0);
-        methodVisitor.visitEnd();
-        writer.visitEnd();
-
         ClassNode classNode = new ClassNode();
-        new ClassReader(writer.toByteArray()).accept(classNode, 0);
+        new ClassReader(classBytesWithArrayLengthMethod()).accept(classNode, 0);
 
         AsmFrontendFailureReport report = GpuProgramCompiler.createDefault().reportStructuredAsmClass(classNode);
 
         assertEquals(1, report.failureCount());
         assertEquals("arrayLength", report.failures().get(0).family());
         assertEquals("arrayLengthKernel", report.failures().get(0).methodName());
+    }
+
+    @Test
+    void reportsStructuredAsmClassFailuresFromByteArrayThroughFacade() {
+        AsmFrontendFailureReport report = GpuProgramCompiler.createDefault()
+                .reportStructuredAsmClass(classBytesWithArrayLengthMethod());
+
+        assertEquals(1, report.failureCount());
+        assertEquals("arrayLength", report.failures().get(0).family());
+    }
+
+    @Test
+    void reportsStructuredAsmClassFailuresFromFileThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-report", ".class");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendFailureReport report = GpuProgramCompiler.createDefault()
+                    .reportStructuredAsmClassFile(classFile);
+
+            assertEquals(1, report.failureCount());
+            assertEquals("arrayLength", report.failures().get(0).family());
+        } finally {
+            Files.deleteIfExists(classFile);
+        }
+    }
+
+    @Test
+    void reportsStructuredAsmClassFailuresFromDirectoryThroughFacade() throws IOException {
+        Path classDirectory = Files.createTempDirectory("javatogpu-compiler-asm-report-dir");
+        try {
+            Files.write(classDirectory.resolve("Demo.class"), classBytesWithArrayLengthMethod());
+
+            AsmFrontendFailureReport report = GpuProgramCompiler.createDefault()
+                    .reportStructuredAsmClassDirectory(classDirectory);
+
+            assertEquals(1, report.failureCount());
+            assertEquals("arrayLength", report.failures().get(0).family());
+        } finally {
+            Files.deleteIfExists(classDirectory.resolve("Demo.class"));
+            Files.deleteIfExists(classDirectory);
+        }
+    }
+
+    @Test
+    void reportsStructuredAsmClassFailuresFromJarThroughFacade() throws IOException {
+        Path jarFile = Files.createTempFile("javatogpu-compiler-asm-report", ".jar");
+        try {
+            try (JarOutputStream outputStream = new JarOutputStream(Files.newOutputStream(jarFile))) {
+                outputStream.putNextEntry(new JarEntry("sample/Demo.class"));
+                outputStream.write(classBytesWithArrayLengthMethod());
+                outputStream.closeEntry();
+            }
+
+            AsmFrontendFailureReport report = GpuProgramCompiler.createDefault()
+                    .reportStructuredAsmJar(jarFile);
+
+            assertEquals(1, report.failureCount());
+            assertEquals("arrayLength", report.failures().get(0).family());
+            assertEquals("arrayLengthKernel", report.failures().get(0).methodName());
+        } finally {
+            Files.deleteIfExists(jarFile);
+        }
+    }
+
+    @Test
+    void reportsStructuredAsmArtifactFailuresByDetectingPathTypeThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-report-artifact", ".class");
+        Path classDirectory = Files.createTempDirectory("javatogpu-compiler-asm-report-artifact-dir");
+        Path jarFile = Files.createTempFile("javatogpu-compiler-asm-report-artifact", ".jar");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+            Files.write(classDirectory.resolve("Demo.class"), classBytesWithArrayLengthMethod());
+            try (JarOutputStream outputStream = new JarOutputStream(Files.newOutputStream(jarFile))) {
+                outputStream.putNextEntry(new JarEntry("sample/Demo.class"));
+                outputStream.write(classBytesWithArrayLengthMethod());
+                outputStream.closeEntry();
+            }
+
+            GpuProgramCompiler compiler = GpuProgramCompiler.createDefault();
+
+            assertEquals("arrayLength", compiler.reportStructuredAsmArtifact(classFile).failures().get(0).family());
+            assertEquals("arrayLength", compiler.reportStructuredAsmArtifact(classDirectory).failures().get(0).family());
+            assertEquals("arrayLength", compiler.reportStructuredAsmArtifact(jarFile).failures().get(0).family());
+        } finally {
+            Files.deleteIfExists(classFile);
+            Files.deleteIfExists(classDirectory.resolve("Demo.class"));
+            Files.deleteIfExists(classDirectory);
+            Files.deleteIfExists(jarFile);
+        }
+    }
+
+    @Test
+    void writesStructuredAsmArtifactReportThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-report-artifact", ".class");
+        Path reportFile = Files.createTempFile("javatogpu-compiler-asm-report", ".properties");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendFailureReport report = GpuProgramCompiler.createDefault()
+                    .writeStructuredAsmArtifactReport(classFile, reportFile);
+            Properties properties = new Properties();
+            try (java.io.InputStream inputStream = Files.newInputStream(reportFile)) {
+                properties.load(inputStream);
+            }
+
+            assertEquals(1, report.failureCount());
+            assertEquals("false", properties.getProperty("asmReport.successful"));
+            assertEquals("arrayLength", properties.getProperty("asmReport.failure.0.family"));
+        } finally {
+            Files.deleteIfExists(classFile);
+            Files.deleteIfExists(reportFile);
+        }
+    }
+
+    @Test
+    void requireStructuredAsmArtifactFailsOnUnsupportedBytecodeThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-require", ".class");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendException exception = assertThrows(
+                    AsmFrontendException.class,
+                    () -> GpuProgramCompiler.createDefault().requireStructuredAsmArtifact(classFile)
+            );
+
+            assertTrue(exception.getMessage().contains("asmFailureReport failed failures=1"));
+            assertEquals("arrayLength", exception.metadata().orElseThrow().family());
+        } finally {
+            Files.deleteIfExists(classFile);
+        }
+    }
+
+    @Test
+    void writeAndRequireStructuredAsmArtifactReportWritesBeforeFailing() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-require", ".class");
+        Path reportFile = Files.createTempFile("javatogpu-compiler-asm-require", ".properties");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            assertThrows(
+                    AsmFrontendException.class,
+                    () -> GpuProgramCompiler.createDefault().writeAndRequireStructuredAsmArtifactReport(classFile, reportFile)
+            );
+            Properties properties = new Properties();
+            try (java.io.InputStream inputStream = Files.newInputStream(reportFile)) {
+                properties.load(inputStream);
+            }
+
+            assertEquals("false", properties.getProperty("asmReport.successful"));
+            assertEquals("arrayLength", properties.getProperty("asmReport.failure.0.family"));
+        } finally {
+            Files.deleteIfExists(classFile);
+            Files.deleteIfExists(reportFile);
+        }
     }
 
     private ParsedGpuMethod parsedMethod(
@@ -285,6 +435,20 @@ class GpuProgramCompilerTest {
                 .filter(method -> method.name.equals(methodName) && method.desc.equals(descriptor))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private byte[] classBytesWithArrayLengthMethod() {
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V1_6, Opcodes.ACC_PUBLIC, DEMO_OWNER, null, "java/lang/Object", null);
+        MethodVisitor methodVisitor = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "arrayLengthKernel", "([F)I", null, null);
+        methodVisitor.visitCode();
+        methodVisitor.visitVarInsn(Opcodes.ALOAD, 0);
+        methodVisitor.visitInsn(Opcodes.ARRAYLENGTH);
+        methodVisitor.visitInsn(Opcodes.IRETURN);
+        methodVisitor.visitMaxs(0, 0);
+        methodVisitor.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
     }
 
     @FunctionalInterface
