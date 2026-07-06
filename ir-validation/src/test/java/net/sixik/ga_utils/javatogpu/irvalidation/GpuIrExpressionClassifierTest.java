@@ -29,11 +29,14 @@ class GpuIrExpressionClassifierTest {
     void classifiesHelpersAndSideEffectIntrinsicsAsSideEffecting() {
         GpuIrHelperCall helperCall = new GpuIrHelperCall("jtg_helper", "void", List.of());
         GpuIrIntrinsicCall barrier = new GpuIrIntrinsicCall(null, "barrier", "barrier(1)", "void", List.of());
+        GpuIrIntrinsicCall imageWrite = new GpuIrIntrinsicCall(null, "write_imagef", "write_imagef({0}, {1}, {2})", "void", List.of());
 
         assertEquals(GpuIrExpressionEffect.SIDE_EFFECTING, classifier.effectOf(helperCall));
         assertEquals(GpuIrExpressionEffect.SIDE_EFFECTING, classifier.effectOf(barrier));
+        assertEquals(GpuIrExpressionEffect.SIDE_EFFECTING, classifier.effectOf(imageWrite));
         assertTrue(classifier.mayHaveSideEffects(helperCall));
         assertTrue(classifier.mayHaveSideEffects(barrier));
+        assertTrue(classifier.mayHaveSideEffects(imageWrite));
     }
 
     @Test

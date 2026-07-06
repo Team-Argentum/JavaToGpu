@@ -32,6 +32,8 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrWhileLoop;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStructField;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -743,8 +745,32 @@ class GpuIrSafetyValidatorTest {
         GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(
                 new GpuIrExpressionStatement(new GpuIrIntrinsicCall(null, "barrier", "barrier(1)", "void", List.of()))
         )));
+        GpuIrCompiledMethod imageWrite = method(new GpuIrMethod("imageWrite", List.of(
+                new GpuIrVariableDeclaration(
+                        "Float4",
+                        "pixel",
+                        new GpuIrStructInit("Float4", List.of(
+                                new GpuIrLiteral("1.0f"),
+                                new GpuIrLiteral("0.5f"),
+                                new GpuIrLiteral("0.25f"),
+                                new GpuIrLiteral("1.0f")
+                        ))
+                ),
+                new GpuIrExpressionStatement(new GpuIrIntrinsicCall(
+                        null,
+                        "write_imagef",
+                        "write_imagef({0}, {1}, {2})",
+                        "void",
+                        List.of(new GpuIrVariableRef("outputImage"), new GpuIrLiteral("0"), new GpuIrVariableRef("pixel")),
+                        List.of("Image1DWriteOnly", "int", "Float4")
+                ))
+        )), List.of(
+                new ParsedGpuParameter("outputImage", "Image1DWriteOnly", GpuAddressSpace.PRIVATE, false, List.of()),
+                new ParsedGpuParameter("output", "float[]", GpuAddressSpace.GLOBAL, false, List.of())
+        ));
 
         assertDoesNotThrow(() -> validator.run(context(method)));
+        assertDoesNotThrow(() -> validator.run(context(imageWrite)));
     }
 
     @Test
@@ -1547,6 +1573,37 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
+    void acceptsKnownStructParameterAndLocalTypesFromMetadata() {
+        ParsedGpuStruct sampleStruct = struct("SampleData", List.of(
+                new ParsedGpuStructField("bias", "double", List.of()),
+                new ParsedGpuStructField("index", "int", List.of())
+        ));
+        GpuIrCompiledMethod structParameter = method(
+                new GpuIrMethod("structParameter", List.of(
+                        new GpuIrVariableDeclaration("SampleData", "local", new GpuIrStructInit("SampleData", List.of(
+                                new GpuIrLiteral("0.5"),
+                                new GpuIrLiteral("1")
+                        ))),
+                        new GpuIrReturn(null)
+                )),
+                List.of(new ParsedGpuParameter("sample", "SampleData", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod structArrayParameter = method(
+                new GpuIrMethod("structArrayParameter", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("samples", "SampleData[]", GpuAddressSpace.GLOBAL, false, List.of()))
+        );
+        GpuIrCompiledMethod unknownStructParameter = method(
+                new GpuIrMethod("unknownStructParameter", List.of(new GpuIrReturn(null))),
+                List.of(new ParsedGpuParameter("sample", "UnknownData", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+
+        assertDoesNotThrow(() -> validator.run(context(structParameter, List.of(sampleStruct))));
+        assertDoesNotThrow(() -> validator.run(context(structArrayParameter, List.of(sampleStruct))));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(unknownStructParameter)))
+                .getMessage().contains("unsupported entry-point parameter type for sample: UnknownData"));
+    }
+
+    @Test
     void rejectsMalformedEntryPointParameterNames() {
         GpuIrCompiledMethod blankParameterName = method(
                 new GpuIrMethod("blankParameterName", List.of(new GpuIrReturn(null))),
@@ -1881,8 +1938,161 @@ class GpuIrSafetyValidatorTest {
         assertDoesNotThrow(() -> validator.run(context(metadataTypeMatch)));
     }
 
+    @Test
+    void acceptsImageSamplerAndScalarAliasMetadataShapes() {
+        GpuIrCompiledMethod imageIntrinsic = method(new GpuIrMethod("imageIntrinsic", List.of(
+                new GpuIrVariableDeclaration(
+                        "Int4",
+                        "pixel",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "read_imagei",
+                                "",
+                                "Int4",
+                                List.of(new GpuIrVariableRef("inputImage"), new GpuIrVariableRef("sampler"), new GpuIrLiteral("0")),
+                                List.of("Image2DReadOnly", "Sampler", "int")
+                        )
+                )
+        )), List.of(
+                new ParsedGpuParameter("inputImage", "Image2DReadOnly", GpuAddressSpace.PRIVATE, false, List.of()),
+                new ParsedGpuParameter("sampler", "Sampler", GpuAddressSpace.PRIVATE, false, List.of()),
+                new ParsedGpuParameter("output", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
+        ));
+        GpuIrCompiledMethod scalarAliasAssignment = method(
+                new GpuIrMethod("scalarAliasAssignment", List.of(
+                        new GpuIrVariableDeclaration("UInt", "value", new GpuIrLiteral("1")),
+                        new GpuIrAssignment(new GpuIrArrayAccess("output", new GpuIrLiteral("0")), new GpuIrVariableRef("value"))
+                )),
+                List.of(new ParsedGpuParameter("output", "int[]", GpuAddressSpace.GLOBAL, false, List.of()))
+        );
+
+        assertDoesNotThrow(() -> validator.run(context(imageIntrinsic)));
+        assertDoesNotThrow(() -> validator.run(context(scalarAliasAssignment)));
+    }
+
+    @Test
+    void acceptsNameOnlyIntrinsicCallsWithoutCodeTemplate() {
+        GpuIrCompiledMethod nameOnlyIntrinsic = method(new GpuIrMethod("nameOnlyIntrinsic", List.of(
+                new GpuIrVariableDeclaration("float", "angle", new GpuIrLiteral("1.0f")),
+                new GpuIrVariableDeclaration(
+                        "float",
+                        "value",
+                        new GpuIrIntrinsicCall(
+                                null,
+                                "native_sin",
+                                "",
+                                "float",
+                                List.of(new GpuIrVariableRef("angle")),
+                                List.of("float")
+                        )
+                )
+        )));
+
+        assertDoesNotThrow(() -> validator.run(context(nameOnlyIntrinsic)));
+    }
+
+    @Test
+    void validatesPointerDereferenceUnaryOperator() {
+        GpuIrCompiledMethod pointerDereference = method(
+                new GpuIrMethod("pointerDereference", List.of(
+                        new GpuIrVariableDeclaration("float", "value", new GpuIrUnary("*", new GpuIrVariableRef("ptr"))),
+                        new GpuIrReturn(new GpuIrVariableRef("value"))
+                )),
+                "jtg_pointer_dereference",
+                List.of(),
+                "float",
+                List.of(new ParsedGpuParameter("ptr", "GlobalFloatPtr", GpuAddressSpace.GLOBAL, false, List.of()))
+        );
+        GpuIrCompiledMethod scalarDereference = method(new GpuIrMethod("scalarDereference", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrLiteral("1.0f")),
+                new GpuIrVariableDeclaration("float", "copy", new GpuIrUnary("*", new GpuIrVariableRef("value")))
+        )));
+
+        assertDoesNotThrow(() -> validator.run(new GpuIrPassContext(pointerDereference, List.of(), List.of(), false)));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(scalarDereference)))
+                .getMessage().contains("operator * requires pointer operand but got float"));
+    }
+
+    @Test
+    void acceptsPointerWrapperInitializerFromPointeeScalar() {
+        GpuIrCompiledMethod pointerWrapperInitializer = method(new GpuIrMethod("pointerWrapperInitializer", List.of(
+                new GpuIrVariableDeclaration("FloatPtr", "ptr", new GpuIrLiteral("1.0f")),
+                new GpuIrReturn(null)
+        )));
+
+        assertDoesNotThrow(() -> validator.run(context(pointerWrapperInitializer)));
+    }
+
+    @Test
+    void acceptsPointerWrapperAddressOfForHelperArguments() {
+        GpuIrCompiledMethod helper = method(
+                new GpuIrMethod("helper", List.of(new GpuIrReturn(null))),
+                "jtg_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("ptr", "FloatPtr", GpuAddressSpace.PRIVATE, false, List.of()))
+        );
+        GpuIrCompiledMethod valid = method(
+                new GpuIrMethod("pointerAddressOf", List.of(
+                        new GpuIrVariableDeclaration("FloatPtr", "ptr", new GpuIrLiteral("1.0f")),
+                        new GpuIrExpressionStatement(new GpuIrHelperCall(
+                                "jtg_helper",
+                                "void",
+                                List.of(new GpuIrUnary("&", new GpuIrVariableRef("ptr")))
+                        ))
+                )),
+                "jtg_kernel",
+                List.of("jtg_helper")
+        );
+        GpuIrCompiledMethod invalid = method(new GpuIrMethod("scalarAddressOf", List.of(
+                new GpuIrVariableDeclaration("float", "value", new GpuIrLiteral("1.0f")),
+                new GpuIrVariableDeclaration("FloatPtr", "ptr", new GpuIrUnary("&", new GpuIrVariableRef("value")))
+        )));
+
+        assertDoesNotThrow(() -> validator.run(new GpuIrPassContext(valid, List.of(helper), List.of(), true)));
+        assertTrue(assertThrows(GpuIrPassException.class, () -> validator.run(context(invalid)))
+                .getMessage().contains("operator & requires pointer-wrapper operand but got float"));
+    }
+
+    @Test
+    void validatesPointerDereferenceAssignmentTargets() {
+        GpuIrCompiledMethod writablePointerWrite = method(
+                new GpuIrMethod("writablePointerWrite", List.of(
+                        new GpuIrAssignment(new GpuIrUnary("*", new GpuIrVariableRef("ptr")), new GpuIrLiteral("1.0f")),
+                        new GpuIrReturn(null)
+                )),
+                "jtg_writable_pointer_write",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("ptr", "GlobalFloatPtr", GpuAddressSpace.GLOBAL, false, List.of()))
+        );
+        GpuIrCompiledMethod readOnlyPointerWrite = method(
+                new GpuIrMethod("readOnlyPointerWrite", List.of(
+                        new GpuIrAssignment(new GpuIrUnary("*", new GpuIrVariableRef("ptr")), new GpuIrLiteral("1.0f")),
+                        new GpuIrReturn(null)
+                )),
+                "jtg_read_only_pointer_write",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("ptr", "GlobalFloatPtr", GpuAddressSpace.CONSTANT, false, List.of()))
+        );
+        assertDoesNotThrow(() -> validator.run(new GpuIrPassContext(writablePointerWrite, List.of(), List.of(), false)));
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(readOnlyPointerWrite, List.of(), List.of(), false))
+        ).getMessage().contains("read-only storage cannot be used as pointer dereference assignment target: ptr"));
+    }
+
     private GpuIrPassContext context(GpuIrCompiledMethod method) {
         return new GpuIrPassContext(method, List.of(), List.of(), true);
+    }
+
+    private GpuIrPassContext context(GpuIrCompiledMethod method, List<ParsedGpuStruct> structs) {
+        return new GpuIrPassContext(method, List.of(), structs, true);
+    }
+
+    private ParsedGpuStruct struct(String name, List<ParsedGpuStructField> fields) {
+        return new ParsedGpuStruct(name, "test." + name, fields, List.of(), List.of(), List.of());
     }
 
     private GpuIrCompiledMethod method(GpuIrMethod irMethod) {

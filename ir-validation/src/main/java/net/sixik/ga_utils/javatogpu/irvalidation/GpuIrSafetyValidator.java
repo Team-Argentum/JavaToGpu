@@ -33,6 +33,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclarati
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrWhileLoop;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
+import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import java.util.HashSet;
@@ -69,7 +70,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         }
         validateCompiledMethodEnvelope(context.method(), "compiled method");
         validateHelperMethodMetadata(context);
-        ValidationState state = new ValidationState(context.method(), helperMethodsByName(context));
+        ValidationState state = new ValidationState(context.method(), helperMethodsByName(context), structTypesByName(context));
         validateMethodMetadata(context.method(), state);
         List<ParsedGpuParameter> parameters = context.method().parsedMethod().parameters();
         if (parameters == null) {
@@ -125,6 +126,15 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
                 ));
     }
 
+    private Map<String, ParsedGpuStruct> structTypesByName(GpuIrPassContext context) {
+        return context.structs().stream()
+                .collect(Collectors.toMap(
+                        ParsedGpuStruct::ownerSimpleName,
+                        struct -> struct,
+                        (left, right) -> left
+                ));
+    }
+
     private void validateHelperMethodMetadata(GpuIrPassContext context) {
         Set<String> seenEmittedNames = new HashSet<>();
         for (GpuIrCompiledMethod helper : context.helperMethods()) {
@@ -141,11 +151,15 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
                 throw new GpuIrPassException("IR safety validation failed for "
                         + context.method().irMethod().name() + ": duplicate helper emitted method name: " + helper.emittedName());
             }
-            validateHelperSignatureMetadata(context.method(), helper);
+            validateHelperSignatureMetadata(context.method(), helper, structTypesByName(context));
         }
     }
 
-    private void validateHelperSignatureMetadata(GpuIrCompiledMethod method, GpuIrCompiledMethod helper) {
+    private void validateHelperSignatureMetadata(
+            GpuIrCompiledMethod method,
+            GpuIrCompiledMethod helper,
+            Map<String, ParsedGpuStruct> structTypesByName
+    ) {
         String returnType = GpuTypeSupport.declaredType(helper.parsedMethod().returnType());
         if (returnType == null || returnType.isBlank()) {
             throw new GpuIrPassException("IR safety validation failed for "
@@ -190,7 +204,8 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
                         + helper.emittedName() + ": " + parameterName);
             }
             if (!GpuTypeSupport.isSupportedHelperParameterType(parameterType)
-                    && !GpuTypeSupport.isSupportedLocalType(parameterType)) {
+                    && !GpuTypeSupport.isSupportedLocalType(parameterType)
+                    && !isKnownStructType(parameterType, structTypesByName)) {
                 throw new GpuIrPassException("IR safety validation failed for "
                         + method.irMethod().name() + ": unsupported helper parameter type for "
                         + helper.emittedName() + ": " + parameterName + " is " + parameterType);
@@ -253,8 +268,8 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         }
         validateParameterQualifiers(parameter, type, state);
         boolean supported = entryPoint
-                ? isSupportedEntryPointParameterType(type)
-                : GpuTypeSupport.isSupportedHelperParameterType(type);
+                ? isSupportedEntryPointParameterType(type, state)
+                : GpuTypeSupport.isSupportedHelperParameterType(type) || isKnownStructType(type, state.structTypesByName());
         if (!supported) {
             state.fail("unsupported " + (entryPoint ? "entry-point" : "helper") + " parameter type for "
                     + parameter.name() + ": " + type);
@@ -262,12 +277,21 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         if ((parameter.addressSpace() == GpuAddressSpace.GLOBAL
                 || parameter.addressSpace() == GpuAddressSpace.CONSTANT
                 || parameter.addressSpace() == GpuAddressSpace.LOCAL)
-                && !GpuTypeSupport.isArrayType(type)) {
-            state.fail(parameter.addressSpace() + " parameter must be an array type: " + parameter.name() + " is " + type);
+                && !isAddressSpaceBackedParameterType(type, entryPoint, state)) {
+            state.fail(parameter.addressSpace() + " parameter must be an array type"
+                    + (entryPoint ? "" : " or pointer type")
+                    + ": " + parameter.name() + " is " + type);
         }
         if (parameter.addressSpace() == GpuAddressSpace.PRIVATE && GpuTypeSupport.isArrayType(type)) {
             state.fail("array parameter must use an explicit GPU address space: " + parameter.name() + " is " + type);
         }
+    }
+
+    private boolean isAddressSpaceBackedParameterType(String type, boolean entryPoint, ValidationState state) {
+        if (GpuTypeSupport.isArrayType(type)) {
+            return true;
+        }
+        return !entryPoint && (GpuTypeSupport.isSupportedPointerType(type) || isKnownStructType(type, state.structTypesByName()));
     }
 
     private void validateParameterQualifiers(ParsedGpuParameter parameter, String type, ValidationState state) {
@@ -292,15 +316,29 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         }
     }
 
-    private boolean isSupportedEntryPointParameterType(String type) {
+    private boolean isSupportedEntryPointParameterType(String type, ValidationState state) {
         if (GpuTypeSupport.isSupportedKernelParameterType(type) || GpuTypeSupport.isSupportedVectorType(type)) {
+            return true;
+        }
+        if (isKnownStructType(type, state.structTypesByName())) {
             return true;
         }
         if (!GpuTypeSupport.isArrayType(type)) {
             return false;
         }
         String componentType = GpuTypeSupport.componentType(type);
-        return GpuTypeSupport.isSupportedVectorType(componentType);
+        return GpuTypeSupport.isSupportedVectorType(componentType) || isKnownStructType(componentType, state.structTypesByName());
+    }
+
+    private boolean isKnownStructType(String type, Map<String, ParsedGpuStruct> structTypesByName) {
+        String normalizedType = GpuTypeSupport.declaredType(type);
+        if (normalizedType == null || structTypesByName.isEmpty()) {
+            return false;
+        }
+        String componentType = GpuTypeSupport.isArrayType(normalizedType)
+                ? GpuTypeSupport.componentType(normalizedType)
+                : normalizedType;
+        return structTypesByName.containsKey(componentType) || structTypesByName.containsKey(GpuTypeSupport.simpleTypeName(componentType));
     }
 
     private enum StorageAccess {
@@ -492,7 +530,8 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             return;
         }
         if (!GpuTypeSupport.isSupportedLocalType(normalizedType)
-                && !GpuTypeSupport.isSupportedVectorType(normalizedType)) {
+                && !GpuTypeSupport.isSupportedVectorType(normalizedType)
+                && !isKnownStructType(normalizedType, state.structTypesByName())) {
             state.fail("unsupported " + location + ": " + normalizedType);
         }
     }
@@ -522,8 +561,20 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             state.requireExpression(fieldAccess.target(), "field access target");
             validateExpression(fieldAccess.target(), state);
             validateKnownVectorFieldAccess(fieldAccess, state);
+        } else if (target instanceof GpuIrUnary unary && Objects.equals("*", unary.operator())) {
+            validatePointerDereferenceAssignmentTarget(unary, state);
         } else {
-            state.fail("assignment target must be a variable, array element, or field access but got " + target.getClass().getSimpleName());
+            state.fail("assignment target must be a variable, array element, field access, or pointer dereference but got "
+                    + target.getClass().getSimpleName());
+        }
+    }
+
+    private void validatePointerDereferenceAssignmentTarget(GpuIrUnary unary, ValidationState state) {
+        state.requireExpression(unary.operand(), "pointer dereference assignment target");
+        validateExpression(unary.operand(), state);
+        validatePointerDereferenceOperand(expressionType(unary.operand(), state), state);
+        if (unary.operand() instanceof GpuIrVariableRef variableRef) {
+            state.requireWritable(variableRef.name(), "pointer dereference assignment target");
         }
     }
 
@@ -599,12 +650,13 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             validateHelperArgumentStorage(helperCall, state);
         } else if (expression instanceof GpuIrIntrinsicCall intrinsicCall) {
             state.requireNonBlank(intrinsicCall.backendName(), "intrinsic backend name");
-            state.requireNonBlank(intrinsicCall.codeTemplate(), "intrinsic code template");
             state.requireNonBlank(intrinsicCall.resultType(), "intrinsic result type");
             validateSupportedIntrinsicResultType(intrinsicCall, state);
             validateExpressionList(intrinsicCall.arguments(), state, "intrinsic argument");
             validateIntrinsicArgumentMetadata(intrinsicCall, state);
-            validateIntrinsicTemplate(intrinsicCall, state);
+            if (!intrinsicCall.codeTemplate().isBlank()) {
+                validateIntrinsicTemplate(intrinsicCall, state);
+            }
             validateExpression(intrinsicCall.receiver(), state);
         } else if (expression instanceof GpuIrStructInit structInit) {
             state.requireNonBlank(structInit.structType(), "struct initializer type");
@@ -740,8 +792,26 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             validateIntegralOperand(operandType, "", operator, state);
         } else if (Objects.equals("-", operator) || Objects.equals("+", operator)) {
             validateNumericOperand(operandType, "", operator, state);
+        } else if (Objects.equals("*", operator)) {
+            validatePointerDereferenceOperand(operandType, state);
+        } else if (Objects.equals("&", operator)) {
+            validatePointerAddressOperand(operandType, state);
         } else {
             state.fail("unsupported unary operator: " + operator);
+        }
+    }
+
+    private void validatePointerDereferenceOperand(String operandType, ValidationState state) {
+        String normalizedType = GpuTypeSupport.declaredType(operandType);
+        if (normalizedType != null && !GpuTypeSupport.isSupportedPointerType(normalizedType)) {
+            state.fail("operator * requires pointer operand but got " + normalizedType);
+        }
+    }
+
+    private void validatePointerAddressOperand(String operandType, ValidationState state) {
+        String normalizedType = GpuTypeSupport.declaredType(operandType);
+        if (normalizedType != null && !GpuTypeSupport.isSupportedPointerType(normalizedType)) {
+            state.fail("operator & requires pointer-wrapper operand but got " + normalizedType);
         }
     }
 
@@ -909,6 +979,12 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         if (Objects.equals("~", unary.operator())) {
             return normalizeUnaryIntegralType(operandType);
         }
+        if (Objects.equals("*", unary.operator()) && GpuTypeSupport.isSupportedPointerType(operandType)) {
+            return GpuTypeSupport.pointerValueType(operandType);
+        }
+        if (Objects.equals("&", unary.operator()) && GpuTypeSupport.isSupportedPointerType(operandType)) {
+            return operandType;
+        }
         return null;
     }
 
@@ -987,9 +1063,28 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         if (normalizedExpected == null || normalizedActual == null) {
             return;
         }
-        if (!GpuTypeSupport.isHelperArgumentCompatible(normalizedActual, normalizedExpected)) {
+        if (!isAssignableType(normalizedExpected, normalizedActual)) {
             state.fail("type mismatch in " + location + ": expected " + normalizedExpected + " but got " + normalizedActual);
         }
+    }
+
+    private boolean isAssignableType(String expectedType, String actualType) {
+        if (GpuTypeSupport.isHelperArgumentCompatible(actualType, expectedType)) {
+            return true;
+        }
+        if (GpuTypeSupport.isSupportedScalarAliasType(actualType)) {
+            return Objects.equals(GpuTypeSupport.scalarAliasValueType(actualType), expectedType);
+        }
+        if (GpuTypeSupport.isSupportedScalarAliasType(expectedType)) {
+            return Objects.equals(GpuTypeSupport.scalarAliasValueType(expectedType), actualType);
+        }
+        if (GpuTypeSupport.isSupportedPointerType(expectedType)) {
+            return Objects.equals(GpuTypeSupport.pointerValueType(expectedType), actualType);
+        }
+        if (GpuTypeSupport.isSupportedPointerType(actualType)) {
+            return Objects.equals(GpuTypeSupport.pointerValueType(actualType), expectedType);
+        }
+        return false;
     }
 
     private void validateExpressionList(List<GpuIrExpression> expressions, ValidationState state, String label) {
@@ -1128,18 +1223,24 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
     private static final class ValidationState {
         private final GpuIrCompiledMethod method;
         private final Map<String, GpuIrCompiledMethod> helperMethodsByName;
+        private final Map<String, ParsedGpuStruct> structTypesByName;
         private final Set<String> declaredNames;
         private final Map<String, String> declaredTypes;
         private final Map<String, StorageAccess> storageAccessByName;
         private final Set<String> usedHelpers;
 
-        private ValidationState(GpuIrCompiledMethod method, Map<String, GpuIrCompiledMethod> helperMethodsByName) {
-            this(method, helperMethodsByName, new HashSet<>(), new HashMap<>(), new HashMap<>(), new HashSet<>());
+        private ValidationState(
+                GpuIrCompiledMethod method,
+                Map<String, GpuIrCompiledMethod> helperMethodsByName,
+                Map<String, ParsedGpuStruct> structTypesByName
+        ) {
+            this(method, helperMethodsByName, structTypesByName, new HashSet<>(), new HashMap<>(), new HashMap<>(), new HashSet<>());
         }
 
         private ValidationState(
                 GpuIrCompiledMethod method,
                 Map<String, GpuIrCompiledMethod> helperMethodsByName,
+                Map<String, ParsedGpuStruct> structTypesByName,
                 Set<String> declaredNames,
                 Map<String, String> declaredTypes,
                 Map<String, StorageAccess> storageAccessByName,
@@ -1147,6 +1248,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         ) {
             this.method = method;
             this.helperMethodsByName = helperMethodsByName;
+            this.structTypesByName = structTypesByName;
             this.declaredNames = declaredNames;
             this.declaredTypes = declaredTypes;
             this.storageAccessByName = storageAccessByName;
@@ -1158,6 +1260,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
             return new ValidationState(
                     method,
                     helperMethodsByName,
+                    structTypesByName,
                     new HashSet<>(declaredNames),
                     new HashMap<>(declaredTypes),
                     new HashMap<>(storageAccessByName),
@@ -1195,6 +1298,10 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
 
         private GpuIrCompiledMethod helperMethod(String helperName) {
             return helperMethodsByName.get(helperName);
+        }
+
+        private Map<String, ParsedGpuStruct> structTypesByName() {
+            return structTypesByName;
         }
 
         private String declaredType(String name) {
@@ -1306,6 +1413,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         if (!GpuTypeSupport.isSupportedScalarType(normalizedType)
                 && !GpuTypeSupport.isSupportedVectorType(normalizedType)
                 && !GpuTypeSupport.isSupportedPointerType(normalizedType)
+                && !GpuTypeSupport.isSupportedImageOrSamplerType(normalizedType)
                 && !GpuTypeSupport.isArrayType(normalizedType)) {
             state.fail("unsupported intrinsic argument " + index + " metadata type for " + backendName + ": " + normalizedType);
         }
@@ -1319,6 +1427,7 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
         if (!GpuTypeSupport.isSupportedScalarType(normalizedType)
                 && !GpuTypeSupport.isSupportedVectorType(normalizedType)
                 && !GpuTypeSupport.isSupportedPointerType(normalizedType)
+                && !GpuTypeSupport.isSupportedImageOrSamplerType(normalizedType)
                 && !GpuTypeSupport.isArrayType(normalizedType)) {
             state.fail("unsupported intrinsic result metadata type for " + intrinsicCall.backendName() + ": " + normalizedType);
         }

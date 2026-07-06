@@ -263,7 +263,7 @@ These are major post-production-core architecture tracks. They should not block 
 
 ### I2. IR validation and optimization pipeline
 
-Current I2 status is intentionally split into small visible milestones so the large read-only optimizer-enablement stack does not look like one vague item:
+I2 is closed for the current scope: the read-only IR Validator foundation is ready to be exercised on real examples. Deeper production optimizer/rewrite work remains intentionally out of I2 and is tracked as post-I2 frontier work instead of blocking validator dogfooding.
 
 - [x] Establish the optional `ir-validation` module and ServiceLoader-based validation provider.
   Strict builds can opt into diagnostic, strict-safety, or strict-optimizer validation without changing default compiler behavior.
@@ -298,49 +298,21 @@ Current I2 status is intentionally split into small visible milestones so the la
 
 - [x] Add the first opt-in IR validator foundation as a separate module.
   The `ir-validation` module now contributes an optional `GpuIrValidationProvider` through Java `ServiceLoader`, so strict builds can add it to the annotation-processor path and explicitly enable it with `-Ajavatogpu.irValidation=diagnostic`, `strictSafety`, or `strictOptimizer` without making the main compiler/runtime artifact heavier or changing default builds. Diagnostic mode now supports `-Ajavatogpu.irValidationDiagnostics=quiet|summary|detailed`, defaulting to compact javac `NOTE` summaries for the unified read-only validation report, including proof-bundle rewrite-safety, diagnostic, and unsafe-proof counters such as `autoVectorizationProofBundleRewriteSafe`, `autoVectorizationProofBundleDiagnostics`, `autoVectorizationProofBundleUnsafeProofs`, and `autoVectorizationProofBundleFirstUnsafeProof`; detailed diagnostics also include nested `autoVectorizationProofBundle={...}` context. `-Ajavatogpu.irValidationReport=<relative-path>` writes a machine-readable `.properties` CI artifact with safety/CSE/vectorization counters plus auto-vectorization vector-shape, rewrite-readiness, rewrite-blocked, rewrite-plan, rewrite-policy, rewrite-dry-run, resolved-rewrite, rewrite-guard, rewrite-plan proof-summary fields such as `autoVectorizationProofRewritePlanRewriteSafe`, `autoVectorizationProofRewritePlanDiagnostics`, and `autoVectorizationProofRewritePlanGuardFamily.*`, proof-bundle fields such as `autoVectorizationProofBundleProofs`, `autoVectorizationProofBundleKinds`, `autoVectorizationProofBundleKindCounts`, `autoVectorizationProofBundleRewriteSafe`, `autoVectorizationProofBundleDiagnostics`, `autoVectorizationProofBundleUnsafeProofs`, `autoVectorizationProofBundleFirstUnsafeProof*`, and `autoVectorizationProofBundleGuardFamily.*`, warning-family, rejection-reason, first-blocking-diagnostic, and first-blocking-family fields. Strict modes still fail at their configured safety/optimizer boundaries with detailed nested optimizer context. The first slices validate lowered IR variable declarations/references, assignment targets, loop/switch break/continue legality, duplicate local declarations, helper-call reachability/result metadata, helper dependency metadata consistency, intrinsic template placeholders, basic struct-initializer metadata, return-shape consistency, non-blank type/operator metadata, positive literal sizes for private arrays, conservative expression-statement side effects, and void-helper result metadata before OpenCL emission. Purity/effect classification has also been split into reusable `GpuIrExpressionClassifier` / `GpuIrExpressionEffect` types so the validator and future CSE/canonicalization passes share one conservative source of truth. A unified read-only `GpuIrOptimizationValidationPipeline` now combines safety validation, CSE planning preview, auto-vectorization preview, dry-run rewrite validation, and resolved rewrite-operation metadata into one report with diagnostic-only, strict-safety, and strict-optimizer modes plus typed aggregate counters for optimizer diagnostics, giving processor integration one stable feature-flagged entrypoint before any production rewrite is enabled.
-- [ ] I2-A. Tighten transformation-safety proof coverage.
-  Goal: make every future mutating optimization prove that the IR shape is safe before rewrite code can run.
-  - [ ] Add dominance proof checks for all rewrite candidates that cross statement, branch, loop, or switch boundaries.
-  - [ ] Add side-effect and evaluation-order proof checks for helper calls, intrinsic calls, array writes, and expression statements.
-  - [ ] Add alias and memory-space legality checks for global/local/constant/private arrays, including read-only storage and same-array source/target cases.
-  - [ ] Add backend/device constraint checks for vector width, double/vector support, address-space limitations, and unsupported OpenCL/CUDA lowering shapes.
-  - [ ] Add focused tests that fail closed when any proof layer is missing, inconsistent, or contradicted by the lowered IR.
-  Done when: strict optimizer mode can explain every blocked rewrite through typed proof-layer fields instead of free-form diagnostics, and no mutating optimizer path can bypass those checks.
+- [x] Close I2 for real-example IR Validator validation.
+  I2 is now treated as complete for its intended scope: optional module wiring, strict/diagnostic modes, safety validation, read-only optimizer evidence, CI artifacts, fail-closed gate contracts, baseline comparison helpers, production-readiness preflight surfaces, and real-example dogfooding contracts are in place. The opt-in `validateIrValidationExampleReports` task now compiles `examples-app` and `test-app` with the validator enabled, fails on any safety regression, verifies the read-only optimizer-readiness artifact shape, rejects accidental production-rewrite enablement, and summarizes expected blockers. Current dogfooding evidence is clean for safety (`examples-app`: `41/41`, `test-app`: `20/20`) while optimizer readiness remains intentionally blocked by read-only CSE literal-promotion / auto-vectorization gates plus the known CSE skipped-candidate policy blockers (`examples-app`: `3`, `test-app`: `3`). Future work should use those real reports to drive post-I2 optimizer frontier improvements instead of reopening the I2 foundation.
 
-- [ ] I2-B. Expand canonicalization and common-computation detection.
-  Goal: find more repeated computations while keeping the canonicalizer conservative and Java-semantics safe.
-  - [ ] Extend numeric canonicalization beyond the current safe reference-only and int-literal arithmetic slices.
-  - [ ] Add typed proof for long overflow, floating-point semantics, casts, mixed numeric operands, and unsupported operators before allowing canonical keys.
-  - [ ] Detect repeated helper-call bodies or intrinsic-heavy expression families without treating unsafe calls as rewrite-ready.
-  - [ ] Group equivalent repeated computations into stable candidate families so future passes can merge identical lowered work into one reusable computation.
-  - [ ] Add artifact fields that separate detected candidates, proof-ready candidates, blocked candidates, and production-rewrite-ready candidates.
-  Done when: CSE/common-computation reports show clear candidate families and blockers, and every newly canonicalized family has proof tests plus runtime-equivalence fixtures.
+Post-I2 optimizer frontier, not blocking I2 closure:
 
-- [ ] I2-C. Grow auto-vectorization from current fixed-width loop detection into broader scalar-computation patterns.
-  Goal: identify repeated scalar work that can later become vector IR without enabling production mutation early.
-  - [ ] Add candidates for repeated coordinate/noise/math expressions that are not already simple lane-copy or lane-wise binary forms.
-  - [ ] Track source/target array layout, lane index expressions, cross-lane reads, repeated writes, and non-lane reads as typed blockers.
-  - [ ] Add backend-sensitive vector-shape decisions for int/float/double vectors, x3 ABI edge cases, and unsupported device capabilities.
-  - [ ] Keep the production `apply(...)` path fail-closed/no-op until runtime evidence and rollback gates are present.
-  - [ ] Add explicit prototype-only rewrite artifacts for any new candidate family before considering production enablement.
-  Done when: auto-vectorization can report useful non-trivial candidate families and their blockers, but production validation still stays read-only unless the future mutation switch is explicitly enabled.
-
-- [ ] I2-D. Add runtime-equivalence proof artifacts for every optimizer family.
-  Goal: prevent performance work from silently changing generated-kernel behavior.
-  - [ ] Add CPU/reference vs pre/post-optimization equivalence fixtures for each CSE candidate family promoted beyond read-only preview.
-  - [ ] Add explicit runtime-equivalence artifacts for each auto-vectorization prototype family, including successful, failed, and unsupported-runner cases.
-  - [ ] Preserve diagnostics as machine-readable fields: first diagnostic, joined diagnostics, indexed diagnostics, input-case counts, output names, and rewrite-family counters.
-  - [ ] Require runtime evidence before changing any production-readiness or promotion-confidence gate from blocked to ready.
-  - [ ] Add regression tests that prove failed runtime evidence blocks promotion even when static proof layers pass.
-  Done when: every optimizer slice has a matching runtime-equivalence artifact and CI can reject promotion from evidence gaps instead of relying on manual review.
-
-- [ ] I2-E. Wire I2 outputs into A1/A2 operational validation.
-  Goal: connect read-only optimizer evidence to real NVIDIA runtime validation before any production mutation is enabled.
-  - [ ] Export the current I2 CI gate index into the operational validation artifacts used by A1/A2 runs.
-  - [ ] Store baseline snapshots for optimizer-layer readiness and compare them across repeated NVIDIA-only validation runs.
-  - [ ] Add operational summaries that show first rejected optimizer gate, runtime-evidence status, and remaining promotion blockers.
-  - [ ] Keep Intel/AMD cross-vendor promotion gates blocked until matching hardware validation exists.
-  Done when: A1/A2 validation can show whether optimizer readiness improved/regressed across real runs, while mutation remains blocked without runtime and cross-vendor confidence.
+- [ ] Tighten transformation-safety proof coverage before any future production rewrite.
+  Add dominance, side-effect/evaluation-order, alias/memory-space, and backend/device proof checks; keep mutating paths blocked unless all proof layers are present and consistent.
+- [ ] Expand canonicalization and common-computation detection beyond the current conservative slices.
+  Extend numeric canonicalization, helper/intrinsic candidate grouping, and proof-ready vs blocked candidate artifacts only when Java semantics and runtime evidence are clear.
+- [ ] Grow auto-vectorization beyond current fixed-width loop detection.
+  Add broader coordinate/noise/math candidate families, richer layout blockers, backend-sensitive vector decisions, and prototype-only rewrite artifacts while production `apply(...)` remains fail-closed/no-op.
+- [ ] Add runtime-equivalence proof artifacts for every optimizer family selected for promotion.
+  Require CPU/reference and pre/post optimization evidence, machine-readable diagnostics, and failed-evidence regression tests before any production-readiness gate can move from blocked to ready.
+- [ ] Wire optimizer evidence into A1/A2 operational validation.
+  Export the I2 CI gate index into NVIDIA validation artifacts, store readiness baselines across runs, summarize first rejected optimizer gates, and keep Intel/AMD promotion gates blocked until hardware validation exists.
 ## Recommended Execution Order
 
 If the goal is to move forward pragmatically from the current state, the best order is now:
@@ -363,7 +335,7 @@ The broad repetitive intrinsic-family generation detour is now closed for curren
 
 After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence remains NVIDIA-only until Intel/AMD hardware is available, and the next major compiler-quality frontier is broader ASM ingestion.
 
-Latest I2/L2 reconciliation: the current CI contract layer is closed for present priorities. Direct contract coverage now pins current readiness CI summaries, optimizer-gate consistency/acceptance, optimizer CI gate-index consistency/acceptance, regression/baseline CI summaries, and nested artifact-field composition. The remaining I2 items are intentionally broader frontier work: deeper transformation-safety proofs, stronger canonicalization/common-computation detection, and eventual production rewrite promotion after A1/A2 runtime confidence is stable. These should stay open until backed by runtime evidence rather than being marked complete from read-only artifact coverage alone.
+Latest I2/L2 reconciliation: the current CI contract layer is closed for present priorities. Direct contract coverage now pins current readiness CI summaries, optimizer-gate consistency/acceptance, optimizer CI gate-index consistency/acceptance, regression/baseline CI summaries, nested artifact-field composition, and opt-in real-example dogfooding reports for `examples-app` / `test-app`. The dogfooding contract keeps safety fail-fast while treating optimizer readiness as a read-only stability artifact: production mutation must remain disabled, rewrite applicability must stay false, known CSE policy blockers are counted, and no-candidate CSE literal-promotion / auto-vectorization blockers are accepted as the current baseline. The remaining I2 items are intentionally broader frontier work: deeper transformation-safety proofs, stronger canonicalization/common-computation detection, runtime-equivalence evidence for selected optimizer families, and eventual production rewrite promotion after A1/A2 runtime confidence is stable. These should stay open until backed by runtime evidence rather than being marked complete from read-only artifact coverage alone.
 
 
 

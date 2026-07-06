@@ -14,6 +14,9 @@ dependencies {
 
     implementation project(':processor')
     annotationProcessor project(':processor')
+    if (providers.gradleProperty('javatogpu.enableIrValidationExamples').map { it.toBoolean() }.getOrElse(false)) {
+        annotationProcessor project(':ir-validation')
+    }
 }
 
 test {
@@ -34,4 +37,14 @@ tasks.register('rewriteGpuMethods', JavaExec) {
 
 tasks.named('classes') {
     dependsOn tasks.named('rewriteGpuMethods')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    if (providers.gradleProperty('javatogpu.enableIrValidationExamples').map { it.toBoolean() }.getOrElse(false)) {
+        options.compilerArgs += [
+                '-Ajavatogpu.irValidation=' + providers.gradleProperty('javatogpu.irValidationMode').getOrElse('diagnostic'),
+                '-Ajavatogpu.irValidationDiagnostics=' + providers.gradleProperty('javatogpu.irValidationDiagnostics').getOrElse('summary'),
+                '-Ajavatogpu.irValidationReport=' + providers.gradleProperty('javatogpu.irValidationReport').getOrElse('reports/test-app-ir-validation.properties')
+        ]
+    }
 }

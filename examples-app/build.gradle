@@ -9,6 +9,9 @@ version = '1.0-SNAPSHOT'
 dependencies {
     implementation project(':processor')
     annotationProcessor project(':processor')
+    if (providers.gradleProperty('javatogpu.enableIrValidationExamples').map { it.toBoolean() }.getOrElse(false)) {
+        annotationProcessor project(':ir-validation')
+    }
     implementation 'com.github.javaparser:javaparser-core:3.28.1'
     implementation 'org.ow2.asm:asm:9.7.1'
     implementation 'org.ow2.asm:asm-tree:9.7.1'
@@ -36,4 +39,14 @@ tasks.named('classes') {
 
 test {
     useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    if (providers.gradleProperty('javatogpu.enableIrValidationExamples').map { it.toBoolean() }.getOrElse(false)) {
+        options.compilerArgs += [
+                '-Ajavatogpu.irValidation=' + providers.gradleProperty('javatogpu.irValidationMode').getOrElse('diagnostic'),
+                '-Ajavatogpu.irValidationDiagnostics=' + providers.gradleProperty('javatogpu.irValidationDiagnostics').getOrElse('summary'),
+                '-Ajavatogpu.irValidationReport=' + providers.gradleProperty('javatogpu.irValidationReport').getOrElse('reports/examples-app-ir-validation.properties')
+        ]
+    }
 }

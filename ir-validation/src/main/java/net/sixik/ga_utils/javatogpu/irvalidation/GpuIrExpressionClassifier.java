@@ -74,11 +74,13 @@ public final class GpuIrExpressionClassifier {
         return backendName.contains("barrier")
                 || backendName.contains("mem_fence")
                 || backendName.contains("atomic")
+                || backendName.contains("write_image")
                 || backendName.contains("trap")
                 || backendName.contains("unreachable")
                 || template.contains("barrier(")
                 || template.contains("mem_fence(")
                 || template.contains("atomic_")
+                || template.contains("write_image")
                 || template.contains("__builtin_trap")
                 || template.contains("__builtin_unreachable");
     }
