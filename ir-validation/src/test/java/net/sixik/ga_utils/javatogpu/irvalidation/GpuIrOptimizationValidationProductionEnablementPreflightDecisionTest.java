@@ -138,6 +138,7 @@ class GpuIrOptimizationValidationProductionEnablementPreflightDecisionTest {
                 true,
                 true,
                 true,
+                true,
                 false,
                 "readyForProductionMutation",
                 "readyForPrototypeRewrite",
@@ -151,6 +152,7 @@ class GpuIrOptimizationValidationProductionEnablementPreflightDecisionTest {
         return new GpuIrOptimizationValidationOptimizerEnablementGateReport(
                 "readyPreflightKernel",
                 "readyForProductionMutation",
+                true,
                 true,
                 true,
                 true,

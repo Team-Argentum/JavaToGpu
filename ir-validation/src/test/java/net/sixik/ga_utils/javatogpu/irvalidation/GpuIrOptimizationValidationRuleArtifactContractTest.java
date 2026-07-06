@@ -272,6 +272,7 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
                 "optimizerEnablementGateVerdict",
                 "optimizerEnablementGateReadyForProductionMutation",
                 "optimizerEnablementGateCseReadyForProductionMutation",
+                "optimizerEnablementGateCseReadyForEnablementReview",
                 "optimizerEnablementGateAutoVectorizationReadyForPrototypeRewrite",
                 "optimizerEnablementGateOptimizerEnablementReviewAllowed",
                 "optimizerEnablementGateProductionMutationEnabled",
@@ -290,6 +291,7 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("notReady/cseBlocked", fields.get("optimizerEnablementGateVerdict"));
         assertEquals("false", fields.get("optimizerEnablementGateReadyForProductionMutation"));
         assertEquals("false", fields.get("optimizerEnablementGateCseReadyForProductionMutation"));
+        assertEquals("false", fields.get("optimizerEnablementGateCseReadyForEnablementReview"));
         assertEquals("false", fields.get("optimizerEnablementGateAutoVectorizationReadyForPrototypeRewrite"));
         assertEquals("true", fields.get("optimizerEnablementGateOptimizerEnablementReviewAllowed"));
         assertEquals("false", fields.get("optimizerEnablementGateProductionMutationEnabled"));
@@ -324,7 +326,15 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
                 "optimizerEnablementGateReadyForProductionMutation",
                 "optimizerProductionPreflightVerdict",
                 "optimizerProductionPreflightBlocked",
-                "optimizerProductionPreflightFirstBlockingReason"
+                "optimizerProductionPreflightFirstBlockingReason",
+                "optimizerProductionSwitchVerdict",
+                "optimizerProductionSwitchEligibleForSwitchReview",
+                "optimizerProductionSwitchRequiredEvidenceCount",
+                "optimizerProductionSwitchFirstBlockingReason",
+                "optimizerPromotionConfidenceVerdict",
+                "optimizerPromotionConfidencePromotionAllowed",
+                "optimizerPromotionConfidenceRuntimeConfidenceStable",
+                "optimizerPromotionConfidenceFirstBlockingReason"
         ));
         assertEquals("bundleContractKernel", fields.get("optimizerValidationBundleMethod"));
         assertEquals("notReady/cseBlocked", fields.get("optimizerValidationBundleVerdict"));
@@ -338,6 +348,88 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionPreflightVerdict"));
         assertEquals("true", fields.get("optimizerProductionPreflightBlocked"));
         assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerProductionPreflightFirstBlockingReason"));
+        assertEquals("blocked/preflightNotReady", fields.get("optimizerProductionSwitchVerdict"));
+        assertEquals("false", fields.get("optimizerProductionSwitchEligibleForSwitchReview"));
+        assertEquals("4", fields.get("optimizerProductionSwitchRequiredEvidenceCount"));
+        assertEquals("productionPreflightNotReviewReady", fields.get("optimizerProductionSwitchFirstBlockingReason"));
+        assertEquals("blocked/productionSwitchNotReady", fields.get("optimizerPromotionConfidenceVerdict"));
+        assertEquals("false", fields.get("optimizerPromotionConfidencePromotionAllowed"));
+        assertEquals("false", fields.get("optimizerPromotionConfidenceRuntimeConfidenceStable"));
+        assertEquals("productionMutationSwitchNotReady", fields.get("optimizerPromotionConfidenceFirstBlockingReason"));
+    }
+
+    @Test
+    void optimizerPromotionConfidenceKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("promotionContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runOptimizerPromotionConfidenceContractFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerPromotionConfidenceMethod",
+                "optimizerPromotionConfidenceVerdict",
+                "optimizerPromotionConfidencePromotionAllowed",
+                "optimizerPromotionConfidenceProductionMutationEnabled",
+                "optimizerPromotionConfidenceSwitchVerdict",
+                "optimizerPromotionConfidenceSwitchReviewEligible",
+                "optimizerPromotionConfidenceRuntimeConfidenceStable",
+                "optimizerPromotionConfidenceRequiredConfidenceEvidence",
+                "optimizerPromotionConfidenceRequiredConfidenceEvidenceCount",
+                "optimizerPromotionConfidenceBlockingReasons",
+                "optimizerPromotionConfidenceBlockingReasonCount",
+                "optimizerPromotionConfidenceRemainingWork",
+                "optimizerPromotionConfidenceRemainingWorkCount",
+                "optimizerPromotionConfidenceFirstBlockingReason",
+                "optimizerPromotionConfidenceFirstRemainingWork",
+                "optimizerPromotionConfidenceCiSummaryLine"
+        ));
+        assertEquals("promotionContractKernel", fields.get("optimizerPromotionConfidenceMethod"));
+        assertEquals("blocked/productionSwitchNotReady", fields.get("optimizerPromotionConfidenceVerdict"));
+        assertEquals("false", fields.get("optimizerPromotionConfidencePromotionAllowed"));
+        assertEquals("false", fields.get("optimizerPromotionConfidenceProductionMutationEnabled"));
+        assertEquals("blocked/preflightNotReady", fields.get("optimizerPromotionConfidenceSwitchVerdict"));
+        assertEquals("false", fields.get("optimizerPromotionConfidenceSwitchReviewEligible"));
+        assertEquals("false", fields.get("optimizerPromotionConfidenceRuntimeConfidenceStable"));
+        assertEquals("5", fields.get("optimizerPromotionConfidenceRequiredConfidenceEvidenceCount"));
+        assertEquals("productionMutationSwitchNotReady", fields.get("optimizerPromotionConfidenceFirstBlockingReason"));
+        assertEquals("collectPreviewCandidates", fields.get("optimizerPromotionConfidenceFirstRemainingWork"));
+    }
+
+    @Test
+    void optimizerProductionMutationSwitchKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("switchContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runProductionMutationSwitchContractFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerProductionSwitchMethod",
+                "optimizerProductionSwitchVerdict",
+                "optimizerProductionSwitchEligibleForSwitchReview",
+                "optimizerProductionSwitchProductionMutationEnabled",
+                "optimizerProductionSwitchPreflightVerdict",
+                "optimizerProductionSwitchPreflightReviewReady",
+                "optimizerProductionSwitchPreflightReadyForProductionMutation",
+                "optimizerProductionSwitchRequiredEvidence",
+                "optimizerProductionSwitchRequiredEvidenceCount",
+                "optimizerProductionSwitchBlockingReasons",
+                "optimizerProductionSwitchBlockingReasonCount",
+                "optimizerProductionSwitchRemainingWork",
+                "optimizerProductionSwitchRemainingWorkCount",
+                "optimizerProductionSwitchFirstBlockingReason",
+                "optimizerProductionSwitchFirstRemainingWork",
+                "optimizerProductionSwitchCiSummaryLine"
+        ));
+        assertEquals("switchContractKernel", fields.get("optimizerProductionSwitchMethod"));
+        assertEquals("blocked/preflightNotReady", fields.get("optimizerProductionSwitchVerdict"));
+        assertEquals("false", fields.get("optimizerProductionSwitchEligibleForSwitchReview"));
+        assertEquals("false", fields.get("optimizerProductionSwitchProductionMutationEnabled"));
+        assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionSwitchPreflightVerdict"));
+        assertEquals("false", fields.get("optimizerProductionSwitchPreflightReviewReady"));
+        assertEquals("false", fields.get("optimizerProductionSwitchPreflightReadyForProductionMutation"));
+        assertEquals("4", fields.get("optimizerProductionSwitchRequiredEvidenceCount"));
+        assertEquals("productionPreflightNotReviewReady", fields.get("optimizerProductionSwitchFirstBlockingReason"));
+        assertEquals("collectPreviewCandidates", fields.get("optimizerProductionSwitchFirstRemainingWork"));
     }
 
     @Test
@@ -368,6 +460,31 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("notReady/cseBlocked", fields.get("optimizerProductionPreflightBundleVerdict"));
         assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerProductionPreflightFirstBlockingReason"));
         assertEquals("collectPreviewCandidates", fields.get("optimizerProductionPreflightFirstRemainingWork"));
+    }
+
+    @Test
+    void productionEnablementReadinessRunnerKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("readinessRunnerContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationProductionEnablementReadinessRunner()
+                .runFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerProductionPreflightMethod",
+                "optimizerProductionPreflightVerdict",
+                "optimizerProductionPreflightBlocked",
+                "optimizerProductionPreflightReviewReady",
+                "optimizerProductionPreflightReadyForProductionMutation",
+                "optimizerProductionPreflightProductionMutationEnabled",
+                "optimizerProductionPreflightBundleVerdict",
+                "optimizerProductionPreflightFirstBlockingReason",
+                "optimizerProductionPreflightFirstRemainingWork",
+                "optimizerProductionPreflightCiSummaryLine"
+        ));
+        assertEquals("readinessRunnerContractKernel", fields.get("optimizerProductionPreflightMethod"));
+        assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionPreflightVerdict"));
+        assertEquals("true", fields.get("optimizerProductionPreflightBlocked"));
+        assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerProductionPreflightFirstBlockingReason"));
     }
 
     private static void assertContainsKeys(Map<String, String> fields, Set<String> expectedKeys) {

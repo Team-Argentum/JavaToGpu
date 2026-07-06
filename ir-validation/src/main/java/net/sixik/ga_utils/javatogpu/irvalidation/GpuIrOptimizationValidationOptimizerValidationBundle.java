@@ -66,6 +66,14 @@ public record GpuIrOptimizationValidationOptimizerValidationBundle(
         return GpuIrOptimizationValidationProductionEnablementPreflightDecision.from(this);
     }
 
+    public GpuIrOptimizationValidationProductionMutationSwitchContract productionMutationSwitchContract() {
+        return GpuIrOptimizationValidationProductionMutationSwitchContract.from(productionPreflightDecision());
+    }
+
+    public GpuIrOptimizationValidationOptimizerPromotionConfidenceContract optimizerPromotionConfidenceContract() {
+        return GpuIrOptimizationValidationOptimizerPromotionConfidenceContract.from(productionMutationSwitchContract());
+    }
+
     public String verdict() {
         return enablementGate.verdict();
     }
@@ -94,6 +102,8 @@ public record GpuIrOptimizationValidationOptimizerValidationBundle(
         enablementArtifact.putArtifactFields(values);
         values.putAll(enablementGate.artifactFields());
         values.putAll(productionPreflightDecision().artifactFields());
+        values.putAll(productionMutationSwitchContract().artifactFields());
+        values.putAll(optimizerPromotionConfidenceContract().artifactFields());
     }
 
     public String ciSummaryLine() {

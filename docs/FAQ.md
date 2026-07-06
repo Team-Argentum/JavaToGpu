@@ -18,7 +18,7 @@ Not yet. CUDA is planned for later.
 
 ## Which GPU vendors are validated?
 
-The current local evidence is NVIDIA OpenCL. Intel and AMD validation are future promotion gates and should not be implied until tested on real hardware.
+The current local evidence is NVIDIA OpenCL, and the RTX 5070 path is operationally proven for repo-local alpha validation through repeated full operational routine passes. Intel and AMD validation are future promotion gates and should not be implied until tested on real hardware.
 
 ## Can `@GPU` methods return values?
 

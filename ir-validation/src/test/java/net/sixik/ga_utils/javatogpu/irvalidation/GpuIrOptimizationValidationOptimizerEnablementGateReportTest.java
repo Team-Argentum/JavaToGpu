@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrCommonSubexpressionSimpleArithmeticLiteralTestFixtures.canonicalizationReport;
+import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.reportWithLiteralEvidence;
 import static net.sixik.ga_utils.javatogpu.irvalidation.GpuIrOptimizationValidationRuleTestFixtures.validationReport;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -25,6 +27,7 @@ class GpuIrOptimizationValidationOptimizerEnablementGateReportTest {
         assertEquals("notReady/cseBlocked", gate.verdict());
         assertFalse(gate.readyForProductionMutation());
         assertFalse(gate.cseReadyForProductionMutation());
+        assertFalse(gate.cseReadyForEnablementReview());
         assertFalse(gate.autoVectorizationReadyForPrototypeRewrite());
         assertTrue(gate.optimizerEnablementReviewAllowed());
         assertFalse(gate.productionMutationEnabled());
@@ -49,6 +52,7 @@ class GpuIrOptimizationValidationOptimizerEnablementGateReportTest {
 
         assertEquals("notReady/autoVectorizationBlocked", gate.verdict());
         assertTrue(gate.cseReadyForProductionMutation());
+        assertTrue(gate.cseReadyForEnablementReview());
         assertFalse(gate.autoVectorizationReadyForPrototypeRewrite());
         assertEquals("autoVectorizationNotReady", gate.firstBlockingReason().orElseThrow());
         assertTrue(gate.remainingWork().contains("clearAutoVectorizationReadiness"));
@@ -67,6 +71,7 @@ class GpuIrOptimizationValidationOptimizerEnablementGateReportTest {
         assertEquals("reviewReady/productionMutationDisabled", gate.verdict());
         assertFalse(gate.readyForProductionMutation());
         assertTrue(gate.cseReadyForProductionMutation());
+        assertTrue(gate.cseReadyForEnablementReview());
         assertTrue(gate.autoVectorizationReadyForPrototypeRewrite());
         assertTrue(gate.optimizerEnablementReviewAllowed());
         assertFalse(gate.productionMutationEnabled());
@@ -75,11 +80,43 @@ class GpuIrOptimizationValidationOptimizerEnablementGateReportTest {
     }
 
     @Test
+    void treatsRuntimeEquivalentCseEvidenceAsReviewReadyWhileProductionMutationStaysDisabled() {
+        GpuIrOptimizationValidationReport report = reportWithLiteralEvidence(
+                canonicalizationReport(),
+                true,
+                List.of(
+                        "literal_assoc_preview(plus:int,int,int;literals=1)",
+                        "literal_assoc_preview(plus:int,int,int;literals=2)"
+                )
+        );
+
+        GpuIrOptimizationValidationOptimizerEnablementGateReport gate =
+                GpuIrOptimizationValidationOptimizerEnablementGateReport.from(
+                        report.commonSubexpressionLiteralPromotionReadinessSummaryReport(),
+                        autoReady(report.methodName()),
+                        reviewAllowedPolicy(report.methodName())
+                );
+        Map<String, String> fields = gate.artifactFields();
+
+        assertEquals("reviewReady/productionMutationDisabled", gate.verdict());
+        assertFalse(gate.readyForProductionMutation());
+        assertFalse(gate.cseReadyForProductionMutation());
+        assertTrue(gate.cseReadyForEnablementReview());
+        assertTrue(gate.autoVectorizationReadyForPrototypeRewrite());
+        assertFalse(gate.productionMutationEnabled());
+        assertEquals("evidenceCompleteButProductionDisabled", gate.cseVerdict());
+        assertEquals(List.of("productionMutationDisabled"), gate.blockingReasons());
+        assertEquals("enableProductionMutationPolicy", gate.firstRemainingWork().orElseThrow());
+        assertEquals("true", fields.get("optimizerEnablementGateCseReadyForEnablementReview"));
+    }
+
+    @Test
     void canRepresentFutureReadyContractOnlyWhenProductionMutationIsEnabled() {
         GpuIrOptimizationValidationOptimizerEnablementGateReport gate =
                 new GpuIrOptimizationValidationOptimizerEnablementGateReport(
                         "kernel",
                         "readyForProductionMutation",
+                        true,
                         true,
                         true,
                         true,
@@ -116,6 +153,7 @@ class GpuIrOptimizationValidationOptimizerEnablementGateReportTest {
                 "kernel",
                 "readyForProductionMutation",
                 false,
+                true,
                 true,
                 true,
                 true,
@@ -212,8 +250,12 @@ class GpuIrOptimizationValidationOptimizerEnablementGateReportTest {
     }
 
     private static GpuIrOptimizationValidationOptimizerEnablementPolicyDecision reviewAllowedPolicy() {
+        return reviewAllowedPolicy("kernel");
+    }
+
+    private static GpuIrOptimizationValidationOptimizerEnablementPolicyDecision reviewAllowedPolicy(String methodName) {
         return new GpuIrOptimizationValidationOptimizerEnablementPolicyDecision(
-                "kernel",
+                methodName,
                 "reviewAllowed/productionMutationDisabled",
                 true,
                 false,

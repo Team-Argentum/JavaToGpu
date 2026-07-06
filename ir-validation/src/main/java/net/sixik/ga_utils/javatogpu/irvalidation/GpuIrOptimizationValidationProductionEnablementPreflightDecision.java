@@ -128,7 +128,7 @@ public record GpuIrOptimizationValidationProductionEnablementPreflightDecision(
             boolean productionEnabled
     ) {
         return !ready
-                && gate.cseReadyForProductionMutation()
+                && gate.cseReadyForEnablementReview()
                 && gate.autoVectorizationReadyForPrototypeRewrite()
                 && gate.optimizerEnablementReviewAllowed()
                 && !productionEnabled;

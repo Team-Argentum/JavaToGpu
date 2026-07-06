@@ -14,7 +14,7 @@ Current validation baseline:
 
 - Backend: OpenCL
 - Proven local device: NVIDIA GeForce RTX 5070 through the NVIDIA CUDA OpenCL stack
-- Current confidence signal: repeated NVIDIA `:processor:openClOperationalRoutine --rerun-tasks` runs
+- Current confidence signal: NVIDIA is operationally proven for repo-local alpha validation with five full `:processor:openClOperationalRoutine` evidence runs, including four explicit `--rerun-tasks` passes
 - Future promotion gates: Intel and AMD OpenCL validation on real hardware
 - CUDA backend: planned, not implemented
 

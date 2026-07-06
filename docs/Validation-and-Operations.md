@@ -8,6 +8,16 @@ The active production-confidence path is NVIDIA OpenCL because that is the curre
 
 Current local evidence proves the available NVIDIA path. Intel and AMD remain future cross-vendor promotion gates.
 
+The NVIDIA path is currently treated as operationally proven for repo-local alpha validation: five
+full `:processor:openClOperationalRoutine` evidence runs are green on the same RTX 5070 driver
+stack, including four explicit `--rerun-tasks` runs. The latest run completed at
+`2026-07-06T08:26:18Z` with benchmark, smoke, long-running stability, workload-equivalence,
+runtime, ABI, image, local-memory, stress, vendor validation, bucket-status, and validation-history
+artifacts all passing.
+
+This is not a cross-vendor promotion claim. Intel and AMD remain `pending-hardware` gates until the
+same operational routine can be repeated on those OpenCL stacks.
+
 ## Main Validation Buckets
 
 - `:processor:benchmarkTest`
@@ -94,6 +104,15 @@ Important files:
 - Serious workload CPU-vs-GPU equivalence checks passed.
 - Long-running warm-session reuse completed without detected ABI/resource regressions.
 - Benchmark and stress buckets produced fresh evidence.
+
+## Current NVIDIA Operational Evidence
+
+- Device stack: `NVIDIA CUDA / NVIDIA GeForce RTX 5070`, driver `595.97`, platform `OpenCL 3.0 CUDA 13.2.73`.
+- Evidence count: five full operational routine passes, including four explicit `--rerun-tasks` passes.
+- Latest pass: `2026-07-06T08:26:18Z`.
+- Workloads: Perlin, packed/blob, packed numeric, synthetic 3D packed-grid, and image workloads passed.
+- Long-running stability: 150 iterations, 600 invocations, 4 compiles, 596 compile-cache hits, 1 session.
+- Current conclusion: NVIDIA interim validation is operationally proven for repo-local alpha confidence; cross-vendor promotion still requires Intel and AMD runs.
 
 ## What It Does Not Prove Yet
 

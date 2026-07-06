@@ -21,6 +21,7 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
         String verdict,
         boolean readyForProductionMutation,
         boolean cseReadyForProductionMutation,
+        boolean cseReadyForEnablementReview,
         boolean autoVectorizationReadyForPrototypeRewrite,
         boolean optimizerEnablementReviewAllowed,
         boolean productionMutationEnabled,
@@ -49,6 +50,9 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
         }
         if (productionMutationEnabled && !readyForProductionMutation) {
             throw new IllegalArgumentException("production mutation cannot be enabled while the aggregate gate is blocked");
+        }
+        if (cseReadyForProductionMutation && !cseReadyForEnablementReview) {
+            throw new IllegalArgumentException("production-ready CSE must also be review-ready");
         }
     }
 
@@ -82,11 +86,13 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
         List<String> blockingReasons = blockingReasons(cseReadiness, autoVectorizationReadiness, optimizerEnablementPolicy);
         List<String> remainingWork = remainingWork(cseReadiness, autoVectorizationReadiness, optimizerEnablementPolicy, blockingReasons);
         String verdict = verdict(cseReadiness, autoVectorizationReadiness, optimizerEnablementPolicy, blockingReasons);
+        boolean cseReviewReady = cseReadyForEnablementReview(cseReadiness);
         return new GpuIrOptimizationValidationOptimizerEnablementGateReport(
                 cseReadiness.methodName(),
                 verdict,
                 VERDICT_READY.equals(verdict),
                 cseReadiness.readyForProductionMutation(),
+                cseReviewReady,
                 autoVectorizationReadiness.readyForPrototypeRewrite(),
                 optimizerEnablementPolicy.allowOptimizerEnablementReview(),
                 optimizerEnablementPolicy.productionMutationEnabled(),
@@ -136,6 +142,7 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
         values.put(prefix + "Verdict", verdict);
         values.put(prefix + "ReadyForProductionMutation", Boolean.toString(readyForProductionMutation));
         values.put(prefix + "CseReadyForProductionMutation", Boolean.toString(cseReadyForProductionMutation));
+        values.put(prefix + "CseReadyForEnablementReview", Boolean.toString(cseReadyForEnablementReview));
         values.put(prefix + "AutoVectorizationReadyForPrototypeRewrite", Boolean.toString(autoVectorizationReadyForPrototypeRewrite));
         values.put(prefix + "OptimizerEnablementReviewAllowed", Boolean.toString(optimizerEnablementReviewAllowed));
         values.put(prefix + "ProductionMutationEnabled", Boolean.toString(productionMutationEnabled));
@@ -182,7 +189,7 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
             GpuIrOptimizationValidationOptimizerEnablementPolicyDecision optimizerEnablementPolicy,
             List<String> blockingReasons
     ) {
-        if (!cseReadiness.readyForProductionMutation()) {
+        if (!cseReadyForEnablementReview(cseReadiness)) {
             return VERDICT_CSE_BLOCKED;
         }
         if (!autoVectorizationReadiness.readyForPrototypeRewrite()) {
@@ -206,7 +213,7 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
             GpuIrOptimizationValidationOptimizerEnablementPolicyDecision optimizerEnablementPolicy
     ) {
         java.util.LinkedHashSet<String> reasons = new java.util.LinkedHashSet<>();
-        if (!cseReadiness.readyForProductionMutation()) {
+        if (!cseReadyForEnablementReview(cseReadiness)) {
             reasons.add("cseLiteralPromotionNotReady");
             cseReadiness.firstBlockingReason().ifPresent(reason -> reasons.add("cse:" + reason));
         }
@@ -233,7 +240,9 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
             List<String> blockingReasons
     ) {
         java.util.LinkedHashSet<String> work = new java.util.LinkedHashSet<>();
-        work.addAll(cseReadiness.remainingWork());
+        if (!cseReadyForEnablementReview(cseReadiness)) {
+            work.addAll(cseReadiness.remainingWork());
+        }
         work.addAll(autoVectorizationReadiness.remainingWork());
         work.add(optimizerEnablementPolicy.firstRemainingWork());
         for (String reason : blockingReasons) {
@@ -254,6 +263,13 @@ public record GpuIrOptimizationValidationOptimizerEnablementGateReport(
             }
         }
         return List.copyOf(work);
+    }
+
+    private static boolean cseReadyForEnablementReview(
+            GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport cseReadiness
+    ) {
+        return cseReadiness.readyForProductionMutation()
+                || "evidenceCompleteButProductionDisabled".equals(cseReadiness.verdict());
     }
 
     private static String mapSummary(Map<String, Long> counts) {

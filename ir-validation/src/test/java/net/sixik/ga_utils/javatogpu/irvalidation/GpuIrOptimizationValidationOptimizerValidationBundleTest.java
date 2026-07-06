@@ -88,6 +88,7 @@ class GpuIrOptimizationValidationOptimizerValidationBundleTest {
                         true,
                         true,
                         true,
+                        true,
                         false,
                         "readyForProductionMutation",
                         "readyForPrototypeRewrite",
@@ -121,6 +122,7 @@ class GpuIrOptimizationValidationOptimizerValidationBundleTest {
                 new GpuIrOptimizationValidationOptimizerEnablementGateReport(
                         "futureReadyBundleKernel",
                         "readyForProductionMutation",
+                        true,
                         true,
                         true,
                         true,
