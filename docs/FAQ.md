@@ -36,6 +36,8 @@ No. Keep arrays as kernel parameters or model packed layouts with explicit offse
 
 No. The ASM frontend expects a canonical supported subset emitted intentionally by tooling you control.
 
+If you are integrating an external bytecode generator, run `GpuProgramCompiler.reportStructuredAsm(...)` or `reportStructuredAsmClass(...)` first. It reports unsupported bytecode families and machine-readable `asmFailure.*` metadata without attempting to compile the method.
+
 ## How do I handle optional GPU execution?
 
 Use runtime selection policies and `GpuRuntime.trySelect(...)` so unsupported environments can skip or fall back without exception-driven control flow.

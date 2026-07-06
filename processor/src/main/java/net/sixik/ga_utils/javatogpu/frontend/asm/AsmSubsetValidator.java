@@ -1,44 +1,5 @@
 package net.sixik.ga_utils.javatogpu.frontend.asm;
 
-import net.sixik.ga_utils.javatogpu.api.BytePtr;
-import net.sixik.ga_utils.javatogpu.api.CharPtr;
-import net.sixik.ga_utils.javatogpu.api.Double2;
-import net.sixik.ga_utils.javatogpu.api.Double3;
-import net.sixik.ga_utils.javatogpu.api.Double4;
-import net.sixik.ga_utils.javatogpu.api.DoublePtr;
-import net.sixik.ga_utils.javatogpu.api.Float2;
-import net.sixik.ga_utils.javatogpu.api.Float3;
-import net.sixik.ga_utils.javatogpu.api.Float4;
-import net.sixik.ga_utils.javatogpu.api.FloatPtr;
-import net.sixik.ga_utils.javatogpu.api.GPU;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Int2;
-import net.sixik.ga_utils.javatogpu.api.Int3;
-import net.sixik.ga_utils.javatogpu.api.Int4;
-import net.sixik.ga_utils.javatogpu.api.IntPtr;
-import net.sixik.ga_utils.javatogpu.api.Long2;
-import net.sixik.ga_utils.javatogpu.api.Long3;
-import net.sixik.ga_utils.javatogpu.api.Long4;
-import net.sixik.ga_utils.javatogpu.api.LongPtr;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
-import net.sixik.ga_utils.javatogpu.api.ShortPtr;
-import net.sixik.ga_utils.javatogpu.api.UInt4;
-import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -65,44 +26,7 @@ import java.util.Set;
 
 public final class AsmSubsetValidator {
 
-    private static final String GPU_OWNER = Type.getInternalName(GPU.class);
-
-    private static final Set<String> BUILTIN_CONSTRUCTOR_OWNERS = Set.of(
-            Type.getInternalName(BytePtr.class),
-            Type.getInternalName(CharPtr.class),
-            Type.getInternalName(ShortPtr.class),
-            Type.getInternalName(IntPtr.class),
-            Type.getInternalName(LongPtr.class),
-            Type.getInternalName(FloatPtr.class),
-            Type.getInternalName(DoublePtr.class)
-    );
-
-    private static final Set<String> BUILTIN_VALUE_OWNERS = Set.of(
-            Type.getInternalName(BytePtr.class),
-            Type.getInternalName(CharPtr.class),
-            Type.getInternalName(ShortPtr.class),
-            Type.getInternalName(IntPtr.class),
-            Type.getInternalName(LongPtr.class),
-            Type.getInternalName(FloatPtr.class),
-            Type.getInternalName(DoublePtr.class),
-            Type.getInternalName(Image1DReadOnly.class),
-            Type.getInternalName(Image1DWriteOnly.class),
-            Type.getInternalName(Image1DArrayReadOnly.class),
-            Type.getInternalName(Image1DArrayWriteOnly.class),
-            Type.getInternalName(Image1DBufferReadOnly.class),
-            Type.getInternalName(Image1DBufferWriteOnly.class),
-            Type.getInternalName(Image2DReadOnly.class),
-            Type.getInternalName(Image2DWriteOnly.class),
-            Type.getInternalName(Image2DMipmappedReadOnly.class),
-            Type.getInternalName(Image2DMipmappedWriteOnly.class),
-            Type.getInternalName(Image2DMsaaReadOnly.class),
-            Type.getInternalName(Image2DMsaaWriteOnly.class),
-            Type.getInternalName(Image2DArrayReadOnly.class),
-            Type.getInternalName(Image2DArrayWriteOnly.class),
-            Type.getInternalName(Image3DReadOnly.class),
-            Type.getInternalName(Image3DWriteOnly.class),
-            Type.getInternalName(Sampler.class)
-    );
+    private static final String GPU_OWNER = AsmGpuTypeRules.GPU_OWNER;
 
     private static final Set<Integer> ALLOWED_SIMPLE_INSN_OPCODES = Set.of(
             Opcodes.NOP,
@@ -252,29 +176,34 @@ public final class AsmSubsetValidator {
 
     private void validateMethodContract(String ownerInternalName, MethodNode methodNode, AsmValidationConfig config) {
         if ((methodNode.access & Opcodes.ACC_STATIC) == 0) {
-            throw new AsmFrontendException("ASM GPU frontend only supports static methods: "
-                    + formatMethod(ownerInternalName, methodNode)
-                    + "; rewrite instance state into explicit parameters");
+            failMethod(ownerInternalName, methodNode, "methodContract",
+                    "ASM GPU frontend only supports static methods: "
+                            + formatMethod(ownerInternalName, methodNode)
+                            + "; rewrite instance state into explicit parameters");
         }
         if ((methodNode.access & Opcodes.ACC_SYNCHRONIZED) != 0) {
-            throw new AsmFrontendException("Synchronized methods are not supported by ASM GPU frontend: "
-                    + formatMethod(ownerInternalName, methodNode)
-                    + "; remove monitor-based control flow before lowering to GPU ASM");
+            failMethod(ownerInternalName, methodNode, "monitorSynchronization",
+                    "Synchronized methods are not supported by ASM GPU frontend: "
+                            + formatMethod(ownerInternalName, methodNode)
+                            + "; remove monitor-based control flow before lowering to GPU ASM");
         }
         if ((methodNode.access & Opcodes.ACC_ABSTRACT) != 0) {
-            throw new AsmFrontendException("Abstract methods are not supported by ASM GPU frontend: "
-                    + formatMethod(ownerInternalName, methodNode)
-                    + "; provide a concrete static implementation");
+            failMethod(ownerInternalName, methodNode, "methodContract",
+                    "Abstract methods are not supported by ASM GPU frontend: "
+                            + formatMethod(ownerInternalName, methodNode)
+                            + "; provide a concrete static implementation");
         }
         if ((methodNode.access & Opcodes.ACC_NATIVE) != 0) {
-            throw new AsmFrontendException("Native methods are not supported by ASM GPU frontend: "
-                    + formatMethod(ownerInternalName, methodNode)
-                    + "; lower the logic into JVM bytecode first or model it as a helper/intrinsic");
+            failMethod(ownerInternalName, methodNode, "methodContract",
+                    "Native methods are not supported by ASM GPU frontend: "
+                            + formatMethod(ownerInternalName, methodNode)
+                            + "; lower the logic into JVM bytecode first or model it as a helper/intrinsic");
         }
         if (!methodNode.tryCatchBlocks.isEmpty()) {
-            throw new AsmFrontendException("Exception handlers are not supported by ASM GPU frontend: "
-                    + formatMethod(ownerInternalName, methodNode)
-                    + "; rewrite the control flow without try/catch blocks");
+            failMethod(ownerInternalName, methodNode, "exceptionControlFlow",
+                    "Exception handlers are not supported by ASM GPU frontend: "
+                            + formatMethod(ownerInternalName, methodNode)
+                            + "; rewrite the control flow without try/catch blocks");
         }
 
         validateMethodDescriptor(ownerInternalName, methodNode, config);
@@ -283,8 +212,8 @@ public final class AsmSubsetValidator {
     private void validateMethodDescriptor(String ownerInternalName, MethodNode methodNode, AsmValidationConfig config) {
         Type methodType = Type.getMethodType(methodNode.desc);
         for (Type argumentType : methodType.getArgumentTypes()) {
-            if (!isSupportedValueType(argumentType, config, true)) {
-                throw new AsmFrontendException(
+            if (!AsmGpuTypeRules.isSupportedValueType(argumentType, config, true)) {
+                failMethod(ownerInternalName, methodNode, "methodDescriptor",
                         "Unsupported ASM method parameter type in " + formatMethod(ownerInternalName, methodNode)
                                 + ": " + argumentType.getDescriptor()
                                 + "; use primitive scalars, single-dimension arrays, supported vectors, pointers, images/samplers, or whitelisted struct values"
@@ -293,8 +222,8 @@ public final class AsmSubsetValidator {
         }
 
         Type returnType = methodType.getReturnType();
-        if (returnType.getSort() != Type.VOID && !isSupportedValueType(returnType, config, false)) {
-            throw new AsmFrontendException(
+        if (returnType.getSort() != Type.VOID && !AsmGpuTypeRules.isSupportedValueType(returnType, config, false)) {
+            failMethod(ownerInternalName, methodNode, "methodDescriptor",
                     "Unsupported ASM method return type in " + formatMethod(ownerInternalName, methodNode)
                             + ": " + returnType.getDescriptor()
                             + "; use void, primitive scalars, supported vectors, or whitelisted struct values"
@@ -305,9 +234,8 @@ public final class AsmSubsetValidator {
     private void validateInstructions(String ownerInternalName, MethodNode methodNode, AsmValidationConfig config) {
         int instructionIndex = 0;
         int lineNumber = -1;
-        for (AbstractInsnNode instruction = methodNode.instructions.getFirst();
-             instruction != null;
-             instruction = instruction.getNext()) {
+        AbstractInsnNode[] instructions = methodNode.instructions.toArray();
+        for (AbstractInsnNode instruction : instructions) {
             if (instruction instanceof LineNumberNode line) {
                 lineNumber = line.line;
                 continue;
@@ -391,7 +319,7 @@ public final class AsmSubsetValidator {
     ) {
         if (!ALLOWED_SIMPLE_INSN_OPCODES.contains(instruction.getOpcode())) {
             fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                    "Unsupported bytecode opcode for ASM GPU frontend: " + opcodeName(instruction.getOpcode()));
+                    unsupportedSimpleOpcodeMessage(instruction.getOpcode()));
         }
     }
 
@@ -417,7 +345,7 @@ public final class AsmSubsetValidator {
     ) {
         if (!ALLOWED_INT_OPCODES.contains(instruction.getOpcode())) {
             fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                    "Unsupported integer opcode for ASM GPU frontend: " + opcodeName(instruction.getOpcode()));
+                    unsupportedIntegerOpcodeMessage(instruction.getOpcode()));
         }
     }
 
@@ -504,11 +432,11 @@ public final class AsmSubsetValidator {
         Type fieldType = Type.getType(instruction.desc);
         switch (instruction.getOpcode()) {
             case Opcodes.GETFIELD, Opcodes.PUTFIELD -> {
-                if (!isAllowedFieldOwner(instruction.owner, config)) {
+            if (!AsmGpuTypeRules.isAllowedFieldOwner(instruction.owner, config)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                             "Unsupported field owner for ASM GPU frontend: " + instruction.owner);
                 }
-                if (!isSupportedValueType(fieldType, config, false)) {
+                if (!AsmGpuTypeRules.isSupportedValueType(fieldType, config, false)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                             "Unsupported field descriptor for ASM GPU frontend: " + instruction.desc);
                 }
@@ -518,7 +446,7 @@ public final class AsmSubsetValidator {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                             "Unsupported static field owner for ASM GPU frontend: " + instruction.owner);
                 }
-                if (!isSupportedValueType(fieldType, config, false)) {
+                if (!AsmGpuTypeRules.isSupportedValueType(fieldType, config, false)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                             "Unsupported static field descriptor for ASM GPU frontend: " + instruction.desc);
                 }
@@ -538,7 +466,7 @@ public final class AsmSubsetValidator {
     ) {
         switch (instruction.getOpcode()) {
             case Opcodes.NEW -> {
-                if (!isAllowedConstructorOwner(instruction.desc, config)) {
+                if (!AsmGpuTypeRules.isAllowedConstructorOwner(instruction.desc, config)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                             "Unsupported constructor owner for ASM GPU frontend: "
                                     + instruction.desc
@@ -548,7 +476,9 @@ public final class AsmSubsetValidator {
             case Opcodes.ANEWARRAY -> fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                     "Object arrays are not supported by ASM GPU frontend; use primitive arrays, vector arrays, or struct arrays instead");
             case Opcodes.CHECKCAST, Opcodes.INSTANCEOF -> fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                    "General object casting is not supported by ASM GPU frontend: " + opcodeName(instruction.getOpcode()));
+                    "Object type checks and casts are not supported by ASM GPU frontend: "
+                            + opcodeName(instruction.getOpcode())
+                            + "; keep values in explicit GPU-safe primitive, pointer, vector, or whitelisted struct types");
             default -> fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                     "Unsupported type opcode for ASM GPU frontend: " + opcodeName(instruction.getOpcode()));
         }
@@ -580,7 +510,7 @@ public final class AsmSubsetValidator {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                             "Unsupported invokespecial target for ASM GPU frontend: " + instruction.owner + "." + instruction.name);
                 }
-                if (!isAllowedConstructorOwner(instruction.owner, config)) {
+                if (!AsmGpuTypeRules.isAllowedConstructorOwner(instruction.owner, config)) {
                     fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                             "Unsupported constructor owner for ASM GPU frontend: "
                                     + instruction.owner
@@ -604,7 +534,7 @@ public final class AsmSubsetValidator {
     ) {
         Type methodType = Type.getMethodType(instruction.desc);
         for (Type argumentType : methodType.getArgumentTypes()) {
-            if (!isSupportedValueType(argumentType, config, true)) {
+            if (!AsmGpuTypeRules.isSupportedValueType(argumentType, config, true)) {
                 fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                         "Unsupported call argument type for ASM GPU frontend: "
                                 + argumentType.getDescriptor()
@@ -612,7 +542,7 @@ public final class AsmSubsetValidator {
             }
         }
         Type returnType = methodType.getReturnType();
-        if (returnType.getSort() != Type.VOID && !isSupportedValueType(returnType, config, false)) {
+        if (returnType.getSort() != Type.VOID && !AsmGpuTypeRules.isSupportedValueType(returnType, config, false)) {
             fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
                     "Unsupported call return type for ASM GPU frontend: "
                             + returnType.getDescriptor()
@@ -630,7 +560,9 @@ public final class AsmSubsetValidator {
         Handle handle = instruction.bsm;
         String bootstrap = handle == null ? "<unknown>" : handle.getOwner() + "." + handle.getName();
         fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                "invokedynamic is not supported by ASM GPU frontend: " + bootstrap);
+                "invokedynamic is not supported by ASM GPU frontend: "
+                        + bootstrap
+                        + "; lower lambdas, string concatenation, and dynamic language features into explicit static helper methods before GPU lowering");
     }
 
     private void validateMultiANewArrayInsnNode(
@@ -641,66 +573,30 @@ public final class AsmSubsetValidator {
             int lineNumber
     ) {
         fail(ownerInternalName, methodNode, instructionIndex, lineNumber,
-                "Multi-dimensional arrays are not supported by ASM GPU frontend: " + instruction.desc);
+                "Multi-dimensional arrays are not supported by ASM GPU frontend: "
+                        + instruction.desc
+                        + "; flatten the data into a single-dimension array and pass dimensions/strides explicitly");
     }
 
-    private boolean isAllowedConstructorOwner(String ownerInternalName, AsmValidationConfig config) {
-        return BUILTIN_CONSTRUCTOR_OWNERS.contains(ownerInternalName)
-                || isBuiltInPointerOrScalarAliasOwner(ownerInternalName)
-                || isBuiltInVectorOwner(ownerInternalName)
-                || config.allowedStructOwners().contains(ownerInternalName);
-    }
-
-    private boolean isAllowedFieldOwner(String ownerInternalName, AsmValidationConfig config) {
-        return BUILTIN_CONSTRUCTOR_OWNERS.contains(ownerInternalName)
-                || isBuiltInPointerOrScalarAliasOwner(ownerInternalName)
-                || isBuiltInVectorOwner(ownerInternalName)
-                || config.allowedStructOwners().contains(ownerInternalName);
-    }
-
-    private boolean isSupportedValueType(Type type, AsmValidationConfig config, boolean allowArrays) {
-        return switch (type.getSort()) {
-            case Type.BOOLEAN, Type.BYTE, Type.CHAR, Type.SHORT, Type.INT, Type.LONG, Type.FLOAT, Type.DOUBLE -> true;
-            case Type.ARRAY -> allowArrays && isSupportedArrayType(type, config);
-            case Type.OBJECT -> isSupportedObjectType(type.getInternalName(), config);
-            default -> false;
+    private String unsupportedSimpleOpcodeMessage(int opcode) {
+        return switch (opcode) {
+            case Opcodes.ATHROW ->
+                    "Exception throwing is not supported by ASM GPU frontend: ATHROW; use explicit status/output flags or GPU.trap/GPU.unreachable for intentional failure paths";
+            case Opcodes.MONITORENTER, Opcodes.MONITOREXIT ->
+                    "Monitor-based synchronization is not supported by ASM GPU frontend: "
+                            + opcodeName(opcode)
+                            + "; remove synchronized blocks and host object locking before GPU lowering";
+            case Opcodes.ARRAYLENGTH ->
+                    "Runtime array length reads are not supported by ASM GPU frontend: ARRAYLENGTH; pass required lengths or bounds as explicit kernel/helper parameters";
+            default -> "Unsupported bytecode opcode for ASM GPU frontend: " + opcodeName(opcode);
         };
     }
 
-    private boolean isSupportedArrayType(Type arrayType, AsmValidationConfig config) {
-        if (arrayType.getDimensions() != 1) {
-            return false;
+    private String unsupportedIntegerOpcodeMessage(int opcode) {
+        if (opcode == Opcodes.NEWARRAY) {
+            return "Runtime primitive array allocation is not supported by ASM GPU frontend: NEWARRAY; allocate buffers on the host side and pass them as array parameters";
         }
-        Type elementType = arrayType.getElementType();
-        return switch (elementType.getSort()) {
-            case Type.BYTE, Type.CHAR, Type.SHORT, Type.INT, Type.LONG, Type.FLOAT, Type.DOUBLE -> true;
-            case Type.OBJECT -> isAllowedArrayObjectElementOwner(elementType.getInternalName(), config);
-            default -> false;
-        };
-    }
-
-    private boolean isSupportedObjectType(String ownerInternalName, AsmValidationConfig config) {
-        return BUILTIN_VALUE_OWNERS.contains(ownerInternalName)
-                || isBuiltInPointerOrScalarAliasOwner(ownerInternalName)
-                || isBuiltInVectorOwner(ownerInternalName)
-                || config.allowedStructOwners().contains(ownerInternalName);
-    }
-
-    private boolean isAllowedArrayObjectElementOwner(String ownerInternalName, AsmValidationConfig config) {
-        return BUILTIN_CONSTRUCTOR_OWNERS.contains(ownerInternalName)
-                || isBuiltInPointerOrScalarAliasOwner(ownerInternalName)
-                || isBuiltInVectorOwner(ownerInternalName)
-                || config.allowedStructOwners().contains(ownerInternalName);
-    }
-
-    private boolean isBuiltInPointerOrScalarAliasOwner(String ownerInternalName) {
-        String className = ownerInternalName.replace('/', '.');
-        return GpuTypeSupport.isSupportedPointerClassName(className)
-                || GpuTypeSupport.isSupportedScalarAliasClassName(className);
-    }
-
-    private boolean isBuiltInVectorOwner(String ownerInternalName) {
-        return GpuTypeSupport.isSupportedVectorClassName(ownerInternalName.replace('/', '.'));
+        return "Unsupported integer opcode for ASM GPU frontend: " + opcodeName(opcode);
     }
 
     private void fail(
@@ -710,6 +606,16 @@ public final class AsmSubsetValidator {
             int lineNumber,
             String detail
     ) {
+        AsmFrontendFailureMetadata metadata = new AsmFrontendFailureMetadata(
+                failureFamily(detail),
+                ownerInternalName,
+                methodNode.name,
+                methodNode.desc,
+                instructionIndex,
+                lineNumber,
+                failureOpcode(detail),
+                detail
+        );
         StringBuilder message = new StringBuilder();
         message.append(detail)
                 .append(" in ")
@@ -720,7 +626,108 @@ public final class AsmSubsetValidator {
             message.append(", line ").append(lineNumber);
         }
         message.append("; rewrite the bytecode into the GPU-friendly ASM subset from docs/ASM-Contract.md");
-        throw new AsmFrontendException(message.toString());
+        throw new AsmFrontendException(message.toString(), metadata);
+    }
+
+    private void failMethod(
+            String ownerInternalName,
+            MethodNode methodNode,
+            String family,
+            String detail
+    ) {
+        throw new AsmFrontendException(detail, methodFailureMetadata(ownerInternalName, methodNode, family, detail));
+    }
+
+    private AsmFrontendFailureMetadata methodFailureMetadata(
+            String ownerInternalName,
+            MethodNode methodNode,
+            String family,
+            String detail
+    ) {
+        return new AsmFrontendFailureMetadata(
+                family,
+                ownerInternalName,
+                methodNode.name,
+                methodNode.desc,
+                0,
+                -1,
+                "",
+                detail
+        );
+    }
+
+    private String failureFamily(String detail) {
+        if (detail.startsWith("Exception throwing is not supported")
+                || detail.startsWith("Exception handlers are not supported")) {
+            return "exceptionControlFlow";
+        }
+        if (detail.startsWith("Monitor-based synchronization is not supported")
+                || detail.startsWith("Synchronized methods are not supported")) {
+            return "monitorSynchronization";
+        }
+        if (detail.startsWith("Runtime array length reads are not supported")) {
+            return "arrayLength";
+        }
+        if (detail.startsWith("Runtime primitive array allocation is not supported")
+                || detail.startsWith("Object arrays are not supported")
+                || detail.startsWith("Multi-dimensional arrays are not supported")) {
+            return "arrayAllocation";
+        }
+        if (detail.startsWith("invokedynamic is not supported")) {
+            return "dynamicInvocation";
+        }
+        if (detail.startsWith("Unsupported method invocation kind")
+                || detail.startsWith("Unsupported static call owner")
+                || detail.startsWith("Unsupported invokespecial target")
+                || detail.startsWith("Unsupported method opcode")) {
+            return "methodInvocation";
+        }
+        if (detail.startsWith("Object type checks and casts are not supported")
+                || detail.startsWith("Unsupported type opcode")
+                || detail.startsWith("Unsupported constructor owner")) {
+            return "objectType";
+        }
+        if (detail.startsWith("Unsupported LDC constant")) {
+            return "constant";
+        }
+        if (detail.startsWith("Unsupported control-flow opcode")
+                || detail.startsWith("Malformed TABLESWITCH")
+                || detail.startsWith("Malformed LOOKUPSWITCH")) {
+            return "controlFlow";
+        }
+        if (detail.startsWith("Unsupported field")
+                || detail.startsWith("Unsupported static field")) {
+            return "fieldAccess";
+        }
+        if (detail.startsWith("Unsupported local-variable opcode")
+                || detail.startsWith("Invalid local slot index")) {
+            return "localVariable";
+        }
+        if (detail.startsWith("Unsupported integer opcode")
+                || detail.startsWith("Unsupported bytecode opcode")) {
+            return "opcode";
+        }
+        return "unsupportedBytecode";
+    }
+
+    private String failureOpcode(String detail) {
+        int marker = detail.indexOf(": ");
+        if (marker < 0 || marker + 2 >= detail.length()) {
+            return "";
+        }
+        String suffix = detail.substring(marker + 2);
+        int separator = suffix.indexOf(';');
+        if (separator >= 0) {
+            suffix = suffix.substring(0, separator);
+        }
+        int space = suffix.indexOf(' ');
+        if (space >= 0) {
+            suffix = suffix.substring(0, space);
+        }
+        if (suffix.matches("[A-Z][A-Z0-9_]*")) {
+            return suffix;
+        }
+        return "";
     }
 
     private String formatMethod(String ownerInternalName, MethodNode methodNode) {

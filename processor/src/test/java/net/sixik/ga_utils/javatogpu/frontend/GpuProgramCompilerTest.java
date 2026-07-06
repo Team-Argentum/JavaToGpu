@@ -1,9 +1,12 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReport;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
+import net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -16,6 +19,7 @@ import org.objectweb.asm.tree.MethodNode;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuProgramCompilerTest {
@@ -125,6 +129,108 @@ class GpuProgramCompilerTest {
                         methodNode
                 )).name()
         );
+    }
+
+    @Test
+    void reportsRustLikeDiagnosticForStructuredAsmFailureThroughFacade() {
+        String source = "public static void kernel(float[] input, float[] output) {\n"
+                + "    output[0] = input.length;\n"
+                + "}";
+        ParsedGpuMethod parsedMethod = new GpuMethodParser().parseMethod(source, "Demo", "sample.Demo");
+        MethodNode methodNode = methodNode(DEMO_OWNER, "kernel", "([F[F)V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitInsn(Opcodes.ARRAYLENGTH);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+        AsmGpuMethod method = new AsmGpuMethod(DEMO_OWNER, parsedMethod, methodNode);
+        List<String> diagnostics = new java.util.ArrayList<>();
+
+        GpuProgramCompiler compiler = GpuProgramCompiler.createDefault();
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> compiler.compileStructuredAsm(
+                        method,
+                        List.of(),
+                        "Demo.java",
+                        source.lines().toList(),
+                        diagnostics::add
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("Runtime array length reads are not supported"));
+        assertEquals(1, diagnostics.size());
+        assertTrue(diagnostics.get(0).contains("error[JTG-ASM-001]: ASM frontend cannot lower this method to GPU-safe IR"));
+        assertTrue(diagnostics.get(0).contains("--> Demo.java:1:1"));
+        assertTrue(diagnostics.get(0).contains("1 | public static void kernel(float[] input, float[] output) {"));
+        assertTrue(diagnostics.get(0).contains("= help: Runtime array length reads are not supported"));
+    }
+
+    @Test
+    void reportsStructuredAsmFailuresThroughUnifiedFacadeWithoutCompiling() {
+        MethodNode arrayLengthMethod = methodNode(DEMO_OWNER, "arrayLengthKernel", "([F)I", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitInsn(Opcodes.ARRAYLENGTH);
+            mv.visitInsn(Opcodes.IRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+        MethodNode throwMethod = methodNode(DEMO_OWNER, "throwKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitInsn(Opcodes.ATHROW);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        GpuProgramCompiler compiler = GpuProgramCompiler.createDefault();
+        AsmFrontendFailureReport report = compiler.reportStructuredAsm(List.of(
+                new AsmGpuMethod(
+                        DEMO_OWNER,
+                        parsedMethod("Demo", "sample.Demo", "arrayLengthKernel", "int", List.of(
+                                globalArrayParameter("input", "float[]")
+                        )),
+                        arrayLengthMethod
+                ),
+                new AsmGpuMethod(
+                        DEMO_OWNER,
+                        parsedMethod("Demo", "sample.Demo", "throwKernel", "void", List.of()),
+                        throwMethod
+                )
+        ));
+
+        assertEquals(2, report.failureCount());
+        assertEquals(1L, report.familyCounts().get("arrayLength"));
+        assertEquals(1L, report.familyCounts().get("exceptionControlFlow"));
+        assertTrue(report.summaryLine().contains("asmFailureReport failed failures=2"));
+        assertTrue(report.artifactFields("asmReport").get("asmReport.summaries").contains("ATHROW"));
+    }
+
+    @Test
+    void reportsStructuredAsmClassFailuresThroughUnifiedFacade() {
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V1_6, Opcodes.ACC_PUBLIC, DEMO_OWNER, null, "java/lang/Object", null);
+        MethodVisitor methodVisitor = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "arrayLengthKernel", "([F)I", null, null);
+        methodVisitor.visitCode();
+        methodVisitor.visitVarInsn(Opcodes.ALOAD, 0);
+        methodVisitor.visitInsn(Opcodes.ARRAYLENGTH);
+        methodVisitor.visitInsn(Opcodes.IRETURN);
+        methodVisitor.visitMaxs(0, 0);
+        methodVisitor.visitEnd();
+        writer.visitEnd();
+
+        ClassNode classNode = new ClassNode();
+        new ClassReader(writer.toByteArray()).accept(classNode, 0);
+
+        AsmFrontendFailureReport report = GpuProgramCompiler.createDefault().reportStructuredAsmClass(classNode);
+
+        assertEquals(1, report.failureCount());
+        assertEquals("arrayLength", report.failures().get(0).family());
+        assertEquals("arrayLengthKernel", report.failures().get(0).methodName());
     }
 
     private ParsedGpuMethod parsedMethod(

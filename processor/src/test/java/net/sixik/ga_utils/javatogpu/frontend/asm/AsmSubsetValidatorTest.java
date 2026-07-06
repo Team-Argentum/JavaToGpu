@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.frontend.asm;
 
 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureMetadata;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -15,6 +16,7 @@ import org.objectweb.asm.tree.MethodNode;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -159,6 +161,13 @@ class AsmSubsetValidatorTest {
 
         assertTrue(exception.getMessage().contains("only supports static methods"));
         assertTrue(exception.getMessage().contains("explicit parameters"));
+
+        AsmFrontendFailureMetadata metadata = exception.metadata().orElseThrow();
+        assertEquals("methodContract", metadata.family());
+        assertEquals(KERNEL_OWNER, metadata.ownerInternalName());
+        assertEquals("instanceKernel", metadata.methodName());
+        assertEquals("()V", metadata.methodDescriptor());
+        assertEquals("0", metadata.artifactFields("asmFailure").get("asmFailure.instructionIndex"));
     }
 
     @Test
@@ -251,6 +260,11 @@ class AsmSubsetValidatorTest {
 
         assertTrue(exception.getMessage().contains("Exception handlers are not supported"));
         assertTrue(exception.getMessage().contains("without try/catch blocks"));
+
+        AsmFrontendFailureMetadata metadata = exception.metadata().orElseThrow();
+        assertEquals("exceptionControlFlow", metadata.family());
+        assertEquals("tryCatchKernel", metadata.methodName());
+        assertEquals("()V", metadata.methodDescriptor());
     }
 
     @Test
@@ -278,6 +292,104 @@ class AsmSubsetValidatorTest {
     }
 
     @Test
+    void rejectsThrowOpcodeWithGpuFailureHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "throwKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitInsn(Opcodes.ATHROW);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Exception throwing is not supported"));
+        assertTrue(exception.getMessage().contains("status/output flags"));
+        assertTrue(exception.getMessage().contains("GPU.trap/GPU.unreachable"));
+    }
+
+    @Test
+    void rejectsMonitorOpcodesWithSynchronizationHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "monitorKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitInsn(Opcodes.MONITORENTER);
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitInsn(Opcodes.MONITOREXIT);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Monitor-based synchronization is not supported"));
+        assertTrue(exception.getMessage().contains("MONITORENTER"));
+        assertTrue(exception.getMessage().contains("synchronized blocks"));
+    }
+
+    @Test
+    void rejectsArrayLengthWithExplicitLengthHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "arrayLengthKernel", "([F)I", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitInsn(Opcodes.ARRAYLENGTH);
+            mv.visitInsn(Opcodes.IRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Runtime array length reads are not supported"));
+        assertTrue(exception.getMessage().contains("pass required lengths or bounds"));
+
+        AsmFrontendFailureMetadata metadata = exception.metadata().orElseThrow();
+        assertEquals("arrayLength", metadata.family());
+        assertEquals(KERNEL_OWNER, metadata.ownerInternalName());
+        assertEquals("arrayLengthKernel", metadata.methodName());
+        assertEquals("([F)I", metadata.methodDescriptor());
+        assertEquals("ARRAYLENGTH", metadata.opcodeName());
+        assertTrue(metadata.instructionIndex() > 0);
+        assertEquals(
+                "arrayLength sample/Kernel.arrayLengthKernel([F)I instruction=2 opcode=ARRAYLENGTH",
+                metadata.summary()
+        );
+        assertEquals(metadata.summary(), metadata.artifactFields("asmFailure").get("asmFailure.summary"));
+        assertEquals("-1", metadata.artifactFields("asmFailure").get("asmFailure.lineNumber"));
+    }
+
+    @Test
+    void rejectsPrimitiveArrayAllocationWithHostAllocationHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "newArrayKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ICONST_4);
+            mv.visitIntInsn(Opcodes.NEWARRAY, Opcodes.T_FLOAT);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Runtime primitive array allocation is not supported"));
+        assertTrue(exception.getMessage().contains("allocate buffers on the host side"));
+    }
+
+    @Test
     void rejectsObjectArrayCreation() {
         MethodNode method = methodNode(KERNEL_OWNER, "objectArrayKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
             mv.visitCode();
@@ -296,6 +408,60 @@ class AsmSubsetValidatorTest {
 
         assertTrue(exception.getMessage().contains("Object arrays are not supported"));
         assertTrue(exception.getMessage().contains("primitive arrays, vector arrays, or struct arrays"));
+    }
+
+    @Test
+    void rejectsInvokeDynamicWithStaticHelperHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "dynamicKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInvokeDynamicInsn(
+                    "run",
+                    "()Ljava/lang/Runnable;",
+                    new org.objectweb.asm.Handle(
+                            Opcodes.H_INVOKESTATIC,
+                            "java/lang/invoke/LambdaMetafactory",
+                            "metafactory",
+                            "()V",
+                            false
+                    )
+            );
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("invokedynamic is not supported"));
+        assertTrue(exception.getMessage().contains("lambdas, string concatenation"));
+        assertTrue(exception.getMessage().contains("explicit static helper methods"));
+    }
+
+    @Test
+    void rejectsMultiDimensionalArrayAllocationWithFlatteningHint() {
+        MethodNode method = methodNode(KERNEL_OWNER, "multiArrayKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ICONST_2);
+            mv.visitInsn(Opcodes.ICONST_3);
+            mv.visitMultiANewArrayInsn("[[F", 2);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendException exception = assertThrows(
+                AsmFrontendException.class,
+                () -> validator.validate(KERNEL_OWNER, method)
+        );
+
+        assertTrue(exception.getMessage().contains("Multi-dimensional arrays are not supported"));
+        assertTrue(exception.getMessage().contains("flatten the data"));
+        assertTrue(exception.getMessage().contains("dimensions/strides"));
     }
 
     @Test

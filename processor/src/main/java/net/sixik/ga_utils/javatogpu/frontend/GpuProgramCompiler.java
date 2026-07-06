@@ -1,12 +1,20 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReport;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReporter;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmValidationConfig;
+import net.sixik.ga_utils.javatogpu.frontend.diagnostics.AsmFrontendDiagnosticAdapter;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
+import org.objectweb.asm.tree.ClassNode;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * Public facade over the JavaToGpu frontend pipeline.
@@ -18,13 +26,34 @@ public final class GpuProgramCompiler {
 
     private final GpuFrontendService sourceFrontend;
     private final AsmFrontendService asmFrontend;
+    private final AsmFrontendDiagnosticAdapter asmDiagnosticAdapter;
+    private final AsmFrontendFailureReporter asmFailureReporter;
 
     public GpuProgramCompiler(
             GpuFrontendService sourceFrontend,
             AsmFrontendService asmFrontend
     ) {
+        this(sourceFrontend, asmFrontend, new AsmFrontendDiagnosticAdapter(), new AsmFrontendFailureReporter());
+    }
+
+    public GpuProgramCompiler(
+            GpuFrontendService sourceFrontend,
+            AsmFrontendService asmFrontend,
+            AsmFrontendDiagnosticAdapter asmDiagnosticAdapter
+    ) {
+        this(sourceFrontend, asmFrontend, asmDiagnosticAdapter, new AsmFrontendFailureReporter());
+    }
+
+    public GpuProgramCompiler(
+            GpuFrontendService sourceFrontend,
+            AsmFrontendService asmFrontend,
+            AsmFrontendDiagnosticAdapter asmDiagnosticAdapter,
+            AsmFrontendFailureReporter asmFailureReporter
+    ) {
         this.sourceFrontend = sourceFrontend;
         this.asmFrontend = asmFrontend;
+        this.asmDiagnosticAdapter = Objects.requireNonNull(asmDiagnosticAdapter, "asmDiagnosticAdapter");
+        this.asmFailureReporter = Objects.requireNonNull(asmFailureReporter, "asmFailureReporter");
     }
 
     public static GpuProgramCompiler createDefault() {
@@ -66,8 +95,60 @@ public final class GpuProgramCompiler {
         return asmFrontend.validateAndLiftStructured(method);
     }
 
+    public AsmFrontendFailureReport reportStructuredAsm(AsmGpuMethod method) {
+        return asmFailureReporter.report(method.ownerInternalName(), method.methodNode());
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsm(AsmGpuMethod method, AsmValidationConfig config) {
+        return asmFailureReporter.report(method.ownerInternalName(), method.methodNode(), config);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsm(List<AsmGpuMethod> methods) {
+        return asmFailureReporter.reportAll(methods);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsm(List<AsmGpuMethod> methods, AsmValidationConfig config) {
+        return asmFailureReporter.reportAll(methods, config);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClass(ClassNode classNode) {
+        return asmFailureReporter.reportClass(classNode);
+    }
+
+    public AsmFrontendFailureReport reportStructuredAsmClass(ClassNode classNode, AsmValidationConfig config) {
+        return asmFailureReporter.reportClass(classNode, config);
+    }
+
+    public GpuIrMethod liftStructuredAsm(
+            AsmGpuMethod method,
+            String sourceName,
+            List<String> sourceLines,
+            Consumer<String> diagnosticReporter
+    ) {
+        try {
+            return asmFrontend.validateAndLiftStructured(method);
+        } catch (AsmFrontendException exception) {
+            reportAsmDiagnostic(method, exception, sourceName, sourceLines, diagnosticReporter);
+            throw exception;
+        }
+    }
+
     public GpuIrMethod liftLinearAsm(AsmGpuMethod method) {
         return asmFrontend.validateAndLiftLinear(method);
+    }
+
+    public GpuIrMethod liftLinearAsm(
+            AsmGpuMethod method,
+            String sourceName,
+            List<String> sourceLines,
+            Consumer<String> diagnosticReporter
+    ) {
+        try {
+            return asmFrontend.validateAndLiftLinear(method);
+        } catch (AsmFrontendException exception) {
+            reportAsmDiagnostic(method, exception, sourceName, sourceLines, diagnosticReporter);
+            throw exception;
+        }
     }
 
     public String compileStructuredAsm(AsmGpuMethod kernelMethod, List<AsmGpuMethod> helperMethods) {
@@ -77,8 +158,47 @@ public final class GpuProgramCompiler {
     public String compileStructuredAsm(
             AsmGpuMethod kernelMethod,
             List<AsmGpuMethod> helperMethods,
+            String sourceName,
+            List<String> sourceLines,
+            Consumer<String> diagnosticReporter
+    ) {
+        return compileStructuredAsm(kernelMethod, helperMethods, List.of(), sourceName, sourceLines, diagnosticReporter);
+    }
+
+    public String compileStructuredAsm(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
             List<ParsedGpuStruct> structs
     ) {
         return asmFrontend.validateLowerAndEmitStructured(kernelMethod, helperMethods, structs);
+    }
+
+    public String compileStructuredAsm(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            String sourceName,
+            List<String> sourceLines,
+            Consumer<String> diagnosticReporter
+    ) {
+        try {
+            return asmFrontend.validateLowerAndEmitStructured(kernelMethod, helperMethods, structs);
+        } catch (AsmFrontendException exception) {
+            reportAsmDiagnostic(kernelMethod, exception, sourceName, sourceLines, diagnosticReporter);
+            throw exception;
+        }
+    }
+
+    private void reportAsmDiagnostic(
+            AsmGpuMethod method,
+            AsmFrontendException exception,
+            String sourceName,
+            List<String> sourceLines,
+            Consumer<String> diagnosticReporter
+    ) {
+        Consumer<String> reporter = diagnosticReporter == null ? ignored -> { } : diagnosticReporter;
+        List<String> lines = sourceLines == null ? List.of() : sourceLines;
+        asmDiagnosticAdapter.render(method, exception, sourceName, lines)
+                .ifPresent(reporter);
     }
 }

@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
@@ -150,6 +151,12 @@ class AsmFrontendServiceTest {
         assertTrue(exception.getMessage().contains("ASM frontend signature mismatch"));
         assertTrue(exception.getMessage().contains("parameter count"));
         assertTrue(exception.getMessage().contains("same source/ASM pair"));
+
+        AsmFrontendFailureMetadata metadata = exception.metadata().orElseThrow();
+        assertEquals("signatureMismatch", metadata.family());
+        assertEquals(DEMO_OWNER, metadata.ownerInternalName());
+        assertEquals("kernel", metadata.methodName());
+        assertEquals("([F[F)V", metadata.methodDescriptor());
     }
 
     @Test

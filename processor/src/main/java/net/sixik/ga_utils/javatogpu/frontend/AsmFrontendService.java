@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmExpressionLifter;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmLiftingResult;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmValidationConfig;
@@ -185,7 +186,7 @@ public final class AsmFrontendService {
         String methodLabel = method.ownerInternalName() + "." + parsedMethod.name();
 
         if (parsedMethod.parameters().size() != methodType.getArgumentTypes().length) {
-            throw new AsmFrontendException(
+            throw signatureMismatch(method,
                     "ASM frontend signature mismatch for "
                             + methodLabel
                             + ": parsed method parameter count does not match the ASM descriptor; regenerate the parsed signature from the same source/ASM pair"
@@ -196,7 +197,7 @@ public final class AsmFrontendService {
             String parsedType = parsedMethod.parameters().get(index).javaType();
             String asmType = toJavaTypeName(methodType.getArgumentTypes()[index]);
             if (!parsedType.equals(asmType)) {
-                throw new AsmFrontendException(
+                throw signatureMismatch(method,
                         "ASM frontend signature mismatch for "
                                 + methodLabel
                                 + ": parsed parameter type does not match the ASM descriptor at index "
@@ -213,7 +214,7 @@ public final class AsmFrontendService {
         String parsedReturnType = parsedMethod.returnType();
         String asmReturnType = toJavaTypeName(methodType.getReturnType());
         if (!parsedReturnType.equals(asmReturnType)) {
-            throw new AsmFrontendException(
+            throw signatureMismatch(method,
                     "ASM frontend signature mismatch for "
                             + methodLabel
                             + ": parsed return type does not match the ASM descriptor; expected "
@@ -223,6 +224,19 @@ public final class AsmFrontendService {
                             + "; regenerate the parsed signature from the same source/ASM pair"
             );
         }
+    }
+
+    private AsmFrontendException signatureMismatch(AsmGpuMethod method, String detail) {
+        return new AsmFrontendException(detail, new AsmFrontendFailureMetadata(
+                "signatureMismatch",
+                method.ownerInternalName(),
+                method.methodNode().name,
+                method.methodNode().desc,
+                0,
+                -1,
+                "",
+                detail
+        ));
     }
 
     private AsmValidationConfig validationConfig(List<AsmGpuMethod> helperMethods, List<ParsedGpuStruct> structs) {
