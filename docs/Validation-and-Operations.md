@@ -64,6 +64,10 @@ Alias and neighboring mutation blockers now have the same typed proof treatment 
 
 Backend and device capability blockers now also have a dedicated proof layer through `GpuIrAutoVectorizationBackendProofReport`. Existing rewrite-plan guard fields such as `backendVectorWidth` and `backendDoubleVector` remain stable, while the proof bundle can separately report a `backend` proof kind and `blockedByBackend` / `blockedByMultipleProofs` decisions without double-counting guard-family totals.
 
+Unknown-vector blockers now have the same typed treatment through `GpuIrAutoVectorizationUnknownVectorProofReport`. Existing `unknownVectorType` rewrite-plan guard fields remain stable, while the proof bundle can separately report `unknownVector` and `blockedByUnknownVector` / `blockedByMultipleProofs` decisions without double-counting guard-family totals.
+
+`autoVectorizationProofLayerReadiness*` now adds a compact CI rollup above the raw proof bundle. It reports layer order, present layers, blocking layers, first blocking layer, per-layer states, and a CI summary line for `unknownVector`, `backend`, `mutation`, `controlFlowBoundary`, `memoryLegality`, and `sideEffect` without requiring tooling to parse `autoVectorizationProofBundleSummary`.
+
 `autoVectorizationReadiness*` now adds the matching one-line readiness rollup for auto-vectorization, combining candidate availability, warnings, rejections, rewrite-plan guards, proof-bundle safety, rewrite-policy status, dry-run status, and resolved-operation availability into one verdict, blocker list, remaining-work list, and CI summary line.
 
 The readiness-to-equivalence bridge tests now cover both sides of that gate: a `readyForPrototypeRewrite` preview must produce a successful opt-in prototype runtime-equivalence artifact, while warning-blocked and rewrite-guard-blocked previews must stop before prototype equivalence is treated as usable evidence.

@@ -114,6 +114,23 @@ public record GpuIrAutoVectorizationPreview(
         ).proofSummary();
     }
 
+    /**
+     * Separates unknown vector-type guards from the broader rewrite-plan proof.
+     */
+    public GpuIrAutoVectorizationProofSummary unknownVectorProofSummary() {
+        return GpuIrAutoVectorizationUnknownVectorProofReport.fromGuards(
+                methodName,
+                rewritePlan().typedGuardDiagnostics()
+        ).proofSummary();
+    }
+
+    private GpuIrAutoVectorizationProofSummary unknownVectorBundleProofSummary() {
+        return GpuIrAutoVectorizationUnknownVectorProofReport.fromGuards(
+                methodName,
+                rewritePlan().typedGuardDiagnostics()
+        ).bundleProofSummary();
+    }
+
     private GpuIrAutoVectorizationProofSummary backendBundleProofSummary() {
         return GpuIrAutoVectorizationBackendProofReport.fromGuards(
                 methodName,
@@ -134,6 +151,10 @@ public record GpuIrAutoVectorizationPreview(
     public GpuIrAutoVectorizationProofBundle proofBundle() {
         List<GpuIrAutoVectorizationProofSummary> summaries = new java.util.ArrayList<>();
         summaries.add(rewritePlanProofSummary());
+        GpuIrAutoVectorizationProofSummary unknownVectorProofSummary = unknownVectorBundleProofSummary();
+        if (unknownVectorProofSummary.hasDiagnostics()) {
+            summaries.add(unknownVectorProofSummary);
+        }
         GpuIrAutoVectorizationProofSummary backendProofSummary = backendBundleProofSummary();
         if (backendProofSummary.hasDiagnostics()) {
             summaries.add(backendProofSummary);

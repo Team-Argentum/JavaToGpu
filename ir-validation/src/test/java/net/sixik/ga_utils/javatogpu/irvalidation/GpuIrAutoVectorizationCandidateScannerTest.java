@@ -287,6 +287,12 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE, rewritePlan.typedGuardDiagnostics().get(0).family());
         assertEquals("stmt[1]", rewritePlan.typedGuardDiagnostics().get(0).location());
         assertEquals(java.util.Map.of("unknownVectorType", 2L), rewritePlan.guardFamilyCounts());
+        assertEquals(2, aggregatePreview.unknownVectorProofSummary().diagnosticCount());
+        assertEquals(java.util.Map.of("unknownVectorType", 2L), aggregatePreview.unknownVectorProofSummary().guardFamilyCounts());
+        assertTrue(aggregatePreview.proofBundle().proofKinds().contains("unknownVector"));
+        assertEquals("2", aggregatePreview.proofBundle()
+                .artifactFields()
+                .get("autoVectorizationProofBundleGuardFamily.unknownVectorType"));
         assertEquals("stmt[1]", rewritePlan.insertionOperations().get(0).loopLocation());
         assertEquals("unknownx8", rewritePlan.insertionOperations().get(0).vectorType());
         assertEquals(List.of("read leftB[i=0..7]", "read rightB[i=0..7]", "read bitsB[i=0..7]"), rewritePlan.insertionOperations().get(0).plannedVectorReads());
@@ -304,11 +310,12 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(aggregatePreview.summary().contains("rewritePolicyBlockingGuards=2"));
         assertTrue(aggregatePreview.summary().contains("canApplyRewrite=false"));
         assertTrue(aggregatePreview.summary().contains("proofBundleRewriteSafe=false"));
-        assertTrue(aggregatePreview.summary().contains("proofBundleDiagnostics=2"));
-        assertTrue(aggregatePreview.summary().contains("proofBundleUnsafeProofs=1"));
+        assertTrue(aggregatePreview.summary().contains("proofBundleDiagnostics=4"));
+        assertTrue(aggregatePreview.summary().contains("proofBundleUnsafeProofs=2"));
         assertTrue(aggregatePreview.summary().contains("proofBundleFirstUnsafeProof=rewritePlan@kernel"));
         assertEquals(List.of(
                 "rewritePlan",
+                "unknownVector",
                 "controlFlowBoundary",
                 "memoryLegality",
                 "controlFlowBoundary",
@@ -316,6 +323,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         ), aggregatePreview.proofBundle().proofKinds());
         assertEquals(List.of(
                 "rewritePlan",
+                "unknownVector",
                 "controlFlowBoundary",
                 "memoryLegality"
         ), aggregatePreview.proofBundle().compactProofKinds());

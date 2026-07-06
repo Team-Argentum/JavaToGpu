@@ -82,6 +82,10 @@ class GpuIrAutoVectorizationArtifactSnapshotTest {
         assertEquals("2", fields.get("autoVectorizationProofBundleProofs"));
         assertEquals("true", fields.get("autoVectorizationProofBundleRewriteSafe"));
         assertEquals("0", fields.get("autoVectorizationProofBundleDiagnostics"));
+        assertEquals("ready", fields.get("autoVectorizationProofLayerReadinessVerdict"));
+        assertEquals("true", fields.get("autoVectorizationProofLayerReadinessAllLayersReady"));
+        assertEquals("0", fields.get("autoVectorizationProofLayerReadinessBlockingLayerCount"));
+        assertEquals("none", fields.get("autoVectorizationProofLayerReadinessFirstBlockingLayer"));
         assertEquals("{int4=1}", fields.get("autoVectorizationVectorTypeCounts"));
         assertEquals("1", fields.get("autoVectorizationUniqueVectorTypes"));
         assertEquals("1", fields.get("autoVectorizationVectorType.int4"));

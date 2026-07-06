@@ -96,6 +96,7 @@ public record GpuIrAutoVectorizationProofDecision(
             case "sideEffect" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_SIDE_EFFECT;
             case "mutation" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_MUTATION;
             case "backend" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_BACKEND;
+            case "unknownVector" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_UNKNOWN_VECTOR;
             default -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_UNKNOWN_PROOF;
         };
     }

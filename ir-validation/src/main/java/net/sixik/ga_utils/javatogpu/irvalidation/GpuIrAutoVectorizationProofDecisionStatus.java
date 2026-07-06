@@ -11,6 +11,7 @@ public enum GpuIrAutoVectorizationProofDecisionStatus {
     BLOCKED_BY_SIDE_EFFECT("blockedBySideEffect"),
     BLOCKED_BY_MUTATION("blockedByMutation"),
     BLOCKED_BY_BACKEND("blockedByBackend"),
+    BLOCKED_BY_UNKNOWN_VECTOR("blockedByUnknownVector"),
     BLOCKED_BY_MULTIPLE_PROOFS("blockedByMultipleProofs"),
     BLOCKED_BY_UNKNOWN_PROOF("blockedByUnknownProof");
 

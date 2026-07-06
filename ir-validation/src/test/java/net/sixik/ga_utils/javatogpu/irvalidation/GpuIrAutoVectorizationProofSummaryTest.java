@@ -127,6 +127,14 @@ class GpuIrAutoVectorizationProofSummaryTest {
                         "backend vector width x3 requires explicit ABI support before rewrite operations"
                 ))
         );
+        GpuIrAutoVectorizationUnknownVectorProofReport unknownVectorProof = GpuIrAutoVectorizationUnknownVectorProofReport.fromGuards(
+                "kernel",
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE,
+                        "stmt[0]",
+                        "unknown vector type blocks rewrite operations"
+                ))
+        );
 
         assertBaseArtifactContract(rewritePlan.artifactFields("autoVectorizationProofRewritePlan"), "autoVectorizationProofRewritePlan");
         assertBaseArtifactContract(memoryLegality.artifactFields(), "autoVectorizationProofMemoryLegality");
@@ -134,6 +142,7 @@ class GpuIrAutoVectorizationProofSummaryTest {
         assertBaseArtifactContract(sideEffectProof.artifactFields(), "autoVectorizationProofSideEffect");
         assertBaseArtifactContract(mutationProof.artifactFields(), "autoVectorizationProofMutation");
         assertBaseArtifactContract(backendProof.artifactFields(), "autoVectorizationProofBackend");
+        assertBaseArtifactContract(unknownVectorProof.artifactFields(), "autoVectorizationProofUnknownVector");
         assertEquals("sideEffect", sideEffectProof.artifactFields().get("autoVectorizationProofSideEffectKind"));
         assertEquals("false", sideEffectProof.artifactFields().get("autoVectorizationProofSideEffectRewriteSafe"));
         assertEquals("1", sideEffectProof.artifactFields().get("autoVectorizationProofSideEffectDiagnostics"));
@@ -146,6 +155,10 @@ class GpuIrAutoVectorizationProofSummaryTest {
         assertEquals("false", backendProof.artifactFields().get("autoVectorizationProofBackendRewriteSafe"));
         assertEquals("1", backendProof.artifactFields().get("autoVectorizationProofBackendDiagnostics"));
         assertEquals("1", backendProof.artifactFields().get("autoVectorizationProofBackendGuardFamily.backendVectorWidth"));
+        assertEquals("unknownVector", unknownVectorProof.artifactFields().get("autoVectorizationProofUnknownVectorKind"));
+        assertEquals("false", unknownVectorProof.artifactFields().get("autoVectorizationProofUnknownVectorRewriteSafe"));
+        assertEquals("1", unknownVectorProof.artifactFields().get("autoVectorizationProofUnknownVectorDiagnostics"));
+        assertEquals("1", unknownVectorProof.artifactFields().get("autoVectorizationProofUnknownVectorGuardFamily.unknownVectorType"));
     }
 
     @Test
@@ -254,6 +267,36 @@ class GpuIrAutoVectorizationProofSummaryTest {
     }
 
     @Test
+    void unknownVectorProofReportGroupsUnknownVectorGuards() {
+        GpuIrAutoVectorizationRewriteGuardDiagnostic unknownVectorGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE,
+                "stmt[0]",
+                "unknown vector type blocks rewrite operations"
+        );
+        GpuIrAutoVectorizationRewriteGuardDiagnostic backendGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH,
+                "stmt[1]",
+                "backend vector width x3 requires explicit ABI support before rewrite operations"
+        );
+
+        GpuIrAutoVectorizationUnknownVectorProofReport report = GpuIrAutoVectorizationUnknownVectorProofReport.fromGuards(
+                "kernel",
+                List.of(unknownVectorGuard, backendGuard)
+        );
+
+        assertTrue(report.blocksRewrite());
+        assertEquals("kernel", report.location());
+        assertEquals(List.of(unknownVectorGuard), report.guardDiagnostics());
+        assertEquals("unknownVector", report.proofSummary().proofKind());
+        assertFalse(report.proofSummary().rewriteSafe());
+        assertEquals(1, report.proofSummary().diagnosticCount());
+        assertEquals(Map.of("unknownVectorType", 1L), report.proofSummary().guardFamilyCounts());
+        assertEquals("unknownVector", report.artifactFields().get("autoVectorizationProofUnknownVectorKind"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofUnknownVectorDiagnostics"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofUnknownVectorGuardFamily.unknownVectorType"));
+    }
+
+    @Test
     void proofBundleAggregatesMultipleProofSurfaces() {
         GpuIrAutoVectorizationProofSummary rewritePlan = GpuIrAutoVectorizationProofSummary.fromGuards(
                 "rewritePlan",
@@ -345,6 +388,168 @@ class GpuIrAutoVectorizationProofSummaryTest {
         assertTrue(bundle.summaryLine().contains("firstUnsafeProof=rewritePlan@kernel"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
         assertThrows(UnsupportedOperationException.class, () -> customFields.put("x", "y"));
+    }
+
+    @Test
+    void proofBundlePreservesLayerOrderWithoutDoubleCountingGuardFamilies() {
+        GpuIrAutoVectorizationRewriteCandidatePreview candidate = new GpuIrAutoVectorizationRewriteCandidatePreview(
+                "stmt[0]",
+                "i",
+                0,
+                3,
+                3,
+                1,
+                3,
+                "x3",
+                "int",
+                "unknownx3",
+                List.of("write out[i=0..2]"),
+                List.of("read out[i=0..2]"),
+                List.of(
+                        new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_TARGET_WRITE,
+                                "stmt[0]",
+                                "next statement stmt[1] writes target array `out`"
+                        )
+                ),
+                List.of("out"),
+                List.of("out")
+        );
+        GpuIrAutoVectorizationProofSummary controlFlow = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "controlFlowBoundary",
+                "stmt[0]",
+                0,
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.CONTROL_FLOW_BOUNDARY,
+                        "stmt[0]",
+                        "previous statement stmt[0] is a control-flow boundary"
+                ))
+        );
+        GpuIrAutoVectorizationProofSummary memory = GpuIrAutoVectorizationProofSummary.fromGuards(
+                "memoryLegality",
+                "stmt[0]",
+                0,
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE,
+                        "stmt[0]",
+                        "source array `input` uses constant memory address space"
+                ))
+        );
+        GpuIrAutoVectorizationProofSummary sideEffect = GpuIrAutoVectorizationSideEffectProofReport.blocking(
+                "stmt[0]",
+                "assignment value may have side effects"
+        ).proofSummary();
+
+        GpuIrAutoVectorizationProofBundle bundle = new GpuIrAutoVectorizationPreview(
+                "kernel",
+                List.of(candidate),
+                List.of(),
+                List.of(),
+                List.of(controlFlow, memory, sideEffect)
+        ).proofBundle();
+        Map<String, String> fields = bundle.artifactFields();
+
+        assertEquals(List.of(
+                "rewritePlan",
+                "unknownVector",
+                "backend",
+                "mutation",
+                "controlFlowBoundary",
+                "memoryLegality",
+                "sideEffect"
+        ), bundle.proofKinds());
+        assertEquals(List.of(
+                "rewritePlan",
+                "unknownVector",
+                "backend",
+                "mutation",
+                "controlFlowBoundary",
+                "memoryLegality",
+                "sideEffect"
+        ), bundle.compactProofKinds());
+        assertEquals(7, bundle.unsafeProofSummaries().size());
+        assertEquals(11, bundle.diagnosticCount());
+        assertEquals(Map.of(
+                GpuIrAutoVectorizationRewriteGuardFamily.UNKNOWN_VECTOR_TYPE, 1L,
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH, 1L,
+                GpuIrAutoVectorizationRewriteGuardFamily.TARGET_SOURCE_ALIAS, 1L,
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_TARGET_WRITE, 1L,
+                GpuIrAutoVectorizationRewriteGuardFamily.CONTROL_FLOW_BOUNDARY, 1L,
+                GpuIrAutoVectorizationRewriteGuardFamily.MEMORY_ADDRESS_SPACE, 1L,
+                GpuIrAutoVectorizationRewriteGuardFamily.SIDE_EFFECT, 1L
+        ), bundle.guardFamilyTypeCounts());
+        assertEquals("7", fields.get("autoVectorizationProofBundleProofs"));
+        assertEquals("rewritePlan,unknownVector,backend,mutation,controlFlowBoundary,memoryLegality,sideEffect",
+                fields.get("autoVectorizationProofBundleKinds"));
+        assertEquals("{rewritePlan=1,unknownVector=1,backend=1,mutation=1,controlFlowBoundary=1,memoryLegality=1,sideEffect=1}",
+                fields.get("autoVectorizationProofBundleUnsafeProofKindCounts"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.unknownVectorType"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.backendVectorWidth"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.targetSourceAlias"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.neighborTargetWrite"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.controlFlowBoundary"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.memoryAddressSpace"));
+        assertEquals("1", fields.get("autoVectorizationProofBundleGuardFamily.sideEffect"));
+        assertEquals("blockedByMultipleProofs", fields.get("autoVectorizationProofBundleDecisionStatus"));
+
+        GpuIrAutoVectorizationProofLayerReadinessSummaryReport readiness =
+                GpuIrAutoVectorizationProofLayerReadinessSummaryReport.from(bundle);
+        Map<String, String> readinessFields = readiness.artifactFields();
+
+        assertFalse(readiness.allLayersReady());
+        assertTrue(readiness.hasBlockingLayers());
+        assertEquals("blocked", readiness.verdict());
+        assertEquals(List.of(
+                "unknownVector",
+                "backend",
+                "mutation",
+                "controlFlowBoundary",
+                "memoryLegality",
+                "sideEffect"
+        ), readiness.layerOrder());
+        assertEquals(readiness.layerOrder(), readiness.presentLayers());
+        assertEquals(readiness.layerOrder(), readiness.blockingLayers());
+        assertEquals(6, readiness.blockingLayerCount());
+        assertEquals(0, readiness.readyLayerCount());
+        assertEquals("unknownVector", readiness.firstBlockingLayer());
+        assertEquals("blocked", readinessFields.get("autoVectorizationProofLayerReadinessVerdict"));
+        assertEquals("unknownVector,backend,mutation,controlFlowBoundary,memoryLegality,sideEffect",
+                readinessFields.get("autoVectorizationProofLayerReadinessBlockingLayers"));
+        assertEquals("blocked", readinessFields.get("autoVectorizationProofLayerReadinessLayer.unknownVector"));
+        assertEquals("blocked", readinessFields.get("autoVectorizationProofLayerReadinessLayer.backend"));
+        assertEquals("blocked", readinessFields.get("autoVectorizationProofLayerReadinessLayer.mutation"));
+        assertEquals("blocked", readinessFields.get("autoVectorizationProofLayerReadinessLayer.controlFlowBoundary"));
+        assertEquals("blocked", readinessFields.get("autoVectorizationProofLayerReadinessLayer.memoryLegality"));
+        assertEquals("blocked", readinessFields.get("autoVectorizationProofLayerReadinessLayer.sideEffect"));
+    }
+
+    @Test
+    void proofLayerReadinessReportsReadyWhenNoLayerBlocksRewrite() {
+        GpuIrAutoVectorizationProofLayerReadinessSummaryReport readiness = GpuIrAutoVectorizationProofLayerReadinessSummaryReport.from(
+                GpuIrAutoVectorizationProofBundle.of(GpuIrAutoVectorizationProofSummary.fromGuards(
+                        "rewritePlan",
+                        "kernel",
+                        0,
+                        List.of()
+                ))
+        );
+
+        assertTrue(readiness.allLayersReady());
+        assertFalse(readiness.hasBlockingLayers());
+        assertEquals("ready", readiness.verdict());
+        assertEquals(List.of(), readiness.presentLayers());
+        assertEquals(List.of(), readiness.blockingLayers());
+        assertEquals("none", readiness.firstBlockingLayer());
+        assertEquals(Map.of(
+                "unknownVector", "notPresent",
+                "backend", "notPresent",
+                "mutation", "notPresent",
+                "controlFlowBoundary", "notPresent",
+                "memoryLegality", "notPresent",
+                "sideEffect", "notPresent"
+        ), readiness.layerStates());
+        assertEquals("ready", readiness.artifactFields().get("autoVectorizationProofLayerReadinessVerdict"));
+        assertEquals("true", readiness.artifactFields().get("autoVectorizationProofLayerReadinessAllLayersReady"));
     }
 
     @Test

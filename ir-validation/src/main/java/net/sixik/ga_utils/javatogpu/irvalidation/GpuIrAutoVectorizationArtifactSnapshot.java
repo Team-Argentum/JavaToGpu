@@ -55,6 +55,10 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
         );
     }
 
+    public GpuIrAutoVectorizationProofLayerReadinessSummaryReport proofLayerReadinessSummaryReport() {
+        return GpuIrAutoVectorizationProofLayerReadinessSummaryReport.from(preview.proofBundle());
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         Objects.requireNonNull(prefix, "prefix");
         Map<String, String> values = new LinkedHashMap<>();
@@ -117,6 +121,7 @@ public record GpuIrAutoVectorizationArtifactSnapshot(
                 ));
         values.putAll(preview.rewritePlanProofSummary().artifactFields(prefix + "ProofRewritePlan"));
         values.putAll(preview.proofBundle().artifactFields(prefix + "ProofBundle"));
+        values.putAll(proofLayerReadinessSummaryReport().artifactFields(prefix + "ProofLayerReadiness"));
         values.put(prefix + "VectorTypeCounts", mapSummary(preview.vectorTypeCounts()));
         values.put(prefix + "UniqueVectorTypes", Integer.toString(preview.vectorTypeCounts().size()));
         preview.vectorTypeCounts().entrySet().stream()
