@@ -64,4 +64,90 @@ public final class AsmFrontendFailureReportIO {
         }
         return properties;
     }
+
+    public static Properties toReadinessProperties(AsmFrontendReadinessReport report) {
+        return toReadinessProperties(report, "asmReadiness");
+    }
+
+    public static Properties toReadinessProperties(AsmFrontendReadinessReport report, String prefix) {
+        Objects.requireNonNull(report, "report");
+
+        Properties properties = new Properties();
+        for (Map.Entry<String, String> entry : report.artifactFields(prefix).entrySet()) {
+            properties.setProperty(entry.getKey(), entry.getValue());
+        }
+        return properties;
+    }
+
+    public static void writeInventory(Path path, AsmBytecodeShapeInventoryReport report) throws IOException {
+        writeInventory(path, report, "asmShapeInventory");
+    }
+
+    public static void writeInventory(
+            Path path,
+            AsmBytecodeShapeInventoryReport report,
+            String prefix
+    ) throws IOException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(report, "report");
+
+        Properties properties = toInventoryProperties(report, prefix);
+        Path parent = path.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        try (OutputStream outputStream = Files.newOutputStream(path)) {
+            properties.store(outputStream, "JavaToGpu ASM bytecode shape inventory");
+        }
+    }
+
+    public static Properties toInventoryProperties(AsmBytecodeShapeInventoryReport report) {
+        return toInventoryProperties(report, "asmShapeInventory");
+    }
+
+    public static Properties toInventoryProperties(AsmBytecodeShapeInventoryReport report, String prefix) {
+        Objects.requireNonNull(report, "report");
+
+        Properties properties = new Properties();
+        for (Map.Entry<String, String> entry : report.artifactFields(prefix).entrySet()) {
+            properties.setProperty(entry.getKey(), entry.getValue());
+        }
+        return properties;
+    }
+
+    public static void writeArtifactSnapshot(Path path, AsmFrontendArtifactReport report) throws IOException {
+        writeArtifactSnapshot(path, report, "asmArtifactReport");
+    }
+
+    public static void writeArtifactSnapshot(
+            Path path,
+            AsmFrontendArtifactReport report,
+            String prefix
+    ) throws IOException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(report, "report");
+
+        Properties properties = toArtifactSnapshotProperties(report, prefix);
+        Path parent = path.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        try (OutputStream outputStream = Files.newOutputStream(path)) {
+            properties.store(outputStream, "JavaToGpu ASM artifact snapshot report");
+        }
+    }
+
+    public static Properties toArtifactSnapshotProperties(AsmFrontendArtifactReport report) {
+        return toArtifactSnapshotProperties(report, "asmArtifactReport");
+    }
+
+    public static Properties toArtifactSnapshotProperties(AsmFrontendArtifactReport report, String prefix) {
+        Objects.requireNonNull(report, "report");
+
+        Properties properties = new Properties();
+        for (Map.Entry<String, String> entry : report.artifactFields(prefix).entrySet()) {
+            properties.setProperty(entry.getKey(), entry.getValue());
+        }
+        return properties;
+    }
 }

@@ -41,6 +41,10 @@ public record AsmFrontendFailureReport(
                 .toList();
     }
 
+    public AsmFrontendReadinessReport readinessReport() {
+        return new AsmFrontendReadinessReport(this);
+    }
+
     public String summaryLine() {
         if (successful()) {
             return "asmFailureReport successful failures=0";
@@ -71,6 +75,7 @@ public record AsmFrontendFailureReport(
         fields.put(safePrefix + ".failureCount", Integer.toString(failureCount()));
         fields.put(safePrefix + ".summary", summaryLine());
         fields.put(safePrefix + ".families", familyCounts().toString());
+        fields.putAll(readinessReport().artifactFields(safePrefix + ".readiness"));
         List<String> summaries = summaries();
         if (!summaries.isEmpty()) {
             fields.put(safePrefix + ".firstFailure", summaries.get(0));

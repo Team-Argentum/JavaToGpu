@@ -43,6 +43,8 @@ class AsmFrontendFailureReporterTest {
         assertEquals(0, report.failureCount());
         assertEquals("asmFailureReport successful failures=0", report.summaryLine());
         assertEquals("true", report.artifactFields("asmReport").get("asmReport.successful"));
+        assertEquals(AsmFrontendReadinessVerdict.SUPPORTED, report.readinessReport().verdict());
+        assertEquals("supported", report.artifactFields("asmReport").get("asmReport.readiness.verdict"));
     }
 
     @Test
@@ -322,6 +324,195 @@ class AsmFrontendFailureReporterTest {
         assertTrue(exception.getMessage().contains("asmFailureReport failed failures=1"));
         assertTrue(exception.getMessage().contains("ARRAYLENGTH"));
         assertEquals("arrayLength", exception.metadata().orElseThrow().family());
+    }
+
+    @Test
+    void readinessReportClassifiesRewriteRequiredFailures() {
+        AsmFrontendFailureReport report = reporter.reportClass(classBytesWithMixedMethods());
+        AsmFrontendReadinessReport readiness = report.readinessReport();
+
+        assertEquals(AsmFrontendReadinessVerdict.REWRITE_REQUIRED, readiness.verdict());
+        assertTrue(readiness.rewriteRequired());
+        assertFalse(readiness.rejected());
+        assertEquals(1, readiness.rewriteRequiredFailureCount());
+        assertEquals(0, readiness.rejectedFailureCount());
+        assertEquals(1L, readiness.actionCounts().get("rewriteToGpuSafeAsm"));
+        assertTrue(readiness.summaryLine().contains("verdict=rewriteRequired"));
+        assertEquals("rewriteRequired", report.artifactFields("asmReport").get("asmReport.readiness.verdict"));
+        assertEquals("1", report.artifactFields("asmReport").get("asmReport.readiness.actionCount.rewriteToGpuSafeAsm"));
+        assertEquals("arrayMetadata", readiness.firstMigrationBucket());
+        assertEquals(1L, readiness.migrationBucketCounts().get("arrayMetadata"));
+        assertTrue(readiness.migrationGuidance().get(0).contains("Pass array lengths"));
+        assertEquals("arrayMetadata", report.artifactFields("asmReport").get("asmReport.readiness.firstMigrationBucket"));
+        assertEquals("1", report.artifactFields("asmReport").get("asmReport.readiness.migrationBucket.arrayMetadata"));
+    }
+
+    @Test
+    void readinessReportGroupsMultipleMigrationBuckets() {
+        MethodNode method = methodNode("multiBucketKernel", "([F)I", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitInsn(Opcodes.ARRAYLENGTH);
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitInsn(Opcodes.ATHROW);
+            mv.visitInsn(Opcodes.IRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendReadinessReport readiness = reporter.report(OWNER, method).readinessReport();
+
+        assertEquals(AsmFrontendReadinessVerdict.REWRITE_REQUIRED, readiness.verdict());
+        assertEquals(1L, readiness.migrationBucketCounts().get("arrayMetadata"));
+        assertEquals(1L, readiness.migrationBucketCounts().get("explicitFailureModel"));
+        assertTrue(readiness.migrationGuidance().stream().anyMatch(line -> line.contains("Pass array lengths")));
+        assertTrue(readiness.migrationGuidance().stream().anyMatch(line -> line.contains("Replace exceptions")));
+    }
+
+    @Test
+    void readinessReportClassifiesRejectedFailuresWhenManualRedesignIsNeeded() {
+        MethodNode method = methodNode("stringDescriptorKernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "sample/ExternalHelper", "badArg", "(Ljava/lang/String;)V", false);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendReadinessReport readiness = reporter.report(OWNER, method).readinessReport();
+
+        assertEquals(AsmFrontendReadinessVerdict.REJECTED, readiness.verdict());
+        assertFalse(readiness.supported());
+        assertTrue(readiness.rejected());
+        assertEquals(1, readiness.rejectedFailureCount());
+        assertEquals(1L, readiness.actionCounts().get("rejectUntilManualRedesign"));
+        assertEquals("typeSignatureModel", readiness.firstMigrationBucket());
+        assertEquals(1L, readiness.migrationBucketCounts().get("typeSignatureModel"));
+        assertTrue(readiness.migrationGuidance().get(0).contains("Redesign unsupported descriptors"));
+        assertTrue(readiness.rejectedSummaries().get(0).contains("methodDescriptor"));
+    }
+
+    @Test
+    void readinessReportRequireSupportedFailsWithFirstFailureMetadata() {
+        AsmFrontendReadinessReport readiness = reporter.reportClass(classBytesWithMixedMethods()).readinessReport();
+
+        AsmFrontendException exception = assertThrows(AsmFrontendException.class, readiness::requireSupported);
+
+        assertTrue(exception.getMessage().contains("asmReadiness verdict=rewriteRequired"));
+        assertEquals("arrayLength", exception.metadata().orElseThrow().family());
+    }
+
+    @Test
+    void convertsReadinessReportToProperties() {
+        AsmFrontendReadinessReport readiness = reporter.reportClass(classBytesWithMixedMethods()).readinessReport();
+
+        Properties properties = AsmFrontendFailureReportIO.toReadinessProperties(readiness, "customReadiness");
+
+        assertEquals("rewriteRequired", properties.getProperty("customReadiness.verdict"));
+        assertEquals("1", properties.getProperty("customReadiness.rewriteRequiredFailureCount"));
+        assertEquals("1", properties.getProperty("customReadiness.actionCount.rewriteToGpuSafeAsm"));
+        assertEquals("arrayMetadata", properties.getProperty("customReadiness.firstMigrationBucket"));
+        assertEquals("1", properties.getProperty("customReadiness.migrationBucket.arrayMetadata"));
+    }
+
+    @Test
+    void inventoriesRiskyShapesInsideOneMethod() {
+        MethodNode method = methodNode("inventoryKernel", "([F)I", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitInsn(Opcodes.ARRAYLENGTH);
+            mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Object", "toString", "()Ljava/lang/String;", false);
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitInsn(Opcodes.ATHROW);
+            mv.visitInsn(Opcodes.IRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmBytecodeShapeInventoryReport inventory = reporter.inventory(OWNER, method);
+
+        assertTrue(inventory.hasRiskyShapes());
+        assertEquals(4, inventory.riskyShapeCount());
+        assertEquals(1L, inventory.kindCounts().get("arrayLength"));
+        assertEquals(1L, inventory.kindCounts().get("virtualDispatch"));
+        assertEquals(1L, inventory.kindCounts().get("unsupportedDescriptor"));
+        assertEquals(1L, inventory.kindCounts().get("exceptionThrow"));
+        assertTrue(inventory.summaryLine().contains("risky=4"));
+        assertTrue(inventory.artifactFields("asmInventory").get("asmInventory.firstRiskyShape").contains("arrayLength"));
+    }
+
+    @Test
+    void inventoriesClassDirectoryAndJarArtifacts() throws IOException {
+        Path classDirectory = Files.createTempDirectory("javatogpu-asm-inventory-dir");
+        Path jarFile = Files.createTempFile("javatogpu-asm-inventory", ".jar");
+        try {
+            Files.write(classDirectory.resolve("ReportDemo.class"), classBytesWithMixedMethods());
+            writeJar(jarFile, List.of(jarClass("sample/ReportDemo.class", classBytesWithMixedMethods())));
+
+            AsmBytecodeShapeInventoryReport directoryInventory = reporter.inventoryArtifact(classDirectory);
+            AsmBytecodeShapeInventoryReport jarInventory = reporter.inventoryArtifact(jarFile);
+
+            assertEquals(1L, directoryInventory.kindCounts().get("arrayLength"));
+            assertEquals(1L, jarInventory.kindCounts().get("arrayLength"));
+            assertEquals("1", directoryInventory.artifactFields("asmInventory").get("asmInventory.kind.arrayLength"));
+            assertEquals("1", jarInventory.artifactFields("asmInventory").get("asmInventory.kind.arrayLength"));
+        } finally {
+            Files.deleteIfExists(classDirectory.resolve("ReportDemo.class"));
+            Files.deleteIfExists(classDirectory);
+            Files.deleteIfExists(jarFile);
+        }
+    }
+
+    @Test
+    void writesInventoryAsPropertiesArtifact() throws IOException {
+        Path reportFile = Files.createTempFile("javatogpu-asm-inventory", ".properties");
+        try {
+            AsmBytecodeShapeInventoryReport inventory = reporter.inventoryClass(classBytesWithMixedMethods());
+
+            AsmFrontendFailureReportIO.writeInventory(reportFile, inventory);
+            Properties properties = AsmFrontendFailureReportIO.readIfExists(reportFile).orElseThrow();
+
+            assertEquals("1", properties.getProperty("asmShapeInventory.riskyShapeCount"));
+            assertEquals("true", properties.getProperty("asmShapeInventory.hasRiskyShapes"));
+            assertEquals("1", properties.getProperty("asmShapeInventory.kind.arrayLength"));
+        } finally {
+            Files.deleteIfExists(reportFile);
+        }
+    }
+
+    @Test
+    void buildsCombinedArtifactReportForClassArtifacts() {
+        AsmFrontendArtifactReport artifactReport = reporter.reportArtifactSnapshot(classBytesWithMixedMethods());
+
+        assertFalse(artifactReport.successful());
+        assertEquals(AsmFrontendReadinessVerdict.REWRITE_REQUIRED, artifactReport.readinessReport().verdict());
+        assertEquals(1, artifactReport.failureReport().failureCount());
+        assertEquals(1, artifactReport.shapeInventoryReport().riskyShapeCount());
+        assertEquals("arrayLength", artifactReport.failureReport().failures().get(0).family());
+        assertEquals(1L, artifactReport.shapeInventoryReport().kindCounts().get("arrayLength"));
+        assertTrue(artifactReport.summaryLine().contains("failureCount=1"));
+        assertTrue(artifactReport.summaryLine().contains("riskyShapeCount=1"));
+        assertEquals("rewriteRequired", artifactReport.artifactFields("asmArtifact").get("asmArtifact.readiness.verdict"));
+        assertEquals("1", artifactReport.artifactFields("asmArtifact").get("asmArtifact.shapeInventory.kind.arrayLength"));
+    }
+
+    @Test
+    void writesCombinedArtifactSnapshotAsProperties() throws IOException {
+        Path reportFile = Files.createTempFile("javatogpu-asm-artifact", ".properties");
+        try {
+            AsmFrontendArtifactReport artifactReport = reporter.reportArtifactSnapshot(classBytesWithMixedMethods());
+
+            AsmFrontendFailureReportIO.writeArtifactSnapshot(reportFile, artifactReport);
+            Properties properties = AsmFrontendFailureReportIO.readIfExists(reportFile).orElseThrow();
+
+            assertEquals("false", properties.getProperty("asmArtifactReport.successful"));
+            assertEquals("rewriteRequired", properties.getProperty("asmArtifactReport.readiness.verdict"));
+            assertEquals("1", properties.getProperty("asmArtifactReport.failureReport.failureCount"));
+            assertEquals("arrayLength", properties.getProperty("asmArtifactReport.failureReport.failure.0.family"));
+            assertEquals("1", properties.getProperty("asmArtifactReport.shapeInventory.kind.arrayLength"));
+        } finally {
+            Files.deleteIfExists(reportFile);
+        }
     }
 
     private AsmGpuMethod asmMethod(String name, String returnType, MethodNode methodNode) {

@@ -73,6 +73,58 @@ Jar preflight reads `.class` entries in stable entry-name order and aggregates f
 
 Artifact preflight auto-detects directories, `.class` files, and `.jar` files, then delegates to the matching preflight mode. This is the recommended CI entry point when build tooling receives a generic compiled artifact path.
 
+The same report exposes a readiness classifier for broader ASM ingestion work:
+
+```java
+AsmFrontendReadinessReport readiness = compiler
+        .reportStructuredAsmArtifactReadiness(pathToClassDirectoryClassFileOrJar);
+
+System.err.println(readiness.summaryLine());
+```
+
+Readiness verdicts are intentionally conservative:
+
+- `supported` means the current GPU-safe ASM subset accepted the artifact.
+- `rewriteRequired` means the artifact contains bytecode that can usually be normalized by an upstream bytecode generator, such as `ARRAYLENGTH`, object allocation, virtual dispatch, exceptions, synchronization, field access, or unsupported owners.
+- `rejected` means at least one failure likely needs manual redesign or stronger type/semantic support before the compiler should try to transform it.
+
+The normal `.properties` report now includes nested `asmReport.readiness.*` fields, including `verdict`, `rewriteRequiredFailureCount`, `rejectedFailureCount`, and grouped `actionCount.*` counters for CI dashboards.
+
+Readiness also exports migration buckets so build tooling can group remediation work without parsing diagnostic text:
+
+- `arrayMetadata` - pass lengths, dimensions, and bounds explicitly instead of reading JVM array metadata.
+- `hostMemoryModel` - move runtime allocation and ownership to host setup.
+- `explicitFailureModel` - replace Java exceptions with explicit status outputs or deliberate GPU trap/unreachable calls.
+- `synchronizationModel` - remove JVM monitor semantics before GPU lowering.
+- `staticDispatchModel` - rewrite dynamic or unsupported calls into whitelisted static GPU helpers.
+- `fieldStateModel` - flatten field state into explicit parameters, structs, or locals.
+- `objectModel` - replace heap objects, casts, and type checks with GPU-safe value shapes.
+- `typeSignatureModel` - redesign unsupported descriptors into GPU-safe primitive, vector, pointer, image, or struct types.
+
+CI fields include `asmReport.readiness.firstMigrationBucket`, `asmReport.readiness.migrationBucketCounts`, `asmReport.readiness.migrationBucket.<bucket>`, and `asmReport.readiness.migrationGuidance`.
+
+For broader parser work, use the bytecode shape inventory to count risky JVM constructs even before deciding whether they map to a concrete frontend failure:
+
+```java
+AsmBytecodeShapeInventoryReport inventory = compiler
+        .inventoryStructuredAsmArtifact(pathToClassDirectoryClassFileOrJar);
+
+System.err.println(inventory.summaryLine());
+```
+
+Inventory fields use the `asmShapeInventory.*` prefix when written through `writeStructuredAsmArtifactInventory(...)`. They include `riskyShapeCount`, `kindCounts`, `kind.<shape>`, `firstRiskyShape`, and per-observation details. This is intended for planning the improved arbitrary-ASM parser by showing real bytecode shape profiles from `.class` directories or jars without changing accepted lowering behavior.
+
+For CI and migration planning, use the combined artifact snapshot when you want one read-only report containing preflight failures, readiness, and bytecode shape inventory:
+
+```java
+AsmFrontendArtifactReport artifactReport = compiler
+        .reportStructuredAsmArtifactSnapshot(pathToClassDirectoryClassFileOrJar);
+
+System.err.println(artifactReport.summaryLine());
+```
+
+Snapshot fields use the `asmArtifactReport.*` prefix when written through `writeStructuredAsmArtifactSnapshot(...)`. They include top-level `successful`, `summary`, `failureCount`, `riskyShapeCount`, nested `readiness.*`, nested `failureReport.*`, and nested `shapeInventory.*` fields. This keeps validator decisions and parser-planning inventory separate while giving build tooling a single artifact to archive.
+
 For CI jobs that need a machine-readable file, write the report as `.properties`:
 
 ```java
@@ -83,6 +135,24 @@ AsmFrontendFailureReport report = compiler.writeStructuredAsmArtifactReport(
 ```
 
 The file uses the same stable `asmReport.*` fields returned by `report.artifactFields("asmReport")`.
+
+Shape inventory can be written separately:
+
+```java
+compiler.writeStructuredAsmArtifactInventory(
+        pathToClassDirectoryClassFileOrJar,
+        Path.of("build/reports/javatogpu-asm-shape-inventory.properties")
+);
+```
+
+Or write the combined snapshot in one file:
+
+```java
+compiler.writeStructuredAsmArtifactSnapshot(
+        pathToClassDirectoryClassFileOrJar,
+        Path.of("build/reports/javatogpu-asm-artifact-snapshot.properties")
+);
+```
 
 To make a build fail after writing the same artifact, use the fail-on-unsupported helper:
 

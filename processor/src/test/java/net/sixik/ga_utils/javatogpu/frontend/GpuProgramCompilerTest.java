@@ -2,7 +2,11 @@ package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendArtifactReport;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmBytecodeShapeInventoryReport;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReport;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendReadinessReport;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendReadinessVerdict;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
@@ -360,6 +364,41 @@ class GpuProgramCompilerTest {
     }
 
     @Test
+    void reportsStructuredAsmArtifactReadinessThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-readiness", ".class");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendReadinessReport readiness = GpuProgramCompiler.createDefault()
+                    .reportStructuredAsmArtifactReadiness(classFile);
+
+            assertEquals(AsmFrontendReadinessVerdict.REWRITE_REQUIRED, readiness.verdict());
+            assertEquals(1, readiness.rewriteRequiredFailureCount());
+            assertEquals("rewriteRequired", readiness.artifactFields("asmReadiness").get("asmReadiness.verdict"));
+        } finally {
+            Files.deleteIfExists(classFile);
+        }
+    }
+
+    @Test
+    void requireStructuredAsmArtifactReadinessFailsThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-readiness", ".class");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendException exception = assertThrows(
+                    AsmFrontendException.class,
+                    () -> GpuProgramCompiler.createDefault().requireStructuredAsmArtifactReadiness(classFile)
+            );
+
+            assertTrue(exception.getMessage().contains("asmReadiness verdict=rewriteRequired"));
+            assertEquals("arrayLength", exception.metadata().orElseThrow().family());
+        } finally {
+            Files.deleteIfExists(classFile);
+        }
+    }
+
+    @Test
     void writeAndRequireStructuredAsmArtifactReportWritesBeforeFailing() throws IOException {
         Path classFile = Files.createTempFile("javatogpu-compiler-asm-require", ".class");
         Path reportFile = Files.createTempFile("javatogpu-compiler-asm-require", ".properties");
@@ -377,6 +416,86 @@ class GpuProgramCompilerTest {
 
             assertEquals("false", properties.getProperty("asmReport.successful"));
             assertEquals("arrayLength", properties.getProperty("asmReport.failure.0.family"));
+        } finally {
+            Files.deleteIfExists(classFile);
+            Files.deleteIfExists(reportFile);
+        }
+    }
+
+    @Test
+    void inventoriesStructuredAsmArtifactThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-inventory", ".class");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmBytecodeShapeInventoryReport inventory = GpuProgramCompiler.createDefault()
+                    .inventoryStructuredAsmArtifact(classFile);
+
+            assertEquals(1L, inventory.kindCounts().get("arrayLength"));
+            assertEquals("1", inventory.artifactFields("asmInventory").get("asmInventory.kind.arrayLength"));
+        } finally {
+            Files.deleteIfExists(classFile);
+        }
+    }
+
+    @Test
+    void writesStructuredAsmArtifactInventoryThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-inventory", ".class");
+        Path reportFile = Files.createTempFile("javatogpu-compiler-asm-inventory", ".properties");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmBytecodeShapeInventoryReport inventory = GpuProgramCompiler.createDefault()
+                    .writeStructuredAsmArtifactInventory(classFile, reportFile);
+            Properties properties = new Properties();
+            try (java.io.InputStream inputStream = Files.newInputStream(reportFile)) {
+                properties.load(inputStream);
+            }
+
+            assertEquals(1, inventory.riskyShapeCount());
+            assertEquals("1", properties.getProperty("asmShapeInventory.kind.arrayLength"));
+        } finally {
+            Files.deleteIfExists(classFile);
+            Files.deleteIfExists(reportFile);
+        }
+    }
+
+    @Test
+    void reportsCombinedStructuredAsmArtifactSnapshotThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-artifact", ".class");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendArtifactReport report = GpuProgramCompiler.createDefault()
+                    .reportStructuredAsmArtifactSnapshot(classFile);
+
+            assertEquals(1, report.failureReport().failureCount());
+            assertEquals(AsmFrontendReadinessVerdict.REWRITE_REQUIRED, report.readinessReport().verdict());
+            assertEquals(1L, report.shapeInventoryReport().kindCounts().get("arrayLength"));
+            assertEquals("1", report.artifactFields("asmArtifact").get("asmArtifact.shapeInventory.kind.arrayLength"));
+        } finally {
+            Files.deleteIfExists(classFile);
+        }
+    }
+
+    @Test
+    void writesCombinedStructuredAsmArtifactSnapshotThroughFacade() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-artifact", ".class");
+        Path reportFile = Files.createTempFile("javatogpu-compiler-asm-artifact", ".properties");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendArtifactReport report = GpuProgramCompiler.createDefault()
+                    .writeStructuredAsmArtifactSnapshot(classFile, reportFile);
+            Properties properties = new Properties();
+            try (java.io.InputStream inputStream = Files.newInputStream(reportFile)) {
+                properties.load(inputStream);
+            }
+
+            assertEquals(1, report.failureReport().failureCount());
+            assertEquals("rewriteRequired", properties.getProperty("asmArtifactReport.readiness.verdict"));
+            assertEquals("1", properties.getProperty("asmArtifactReport.failureReport.failureCount"));
+            assertEquals("1", properties.getProperty("asmArtifactReport.shapeInventory.kind.arrayLength"));
         } finally {
             Files.deleteIfExists(classFile);
             Files.deleteIfExists(reportFile);

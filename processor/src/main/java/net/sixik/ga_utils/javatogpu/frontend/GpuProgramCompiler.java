@@ -1,9 +1,12 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmBytecodeShapeInventoryReport;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendArtifactReport;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReport;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReportIO;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureReporter;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendReadinessReport;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmValidationConfig;
 import net.sixik.ga_utils.javatogpu.frontend.diagnostics.AsmFrontendDiagnosticAdapter;
@@ -162,6 +165,68 @@ public final class GpuProgramCompiler {
         return asmFailureReporter.reportArtifact(artifact, config);
     }
 
+    public AsmFrontendReadinessReport reportStructuredAsmArtifactReadiness(Path artifact) {
+        return reportStructuredAsmArtifact(artifact).readinessReport();
+    }
+
+    public AsmFrontendReadinessReport reportStructuredAsmArtifactReadiness(Path artifact, AsmValidationConfig config) {
+        return reportStructuredAsmArtifact(artifact, config).readinessReport();
+    }
+
+    public AsmFrontendArtifactReport reportStructuredAsmArtifactSnapshot(Path artifact) {
+        return asmFailureReporter.reportArtifactSnapshot(artifact);
+    }
+
+    public AsmFrontendArtifactReport reportStructuredAsmArtifactSnapshot(Path artifact, AsmValidationConfig config) {
+        return asmFailureReporter.reportArtifactSnapshot(artifact, config);
+    }
+
+    public AsmBytecodeShapeInventoryReport inventoryStructuredAsmArtifact(Path artifact) {
+        return asmFailureReporter.inventoryArtifact(artifact);
+    }
+
+    public AsmBytecodeShapeInventoryReport inventoryStructuredAsmArtifact(Path artifact, AsmValidationConfig config) {
+        return asmFailureReporter.inventoryArtifact(artifact, config);
+    }
+
+    public AsmBytecodeShapeInventoryReport writeStructuredAsmArtifactInventory(
+            Path artifact,
+            Path reportFile
+    ) throws IOException {
+        AsmBytecodeShapeInventoryReport report = inventoryStructuredAsmArtifact(artifact);
+        AsmFrontendFailureReportIO.writeInventory(reportFile, report);
+        return report;
+    }
+
+    public AsmBytecodeShapeInventoryReport writeStructuredAsmArtifactInventory(
+            Path artifact,
+            Path reportFile,
+            AsmValidationConfig config
+    ) throws IOException {
+        AsmBytecodeShapeInventoryReport report = inventoryStructuredAsmArtifact(artifact, config);
+        AsmFrontendFailureReportIO.writeInventory(reportFile, report);
+        return report;
+    }
+
+    public AsmFrontendArtifactReport writeStructuredAsmArtifactSnapshot(
+            Path artifact,
+            Path reportFile
+    ) throws IOException {
+        AsmFrontendArtifactReport report = reportStructuredAsmArtifactSnapshot(artifact);
+        AsmFrontendFailureReportIO.writeArtifactSnapshot(reportFile, report);
+        return report;
+    }
+
+    public AsmFrontendArtifactReport writeStructuredAsmArtifactSnapshot(
+            Path artifact,
+            Path reportFile,
+            AsmValidationConfig config
+    ) throws IOException {
+        AsmFrontendArtifactReport report = reportStructuredAsmArtifactSnapshot(artifact, config);
+        AsmFrontendFailureReportIO.writeArtifactSnapshot(reportFile, report);
+        return report;
+    }
+
     public AsmFrontendFailureReport writeStructuredAsmArtifactReport(Path artifact, Path reportFile) throws IOException {
         AsmFrontendFailureReport report = reportStructuredAsmArtifact(artifact);
         AsmFrontendFailureReportIO.write(reportFile, report);
@@ -184,6 +249,14 @@ public final class GpuProgramCompiler {
 
     public AsmFrontendFailureReport requireStructuredAsmArtifact(Path artifact, AsmValidationConfig config) {
         return reportStructuredAsmArtifact(artifact, config).requireSuccessful();
+    }
+
+    public AsmFrontendReadinessReport requireStructuredAsmArtifactReadiness(Path artifact) {
+        return reportStructuredAsmArtifactReadiness(artifact).requireSupported();
+    }
+
+    public AsmFrontendReadinessReport requireStructuredAsmArtifactReadiness(Path artifact, AsmValidationConfig config) {
+        return reportStructuredAsmArtifactReadiness(artifact, config).requireSupported();
     }
 
     public AsmFrontendFailureReport writeAndRequireStructuredAsmArtifactReport(
