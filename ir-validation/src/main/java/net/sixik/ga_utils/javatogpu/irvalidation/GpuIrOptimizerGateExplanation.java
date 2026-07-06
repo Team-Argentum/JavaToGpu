@@ -26,7 +26,8 @@ public record GpuIrOptimizerGateExplanation(
     public static GpuIrOptimizerGateExplanation from(GpuIrOptimizationValidationReport report) {
         Objects.requireNonNull(report, "report");
         if (report.hasSafetyError()) {
-            return blocked("safety", "safety.error", report.safetyError().orElseThrow());
+            String safetyError = report.safetyError().orElseThrow();
+            return blocked("safety", safetyFamily(safetyError), safetyError);
         }
         Optional<String> autoVectorizationSummary = report.autoVectorizationPreview().firstBlockingDiagnosticSummary();
         if (autoVectorizationSummary.isPresent()) {
@@ -53,6 +54,10 @@ public record GpuIrOptimizerGateExplanation(
 
     public static GpuIrOptimizerGateExplanation blocked(String source, String family, String summary) {
         return new GpuIrOptimizerGateExplanation(true, source, family, summary);
+    }
+
+    static String safetyFamily(String safetyError) {
+        return GpuIrSafetyGateFamily.fromSafetyError(safetyError).artifactValue();
     }
 
     public Map<String, String> artifactFields(String prefix) {

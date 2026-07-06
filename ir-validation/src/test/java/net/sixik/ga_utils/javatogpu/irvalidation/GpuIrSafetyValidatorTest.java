@@ -1644,6 +1644,38 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
+    void rejectsOpaqueExpressionsPassedToMutableHelperParameters() {
+        GpuIrCompiledMethod mutatingHelper = method(
+                new GpuIrMethod("writeHelper", List.of(new GpuIrReturn(null))),
+                "jtg_write_helper",
+                List.of(),
+                "void",
+                List.of(new ParsedGpuParameter("target", "float[]", GpuAddressSpace.GLOBAL, false, List.of()))
+        );
+        GpuIrCompiledMethod opaqueArgument = method(
+                new GpuIrMethod("opaqueMutableHelperArgument", List.of(
+                        new GpuIrVariableDeclaration("boolean", "enabled", new GpuIrLiteral("true")),
+                        new GpuIrExpressionStatement(new GpuIrHelperCall(
+                                "jtg_write_helper",
+                                "void",
+                                List.of(new GpuIrTernary(
+                                        new GpuIrVariableRef("enabled"),
+                                        new GpuIrVariableRef("output"),
+                                        new GpuIrVariableRef("output")
+                                ))
+                        ))
+                )),
+                "jtg_kernel",
+                List.of("jtg_write_helper")
+        );
+
+        assertTrue(assertThrows(
+                GpuIrPassException.class,
+                () -> validator.run(new GpuIrPassContext(opaqueArgument, List.of(mutatingHelper), List.of(), true))
+        ).getMessage().contains("mutable helper argument target for jtg_write_helper must reference declared storage directly"));
+    }
+
+    @Test
     void allowsReadOnlyStoragePassedToReadOnlyHelperParameters() {
         GpuIrCompiledMethod readOnlyHelper = method(
                 new GpuIrMethod("readHelper", List.of(new GpuIrReturn(null))),

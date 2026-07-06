@@ -413,4 +413,249 @@ class GpuIrOptimizationValidationRulesTest {
         assertEquals("safety", fields.get("rulesResult.0.Metadata.firstRegressedLayer"));
     }
 
+    @Test
+    void optimizerLayerReadinessRegistryFailsWhenCurrentSnapshotIsBlocked() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("layerGateBlockedKernel", List.of(
+                new GpuIrReturn(null)
+        )));
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .optimizerLayerReadinessRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(1, results.size());
+        assertEquals("optimizer.layerReadinessGate", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.FAIL, results.get(0).status());
+        assertTrue(results.get(0).blocking());
+        assertEquals("false", fields.get("rulesPassed"));
+        assertEquals("blocked", fields.get("rulesResult.0.Metadata.readinessVerdict"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.allLayersReady"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.hasBlockingLayers"));
+        assertEquals("2", fields.get("rulesResult.0.Metadata.blockingLayerCount"));
+        assertEquals("cseLiteralPromotion,autoVectorization", fields.get("rulesResult.0.Metadata.blockingLayers"));
+        assertEquals("cseLiteralPromotion", fields.get("rulesResult.0.Metadata.firstBlockingLayer"));
+        assertEquals("blocked", fields.get("rulesResult.0.Metadata.layer.cseLiteralPromotion"));
+        assertEquals("blocked", fields.get("rulesResult.0.Metadata.layer.autoVectorization"));
+        assertEquals("consistent", fields.get("rulesResult.0.Metadata.consistencyVerdict"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.consistencyConsistent"));
+    }
+
+    @Test
+    void cseLayerReadinessRegistryPassesWhenThereIsNoCseWork() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("cseNoWorkKernel", List.of(
+                new GpuIrReturn(null)
+        )));
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .cseLayerReadinessRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(1, results.size());
+        assertEquals("cse.layerReadinessGate", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertFalse(results.get(0).blocking());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("noRewriteWork", fields.get("rulesResult.0.Metadata.readinessVerdict"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.allLayersReady"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.hasBlockingLayers"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.blockingLayerCount"));
+        assertEquals("none", fields.get("rulesResult.0.Metadata.firstBlockingLayer"));
+        assertEquals("notPresent", fields.get("rulesResult.0.Metadata.layer.rewritePolicy"));
+    }
+
+    @Test
+    void cseLayerReadinessRegistryPassesWhenCseRewritePreviewIsReady() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("cseReadyKernel", List.of(
+                new GpuIrVariableDeclaration("int", "y", new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrLiteral("1"))),
+                new GpuIrVariableDeclaration("int", "z", new GpuIrBinary("+", new GpuIrVariableRef("x"), new GpuIrLiteral("2"))),
+                new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("+",
+                        new GpuIrVariableRef("x"),
+                        new GpuIrBinary("+", new GpuIrVariableRef("y"), new GpuIrVariableRef("z"))
+                )),
+                new GpuIrVariableDeclaration("int", "second", new GpuIrBinary("+",
+                        new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrVariableRef("x")),
+                        new GpuIrVariableRef("y")
+                )),
+                new GpuIrReturn(null)
+        )));
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .cseLayerReadinessRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals("cse.layerReadinessGate", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertFalse(results.get(0).blocking());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("ready", fields.get("rulesResult.0.Metadata.readinessVerdict"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.allLayersReady"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.hasBlockingLayers"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.blockingLayerCount"));
+        assertEquals("2", fields.get("rulesResult.0.Metadata.readyLayerCount"));
+        assertEquals("rewritePolicy,simpleArithmeticProof", fields.get("rulesResult.0.Metadata.presentLayers"));
+        assertEquals("none", fields.get("rulesResult.0.Metadata.firstBlockingLayer"));
+        assertEquals("ready", fields.get("rulesResult.0.Metadata.layer.rewritePolicy"));
+        assertEquals("ready", fields.get("rulesResult.0.Metadata.layer.simpleArithmeticProof"));
+    }
+
+    @Test
+    void cseLayerReadinessRegistryFailsWhenCseRewritePreviewIsBlocked() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("cseBlockedKernel", List.of(
+                new GpuIrVariableDeclaration("int", "z", new GpuIrVariableRef("x")),
+                new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrLiteral("1"))),
+                new GpuIrAssignment(new GpuIrVariableRef("z"), new GpuIrLiteral("7")),
+                new GpuIrVariableDeclaration("int", "second", new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrLiteral("1"))),
+                new GpuIrReturn(null)
+        )));
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .cseLayerReadinessRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals("cse.layerReadinessGate", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.FAIL, results.get(0).status());
+        assertTrue(results.get(0).blocking());
+        assertEquals("false", fields.get("rulesPassed"));
+        assertEquals("blocked", fields.get("rulesResult.0.Metadata.readinessVerdict"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.allLayersReady"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.hasBlockingLayers"));
+        assertEquals("3", fields.get("rulesResult.0.Metadata.blockingLayerCount"));
+        assertEquals("rewritePolicy,skipReason,dominance", fields.get("rulesResult.0.Metadata.blockingLayers"));
+        assertEquals("rewritePolicy", fields.get("rulesResult.0.Metadata.firstBlockingLayer"));
+        assertEquals("blocked", fields.get("rulesResult.0.Metadata.layer.rewritePolicy"));
+        assertEquals("blocked", fields.get("rulesResult.0.Metadata.layer.skipReason"));
+        assertEquals("blocked", fields.get("rulesResult.0.Metadata.layer.dominance"));
+    }
+
+    @Test
+    void autoVectorizationLayerReadinessRegistryFailsWhenCurrentSnapshotIsNotReady() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("autoNoWorkKernel", List.of(
+                new GpuIrReturn(null)
+        )));
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .autoVectorizationLayerReadinessRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(1, results.size());
+        assertEquals("autoVectorization.layerReadinessGate", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.FAIL, results.get(0).status());
+        assertTrue(results.get(0).blocking());
+        assertEquals("false", fields.get("rulesPassed"));
+        assertEquals("notReady/noCandidates", fields.get("rulesResult.0.Metadata.readinessVerdict"));
+        assertEquals("false", fields.get("rulesResult.0.Metadata.readyForPrototypeRewrite"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.candidateCount"));
+        assertEquals("2", fields.get("rulesResult.0.Metadata.blockingReasonCount"));
+        assertEquals("noRewriteCandidates,rewritePolicyBlocksRewrite", fields.get("rulesResult.0.Metadata.blockingReasons"));
+        assertEquals("noRewriteCandidates", fields.get("rulesResult.0.Metadata.firstBlockingReason"));
+        assertEquals("collectRewriteCandidates", fields.get("rulesResult.0.Metadata.firstRemainingWork"));
+    }
+
+    @Test
+    void autoVectorizationLayerReadinessRegistryPassesWhenCurrentSnapshotIsReady() {
+        GpuIrOptimizationValidationReport report = autoVectorizationReadyReport("autoReadyKernel");
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .autoVectorizationLayerReadinessRegistry();
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(1, results.size());
+        assertEquals("autoVectorization.layerReadinessGate", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertFalse(results.get(0).blocking());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("readyForPrototypeRewrite", fields.get("rulesResult.0.Metadata.readinessVerdict"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.readyForPrototypeRewrite"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.candidateCount"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.blockingReasonCount"));
+        assertEquals("", fields.get("rulesResult.0.Metadata.blockingReasons"));
+        assertEquals("ready", fields.get("rulesResult.0.Metadata.dryRunReadiness"));
+    }
+
+    private static GpuIrOptimizationValidationReport autoVectorizationReadyReport(String methodName) {
+        GpuIrOptimizationValidationReport baseReport = validate(new GpuIrMethod(methodName, List.of(new GpuIrReturn(null))));
+        return new GpuIrOptimizationValidationReport(
+                baseReport.methodName(),
+                baseReport.safetyError(),
+                baseReport.commonSubexpressionPreview(),
+                baseReport.commonSubexpressionNumericBoundaryReport(),
+                baseReport.commonSubexpressionLiteralProofReport(),
+                baseReport.commonSubexpressionLiteralCanonicalizationReport(),
+                baseReport.commonSubexpressionLiteralNumericSemanticsProofReport(),
+                baseReport.commonSubexpressionLiteralTypedNumericBlockerSummaryReport(),
+                baseReport.commonSubexpressionLiteralRuntimeEquivalenceReport(),
+                baseReport.commonSubexpressionLiteralCanonicalizationGate(),
+                baseReport.commonSubexpressionLiteralFingerprintDecisionReport(),
+                baseReport.commonSubexpressionLiteralFingerprintParityReport(),
+                baseReport.commonSubexpressionLiteralEnablementReport(),
+                baseReport.commonSubexpressionLiteralRewritePreflightReport(),
+                baseReport.commonSubexpressionLiteralRewriteOperationPreviewReport(),
+                baseReport.commonSubexpressionLiteralPromotionChecklistReport(),
+                baseReport.commonSubexpressionLiteralPromotionReadinessSummaryReport(),
+                baseReport.commonSubexpressionLiteralConsistencyCheckReport(),
+                readyAutoVectorizationPreview(methodName),
+                GpuIrAutoVectorizationRewriteDryRunReport.ready(methodName, 1, 1, 1),
+                readyAutoVectorizationResolvedOperations(methodName)
+        );
+    }
+
+    private static GpuIrAutoVectorizationPreview readyAutoVectorizationPreview(String methodName) {
+        return new GpuIrAutoVectorizationPreview(
+                methodName,
+                List.of(new GpuIrAutoVectorizationRewriteCandidatePreview(
+                        "stmt[0]",
+                        "i",
+                        0,
+                        4,
+                        4,
+                        1,
+                        1,
+                        "x4",
+                        "int",
+                        "int4",
+                        List.of("write out[i=0..3]"),
+                        List.of("read left[i=0..3]"),
+                        List.of(),
+                        List.of("out"),
+                        List.of("left")
+                )),
+                List.of(),
+                List.of()
+        );
+    }
+
+    private static GpuIrAutoVectorizationResolvedRewriteOperations readyAutoVectorizationResolvedOperations(
+            String methodName
+    ) {
+        return new GpuIrAutoVectorizationResolvedRewriteOperations(
+                methodName,
+                List.of(new GpuIrAutoVectorizationResolvedInsertionOperation(
+                        "stmt[0]",
+                        0,
+                        "int4",
+                        0,
+                        4,
+                        1,
+                        1,
+                        List.of("read left[i=0..3]")
+                )),
+                List.of(new GpuIrAutoVectorizationResolvedReplacementOperation(
+                        "stmt[0]",
+                        0,
+                        "i",
+                        0,
+                        4,
+                        1,
+                        1,
+                        List.of("write out[i=0..3]")
+                ))
+        );
+    }
+
 }

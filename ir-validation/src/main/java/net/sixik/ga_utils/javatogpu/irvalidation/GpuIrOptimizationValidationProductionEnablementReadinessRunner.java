@@ -67,6 +67,144 @@ public final class GpuIrOptimizationValidationProductionEnablementReadinessRunne
         return runOptimizerLayerReadiness(validationReport).artifactFields();
     }
 
+    public GpuIrOptimizationValidationRuleArtifactReport runOptimizerLayerReadinessRuleArtifact(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessRuleArtifact(validationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRuleArtifactFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerLayerReadinessRuleArtifact(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactAcceptance runOptimizerLayerReadinessRuleArtifactAcceptance(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessRuleArtifactAcceptance(validationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRuleArtifactAcceptanceFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerLayerReadinessRuleArtifactAcceptance(validationReport).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessCiFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessCiFields(validationReport);
+    }
+
+    public GpuIrCommonSubexpressionLayerReadinessSummaryReport runCseLayerReadiness(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runCseLayerReadiness(validationReport);
+    }
+
+    public Map<String, String> runCseLayerReadinessFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runCseLayerReadiness(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactReport runCseLayerReadinessRuleArtifact(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runCseLayerReadinessRuleArtifact(validationReport);
+    }
+
+    public Map<String, String> runCseLayerReadinessRuleArtifactFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runCseLayerReadinessRuleArtifact(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactAcceptance runCseLayerReadinessRuleArtifactAcceptance(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runCseLayerReadinessRuleArtifactAcceptance(validationReport);
+    }
+
+    public Map<String, String> runCseLayerReadinessRuleArtifactAcceptanceFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runCseLayerReadinessRuleArtifactAcceptance(validationReport).artifactFields();
+    }
+
+    public Map<String, String> runCseLayerReadinessCiFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runCseLayerReadinessCiFields(validationReport);
+    }
+
+    public GpuIrAutoVectorizationReadinessSummaryReport runAutoVectorizationReadiness(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runAutoVectorizationReadiness(validationReport);
+    }
+
+    public Map<String, String> runAutoVectorizationReadinessFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runAutoVectorizationReadiness(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactReport runAutoVectorizationReadinessRuleArtifact(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runAutoVectorizationReadinessRuleArtifact(validationReport);
+    }
+
+    public Map<String, String> runAutoVectorizationReadinessRuleArtifactFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runAutoVectorizationReadinessRuleArtifact(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactAcceptance runAutoVectorizationReadinessRuleArtifactAcceptance(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runAutoVectorizationReadinessRuleArtifactAcceptance(validationReport);
+    }
+
+    public Map<String, String> runAutoVectorizationReadinessRuleArtifactAcceptanceFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runAutoVectorizationReadinessRuleArtifactAcceptance(validationReport).artifactFields();
+    }
+
+    public Map<String, String> runAutoVectorizationReadinessCiFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runAutoVectorizationReadinessCiFields(validationReport);
+    }
+
+    public GpuIrOptimizationValidationCiGateIndex runCiGateIndex(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runCiGateIndex(validationReport);
+    }
+
+    public Map<String, String> runCiGateIndexFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runCiGateIndexFields(validationReport);
+    }
+
+    public GpuIrOptimizerGateSnapshot runOptimizerGateSnapshot(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerGateSnapshot(validationReport);
+    }
+
+    public Map<String, String> runOptimizerGateSnapshotFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerGateSnapshot(validationReport).artifactFields();
+    }
+
     public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot runOptimizerLayerReadinessBaselineSnapshot(
             GpuIrOptimizationValidationReport validationReport
     ) {

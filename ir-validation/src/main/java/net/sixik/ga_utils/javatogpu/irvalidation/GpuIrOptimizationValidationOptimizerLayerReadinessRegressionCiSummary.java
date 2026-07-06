@@ -90,6 +90,9 @@ public record GpuIrOptimizationValidationOptimizerLayerReadinessRegressionCiSumm
         regression.firstChangedLayer().ifPresent(layer -> values.put(prefix + "FirstChangedLayer", layer));
         regression.firstImprovedLayer().ifPresent(layer -> values.put(prefix + "FirstImprovedLayer", layer));
         regression.firstRegressedLayer().ifPresent(layer -> values.put(prefix + "FirstRegressedLayer", layer));
+        GpuIrOptimizationValidationArtifactFieldMaps.putNestedFields(values, prefix + "Regression.", regression.artifactFields());
+        GpuIrOptimizationValidationArtifactFieldMaps.putNestedFields(values, prefix + "RuleArtifact.", ruleArtifact.artifactFields());
+        GpuIrOptimizationValidationArtifactFieldMaps.putNestedFields(values, prefix + "Acceptance.", acceptance.artifactFields());
         values.put(prefix + "CiSummaryLine", ciSummaryLine());
         values.put(prefix + "Summary", summary());
         return Collections.unmodifiableMap(values);

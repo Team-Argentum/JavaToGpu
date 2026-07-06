@@ -2,13 +2,16 @@ package net.sixik.ga_utils.javatogpu.irvalidation;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrArrayAccess;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrBinary;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrHelperCall;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrLiteral;
+import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrTernary;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassContext;
 import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
+import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrExpressionStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrForLoop;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrReturn;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
@@ -129,6 +132,83 @@ class GpuIrOptimizationValidationPipelineTest {
     }
 
     @Test
+    void classifiesOpaqueMutableHelperStorageArgumentsAsTypedSafetyGateFamily() {
+        GpuIrCompiledMethod helper = helperMethod();
+        GpuIrCompiledMethod kernel = method(
+                new GpuIrMethod("opaqueMutableHelperArgument", List.of(
+                        new GpuIrVariableDeclaration("boolean", "enabled", new GpuIrLiteral("true")),
+                        new GpuIrExpressionStatement(new GpuIrHelperCall(
+                                "jtg_write_helper",
+                                "void",
+                                List.of(new GpuIrTernary(
+                                        new GpuIrVariableRef("enabled"),
+                                        new GpuIrVariableRef("out"),
+                                        new GpuIrVariableRef("out")
+                                ))
+                        ))
+                )),
+                List.of("jtg_write_helper")
+        );
+
+        GpuIrOptimizationValidationReport report = pipeline.validate(context(kernel, List.of(helper)));
+
+        assertTrue(report.hasSafetyError());
+        assertTrue(report.optimizerGateExplanation().blocked());
+        assertEquals("safety", report.optimizerGateExplanation().source());
+        assertEquals("safety.helperMutableStorageOpaqueArgument", report.optimizerGateExplanation().family());
+        assertEquals(java.util.Map.of("safety", 1L), report.optimizerGateSourceCounts());
+        assertEquals(java.util.Map.of("safety.helperMutableStorageOpaqueArgument", 1L), report.optimizerGateFamilyCounts());
+        assertTrue(report.safetyError().orElseThrow()
+                .contains("mutable helper argument target for jtg_write_helper must reference declared storage directly"));
+        assertTrue(report.compactSummary().contains("optimizerGateFamily=safety.helperMutableStorageOpaqueArgument"));
+        assertTrue(report.compactSummary().contains("optimizerGateFamilyCounts={safety.helperMutableStorageOpaqueArgument=1}"));
+    }
+
+    @Test
+    void classifiesHelperSafetyFailuresAsTypedGateFamilies() {
+        assertSafetyGateFamily(
+                method(new GpuIrMethod("readOnlyMutableHelperArgument", List.of(
+                        new GpuIrExpressionStatement(new GpuIrHelperCall(
+                                "jtg_write_helper",
+                                "void",
+                                List.of(new GpuIrVariableRef("left"))
+                        ))
+                )), List.of("jtg_write_helper"), List.of(
+                        new ParsedGpuParameter("x", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                        new ParsedGpuParameter("y", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                        new ParsedGpuParameter("z", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                        new ParsedGpuParameter("left", "int[]", GpuAddressSpace.CONSTANT, false, List.of()),
+                        new ParsedGpuParameter("out", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
+                )),
+                List.of(helperMethod()),
+                "safety.helperMutableStorageReadOnlyArgument",
+                "read-only storage cannot be used as mutable helper argument target for jtg_write_helper: left"
+        );
+        assertSafetyGateFamily(
+                method(new GpuIrMethod("helperArgumentCountMismatch", List.of(
+                        new GpuIrExpressionStatement(new GpuIrHelperCall("jtg_write_helper", "void", List.of()))
+                )), List.of("jtg_write_helper")),
+                List.of(helperMethod()),
+                "safety.helperArgumentCountMismatch",
+                "helper call argument count mismatch for jtg_write_helper: expected 1 but got 0"
+        );
+        assertSafetyGateFamily(
+                method(new GpuIrMethod("helperArgumentTypeMismatch", List.of(
+                        new GpuIrExpressionStatement(new GpuIrHelperCall(
+                                "jtg_flag_helper",
+                                "void",
+                                List.of(new GpuIrVariableRef("z"))
+                        ))
+                )), List.of("jtg_flag_helper")),
+                List.of(helperMethod("flagHelper", "jtg_flag_helper", List.of(
+                        new ParsedGpuParameter("flag", "boolean", GpuAddressSpace.PRIVATE, false, List.of())
+                ))),
+                "safety.helperArgumentTypeMismatch",
+                "type mismatch in helper argument flag for jtg_flag_helper: expected boolean but got int"
+        );
+    }
+
+    @Test
     void cseRewritePolicyBecomesFirstGateWhenOnlyCseBlocks() {
         GpuIrPassContext context = context(method(new GpuIrMethod("kernel", List.of(
                 new GpuIrVariableDeclaration("int", "first", new GpuIrBinary("+", new GpuIrVariableRef("z"), new GpuIrLiteral("1"))),
@@ -246,19 +326,53 @@ class GpuIrOptimizationValidationPipelineTest {
         return new GpuIrPassContext(method, List.of(), List.of(), true);
     }
 
+    private GpuIrPassContext context(GpuIrCompiledMethod method, List<GpuIrCompiledMethod> helperMethods) {
+        return new GpuIrPassContext(method, helperMethods, List.of(), true);
+    }
+
+    private void assertSafetyGateFamily(
+            GpuIrCompiledMethod kernel,
+            List<GpuIrCompiledMethod> helperMethods,
+            String expectedFamily,
+            String expectedMessage
+    ) {
+        GpuIrOptimizationValidationReport report = pipeline.validate(context(kernel, helperMethods));
+
+        assertTrue(report.hasSafetyError());
+        assertEquals("safety", report.optimizerGateExplanation().source());
+        assertEquals(expectedFamily, report.optimizerGateExplanation().family());
+        assertEquals(java.util.Map.of("safety", 1L), report.optimizerGateSourceCounts());
+        assertEquals(java.util.Map.of(expectedFamily, 1L), report.optimizerGateFamilyCounts());
+        assertTrue(report.safetyError().orElseThrow().contains(expectedMessage));
+        assertTrue(report.compactSummary().contains("optimizerGateFamily=" + expectedFamily));
+        assertTrue(report.compactSummary().contains("optimizerGateFamilyCounts={" + expectedFamily + "=1}"));
+    }
+
     private GpuIrCompiledMethod method(GpuIrMethod irMethod) {
+        return method(irMethod, List.of());
+    }
+
+    private GpuIrCompiledMethod method(GpuIrMethod irMethod, List<String> helperDependencies) {
+        return method(irMethod, helperDependencies, List.of(
+                new ParsedGpuParameter("x", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                new ParsedGpuParameter("y", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                new ParsedGpuParameter("z", "int", GpuAddressSpace.PRIVATE, false, List.of()),
+                new ParsedGpuParameter("left", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
+                new ParsedGpuParameter("out", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
+        ));
+    }
+
+    private GpuIrCompiledMethod method(
+            GpuIrMethod irMethod,
+            List<String> helperDependencies,
+            List<ParsedGpuParameter> parameters
+    ) {
         ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
                 "KernelOwner",
                 "test.KernelOwner",
                 irMethod.name(),
                 "void",
-                List.of(
-                        new ParsedGpuParameter("x", "int", GpuAddressSpace.PRIVATE, false, List.of()),
-                        new ParsedGpuParameter("y", "int", GpuAddressSpace.PRIVATE, false, List.of()),
-                        new ParsedGpuParameter("z", "int", GpuAddressSpace.PRIVATE, false, List.of()),
-                        new ParsedGpuParameter("left", "int[]", GpuAddressSpace.GLOBAL, false, List.of()),
-                        new ParsedGpuParameter("out", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
-                ),
+                parameters,
                 List.of(),
                 List.of(),
                 null,
@@ -269,6 +383,32 @@ class GpuIrOptimizationValidationPipelineTest {
                 null,
                 false
         );
-        return new GpuIrCompiledMethod(parsedMethod, irMethod, "jtg_kernel", List.of());
+        return new GpuIrCompiledMethod(parsedMethod, irMethod, "jtg_kernel", helperDependencies);
+    }
+
+    private GpuIrCompiledMethod helperMethod() {
+        return helperMethod("writeHelper", "jtg_write_helper", List.of(
+                new ParsedGpuParameter("target", "int[]", GpuAddressSpace.GLOBAL, false, List.of())
+        ));
+    }
+
+    private GpuIrCompiledMethod helperMethod(String methodName, String emittedName, List<ParsedGpuParameter> parameters) {
+        ParsedGpuMethod parsedMethod = new ParsedGpuMethod(
+                "KernelOwner",
+                "test.KernelOwner",
+                methodName,
+                "void",
+                parameters,
+                List.of(),
+                List.of(),
+                null,
+                false,
+                List.of(),
+                null,
+                "",
+                null,
+                false
+        );
+        return new GpuIrCompiledMethod(parsedMethod, new GpuIrMethod(methodName, List.of(new GpuIrReturn(null))), emittedName, List.of());
     }
 }

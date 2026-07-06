@@ -68,6 +68,7 @@ public record GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummar
         comparison.firstChangedLayer().ifPresent(layer -> values.put(prefix + "FirstChangedLayer", layer));
         comparison.firstImprovedLayer().ifPresent(layer -> values.put(prefix + "FirstImprovedLayer", layer));
         comparison.firstRegressedLayer().ifPresent(layer -> values.put(prefix + "FirstRegressedLayer", layer));
+        GpuIrOptimizationValidationArtifactFieldMaps.putNestedFields(values, prefix + "Comparison.", comparison.artifactFields());
         values.put(prefix + "CiSummaryLine", ciSummaryLine());
         values.put(prefix + "Summary", summary());
         return Collections.unmodifiableMap(values);

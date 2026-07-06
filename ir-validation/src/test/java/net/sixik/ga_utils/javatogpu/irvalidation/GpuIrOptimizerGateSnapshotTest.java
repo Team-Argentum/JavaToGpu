@@ -31,9 +31,73 @@ class GpuIrOptimizerGateSnapshotTest {
         assertEquals("{guard.memoryAddressSpace=1,cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY=2}", fields.get("gateFamilyCounts"));
         assertEquals("1", fields.get("gateFamilyCount.guard.memoryAddressSpace"));
         assertEquals("2", fields.get("gateFamilyCount.cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY"));
+        assertEquals("consistent", fields.get("gateConsistencyVerdict"));
+        assertEquals("true", fields.get("gateConsistencyConsistent"));
+        assertEquals("0", fields.get("gateConsistencyFailedChecks"));
+        assertEquals("accepted", fields.get("gateAcceptanceVerdict"));
+        assertEquals("true", fields.get("gateAcceptanceAccepted"));
+        assertEquals("false", fields.get("gateAcceptanceRejected"));
+        assertEquals("false", fields.get("gateAcceptanceFailBuild"));
+        assertEquals("accepted/consistentArtifact", fields.get("gateAcceptanceReason"));
         assertTrue(snapshot.compactSummary().contains("sourceCounts={autoVectorization=1,cseRewritePolicy=2}"));
         assertTrue(snapshot.compactSummary().contains("familyCounts={guard.memoryAddressSpace=1,cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY=2}"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
+    }
+
+    @Test
+    void consistencyReportValidatesBlockedGateCounters() {
+        GpuIrOptimizerGateSnapshot consistentSnapshot = new GpuIrOptimizerGateSnapshot(
+                GpuIrOptimizerGateExplanation.blocked("safety", "safety.helperArgumentTypeMismatch", "type mismatch"),
+                linkedCounts("safety", 1L),
+                linkedCounts("safety.helperArgumentTypeMismatch", 1L)
+        );
+        GpuIrOptimizerGateSnapshot inconsistentSnapshot = new GpuIrOptimizerGateSnapshot(
+                GpuIrOptimizerGateExplanation.blocked("safety", "safety.helperArgumentTypeMismatch", "type mismatch"),
+                linkedCounts("safety", 1L),
+                linkedCounts("safety.error", 1L)
+        );
+
+        GpuIrOptimizerGateConsistencyReport consistentReport = consistentSnapshot.consistencyReport();
+        GpuIrOptimizerGateConsistencyReport inconsistentReport = inconsistentSnapshot.consistencyReport();
+
+        assertTrue(consistentReport.consistent());
+        assertEquals("consistent", consistentReport.verdict());
+        assertEquals(0, consistentReport.failedCheckCount());
+        assertEquals("true", consistentReport.artifactFields("gateConsistency").get("gateConsistencyConsistent"));
+        assertEquals("inconsistent", inconsistentReport.verdict());
+        assertEquals("false", inconsistentReport.artifactFields("gateConsistency").get("gateConsistencyConsistent"));
+        assertEquals("blockedFamilyPresent", inconsistentReport.firstFailedCheck().orElseThrow());
+        assertEquals("blocked gate family must appear in optimizer gate family counts", inconsistentReport.firstFailureExplanation().orElseThrow());
+        assertTrue(inconsistentReport.ciSummaryLine().contains("failed"));
+    }
+
+    @Test
+    void acceptanceFailsClosedForInconsistentGateArtifacts() {
+        GpuIrOptimizerGateSnapshot consistentSnapshot = new GpuIrOptimizerGateSnapshot(
+                GpuIrOptimizerGateExplanation.blocked("safety", "safety.helperArgumentTypeMismatch", "type mismatch"),
+                linkedCounts("safety", 1L),
+                linkedCounts("safety.helperArgumentTypeMismatch", 1L)
+        );
+        GpuIrOptimizerGateSnapshot inconsistentSnapshot = new GpuIrOptimizerGateSnapshot(
+                GpuIrOptimizerGateExplanation.blocked("safety", "safety.helperArgumentTypeMismatch", "type mismatch"),
+                linkedCounts("safety", 1L),
+                linkedCounts("safety.error", 1L)
+        );
+
+        GpuIrOptimizerGateArtifactAcceptance accepted = consistentSnapshot.acceptance();
+        GpuIrOptimizerGateArtifactAcceptance rejected = inconsistentSnapshot.acceptance();
+
+        assertTrue(accepted.accepted());
+        assertEquals("accepted", accepted.verdict());
+        assertEquals("accepted/consistentArtifact", accepted.reason());
+        assertEquals("false", accepted.artifactFields("gateAcceptance").get("gateAcceptanceFailBuild"));
+        assertTrue(rejected.rejected());
+        assertTrue(rejected.failBuild());
+        assertEquals("rejected", rejected.verdict());
+        assertEquals("rejected/inconsistentArtifact", rejected.reason());
+        assertEquals("blockedFamilyPresent", rejected.firstConsistencyFailedCheck());
+        assertEquals("true", rejected.artifactFields("gateAcceptance").get("gateAcceptanceFailBuild"));
+        assertTrue(rejected.ciSummaryLine().contains("firstConsistencyFailedCheck=blockedFamilyPresent"));
     }
 
     @Test

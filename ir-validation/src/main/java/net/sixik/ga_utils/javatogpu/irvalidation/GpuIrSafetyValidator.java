@@ -1042,8 +1042,12 @@ public final class GpuIrSafetyValidator implements GpuIrPass {
                 continue;
             }
             String storageName = referencedStorageName(helperCall.arguments().get(index));
-            if (storageName != null) {
-                state.requireWritable(storageName, "mutable helper argument " + parameter.name() + " for " + helperCall.helperName());
+            String location = "mutable helper argument " + parameter.name() + " for " + helperCall.helperName();
+            if (storageName == null) {
+                // Mutating helper parameters must be tied to concrete storage so read-only and alias guards can reason about them.
+                state.fail(location + " must reference declared storage directly");
+            } else {
+                state.requireWritable(storageName, location);
             }
         }
     }

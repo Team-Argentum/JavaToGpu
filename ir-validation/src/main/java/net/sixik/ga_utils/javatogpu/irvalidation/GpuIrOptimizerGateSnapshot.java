@@ -35,6 +35,14 @@ public record GpuIrOptimizerGateSnapshot(
         return countsSummary(familyCounts);
     }
 
+    public GpuIrOptimizerGateConsistencyReport consistencyReport() {
+        return GpuIrOptimizerGateConsistencyReport.from(this);
+    }
+
+    public GpuIrOptimizerGateArtifactAcceptance acceptance() {
+        return GpuIrOptimizerGateArtifactAcceptance.from(this);
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         Objects.requireNonNull(prefix, "prefix");
         Map<String, String> values = new java.util.LinkedHashMap<>(explanation.artifactFields(prefix));
@@ -49,6 +57,8 @@ public record GpuIrOptimizerGateSnapshot(
                 prefix + "FamilyCount." + family,
                 Long.toString(count)
         ));
+        values.putAll(consistencyReport().artifactFields(prefix + "Consistency"));
+        values.putAll(acceptance().artifactFields(prefix + "Acceptance"));
         return Collections.unmodifiableMap(values);
     }
 
@@ -75,7 +85,7 @@ public record GpuIrOptimizerGateSnapshot(
     private static Map<String, Long> familyCounts(GpuIrOptimizationValidationReport report) {
         Map<String, Long> counts = new java.util.LinkedHashMap<>();
         if (report.hasSafetyError()) {
-            counts.put("safety.error", 1L);
+            counts.put(GpuIrOptimizerGateExplanation.safetyFamily(report.safetyError().orElseThrow()), 1L);
         }
         report.autoVectorizationPreview().warningFamilyCounts()
                 .forEach((family, count) -> putPositive(counts, "warning." + family, count));

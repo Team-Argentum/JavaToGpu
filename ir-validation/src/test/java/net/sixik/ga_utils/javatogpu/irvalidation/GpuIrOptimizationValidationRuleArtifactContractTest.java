@@ -780,6 +780,13 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
                 "optimizerLayerReadinessRegressionCiAccepted",
                 "optimizerLayerReadinessRegressionCiAcceptanceReason",
                 "optimizerLayerReadinessRegressionCiCiSummaryLine",
+                "optimizerLayerReadinessRegressionCiRegression.optimizerLayerReadinessRegressionMethod",
+                "optimizerLayerReadinessRegressionCiRegression.optimizerLayerReadinessRegressionOutcome",
+                "optimizerLayerReadinessRegressionCiRuleArtifact.validationRulesMethod",
+                "optimizerLayerReadinessRegressionCiRuleArtifact.validationRulesVerdict",
+                "optimizerLayerReadinessRegressionCiRuleArtifact.validationRulesRegistryResult.0.RuleId",
+                "optimizerLayerReadinessRegressionCiAcceptance.validationRulesAcceptanceMethod",
+                "optimizerLayerReadinessRegressionCiAcceptance.validationRulesAcceptanceReason",
                 "validationRulesMethod",
                 "validationRulesVerdict",
                 "validationRulesPassed",
@@ -802,6 +809,31 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertTrue(fields.get("optimizerLayerReadinessRegressionCiCiSummaryLine").contains("outcome=unchanged"));
         assertTrue(fields.get("optimizerLayerReadinessRegressionCiCiSummaryLine").contains("ruleVerdict=pass"));
         assertTrue(fields.get("optimizerLayerReadinessRegressionCiCiSummaryLine").contains("accepted=true"));
+        assertEquals(
+                "layerRegressionCiContractKernel",
+                fields.get("optimizerLayerReadinessRegressionCiRegression.optimizerLayerReadinessRegressionMethod")
+        );
+        assertEquals(
+                "unchanged",
+                fields.get("optimizerLayerReadinessRegressionCiRegression.optimizerLayerReadinessRegressionOutcome")
+        );
+        assertEquals(
+                "layerRegressionCiContractKernel",
+                fields.get("optimizerLayerReadinessRegressionCiRuleArtifact.validationRulesMethod")
+        );
+        assertEquals("pass", fields.get("optimizerLayerReadinessRegressionCiRuleArtifact.validationRulesVerdict"));
+        assertEquals(
+                "optimizer.layerReadinessRegressionGate",
+                fields.get("optimizerLayerReadinessRegressionCiRuleArtifact.validationRulesRegistryResult.0.RuleId")
+        );
+        assertEquals(
+                "layerRegressionCiContractKernel",
+                fields.get("optimizerLayerReadinessRegressionCiAcceptance.validationRulesAcceptanceMethod")
+        );
+        assertEquals(
+                "accepted/pass",
+                fields.get("optimizerLayerReadinessRegressionCiAcceptance.validationRulesAcceptanceReason")
+        );
         assertEquals("layerRegressionCiContractKernel", fields.get("validationRulesMethod"));
         assertEquals("pass", fields.get("validationRulesVerdict"));
         assertEquals("true", fields.get("validationRulesPassed"));
@@ -954,6 +986,10 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
                 "optimizerLayerReadinessBaselineCiReadyLayerDelta",
                 "optimizerLayerReadinessBaselineCiChangedLayerCount",
                 "optimizerLayerReadinessBaselineCiRegressedLayerCount",
+                "optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonMethod",
+                "optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonOutcome",
+                "optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonBlockingLayerDelta",
+                "optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonLayer.safety",
                 "optimizerLayerReadinessBaselineCiCiSummaryLine",
                 "optimizerLayerReadinessBaselineCiSummary"
         ));
@@ -965,6 +1001,22 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("false", unchangedFields.get("optimizerLayerReadinessBaselineCiFailBuild"));
         assertEquals("0", unchangedFields.get("optimizerLayerReadinessBaselineCiBlockingLayerDelta"));
         assertEquals("0", unchangedFields.get("optimizerLayerReadinessBaselineCiRegressedLayerCount"));
+        assertEquals(
+                "layerStoredBaselineCiContractKernel",
+                unchangedFields.get("optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonMethod")
+        );
+        assertEquals(
+                "unchanged",
+                unchangedFields.get("optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonOutcome")
+        );
+        assertEquals(
+                "0",
+                unchangedFields.get("optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonBlockingLayerDelta")
+        );
+        assertEquals(
+                "ready->ready",
+                unchangedFields.get("optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonLayer.safety")
+        );
 
         assertEquals("regressed", regressedFields.get("optimizerLayerReadinessBaselineCiOutcome"));
         assertEquals("fail/regressionDetected", regressedFields.get("optimizerLayerReadinessBaselineCiDecision"));
@@ -976,6 +1028,18 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("2", regressedFields.get("optimizerLayerReadinessBaselineCiRegressedLayerCount"));
         assertEquals("safety", regressedFields.get("optimizerLayerReadinessBaselineCiFirstChangedLayer"));
         assertEquals("safety", regressedFields.get("optimizerLayerReadinessBaselineCiFirstRegressedLayer"));
+        assertEquals(
+                "regressed",
+                regressedFields.get("optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonOutcome")
+        );
+        assertEquals(
+                "2",
+                regressedFields.get("optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonBlockingLayerDelta")
+        );
+        assertEquals(
+                "ready->blocked",
+                regressedFields.get("optimizerLayerReadinessBaselineCiComparison.optimizerLayerReadinessBaselineComparisonLayer.safety")
+        );
         assertTrue(regressedFields.get("optimizerLayerReadinessBaselineCiCiSummaryLine").contains("failBuild=true"));
     }
 
@@ -1230,6 +1294,307 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionPreflightVerdict"));
         assertEquals("true", fields.get("optimizerProductionPreflightBlocked"));
         assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerProductionPreflightFirstBlockingReason"));
+    }
+
+    @Test
+    void optimizerLayerReadinessCiRunnerKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("optimizerLayerReadinessCiContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runOptimizerLayerReadinessCiFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerLayerReadinessMethod",
+                "optimizerLayerReadinessVerdict",
+                "optimizerLayerReadinessBlockingLayers",
+                "optimizerLayerReadinessFirstBlockingLayer",
+                "optimizerLayerReadinessConsistencyVerdict",
+                "optimizerLayerReadinessConsistencyConsistent",
+                "validationRulesMethod",
+                "validationRulesVerdict",
+                "validationRulesPassed",
+                "validationRulesRegistryResult.0.RuleId",
+                "validationRulesRegistryResult.0.Status",
+                "validationRulesRegistryResult.0.Metadata.readinessVerdict",
+                "validationRulesRegistryResult.0.Metadata.firstBlockingLayer",
+                "validationRulesAcceptanceMethod",
+                "validationRulesAcceptanceVerdict",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceRejected",
+                "validationRulesAcceptanceReason",
+                "validationRulesAcceptanceFirstBlockingRuleId",
+                "optimizerLayerReadinessCiMethod",
+                "optimizerLayerReadinessCiVerdict",
+                "optimizerLayerReadinessCiRuleVerdict",
+                "optimizerLayerReadinessCiAccepted",
+                "optimizerLayerReadinessCiRejected",
+                "optimizerLayerReadinessCiAcceptanceReason",
+                "optimizerLayerReadinessCiFirstBlockingLayer",
+                "optimizerLayerReadinessCiCiSummaryLine"
+        ));
+        assertEquals("optimizerLayerReadinessCiContractKernel", fields.get("optimizerLayerReadinessMethod"));
+        assertEquals("blocked", fields.get("optimizerLayerReadinessVerdict"));
+        assertEquals("cseLiteralPromotion", fields.get("optimizerLayerReadinessFirstBlockingLayer"));
+        assertEquals("consistent", fields.get("optimizerLayerReadinessConsistencyVerdict"));
+        assertEquals("true", fields.get("optimizerLayerReadinessConsistencyConsistent"));
+        assertEquals("fail", fields.get("validationRulesVerdict"));
+        assertEquals("false", fields.get("validationRulesPassed"));
+        assertEquals("optimizer.layerReadinessGate", fields.get("validationRulesRegistryResult.0.RuleId"));
+        assertEquals("blocked", fields.get("validationRulesRegistryResult.0.Metadata.readinessVerdict"));
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("rejected/blockingResultsPresent", fields.get("validationRulesAcceptanceReason"));
+        assertEquals("optimizer.layerReadinessGate", fields.get("validationRulesAcceptanceFirstBlockingRuleId"));
+        assertEquals("blocked", fields.get("optimizerLayerReadinessCiVerdict"));
+        assertEquals("fail", fields.get("optimizerLayerReadinessCiRuleVerdict"));
+        assertEquals("false", fields.get("optimizerLayerReadinessCiAccepted"));
+        assertEquals("true", fields.get("optimizerLayerReadinessCiRejected"));
+        assertEquals("rejected/blockingResultsPresent", fields.get("optimizerLayerReadinessCiAcceptanceReason"));
+    }
+
+    @Test
+    void cseLayerReadinessCiRunnerKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("cseLayerReadinessCiContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runCseLayerReadinessCiFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "cseLayerReadinessVerdict",
+                "cseLayerReadinessAllLayersReady",
+                "cseLayerReadinessHasBlockingLayers",
+                "cseLayerReadinessBlockingLayers",
+                "cseLayerReadinessFirstBlockingLayer",
+                "validationRulesMethod",
+                "validationRulesVerdict",
+                "validationRulesPassed",
+                "validationRulesRegistryResult.0.RuleId",
+                "validationRulesRegistryResult.0.Status",
+                "validationRulesRegistryResult.0.Metadata.readinessVerdict",
+                "validationRulesRegistryResult.0.Metadata.firstBlockingLayer",
+                "validationRulesAcceptanceMethod",
+                "validationRulesAcceptanceVerdict",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceRejected",
+                "validationRulesAcceptanceReason",
+                "validationRulesAcceptanceFirstBlockingRuleId",
+                "cseLayerReadinessCiMethod",
+                "cseLayerReadinessCiVerdict",
+                "cseLayerReadinessCiRuleVerdict",
+                "cseLayerReadinessCiAccepted",
+                "cseLayerReadinessCiRejected",
+                "cseLayerReadinessCiAcceptanceReason",
+                "cseLayerReadinessCiFirstBlockingLayer",
+                "cseLayerReadinessCiCiSummaryLine"
+        ));
+        assertEquals("noRewriteWork", fields.get("cseLayerReadinessVerdict"));
+        assertEquals("true", fields.get("cseLayerReadinessAllLayersReady"));
+        assertEquals("false", fields.get("cseLayerReadinessHasBlockingLayers"));
+        assertEquals("none", fields.get("cseLayerReadinessFirstBlockingLayer"));
+        assertEquals("cseLayerReadinessCiContractKernel", fields.get("validationRulesMethod"));
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("cse.layerReadinessGate", fields.get("validationRulesRegistryResult.0.RuleId"));
+        assertEquals("noRewriteWork", fields.get("validationRulesRegistryResult.0.Metadata.readinessVerdict"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("false", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("accepted/pass", fields.get("validationRulesAcceptanceReason"));
+        assertEquals("noRewriteWork", fields.get("cseLayerReadinessCiVerdict"));
+        assertEquals("pass", fields.get("cseLayerReadinessCiRuleVerdict"));
+        assertEquals("true", fields.get("cseLayerReadinessCiAccepted"));
+        assertEquals("false", fields.get("cseLayerReadinessCiRejected"));
+        assertEquals("accepted/pass", fields.get("cseLayerReadinessCiAcceptanceReason"));
+    }
+
+    @Test
+    void autoVectorizationReadinessCiRunnerKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("autoVectorizationReadinessCiContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runAutoVectorizationReadinessCiFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "autoVectorizationReadinessVerdict",
+                "autoVectorizationReadinessReadyForPrototypeRewrite",
+                "autoVectorizationReadinessBlockingReasons",
+                "autoVectorizationReadinessBlockingReasonCount",
+                "autoVectorizationReadinessFirstBlockingReason",
+                "validationRulesMethod",
+                "validationRulesVerdict",
+                "validationRulesPassed",
+                "validationRulesRegistryResult.0.RuleId",
+                "validationRulesRegistryResult.0.Status",
+                "validationRulesRegistryResult.0.Metadata.readinessVerdict",
+                "validationRulesRegistryResult.0.Metadata.readyForPrototypeRewrite",
+                "validationRulesRegistryResult.0.Metadata.firstBlockingReason",
+                "validationRulesAcceptanceMethod",
+                "validationRulesAcceptanceVerdict",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceRejected",
+                "validationRulesAcceptanceReason",
+                "validationRulesAcceptanceFirstBlockingRuleId",
+                "autoVectorizationReadinessCiMethod",
+                "autoVectorizationReadinessCiVerdict",
+                "autoVectorizationReadinessCiRuleVerdict",
+                "autoVectorizationReadinessCiAccepted",
+                "autoVectorizationReadinessCiRejected",
+                "autoVectorizationReadinessCiAcceptanceReason",
+                "autoVectorizationReadinessCiFirstBlockingReason",
+                "autoVectorizationReadinessCiCiSummaryLine"
+        ));
+        assertEquals("notReady/noCandidates", fields.get("autoVectorizationReadinessVerdict"));
+        assertEquals("false", fields.get("autoVectorizationReadinessReadyForPrototypeRewrite"));
+        assertEquals("noRewriteCandidates", fields.get("autoVectorizationReadinessFirstBlockingReason"));
+        assertEquals("autoVectorizationReadinessCiContractKernel", fields.get("validationRulesMethod"));
+        assertEquals("fail", fields.get("validationRulesVerdict"));
+        assertEquals("false", fields.get("validationRulesPassed"));
+        assertEquals("autoVectorization.layerReadinessGate", fields.get("validationRulesRegistryResult.0.RuleId"));
+        assertEquals("notReady/noCandidates", fields.get("validationRulesRegistryResult.0.Metadata.readinessVerdict"));
+        assertEquals("false", fields.get("validationRulesRegistryResult.0.Metadata.readyForPrototypeRewrite"));
+        assertEquals("false", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", fields.get("validationRulesAcceptanceRejected"));
+        assertEquals("rejected/blockingResultsPresent", fields.get("validationRulesAcceptanceReason"));
+        assertEquals("autoVectorization.layerReadinessGate", fields.get("validationRulesAcceptanceFirstBlockingRuleId"));
+        assertEquals("notReady/noCandidates", fields.get("autoVectorizationReadinessCiVerdict"));
+        assertEquals("fail", fields.get("autoVectorizationReadinessCiRuleVerdict"));
+        assertEquals("false", fields.get("autoVectorizationReadinessCiAccepted"));
+        assertEquals("true", fields.get("autoVectorizationReadinessCiRejected"));
+        assertEquals("rejected/blockingResultsPresent", fields.get("autoVectorizationReadinessCiAcceptanceReason"));
+    }
+
+    @Test
+    void ciGateIndexRunnerKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("ciGateIndexContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runCiGateIndexFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerCiGateIndexMethod",
+                "optimizerCiGateIndexVerdict",
+                "optimizerCiGateIndexAccepted",
+                "optimizerCiGateIndexRejected",
+                "optimizerCiGateIndexFirstRejectedGate",
+                "optimizerCiGateIndexCseVerdict",
+                "optimizerCiGateIndexCseRuleVerdict",
+                "optimizerCiGateIndexCseAccepted",
+                "optimizerCiGateIndexCseAcceptanceReason",
+                "optimizerCiGateIndexAutoVectorizationVerdict",
+                "optimizerCiGateIndexAutoVectorizationRuleVerdict",
+                "optimizerCiGateIndexAutoVectorizationAccepted",
+                "optimizerCiGateIndexAutoVectorizationAcceptanceReason",
+                "optimizerCiGateIndexOptimizerVerdict",
+                "optimizerCiGateIndexOptimizerRuleVerdict",
+                "optimizerCiGateIndexOptimizerAccepted",
+                "optimizerCiGateIndexOptimizerAcceptanceReason",
+                "optimizerCiGateIndexConsistencyVerdict",
+                "optimizerCiGateIndexConsistencyConsistent",
+                "optimizerCiGateIndexConsistencyChecks",
+                "optimizerCiGateIndexConsistencyFailedChecks",
+                "optimizerCiGateIndexConsistencyFailedCheckList",
+                "optimizerCiGateIndexConsistencyCiSummaryLine",
+                "optimizerCiGateIndexAcceptanceVerdict",
+                "optimizerCiGateIndexAcceptanceAccepted",
+                "optimizerCiGateIndexAcceptanceRejected",
+                "optimizerCiGateIndexAcceptanceFailBuild",
+                "optimizerCiGateIndexAcceptanceReason",
+                "optimizerCiGateIndexAcceptanceFirstRejectedGate",
+                "optimizerCiGateIndexAcceptanceFirstConsistencyFailedCheck",
+                "optimizerCiGateIndexAcceptanceCiSummaryLine",
+                "optimizerCiGateIndexCiSummaryLine",
+                "optimizerCiGateIndexCseGate.cseLayerReadinessCiMethod",
+                "optimizerCiGateIndexCseGate.RuleArtifact.validationRulesMethod",
+                "optimizerCiGateIndexCseGate.RuleArtifact.validationRulesVerdict",
+                "optimizerCiGateIndexCseGate.RuleArtifact.validationRulesRegistryResult.0.RuleId",
+                "optimizerCiGateIndexCseGate.Acceptance.validationRulesAcceptanceReason",
+                "optimizerCiGateIndexAutoVectorizationGate.autoVectorizationReadinessCiMethod",
+                "optimizerCiGateIndexAutoVectorizationGate.RuleArtifact.validationRulesMethod",
+                "optimizerCiGateIndexAutoVectorizationGate.RuleArtifact.validationRulesVerdict",
+                "optimizerCiGateIndexAutoVectorizationGate.RuleArtifact.validationRulesRegistryResult.0.RuleId",
+                "optimizerCiGateIndexAutoVectorizationGate.Acceptance.validationRulesAcceptanceReason",
+                "optimizerCiGateIndexOptimizerGate.optimizerLayerReadinessCiMethod",
+                "optimizerCiGateIndexOptimizerGate.RuleArtifact.validationRulesMethod",
+                "optimizerCiGateIndexOptimizerGate.RuleArtifact.validationRulesVerdict",
+                "optimizerCiGateIndexOptimizerGate.RuleArtifact.validationRulesRegistryResult.0.RuleId",
+                "optimizerCiGateIndexOptimizerGate.Acceptance.validationRulesAcceptanceReason",
+                "cseLayerReadinessCiMethod",
+                "autoVectorizationReadinessCiMethod",
+                "optimizerLayerReadinessCiMethod"
+        ));
+        assertEquals("ciGateIndexContractKernel", fields.get("optimizerCiGateIndexMethod"));
+        assertEquals("rejected", fields.get("optimizerCiGateIndexVerdict"));
+        assertEquals("false", fields.get("optimizerCiGateIndexAccepted"));
+        assertEquals("true", fields.get("optimizerCiGateIndexRejected"));
+        assertEquals("autoVectorization", fields.get("optimizerCiGateIndexFirstRejectedGate"));
+        assertEquals("true", fields.get("optimizerCiGateIndexCseAccepted"));
+        assertEquals("false", fields.get("optimizerCiGateIndexAutoVectorizationAccepted"));
+        assertEquals("false", fields.get("optimizerCiGateIndexOptimizerAccepted"));
+        assertEquals("consistent", fields.get("optimizerCiGateIndexConsistencyVerdict"));
+        assertEquals("true", fields.get("optimizerCiGateIndexConsistencyConsistent"));
+        assertEquals("10", fields.get("optimizerCiGateIndexConsistencyChecks"));
+        assertEquals("0", fields.get("optimizerCiGateIndexConsistencyFailedChecks"));
+        assertEquals("rejected", fields.get("optimizerCiGateIndexAcceptanceVerdict"));
+        assertEquals("false", fields.get("optimizerCiGateIndexAcceptanceAccepted"));
+        assertEquals("true", fields.get("optimizerCiGateIndexAcceptanceRejected"));
+        assertEquals("true", fields.get("optimizerCiGateIndexAcceptanceFailBuild"));
+        assertEquals("rejected/gateRejected", fields.get("optimizerCiGateIndexAcceptanceReason"));
+        assertEquals("autoVectorization", fields.get("optimizerCiGateIndexAcceptanceFirstRejectedGate"));
+        assertEquals("pass", fields.get("optimizerCiGateIndexCseGate.RuleArtifact.validationRulesVerdict"));
+        assertEquals(
+                "fail",
+                fields.get("optimizerCiGateIndexAutoVectorizationGate.RuleArtifact.validationRulesVerdict")
+        );
+        assertEquals("fail", fields.get("optimizerCiGateIndexOptimizerGate.RuleArtifact.validationRulesVerdict"));
+        assertEquals(
+                "cse.layerReadinessGate",
+                fields.get("optimizerCiGateIndexCseGate.RuleArtifact.validationRulesRegistryResult.0.RuleId")
+        );
+        assertEquals(
+                "autoVectorization.layerReadinessGate",
+                fields.get("optimizerCiGateIndexAutoVectorizationGate.RuleArtifact.validationRulesRegistryResult.0.RuleId")
+        );
+        assertEquals(
+                "optimizer.layerReadinessGate",
+                fields.get("optimizerCiGateIndexOptimizerGate.RuleArtifact.validationRulesRegistryResult.0.RuleId")
+        );
+    }
+
+    @Test
+    void optimizerGateSnapshotRunnerKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("optimizerGateSnapshotContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner()
+                .runOptimizerGateSnapshotFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerGateBlocked",
+                "optimizerGateSource",
+                "optimizerGateFamily",
+                "optimizerGateSummary",
+                "optimizerGateCompactSummary",
+                "optimizerGateSourceCounts",
+                "optimizerGateFamilyCounts",
+                "optimizerGateConsistencyVerdict",
+                "optimizerGateConsistencyConsistent",
+                "optimizerGateConsistencyFailedChecks",
+                "optimizerGateConsistencyCiSummaryLine",
+                "optimizerGateAcceptanceVerdict",
+                "optimizerGateAcceptanceAccepted",
+                "optimizerGateAcceptanceRejected",
+                "optimizerGateAcceptanceFailBuild",
+                "optimizerGateAcceptanceReason",
+                "optimizerGateAcceptanceCiSummaryLine"
+        ));
+        assertEquals("false", fields.get("optimizerGateBlocked"));
+        assertEquals("none", fields.get("optimizerGateSource"));
+        assertEquals("none", fields.get("optimizerGateFamily"));
+        assertEquals("{}", fields.get("optimizerGateSourceCounts"));
+        assertEquals("{}", fields.get("optimizerGateFamilyCounts"));
+        assertEquals("consistent", fields.get("optimizerGateConsistencyVerdict"));
+        assertEquals("true", fields.get("optimizerGateConsistencyConsistent"));
+        assertEquals("accepted", fields.get("optimizerGateAcceptanceVerdict"));
+        assertEquals("true", fields.get("optimizerGateAcceptanceAccepted"));
+        assertEquals("false", fields.get("optimizerGateAcceptanceFailBuild"));
     }
 
     @Test

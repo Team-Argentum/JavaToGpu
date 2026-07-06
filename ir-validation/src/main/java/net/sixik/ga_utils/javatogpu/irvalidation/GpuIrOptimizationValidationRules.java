@@ -20,6 +20,12 @@ public final class GpuIrOptimizationValidationRules {
             "autoVectorization.prototypePrePostRuntimeEquivalenceEvidence";
     private static final String AUTO_VECTORIZATION_PROTOTYPE_PRE_POST_RUNTIME_EQUIVALENCE_GATE_ID =
             "autoVectorization.prototypePrePostRuntimeEquivalenceGate";
+    private static final String CSE_LAYER_READINESS_GATE_ID =
+            "cse.layerReadinessGate";
+    private static final String AUTO_VECTORIZATION_LAYER_READINESS_GATE_ID =
+            "autoVectorization.layerReadinessGate";
+    private static final String OPTIMIZER_LAYER_READINESS_GATE_ID =
+            "optimizer.layerReadinessGate";
     private static final String OPTIMIZER_LAYER_READINESS_REGRESSION_GATE_ID =
             "optimizer.layerReadinessRegressionGate";
 
@@ -293,6 +299,92 @@ public final class GpuIrOptimizationValidationRules {
         };
     }
 
+    public static GpuIrOptimizationValidationRule optimizerLayerReadinessGate() {
+        return new GpuIrOptimizationValidationRule() {
+            @Override
+            public String id() {
+                return OPTIMIZER_LAYER_READINESS_GATE_ID;
+            }
+
+            @Override
+            public GpuIrOptimizationValidationRuleResult evaluate(GpuIrOptimizationValidationRuleContext context) {
+                GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport readiness =
+                        context.report().optimizerLayerReadinessSummaryReport();
+                Map<String, String> metadata = optimizerLayerReadinessMetadata(context, readiness);
+                if (readiness.allLayersReady()) {
+                    return GpuIrOptimizationValidationRuleResult.passed(
+                            OPTIMIZER_LAYER_READINESS_GATE_ID,
+                            "method has ready optimizer layers",
+                            metadata
+                    );
+                }
+                return GpuIrOptimizationValidationRuleResult.failed(
+                        OPTIMIZER_LAYER_READINESS_GATE_ID,
+                        "method has blocked optimizer layers",
+                        metadata
+                );
+            }
+        };
+    }
+
+    public static GpuIrOptimizationValidationRule cseLayerReadinessGate() {
+        return new GpuIrOptimizationValidationRule() {
+            @Override
+            public String id() {
+                return CSE_LAYER_READINESS_GATE_ID;
+            }
+
+            @Override
+            public GpuIrOptimizationValidationRuleResult evaluate(GpuIrOptimizationValidationRuleContext context) {
+                GpuIrCommonSubexpressionLayerReadinessSummaryReport readiness = context.report()
+                        .commonSubexpressionArtifactSnapshot()
+                        .layerReadinessSummaryReport();
+                Map<String, String> metadata = cseLayerReadinessMetadata(context, readiness);
+                if (readiness.hasBlockingLayers()) {
+                    return GpuIrOptimizationValidationRuleResult.failed(
+                            CSE_LAYER_READINESS_GATE_ID,
+                            "method has blocked CSE readiness layers",
+                            metadata
+                    );
+                }
+                return GpuIrOptimizationValidationRuleResult.passed(
+                        CSE_LAYER_READINESS_GATE_ID,
+                        "method has no blocked CSE readiness layers",
+                        metadata
+                );
+            }
+        };
+    }
+
+    public static GpuIrOptimizationValidationRule autoVectorizationLayerReadinessGate() {
+        return new GpuIrOptimizationValidationRule() {
+            @Override
+            public String id() {
+                return AUTO_VECTORIZATION_LAYER_READINESS_GATE_ID;
+            }
+
+            @Override
+            public GpuIrOptimizationValidationRuleResult evaluate(GpuIrOptimizationValidationRuleContext context) {
+                GpuIrAutoVectorizationReadinessSummaryReport readiness = context.report()
+                        .autoVectorizationArtifactSnapshot()
+                        .readinessSummaryReport();
+                Map<String, String> metadata = autoVectorizationLayerReadinessMetadata(context, readiness);
+                if (readiness.readyForPrototypeRewrite()) {
+                    return GpuIrOptimizationValidationRuleResult.passed(
+                            AUTO_VECTORIZATION_LAYER_READINESS_GATE_ID,
+                            "method has ready auto-vectorization layers",
+                            metadata
+                    );
+                }
+                return GpuIrOptimizationValidationRuleResult.failed(
+                        AUTO_VECTORIZATION_LAYER_READINESS_GATE_ID,
+                        "method has blocked auto-vectorization layers",
+                        metadata
+                );
+            }
+        };
+    }
+
     public static GpuIrOptimizationValidationRuleRegistry defaultRegistry() {
         return GpuIrOptimizationValidationRuleRegistry.of(defaultRules());
     }
@@ -325,6 +417,18 @@ public final class GpuIrOptimizationValidationRules {
         return GpuIrOptimizationValidationRuleRegistry.of(optimizerLayerReadinessRegressionRules(baseline));
     }
 
+    public static GpuIrOptimizationValidationRuleRegistry optimizerLayerReadinessRegistry() {
+        return GpuIrOptimizationValidationRuleRegistry.of(optimizerLayerReadinessRules());
+    }
+
+    public static GpuIrOptimizationValidationRuleRegistry cseLayerReadinessRegistry() {
+        return GpuIrOptimizationValidationRuleRegistry.of(cseLayerReadinessRules());
+    }
+
+    public static GpuIrOptimizationValidationRuleRegistry autoVectorizationLayerReadinessRegistry() {
+        return GpuIrOptimizationValidationRuleRegistry.of(autoVectorizationLayerReadinessRules());
+    }
+
     public static List<GpuIrOptimizationValidationRule> runtimeEquivalenceEvidenceRules() {
         return List.of(
                 cseLiteralRuntimeEquivalenceEvidence(),
@@ -353,6 +457,18 @@ public final class GpuIrOptimizationValidationRules {
             GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline
     ) {
         return List.of(optimizerLayerReadinessRegressionGate(baseline));
+    }
+
+    public static List<GpuIrOptimizationValidationRule> optimizerLayerReadinessRules() {
+        return List.of(optimizerLayerReadinessGate());
+    }
+
+    public static List<GpuIrOptimizationValidationRule> cseLayerReadinessRules() {
+        return List.of(cseLayerReadinessGate());
+    }
+
+    public static List<GpuIrOptimizationValidationRule> autoVectorizationLayerReadinessRules() {
+        return List.of(autoVectorizationLayerReadinessGate());
     }
 
     private static Map<String, String> safetyMetadata(GpuIrOptimizationValidationRuleContext context) {
@@ -508,6 +624,73 @@ public final class GpuIrOptimizationValidationRules {
         regression.firstChangedLayer().ifPresent(layer -> metadata.put("firstChangedLayer", layer));
         regression.firstImprovedLayer().ifPresent(layer -> metadata.put("firstImprovedLayer", layer));
         regression.firstRegressedLayer().ifPresent(layer -> metadata.put("firstRegressedLayer", layer));
+        return metadata;
+    }
+
+    private static Map<String, String> optimizerLayerReadinessMetadata(
+            GpuIrOptimizationValidationRuleContext context,
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport readiness
+    ) {
+        Map<String, String> metadata = baseMetadata(context);
+        metadata.put("readinessVerdict", readiness.verdict());
+        metadata.put("allLayersReady", Boolean.toString(readiness.allLayersReady()));
+        metadata.put("hasBlockingLayers", Boolean.toString(readiness.hasBlockingLayers()));
+        metadata.put("blockingLayerCount", Integer.toString(readiness.blockingLayerCount()));
+        metadata.put("readyLayerCount", Integer.toString(readiness.readyLayerCount()));
+        metadata.put("blockingLayers", String.join(",", readiness.blockingLayers()));
+        metadata.put("presentLayers", String.join(",", readiness.presentLayers()));
+        metadata.put("firstBlockingLayer", readiness.firstBlockingLayer());
+        readiness.layerStates().forEach((layer, state) -> metadata.put("layer." + layer, state));
+        metadata.put("consistencyVerdict", readiness.consistencyReport().verdict());
+        metadata.put("consistencyConsistent", Boolean.toString(readiness.consistencyReport().consistent()));
+        metadata.put("ciSummaryLine", readiness.ciSummaryLine());
+        return metadata;
+    }
+
+    private static Map<String, String> cseLayerReadinessMetadata(
+            GpuIrOptimizationValidationRuleContext context,
+            GpuIrCommonSubexpressionLayerReadinessSummaryReport readiness
+    ) {
+        Map<String, String> metadata = baseMetadata(context);
+        metadata.put("readinessVerdict", readiness.verdict());
+        metadata.put("allLayersReady", Boolean.toString(readiness.allLayersReady()));
+        metadata.put("hasBlockingLayers", Boolean.toString(readiness.hasBlockingLayers()));
+        metadata.put("blockingLayerCount", Integer.toString(readiness.blockingLayerCount()));
+        metadata.put("readyLayerCount", Integer.toString(readiness.readyLayerCount()));
+        metadata.put("blockingLayers", String.join(",", readiness.blockingLayers()));
+        metadata.put("presentLayers", String.join(",", readiness.presentLayers()));
+        metadata.put("firstBlockingLayer", readiness.firstBlockingLayer());
+        readiness.layerStates().forEach((layer, state) -> metadata.put("layer." + layer, state));
+        metadata.put("ciSummaryLine", readiness.ciSummaryLine());
+        return metadata;
+    }
+
+    private static Map<String, String> autoVectorizationLayerReadinessMetadata(
+            GpuIrOptimizationValidationRuleContext context,
+            GpuIrAutoVectorizationReadinessSummaryReport readiness
+    ) {
+        Map<String, String> metadata = baseMetadata(context);
+        metadata.put("readinessVerdict", readiness.verdict());
+        metadata.put("readyForPrototypeRewrite", Boolean.toString(readiness.readyForPrototypeRewrite()));
+        metadata.put("candidateCount", Integer.toString(readiness.candidateCount()));
+        metadata.put("warningCount", Integer.toString(readiness.warningCount()));
+        metadata.put("rejectionCount", Integer.toString(readiness.rejectionCount()));
+        metadata.put("rewriteBlockedCandidateCount", Integer.toString(readiness.rewriteBlockedCandidateCount()));
+        metadata.put("rewritePlanGuardCount", Integer.toString(readiness.rewritePlanGuardCount()));
+        metadata.put("proofBundleDiagnosticCount", Integer.toString(readiness.proofBundleDiagnosticCount()));
+        metadata.put("unsafeProofCount", Integer.toString(readiness.unsafeProofCount()));
+        metadata.put("dryRunDiagnosticCount", Integer.toString(readiness.dryRunDiagnosticCount()));
+        metadata.put("resolvedRewriteOperationCount", Integer.toString(readiness.resolvedRewriteOperationCount()));
+        metadata.put("blockingReasonCount", Integer.toString(readiness.blockingReasonCount()));
+        metadata.put("blockingReasons", String.join(",", readiness.blockingReasons()));
+        metadata.put("remainingWorkCount", Integer.toString(readiness.remainingWorkCount()));
+        metadata.put("remainingWork", String.join(",", readiness.remainingWork()));
+        metadata.put("rewriteReadiness", readiness.rewriteReadiness());
+        metadata.put("rewritePolicyReadiness", readiness.rewritePolicyReadiness());
+        metadata.put("dryRunReadiness", readiness.dryRunReadiness());
+        readiness.firstBlockingReason().ifPresent(reason -> metadata.put("firstBlockingReason", reason));
+        readiness.firstRemainingWork().ifPresent(work -> metadata.put("firstRemainingWork", work));
+        metadata.put("ciSummaryLine", readiness.ciSummaryLine());
         return metadata;
     }
 
