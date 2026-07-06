@@ -616,9 +616,9 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
-        assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "blockedByRewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "blockedByMultipleProofs");
         assertEntryValue(entries, "autoVectorizationProofDecisionAllowRewrite", "false");
-        assertEntryValue(entries, "autoVectorizationProofDecisionBlockingProofKinds", "rewritePlan");
+        assertEntryValue(entries, "autoVectorizationProofDecisionBlockingProofKinds", "rewritePlan,mutation");
         assertEntryValue(entries, "autoVectorizationProofDecisionFirstBlockingProofKind", "rewritePlan");
         assertEntryValue(entries, "autoVectorizationHasPolicyBlockedRewrite", "true");
         assertEntryValue(entries, "autoVectorizationRewritePlanOperations", "0");
@@ -633,7 +633,19 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationProofRewritePlanDiagnostics", "1");
         assertEntryValue(entries, "autoVectorizationProofRewritePlanGuardFamily.neighborSourceWrite", "1");
         assertEntryValueContains(entries, "autoVectorizationProofRewritePlanSummary", "guardFamilies={neighborSourceWrite=1}");
-        assertProofBundleFields(entries, "3", "rewritePlan,controlFlowBoundary,memoryLegality", "false", "0", "1", "1", "1", "{rewritePlan=1}", "neighborSourceWrite");
+        assertProofBundleFields(
+                entries,
+                "4",
+                "rewritePlan,mutation,controlFlowBoundary,memoryLegality",
+                "false",
+                "1",
+                "1",
+                "2",
+                "2",
+                "{rewritePlan=1,mutation=1}",
+                "neighborSourceWrite",
+                "mutation"
+        );
         assertEntryValue(entries, "autoVectorizationRewritePolicyCanRewrite", "false");
         assertEntryValue(entries, "autoVectorizationRewritePolicyReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationRewritePolicyPlannedOperations", "2");
@@ -861,6 +873,34 @@ class GpuIrOptimizationValidationProviderTest {
             String unsafeProofKindCounts,
             String guardFamily
     ) {
+        assertProofBundleFields(
+                entries,
+                proofs,
+                kinds,
+                rewriteSafe,
+                warnings,
+                guardDiagnostics,
+                diagnostics,
+                unsafeProofs,
+                unsafeProofKindCounts,
+                guardFamily,
+                null
+        );
+    }
+
+    private void assertProofBundleFields(
+            List<GpuIrValidationReportEntry> entries,
+            String proofs,
+            String kinds,
+            String rewriteSafe,
+            String warnings,
+            String guardDiagnostics,
+            String diagnostics,
+            String unsafeProofs,
+            String unsafeProofKindCounts,
+            String guardFamily,
+            String additionalUnsafeProofKind
+    ) {
         assertEntryValue(entries, "autoVectorizationProofBundleProofs", proofs);
         assertEntryValue(entries, "autoVectorizationProofBundleKinds", kinds);
         assertEntryValue(entries, "autoVectorizationProofBundleRewriteSafe", rewriteSafe);
@@ -871,6 +911,9 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "autoVectorizationProofBundleUnsafeProofKindCounts", unsafeProofKindCounts);
         if (!"0".equals(unsafeProofs)) {
             assertEntryValue(entries, "autoVectorizationProofBundleUnsafeProofKind.rewritePlan", "1");
+        }
+        if (additionalUnsafeProofKind != null) {
+            assertEntryValue(entries, "autoVectorizationProofBundleUnsafeProofKind." + additionalUnsafeProofKind, "1");
         }
         if (guardFamily != null) {
             assertEntryValue(entries, "autoVectorizationProofBundleGuardFamily." + guardFamily, "1");

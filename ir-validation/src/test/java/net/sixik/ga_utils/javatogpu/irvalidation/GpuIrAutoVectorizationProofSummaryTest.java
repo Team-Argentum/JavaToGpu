@@ -107,10 +107,150 @@ class GpuIrAutoVectorizationProofSummaryTest {
                 "previous",
                 GpuIrAutoVectorizationControlFlowBoundaryKind.CONTROL_FLOW_BOUNDARY
         );
+        GpuIrAutoVectorizationSideEffectProofReport sideEffectProof = GpuIrAutoVectorizationSideEffectProofReport.blocking(
+                "stmt[0]",
+                "assignment value may have side effects"
+        );
+        GpuIrAutoVectorizationMutationProofReport mutationProof = GpuIrAutoVectorizationMutationProofReport.fromGuards(
+                "kernel",
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_SOURCE_WRITE,
+                        "stmt[1]",
+                        "previous statement stmt[0] writes source array `left`"
+                ))
+        );
+        GpuIrAutoVectorizationBackendProofReport backendProof = GpuIrAutoVectorizationBackendProofReport.fromGuards(
+                "kernel",
+                List.of(new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                        GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH,
+                        "stmt[0]",
+                        "backend vector width x3 requires explicit ABI support before rewrite operations"
+                ))
+        );
 
         assertBaseArtifactContract(rewritePlan.artifactFields("autoVectorizationProofRewritePlan"), "autoVectorizationProofRewritePlan");
         assertBaseArtifactContract(memoryLegality.artifactFields(), "autoVectorizationProofMemoryLegality");
         assertBaseArtifactContract(controlFlowBoundary.artifactFields(), "autoVectorizationProofControlFlowBoundary");
+        assertBaseArtifactContract(sideEffectProof.artifactFields(), "autoVectorizationProofSideEffect");
+        assertBaseArtifactContract(mutationProof.artifactFields(), "autoVectorizationProofMutation");
+        assertBaseArtifactContract(backendProof.artifactFields(), "autoVectorizationProofBackend");
+        assertEquals("sideEffect", sideEffectProof.artifactFields().get("autoVectorizationProofSideEffectKind"));
+        assertEquals("false", sideEffectProof.artifactFields().get("autoVectorizationProofSideEffectRewriteSafe"));
+        assertEquals("1", sideEffectProof.artifactFields().get("autoVectorizationProofSideEffectDiagnostics"));
+        assertEquals("1", sideEffectProof.artifactFields().get("autoVectorizationProofSideEffectGuardFamily.sideEffect"));
+        assertEquals("mutation", mutationProof.artifactFields().get("autoVectorizationProofMutationKind"));
+        assertEquals("false", mutationProof.artifactFields().get("autoVectorizationProofMutationRewriteSafe"));
+        assertEquals("1", mutationProof.artifactFields().get("autoVectorizationProofMutationDiagnostics"));
+        assertEquals("1", mutationProof.artifactFields().get("autoVectorizationProofMutationGuardFamily.neighborSourceWrite"));
+        assertEquals("backend", backendProof.artifactFields().get("autoVectorizationProofBackendKind"));
+        assertEquals("false", backendProof.artifactFields().get("autoVectorizationProofBackendRewriteSafe"));
+        assertEquals("1", backendProof.artifactFields().get("autoVectorizationProofBackendDiagnostics"));
+        assertEquals("1", backendProof.artifactFields().get("autoVectorizationProofBackendGuardFamily.backendVectorWidth"));
+    }
+
+    @Test
+    void sideEffectProofReportBlocksRewriteWithTypedGuardFamily() {
+        GpuIrAutoVectorizationSideEffectProofReport report = GpuIrAutoVectorizationSideEffectProofReport.blocking(
+                "stmt[0]",
+                "assignment value may have side effects"
+        );
+
+        assertTrue(report.blocksRewrite());
+        assertEquals("stmt[0]", report.location());
+        assertEquals(GpuIrAutoVectorizationRewriteGuardFamily.SIDE_EFFECT, report.guardDiagnostic().family());
+        assertTrue(report.guardDiagnostic().summary().contains("assignment value may have side effects"));
+        assertFalse(report.proofSummary().rewriteSafe());
+        assertEquals("sideEffect", report.proofSummary().proofKind());
+        assertEquals(Map.of("sideEffect", 1L), report.proofSummary().guardFamilyCounts());
+        assertEquals("sideEffect", report.artifactFields().get("autoVectorizationProofSideEffectKind"));
+        assertEquals("false", report.artifactFields().get("autoVectorizationProofSideEffectRewriteSafe"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofSideEffectDiagnostics"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofSideEffectGuardFamily.sideEffect"));
+    }
+
+    @Test
+    void mutationProofReportGroupsAliasAndNeighborMutationGuards() {
+        GpuIrAutoVectorizationRewriteGuardDiagnostic aliasGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.TARGET_SOURCE_ALIAS,
+                "stmt[0]",
+                "target array `out` is also read by the candidate"
+        );
+        GpuIrAutoVectorizationRewriteGuardDiagnostic sourceMutationGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_SOURCE_WRITE,
+                "stmt[1]",
+                "previous statement stmt[0] writes source array `left`"
+        );
+        GpuIrAutoVectorizationRewriteGuardDiagnostic targetMutationGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_TARGET_WRITE,
+                "stmt[0]",
+                "next statement stmt[1] writes target array `out`"
+        );
+        GpuIrAutoVectorizationRewriteGuardDiagnostic backendGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH,
+                "stmt[0]",
+                "backend vector width x3 requires explicit ABI support before rewrite operations"
+        );
+
+        GpuIrAutoVectorizationMutationProofReport report = GpuIrAutoVectorizationMutationProofReport.fromGuards(
+                "kernel",
+                List.of(aliasGuard, sourceMutationGuard, targetMutationGuard, backendGuard)
+        );
+
+        assertTrue(report.blocksRewrite());
+        assertEquals("kernel", report.location());
+        assertEquals(List.of(aliasGuard, sourceMutationGuard, targetMutationGuard), report.guardDiagnostics());
+        assertEquals("mutation", report.proofSummary().proofKind());
+        assertFalse(report.proofSummary().rewriteSafe());
+        assertEquals(3, report.proofSummary().diagnosticCount());
+        assertEquals(Map.of(
+                "targetSourceAlias", 1L,
+                "neighborSourceWrite", 1L,
+                "neighborTargetWrite", 1L
+        ), report.proofSummary().guardFamilyCounts());
+        assertEquals("mutation", report.artifactFields().get("autoVectorizationProofMutationKind"));
+        assertEquals("3", report.artifactFields().get("autoVectorizationProofMutationDiagnostics"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofMutationGuardFamily.targetSourceAlias"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofMutationGuardFamily.neighborSourceWrite"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofMutationGuardFamily.neighborTargetWrite"));
+    }
+
+    @Test
+    void backendProofReportGroupsBackendDeviceGuards() {
+        GpuIrAutoVectorizationRewriteGuardDiagnostic widthGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_VECTOR_WIDTH,
+                "stmt[0]",
+                "backend vector width x3 requires explicit ABI support before rewrite operations"
+        );
+        GpuIrAutoVectorizationRewriteGuardDiagnostic doubleGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.BACKEND_DOUBLE_VECTOR,
+                "stmt[1]",
+                "backend double vector type double4 requires explicit device capability support before rewrite operations"
+        );
+        GpuIrAutoVectorizationRewriteGuardDiagnostic mutationGuard = new GpuIrAutoVectorizationRewriteGuardDiagnostic(
+                GpuIrAutoVectorizationRewriteGuardFamily.NEIGHBOR_TARGET_WRITE,
+                "stmt[0]",
+                "next statement stmt[1] writes target array `out`"
+        );
+
+        GpuIrAutoVectorizationBackendProofReport report = GpuIrAutoVectorizationBackendProofReport.fromGuards(
+                "kernel",
+                List.of(widthGuard, doubleGuard, mutationGuard)
+        );
+
+        assertTrue(report.blocksRewrite());
+        assertEquals("kernel", report.location());
+        assertEquals(List.of(widthGuard, doubleGuard), report.guardDiagnostics());
+        assertEquals("backend", report.proofSummary().proofKind());
+        assertFalse(report.proofSummary().rewriteSafe());
+        assertEquals(2, report.proofSummary().diagnosticCount());
+        assertEquals(Map.of(
+                "backendVectorWidth", 1L,
+                "backendDoubleVector", 1L
+        ), report.proofSummary().guardFamilyCounts());
+        assertEquals("backend", report.artifactFields().get("autoVectorizationProofBackendKind"));
+        assertEquals("2", report.artifactFields().get("autoVectorizationProofBackendDiagnostics"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofBackendGuardFamily.backendVectorWidth"));
+        assertEquals("1", report.artifactFields().get("autoVectorizationProofBackendGuardFamily.backendDoubleVector"));
     }
 
     @Test

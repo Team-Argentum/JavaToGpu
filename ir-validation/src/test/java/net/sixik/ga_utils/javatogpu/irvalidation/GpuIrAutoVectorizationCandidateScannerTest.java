@@ -420,6 +420,12 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 preview.rewritePlan().guardFamilyTypeCounts()
         );
         assertEquals(java.util.Map.of("backendVectorWidth", 1L), preview.rewritePlan().guardFamilyCounts());
+        assertEquals(1, preview.backendProofSummary().diagnosticCount());
+        assertEquals(java.util.Map.of("backendVectorWidth", 1L), preview.backendProofSummary().guardFamilyCounts());
+        assertTrue(preview.proofBundle().proofKinds().contains("backend"));
+        assertEquals("1", preview.proofBundle()
+                .artifactFields()
+                .get("autoVectorizationProofBundleGuardFamily.backendVectorWidth"));
         assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, preview.rewriteReadiness());
     }
 
@@ -448,6 +454,9 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 preview.rewritePlan().guardFamilyTypeCounts()
         );
         assertEquals(java.util.Map.of("backendDoubleVector", 1L), preview.rewritePlan().guardFamilyCounts());
+        assertEquals(1, preview.backendProofSummary().diagnosticCount());
+        assertEquals(java.util.Map.of("backendDoubleVector", 1L), preview.backendProofSummary().guardFamilyCounts());
+        assertTrue(preview.proofBundle().proofKinds().contains("backend"));
         assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, preview.rewriteReadiness());
     }
 
@@ -500,6 +509,28 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(preview.rewritePlan().guardDiagnostics().get(0)
                 .contains("source array `input` uses constant memory address space"));
         assertEquals(java.util.Map.of("memoryAddressSpace", 1L), preview.rewritePlan().guardFamilyCounts());
+    }
+
+    @Test
+    void rewritePlanGuardsMissingArrayParameterMetadataBeforeOperations() {
+        GpuIrMethod method = new GpuIrMethod("kernel", List.of(
+                fixedWidthLoop(4, List.of(new GpuIrAssignment(
+                        new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
+                        new GpuIrArrayAccess("input", new GpuIrVariableRef("i"))
+                )))
+        ));
+
+        GpuIrAutoVectorizationPreview preview = scanner.scan(compiledMethod(method,
+                parameter("out", "int[]")
+        )).preview();
+
+        assertTrue(preview.hasRewriteCandidates());
+        assertEquals(0, preview.rewritePlan().operationCount());
+        assertTrue(preview.rewritePlan().guardDiagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("source array `input` has no parameter metadata")));
+        assertEquals(java.util.Map.of("memoryAddressSpace", 1L), preview.rewritePlan().guardFamilyCounts());
+        assertFalse(preview.proofBundle().rewriteSafe());
+        assertEquals(GpuIrAutoVectorizationRewriteReadiness.BLOCKED_BY_GUARD, preview.rewriteReadiness());
     }
 
     @Test
@@ -582,7 +613,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
     }
 
     @Test
-    void compiledMethodRejectsUnknownArrayElementTypesBeforeRewritePreview() {
+    void compiledMethodRejectsFullyUnknownArrayElementTypesBeforeRewritePreview() {
         GpuIrMethod method = new GpuIrMethod("kernel", List.of(
                 fixedWidthLoop(4, List.of(new GpuIrAssignment(
                         new GpuIrArrayAccess("out", new GpuIrVariableRef("i")),
@@ -590,13 +621,12 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 )))
         ));
 
-        GpuIrAutoVectorizationReport report = scanner.scan(compiledMethod(method,
-                parameter("out", "int[]")
-        ));
+        GpuIrAutoVectorizationReport report = scanner.scan(compiledMethod(method));
 
         assertFalse(report.hasCandidates());
         assertTrue(report.hasRejections());
         assertEquals(GpuIrAutoVectorizationRejectionReason.UNSUPPORTED_ELEMENT_TYPE, report.rejections().get(0).reason());
+        assertTrue(report.rejections().get(0).summary().contains("out=null"));
         assertTrue(report.rejections().get(0).summary().contains("missing=null"));
     }
 
@@ -626,6 +656,12 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertEquals(0, preview.rewritePlan().operationCount());
         assertTrue(preview.rewritePlan().guardDiagnostics().get(0).contains("previous statement stmt[0] writes source array `left`"));
         assertEquals(java.util.Map.of("neighborSourceWrite", 1L), preview.rewritePlan().guardFamilyCounts());
+        assertEquals(1, preview.mutationProofSummary().diagnosticCount());
+        assertEquals(java.util.Map.of("neighborSourceWrite", 1L), preview.mutationProofSummary().guardFamilyCounts());
+        assertTrue(preview.proofBundle().proofKinds().contains("mutation"));
+        assertEquals("1", preview.proofBundle()
+                .artifactFields()
+                .get("autoVectorizationProofBundleGuardFamily.neighborSourceWrite"));
     }
 
     @Test
@@ -652,6 +688,9 @@ class GpuIrAutoVectorizationCandidateScannerTest {
         assertTrue(preview.rewritePlan().hasGuardDiagnostics());
         assertEquals(0, preview.rewritePlan().operationCount());
         assertEquals(java.util.Map.of("neighborTargetWrite", 1L), preview.rewritePlan().guardFamilyCounts());
+        assertEquals(1, preview.mutationProofSummary().diagnosticCount());
+        assertEquals(java.util.Map.of("neighborTargetWrite", 1L), preview.mutationProofSummary().guardFamilyCounts());
+        assertTrue(preview.proofBundle().proofKinds().contains("mutation"));
     }
 
     @Test
@@ -776,10 +815,18 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 List.of(),
                 List.of()
         ).rewritePlan();
+        GpuIrAutoVectorizationPreview preview = new GpuIrAutoVectorizationPreview(
+                "kernel",
+                List.of(candidate),
+                List.of(),
+                List.of()
+        );
 
         assertTrue(plan.hasGuardDiagnostics());
         assertEquals(0, plan.operationCount());
         assertEquals(java.util.Map.of("targetSourceAlias", 1L), plan.guardFamilyCounts());
+        assertEquals(java.util.Map.of("targetSourceAlias", 1L), preview.mutationProofSummary().guardFamilyCounts());
+        assertTrue(preview.proofBundle().proofKinds().contains("mutation"));
     }
 
     @Test
@@ -905,6 +952,17 @@ class GpuIrAutoVectorizationCandidateScannerTest {
 
         GpuIrAutoVectorizationReport sideEffectingReport = scanner.scan(sideEffecting);
         assertEquals(GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE, sideEffectingReport.rejections().get(0).reason());
+        assertEquals(1, sideEffectingReport.sideEffectProofSummaries().size());
+        assertEquals("sideEffect", sideEffectingReport.sideEffectProofSummaries().get(0).proofKind());
+        assertEquals("stmt[0]", sideEffectingReport.sideEffectProofSummaries().get(0).location());
+        assertEquals(java.util.Map.of("sideEffect", 1L), sideEffectingReport.sideEffectProofSummaries().get(0).guardFamilyCounts());
+        assertEquals(GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_SIDE_EFFECT, sideEffectingReport.preview().proofDecision().status());
+        assertTrue(sideEffectingReport.preview().firstBlockingDiagnosticSummary().orElseThrow().contains("SIDE_EFFECTING_VALUE"));
+        assertEquals("rejection.SIDE_EFFECTING_VALUE", sideEffectingReport.preview().firstBlockingDiagnosticFamily().orElseThrow());
+        assertTrue(sideEffectingReport.preview().proofDecision().summary().contains("sideEffect@stmt[0]"));
+        assertEquals("1", sideEffectingReport.preview().proofBundle()
+                .artifactFields()
+                .get("autoVectorizationProofBundleGuardFamily.sideEffect"));
 
         GpuIrAutoVectorizationReport nonLaneTargetReport = scanner.scan(nonLaneTarget);
         assertEquals(GpuIrAutoVectorizationRejectionReason.NON_LANE_TARGET, nonLaneTargetReport.rejections().get(0).reason());

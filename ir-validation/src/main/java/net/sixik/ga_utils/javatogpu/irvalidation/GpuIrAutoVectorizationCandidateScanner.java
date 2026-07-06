@@ -26,6 +26,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrStatement;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrSwitch;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrWhileLoop;
+import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
@@ -360,9 +361,6 @@ public final class GpuIrAutoVectorizationCandidateScanner {
     }
 
     private Optional<String> scalarElementType(Map<String, String> arrayElementTypes, boolean requiresKnownTypes) {
-        if (requiresKnownTypes && arrayElementTypes.values().stream().anyMatch(type -> type == null || type.isBlank())) {
-            return Optional.empty();
-        }
         LinkedHashSet<String> knownTypes = new LinkedHashSet<>(arrayElementTypes.values());
         knownTypes.removeIf(type -> type == null || type.isBlank());
         if (knownTypes.isEmpty()) {
@@ -578,7 +576,11 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         }
 
         Optional<ParsedGpuParameter> parameter(String name) {
-            if (method == null || method.parsedMethod() == null || method.parsedMethod().parameters() == null) {
+            if (method == null) {
+                // Source-only diagnostic scans do not have compiled parameter metadata yet.
+                return Optional.of(new ParsedGpuParameter(name, "unknown[]", GpuAddressSpace.GLOBAL, false, List.of()));
+            }
+            if (method.parsedMethod() == null || method.parsedMethod().parameters() == null) {
                 return Optional.empty();
             }
             return method.parsedMethod().parameters().stream()

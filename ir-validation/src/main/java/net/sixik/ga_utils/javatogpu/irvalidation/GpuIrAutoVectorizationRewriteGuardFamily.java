@@ -13,6 +13,7 @@ public enum GpuIrAutoVectorizationRewriteGuardFamily {
     NEIGHBOR_TARGET_WRITE("neighborTargetWrite"),
     CONTROL_FLOW_BOUNDARY("controlFlowBoundary"),
     EARLY_EXIT_BOUNDARY("earlyExitBoundary"),
+    SIDE_EFFECT("sideEffect"),
     OTHER("other");
 
     private final String artifactValue;

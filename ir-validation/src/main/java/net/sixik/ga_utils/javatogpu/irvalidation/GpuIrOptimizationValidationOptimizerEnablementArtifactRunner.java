@@ -108,6 +108,30 @@ public final class GpuIrOptimizationValidationOptimizerEnablementArtifactRunner 
         return runOptimizerPromotionConfidenceContract(validationReport).artifactFields();
     }
 
+    public GpuIrOptimizationValidationProductionReadinessArtifact runProductionReadinessArtifact(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return GpuIrOptimizationValidationProductionReadinessArtifact.from(runBundle(validationReport));
+    }
+
+    public Map<String, String> runProductionReadinessArtifactFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runProductionReadinessArtifact(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationProductionReadinessArtifactAcceptance runProductionReadinessArtifactAcceptance(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runProductionReadinessArtifact(validationReport).acceptanceDecision();
+    }
+
+    public Map<String, String> runProductionReadinessArtifactAcceptanceFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runProductionReadinessArtifactAcceptance(validationReport).artifactFields();
+    }
+
     public GpuIrOptimizationValidationRuleRegistry registry() {
         return ruleArtifactRunner.registry();
     }

@@ -93,6 +93,9 @@ public record GpuIrAutoVectorizationProofDecision(
             case "rewritePlan" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_REWRITE_PLAN;
             case "memoryLegality" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_MEMORY;
             case "controlFlowBoundary" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_CONTROL_FLOW;
+            case "sideEffect" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_SIDE_EFFECT;
+            case "mutation" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_MUTATION;
+            case "backend" -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_BACKEND;
             default -> GpuIrAutoVectorizationProofDecisionStatus.BLOCKED_BY_UNKNOWN_PROOF;
         };
     }

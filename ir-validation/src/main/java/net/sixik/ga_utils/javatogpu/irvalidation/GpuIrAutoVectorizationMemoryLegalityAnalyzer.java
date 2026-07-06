@@ -61,10 +61,26 @@ public final class GpuIrAutoVectorizationMemoryLegalityAnalyzer {
         Objects.requireNonNull(parameterLookup, "parameterLookup");
         List<GpuIrAutoVectorizationRewriteGuardDiagnostic> diagnostics = new ArrayList<>();
         for (String targetArray : targetArrays) {
-            parameterLookup.apply(targetArray).ifPresent(parameter -> addTargetGuard(diagnostics, location, targetArray, parameter));
+            Optional<ParsedGpuParameter> parameter = parameterLookup.apply(targetArray);
+            if (parameter.isEmpty()) {
+                diagnostics.add(rewriteGuard(
+                        location,
+                        "target array `" + targetArray + "` has no parameter metadata before vector rewrite safety is proven"
+                ));
+            } else {
+                addTargetGuard(diagnostics, location, targetArray, parameter.orElseThrow());
+            }
         }
         for (String sourceArray : sourceArrays) {
-            parameterLookup.apply(sourceArray).ifPresent(parameter -> addSourceGuard(diagnostics, location, sourceArray, parameter));
+            Optional<ParsedGpuParameter> parameter = parameterLookup.apply(sourceArray);
+            if (parameter.isEmpty()) {
+                diagnostics.add(rewriteGuard(
+                        location,
+                        "source array `" + sourceArray + "` has no parameter metadata before vector rewrite safety is proven"
+                ));
+            } else {
+                addSourceGuard(diagnostics, location, sourceArray, parameter.orElseThrow());
+            }
         }
         return List.copyOf(diagnostics);
     }

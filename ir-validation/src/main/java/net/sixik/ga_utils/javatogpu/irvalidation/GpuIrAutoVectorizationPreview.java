@@ -95,11 +95,53 @@ public record GpuIrAutoVectorizationPreview(
     }
 
     /**
+     * Separates alias and neighboring mutation guards from the broader rewrite-plan proof.
+     */
+    public GpuIrAutoVectorizationProofSummary mutationProofSummary() {
+        return GpuIrAutoVectorizationMutationProofReport.fromGuards(
+                methodName,
+                rewritePlan().typedGuardDiagnostics()
+        ).proofSummary();
+    }
+
+    /**
+     * Separates backend/device capability guards from the broader rewrite-plan proof.
+     */
+    public GpuIrAutoVectorizationProofSummary backendProofSummary() {
+        return GpuIrAutoVectorizationBackendProofReport.fromGuards(
+                methodName,
+                rewritePlan().typedGuardDiagnostics()
+        ).proofSummary();
+    }
+
+    private GpuIrAutoVectorizationProofSummary backendBundleProofSummary() {
+        return GpuIrAutoVectorizationBackendProofReport.fromGuards(
+                methodName,
+                rewritePlan().typedGuardDiagnostics()
+        ).bundleProofSummary();
+    }
+
+    private GpuIrAutoVectorizationProofSummary mutationBundleProofSummary() {
+        return GpuIrAutoVectorizationMutationProofReport.fromGuards(
+                methodName,
+                rewritePlan().typedGuardDiagnostics()
+        ).bundleProofSummary();
+    }
+
+    /**
      * Single aggregate proof object for future rewrite gates.
      */
     public GpuIrAutoVectorizationProofBundle proofBundle() {
         List<GpuIrAutoVectorizationProofSummary> summaries = new java.util.ArrayList<>();
         summaries.add(rewritePlanProofSummary());
+        GpuIrAutoVectorizationProofSummary backendProofSummary = backendBundleProofSummary();
+        if (backendProofSummary.hasDiagnostics()) {
+            summaries.add(backendProofSummary);
+        }
+        GpuIrAutoVectorizationProofSummary mutationProofSummary = mutationBundleProofSummary();
+        if (mutationProofSummary.hasDiagnostics()) {
+            summaries.add(mutationProofSummary);
+        }
         summaries.addAll(additionalProofSummaries);
         return new GpuIrAutoVectorizationProofBundle(summaries);
     }

@@ -94,6 +94,25 @@ class GpuIrAutoVectorizationMemoryLegalityAnalyzerTest {
     }
 
     @Test
+    void failsClosedWhenCompiledArrayParameterMetadataIsMissing() {
+        GpuIrAutoVectorizationMemoryLegalityReport report = analyzer.analyze(
+                "stmt[0]",
+                orderedSet("out"),
+                orderedSet("left"),
+                name -> Optional.empty()
+        );
+
+        assertFalse(report.rewriteSafe());
+        assertEquals(2, report.guardDiagnostics().size());
+        assertTrue(report.guardDiagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.summary().contains("target array `out` has no parameter metadata")));
+        assertTrue(report.guardDiagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.summary().contains("source array `left` has no parameter metadata")));
+        assertEquals(Map.of("memoryAddressSpace", 2L), report.guardFamilyCounts());
+        assertEquals("2", report.artifactFields().get("autoVectorizationProofMemoryLegalityGuardFamily.memoryAddressSpace"));
+    }
+
+    @Test
     void returnsImmutableReportCollectionsAndRejectsInvalidInputs() {
         GpuIrAutoVectorizationMemoryLegalityReport report = analyzer.analyze(
                 "stmt[0]",

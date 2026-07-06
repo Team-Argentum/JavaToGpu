@@ -77,6 +77,30 @@ public final class GpuIrOptimizationValidationProductionEnablementReadinessRunne
         return runOptimizerPromotionConfidenceContract(validationReport).artifactFields();
     }
 
+    public GpuIrOptimizationValidationProductionReadinessArtifact runProductionReadinessArtifact(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runProductionReadinessArtifact(validationReport);
+    }
+
+    public Map<String, String> runProductionReadinessArtifactFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runProductionReadinessArtifact(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationProductionReadinessArtifactAcceptance runProductionReadinessArtifactAcceptance(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runProductionReadinessArtifactAcceptance(validationReport);
+    }
+
+    public Map<String, String> runProductionReadinessArtifactAcceptanceFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runProductionReadinessArtifactAcceptance(validationReport).artifactFields();
+    }
+
     public GpuIrOptimizationValidationOptimizerEnablementArtifactRunner enablementRunner() {
         return enablementRunner;
     }

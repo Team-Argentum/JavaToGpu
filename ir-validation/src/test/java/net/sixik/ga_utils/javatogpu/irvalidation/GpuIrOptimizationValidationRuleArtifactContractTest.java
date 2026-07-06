@@ -487,6 +487,78 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("cseLiteralPromotionNotReady", fields.get("optimizerProductionPreflightFirstBlockingReason"));
     }
 
+    @Test
+    void optimizerProductionReadinessArtifactKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationReport report = validationReport("productionReadinessContractKernel");
+
+        Map<String, String> fields = new GpuIrOptimizationValidationProductionEnablementReadinessRunner()
+                .runProductionReadinessArtifactFields(report);
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerProductionReadinessMethod",
+                "optimizerProductionReadinessVerdict",
+                "optimizerProductionReadinessBlocked",
+                "optimizerProductionReadinessReviewReady",
+                "optimizerProductionReadinessProductionMutationEnabled",
+                "optimizerProductionReadinessPromotionAllowed",
+                "optimizerProductionReadinessBundleVerdict",
+                "optimizerProductionReadinessPreflightVerdict",
+                "optimizerProductionReadinessSwitchVerdict",
+                "optimizerProductionReadinessPromotionConfidenceVerdict",
+                "optimizerProductionReadinessBlockingReasons",
+                "optimizerProductionReadinessBlockingReasonCount",
+                "optimizerProductionReadinessRemainingWork",
+                "optimizerProductionReadinessRemainingWorkCount",
+                "optimizerProductionReadinessFirstBlockingReason",
+                "optimizerProductionReadinessFirstRemainingWork",
+                "optimizerProductionReadinessConsistent",
+                "optimizerProductionReadinessCiSummaryLine",
+                "optimizerProductionReadinessSummary",
+                "optimizerProductionReadinessConsistency.Method",
+                "optimizerProductionReadinessConsistency.Consistent",
+                "optimizerProductionReadinessConsistency.Checks",
+                "optimizerProductionReadinessConsistency.FailedChecks",
+                "optimizerProductionReadinessConsistency.FailedCheckList",
+                "optimizerProductionReadinessConsistency.CiSummaryLine",
+                "optimizerProductionReadinessAcceptance.Method",
+                "optimizerProductionReadinessAcceptance.Verdict",
+                "optimizerProductionReadinessAcceptance.Accepted",
+                "optimizerProductionReadinessAcceptance.Rejected",
+                "optimizerProductionReadinessAcceptance.Reason",
+                "optimizerProductionReadinessAcceptance.FirstBlockingReason",
+                "optimizerProductionReadinessAcceptance.FirstRemainingWork",
+                "optimizerProductionReadinessAcceptance.FirstConsistencyFailedCheck",
+                "optimizerProductionReadinessAcceptance.CiSummaryLine",
+                "optimizerValidationBundleVerdict",
+                "optimizerProductionPreflightVerdict",
+                "optimizerProductionSwitchVerdict",
+                "optimizerPromotionConfidenceVerdict"
+        ));
+        assertEquals("productionReadinessContractKernel", fields.get("optimizerProductionReadinessMethod"));
+        assertEquals("blocked/productionSwitchNotReady", fields.get("optimizerProductionReadinessVerdict"));
+        assertEquals("true", fields.get("optimizerProductionReadinessBlocked"));
+        assertEquals("false", fields.get("optimizerProductionReadinessReviewReady"));
+        assertEquals("false", fields.get("optimizerProductionReadinessProductionMutationEnabled"));
+        assertEquals("false", fields.get("optimizerProductionReadinessPromotionAllowed"));
+        assertEquals("notReady/cseBlocked", fields.get("optimizerProductionReadinessBundleVerdict"));
+        assertEquals("blocked/optimizerValidationBundleNotReady", fields.get("optimizerProductionReadinessPreflightVerdict"));
+        assertEquals("blocked/preflightNotReady", fields.get("optimizerProductionReadinessSwitchVerdict"));
+        assertEquals("blocked/productionSwitchNotReady", fields.get("optimizerProductionReadinessPromotionConfidenceVerdict"));
+        assertEquals("productionMutationSwitchNotReady", fields.get("optimizerProductionReadinessFirstBlockingReason"));
+        assertEquals("collectPreviewCandidates", fields.get("optimizerProductionReadinessFirstRemainingWork"));
+        assertEquals("true", fields.get("optimizerProductionReadinessConsistent"));
+        assertEquals("true", fields.get("optimizerProductionReadinessConsistency.Consistent"));
+        assertEquals("0", fields.get("optimizerProductionReadinessConsistency.FailedChecks"));
+        assertEquals("false", fields.get("optimizerProductionReadinessAcceptance.Accepted"));
+        assertEquals("true", fields.get("optimizerProductionReadinessAcceptance.Rejected"));
+        assertEquals("rejected/productionReadinessBlocked", fields.get("optimizerProductionReadinessAcceptance.Reason"));
+        assertEquals(
+                "productionMutationSwitchNotReady",
+                fields.get("optimizerProductionReadinessAcceptance.FirstBlockingReason")
+        );
+        assertTrue(fields.get("optimizerProductionReadinessRemainingWork").contains("stabilizeA1A2RuntimeEquivalenceHistory"));
+    }
+
     private static void assertContainsKeys(Map<String, String> fields, Set<String> expectedKeys) {
         assertTrue(fields.keySet().containsAll(expectedKeys), () -> "missing artifact keys: "
                 + expectedKeys.stream()

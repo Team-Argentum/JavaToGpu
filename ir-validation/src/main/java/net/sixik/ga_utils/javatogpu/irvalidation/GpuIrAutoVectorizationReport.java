@@ -98,8 +98,21 @@ public record GpuIrAutoVectorizationReport(
     }
 
     public List<GpuIrAutoVectorizationProofSummary> previewAdditionalProofSummaries() {
-        return rewritePriorityCandidates().stream()
-                .flatMap(candidate -> candidate.proofSummaries().stream())
+        return java.util.stream.Stream.concat(
+                rewritePriorityCandidates().stream()
+                        .flatMap(candidate -> candidate.proofSummaries().stream()),
+                sideEffectProofSummaries().stream()
+        )
+                .toList();
+    }
+
+    public List<GpuIrAutoVectorizationProofSummary> sideEffectProofSummaries() {
+        return rejections.stream()
+                .filter(rejection -> rejection.reason() == GpuIrAutoVectorizationRejectionReason.SIDE_EFFECTING_VALUE)
+                .map(rejection -> GpuIrAutoVectorizationSideEffectProofReport.blocking(
+                        rejection.loopLocation(),
+                        rejection.detail()
+                ).proofSummary())
                 .toList();
     }
 

@@ -58,6 +58,12 @@ The proof-bundle artifact also reports unsafe proof-layer grouping through `auto
 
 The same proof state now feeds a read-only proof decision surface. Compact diagnostics report `autoVectorizationProofDecision`, `autoVectorizationProofDecisionAllowRewrite`, and optional `autoVectorizationProofDecisionBlockingKinds`, while CI artifacts also include `autoVectorizationProofDecisionStatus`, `autoVectorizationProofDecisionBlockingProofKinds`, and first-blocking-proof fields. Nested proof-bundle artifacts mirror the same decision with `autoVectorizationProofBundleDecision*` keys.
 
+Side-effecting auto-vectorization values now also feed that proof surface through `GpuIrAutoVectorizationSideEffectProofReport`. The user-facing scanner rejection remains `SIDE_EFFECTING_VALUE`, while CI/proof artifacts expose `sideEffect`, `blockedBySideEffect`, and `autoVectorizationProofBundleGuardFamily.sideEffect` so future rewrite gates can fail closed without parsing rejection text.
+
+Alias and neighboring mutation blockers now have the same typed proof treatment through `GpuIrAutoVectorizationMutationProofReport`. Rewrite-plan guards still expose `targetSourceAlias`, `neighborSourceWrite`, and `neighborTargetWrite` exactly as before, while the proof bundle also records a `mutation` proof kind and `blockedByMutation` / `blockedByMultipleProofs` decisions for future rewrite gates.
+
+Backend and device capability blockers now also have a dedicated proof layer through `GpuIrAutoVectorizationBackendProofReport`. Existing rewrite-plan guard fields such as `backendVectorWidth` and `backendDoubleVector` remain stable, while the proof bundle can separately report a `backend` proof kind and `blockedByBackend` / `blockedByMultipleProofs` decisions without double-counting guard-family totals.
+
 `autoVectorizationReadiness*` now adds the matching one-line readiness rollup for auto-vectorization, combining candidate availability, warnings, rejections, rewrite-plan guards, proof-bundle safety, rewrite-policy status, dry-run status, and resolved-operation availability into one verdict, blocker list, remaining-work list, and CI summary line.
 
 The readiness-to-equivalence bridge tests now cover both sides of that gate: a `readyForPrototypeRewrite` preview must produce a successful opt-in prototype runtime-equivalence artifact, while warning-blocked and rewrite-guard-blocked previews must stop before prototype equivalence is treated as usable evidence.
@@ -69,6 +75,8 @@ Optimizer validation now also exposes a unified read-only gate explanation. Comp
 The gate explanation also exports grouped source counters through `optimizerGateSourceCounts` and `optimizerGateSourceCount.*`, so CI can distinguish the first blocking gate from the full blocking profile when, for example, auto-vectorization warnings and CSE rewrite-policy blockers are both present.
 
 It also exports grouped family counters through `optimizerGateFamilyCounts` and `optimizerGateFamilyCount.*`, preserving concrete families such as `warning.alias`, `guard.memoryAddressSpace`, `rejection.UNSUPPORTED_LANE_COUNT`, `cseRewritePolicy.blockedBySkippedCandidate`, or `cseRewritePolicy.skipReason.CONTROL_FLOW_BOUNDARY` for CI trend analysis.
+
+Auto-vectorization memory legality is fail-closed for compiled methods: missing target/source array parameter metadata is exported as a `memoryAddressSpace` guard instead of being treated as rewrite-safe. If no compatible lane-array element type can be proven, the loop remains rejected as `UNSUPPORTED_ELEMENT_TYPE` before rewrite preview.
 
 See [IR Validation](IR-Validation.md) for setup, checks, planning modes, and current limitations.
 
