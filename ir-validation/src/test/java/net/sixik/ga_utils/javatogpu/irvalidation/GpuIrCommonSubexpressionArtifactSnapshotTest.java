@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -69,10 +70,35 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         assertEquals("blockedBySkippedCandidate", fields.get("cseRewritePolicyReadiness"));
         assertEquals("1", fields.get("cseRewritePolicyBlockingSkippedCandidates"));
         assertEquals("NO_DOMINATING_FIRST_OCCURRENCE", fields.get("cseRewritePolicyFirstBlockingSkippedReason"));
+        assertEquals("blocked", fields.get("cseLayerReadinessVerdict"));
+        assertEquals("false", fields.get("cseLayerReadinessAllLayersReady"));
+        assertEquals("true", fields.get("cseLayerReadinessHasBlockingLayers"));
+        assertEquals(
+                "rewritePolicy,skipReason,dominance,localExpression,simpleArithmeticProof",
+                fields.get("cseLayerReadinessLayerOrder")
+        );
+        assertEquals(
+                "rewritePolicy,skipReason,dominance,localExpression",
+                fields.get("cseLayerReadinessPresentLayers")
+        );
+        assertEquals(
+                "rewritePolicy,skipReason,dominance,localExpression",
+                fields.get("cseLayerReadinessBlockingLayers")
+        );
+        assertEquals("4", fields.get("cseLayerReadinessBlockingLayerCount"));
+        assertEquals("0", fields.get("cseLayerReadinessReadyLayerCount"));
+        assertEquals("rewritePolicy", fields.get("cseLayerReadinessFirstBlockingLayer"));
+        assertEquals("blocked", fields.get("cseLayerReadinessLayer.rewritePolicy"));
+        assertEquals("blocked", fields.get("cseLayerReadinessLayer.skipReason"));
+        assertEquals("blocked", fields.get("cseLayerReadinessLayer.dominance"));
+        assertEquals("blocked", fields.get("cseLayerReadinessLayer.localExpression"));
+        assertEquals("notPresent", fields.get("cseLayerReadinessLayer.simpleArithmeticProof"));
+        assertTrue(fields.get("cseLayerReadinessCiSummaryLine").contains("firstBlockingLayer=rewritePolicy"));
         assertTrue(snapshot.summary().contains("firstSkippedDominanceStatus=requiresLocalExpressionDominance"));
         assertTrue(snapshot.summary().contains("localExpression={"));
         assertTrue(snapshot.summary().contains("simpleArithmeticProof={"));
         assertTrue(snapshot.summary().contains("rewritePolicy={"));
+        assertTrue(snapshot.summary().contains("layerReadiness={"));
         assertThrows(UnsupportedOperationException.class, () -> fields.put("x", "y"));
         assertThrows(UnsupportedOperationException.class, () -> defaultFields.put("x", "y"));
     }
@@ -113,6 +139,16 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         assertEquals("stmt[0].initializer", fields.get("cseSimpleArithmeticProofFirstProvenAnchor"));
         assertTrue(snapshot.simpleArithmeticProofReport().hasProofs());
         assertTrue(snapshot.simpleArithmeticProofReport().summary().contains("referenceOnlyNestedArithmetic"));
+        assertTrue(snapshot.layerReadinessSummaryReport().allLayersReady());
+        assertFalse(snapshot.layerReadinessSummaryReport().hasBlockingLayers());
+        assertEquals("ready", fields.get("cseLayerReadinessVerdict"));
+        assertEquals("true", fields.get("cseLayerReadinessAllLayersReady"));
+        assertEquals("rewritePolicy,simpleArithmeticProof", fields.get("cseLayerReadinessPresentLayers"));
+        assertEquals("", fields.get("cseLayerReadinessBlockingLayers"));
+        assertEquals("2", fields.get("cseLayerReadinessReadyLayerCount"));
+        assertEquals("none", fields.get("cseLayerReadinessFirstBlockingLayer"));
+        assertEquals("ready", fields.get("cseLayerReadinessLayer.rewritePolicy"));
+        assertEquals("ready", fields.get("cseLayerReadinessLayer.simpleArithmeticProof"));
     }
 
     @Test
@@ -134,6 +170,19 @@ class GpuIrCommonSubexpressionArtifactSnapshotTest {
         assertEquals("false", fields.get("cseSimpleArithmeticProofHasProofs"));
         assertEquals("none", fields.get("cseRewritePolicyReadiness"));
         assertEquals("false", fields.get("cseRewritePolicyCanRewrite"));
+        assertEquals("noRewriteWork", fields.get("cseLayerReadinessVerdict"));
+        assertEquals("true", fields.get("cseLayerReadinessAllLayersReady"));
+        assertEquals("false", fields.get("cseLayerReadinessHasBlockingLayers"));
+        assertEquals("", fields.get("cseLayerReadinessPresentLayers"));
+        assertEquals("", fields.get("cseLayerReadinessBlockingLayers"));
+        assertEquals("0", fields.get("cseLayerReadinessBlockingLayerCount"));
+        assertEquals("0", fields.get("cseLayerReadinessReadyLayerCount"));
+        assertEquals("none", fields.get("cseLayerReadinessFirstBlockingLayer"));
+        assertEquals("notPresent", fields.get("cseLayerReadinessLayer.rewritePolicy"));
+        assertEquals("notPresent", fields.get("cseLayerReadinessLayer.skipReason"));
+        assertEquals("notPresent", fields.get("cseLayerReadinessLayer.dominance"));
+        assertEquals("notPresent", fields.get("cseLayerReadinessLayer.localExpression"));
+        assertEquals("notPresent", fields.get("cseLayerReadinessLayer.simpleArithmeticProof"));
         assertTrue(!fields.containsKey("cseFirstSkippedReason"));
         assertThrows(NullPointerException.class, () -> new GpuIrCommonSubexpressionArtifactSnapshot(null));
     }

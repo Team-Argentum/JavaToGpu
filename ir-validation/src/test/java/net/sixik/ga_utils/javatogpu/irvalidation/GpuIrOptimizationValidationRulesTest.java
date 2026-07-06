@@ -337,4 +337,80 @@ class GpuIrOptimizationValidationRulesTest {
         assertEquals("[cse.literalPromotionRuntimeEquivalenceGate=fail,autoVectorization.prototypePrePostRuntimeEquivalenceGate=fail]", fields.get("rulesBlockingRuleIndex"));
     }
 
+    @Test
+    void optimizerLayerReadinessRegressionRegistryPassesWhenSnapshotIsUnchanged() {
+        GpuIrOptimizationValidationReport report = validate(new GpuIrMethod("layerUnchangedKernel", List.of(new GpuIrReturn(null))));
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline =
+                report.optimizerLayerReadinessSummaryReport();
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .optimizerLayerReadinessRegressionRegistry(baseline);
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(report));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(1, results.size());
+        assertEquals("optimizer.layerReadinessRegressionGate", results.get(0).ruleId());
+        assertEquals(GpuIrOptimizationValidationRuleStatus.PASS, results.get(0).status());
+        assertFalse(results.get(0).blocking());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("unchanged", fields.get("rulesResult.0.Metadata.regressionOutcome"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.regressionUnchanged"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.blockingLayerDelta"));
+        assertEquals("0", fields.get("rulesResult.0.Metadata.readyLayerDelta"));
+    }
+
+    @Test
+    void optimizerLayerReadinessRegressionRegistryWarnsWhenSnapshotImproves() {
+        GpuIrOptimizationValidationReport baselineReport = validate(new GpuIrMethod("layerImprovedKernel", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing"))
+        )));
+        GpuIrOptimizationValidationReport current = validate(new GpuIrMethod("layerImprovedKernel", List.of(
+                new GpuIrReturn(null)
+        )));
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline =
+                baselineReport.optimizerLayerReadinessSummaryReport();
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .optimizerLayerReadinessRegressionRegistry(baseline);
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(current));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(GpuIrOptimizationValidationRuleStatus.WARN, results.get(0).status());
+        assertFalse(results.get(0).blocking());
+        assertEquals("true", fields.get("rulesPassed"));
+        assertEquals("improved", fields.get("rulesResult.0.Metadata.regressionOutcome"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.regressionImproved"));
+        assertEquals("-2", fields.get("rulesResult.0.Metadata.blockingLayerDelta"));
+        assertEquals("1", fields.get("rulesResult.0.Metadata.readyLayerDelta"));
+        assertEquals("safety,optimizerGate", fields.get("rulesResult.0.Metadata.improvedLayers"));
+        assertEquals("safety", fields.get("rulesResult.0.Metadata.firstImprovedLayer"));
+    }
+
+    @Test
+    void optimizerLayerReadinessRegressionRegistryFailsWhenSnapshotRegresses() {
+        GpuIrOptimizationValidationReport baselineReport = validate(new GpuIrMethod("layerRegressedKernel", List.of(
+                new GpuIrReturn(null)
+        )));
+        GpuIrOptimizationValidationReport current = validate(new GpuIrMethod("layerRegressedKernel", List.of(
+                new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing"))
+        )));
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline =
+                baselineReport.optimizerLayerReadinessSummaryReport();
+
+        GpuIrOptimizationValidationRuleRegistry registry = GpuIrOptimizationValidationRules
+                .optimizerLayerReadinessRegressionRegistry(baseline);
+        List<GpuIrOptimizationValidationRuleResult> results = registry.evaluate(new GpuIrOptimizationValidationRuleContext(current));
+        Map<String, String> fields = registry.artifactFields("rules", results);
+
+        assertEquals(GpuIrOptimizationValidationRuleStatus.FAIL, results.get(0).status());
+        assertTrue(results.get(0).blocking());
+        assertEquals("false", fields.get("rulesPassed"));
+        assertEquals("regressed", fields.get("rulesResult.0.Metadata.regressionOutcome"));
+        assertEquals("true", fields.get("rulesResult.0.Metadata.regressionRegressed"));
+        assertEquals("2", fields.get("rulesResult.0.Metadata.blockingLayerDelta"));
+        assertEquals("-1", fields.get("rulesResult.0.Metadata.readyLayerDelta"));
+        assertEquals("safety,optimizerGate", fields.get("rulesResult.0.Metadata.regressedLayers"));
+        assertEquals("safety", fields.get("rulesResult.0.Metadata.firstRegressedLayer"));
+    }
+
 }

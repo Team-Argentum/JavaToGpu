@@ -53,6 +53,49 @@ public final class GpuIrOptimizationValidationProductionEnablementReadinessRunne
         return runBundle(validationReport).artifactFields();
     }
 
+    public GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport runOptimizerLayerReadiness(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadiness(validationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerLayerReadiness(validationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessRegressionReport runOptimizerLayerReadinessRegression(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessRegression(baseline, currentValidationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRegressionFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessRegression(baseline, currentValidationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactReport runOptimizerLayerReadinessRegressionRuleArtifact(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessRegressionRuleArtifact(
+                baseline,
+                currentValidationReport
+        );
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRegressionRuleArtifactFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessRegressionRuleArtifact(baseline, currentValidationReport).artifactFields();
+    }
+
     public GpuIrOptimizationValidationProductionMutationSwitchContract runProductionMutationSwitchContract(
             GpuIrOptimizationValidationReport validationReport
     ) {

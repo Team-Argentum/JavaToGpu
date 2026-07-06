@@ -79,6 +79,10 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
         return GpuIrCommonSubexpressionSimpleArithmeticProofReport.from(preview);
     }
 
+    public GpuIrCommonSubexpressionLayerReadinessSummaryReport layerReadinessSummaryReport() {
+        return GpuIrCommonSubexpressionLayerReadinessSummaryReport.from(preview, rewritePolicy);
+    }
+
     public String skippedDominanceStatusCountsSummary() {
         return dominanceStatusCountsSummary(skippedDominanceStatusCounts());
     }
@@ -104,6 +108,7 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
         values.putAll(localExpressionDominanceReport().artifactFields(prefix + "LocalExpression"));
         values.putAll(simpleArithmeticProofReport().artifactFields(prefix + "SimpleArithmeticProof"));
         values.putAll(rewritePolicy.artifactFields(prefix + "RewritePolicy"));
+        values.putAll(layerReadinessSummaryReport().artifactFields(prefix + "LayerReadiness"));
         return Collections.unmodifiableMap(values);
     }
 
@@ -119,6 +124,7 @@ public record GpuIrCommonSubexpressionArtifactSnapshot(
                 + " localExpression={" + localExpressionDominanceReport().summary() + "}"
                 + " simpleArithmeticProof={" + simpleArithmeticProofReport().summary() + "}"
                 + " rewritePolicy={" + rewritePolicy.summary() + "}"
+                + " layerReadiness={" + layerReadinessSummaryReport().summary() + "}"
                 + firstSkippedDominanceStatus()
                 .map(status -> " firstSkippedDominanceStatus=" + status.artifactValue())
                 .orElse("");

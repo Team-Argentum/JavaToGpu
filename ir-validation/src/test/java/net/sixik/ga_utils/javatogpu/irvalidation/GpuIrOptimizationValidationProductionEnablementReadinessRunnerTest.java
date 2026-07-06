@@ -48,6 +48,64 @@ class GpuIrOptimizationValidationProductionEnablementReadinessRunnerTest {
     }
 
     @Test
+    void canAlsoExportOptimizerLayerReadinessFieldsForCiConsumers() {
+        GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
+                new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
+
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport readiness =
+                runner.runOptimizerLayerReadiness(validationReport("readinessLayerKernel"));
+        Map<String, String> fields = runner.runOptimizerLayerReadinessFields(validationReport("readinessLayerKernel"));
+
+        assertEquals("readinessLayerKernel", readiness.methodName());
+        assertEquals("blocked", readiness.verdict());
+        assertEquals("readinessLayerKernel", fields.get("optimizerLayerReadinessMethod"));
+        assertEquals("blocked", fields.get("optimizerLayerReadinessVerdict"));
+        assertEquals("cseLiteralPromotion", fields.get("optimizerLayerReadinessFirstBlockingLayer"));
+        assertEquals("cseLiteralPromotion,autoVectorization", fields.get("optimizerLayerReadinessBlockingLayers"));
+        assertEquals("consistent", fields.get("optimizerLayerReadinessConsistencyVerdict"));
+        assertEquals("true", fields.get("optimizerLayerReadinessConsistencyConsistent"));
+    }
+
+    @Test
+    void canAlsoExportOptimizerLayerReadinessRegressionFieldsForCiConsumers() {
+        GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
+                new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline =
+                runner.runOptimizerLayerReadiness(validationReport("readinessRegressionKernel"));
+
+        Map<String, String> fields = runner.runOptimizerLayerReadinessRegressionFields(
+                baseline,
+                validationReport("readinessRegressionKernel")
+        );
+
+        assertEquals("readinessRegressionKernel", fields.get("optimizerLayerReadinessRegressionMethod"));
+        assertEquals("unchanged", fields.get("optimizerLayerReadinessRegressionOutcome"));
+        assertEquals("false", fields.get("optimizerLayerReadinessRegressionImproved"));
+        assertEquals("false", fields.get("optimizerLayerReadinessRegressionRegressed"));
+        assertEquals("true", fields.get("optimizerLayerReadinessRegressionUnchanged"));
+    }
+
+    @Test
+    void canAlsoExportOptimizerLayerReadinessRegressionRuleArtifactFieldsForCiConsumers() {
+        GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
+                new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline =
+                runner.runOptimizerLayerReadiness(validationReport("readinessRegressionRuleKernel"));
+
+        Map<String, String> fields = runner.runOptimizerLayerReadinessRegressionRuleArtifactFields(
+                baseline,
+                validationReport("readinessRegressionRuleKernel")
+        );
+
+        assertEquals("readinessRegressionRuleKernel", fields.get("validationRulesMethod"));
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("1", fields.get("validationRulesRules"));
+        assertEquals("optimizer.layerReadinessRegressionGate", fields.get("validationRulesRegistryResult.0.RuleId"));
+        assertEquals("unchanged", fields.get("validationRulesRegistryResult.0.Metadata.regressionOutcome"));
+    }
+
+    @Test
     void canExportProductionMutationSwitchContractForCiConsumers() {
         GpuIrOptimizationValidationProductionEnablementReadinessRunner runner =
                 new GpuIrOptimizationValidationProductionEnablementReadinessRunner();
@@ -109,6 +167,12 @@ class GpuIrOptimizationValidationProductionEnablementReadinessRunnerTest {
         assertThrows(NullPointerException.class, () -> runner.runFields(null));
         assertThrows(NullPointerException.class, () -> runner.runBundle(null));
         assertThrows(NullPointerException.class, () -> runner.runBundleFields(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadiness(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadinessFields(null));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadinessRegression(null, validationReport("nullBaselineReadinessKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadinessRegressionFields(null, validationReport("nullBaselineReadinessFieldsKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadinessRegressionRuleArtifact(null, validationReport("nullBaselineReadinessRuleArtifactKernel")));
+        assertThrows(NullPointerException.class, () -> runner.runOptimizerLayerReadinessRegressionRuleArtifactFields(null, validationReport("nullBaselineReadinessRuleArtifactFieldsKernel")));
         assertThrows(NullPointerException.class, () -> runner.runProductionMutationSwitchContract(null));
         assertThrows(NullPointerException.class, () -> runner.runProductionMutationSwitchContractFields(null));
         assertThrows(NullPointerException.class, () -> runner.runOptimizerPromotionConfidenceContract(null));

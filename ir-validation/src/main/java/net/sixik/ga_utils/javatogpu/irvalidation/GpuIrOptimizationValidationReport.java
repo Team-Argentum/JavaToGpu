@@ -247,6 +247,10 @@ public record GpuIrOptimizationValidationReport(
         return GpuIrOptimizerGatePolicyDecision.from(mode, this);
     }
 
+    public GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport optimizerLayerReadinessSummaryReport() {
+        return GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport.from(this);
+    }
+
     /**
      * Short one-line summary intended for javac diagnostics and CI logs.
      */
@@ -338,6 +342,8 @@ public record GpuIrOptimizationValidationReport(
                 + " autoVectorizationReadinessVerdict=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().verdict()
                 + " autoVectorizationReadinessReadyForPrototypeRewrite=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().readyForPrototypeRewrite()
                 + " autoVectorizationReadinessBlockingReasons=" + autoVectorizationArtifactSnapshot().readinessSummaryReport().blockingReasons()
+                + " optimizerLayerReadinessVerdict=" + optimizerLayerReadinessSummaryReport().verdict()
+                + " optimizerLayerReadinessBlockingLayers=" + optimizerLayerReadinessSummaryReport().blockingLayers()
                 + " autoVectorizationHasPolicyBlockedRewrite=" + autoVectorizationPreview.hasPolicyBlockedRewrite()
                 + " autoVectorizationRewritePolicyCanRewrite=" + autoVectorizationPreview.rewritePolicy().canRewrite()
                 + " autoVectorizationRewritePolicyBlockingGuards=" + autoVectorizationPreview.rewritePolicy().blockingGuards().size()
@@ -390,6 +396,7 @@ public record GpuIrOptimizationValidationReport(
                 + " cseSimpleArithmeticLiteralPromotionReadiness={" + commonSubexpressionLiteralPromotionReadinessSummaryReport.summary() + "}"
                 + " cseSimpleArithmeticLiteralConsistencyCheck={" + commonSubexpressionLiteralConsistencyCheckReport.summary() + "}"
                 + " cseRewritePolicy={" + commonSubexpressionArtifactSnapshot().rewritePolicy().summary() + "}"
+                + " optimizerLayerReadiness={" + optimizerLayerReadinessSummaryReport().summary() + "}"
                 + firstCommonSubexpressionSkippedDominanceSummary()
                 .map(summary -> " cseFirstSkippedDominance={" + summary + "}")
                 .orElse("")

@@ -97,9 +97,12 @@ public record GpuIrOptimizationValidationOptimizerValidationBundle(
         values.put("optimizerValidationBundleEnablementPolicyVerdict", enablementArtifact.policy().verdict());
         values.put("optimizerValidationBundleGateFirstBlockingReason", enablementGate.firstBlockingReason().orElse(""));
         values.put("optimizerValidationBundleGateFirstRemainingWork", enablementGate.firstRemainingWork().orElse(""));
+        values.put("optimizerValidationBundleLayerReadinessVerdict", validationReport.optimizerLayerReadinessSummaryReport().verdict());
+        values.put("optimizerValidationBundleLayerReadinessFirstBlockingLayer", validationReport.optimizerLayerReadinessSummaryReport().firstBlockingLayer());
         values.put("optimizerValidationBundleCiSummaryLine", ciSummaryLine());
         values.put("optimizerValidationBundleSummary", summary());
         enablementArtifact.putArtifactFields(values);
+        values.putAll(validationReport.optimizerLayerReadinessSummaryReport().artifactFields());
         values.putAll(enablementGate.artifactFields());
         values.putAll(productionPreflightDecision().artifactFields());
         values.putAll(productionMutationSwitchContract().artifactFields());
@@ -124,6 +127,8 @@ public record GpuIrOptimizationValidationOptimizerValidationBundle(
                 + " ruleArtifactVerdict=" + enablementArtifact.ruleArtifact().verdict()
                 + " ruleArtifactAccepted=" + enablementArtifact.accepted()
                 + " enablementPolicyVerdict=" + enablementArtifact.policy().verdict()
+                + " layerReadinessVerdict=" + validationReport.optimizerLayerReadinessSummaryReport().verdict()
+                + " layerReadinessBlockingLayers=" + validationReport.optimizerLayerReadinessSummaryReport().blockingLayers()
                 + " gateVerdict=" + enablementGate.verdict()
                 + " gateBlockingReasons=" + enablementGate.blockingReasons()
                 + " gateRemainingWork=" + enablementGate.remainingWork();

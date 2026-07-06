@@ -55,6 +55,7 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.putAll(report.optimizerGatePolicyDecision(mode(request.mode())).artifactFields("optimizerGatePolicy"));
         values.put("optimizerDiagnostics", Integer.toString(report.optimizerDiagnosticCount()));
         values.put("hasOptimizerDiagnostics", Boolean.toString(report.hasOptimizerDiagnostics()));
+        values.putAll(report.optimizerLayerReadinessSummaryReport().artifactFields("optimizerLayerReadiness"));
         GpuIrRuntimeEquivalenceDiagnosticFamilies.putRollupArtifactFields(
                 values,
                 "runtimeEquivalence",

@@ -209,6 +209,25 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
         assertEntryValue(entries, "optimizerGatePolicySource", "none");
         assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
+        assertEntryValue(entries, "optimizerLayerReadinessVerdict", "blocked");
+        assertEntryValue(entries, "optimizerLayerReadinessAllLayersReady", "false");
+        assertEntryValue(entries, "optimizerLayerReadinessHasBlockingLayers", "true");
+        assertEntryValue(
+                entries,
+                "optimizerLayerReadinessLayerOrder",
+                "safety,optimizerGate,cse,cseLiteralPromotion,autoVectorizationProofLayers,autoVectorization"
+        );
+        assertEntryValue(entries, "optimizerLayerReadinessPresentLayers", "safety,cseLiteralPromotion,autoVectorization");
+        assertEntryValue(entries, "optimizerLayerReadinessBlockingLayers", "cseLiteralPromotion,autoVectorization");
+        assertEntryValue(entries, "optimizerLayerReadinessBlockingLayerCount", "2");
+        assertEntryValue(entries, "optimizerLayerReadinessReadyLayerCount", "1");
+        assertEntryValue(entries, "optimizerLayerReadinessFirstBlockingLayer", "cseLiteralPromotion");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.safety", "ready");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.optimizerGate", "notPresent");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.cse", "notPresent");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.cseLiteralPromotion", "blocked");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.autoVectorizationProofLayers", "notPresent");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.autoVectorization", "blocked");
         assertEntryValue(entries, "runtimeEquivalenceDiagnostics", "1");
         assertEntryValue(entries, "hasRuntimeEquivalenceDiagnostics", "true");
         assertEntryValue(entries, "runtimeEquivalenceDiagnosticFamilyCounts", "{other=1}");
@@ -614,6 +633,12 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "optimizerGatePolicyBlocked", "false");
         assertEntryValue(entries, "optimizerGatePolicySource", "none");
         assertEntryValue(entries, "optimizerGatePolicyFamily", "none");
+        assertEntryValue(entries, "optimizerLayerReadinessVerdict", "blocked");
+        assertEntryValue(entries, "optimizerLayerReadinessBlockingLayers", "optimizerGate,cseLiteralPromotion,autoVectorizationProofLayers,autoVectorization");
+        assertEntryValue(entries, "optimizerLayerReadinessFirstBlockingLayer", "optimizerGate");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.optimizerGate", "blocked");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.autoVectorizationProofLayers", "blocked");
+        assertEntryValue(entries, "optimizerLayerReadinessLayer.autoVectorization", "blocked");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "blockedByGuard");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
         assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "blockedByMultipleProofs");

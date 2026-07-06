@@ -20,6 +20,8 @@ public final class GpuIrOptimizationValidationRules {
             "autoVectorization.prototypePrePostRuntimeEquivalenceEvidence";
     private static final String AUTO_VECTORIZATION_PROTOTYPE_PRE_POST_RUNTIME_EQUIVALENCE_GATE_ID =
             "autoVectorization.prototypePrePostRuntimeEquivalenceGate";
+    private static final String OPTIMIZER_LAYER_READINESS_REGRESSION_GATE_ID =
+            "optimizer.layerReadinessRegressionGate";
 
     private GpuIrOptimizationValidationRules() {
     }
@@ -250,6 +252,47 @@ public final class GpuIrOptimizationValidationRules {
         };
     }
 
+    public static GpuIrOptimizationValidationRule optimizerLayerReadinessRegressionGate(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline
+    ) {
+        Objects.requireNonNull(baseline, "baseline");
+        return new GpuIrOptimizationValidationRule() {
+            @Override
+            public String id() {
+                return OPTIMIZER_LAYER_READINESS_REGRESSION_GATE_ID;
+            }
+
+            @Override
+            public GpuIrOptimizationValidationRuleResult evaluate(GpuIrOptimizationValidationRuleContext context) {
+                GpuIrOptimizationValidationOptimizerLayerReadinessRegressionReport regression =
+                        GpuIrOptimizationValidationOptimizerLayerReadinessRegressionReport.from(
+                                baseline,
+                                context.report().optimizerLayerReadinessSummaryReport()
+                        );
+                Map<String, String> metadata = optimizerLayerReadinessRegressionMetadata(context, regression);
+                if (regression.regressed()) {
+                    return GpuIrOptimizationValidationRuleResult.failed(
+                            OPTIMIZER_LAYER_READINESS_REGRESSION_GATE_ID,
+                            "method regressed against optimizer layer readiness baseline",
+                            metadata
+                    );
+                }
+                if (regression.improved() || !regression.unchanged()) {
+                    return GpuIrOptimizationValidationRuleResult.warned(
+                            OPTIMIZER_LAYER_READINESS_REGRESSION_GATE_ID,
+                            "method changed against optimizer layer readiness baseline",
+                            metadata
+                    );
+                }
+                return GpuIrOptimizationValidationRuleResult.passed(
+                        OPTIMIZER_LAYER_READINESS_REGRESSION_GATE_ID,
+                        "method matches optimizer layer readiness baseline",
+                        metadata
+                );
+            }
+        };
+    }
+
     public static GpuIrOptimizationValidationRuleRegistry defaultRegistry() {
         return GpuIrOptimizationValidationRuleRegistry.of(defaultRules());
     }
@@ -276,6 +319,12 @@ public final class GpuIrOptimizationValidationRules {
         );
     }
 
+    public static GpuIrOptimizationValidationRuleRegistry optimizerLayerReadinessRegressionRegistry(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline
+    ) {
+        return GpuIrOptimizationValidationRuleRegistry.of(optimizerLayerReadinessRegressionRules(baseline));
+    }
+
     public static List<GpuIrOptimizationValidationRule> runtimeEquivalenceEvidenceRules() {
         return List.of(
                 cseLiteralRuntimeEquivalenceEvidence(),
@@ -298,6 +347,12 @@ public final class GpuIrOptimizationValidationRules {
                 autoVectorizationPrototypePrePostRuntimeEquivalenceEvidence(prePostRuntimeEquivalenceReport),
                 autoVectorizationPrototypePrePostRuntimeEquivalenceGate(prePostRuntimeEquivalenceReport)
         );
+    }
+
+    public static List<GpuIrOptimizationValidationRule> optimizerLayerReadinessRegressionRules(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline
+    ) {
+        return List.of(optimizerLayerReadinessRegressionGate(baseline));
     }
 
     private static Map<String, String> safetyMetadata(GpuIrOptimizationValidationRuleContext context) {
@@ -424,6 +479,35 @@ public final class GpuIrOptimizationValidationRules {
         if (!runtimeEquivalenceReport.firstDiagnostic().isBlank()) {
             metadata.put("runtimeEquivalenceFirstDiagnostic", runtimeEquivalenceReport.firstDiagnostic());
         }
+        return metadata;
+    }
+
+    private static Map<String, String> optimizerLayerReadinessRegressionMetadata(
+            GpuIrOptimizationValidationRuleContext context,
+            GpuIrOptimizationValidationOptimizerLayerReadinessRegressionReport regression
+    ) {
+        Map<String, String> metadata = baseMetadata(context);
+        metadata.put("regressionOutcome", regression.outcome());
+        metadata.put("regressionImproved", Boolean.toString(regression.improved()));
+        metadata.put("regressionRegressed", Boolean.toString(regression.regressed()));
+        metadata.put("regressionUnchanged", Boolean.toString(regression.unchanged()));
+        metadata.put("baselineVerdict", regression.baseline().verdict());
+        metadata.put("currentVerdict", regression.current().verdict());
+        metadata.put("baselineBlockingLayerCount", Integer.toString(regression.baselineBlockingLayerCount()));
+        metadata.put("currentBlockingLayerCount", Integer.toString(regression.currentBlockingLayerCount()));
+        metadata.put("blockingLayerDelta", Integer.toString(regression.blockingLayerDelta()));
+        metadata.put("baselineReadyLayerCount", Integer.toString(regression.baselineReadyLayerCount()));
+        metadata.put("currentReadyLayerCount", Integer.toString(regression.currentReadyLayerCount()));
+        metadata.put("readyLayerDelta", Integer.toString(regression.readyLayerDelta()));
+        metadata.put("improvedLayerCount", Integer.toString(regression.improvedLayerCount()));
+        metadata.put("improvedLayers", String.join(",", regression.improvedLayers()));
+        metadata.put("regressedLayerCount", Integer.toString(regression.regressedLayerCount()));
+        metadata.put("regressedLayers", String.join(",", regression.regressedLayers()));
+        metadata.put("changedLayerCount", Integer.toString(regression.changedLayerCount()));
+        metadata.put("changedLayers", String.join(",", regression.changedLayers()));
+        regression.firstChangedLayer().ifPresent(layer -> metadata.put("firstChangedLayer", layer));
+        regression.firstImprovedLayer().ifPresent(layer -> metadata.put("firstImprovedLayer", layer));
+        regression.firstRegressedLayer().ifPresent(layer -> metadata.put("firstRegressedLayer", layer));
         return metadata;
     }
 

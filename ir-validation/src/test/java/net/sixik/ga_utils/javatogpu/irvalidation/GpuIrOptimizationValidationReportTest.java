@@ -109,6 +109,8 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.compactSummary().contains("autoVectorizationReadinessVerdict=notReady/noCandidates"));
         assertTrue(report.compactSummary().contains("autoVectorizationReadinessReadyForPrototypeRewrite=false"));
         assertTrue(report.compactSummary().contains("autoVectorizationReadinessBlockingReasons=[noRewriteCandidates, rewritePolicyBlocksRewrite, dryRunNotReady]"));
+        assertTrue(report.compactSummary().contains("optimizerLayerReadinessVerdict=blocked"));
+        assertTrue(report.compactSummary().contains("optimizerLayerReadinessBlockingLayers=[cseLiteralPromotion, autoVectorization]"));
         assertTrue(report.compactSummary().contains("autoVectorizationVectorTypeCounts={}"));
         assertTrue(report.compactSummary().contains("autoVectorizationUniqueVectorTypes=0"));
         assertTrue(report.compactSummary().contains("autoVectorizationWarningFamilyCounts={}"));
@@ -139,6 +141,8 @@ class GpuIrOptimizationValidationReportTest {
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralPromotionChecklist={"));
         assertTrue(report.detailedSummary().contains("cseSimpleArithmeticLiteralConsistencyCheck={"));
         assertTrue(report.detailedSummary().contains("cseRewritePolicy={"));
+        assertTrue(report.detailedSummary().contains("optimizerLayerReadiness={"));
+        assertTrue(report.detailedSummary().contains("optimizer layers blocked method=kernel"));
         assertTrue(report.detailedSummary().contains("CSE rewrite policy method=kernel"));
         assertTrue(report.detailedSummary().contains("successful=false"));
         assertTrue(report.detailedSummary().contains("replacement loopLocation expected=stmt[0] actual=stmt[1]"));
