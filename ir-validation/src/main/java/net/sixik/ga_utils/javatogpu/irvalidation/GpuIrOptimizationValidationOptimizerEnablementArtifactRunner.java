@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
 
@@ -85,6 +87,141 @@ public final class GpuIrOptimizationValidationOptimizerEnablementArtifactRunner 
         return runOptimizerLayerReadiness(validationReport).artifactFields();
     }
 
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot runOptimizerLayerReadinessBaselineSnapshot(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot.from(
+                runOptimizerLayerReadiness(validationReport)
+        );
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineSnapshotFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerLayerReadinessBaselineSnapshot(validationReport).artifactFields();
+    }
+
+    public void saveOptimizerLayerReadinessBaselineSnapshot(
+            Path path,
+            GpuIrOptimizationValidationReport validationReport
+    ) throws IOException {
+        GpuIrOptimizationValidationOptimizerLayerReadinessBaselinePropertiesStore.save(
+                path,
+                runOptimizerLayerReadinessBaselineSnapshot(validationReport)
+        );
+    }
+
+    public Map<String, String> loadOptimizerLayerReadinessBaselineSnapshotFields(
+            Path path
+    ) throws IOException {
+        return GpuIrOptimizationValidationOptimizerLayerReadinessBaselinePropertiesStore.loadFields(path);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFailClosedFields(
+            Path baselinePath,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) throws IOException {
+        return runOptimizerLayerReadinessBaselineCiFailClosedFields(
+                loadOptimizerLayerReadinessBaselineSnapshotFields(baselinePath),
+                currentValidationReport
+        );
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineComparisonReport runOptimizerLayerReadinessBaselineComparison(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Objects.requireNonNull(baseline, "baseline");
+        return GpuIrOptimizationValidationOptimizerLayerReadinessBaselineComparisonReport.from(
+                baseline,
+                runOptimizerLayerReadiness(currentValidationReport)
+        );
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineComparisonReport runOptimizerLayerReadinessBaselineComparison(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessBaselineComparison(
+                GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot.fromArtifactFields(baselineFields),
+                currentValidationReport
+        );
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineComparisonFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessBaselineComparison(baseline, currentValidationReport).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineComparisonFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessBaselineComparison(baselineFields, currentValidationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary runOptimizerLayerReadinessBaselineCi(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return new GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary(
+                runOptimizerLayerReadinessBaselineComparison(baseline, currentValidationReport)
+        );
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary runOptimizerLayerReadinessBaselineCi(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return new GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary(
+                runOptimizerLayerReadinessBaselineComparison(baselineFields, currentValidationReport)
+        );
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Map<String, String> values = new java.util.LinkedHashMap<>();
+        GpuIrOptimizationValidationOptimizerLayerReadinessBaselineComparisonReport comparison =
+                runOptimizerLayerReadinessBaselineComparison(baseline, currentValidationReport);
+        values.putAll(comparison.artifactFields());
+        values.putAll(new GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary(comparison).artifactFields());
+        return Map.copyOf(values);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Map<String, String> values = new java.util.LinkedHashMap<>();
+        GpuIrOptimizationValidationOptimizerLayerReadinessBaselineComparisonReport comparison =
+                runOptimizerLayerReadinessBaselineComparison(baselineFields, currentValidationReport);
+        values.putAll(comparison.artifactFields());
+        values.putAll(new GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary(comparison).artifactFields());
+        return Map.copyOf(values);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFailClosedFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Objects.requireNonNull(baselineFields, "baselineFields");
+        Objects.requireNonNull(currentValidationReport, "currentValidationReport");
+        try {
+            return runOptimizerLayerReadinessBaselineCiFields(baselineFields, currentValidationReport);
+        } catch (RuntimeException failure) {
+            return GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary.invalidBaselineArtifactFields(
+                    "optimizerLayerReadinessBaselineCi",
+                    currentValidationReport.methodName(),
+                    baselineFields.get("optimizerLayerReadinessBaselineSnapshotMethod"),
+                    failure
+            );
+        }
+    }
+
     public GpuIrOptimizationValidationOptimizerLayerReadinessRegressionReport runOptimizerLayerReadinessRegression(
             GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
             GpuIrOptimizationValidationReport currentValidationReport
@@ -120,6 +257,49 @@ public final class GpuIrOptimizationValidationOptimizerEnablementArtifactRunner 
             GpuIrOptimizationValidationReport currentValidationReport
     ) {
         return runOptimizerLayerReadinessRegressionRuleArtifact(baseline, currentValidationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactAcceptance runOptimizerLayerReadinessRegressionRuleArtifactAcceptance(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return GpuIrOptimizationValidationRuleArtifactAcceptance.from(
+                runOptimizerLayerReadinessRegressionRuleArtifact(baseline, currentValidationReport)
+        );
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRegressionRuleArtifactAcceptanceFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessRegressionRuleArtifactAcceptance(
+                baseline,
+                currentValidationReport
+        ).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRegressionCiFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        Map<String, String> values = new java.util.LinkedHashMap<>();
+        GpuIrOptimizationValidationOptimizerLayerReadinessRegressionReport regression =
+                runOptimizerLayerReadinessRegression(baseline, currentValidationReport);
+        values.putAll(regression.artifactFields());
+        GpuIrOptimizationValidationRuleArtifactReport ruleArtifact = runOptimizerLayerReadinessRegressionRuleArtifact(
+                baseline,
+                currentValidationReport
+        );
+        values.putAll(ruleArtifact.artifactFields());
+        GpuIrOptimizationValidationRuleArtifactAcceptance acceptance =
+                GpuIrOptimizationValidationRuleArtifactAcceptance.from(ruleArtifact);
+        values.putAll(acceptance.artifactFields());
+        values.putAll(new GpuIrOptimizationValidationOptimizerLayerReadinessRegressionCiSummary(
+                regression,
+                ruleArtifact,
+                acceptance
+        ).artifactFields());
+        return Map.copyOf(values);
     }
 
     public GpuIrOptimizationValidationProductionEnablementPreflightDecision runProductionPreflight(

@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.irvalidation;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
 
@@ -65,6 +67,107 @@ public final class GpuIrOptimizationValidationProductionEnablementReadinessRunne
         return runOptimizerLayerReadiness(validationReport).artifactFields();
     }
 
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot runOptimizerLayerReadinessBaselineSnapshot(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineSnapshot(validationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineSnapshotFields(
+            GpuIrOptimizationValidationReport validationReport
+    ) {
+        return runOptimizerLayerReadinessBaselineSnapshot(validationReport).artifactFields();
+    }
+
+    public void saveOptimizerLayerReadinessBaselineSnapshot(
+            Path path,
+            GpuIrOptimizationValidationReport validationReport
+    ) throws IOException {
+        enablementRunner.saveOptimizerLayerReadinessBaselineSnapshot(path, validationReport);
+    }
+
+    public Map<String, String> loadOptimizerLayerReadinessBaselineSnapshotFields(
+            Path path
+    ) throws IOException {
+        return enablementRunner.loadOptimizerLayerReadinessBaselineSnapshotFields(path);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFailClosedFields(
+            Path baselinePath,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) throws IOException {
+        return enablementRunner.runOptimizerLayerReadinessBaselineCiFailClosedFields(
+                baselinePath,
+                currentValidationReport
+        );
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineComparisonReport runOptimizerLayerReadinessBaselineComparison(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineComparison(baseline, currentValidationReport);
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineComparisonReport runOptimizerLayerReadinessBaselineComparison(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineComparison(baselineFields, currentValidationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineComparisonFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessBaselineComparison(baseline, currentValidationReport).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineComparisonFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessBaselineComparison(baselineFields, currentValidationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary runOptimizerLayerReadinessBaselineCi(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineCi(baseline, currentValidationReport);
+    }
+
+    public GpuIrOptimizationValidationOptimizerLayerReadinessBaselineCiSummary runOptimizerLayerReadinessBaselineCi(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineCi(baselineFields, currentValidationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessBaselineSnapshot baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineCiFields(baseline, currentValidationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineCiFields(baselineFields, currentValidationReport);
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessBaselineCiFailClosedFields(
+            Map<String, String> baselineFields,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessBaselineCiFailClosedFields(
+                baselineFields,
+                currentValidationReport
+        );
+    }
+
     public GpuIrOptimizationValidationOptimizerLayerReadinessRegressionReport runOptimizerLayerReadinessRegression(
             GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
             GpuIrOptimizationValidationReport currentValidationReport
@@ -94,6 +197,36 @@ public final class GpuIrOptimizationValidationProductionEnablementReadinessRunne
             GpuIrOptimizationValidationReport currentValidationReport
     ) {
         return runOptimizerLayerReadinessRegressionRuleArtifact(baseline, currentValidationReport).artifactFields();
+    }
+
+    public GpuIrOptimizationValidationRuleArtifactAcceptance runOptimizerLayerReadinessRegressionRuleArtifactAcceptance(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessRegressionRuleArtifactAcceptance(
+                baseline,
+                currentValidationReport
+        );
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRegressionRuleArtifactAcceptanceFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return runOptimizerLayerReadinessRegressionRuleArtifactAcceptance(
+                baseline,
+                currentValidationReport
+        ).artifactFields();
+    }
+
+    public Map<String, String> runOptimizerLayerReadinessRegressionCiFields(
+            GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline,
+            GpuIrOptimizationValidationReport currentValidationReport
+    ) {
+        return enablementRunner.runOptimizerLayerReadinessRegressionCiFields(
+                baseline,
+                currentValidationReport
+        );
     }
 
     public GpuIrOptimizationValidationProductionMutationSwitchContract runProductionMutationSwitchContract(

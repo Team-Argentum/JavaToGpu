@@ -5,7 +5,11 @@ import org.junit.jupiter.api.Test;
 import net.sixik.ga_utils.javatogpu.frontend.ir.expression.GpuIrVariableRef;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclaration;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -630,6 +634,473 @@ class GpuIrOptimizationValidationRuleArtifactContractTest {
         assertEquals("safety,optimizerGate", fields.get("validationRulesRegistryResult.0.Metadata.regressedLayers"));
         assertEquals("safety", fields.get("validationRulesRegistryResult.0.Metadata.firstRegressedLayer"));
         assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+    }
+
+    @Test
+    void optimizerLayerReadinessRegressionRuleArtifactWarnsWhenCurrentSnapshotImproves() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        GpuIrOptimizationValidationReport baselineReport = validate(new GpuIrMethod(
+                "layerRegressionWarnContractKernel",
+                List.of(new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")))
+        ));
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline =
+                runner.runOptimizerLayerReadiness(baselineReport);
+
+        Map<String, String> fields = runner.runOptimizerLayerReadinessRegressionRuleArtifactFields(
+                baseline,
+                validationReport("layerRegressionWarnContractKernel")
+        );
+
+        assertEquals("layerRegressionWarnContractKernel", fields.get("validationRulesMethod"));
+        assertEquals("warn", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals("0", fields.get("validationRulesFailed"));
+        assertEquals("1", fields.get("validationRulesWarnings"));
+        assertEquals("0", fields.get("validationRulesBlocking"));
+        assertEquals("false", fields.get("validationRulesHasFailures"));
+        assertEquals("true", fields.get("validationRulesHasWarnings"));
+        assertEquals("false", fields.get("validationRulesHasBlockingResults"));
+        assertEquals(
+                "optimizer.layerReadinessRegressionGate",
+                fields.get("validationRulesWarningRuleIds")
+        );
+        assertEquals(
+                "[optimizer.layerReadinessRegressionGate=warn]",
+                fields.get("validationRulesRuleIndex")
+        );
+        assertEquals(
+                "[optimizer.layerReadinessRegressionGate=warn]",
+                fields.get("validationRulesWarningRuleIndex")
+        );
+        assertEquals("warn", fields.get("validationRulesRegistryResult.0.Status"));
+        assertEquals("false", fields.get("validationRulesRegistryResult.0.Blocking"));
+        assertEquals("improved", fields.get("validationRulesRegistryResult.0.Metadata.regressionOutcome"));
+        assertEquals("true", fields.get("validationRulesRegistryResult.0.Metadata.regressionImproved"));
+        assertEquals("false", fields.get("validationRulesRegistryResult.0.Metadata.regressionRegressed"));
+        assertEquals("false", fields.get("validationRulesRegistryResult.0.Metadata.regressionUnchanged"));
+        assertEquals("-2", fields.get("validationRulesRegistryResult.0.Metadata.blockingLayerDelta"));
+        assertEquals("1", fields.get("validationRulesRegistryResult.0.Metadata.readyLayerDelta"));
+        assertEquals("safety,optimizerGate", fields.get("validationRulesRegistryResult.0.Metadata.improvedLayers"));
+        assertEquals("safety", fields.get("validationRulesRegistryResult.0.Metadata.firstImprovedLayer"));
+        assertEquals("true", fields.get("validationRulesConsistency.Consistent"));
+    }
+
+    @Test
+    void optimizerLayerReadinessRegressionRuleArtifactAcceptanceKeepsStableCiConsumptionKeys() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport unchangedBaseline =
+                runner.runOptimizerLayerReadiness(validationReport("layerRegressionAcceptancePassContractKernel"));
+        GpuIrOptimizationValidationReport improvedBaselineReport = validate(new GpuIrMethod(
+                "layerRegressionAcceptanceWarnContractKernel",
+                List.of(new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")))
+        ));
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport improvedBaseline =
+                runner.runOptimizerLayerReadiness(improvedBaselineReport);
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport regressionBaseline =
+                runner.runOptimizerLayerReadiness(validationReport("layerRegressionAcceptanceFailContractKernel"));
+        GpuIrOptimizationValidationReport regressedCurrent = validate(new GpuIrMethod(
+                "layerRegressionAcceptanceFailContractKernel",
+                List.of(new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")))
+        ));
+
+        Map<String, String> passFields = runner.runOptimizerLayerReadinessRegressionRuleArtifactAcceptanceFields(
+                unchangedBaseline,
+                validationReport("layerRegressionAcceptancePassContractKernel")
+        );
+        Map<String, String> warnFields = runner.runOptimizerLayerReadinessRegressionRuleArtifactAcceptanceFields(
+                improvedBaseline,
+                validationReport("layerRegressionAcceptanceWarnContractKernel")
+        );
+        Map<String, String> failFields = runner.runOptimizerLayerReadinessRegressionRuleArtifactAcceptanceFields(
+                regressionBaseline,
+                regressedCurrent
+        );
+
+        assertContainsKeys(passFields, Set.of(
+                "validationRulesAcceptanceMethod",
+                "validationRulesAcceptanceVerdict",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceRejected",
+                "validationRulesAcceptanceAcceptedWithWarnings",
+                "validationRulesAcceptanceReason",
+                "validationRulesAcceptanceCiSummaryLine"
+        ));
+        assertEquals("layerRegressionAcceptancePassContractKernel", passFields.get("validationRulesAcceptanceMethod"));
+        assertEquals("pass", passFields.get("validationRulesAcceptanceVerdict"));
+        assertEquals("true", passFields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("false", passFields.get("validationRulesAcceptanceRejected"));
+        assertEquals("false", passFields.get("validationRulesAcceptanceAcceptedWithWarnings"));
+        assertEquals("accepted/pass", passFields.get("validationRulesAcceptanceReason"));
+
+        assertEquals("layerRegressionAcceptanceWarnContractKernel", warnFields.get("validationRulesAcceptanceMethod"));
+        assertEquals("warn", warnFields.get("validationRulesAcceptanceVerdict"));
+        assertEquals("true", warnFields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("false", warnFields.get("validationRulesAcceptanceRejected"));
+        assertEquals("true", warnFields.get("validationRulesAcceptanceAcceptedWithWarnings"));
+        assertEquals("accepted/warningsPresent", warnFields.get("validationRulesAcceptanceReason"));
+        assertEquals(
+                "optimizer.layerReadinessRegressionGate",
+                warnFields.get("validationRulesAcceptanceFirstWarningRuleId")
+        );
+
+        assertEquals("layerRegressionAcceptanceFailContractKernel", failFields.get("validationRulesAcceptanceMethod"));
+        assertEquals("fail", failFields.get("validationRulesAcceptanceVerdict"));
+        assertEquals("false", failFields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("true", failFields.get("validationRulesAcceptanceRejected"));
+        assertEquals("false", failFields.get("validationRulesAcceptanceAcceptedWithWarnings"));
+        assertEquals("rejected/blockingResultsPresent", failFields.get("validationRulesAcceptanceReason"));
+        assertEquals(
+                "optimizer.layerReadinessRegressionGate",
+                failFields.get("validationRulesAcceptanceFirstBlockingRuleId")
+        );
+    }
+
+    @Test
+    void optimizerLayerReadinessRegressionCiFieldsKeepStableCombinedConsumptionKeys() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        GpuIrOptimizationValidationOptimizerLayerReadinessSummaryReport baseline =
+                runner.runOptimizerLayerReadiness(validationReport("layerRegressionCiContractKernel"));
+
+        Map<String, String> fields = runner.runOptimizerLayerReadinessRegressionCiFields(
+                baseline,
+                validationReport("layerRegressionCiContractKernel")
+        );
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerLayerReadinessRegressionMethod",
+                "optimizerLayerReadinessRegressionOutcome",
+                "optimizerLayerReadinessRegressionUnchanged",
+                "optimizerLayerReadinessRegressionBlockingLayerDelta",
+                "optimizerLayerReadinessRegressionCiMethod",
+                "optimizerLayerReadinessRegressionCiOutcome",
+                "optimizerLayerReadinessRegressionCiRuleVerdict",
+                "optimizerLayerReadinessRegressionCiAccepted",
+                "optimizerLayerReadinessRegressionCiAcceptanceReason",
+                "optimizerLayerReadinessRegressionCiCiSummaryLine",
+                "validationRulesMethod",
+                "validationRulesVerdict",
+                "validationRulesPassed",
+                "validationRulesRegistryResult.0.RuleId",
+                "validationRulesRegistryResult.0.Metadata.regressionOutcome",
+                "validationRulesAcceptanceMethod",
+                "validationRulesAcceptanceVerdict",
+                "validationRulesAcceptanceAccepted",
+                "validationRulesAcceptanceReason"
+        ));
+        assertEquals("layerRegressionCiContractKernel", fields.get("optimizerLayerReadinessRegressionMethod"));
+        assertEquals("unchanged", fields.get("optimizerLayerReadinessRegressionOutcome"));
+        assertEquals("true", fields.get("optimizerLayerReadinessRegressionUnchanged"));
+        assertEquals("0", fields.get("optimizerLayerReadinessRegressionBlockingLayerDelta"));
+        assertEquals("layerRegressionCiContractKernel", fields.get("optimizerLayerReadinessRegressionCiMethod"));
+        assertEquals("unchanged", fields.get("optimizerLayerReadinessRegressionCiOutcome"));
+        assertEquals("pass", fields.get("optimizerLayerReadinessRegressionCiRuleVerdict"));
+        assertEquals("true", fields.get("optimizerLayerReadinessRegressionCiAccepted"));
+        assertEquals("accepted/pass", fields.get("optimizerLayerReadinessRegressionCiAcceptanceReason"));
+        assertTrue(fields.get("optimizerLayerReadinessRegressionCiCiSummaryLine").contains("outcome=unchanged"));
+        assertTrue(fields.get("optimizerLayerReadinessRegressionCiCiSummaryLine").contains("ruleVerdict=pass"));
+        assertTrue(fields.get("optimizerLayerReadinessRegressionCiCiSummaryLine").contains("accepted=true"));
+        assertEquals("layerRegressionCiContractKernel", fields.get("validationRulesMethod"));
+        assertEquals("pass", fields.get("validationRulesVerdict"));
+        assertEquals("true", fields.get("validationRulesPassed"));
+        assertEquals(
+                "optimizer.layerReadinessRegressionGate",
+                fields.get("validationRulesRegistryResult.0.RuleId")
+        );
+        assertEquals("unchanged", fields.get("validationRulesRegistryResult.0.Metadata.regressionOutcome"));
+        assertEquals("layerRegressionCiContractKernel", fields.get("validationRulesAcceptanceMethod"));
+        assertEquals("pass", fields.get("validationRulesAcceptanceVerdict"));
+        assertEquals("true", fields.get("validationRulesAcceptanceAccepted"));
+        assertEquals("accepted/pass", fields.get("validationRulesAcceptanceReason"));
+    }
+
+    @Test
+    void optimizerLayerReadinessBaselineSnapshotKeepsStableStorageAndCompareKeys() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+
+        Map<String, String> baselineFields = runner.runOptimizerLayerReadinessBaselineSnapshotFields(
+                validationReport("layerStoredBaselineContractKernel")
+        );
+        Map<String, String> comparisonFields = runner.runOptimizerLayerReadinessBaselineComparisonFields(
+                baselineFields,
+                validationReport("layerStoredBaselineContractKernel")
+        );
+
+        assertContainsKeys(baselineFields, Set.of(
+                "optimizerLayerReadinessBaselineSnapshotMethod",
+                "optimizerLayerReadinessBaselineSnapshotVerdict",
+                "optimizerLayerReadinessBaselineSnapshotLayerOrder",
+                "optimizerLayerReadinessBaselineSnapshotPresentLayers",
+                "optimizerLayerReadinessBaselineSnapshotBlockingLayers",
+                "optimizerLayerReadinessBaselineSnapshotBlockingLayerCount",
+                "optimizerLayerReadinessBaselineSnapshotReadyLayerCount",
+                "optimizerLayerReadinessBaselineSnapshotFirstBlockingLayer",
+                "optimizerLayerReadinessBaselineSnapshotLayerStates",
+                "optimizerLayerReadinessBaselineSnapshotLayer.safety",
+                "optimizerLayerReadinessBaselineSnapshotLayer.cseLiteralPromotion",
+                "optimizerLayerReadinessBaselineSnapshotLayer.autoVectorization",
+                "optimizerLayerReadinessBaselineSnapshotCiSummaryLine",
+                "optimizerLayerReadinessBaselineSnapshotSummary"
+        ));
+        assertEquals("layerStoredBaselineContractKernel", baselineFields.get("optimizerLayerReadinessBaselineSnapshotMethod"));
+        assertEquals("blocked", baselineFields.get("optimizerLayerReadinessBaselineSnapshotVerdict"));
+        assertEquals(
+                "safety,optimizerGate,cse,cseLiteralPromotion,autoVectorizationProofLayers,autoVectorization",
+                baselineFields.get("optimizerLayerReadinessBaselineSnapshotLayerOrder")
+        );
+        assertEquals("ready", baselineFields.get("optimizerLayerReadinessBaselineSnapshotLayer.safety"));
+        assertEquals("blocked", baselineFields.get("optimizerLayerReadinessBaselineSnapshotLayer.cseLiteralPromotion"));
+        assertEquals("blocked", baselineFields.get("optimizerLayerReadinessBaselineSnapshotLayer.autoVectorization"));
+
+        assertContainsKeys(comparisonFields, Set.of(
+                "optimizerLayerReadinessBaselineComparisonMethod",
+                "optimizerLayerReadinessBaselineComparisonOutcome",
+                "optimizerLayerReadinessBaselineComparisonImproved",
+                "optimizerLayerReadinessBaselineComparisonRegressed",
+                "optimizerLayerReadinessBaselineComparisonUnchanged",
+                "optimizerLayerReadinessBaselineComparisonBaselineVerdict",
+                "optimizerLayerReadinessBaselineComparisonCurrentVerdict",
+                "optimizerLayerReadinessBaselineComparisonBlockingLayerDelta",
+                "optimizerLayerReadinessBaselineComparisonReadyLayerDelta",
+                "optimizerLayerReadinessBaselineComparisonChangedLayers",
+                "optimizerLayerReadinessBaselineComparisonLayerTransitions",
+                "optimizerLayerReadinessBaselineComparisonLayer.safety",
+                "optimizerLayerReadinessBaselineComparisonLayer.cseLiteralPromotion",
+                "optimizerLayerReadinessBaselineComparisonLayer.autoVectorization",
+                "optimizerLayerReadinessBaselineComparisonCiSummaryLine",
+                "optimizerLayerReadinessBaselineComparisonSummary"
+        ));
+        assertEquals("layerStoredBaselineContractKernel", comparisonFields.get("optimizerLayerReadinessBaselineComparisonMethod"));
+        assertEquals("unchanged", comparisonFields.get("optimizerLayerReadinessBaselineComparisonOutcome"));
+        assertEquals("false", comparisonFields.get("optimizerLayerReadinessBaselineComparisonImproved"));
+        assertEquals("false", comparisonFields.get("optimizerLayerReadinessBaselineComparisonRegressed"));
+        assertEquals("true", comparisonFields.get("optimizerLayerReadinessBaselineComparisonUnchanged"));
+        assertEquals("0", comparisonFields.get("optimizerLayerReadinessBaselineComparisonBlockingLayerDelta"));
+        assertEquals("0", comparisonFields.get("optimizerLayerReadinessBaselineComparisonReadyLayerDelta"));
+        assertEquals("ready->ready", comparisonFields.get("optimizerLayerReadinessBaselineComparisonLayer.safety"));
+        assertEquals("blocked->blocked", comparisonFields.get("optimizerLayerReadinessBaselineComparisonLayer.cseLiteralPromotion"));
+        assertEquals("blocked->blocked", comparisonFields.get("optimizerLayerReadinessBaselineComparisonLayer.autoVectorization"));
+    }
+
+    @Test
+    void optimizerLayerReadinessBaselineComparisonDetectsStoredRegression() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+
+        Map<String, String> baselineFields = runner.runOptimizerLayerReadinessBaselineSnapshotFields(
+                validationReport("layerStoredBaselineRegressionContractKernel")
+        );
+        GpuIrOptimizationValidationReport currentReport = validate(new GpuIrMethod(
+                "layerStoredBaselineRegressionContractKernel",
+                List.of(new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")))
+        ));
+
+        Map<String, String> comparisonFields = runner.runOptimizerLayerReadinessBaselineComparisonFields(
+                baselineFields,
+                currentReport
+        );
+
+        assertEquals(
+                "layerStoredBaselineRegressionContractKernel",
+                comparisonFields.get("optimizerLayerReadinessBaselineComparisonMethod")
+        );
+        assertEquals("regressed", comparisonFields.get("optimizerLayerReadinessBaselineComparisonOutcome"));
+        assertEquals("false", comparisonFields.get("optimizerLayerReadinessBaselineComparisonImproved"));
+        assertEquals("true", comparisonFields.get("optimizerLayerReadinessBaselineComparisonRegressed"));
+        assertEquals("false", comparisonFields.get("optimizerLayerReadinessBaselineComparisonUnchanged"));
+        assertEquals("2", comparisonFields.get("optimizerLayerReadinessBaselineComparisonBlockingLayerDelta"));
+        assertEquals("-1", comparisonFields.get("optimizerLayerReadinessBaselineComparisonReadyLayerDelta"));
+        assertEquals("[safety,optimizerGate]", comparisonFields.get("optimizerLayerReadinessBaselineComparisonRegressedLayers"));
+        assertEquals("safety", comparisonFields.get("optimizerLayerReadinessBaselineComparisonFirstRegressedLayer"));
+        assertEquals("ready->blocked", comparisonFields.get("optimizerLayerReadinessBaselineComparisonLayer.safety"));
+        assertEquals("notPresent->blocked", comparisonFields.get("optimizerLayerReadinessBaselineComparisonLayer.optimizerGate"));
+    }
+
+    @Test
+    void optimizerLayerReadinessBaselineCiFieldsKeepStableConsumptionKeys() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        Map<String, String> baselineFields = runner.runOptimizerLayerReadinessBaselineSnapshotFields(
+                validationReport("layerStoredBaselineCiContractKernel")
+        );
+
+        Map<String, String> unchangedFields = runner.runOptimizerLayerReadinessBaselineCiFields(
+                baselineFields,
+                validationReport("layerStoredBaselineCiContractKernel")
+        );
+        GpuIrOptimizationValidationReport regressedReport = validate(new GpuIrMethod(
+                "layerStoredBaselineCiContractKernel",
+                List.of(new GpuIrVariableDeclaration("int", "value", new GpuIrVariableRef("missing")))
+        ));
+        Map<String, String> regressedFields = runner.runOptimizerLayerReadinessBaselineCiFields(
+                baselineFields,
+                regressedReport
+        );
+
+        assertContainsKeys(unchangedFields, Set.of(
+                "optimizerLayerReadinessBaselineComparisonMethod",
+                "optimizerLayerReadinessBaselineComparisonOutcome",
+                "optimizerLayerReadinessBaselineComparisonBlockingLayerDelta",
+                "optimizerLayerReadinessBaselineCiMethod",
+                "optimizerLayerReadinessBaselineCiOutcome",
+                "optimizerLayerReadinessBaselineCiDecision",
+                "optimizerLayerReadinessBaselineCiAccepted",
+                "optimizerLayerReadinessBaselineCiRejected",
+                "optimizerLayerReadinessBaselineCiFailBuild",
+                "optimizerLayerReadinessBaselineCiBlockingLayerDelta",
+                "optimizerLayerReadinessBaselineCiReadyLayerDelta",
+                "optimizerLayerReadinessBaselineCiChangedLayerCount",
+                "optimizerLayerReadinessBaselineCiRegressedLayerCount",
+                "optimizerLayerReadinessBaselineCiCiSummaryLine",
+                "optimizerLayerReadinessBaselineCiSummary"
+        ));
+        assertEquals("layerStoredBaselineCiContractKernel", unchangedFields.get("optimizerLayerReadinessBaselineCiMethod"));
+        assertEquals("unchanged", unchangedFields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("accepted/noRegression", unchangedFields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("true", unchangedFields.get("optimizerLayerReadinessBaselineCiAccepted"));
+        assertEquals("false", unchangedFields.get("optimizerLayerReadinessBaselineCiRejected"));
+        assertEquals("false", unchangedFields.get("optimizerLayerReadinessBaselineCiFailBuild"));
+        assertEquals("0", unchangedFields.get("optimizerLayerReadinessBaselineCiBlockingLayerDelta"));
+        assertEquals("0", unchangedFields.get("optimizerLayerReadinessBaselineCiRegressedLayerCount"));
+
+        assertEquals("regressed", regressedFields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("fail/regressionDetected", regressedFields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("false", regressedFields.get("optimizerLayerReadinessBaselineCiAccepted"));
+        assertEquals("true", regressedFields.get("optimizerLayerReadinessBaselineCiRejected"));
+        assertEquals("true", regressedFields.get("optimizerLayerReadinessBaselineCiFailBuild"));
+        assertEquals("2", regressedFields.get("optimizerLayerReadinessBaselineCiBlockingLayerDelta"));
+        assertEquals("-1", regressedFields.get("optimizerLayerReadinessBaselineCiReadyLayerDelta"));
+        assertEquals("2", regressedFields.get("optimizerLayerReadinessBaselineCiRegressedLayerCount"));
+        assertEquals("safety", regressedFields.get("optimizerLayerReadinessBaselineCiFirstChangedLayer"));
+        assertEquals("safety", regressedFields.get("optimizerLayerReadinessBaselineCiFirstRegressedLayer"));
+        assertTrue(regressedFields.get("optimizerLayerReadinessBaselineCiCiSummaryLine").contains("failBuild=true"));
+    }
+
+    @Test
+    void optimizerLayerReadinessBaselineCiFailClosesInvalidStoredBaseline() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        Map<String, String> damagedBaselineFields = Map.of(
+                "optimizerLayerReadinessBaselineSnapshotMethod",
+                "layerStoredInvalidBaselineCiContractKernel"
+        );
+
+        Map<String, String> fields = runner.runOptimizerLayerReadinessBaselineCiFailClosedFields(
+                damagedBaselineFields,
+                validationReport("layerStoredInvalidBaselineCiContractKernel")
+        );
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerLayerReadinessBaselineCiMethod",
+                "optimizerLayerReadinessBaselineCiOutcome",
+                "optimizerLayerReadinessBaselineCiDecision",
+                "optimizerLayerReadinessBaselineCiAccepted",
+                "optimizerLayerReadinessBaselineCiRejected",
+                "optimizerLayerReadinessBaselineCiFailBuild",
+                "optimizerLayerReadinessBaselineCiInvalidBaseline",
+                "optimizerLayerReadinessBaselineCiFailureType",
+                "optimizerLayerReadinessBaselineCiFailureMessage",
+                "optimizerLayerReadinessBaselineCiCiSummaryLine",
+                "optimizerLayerReadinessBaselineCiSummary"
+        ));
+        assertEquals("layerStoredInvalidBaselineCiContractKernel", fields.get("optimizerLayerReadinessBaselineCiMethod"));
+        assertEquals("layerStoredInvalidBaselineCiContractKernel", fields.get("optimizerLayerReadinessBaselineCiCurrentMethod"));
+        assertEquals("layerStoredInvalidBaselineCiContractKernel", fields.get("optimizerLayerReadinessBaselineCiBaselineSourceMethod"));
+        assertEquals("invalidBaseline", fields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("fail/invalidBaseline", fields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("false", fields.get("optimizerLayerReadinessBaselineCiAccepted"));
+        assertEquals("true", fields.get("optimizerLayerReadinessBaselineCiRejected"));
+        assertEquals("true", fields.get("optimizerLayerReadinessBaselineCiFailBuild"));
+        assertEquals("true", fields.get("optimizerLayerReadinessBaselineCiInvalidBaseline"));
+        assertEquals("IllegalArgumentException", fields.get("optimizerLayerReadinessBaselineCiFailureType"));
+        assertTrue(fields.get("optimizerLayerReadinessBaselineCiFailureMessage").contains("LayerOrder"));
+        assertTrue(fields.get("optimizerLayerReadinessBaselineCiCiSummaryLine").contains("fail/invalidBaseline"));
+    }
+
+    @Test
+    void optimizerLayerReadinessBaselineCiFailClosesStoredBaselineMethodMismatch() {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        Map<String, String> baselineFields = runner.runOptimizerLayerReadinessBaselineSnapshotFields(
+                validationReport("layerStoredBaselineMismatchContractKernel")
+        );
+
+        Map<String, String> fields = runner.runOptimizerLayerReadinessBaselineCiFailClosedFields(
+                baselineFields,
+                validationReport("layerStoredCurrentMismatchContractKernel")
+        );
+
+        assertContainsKeys(fields, Set.of(
+                "optimizerLayerReadinessBaselineCiMethod",
+                "optimizerLayerReadinessBaselineCiCurrentMethod",
+                "optimizerLayerReadinessBaselineCiBaselineSourceMethod",
+                "optimizerLayerReadinessBaselineCiOutcome",
+                "optimizerLayerReadinessBaselineCiDecision",
+                "optimizerLayerReadinessBaselineCiAccepted",
+                "optimizerLayerReadinessBaselineCiRejected",
+                "optimizerLayerReadinessBaselineCiFailBuild",
+                "optimizerLayerReadinessBaselineCiInvalidBaseline",
+                "optimizerLayerReadinessBaselineCiFailureType",
+                "optimizerLayerReadinessBaselineCiFailureMessage",
+                "optimizerLayerReadinessBaselineCiCiSummaryLine"
+        ));
+        assertEquals("layerStoredCurrentMismatchContractKernel", fields.get("optimizerLayerReadinessBaselineCiMethod"));
+        assertEquals("layerStoredCurrentMismatchContractKernel", fields.get("optimizerLayerReadinessBaselineCiCurrentMethod"));
+        assertEquals("layerStoredBaselineMismatchContractKernel", fields.get("optimizerLayerReadinessBaselineCiBaselineSourceMethod"));
+        assertEquals("invalidBaseline", fields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("fail/invalidBaseline", fields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("false", fields.get("optimizerLayerReadinessBaselineCiAccepted"));
+        assertEquals("true", fields.get("optimizerLayerReadinessBaselineCiRejected"));
+        assertEquals("true", fields.get("optimizerLayerReadinessBaselineCiFailBuild"));
+        assertEquals("true", fields.get("optimizerLayerReadinessBaselineCiInvalidBaseline"));
+        assertEquals("IllegalArgumentException", fields.get("optimizerLayerReadinessBaselineCiFailureType"));
+        assertTrue(fields.get("optimizerLayerReadinessBaselineCiFailureMessage").contains("method must match"));
+        assertTrue(fields.get("optimizerLayerReadinessBaselineCiCiSummaryLine").contains("failBuild=true"));
+        assertTrue(fields.get("optimizerLayerReadinessBaselineCiCiSummaryLine").contains("baselineSourceMethod=layerStoredBaselineMismatchContractKernel"));
+        assertTrue(fields.get("optimizerLayerReadinessBaselineCiCiSummaryLine").contains("currentMethod=layerStoredCurrentMismatchContractKernel"));
+    }
+
+    @Test
+    void optimizerLayerReadinessBaselinePropertiesFileKeepsStableCiWorkflow(@TempDir Path tempDir) throws IOException {
+        GpuIrOptimizationValidationOptimizerEnablementArtifactRunner runner =
+                new GpuIrOptimizationValidationOptimizerEnablementArtifactRunner();
+        Path baselinePath = tempDir.resolve("optimizer-layer-readiness-baseline.properties");
+
+        runner.saveOptimizerLayerReadinessBaselineSnapshot(
+                baselinePath,
+                validationReport("layerStoredBaselineFileContractKernel")
+        );
+        Map<String, String> loadedFields = runner.loadOptimizerLayerReadinessBaselineSnapshotFields(baselinePath);
+        Map<String, String> ciFields = runner.runOptimizerLayerReadinessBaselineCiFailClosedFields(
+                baselinePath,
+                validationReport("layerStoredBaselineFileContractKernel")
+        );
+
+        assertTrue(Files.exists(baselinePath));
+        assertContainsKeys(loadedFields, Set.of(
+                "optimizerLayerReadinessBaselineSnapshotMethod",
+                "optimizerLayerReadinessBaselineSnapshotVerdict",
+                "optimizerLayerReadinessBaselineSnapshotLayerOrder",
+                "optimizerLayerReadinessBaselineSnapshotLayer.safety",
+                "optimizerLayerReadinessBaselineSnapshotLayer.cseLiteralPromotion",
+                "optimizerLayerReadinessBaselineSnapshotLayer.autoVectorization"
+        ));
+        assertContainsKeys(ciFields, Set.of(
+                "optimizerLayerReadinessBaselineComparisonMethod",
+                "optimizerLayerReadinessBaselineComparisonOutcome",
+                "optimizerLayerReadinessBaselineCiMethod",
+                "optimizerLayerReadinessBaselineCiOutcome",
+                "optimizerLayerReadinessBaselineCiDecision",
+                "optimizerLayerReadinessBaselineCiFailBuild"
+        ));
+        assertEquals("layerStoredBaselineFileContractKernel", loadedFields.get("optimizerLayerReadinessBaselineSnapshotMethod"));
+        assertEquals("layerStoredBaselineFileContractKernel", ciFields.get("optimizerLayerReadinessBaselineCiMethod"));
+        assertEquals("unchanged", ciFields.get("optimizerLayerReadinessBaselineCiOutcome"));
+        assertEquals("accepted/noRegression", ciFields.get("optimizerLayerReadinessBaselineCiDecision"));
+        assertEquals("false", ciFields.get("optimizerLayerReadinessBaselineCiFailBuild"));
     }
 
     @Test
