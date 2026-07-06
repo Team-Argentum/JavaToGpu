@@ -502,6 +502,35 @@ class GpuProgramCompilerTest {
         }
     }
 
+    @Test
+    void writeAndRequireCombinedStructuredAsmArtifactSnapshotWritesBeforeFailing() throws IOException {
+        Path classFile = Files.createTempFile("javatogpu-compiler-asm-artifact-require", ".class");
+        Path reportFile = Files.createTempFile("javatogpu-compiler-asm-artifact-require", ".properties");
+        try {
+            Files.write(classFile, classBytesWithArrayLengthMethod());
+
+            AsmFrontendException exception = assertThrows(
+                    AsmFrontendException.class,
+                    () -> GpuProgramCompiler.createDefault()
+                            .writeAndRequireStructuredAsmArtifactSnapshot(classFile, reportFile)
+            );
+            Properties properties = new Properties();
+            try (java.io.InputStream inputStream = Files.newInputStream(reportFile)) {
+                properties.load(inputStream);
+            }
+
+            assertTrue(exception.getMessage().contains("asmFailureReport failed failures=1"));
+            assertEquals("arrayLength", exception.metadata().orElseThrow().family());
+            assertEquals("false", properties.getProperty("asmArtifactReport.successful"));
+            assertEquals("rewriteRequired", properties.getProperty("asmArtifactReport.readiness.verdict"));
+            assertEquals("1", properties.getProperty("asmArtifactReport.failureReport.failureCount"));
+            assertEquals("1", properties.getProperty("asmArtifactReport.shapeInventory.kind.arrayLength"));
+        } finally {
+            Files.deleteIfExists(classFile);
+            Files.deleteIfExists(reportFile);
+        }
+    }
+
     private ParsedGpuMethod parsedMethod(
             String ownerSimpleName,
             String ownerQualifiedName,

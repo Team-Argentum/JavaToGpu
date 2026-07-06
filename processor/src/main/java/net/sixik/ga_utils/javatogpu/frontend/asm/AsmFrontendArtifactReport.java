@@ -39,6 +39,11 @@ public record AsmFrontendArtifactReport(
                 + shapeInventoryReport.riskyShapeCount();
     }
 
+    public AsmFrontendArtifactReport requireSuccessful() {
+        failureReport.requireSuccessful();
+        return this;
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         String safePrefix = prefix == null || prefix.isBlank() ? "asmArtifactReport" : prefix;
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

@@ -515,6 +515,33 @@ class AsmFrontendFailureReporterTest {
         }
     }
 
+    @Test
+    void combinedArtifactRequireSuccessfulReturnsSupportedSnapshot() {
+        MethodNode method = methodNode("kernel", "()V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmFrontendArtifactReport artifactReport = new AsmFrontendArtifactReport(
+                reporter.report(OWNER, method),
+                reporter.inventory(OWNER, method)
+        );
+
+        assertEquals(artifactReport, artifactReport.requireSuccessful());
+    }
+
+    @Test
+    void combinedArtifactRequireSuccessfulFailsWithFirstFailureMetadata() {
+        AsmFrontendArtifactReport artifactReport = reporter.reportArtifactSnapshot(classBytesWithMixedMethods());
+
+        AsmFrontendException exception = assertThrows(AsmFrontendException.class, artifactReport::requireSuccessful);
+
+        assertTrue(exception.getMessage().contains("asmFailureReport failed failures=1"));
+        assertEquals("arrayLength", exception.metadata().orElseThrow().family());
+    }
+
     private AsmGpuMethod asmMethod(String name, String returnType, MethodNode methodNode) {
         return new AsmGpuMethod(
                 OWNER,

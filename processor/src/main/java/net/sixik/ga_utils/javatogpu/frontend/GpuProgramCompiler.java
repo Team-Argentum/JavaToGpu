@@ -227,6 +227,21 @@ public final class GpuProgramCompiler {
         return report;
     }
 
+    public AsmFrontendArtifactReport writeAndRequireStructuredAsmArtifactSnapshot(
+            Path artifact,
+            Path reportFile
+    ) throws IOException {
+        return writeStructuredAsmArtifactSnapshot(artifact, reportFile).requireSuccessful();
+    }
+
+    public AsmFrontendArtifactReport writeAndRequireStructuredAsmArtifactSnapshot(
+            Path artifact,
+            Path reportFile,
+            AsmValidationConfig config
+    ) throws IOException {
+        return writeStructuredAsmArtifactSnapshot(artifact, reportFile, config).requireSuccessful();
+    }
+
     public AsmFrontendFailureReport writeStructuredAsmArtifactReport(Path artifact, Path reportFile) throws IOException {
         AsmFrontendFailureReport report = reportStructuredAsmArtifact(artifact);
         AsmFrontendFailureReportIO.write(reportFile, report);

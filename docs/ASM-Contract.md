@@ -165,6 +165,10 @@ compiler.writeAndRequireStructuredAsmArtifactReport(
 
 It throws `AsmFrontendException` when the report contains unsupported bytecode, while preserving the first failure metadata for diagnostics.
 
+For CI jobs that want the richer combined artifact and the same fail-on-unsupported behavior, use `writeAndRequireStructuredAsmArtifactSnapshot(...)`. It writes `asmArtifactReport.*` fields first, then throws using the nested failure report if unsupported bytecode is present.
+
+The same fail-on-unsupported check is available directly on the snapshot via `artifactReport.requireSuccessful()` for integrations that want to inspect or archive the combined report before deciding whether to continue.
+
 ### Gradle / CI Preflight Example
 
 For a build pipeline, keep the preflight code in a tiny Java entry point and call it from Gradle after `classes` or `jar`.

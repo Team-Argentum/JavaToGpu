@@ -33,6 +33,7 @@ Useful report fields:
 - `asmReport.readiness.firstMigrationBucket`, `asmReport.readiness.migrationBucket.<bucket>`, and `asmReport.readiness.migrationGuidance` group unsupported ASM by migration work such as `arrayMetadata`, `staticDispatchModel`, `objectModel`, or `typeSignatureModel`.
 - `compiler.inventoryStructuredAsmArtifact(path)` produces an `AsmBytecodeShapeInventoryReport` with `asmShapeInventory.*` fields such as `riskyShapeCount`, `kind.<shape>`, `firstRiskyShape`, and per-observation metadata for arbitrary-ASM parser planning.
 - `compiler.reportStructuredAsmArtifactSnapshot(path)` and `compiler.writeStructuredAsmArtifactSnapshot(inputPath, reportPath)` produce one combined `AsmFrontendArtifactReport` / `.properties` snapshot with `asmArtifactReport.*` fields, including nested `readiness.*`, `failureReport.*`, and `shapeInventory.*` sections.
+- `compiler.writeAndRequireStructuredAsmArtifactSnapshot(inputPath, reportPath)` writes the same combined snapshot before failing on unsupported bytecode.
 - For Gradle CI, call `writeAndRequireStructuredAsmArtifactReport(...)` from a small `JavaExec` helper after `classes` or `jar`; the report is still written before the build fails.
 
 When source information is available, `AsmFrontendDiagnosticAdapter` can render `AsmFrontendException` as a Rust-like source snippet while preserving the same `asmFailure.*` metadata fields for tooling.
