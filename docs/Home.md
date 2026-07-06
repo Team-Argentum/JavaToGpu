@@ -31,7 +31,7 @@ This documentation is the public user manual for the current alpha. It focuses o
 
 Recommended public label: `v0.1.0-alpha.1` or equivalent developer preview.
 
-The current evidence set supports an alpha release on NVIDIA OpenCL. It does not yet prove broad production readiness across Intel and AMD OpenCL stacks.
+The current evidence set makes the NVIDIA RTX 5070 OpenCL path operationally proven for repo-local alpha validation. It does not yet prove broad production readiness across Intel and AMD OpenCL stacks.
 
 ## Maintainer Notes
 

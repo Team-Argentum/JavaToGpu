@@ -6,7 +6,7 @@ This guide shows the shortest path from a Java method to an OpenCL-backed GPU ca
 
 - JDK compatible with this Gradle build.
 - A working OpenCL runtime for GPU execution.
-- For the current alpha evidence path, an NVIDIA OpenCL stack is the locally validated target.
+- For the current alpha evidence path, the NVIDIA RTX 5070 OpenCL stack is operationally proven for repo-local validation; Intel and AMD remain future validation targets.
 
 JavaToGpu can still compile and run many tests without a real GPU, but runtime validation requires OpenCL hardware and drivers.
 

@@ -1,6 +1,7 @@
 # Publishing Guide
 
-This guide describes how to publish the `processor` module as the public JavaToGpu Maven artifact.
+This guide describes how to publish the JavaToGpu Maven artifacts: the main `processor` module and
+the optional `ir-validation` strict-build add-on.
 
 ## Artifact Coordinates
 
@@ -10,7 +11,7 @@ artifactId: javatogpu
 version: 0.1.0-alpha.1
 ```
 
-The Gradle project that owns the publication is:
+The Gradle project that owns the main publication is:
 
 ```text
 :processor
@@ -39,6 +40,12 @@ version: 0.1.0-alpha.1
 ```
 
 It contributes an optional compiler IR validation provider through Java `ServiceLoader`. Users add it to the annotation-processor path and enable `-Ajavatogpu.irValidation=diagnostic`, `strictSafety`, or `strictOptimizer` when they want extra lowered-IR checks before OpenCL emission.
+
+The Gradle project that owns the optional publication is:
+
+```text
+:ir-validation
+```
 
 ## Release Dependency Baseline
 
@@ -86,18 +93,21 @@ Before publishing remotely, build the local staging repository:
 
 ```powershell
 .\gradlew.bat :processor:publishMavenJavaPublicationToLocalStagingRepository --console=plain
+.\gradlew.bat :ir-validation:publishMavenJavaPublicationToLocalStagingRepository --console=plain
 ```
 
 Output is written under:
 
 ```text
 processor/build/maven-staging/
+ir-validation/build/maven-staging/
 ```
 
-Inspect the generated POM before release:
+Inspect the generated POMs before release:
 
 ```text
 processor/build/publications/mavenJava/pom-default.xml
+ir-validation/build/publications/mavenJava/pom-default.xml
 ```
 
 ## Snapshot Publishing
@@ -106,12 +116,14 @@ Use a snapshot version when publishing to the Central snapshot repository:
 
 ```powershell
 .\gradlew.bat :processor:publishMavenJavaPublicationToCentralSnapshotsRepository -Pjavatogpu.version=0.1.0-SNAPSHOT --console=plain
+.\gradlew.bat :ir-validation:publishMavenJavaPublicationToCentralSnapshotsRepository -Pjavatogpu.version=0.1.0-SNAPSHOT --console=plain
 ```
 
 PowerShell users can quote the Gradle property if the shell splits `-P` incorrectly:
 
 ```powershell
 .\gradlew.bat ":processor:publishMavenJavaPublicationToCentralSnapshotsRepository" "-Pjavatogpu.version=0.1.0-SNAPSHOT" --console=plain
+.\gradlew.bat ":ir-validation:publishMavenJavaPublicationToCentralSnapshotsRepository" "-Pjavatogpu.version=0.1.0-SNAPSHOT" --console=plain
 ```
 
 ## Release Publishing
@@ -120,22 +132,24 @@ For the first public alpha:
 
 ```powershell
 .\gradlew.bat :processor:publishMavenJavaPublicationToCentralReleasesRepository -Pjavatogpu.version=0.1.0-alpha.1 --console=plain
+.\gradlew.bat :ir-validation:publishMavenJavaPublicationToCentralReleasesRepository -Pjavatogpu.version=0.1.0-alpha.1 --console=plain
 ```
 
 PowerShell-safe form:
 
 ```powershell
 .\gradlew.bat ":processor:publishMavenJavaPublicationToCentralReleasesRepository" "-Pjavatogpu.version=0.1.0-alpha.1" --console=plain
+.\gradlew.bat ":ir-validation:publishMavenJavaPublicationToCentralReleasesRepository" "-Pjavatogpu.version=0.1.0-alpha.1" --console=plain
 ```
 
-After upload, complete the release from the Maven Central / Sonatype portal if the deployment lands in a staging flow that requires manual close/release.
+After upload, complete the release from the Maven Central / Sonatype portal if the deployment lands in a staging flow that requires manual close/release. Release the main artifact and the optional IR validation artifact with the same version.
 
 ## Recommended Release Flow
 
-1. Run the normal tests:
+1. Run the normal tests for both published modules:
 
 ```powershell
-.\gradlew.bat :processor:test --console=plain
+.\gradlew.bat :processor:test :ir-validation:test --console=plain
 ```
 
 2. Run the OpenCL operational routine on the validated GPU machine:
@@ -144,15 +158,27 @@ After upload, complete the release from the Maven Central / Sonatype portal if t
 .\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
 ```
 
-3. Build local Maven staging:
+3. Run Maven Central release-readiness guards for both publications:
+
+```powershell
+.\gradlew.bat :processor:validateMavenCentralReleaseReadiness :ir-validation:validateMavenCentralReleaseReadiness --console=plain
+```
+
+4. Build local Maven staging:
 
 ```powershell
 .\gradlew.bat :processor:publishMavenJavaPublicationToLocalStagingRepository --console=plain
+.\gradlew.bat :ir-validation:publishMavenJavaPublicationToLocalStagingRepository --console=plain
 ```
 
-4. Inspect `processor/build/publications/mavenJava/pom-default.xml`.
+5. Inspect both generated POM files:
 
-5. Publish snapshot or release with the command above.
+```text
+processor/build/publications/mavenJava/pom-default.xml
+ir-validation/build/publications/mavenJava/pom-default.xml
+```
+
+6. Publish snapshot or release for both modules with the commands above.
 
 ## Consumer Example
 
