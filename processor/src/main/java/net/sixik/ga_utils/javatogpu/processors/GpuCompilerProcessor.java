@@ -665,6 +665,25 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         builder.append("entry.count=").append(irValidationReportEntries.size()).append("\n");
         Map<String, Long> autoVectorizationNoCandidateDiagnosticCodeCounts =
                 autoVectorizationNoCandidateDiagnosticCodeCounts();
+        Map<String, Long> autoVectorizationNoCandidateBucketCounts =
+                autoVectorizationNoCandidateBucketCounts();
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateBucketCounts",
+                countSummary(autoVectorizationNoCandidateBucketCounts)
+        );
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateUniqueBuckets",
+                Integer.toString(autoVectorizationNoCandidateBucketCounts.size())
+        );
+        autoVectorizationNoCandidateBucketCounts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> appendProperty(
+                        builder,
+                        "autoVectorizationNoCandidateBucket." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
         appendProperty(
                 builder,
                 "autoVectorizationNoCandidateDiagnosticCodeCounts",
@@ -693,6 +712,18 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                     .forEach(value -> appendProperty(builder, prefix + value.getKey(), value.getValue()));
         }
         return builder.toString();
+    }
+
+    private Map<String, Long> autoVectorizationNoCandidateBucketCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (GpuIrValidationReportEntry entry : irValidationReportEntries) {
+            String bucket = entry.values().get("autoVectorizationNoCandidateFirstBucket");
+            if (bucket == null || bucket.isBlank() || "none".equals(bucket)) {
+                continue;
+            }
+            counts.put(bucket, counts.getOrDefault(bucket, 0L) + 1L);
+        }
+        return counts;
     }
 
     private Map<String, Long> autoVectorizationNoCandidateDiagnosticCodeCounts() {

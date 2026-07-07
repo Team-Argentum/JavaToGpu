@@ -19,6 +19,8 @@ def irValidationBaselineDirectory = providers.gradleProperty('javatogpu.irValida
         .map { layout.projectDirectory.dir(it) }
         .orElse(layout.buildDirectory.dir('ir-validation-baselines'))
 
+def irValidationHealthSummaryFile = layout.buildDirectory.file('reports/ir-validation/health-summary.properties')
+
 tasks.register('validateIrValidationExampleReports') {
     group = 'verification'
     description = 'Verifies opt-in IR validation dogfooding reports for safety and read-only optimizer-readiness stability.'
@@ -162,6 +164,12 @@ tasks.register('validateIrValidationDogfoodingContractSelfTest') {
             expectPersistedBaselineFailure(scenario.name, validBaseline, validReport, scenario.baselineMutation, scenario.currentMutation)
         }
 
+        Properties validHealthSummary = irValidationHealthSummaryArtifact(['synthetic-valid': validReport])
+        validateIrValidationHealthSummaryArtifact(validHealthSummary, 'synthetic-health-valid')
+        syntheticHealthSummaryFailureScenarios().each { scenario ->
+            expectHealthSummaryFailure(scenario.name, validHealthSummary, scenario.mutation)
+        }
+
         logger.lifecycle('IR validation dogfooding contract self-test OK: optimizerBlocker and persisted baseline failures fail as expected')
     }
 }
@@ -187,6 +195,9 @@ tasks.register('writeIrValidationExampleReportBaseline') {
                     reportSpec.name,
                     baseline.getProperty('entry.count'),
                     baselineFile)
+            logger.lifecycle('IR validation persisted baseline trend for {}: {}',
+                    reportSpec.name,
+                    noCandidateTrendSummary(baseline, reportSpec.name + ' baseline'))
         }
     }
 }
@@ -215,7 +226,35 @@ tasks.register('validateIrValidationExampleReportBaseline') {
                     reportSpec.name,
                     current.getProperty('entry.count'),
                     baselineFile)
+            logger.lifecycle('IR validation persisted baseline trend for {}: {}',
+                    reportSpec.name,
+                    noCandidateTrendSummary(current, reportSpec.name))
         }
+    }
+}
+
+tasks.register('writeIrValidationHealthSummary') {
+    group = 'verification'
+    description = 'Writes a compact machine-readable health summary for current IR validation dogfooding reports.'
+    dependsOn tasks.named('validateIrValidationExampleReports')
+    inputs.files(irValidationExampleReports.collect { it.reportFile })
+    outputs.file(irValidationHealthSummaryFile)
+
+    doLast {
+        Map<String, Properties> reportsByName = new LinkedHashMap<>()
+        irValidationExampleReports.each { reportSpec ->
+            reportsByName.put(reportSpec.name, loadIrValidationReport(reportSpec.reportFile.asFile, reportSpec.name))
+        }
+        Properties summary = irValidationHealthSummaryArtifact(reportsByName)
+        validateIrValidationHealthSummaryArtifact(summary, 'writeIrValidationHealthSummary')
+
+        File outputFile = irValidationHealthSummaryFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.withOutputStream { stream ->
+            summary.store(stream, 'JavaToGpu IR validation health summary')
+        }
+        logger.lifecycle('IR validation health summary written: {}', outputFile)
+        logger.lifecycle('IR validation health summary: {}', summary.getProperty('total.ciSummaryLine'))
     }
 }
 
@@ -224,6 +263,211 @@ private static void incrementCount(Map<String, Integer> counts, String key) {
         return
     }
     counts.put(key, counts.getOrDefault(key, 0) + 1)
+}
+
+private static void mergeCounts(Map<String, Integer> target, Map<String, Integer> source) {
+    source.each { key, value -> target.put(key, target.getOrDefault(key, 0) + value) }
+}
+
+private static IrValidationHealthSummary irValidationHealthSummary(Properties report, String reportName) {
+    int entryCount = parseReportInt(report, 'entry.count', reportName)
+    int safetyOk = 0
+    int safetyFailed = 0
+    int optimizerBlocked = 0
+    int readOnlyBlocked = 0
+    Map<String, Integer> optimizerBlockerSourceCounts = new LinkedHashMap<>()
+    Map<String, Integer> productionReadinessStageCounts = new LinkedHashMap<>()
+    Map<String, Integer> noCandidateBucketCounts = new LinkedHashMap<>()
+    Map<String, Integer> noCandidateDiagnosticCodeCounts = new LinkedHashMap<>()
+
+    for (int index = 0; index < entryCount; index++) {
+        String prefix = 'entry.' + index + '.'
+        String safety = requireReportValue(report, prefix + 'safety', reportName)
+        if (safety == 'ok') {
+            safetyOk++
+        } else if (safety == 'failed') {
+            safetyFailed++
+        } else {
+            throw new GradleException('Unexpected IR validation safety state for ' + reportName
+                    + ' entry ' + index + ': ' + safety)
+        }
+
+        String optimizerVerdict = requireReportValue(report, prefix + 'optimizerLayerReadinessVerdict', reportName)
+        if (optimizerVerdict == 'blocked') {
+            optimizerBlocked++
+        }
+        String csePolicyReadiness = requireReportValue(report, prefix + 'cseRewritePolicyReadiness', reportName)
+        String blockingLayers = requireReportValue(report, prefix + 'optimizerLayerReadinessBlockingLayers', reportName)
+        if (optimizerVerdict == 'blocked'
+                && csePolicyReadiness != 'blockedBySkippedCandidate'
+                && blockingLayers.contains('cseLiteralPromotion')
+                && blockingLayers.contains('autoVectorization')) {
+            readOnlyBlocked++
+        }
+
+        incrementCount(optimizerBlockerSourceCounts, requireReportValue(report, prefix + 'optimizerBlockerSource', reportName))
+        incrementCount(productionReadinessStageCounts, requireReportValue(report, prefix + 'optimizerProductionReadinessFirstBlockingStage', reportName))
+        incrementCount(noCandidateBucketCounts, requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstBucket', reportName))
+        incrementCount(noCandidateDiagnosticCodeCounts, requireReportValue(report, prefix + 'autoVectorizationNoCandidateDiagnosticCode', reportName))
+    }
+
+    return new IrValidationHealthSummary(
+            entryCount,
+            safetyOk,
+            safetyFailed,
+            optimizerBlocked,
+            readOnlyBlocked,
+            optimizerBlockerSourceCounts,
+            productionReadinessStageCounts,
+            noCandidateBucketCounts,
+            noCandidateDiagnosticCodeCounts
+    )
+}
+
+private static Properties irValidationHealthSummaryArtifact(Map<String, Properties> reportsByName) {
+    Properties summary = new Properties()
+    summary.setProperty('format', 'javatogpu.ir.validation.health-summary.v1')
+    summary.setProperty('report.count', Integer.toString(reportsByName.size()))
+
+    int totalEntries = 0
+    int totalSafetyOk = 0
+    int totalSafetyFailed = 0
+    int totalOptimizerBlocked = 0
+    int totalReadOnlyBlocked = 0
+    Map<String, Integer> totalBlockerSourceCounts = new LinkedHashMap<>()
+    Map<String, Integer> totalProductionStageCounts = new LinkedHashMap<>()
+    Map<String, Integer> totalNoCandidateBucketCounts = new LinkedHashMap<>()
+    Map<String, Integer> totalNoCandidateDiagnosticCounts = new LinkedHashMap<>()
+
+    int reportIndex = 0
+    reportsByName.each { reportName, report ->
+        IrValidationHealthSummary health = irValidationHealthSummary(report, reportName)
+        String prefix = 'report.' + reportIndex + '.'
+        summary.setProperty(prefix + 'name', reportName)
+        summary.setProperty(prefix + 'entries', Integer.toString(health.entries))
+        summary.setProperty(prefix + 'safetyOk', Integer.toString(health.safetyOk))
+        summary.setProperty(prefix + 'safetyFailed', Integer.toString(health.safetyFailed))
+        summary.setProperty(prefix + 'optimizerBlocked', Integer.toString(health.optimizerBlocked))
+        summary.setProperty(prefix + 'readOnlyBlocked', Integer.toString(health.readOnlyBlocked))
+        summary.setProperty(prefix + 'optimizerBlockerSources', countSummary(health.optimizerBlockerSourceCounts))
+        summary.setProperty(prefix + 'productionReadinessStages', countSummary(health.productionReadinessStageCounts))
+        summary.setProperty(prefix + 'noCandidateBuckets', countSummary(health.noCandidateBucketCounts))
+        summary.setProperty(prefix + 'noCandidateDiagnosticCodes', countSummary(health.noCandidateDiagnosticCodeCounts))
+        summary.setProperty(prefix + 'ciSummaryLine', health.ciSummaryLine(reportName))
+
+        totalEntries += health.entries
+        totalSafetyOk += health.safetyOk
+        totalSafetyFailed += health.safetyFailed
+        totalOptimizerBlocked += health.optimizerBlocked
+        totalReadOnlyBlocked += health.readOnlyBlocked
+        mergeCounts(totalBlockerSourceCounts, health.optimizerBlockerSourceCounts)
+        mergeCounts(totalProductionStageCounts, health.productionReadinessStageCounts)
+        mergeCounts(totalNoCandidateBucketCounts, health.noCandidateBucketCounts)
+        mergeCounts(totalNoCandidateDiagnosticCounts, health.noCandidateDiagnosticCodeCounts)
+        reportIndex++
+    }
+
+    summary.setProperty('total.entries', Integer.toString(totalEntries))
+    summary.setProperty('total.safetyOk', Integer.toString(totalSafetyOk))
+    summary.setProperty('total.safetyFailed', Integer.toString(totalSafetyFailed))
+    summary.setProperty('total.optimizerBlocked', Integer.toString(totalOptimizerBlocked))
+    summary.setProperty('total.readOnlyBlocked', Integer.toString(totalReadOnlyBlocked))
+    summary.setProperty('total.optimizerBlockerSources', countSummary(totalBlockerSourceCounts))
+    summary.setProperty('total.productionReadinessStages', countSummary(totalProductionStageCounts))
+    summary.setProperty('total.noCandidateBuckets', countSummary(totalNoCandidateBucketCounts))
+    summary.setProperty('total.noCandidateDiagnosticCodes', countSummary(totalNoCandidateDiagnosticCounts))
+    summary.setProperty(
+            'total.ciSummaryLine',
+            'irValidationHealth reports=' + reportsByName.size()
+                    + ' entries=' + totalEntries
+                    + ' safetyFailed=' + totalSafetyFailed
+                    + ' optimizerBlocked=' + totalOptimizerBlocked
+                    + ' readOnlyBlocked=' + totalReadOnlyBlocked
+                    + ' diagnosticCodes=' + countSummary(totalNoCandidateDiagnosticCounts)
+                    + ' firstBuckets=' + countSummary(totalNoCandidateBucketCounts)
+    )
+    return summary
+}
+
+private static void validateIrValidationHealthSummaryArtifact(Properties summary, String reportName) {
+    if (summary.getProperty('format') != 'javatogpu.ir.validation.health-summary.v1') {
+        throw new GradleException('Unexpected IR validation health summary format for ' + reportName
+                + ': ' + summary.getProperty('format'))
+    }
+    int reportCount = parseReportInt(summary, 'report.count', reportName)
+    if (reportCount <= 0) {
+        throw new GradleException('IR validation health summary must contain at least one report for ' + reportName)
+    }
+    parseReportInt(summary, 'total.entries', reportName)
+    parseReportInt(summary, 'total.safetyOk', reportName)
+    parseReportInt(summary, 'total.safetyFailed', reportName)
+    parseReportInt(summary, 'total.optimizerBlocked', reportName)
+    parseReportInt(summary, 'total.readOnlyBlocked', reportName)
+    requireReportValue(summary, 'total.optimizerBlockerSources', reportName)
+    requireReportValue(summary, 'total.productionReadinessStages', reportName)
+    requireReportValue(summary, 'total.noCandidateBuckets', reportName)
+    requireReportValue(summary, 'total.noCandidateDiagnosticCodes', reportName)
+    String totalSummaryLine = requireReportValue(summary, 'total.ciSummaryLine', reportName)
+    if (!totalSummaryLine.contains('irValidationHealth reports=' + reportCount)
+            || !totalSummaryLine.contains('diagnosticCodes=')
+            || !totalSummaryLine.contains('firstBuckets=')) {
+        throw new GradleException('IR validation health summary total CI line is incomplete for ' + reportName
+                + ': ' + totalSummaryLine)
+    }
+
+    for (int index = 0; index < reportCount; index++) {
+        String prefix = 'report.' + index + '.'
+        String name = requireReportValue(summary, prefix + 'name', reportName)
+        parseReportInt(summary, prefix + 'entries', reportName)
+        parseReportInt(summary, prefix + 'safetyOk', reportName)
+        parseReportInt(summary, prefix + 'safetyFailed', reportName)
+        parseReportInt(summary, prefix + 'optimizerBlocked', reportName)
+        parseReportInt(summary, prefix + 'readOnlyBlocked', reportName)
+        requireReportValue(summary, prefix + 'optimizerBlockerSources', reportName)
+        requireReportValue(summary, prefix + 'productionReadinessStages', reportName)
+        requireReportValue(summary, prefix + 'noCandidateBuckets', reportName)
+        requireReportValue(summary, prefix + 'noCandidateDiagnosticCodes', reportName)
+        String reportSummaryLine = requireReportValue(summary, prefix + 'ciSummaryLine', reportName)
+        if (!reportSummaryLine.contains('irValidationHealth report=' + name)
+                || !reportSummaryLine.contains('diagnosticCodes=')
+                || !reportSummaryLine.contains('firstBuckets=')) {
+            throw new GradleException('IR validation health summary report CI line is incomplete for '
+                    + reportName + ' entry ' + index + ': ' + reportSummaryLine)
+        }
+    }
+}
+
+private static List<Map<String, Object>> syntheticHealthSummaryFailureScenarios() {
+    return [
+            [
+                    name    : 'synthetic-health-missing-total-summary-line',
+                    mutation: { Properties summary -> summary.remove('total.ciSummaryLine') }
+            ],
+            [
+                    name    : 'synthetic-health-missing-total-buckets',
+                    mutation: { Properties summary -> summary.remove('total.noCandidateBuckets') }
+            ],
+            [
+                    name    : 'synthetic-health-missing-total-diagnostic-codes',
+                    mutation: { Properties summary -> summary.remove('total.noCandidateDiagnosticCodes') }
+            ],
+            [
+                    name    : 'synthetic-health-missing-report-summary-line',
+                    mutation: { Properties summary -> summary.remove('report.0.ciSummaryLine') }
+            ]
+    ]
+}
+
+private static void expectHealthSummaryFailure(String scenario, Properties baseline, Closure mutation) {
+    Properties summary = new Properties()
+    summary.putAll(baseline)
+    mutation.call(summary)
+    try {
+        validateIrValidationHealthSummaryArtifact(summary, scenario)
+    } catch (GradleException expected) {
+        return
+    }
+    throw new GradleException('Synthetic IR validation health summary scenario unexpectedly passed: ' + scenario)
 }
 
 private static void validateAutoVectorizationNoCandidateDiagnosticCodeRollup(
@@ -276,9 +520,12 @@ private static Properties persistedIrValidationBaseline(Properties report, Strin
     baseline.setProperty('format', 'javatogpu.ir.validation.persisted-baseline.v1')
     baseline.setProperty('sourceFormat', requireReportValue(report, 'format', reportName))
     baseline.setProperty('entry.count', Integer.toString(entryCount))
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateBucketCounts')
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateUniqueBuckets')
+    copyCountFields(report, baseline, 'autoVectorizationNoCandidateBucket.')
     copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateDiagnosticCodeCounts')
     copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateUniqueDiagnosticCodes')
-    copyDiagnosticCodeCountFields(report, baseline)
+    copyCountFields(report, baseline, 'autoVectorizationNoCandidateDiagnosticCode.')
     for (int index = 0; index < entryCount; index++) {
         String prefix = 'entry.' + index + '.'
         copyRequiredBaselineField(report, baseline, reportName, prefix, 'methodName')
@@ -300,9 +547,9 @@ private static Properties persistedIrValidationBaseline(Properties report, Strin
     return baseline
 }
 
-private static void copyDiagnosticCodeCountFields(Properties source, Properties target) {
+private static void copyCountFields(Properties source, Properties target, String prefix) {
     source.stringPropertyNames()
-            .findAll { key -> key.startsWith('autoVectorizationNoCandidateDiagnosticCode.') }
+            .findAll { key -> key.startsWith(prefix) }
             .sort()
             .each { key -> target.setProperty(key, source.getProperty(key)) }
 }
@@ -357,6 +604,16 @@ private static List<Map<String, Object>> syntheticPersistedBaselineFailureScenar
                     name            : 'synthetic-persisted-no-candidate-diagnostic-count-drift',
                     baselineMutation: { Properties baseline -> },
                     currentMutation : { Properties current -> current.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '2') }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-bucket-summary-drift',
+                    baselineMutation: { Properties baseline -> baseline.setProperty('autoVectorizationNoCandidateBucketCounts', '{scannerFoundNoVectorShape=2}') },
+                    currentMutation : { Properties current -> }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-bucket-count-drift',
+                    baselineMutation: { Properties baseline -> },
+                    currentMutation : { Properties current -> current.setProperty('autoVectorizationNoCandidateBucket.scannerFoundNoVectorShape', '2') }
             ]
     ]
 }
@@ -397,9 +654,12 @@ private static void validatePersistedIrValidationBaseline(
         throw new GradleException('IR validation persisted baseline entry count changed for ' + reportName
                 + ': baseline=' + baselineEntryCount + ' current=' + currentEntryCount)
     }
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateBucketCounts')
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateUniqueBuckets')
+    comparePersistedCountFields(baseline, current, reportName, 'autoVectorizationNoCandidateBucket.', 'bucket')
     comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateDiagnosticCodeCounts')
     comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateUniqueDiagnosticCodes')
-    comparePersistedDiagnosticCodeCountFields(baseline, current, reportName)
+    comparePersistedCountFields(baseline, current, reportName, 'autoVectorizationNoCandidateDiagnosticCode.', 'diagnostic-code')
     for (int index = 0; index < currentEntryCount; index++) {
         String prefix = 'entry.' + index + '.'
         String baselineMethod = requireReportValue(baseline, prefix + 'methodName', reportName + ' baseline')
@@ -429,23 +689,25 @@ private static void validatePersistedIrValidationBaseline(
     }
 }
 
-private static void comparePersistedDiagnosticCodeCountFields(
+private static void comparePersistedCountFields(
         Properties baseline,
         Properties current,
-        String reportName
+        String reportName,
+        String prefix,
+        String label
 ) {
-    Set<String> baselineKeys = diagnosticCodeCountKeys(baseline)
-    Set<String> currentKeys = diagnosticCodeCountKeys(current)
+    Set<String> baselineKeys = countKeys(baseline, prefix)
+    Set<String> currentKeys = countKeys(current, prefix)
     if (baselineKeys != currentKeys) {
-        throw new GradleException('IR validation persisted diagnostic-code keys changed for ' + reportName
+        throw new GradleException('IR validation persisted ' + label + ' keys changed for ' + reportName
                 + ': baseline=' + baselineKeys + ' current=' + currentKeys)
     }
     baselineKeys.each { key -> comparePersistedReportField(baseline, current, reportName, key) }
 }
 
-private static Set<String> diagnosticCodeCountKeys(Properties report) {
+private static Set<String> countKeys(Properties report, String prefix) {
     return new TreeSet<>(report.stringPropertyNames()
-            .findAll { key -> key.startsWith('autoVectorizationNoCandidateDiagnosticCode.') })
+            .findAll { key -> key.startsWith(prefix) })
 }
 
 private static void comparePersistedReportField(
@@ -485,10 +747,23 @@ private static String countSummary(Map<String, Integer> counts) {
     return '{' + counts.collect { key, value -> key + '=' + value }.join(',') + '}'
 }
 
+private static String noCandidateTrendSummary(Properties report, String reportName) {
+    return 'diagnosticCodes=' + requireReportValue(
+            report,
+            'autoVectorizationNoCandidateDiagnosticCodeCounts',
+            reportName
+    ) + ' firstBuckets=' + requireReportValue(
+            report,
+            'autoVectorizationNoCandidateBucketCounts',
+            reportName
+    )
+}
+
 tasks.named('check') {
     dependsOn tasks.named('validateIrValidationDogfoodingContractSelfTest')
     if (irValidationExamplesEnabled) {
         dependsOn tasks.named('validateIrValidationExampleReports')
+        dependsOn tasks.named('writeIrValidationHealthSummary')
     }
 }
 
@@ -497,6 +772,7 @@ private static Properties syntheticIrValidationContractReport() {
     report.setProperty('format', 'javatogpu.ir.validation.v1')
     report.setProperty('entry.count', '1')
     report.setProperty('entry.0.methodName', 'syntheticKernel')
+    report.setProperty('entry.0.safety', 'ok')
     report.setProperty('entry.0.optimizerLayerReadinessVerdict', 'blocked')
     report.setProperty('entry.0.optimizerLayerReadinessFirstBlockingLayer', 'autoVectorization')
     report.setProperty('entry.0.optimizerLayerReadinessBlockingLayers', 'cseLiteralPromotion,autoVectorization')
@@ -523,6 +799,9 @@ private static Properties syntheticIrValidationContractReport() {
     report.setProperty('entry.0.autoVectorizationNoCandidateFirstExample', 'syntheticKernel@method: scanner found no vector-shaped rewrite candidate')
     report.setProperty('entry.0.autoVectorizationNoCandidateDiagnosticCode', 'JTG-IR-AV-001')
     report.setProperty('entry.0.autoVectorizationNoCandidateFirstHelp', 'inspect the first IR example and add a more specific scanner shape bucket if needed')
+    report.setProperty('autoVectorizationNoCandidateBucketCounts', '{scannerFoundNoVectorShape=1}')
+    report.setProperty('autoVectorizationNoCandidateUniqueBuckets', '1')
+    report.setProperty('autoVectorizationNoCandidateBucket.scannerFoundNoVectorShape', '1')
     report.setProperty('autoVectorizationNoCandidateDiagnosticCodeCounts', '{JTG-IR-AV-001=1}')
     report.setProperty('autoVectorizationNoCandidateUniqueDiagnosticCodes', '1')
     report.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '1')
@@ -1129,5 +1408,58 @@ class OptimizerReadinessContractResult {
         this.productionReadinessFirstBlockingStage = productionReadinessFirstBlockingStage
         this.autoVectorizationNoCandidateFirstBucket = autoVectorizationNoCandidateFirstBucket
         this.autoVectorizationNoCandidateDiagnosticCode = autoVectorizationNoCandidateDiagnosticCode
+    }
+}
+
+class IrValidationHealthSummary {
+    final int entries
+    final int safetyOk
+    final int safetyFailed
+    final int optimizerBlocked
+    final int readOnlyBlocked
+    final Map<String, Integer> optimizerBlockerSourceCounts
+    final Map<String, Integer> productionReadinessStageCounts
+    final Map<String, Integer> noCandidateBucketCounts
+    final Map<String, Integer> noCandidateDiagnosticCodeCounts
+
+    IrValidationHealthSummary(
+            int entries,
+            int safetyOk,
+            int safetyFailed,
+            int optimizerBlocked,
+            int readOnlyBlocked,
+            Map<String, Integer> optimizerBlockerSourceCounts,
+            Map<String, Integer> productionReadinessStageCounts,
+            Map<String, Integer> noCandidateBucketCounts,
+            Map<String, Integer> noCandidateDiagnosticCodeCounts
+    ) {
+        this.entries = entries
+        this.safetyOk = safetyOk
+        this.safetyFailed = safetyFailed
+        this.optimizerBlocked = optimizerBlocked
+        this.readOnlyBlocked = readOnlyBlocked
+        this.optimizerBlockerSourceCounts = new LinkedHashMap<>(optimizerBlockerSourceCounts)
+        this.productionReadinessStageCounts = new LinkedHashMap<>(productionReadinessStageCounts)
+        this.noCandidateBucketCounts = new LinkedHashMap<>(noCandidateBucketCounts)
+        this.noCandidateDiagnosticCodeCounts = new LinkedHashMap<>(noCandidateDiagnosticCodeCounts)
+    }
+
+    String ciSummaryLine(String reportName) {
+        return ('irValidationHealth report=' + reportName
+                + ' entries=' + entries
+                + ' safetyFailed=' + safetyFailed
+                + ' optimizerBlocked=' + optimizerBlocked
+                + ' readOnlyBlocked=' + readOnlyBlocked
+                + ' blockerSources=' + countSummary(optimizerBlockerSourceCounts)
+                + ' productionStages=' + countSummary(productionReadinessStageCounts)
+                + ' diagnosticCodes=' + countSummary(noCandidateDiagnosticCodeCounts)
+                + ' firstBuckets=' + countSummary(noCandidateBucketCounts))
+    }
+
+    private static String countSummary(Map<String, Integer> counts) {
+        if (counts.isEmpty()) {
+            return '{}'
+        }
+        return '{' + counts.collect { key, value -> key + '=' + value }.join(',') + '}'
     }
 }

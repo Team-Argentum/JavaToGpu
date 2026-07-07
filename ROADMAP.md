@@ -313,6 +313,119 @@ Post-I2 optimizer frontier, not blocking I2 closure:
   Require CPU/reference and pre/post optimization evidence, machine-readable diagnostics, and failed-evidence regression tests before any production-readiness gate can move from blocked to ready.
 - [ ] Wire optimizer evidence into A1/A2 operational validation.
   Export the I2 CI gate index into NVIDIA validation artifacts, store readiness baselines across runs, summarize first rejected optimizer gates, and keep Intel/AMD promotion gates blocked until hardware validation exists.
+
+### I3. Production IR pipeline and runtime backend optimization
+
+Goal: make IR a first-class production pipeline artifact instead of using build-time OpenCL source as the only generated output. This is the bridge from the current read-only IR Validator to future runtime/device-specific optimization for OpenCL, CUDA, Vulkan/SPIR-V, and Metal.
+
+Current rule: keep the existing OpenCL build-time source path working while I3 is introduced. New runtime IR compilation must be opt-in until A1/A2 runtime evidence, rollback, and cross-vendor gates are stable.
+
+#### I3.1 Canonical `IrGpu` artifact format
+
+- [ ] Define a backend-neutral `IrGpu` artifact as the canonical stored representation.
+  It should store entry methods, helper methods, structs, constants, address spaces, intrinsic calls, launch metadata, source/debug mapping, ABI metadata, validation version, and feature flags without committing to OpenCL/CUDA/Metal syntax.
+- [ ] Add an `IrGpu` version/header contract.
+  Include schema version, compiler version, source frontend (`java-source`, `structured-asm`, future ASM), target-independent capability requirements, and compatibility rules for old artifacts.
+- [ ] Serialize `IrGpu` as a packaged build artifact/resource.
+  Build output should package `IrGpu` beside or instead of generated OpenCL source, so runtime compilation can choose the backend and target device later.
+- [ ] Keep generated OpenCL source as a derived artifact during transition.
+  The current `kernel.cl` style output remains available for debugging and compatibility, but it should stop being the only source of truth.
+- [ ] Add round-trip and compatibility tests for `IrGpu`.
+  Validate that build-time Java/ASM lowering -> `IrGpu` -> OpenCL lowering preserves the current generated source behavior before enabling runtime use.
+
+#### I3.2 Runtime compile request and compile options
+
+- [ ] Introduce a runtime `GpuCompileRequest` / `GpuCompileOptions` model.
+  It should carry backend selection, target device identity, vendor, driver/runtime version, capability snapshot, user compile args, debug flags, optimizer profile, and fallback policy.
+- [ ] Support user-provided backend compile arguments.
+  OpenCL should accept options analogous to `clBuildProgram` args; future CUDA/Vulkan/Metal paths should expose their own structured option surface without leaking backend-specific strings into the high-level API.
+- [ ] Add compile option provenance to artifacts.
+  Generated runtime artifacts should record which backend, device, compile args, optimizer profile, and fallback decisions were used.
+- [ ] Make ASM and Java source frontends feed the same runtime compile request path.
+  Structured ASM should lower into `IrGpu` first, then use the same runtime pipeline as source-compiled kernels.
+- [ ] Add strict validation for unsafe or unsupported compile args.
+  Unknown or backend-incompatible options should fail with clear diagnostics instead of being silently ignored.
+
+#### I3.3 Backend lowering boundary
+
+- [ ] Define a `GpuBackendLowerer` service boundary.
+  Contract: `IrGpu + GpuCompileRequest -> backend module artifact`, where the artifact may be OpenCL C source/binary, CUDA source/PTX/CUBIN, SPIR-V, MSL, or another backend-specific representation.
+- [ ] Move OpenCL lowering behind that backend boundary.
+  Current OpenCL emission should become the first implementation of `GpuBackendLowerer`, preserving existing generated source and runtime behavior.
+- [ ] Add backend module artifact metadata.
+  Store backend id, generated code kind, binary/source availability, source map links, compile logs, and runtime load requirements.
+- [ ] Keep backend lowerers isolated from frontend validation.
+  Frontend Java/ASM validation should produce valid `IrGpu`; backend lowerers should only handle target-specific lowering and backend diagnostics.
+- [ ] Add no-op/stub lowerers for planned CUDA, Vulkan/SPIR-V, and Metal.
+  They should expose explicit `unsupportedBackend` diagnostics and stable extension points so future implementations do not require pipeline rewrites.
+
+#### I3.4 Runtime IR optimizer entrypoint
+
+- [ ] Add a `GpuIrRuntimeOptimizer` entrypoint.
+  Contract: `IrGpu + target profile + optimizer options -> optimized IrGpu + optimization report`.
+- [ ] Split optimizer stages into explicit passes.
+  Suggested order: normalize/canonicalize, validate, target-profile analysis, candidate discovery, proof collection, transformation, post-transform validation, backend-readiness validation.
+- [ ] Keep every mutating pass rollback-safe.
+  Each pass must return both original and transformed IR identity, proof status, diagnostics, and rollback reason when transformation is rejected.
+- [ ] Support optimizer profiles.
+  Initial profiles: `off`, `diagnostic`, `prototype`, `targeted`, and future `production`. Default remains `off` until production gates are satisfied.
+- [ ] Reuse I2 artifacts as the proof/report layer.
+  Existing read-only validator reports become the input evidence for runtime optimizer decisions instead of being discarded.
+
+#### I3.5 Vendor/device-specific optimization strategy
+
+- [ ] Add target profile extraction from runtime devices.
+  OpenCL/NVIDIA should record compute units, work-group limits, preferred vector widths, local memory size, double/image support, subgroup-like capabilities where available, driver version, and known quirks.
+- [ ] Add pluggable `GpuOptimizationStrategy` by backend/vendor/device family.
+  Examples: NVIDIA may keep some scalar-heavy code scalar; AMD/Intel may prefer vectorized or wider-lane forms for selected patterns.
+- [ ] Add strategy selection diagnostics.
+  Runtime logs and artifacts should explain why a strategy was selected, skipped, or downgraded.
+- [ ] Keep vendor strategies advisory until evidence-backed.
+  Strategy may suggest transformations, but the runtime optimizer must still require proof, post-transform validation, and rollback.
+- [ ] Add per-vendor baselines.
+  NVIDIA-only baselines can guide development now; AMD/Intel strategy promotion must wait for real hardware evidence.
+
+#### I3.6 Runtime-equivalence and promotion gates
+
+- [ ] Add pre/post runtime-equivalence execution for selected optimized IR.
+  Compare original `IrGpu` lowering against optimized `IrGpu` lowering on deterministic input sets before accepting a runtime optimization family.
+- [ ] Persist runtime-equivalence evidence per backend/vendor/profile.
+  Store pass/fail, input cases, compared outputs, device info, compile args, optimizer passes, and failure diagnostics.
+- [ ] Add rollback-on-failure at runtime.
+  If optimized compilation or equivalence fails, runtime should automatically use the original `IrGpu` lowering and record the fallback.
+- [ ] Gate production optimizer profile behind A1/A2.
+  Production profile requires stable NVIDIA evidence, long-running stress, rollback coverage, and later Intel/AMD evidence before becoming default.
+- [ ] Add CI artifact checks for runtime optimizer drift.
+  Compare optimizer pass counts, accepted/rejected transformation families, fallback counts, and device-specific decisions across runs.
+
+#### I3.7 Storage and cache model
+
+- [ ] Replace source-only kernel cache keys with `IrGpu`-aware cache keys.
+  Cache identity should include IR hash, backend id, target device profile, compile args, optimizer profile, and backend lowerer version.
+- [ ] Store original and optimized artifacts separately.
+  Cache should distinguish original `IrGpu`, optimized `IrGpu`, backend source/binary, compile log, and runtime validation evidence.
+- [ ] Add cache invalidation for compiler/backend/optimizer upgrades.
+  Old optimized artifacts must not be reused when the IR schema, backend lowerer, or optimizer pass version changes.
+- [ ] Preserve debug/source maps through runtime compilation.
+  Diagnostics should still point back to Java/ASM source locations after runtime optimization and backend lowering.
+- [ ] Add tooling to dump `IrGpu`, optimized `IrGpu`, and backend output.
+  Developers should be able to compare original IR, transformed IR, and emitted backend code for one kernel.
+
+#### I3.8 Migration plan from current OpenCL build output
+
+- [ ] Phase 1: dual output.
+  Build produces current OpenCL source and new `IrGpu`; runtime still uses OpenCL source by default.
+- [ ] Phase 2: OpenCL-from-`IrGpu` parity.
+  Runtime can lower `IrGpu` to OpenCL and produce byte-for-byte or behavior-equivalent output for current workloads.
+- [ ] Phase 3: opt-in runtime compilation.
+  Users can choose runtime `IrGpu` compilation with OpenCL backend and compile args.
+- [ ] Phase 4: opt-in prototype optimization.
+  Runtime can run proof-backed optimization passes with rollback, still disabled by default.
+- [ ] Phase 5: multi-backend lowerer expansion.
+  Add CUDA/Vulkan/Metal lowerer stubs first, then implement real backend support behind the same `IrGpu` contract.
+- [ ] Phase 6: evidence-backed production optimization.
+  Selected optimizer families can graduate only after A1/A2 evidence, backend-specific baselines, and rollback confidence are stable.
+
 ## Recommended Execution Order
 
 If the goal is to move forward pragmatically from the current state, the best order is now:
@@ -321,11 +434,15 @@ If the goal is to move forward pragmatically from the current state, the best or
    Keep repeating `:processor:openClOperationalRoutine --rerun-tasks` on the available RTX 5070 stack until Intel/AMD hardware exists, preserving validation history, workload summaries, long-running summaries, and benchmark output.
 2. `A3/A4 Diagnostics and runtime-stability fixes from real failures`
    Treat any repeated NVIDIA failure, skipped workload, resource leak, or diagnostic gap as the next concrete implementation target.
-3. `A1 Intel/AMD runner bring-up when hardware exists`
+3. `I3 Production IR pipeline foundation`
+   Start with the non-mutating foundation: canonical `IrGpu` artifact, dual output beside current OpenCL source, OpenCL-from-`IrGpu` parity, runtime compile request/options, backend-lowering boundary, and source/ASM frontends feeding the same IR storage path. Keep runtime optimization profile `off` by default.
+4. `A1 Intel/AMD runner bring-up when hardware exists`
    The cross-vendor production gate remains open until Intel and AMD OpenCL stacks can run the same bucket set.
-4. `Improved ASM parser/frontend`
-   F1 source-parity blockers and the read-only IR enablement stack are closed for current priorities, so the next major compiler-quality leap is the general ASM ingestion frontier. The first broader-ASM diagnostics layer is now in place: `AsmFrontendFailureMetadata`, `AsmFrontendFailureReport`, `AsmFrontendFailureReporter`, `AsmUnsupportedPatternScanner`, Rust-like `AsmFrontendDiagnosticAdapter`, and public `GpuProgramCompiler.reportStructuredAsm(...)` preflight APIs expose stable `asmFailure.*` metadata without expanding the accepted bytecode subset.
-5. `H Lower-priority backend/optimization work`
+5. `Improved ASM parser/frontend`
+   Broader ASM ingestion should lower into `IrGpu` first, then reuse the same runtime compile request, validation, backend lowering, and future optimizer path instead of growing a separate pipeline. The first broader-ASM diagnostics layer is already in place through `asmFailure.*` metadata and public preflight APIs.
+6. `I3 prototype runtime optimization`
+   After `IrGpu` storage and OpenCL parity are stable, add opt-in prototype optimization with rollback, pre/post runtime-equivalence artifacts, and NVIDIA-only evidence first. Keep production mutation disabled until A1/A2 confidence and future Intel/AMD gates are satisfied.
+7. `H Lower-priority backend/optimization work`
 
 ## Current Working Conclusion
 
@@ -333,7 +450,7 @@ JavaToGpu is already beyond the "toy compiler" stage.
 
 The broad repetitive intrinsic-family generation detour is now closed for current priorities, so the active focus returns to production-core/runtime validation rather than expanding optional API symmetry.
 
-After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence remains NVIDIA-only until Intel/AMD hardware is available, and the next major compiler-quality frontier is broader ASM ingestion.
+After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence remains NVIDIA-only until Intel/AMD hardware is available. The next major architecture frontier is the I3 Production IR pipeline: `IrGpu` should become the stored backend-neutral artifact, while OpenCL/CUDA/Vulkan/Metal become backend lowerers selected at runtime from compile options and device profile. Broader ASM ingestion should feed that same `IrGpu` path instead of creating a second compiler pipeline.
 
 Latest I2/L2 reconciliation: the current CI contract layer is closed for present priorities. Direct contract coverage now pins current readiness CI summaries, optimizer-gate consistency/acceptance, optimizer CI gate-index consistency/acceptance, regression/baseline CI summaries, nested artifact-field composition, and opt-in real-example dogfooding reports for `examples-app` / `test-app`. The dogfooding contract keeps safety fail-fast while treating optimizer readiness as a read-only stability artifact: production mutation must remain disabled, rewrite applicability must stay false, known CSE policy blockers are counted, and no-candidate CSE literal-promotion / auto-vectorization blockers are accepted as the current baseline. The remaining I2 items are intentionally broader frontier work: deeper transformation-safety proofs, stronger canonicalization/common-computation detection, runtime-equivalence evidence for selected optimizer families, and eventual production rewrite promotion after A1/A2 runtime confidence is stable. These should stay open until backed by runtime evidence rather than being marked complete from read-only artifact coverage alone.
 

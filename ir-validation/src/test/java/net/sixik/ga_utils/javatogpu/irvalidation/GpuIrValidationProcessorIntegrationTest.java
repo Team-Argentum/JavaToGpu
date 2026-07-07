@@ -277,6 +277,9 @@ class GpuIrValidationProcessorIntegrationTest {
 
         assertTrue("javatogpu.ir.validation.v1".equals(report.getProperty("format")));
         assertTrue("1".equals(report.getProperty("entry.count")));
+        assertEntryValue(report, "autoVectorizationNoCandidateBucketCounts", "{noFixedWidthLaneLoop=1}");
+        assertEntryValue(report, "autoVectorizationNoCandidateUniqueBuckets", "1");
+        assertEntryValue(report, "autoVectorizationNoCandidateBucket.noFixedWidthLaneLoop", "1");
         assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCodeCounts", "{JTG-IR-AV-001=1}");
         assertEntryValue(report, "autoVectorizationNoCandidateUniqueDiagnosticCodes", "1");
         assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001", "1");
@@ -840,6 +843,9 @@ class GpuIrValidationProcessorIntegrationTest {
         Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
 
         assertTrue("2".equals(report.getProperty("entry.count")));
+        assertEntryValue(report, "autoVectorizationNoCandidateBucketCounts", "{noFixedWidthLaneLoop=1}");
+        assertEntryValue(report, "autoVectorizationNoCandidateUniqueBuckets", "1");
+        assertEntryValue(report, "autoVectorizationNoCandidateBucket.noFixedWidthLaneLoop", "1");
         assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCodeCounts", "{JTG-IR-AV-001=1}");
         assertEntryValue(report, "autoVectorizationNoCandidateUniqueDiagnosticCodes", "1");
         assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001", "1");
