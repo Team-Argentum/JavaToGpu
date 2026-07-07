@@ -25,10 +25,13 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
     public GpuBackendModuleArtifact lower(GpuRuntimeCompileRequest compileRequest) {
         Objects.requireNonNull(compileRequest, "compileRequest");
         OpenClIrGpuParityResult parityResult = OpenClIrGpuParityChecker.check(compileRequest);
+        OpenClIrGpuReconstructionPlan reconstructionPlan = OpenClIrGpuReconstructionPlan.from(parityResult);
         if (parityResult.checked() && !parityResult.compatible()) {
             throw new IllegalStateException(
                     "OpenCL IrGpu parity check failed: "
                             + parityResult.toLine()
+                            + "; reconstructionPlan="
+                            + reconstructionPlan.toLine()
                             + "; regenerate both kernel.cl and kernel.irgpu.properties from the same frontend output"
             );
         }

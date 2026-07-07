@@ -8,11 +8,15 @@ public record IrGpuArtifactHeader(
 ) {
 
     public static IrGpuArtifactHeader javaSourceV1() {
+        return sourceFrontendV1("java-source");
+    }
+
+    public static IrGpuArtifactHeader sourceFrontendV1(String sourceFrontend) {
         return new IrGpuArtifactHeader(
                 "javatogpu.irgpu.v1",
                 1,
                 "JavaToGpu",
-                "java-source"
+                sourceFrontend == null || sourceFrontend.isBlank() ? "java-source" : sourceFrontend
         );
     }
 }

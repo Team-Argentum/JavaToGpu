@@ -9,6 +9,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityChecker;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityResult;
+import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuReconstructionPlan;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -43,6 +44,11 @@ class GpuBackendLowerersTest {
         assertEquals(descriptor.kernelSource(), artifact.source());
         assertEquals(descriptor.kernelResource(), artifact.resource());
         assertEquals(OpenClBackendLowerer.VERSION, artifact.lowererVersion());
+        assertEquals("derived-opencl-source", artifact.sourceOrigin());
+        assertTrue(artifact.sourceAvailable());
+        assertTrue(!artifact.binaryAvailable());
+        assertEquals("", artifact.sourceMapResource());
+        assertEquals("opencl-source-compile", artifact.runtimeLoadMode());
     }
 
     @Test
@@ -56,10 +62,22 @@ class GpuBackendLowerersTest {
         );
 
         OpenClIrGpuParityResult parityResult = OpenClIrGpuParityChecker.check(compileRequest);
+        OpenClIrGpuReconstructionPlan reconstructionPlan = OpenClIrGpuReconstructionPlan.from(parityResult);
         GpuBackendModuleArtifact artifact = GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest);
 
         assertTrue(parityResult.checked());
         assertTrue(parityResult.compatible());
+        assertTrue(!parityResult.backendNeutralSourceReady());
+        assertEquals("ir-text-v1", parityResult.regenerationPayloadFormat());
+        assertEquals("derived-opencl-source", parityResult.regenerationFallbackSource());
+        assertEquals(List.of("typed-body-regeneration-not-yet-available"), parityResult.regenerationBlockers());
+        assertTrue(parityResult.toLine().contains("backendNeutralSourceReady=false"));
+        assertTrue(parityResult.toLine().contains("regenerationBlockers=typed-body-regeneration-not-yet-available"));
+        assertTrue(!reconstructionPlan.irGpuSourceSelected());
+        assertEquals("derived-opencl-source", reconstructionPlan.selectedSource());
+        assertEquals("ir-text-v1", reconstructionPlan.payloadFormat());
+        assertEquals(List.of("typed-body-regeneration-not-yet-available"), reconstructionPlan.blockers());
+        assertTrue(reconstructionPlan.toLine().contains("irGpuSourceSelected=false"));
         assertEquals(descriptor.kernelResource(), parityResult.derivedOpenClResource());
         assertEquals(descriptor.kernelSource(), artifact.source());
         assertEquals(descriptor.kernelResource(), artifact.resource());

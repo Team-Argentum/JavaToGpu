@@ -9,6 +9,8 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
+import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -124,6 +126,92 @@ class AsmFrontendServiceTest {
         assertTrue(kernel.contains("float jtg_fn_Helpers_square_float(float value);"));
         assertTrue(kernel.contains("return (arg0 * arg0);"));
         assertTrue(kernel.contains("arg1[tmp2] = jtg_fn_Helpers_square_float(arg0[tmp2]);"));
+    }
+
+    @Test
+    void compilesStructuredAsmKernelAndReturnsIrGpuArtifact() {
+        MethodNode helperMethodNode = methodNode(HELPERS_OWNER, "square", "(F)F", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.FLOAD, 0);
+            mv.visitVarInsn(Opcodes.FLOAD, 0);
+            mv.visitInsn(Opcodes.FMUL);
+            mv.visitInsn(Opcodes.FRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        MethodNode kernelMethodNode = methodNode(DEMO_OWNER, "kernel", "([F[F)V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ICONST_0);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, GPU_OWNER, "get_global_id", "(I)I", false);
+            mv.visitVarInsn(Opcodes.ISTORE, 2);
+            mv.visitVarInsn(Opcodes.ALOAD, 1);
+            mv.visitVarInsn(Opcodes.ILOAD, 2);
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitVarInsn(Opcodes.ILOAD, 2);
+            mv.visitInsn(Opcodes.FALOAD);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, HELPERS_OWNER, "square", "(F)F", false);
+            mv.visitInsn(Opcodes.FASTORE);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmGpuMethod helperMethod = new AsmGpuMethod(
+                HELPERS_OWNER,
+                parsedMethod("Helpers", "sample.Helpers", "square", "float", List.of(
+                        parameter("value", "float")
+                )),
+                helperMethodNode
+        );
+        AsmGpuMethod kernelMethod = new AsmGpuMethod(
+                DEMO_OWNER,
+                parsedMethod("Demo", "sample.Demo", "kernel", "void", List.of(
+                        globalArrayParameter("input", "float[]"),
+                        globalArrayParameter("output", "float[]")
+                )),
+                kernelMethodNode
+        );
+
+        AsmFrontendService service = AsmFrontendService.createDefault();
+        GpuFrontendCompilationResult result = service.compileStructured(
+                kernelMethod,
+                List.of(helperMethod),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertTrue(result.openClSource().contains("float jtg_fn_Helpers_square_float(float value);"));
+        assertTrue(result.openClSource().contains("arg1[tmp2] = jtg_fn_Helpers_square_float(arg0[tmp2]);"));
+        assertEquals("asm", result.irGpuArtifact().header().sourceFrontend());
+        assertEquals("kernel", result.irGpuArtifact().module().entryMethod());
+        assertEquals("jtg_kernel", result.irGpuArtifact().module().entryEmittedName());
+        assertEquals(1, result.irGpuArtifact().module().helperMethods().size());
+        assertEquals("square", result.irGpuArtifact().module().helperMethods().get(0).name());
+        assertEquals("jtg_fn_Helpers_square_float", result.irGpuArtifact().module().helperMethods().get(0).emittedName());
+        assertEquals(2, result.irGpuArtifact().entryParameters().size());
+        assertEquals("input", result.irGpuArtifact().entryParameters().get(0).name());
+        assertEquals("float[]", result.irGpuArtifact().entryParameters().get(0).javaType());
+        assertEquals("GLOBAL", result.irGpuArtifact().entryParameters().get(0).addressSpace());
+        assertEquals(2, result.irGpuArtifact().module().methodBodies().size());
+        assertEquals("asm", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().sourceKind());
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(0).body().contains("method jtg_kernel source=kernel"));
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(0).bodyIndex().helperCalls().contains("jtg_fn_Helpers_square_float"));
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().derivedOpenClResource());
+
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.openClResource());
+        assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", result.irGpuResource());
+        assertTrue(!result.irGpuArtifact().regenerationMetadata().backendNeutralSourceReady());
+
+        GpuKernelDescriptor descriptor = result.toKernelDescriptor();
+        assertEquals("jtg_kernel", descriptor.kernelName());
+        assertEquals("javatogpu/sample/Demo/kernel.cl", descriptor.kernelResource());
+        assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", descriptor.irGpuResource());
+        assertEquals(result.openClSource(), descriptor.kernelSource());
+        assertEquals(2, descriptor.parameterDescriptors().size());
+        assertEquals("input", descriptor.parameterDescriptors().get(0).name());
+        assertEquals("float[]", descriptor.parameterDescriptors().get(0).javaType());
+        assertEquals(GpuKernelParameterAccess.READ_WRITE, descriptor.parameterDescriptors().get(0).access());
     }
 
     @Test

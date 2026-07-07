@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Records where a runtime compile artifact came from and which options shaped it.
@@ -22,11 +23,53 @@ public record GpuRuntimeCompileProvenance(
         boolean supportsImages,
         boolean supportsSubgroups,
         List<String> compileArgs,
+        GpuBackendCompileOptions backendOptions,
         String optimizationProfile,
         String fallbackDecision
 ) {
 
     public static final String NO_FALLBACK = "none";
+
+    public GpuRuntimeCompileProvenance(
+            GpuBackendTarget backendTarget,
+            String backendName,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            long computeUnits,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsSubgroups,
+            List<String> compileArgs,
+            String optimizationProfile,
+            String fallbackDecision
+    ) {
+        this(
+                backendTarget,
+                backendName,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                computeUnits,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsSubgroups,
+                compileArgs,
+                backendTarget == GpuBackendTarget.OPENCL
+                        ? GpuBackendCompileOptions.openCl(compileArgs)
+                        : GpuBackendCompileOptions.empty(backendTarget),
+                optimizationProfile,
+                fallbackDecision
+        );
+    }
 
     public GpuRuntimeCompileProvenance {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -40,6 +83,9 @@ public record GpuRuntimeCompileProvenance(
         maxWorkGroupSize = normalizeLong(maxWorkGroupSize);
         preferredVectorWidthFloat = normalizeLong(preferredVectorWidthFloat);
         compileArgs = compileArgs == null ? List.of() : List.copyOf(compileArgs);
+        backendOptions = backendOptions == null
+                ? GpuBackendCompileOptions.empty(backendTarget)
+                : backendOptions;
         optimizationProfile = optimizationProfile == null || optimizationProfile.isBlank()
                 ? "off"
                 : optimizationProfile;
@@ -69,6 +115,7 @@ public record GpuRuntimeCompileProvenance(
                 deviceProfile.supportsImages(),
                 deviceProfile.supportsSubgroups(),
                 options.compileArgs(),
+                options.backendOptions(),
                 options.optimizationProfile(),
                 NO_FALLBACK
         );
@@ -90,6 +137,7 @@ public record GpuRuntimeCompileProvenance(
                 false,
                 false,
                 List.of(),
+                GpuBackendCompileOptions.empty(GpuBackendTarget.UNKNOWN),
                 "off",
                 NO_FALLBACK
         );
@@ -111,6 +159,7 @@ public record GpuRuntimeCompileProvenance(
                 supportsImages,
                 supportsSubgroups,
                 compileArgs,
+                backendOptions,
                 optimizationProfile,
                 fallbackDecision
         );
@@ -134,6 +183,19 @@ public record GpuRuntimeCompileProvenance(
         builder.append("compileArg.count=").append(compileArgs.size()).append('\n');
         for (int index = 0; index < compileArgs.size(); index++) {
             builder.append("compileArg.").append(index).append('=').append(compileArgs.get(index)).append('\n');
+        }
+        builder.append("backendOption.target=").append(backendOptions.backendTarget()).append('\n');
+        builder.append("backendOption.flag.count=").append(backendOptions.flags().size()).append('\n');
+        for (int index = 0; index < backendOptions.flags().size(); index++) {
+            builder.append("backendOption.flag.").append(index).append('=').append(backendOptions.flags().get(index)).append('\n');
+        }
+        Map<String, String> stableProperties = backendOptions.stableProperties();
+        builder.append("backendOption.property.count=").append(stableProperties.size()).append('\n');
+        int propertyIndex = 0;
+        for (Map.Entry<String, String> entry : stableProperties.entrySet()) {
+            builder.append("backendOption.property.").append(propertyIndex).append(".key=").append(entry.getKey()).append('\n');
+            builder.append("backendOption.property.").append(propertyIndex).append(".value=").append(entry.getValue()).append('\n');
+            propertyIndex++;
         }
         builder.append("optimizationProfile=").append(optimizationProfile).append('\n');
         builder.append("fallbackDecision=").append(fallbackDecision).append('\n');

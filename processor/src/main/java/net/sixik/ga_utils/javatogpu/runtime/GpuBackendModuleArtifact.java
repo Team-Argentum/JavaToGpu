@@ -11,8 +11,38 @@ public record GpuBackendModuleArtifact(
         String source,
         String resource,
         String artifactVersion,
-        String lowererVersion
+        String lowererVersion,
+        String sourceOrigin,
+        boolean sourceAvailable,
+        boolean binaryAvailable,
+        String sourceMapResource,
+        String runtimeLoadMode
 ) {
+
+    public GpuBackendModuleArtifact(
+            GpuBackendTarget backendTarget,
+            String kind,
+            String format,
+            String source,
+            String resource,
+            String artifactVersion,
+            String lowererVersion
+    ) {
+        this(
+                backendTarget,
+                kind,
+                format,
+                source,
+                resource,
+                artifactVersion,
+                lowererVersion,
+                "lowered-source",
+                source != null && !source.isBlank(),
+                false,
+                "",
+                "source-compile"
+        );
+    }
 
     public GpuBackendModuleArtifact {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -22,6 +52,10 @@ public record GpuBackendModuleArtifact(
         resource = resource == null ? "" : resource;
         artifactVersion = normalize(artifactVersion, backendTarget.name().toLowerCase(java.util.Locale.ROOT) + ":" + kind + ":" + format);
         lowererVersion = normalize(lowererVersion, "unknown");
+        sourceOrigin = normalize(sourceOrigin, "lowered-source");
+        sourceAvailable = sourceAvailable || !source.isBlank();
+        sourceMapResource = sourceMapResource == null ? "" : sourceMapResource;
+        runtimeLoadMode = normalize(runtimeLoadMode, "source-compile");
     }
 
     public static GpuBackendModuleArtifact openClSource(
@@ -36,7 +70,12 @@ public record GpuBackendModuleArtifact(
                 source,
                 resource,
                 "opencl:source:opencl-c:v1",
-                lowererVersion
+                lowererVersion,
+                "derived-opencl-source",
+                source != null && !source.isBlank(),
+                false,
+                "",
+                "opencl-source-compile"
         );
     }
 
@@ -48,6 +87,11 @@ public record GpuBackendModuleArtifact(
                 "",
                 "",
                 "unknown:unknown:unknown",
+                "unknown",
+                "unknown",
+                false,
+                false,
+                "",
                 "unknown"
         );
     }

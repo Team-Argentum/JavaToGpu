@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 
 /**
@@ -25,9 +26,24 @@ public final class OpenClIrGpuParityChecker {
             return OpenClIrGpuParityResult.missingIrGpu(descriptorOpenClResource);
         }
         String derivedOpenClResource = artifact.derivedOpenClResource();
+        IrGpuRegenerationMetadata regenerationMetadata = artifact.regenerationMetadata();
         if (!derivedOpenClResource.isBlank() && derivedOpenClResource.equals(descriptorOpenClResource)) {
-            return OpenClIrGpuParityResult.compatible(derivedOpenClResource, descriptorOpenClResource);
+            return OpenClIrGpuParityResult.compatible(
+                    regenerationMetadata.backendNeutralSourceReady(),
+                    regenerationMetadata.payloadFormat(),
+                    regenerationMetadata.fallbackSource(),
+                    regenerationMetadata.blockers(),
+                    derivedOpenClResource,
+                    descriptorOpenClResource
+            );
         }
-        return OpenClIrGpuParityResult.incompatible(derivedOpenClResource, descriptorOpenClResource);
+        return OpenClIrGpuParityResult.incompatible(
+                regenerationMetadata.backendNeutralSourceReady(),
+                regenerationMetadata.payloadFormat(),
+                regenerationMetadata.fallbackSource(),
+                regenerationMetadata.blockers(),
+                derivedOpenClResource,
+                descriptorOpenClResource
+        );
     }
 }

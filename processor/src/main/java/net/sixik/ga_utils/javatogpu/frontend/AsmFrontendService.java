@@ -134,6 +134,15 @@ public final class AsmFrontendService {
             List<AsmGpuMethod> helperMethods,
             List<ParsedGpuStruct> structs
     ) {
+        return compileStructured(kernelMethod, helperMethods, structs, "").openClSource();
+    }
+
+    public GpuFrontendCompilationResult compileStructured(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            String derivedOpenClResource
+    ) {
         validateSignatureCompatibility(kernelMethod);
         helperMethods.forEach(this::validateSignatureCompatibility);
 
@@ -167,16 +176,21 @@ public final class AsmFrontendService {
         );
         passRunner.run(compiledKernel, compiledMethods, structs);
         validationRunner.run(compiledKernel, compiledMethods, structs);
-
-        return emitter.emitProgram(
+        List<GpuIrCompiledMethod> reachableHelpers = GpuProgramAssemblySupport.selectReachableHelpers(
                 compiledKernel,
-                GpuProgramAssemblySupport.selectReachableHelpers(
-                        compiledKernel,
-                        compiledMethods,
-                        "Lifted ASM kernel references unknown helper: ",
-                        "Recursive ASM helper calls are not supported: "
-                ),
+                compiledMethods,
+                "Lifted ASM kernel references unknown helper: ",
+                "Recursive ASM helper calls are not supported: "
+        );
+
+        String openClSource = emitter.emitProgram(
+                compiledKernel,
+                reachableHelpers,
                 structs
+        );
+        return new GpuFrontendCompilationResult(
+                openClSource,
+                GpuFrontendService.buildIrGpuArtifact(compiledKernel, reachableHelpers, structs, derivedOpenClResource, "asm")
         );
     }
 

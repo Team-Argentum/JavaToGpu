@@ -96,6 +96,9 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("entryEmittedName=jtg_kernel"));
         assertTrue(irGpuManifest.contains("helper.count=0"));
         assertTrue(irGpuManifest.contains("struct.count=0"));
+        assertTrue(irGpuManifest.contains("structMetadata.count=0"));
+        assertTrue(irGpuManifest.contains("constant.count=0"));
+        assertTrue(irGpuManifest.contains("constantData.count=0"));
         assertTrue(irGpuManifest.contains("entryParameter.count=2"));
         assertTrue(irGpuManifest.contains("entryParameter.0.name=input"));
         assertTrue(irGpuManifest.contains("entryParameter.0.javaType=float[]"));
@@ -105,6 +108,19 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("entryParameter.1.javaType=float[]"));
         assertTrue(irGpuManifest.contains("entryParameter.1.addressSpace=GLOBAL"));
         assertTrue(irGpuManifest.contains("entryParameter.1.constant=false"));
+        assertTrue(irGpuManifest.contains("launch.requiredDimensions=1"));
+        assertTrue(irGpuManifest.contains("launch.globalWorkSizeSource=first-buffer-parameter"));
+        assertTrue(irGpuManifest.contains("launch.explicitConfigSupported=true"));
+        assertTrue(irGpuManifest.contains("validation.contractVersion=ir-validation-v1"));
+        assertTrue(irGpuManifest.contains("validation.safetyMode=frontend-subset"));
+        assertTrue(irGpuManifest.contains("validation.optimizerEvidenceRequired=false"));
+        assertTrue(irGpuManifest.contains("feature.required.count=0"));
+        assertTrue(irGpuManifest.contains("feature.optional.count=1"));
+        assertTrue(irGpuManifest.contains("feature.optional.0=opencl-source-compat"));
+        assertTrue(irGpuManifest.contains("regeneration.backendNeutralSourceReady=false"));
+        assertTrue(irGpuManifest.contains("regeneration.payloadFormat=ir-text-v1"));
+        assertTrue(irGpuManifest.contains("regeneration.fallbackSource=derived-opencl-source"));
+        assertTrue(irGpuManifest.contains("regeneration.blocker.0=typed-body-regeneration-not-yet-available"));
         assertTrue(irGpuManifest.contains("backendOutput.count=1"));
         assertTrue(irGpuManifest.contains("backendOutput.0.backend=opencl"));
         assertTrue(irGpuManifest.contains("backendOutput.0.kind=source"));
@@ -118,6 +134,15 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("methodBody.0.name=kernel"));
         assertTrue(irGpuManifest.contains("methodBody.0.emittedName=jtg_kernel"));
         assertTrue(irGpuManifest.contains("methodBody.0.format=ir-text-v1"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statement.count=3"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statementKind.0=GpuIrVariableDeclaration"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statementKind.1=GpuIrAssignment"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.expressionKind.0=GpuIrIntrinsicCall"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.intrinsicCall.0=get_global_id"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.intrinsicCall.1=sin"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.intrinsicCall.2=cos"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.writesMemory=true"));
+        assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.hasControlFlow=false"));
 
         IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
         assertEquals(2, irGpuArtifact.entryParameters().size());
@@ -127,10 +152,30 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuArtifact.entryParameters().get(0).constant());
         assertEquals("output", irGpuArtifact.entryParameters().get(1).name());
         assertFalse(irGpuArtifact.entryParameters().get(1).constant());
+        assertEquals(1, irGpuArtifact.launchMetadata().requiredDimensions());
+        assertEquals("first-buffer-parameter", irGpuArtifact.launchMetadata().globalWorkSizeSource());
+        assertTrue(irGpuArtifact.launchMetadata().explicitConfigSupported());
+        assertEquals("ir-validation-v1", irGpuArtifact.validationMetadata().contractVersion());
+        assertEquals("frontend-subset", irGpuArtifact.validationMetadata().safetyMode());
+        assertFalse(irGpuArtifact.validationMetadata().optimizerEvidenceRequired());
+        assertTrue(irGpuArtifact.featureMetadata().requiredFeatures().isEmpty());
+        assertEquals(List.of("opencl-source-compat"), irGpuArtifact.featureMetadata().optionalFeatures());
+        assertFalse(irGpuArtifact.regenerationMetadata().backendNeutralSourceReady());
+        assertEquals("ir-text-v1", irGpuArtifact.regenerationMetadata().payloadFormat());
+        assertEquals("derived-opencl-source", irGpuArtifact.regenerationMetadata().fallbackSource());
+        assertEquals(List.of("typed-body-regeneration-not-yet-available"), irGpuArtifact.regenerationMetadata().blockers());
+        assertTrue(irGpuArtifact.structMetadata().isEmpty());
+        assertTrue(irGpuArtifact.constants().isEmpty());
+        assertTrue(irGpuArtifact.constantData().isEmpty());
         assertEquals(1, irGpuArtifact.module().methodBodies().size());
         assertEquals("entry", irGpuArtifact.module().methodBodies().get(0).role());
         assertEquals("kernel", irGpuArtifact.module().methodBodies().get(0).name());
         assertEquals("jtg_kernel", irGpuArtifact.module().methodBodies().get(0).emittedName());
+        assertEquals(3, irGpuArtifact.module().methodBodies().get(0).bodyIndex().statementCount());
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().statementKinds().contains("GpuIrAssignment"));
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().intrinsicCalls().contains("sin"));
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().writesMemory());
+        assertFalse(irGpuArtifact.module().methodBodies().get(0).bodyIndex().hasControlFlow());
         assertTrue(irGpuArtifact.module().methodBodies().get(0).body().contains("method jtg_kernel source=kernel"));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).body().contains("var int id = intrinsic(get_global_id"));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).body().contains("set output[id] = (intrinsic(sin"));
@@ -1449,6 +1494,24 @@ class GpuCompilerProcessorTest {
                     int id = get_global_id(0);
                     output[id] = (input[id] * 0.5F);
                 }""", Files.readString(kernelPath));
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("constant.count=1"));
+        assertTrue(irGpuManifest.contains("constant.0.ownerQualifiedName=sample.Demo"));
+        assertTrue(irGpuManifest.contains("constant.0.ownerSimpleName=Demo"));
+        assertTrue(irGpuManifest.contains("constant.0.name=SCALE"));
+        assertTrue(irGpuManifest.contains("constant.0.javaType=float"));
+        assertTrue(irGpuManifest.contains("constant.0.sourceText=0.5F"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertEquals(1, irGpuArtifact.constants().size());
+        assertEquals("sample.Demo", irGpuArtifact.constants().get(0).ownerQualifiedName());
+        assertEquals("Demo", irGpuArtifact.constants().get(0).ownerSimpleName());
+        assertEquals("SCALE", irGpuArtifact.constants().get(0).name());
+        assertEquals("float", irGpuArtifact.constants().get(0).javaType());
+        assertEquals("0.5F", irGpuArtifact.constants().get(0).sourceText());
     }
 
     @Test
@@ -1503,6 +1566,24 @@ class GpuCompilerProcessorTest {
         assertTrue(kernel.contains("0.25f") || kernel.contains("0.25F"));
         assertTrue(kernel.contains("0.5f") || kernel.contains("0.5F"));
         assertTrue(kernel.contains("output[id] = (input[id] * LOOKUP[id]);"));
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("constantData.count=1"));
+        assertTrue(irGpuManifest.contains("constantData.0.ownerQualifiedName=sample.Demo"));
+        assertTrue(irGpuManifest.contains("constantData.0.ownerSimpleName=Demo"));
+        assertTrue(irGpuManifest.contains("constantData.0.name=LOOKUP"));
+        assertTrue(irGpuManifest.contains("constantData.0.javaType=float[]"));
+        assertTrue(irGpuManifest.contains("constantData.0.kind=EMBEDDED"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertEquals(1, irGpuArtifact.constantData().size());
+        assertEquals("sample.Demo", irGpuArtifact.constantData().get(0).ownerQualifiedName());
+        assertEquals("Demo", irGpuArtifact.constantData().get(0).ownerSimpleName());
+        assertEquals("LOOKUP", irGpuArtifact.constantData().get(0).name());
+        assertEquals("float[]", irGpuArtifact.constantData().get(0).javaType());
+        assertEquals("EMBEDDED", irGpuArtifact.constantData().get(0).kind());
     }
 
     @Test
@@ -10113,6 +10194,24 @@ class GpuCompilerProcessorTest {
                     int id = get_global_id(0);
                     output[id] = (input[id] + LOOKUP[id]);
                 }""", Files.readString(kernelPath));
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("constantData.count=1"));
+        assertTrue(irGpuManifest.contains("constantData.0.ownerQualifiedName=sample.Demo"));
+        assertTrue(irGpuManifest.contains("constantData.0.ownerSimpleName=Demo"));
+        assertTrue(irGpuManifest.contains("constantData.0.name=LOOKUP"));
+        assertTrue(irGpuManifest.contains("constantData.0.javaType=int[]"));
+        assertTrue(irGpuManifest.contains("constantData.0.kind=EXTERN"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertEquals(1, irGpuArtifact.constantData().size());
+        assertEquals("sample.Demo", irGpuArtifact.constantData().get(0).ownerQualifiedName());
+        assertEquals("Demo", irGpuArtifact.constantData().get(0).ownerSimpleName());
+        assertEquals("LOOKUP", irGpuArtifact.constantData().get(0).name());
+        assertEquals("int[]", irGpuArtifact.constantData().get(0).javaType());
+        assertEquals("EXTERN", irGpuArtifact.constantData().get(0).kind());
     }
 
     @Test
@@ -10932,6 +11031,28 @@ class GpuCompilerProcessorTest {
         assertTrue(kernel.contains("view.densityOffset"));
         assertTrue(kernel.contains("__global int*)"));
         assertTrue(kernel.contains("id * 4"));
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("structMetadata.count=1"));
+        assertTrue(irGpuManifest.contains("structMetadata.0.ownerQualifiedName=sample.Demo.PackedNoiseView"));
+        assertTrue(irGpuManifest.contains("structMetadata.0.ownerSimpleName=PackedNoiseView"));
+        assertTrue(irGpuManifest.contains("structMetadata.0.field.count=2"));
+        assertTrue(irGpuManifest.contains("structMetadata.0.field.0.name=samplerOffset"));
+        assertTrue(irGpuManifest.contains("structMetadata.0.field.0.javaType=int"));
+        assertTrue(irGpuManifest.contains("structMetadata.0.field.1.name=densityOffset"));
+        assertTrue(irGpuManifest.contains("structMetadata.0.field.1.javaType=int"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertEquals(1, irGpuArtifact.structMetadata().size());
+        assertEquals("sample.Demo.PackedNoiseView", irGpuArtifact.structMetadata().get(0).ownerQualifiedName());
+        assertEquals("PackedNoiseView", irGpuArtifact.structMetadata().get(0).ownerSimpleName());
+        assertEquals(2, irGpuArtifact.structMetadata().get(0).fields().size());
+        assertEquals("samplerOffset", irGpuArtifact.structMetadata().get(0).fields().get(0).name());
+        assertEquals("int", irGpuArtifact.structMetadata().get(0).fields().get(0).javaType());
+        assertEquals("densityOffset", irGpuArtifact.structMetadata().get(0).fields().get(1).name());
+        assertEquals("int", irGpuArtifact.structMetadata().get(0).fields().get(1).javaType());
     }
 
     private static final class StringJavaFileObject extends SimpleJavaFileObject {

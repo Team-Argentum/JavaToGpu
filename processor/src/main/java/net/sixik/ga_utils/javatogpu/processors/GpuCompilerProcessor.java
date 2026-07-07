@@ -9,12 +9,12 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import net.sixik.ga_utils.javatogpu.api.GpuAnnotationSupport;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendArtifactWriter;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendCompilationResult;
+import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendResourcePaths;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendService;
 import net.sixik.ga_utils.javatogpu.frontend.GpuStructAliasRegistry;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactSerializer;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
@@ -28,7 +28,6 @@ import net.sixik.ga_utils.javatogpu.frontend.parser.GpuStructParser;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
@@ -207,8 +206,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                         buildResourcePath(method)
                 );
                 String kernelSource = compilationResult.openClSource();
-                writeKernelResource(method, kernelSource);
-                writeIrGpuResource(method, compilationResult.irGpuArtifact());
+                writeFrontendArtifacts(method, compilationResult);
                 writeLauncherSource(method, kernelSource);
             } catch (RuntimeException | IOException exception) {
                 processingEnv.getMessager().printMessage(
@@ -1411,33 +1409,18 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 .toList();
     }
 
-    private void writeKernelResource(ExecutableElement method, String kernelSource) throws IOException {
-        String resourcePath = buildResourcePath(method);
-        if (!writtenResources.add(resourcePath)) {
-            return;
-        }
-
-        Filer filer = processingEnv.getFiler();
-        FileObject resource = filer.createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, method);
-        try (Writer writer = resource.openWriter()) {
-            writer.write(kernelSource);
-        }
-    }
-
-    private void writeIrGpuResource(
+    private void writeFrontendArtifacts(
             ExecutableElement method,
-            IrGpuArtifact artifact
+            GpuFrontendCompilationResult compilationResult
     ) throws IOException {
-        String resourcePath = buildIrGpuResourcePath(method);
-        if (!writtenResources.add(resourcePath)) {
-            return;
-        }
-
-        Filer filer = processingEnv.getFiler();
-        FileObject resource = filer.createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, method);
-        try (Writer writer = resource.openWriter()) {
-            writer.write(IrGpuArtifactSerializer.serialize(artifact));
-        }
+        GpuFrontendArtifactWriter.write(compilationResult, resourcePath -> {
+            if (!writtenResources.add(resourcePath)) {
+                return Writer.nullWriter();
+            }
+            FileObject resource = processingEnv.getFiler()
+                    .createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, method);
+            return resource.openWriter();
+        });
     }
 
     private void writeLauncherSource(ExecutableElement method, String kernelSource) throws IOException {
@@ -1706,14 +1689,20 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private String buildResourcePath(ExecutableElement method) {
         TypeElement enclosingType = (TypeElement) method.getEnclosingElement();
-        String qualifiedName = enclosingType.getQualifiedName().toString().replace('.', '/');
-        return "javatogpu/" + qualifiedName + "/" + method.getSimpleName() + ".cl";
+        return GpuFrontendResourcePaths.openClResource(
+                enclosingType.getQualifiedName().toString(),
+                enclosingType.getSimpleName().toString(),
+                method.getSimpleName().toString()
+        );
     }
 
     private String buildIrGpuResourcePath(ExecutableElement method) {
         TypeElement enclosingType = (TypeElement) method.getEnclosingElement();
-        String qualifiedName = enclosingType.getQualifiedName().toString().replace('.', '/');
-        return "javatogpu/" + qualifiedName + "/" + method.getSimpleName() + ".irgpu.properties";
+        return GpuFrontendResourcePaths.irGpuResource(
+                enclosingType.getQualifiedName().toString(),
+                enclosingType.getSimpleName().toString(),
+                method.getSimpleName().toString()
+        );
     }
 
     private String buildLauncherPackageName(ExecutableElement method) {

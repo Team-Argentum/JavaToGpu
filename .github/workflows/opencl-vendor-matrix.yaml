@@ -1,0 +1,115 @@
+name: OpenCL Vendor Matrix
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencl-vendor-matrix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  opencl-vendor-matrix:
+    name: OpenCL ${{ matrix.vendor_name }} / ${{ matrix.device_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - vendor: amd
+            vendor_name: AMD
+            device_name: RX 7800 XT
+            artifact_suffix: amd-rx7800xt
+            runner_labels: [self-hosted, Windows, X64, amd, rx7800xt]
+            routine_task: :processor:openClOperationalRoutine
+
+          - vendor: nvidia
+            vendor_name: NVIDIA
+            device_name: RTX 5070
+            artifact_suffix: nvidia-rtx5070
+            runner_labels: [self-hosted, Windows, X64, nvidia, rtx5070]
+            routine_task: :processor:openClNvidiaRoutine
+
+    runs-on: ${{ matrix.runner_labels }}
+    timeout-minutes: 90
+
+    env:
+      JTG_VALIDATION_VENDOR: ${{ matrix.vendor }}
+      JTG_VALIDATION_DEVICE: ${{ matrix.device_name }}
+      JTG_OPENCL_CI: 'true'
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Print runner and GPU context
+        shell: powershell
+        run: |
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "Labels: $env:RUNNER_LABELS"
+          Write-Host "Expected vendor: $env:JTG_VALIDATION_VENDOR"
+          Write-Host "Expected device: $env:JTG_VALIDATION_DEVICE"
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, AdapterCompatibility, DriverVersion |
+            Format-Table -AutoSize
+
+      - name: OpenCL validation routine
+        id: opencl_validation
+        continue-on-error: true
+        shell: powershell
+        run: .\gradlew.bat ${{ matrix.routine_task }} --console=plain --no-daemon
+
+      - name: Generate OpenCL validation report
+        if: always()
+        id: validation_report
+        continue-on-error: true
+        shell: powershell
+        run: .\gradlew.bat :processor:openClValidationReport --console=plain --no-daemon
+
+      - name: Upload OpenCL report bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencl-validation-${{ matrix.artifact_suffix }}
+          path: |
+            processor/build/reports/opencl/
+            processor/build/test-results/
+            processor/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail after artifact capture
+        if: always()
+        shell: powershell
+        env:
+          OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
+          VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
+        run: |
+          $failed = @()
+          if ($env:OPENCL_VALIDATION_OUTCOME -ne 'success') {
+            $failed += "openclValidation=$env:OPENCL_VALIDATION_OUTCOME"
+          }
+          if ($env:VALIDATION_REPORT_OUTCOME -ne 'success') {
+            $failed += "validationReport=$env:VALIDATION_REPORT_OUTCOME"
+          }
+
+          if ($failed.Count -gt 0) {
+            Write-Error "OpenCL $env:JTG_VALIDATION_VENDOR / $env:JTG_VALIDATION_DEVICE lane failed after artifact capture: $($failed -join ', ')"
+            exit 1
+          }
+
+          Write-Host "OpenCL $env:JTG_VALIDATION_VENDOR / $env:JTG_VALIDATION_DEVICE lane passed."

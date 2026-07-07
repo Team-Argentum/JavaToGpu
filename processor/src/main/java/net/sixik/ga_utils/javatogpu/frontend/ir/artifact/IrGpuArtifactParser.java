@@ -41,6 +41,13 @@ public final class IrGpuArtifactParser {
                 header,
                 module,
                 parseEntryParameters(properties),
+                parseLaunchMetadata(properties),
+                parseValidationMetadata(properties),
+                parseFeatureMetadata(properties),
+                parseRegenerationMetadata(properties),
+                parseStructMetadata(properties),
+                parseConstants(properties),
+                parseConstantData(properties),
                 backendOutputs,
                 properties.getProperty("runtime.defaultBackend", "opencl"),
                 properties.getProperty("runtime.optimizationProfile", "off")
@@ -79,11 +86,24 @@ public final class IrGpuArtifactParser {
                     require(properties, prefix + "emittedName"),
                     require(properties, prefix + "format"),
                     require(properties, prefix + "body"),
+                    parseBodyIndex(properties, prefix),
                     parseMethodBodyDependencies(properties, prefix),
                     parseSourceLocation(properties, prefix)
             ));
         }
         return List.copyOf(methodBodies);
+    }
+
+    private static IrGpuBodyIndex parseBodyIndex(Properties properties, String prefix) {
+        return new IrGpuBodyIndex(
+                parseInt(properties, prefix + "bodyIndex.statement.count", 0),
+                parseIndexedValues(properties, prefix + "bodyIndex.statementKind"),
+                parseIndexedValues(properties, prefix + "bodyIndex.expressionKind"),
+                parseIndexedValues(properties, prefix + "bodyIndex.intrinsicCall"),
+                parseIndexedValues(properties, prefix + "bodyIndex.helperCall"),
+                Boolean.parseBoolean(properties.getProperty(prefix + "bodyIndex.writesMemory", "false")),
+                Boolean.parseBoolean(properties.getProperty(prefix + "bodyIndex.hasControlFlow", "false"))
+        );
     }
 
     private static IrGpuSourceLocation parseSourceLocation(Properties properties, String prefix) {
@@ -136,6 +156,47 @@ public final class IrGpuArtifactParser {
         return List.copyOf(qualifiers);
     }
 
+    private static IrGpuLaunchMetadata parseLaunchMetadata(Properties properties) {
+        return new IrGpuLaunchMetadata(
+                parseInt(properties, "launch.requiredDimensions", 1),
+                properties.getProperty("launch.globalWorkSizeSource", "first-buffer-parameter"),
+                Boolean.parseBoolean(properties.getProperty("launch.explicitConfigSupported", "true"))
+        );
+    }
+
+    private static IrGpuValidationMetadata parseValidationMetadata(Properties properties) {
+        return new IrGpuValidationMetadata(
+                properties.getProperty("validation.contractVersion", "ir-validation-v1"),
+                properties.getProperty("validation.safetyMode", "frontend-subset"),
+                Boolean.parseBoolean(properties.getProperty("validation.optimizerEvidenceRequired", "false"))
+        );
+    }
+
+    private static IrGpuFeatureMetadata parseFeatureMetadata(Properties properties) {
+        return new IrGpuFeatureMetadata(
+                parseIndexedValues(properties, "feature.required"),
+                parseIndexedValues(properties, "feature.optional")
+        );
+    }
+
+    private static IrGpuRegenerationMetadata parseRegenerationMetadata(Properties properties) {
+        return new IrGpuRegenerationMetadata(
+                Boolean.parseBoolean(properties.getProperty("regeneration.backendNeutralSourceReady", "false")),
+                properties.getProperty("regeneration.payloadFormat", "ir-text-v1"),
+                properties.getProperty("regeneration.fallbackSource", "derived-opencl-source"),
+                parseIndexedValues(properties, "regeneration.blocker")
+        );
+    }
+
+    private static List<String> parseIndexedValues(Properties properties, String prefix) {
+        int count = parseInt(properties, prefix + ".count", 0);
+        ArrayList<String> values = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            values.add(require(properties, prefix + "." + index));
+        }
+        return List.copyOf(values);
+    }
+
     private static List<IrGpuBackendOutput> parseBackendOutputs(Properties properties) {
         int count = parseInt(properties, "backendOutput.count", 0);
         ArrayList<IrGpuBackendOutput> outputs = new ArrayList<>();
@@ -148,6 +209,68 @@ public final class IrGpuArtifactParser {
             ));
         }
         return List.copyOf(outputs);
+    }
+
+    private static List<IrGpuStructMetadata> parseStructMetadata(Properties properties) {
+        int count = parseInt(properties, "structMetadata.count", 0);
+        ArrayList<IrGpuStructMetadata> structs = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "structMetadata." + index + ".";
+            structs.add(new IrGpuStructMetadata(
+                    require(properties, prefix + "ownerQualifiedName"),
+                    properties.getProperty(prefix + "ownerSimpleName", ""),
+                    parseStructFields(properties, prefix),
+                    parseIndexedValues(properties, prefix + "openClAttribute")
+            ));
+        }
+        return List.copyOf(structs);
+    }
+
+    private static List<IrGpuStructFieldMetadata> parseStructFields(Properties properties, String structPrefix) {
+        int count = parseInt(properties, structPrefix + "field.count", 0);
+        ArrayList<IrGpuStructFieldMetadata> fields = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = structPrefix + "field." + index + ".";
+            fields.add(new IrGpuStructFieldMetadata(
+                    require(properties, prefix + "name"),
+                    require(properties, prefix + "javaType"),
+                    parseIndexedValues(properties, prefix + "openClAttribute")
+            ));
+        }
+        return List.copyOf(fields);
+    }
+
+    private static List<IrGpuConstantMetadata> parseConstants(Properties properties) {
+        int count = parseInt(properties, "constant.count", 0);
+        ArrayList<IrGpuConstantMetadata> constants = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "constant." + index + ".";
+            constants.add(new IrGpuConstantMetadata(
+                    require(properties, prefix + "ownerQualifiedName"),
+                    properties.getProperty(prefix + "ownerSimpleName", ""),
+                    require(properties, prefix + "name"),
+                    require(properties, prefix + "javaType"),
+                    properties.getProperty(prefix + "sourceText", "")
+            ));
+        }
+        return List.copyOf(constants);
+    }
+
+    private static List<IrGpuConstantDataMetadata> parseConstantData(Properties properties) {
+        int count = parseInt(properties, "constantData.count", 0);
+        ArrayList<IrGpuConstantDataMetadata> constantData = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "constantData." + index + ".";
+            constantData.add(new IrGpuConstantDataMetadata(
+                    require(properties, prefix + "ownerQualifiedName"),
+                    properties.getProperty(prefix + "ownerSimpleName", ""),
+                    require(properties, prefix + "name"),
+                    require(properties, prefix + "javaType"),
+                    properties.getProperty(prefix + "initializerSource", ""),
+                    properties.getProperty(prefix + "kind", "EMBEDDED")
+            ));
+        }
+        return List.copyOf(constantData);
     }
 
     private static String require(Properties properties, String key) {

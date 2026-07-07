@@ -8,6 +8,10 @@ import java.util.List;
 public record OpenClIrGpuParityResult(
         boolean checked,
         boolean compatible,
+        boolean backendNeutralSourceReady,
+        String regenerationPayloadFormat,
+        String regenerationFallbackSource,
+        List<String> regenerationBlockers,
         String derivedOpenClResource,
         String descriptorOpenClResource,
         String reason,
@@ -15,6 +19,9 @@ public record OpenClIrGpuParityResult(
 ) {
 
     public OpenClIrGpuParityResult {
+        regenerationPayloadFormat = normalize(regenerationPayloadFormat);
+        regenerationFallbackSource = normalize(regenerationFallbackSource);
+        regenerationBlockers = regenerationBlockers == null ? List.of() : List.copyOf(regenerationBlockers);
         derivedOpenClResource = normalize(derivedOpenClResource);
         descriptorOpenClResource = normalize(descriptorOpenClResource);
         reason = reason == null || reason.isBlank() ? "not checked" : reason;
@@ -25,6 +32,10 @@ public record OpenClIrGpuParityResult(
         return new OpenClIrGpuParityResult(
                 false,
                 false,
+                false,
+                "",
+                "descriptor-opencl-source",
+                List.of("irgpu-artifact-missing"),
                 "",
                 descriptorOpenClResource,
                 "compile request has no IrGpu artifact",
@@ -32,21 +43,45 @@ public record OpenClIrGpuParityResult(
         );
     }
 
-    public static OpenClIrGpuParityResult compatible(String derivedOpenClResource, String descriptorOpenClResource) {
+    public static OpenClIrGpuParityResult compatible(
+            boolean backendNeutralSourceReady,
+            String regenerationPayloadFormat,
+            String regenerationFallbackSource,
+            List<String> regenerationBlockers,
+            String derivedOpenClResource,
+            String descriptorOpenClResource
+    ) {
         return new OpenClIrGpuParityResult(
                 true,
                 true,
+                backendNeutralSourceReady,
+                regenerationPayloadFormat,
+                regenerationFallbackSource,
+                regenerationBlockers,
                 derivedOpenClResource,
                 descriptorOpenClResource,
                 "IrGpu derived OpenCL resource matches descriptor OpenCL resource",
-                List.of()
+                backendNeutralSourceReady
+                        ? List.of("OpenCL lowering can use backend-neutral IrGpu source once enabled")
+                        : List.of("OpenCL lowering remains on transitional derived OpenCL source fallback")
         );
     }
 
-    public static OpenClIrGpuParityResult incompatible(String derivedOpenClResource, String descriptorOpenClResource) {
+    public static OpenClIrGpuParityResult incompatible(
+            boolean backendNeutralSourceReady,
+            String regenerationPayloadFormat,
+            String regenerationFallbackSource,
+            List<String> regenerationBlockers,
+            String derivedOpenClResource,
+            String descriptorOpenClResource
+    ) {
         return new OpenClIrGpuParityResult(
                 true,
                 false,
+                backendNeutralSourceReady,
+                regenerationPayloadFormat,
+                regenerationFallbackSource,
+                regenerationBlockers,
                 derivedOpenClResource,
                 descriptorOpenClResource,
                 "IrGpu derived OpenCL resource does not match descriptor OpenCL resource",
@@ -63,6 +98,14 @@ public record OpenClIrGpuParityResult(
                 + checked
                 + " compatible="
                 + compatible
+                + " backendNeutralSourceReady="
+                + backendNeutralSourceReady
+                + " regenerationPayloadFormat="
+                + regenerationPayloadFormat
+                + " regenerationFallbackSource="
+                + regenerationFallbackSource
+                + " regenerationBlockers="
+                + (regenerationBlockers.isEmpty() ? "-" : String.join(",", regenerationBlockers))
                 + " derivedOpenClResource="
                 + derivedOpenClResource
                 + " descriptorOpenClResource="

@@ -325,6 +325,25 @@ public final class GpuProgramCompiler {
         return asmFrontend.validateLowerAndEmitStructured(kernelMethod, helperMethods);
     }
 
+    public GpuFrontendCompilationResult compileStructuredAsmResult(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
+            String derivedOpenClResource
+    ) {
+        return asmFrontend.compileStructured(kernelMethod, helperMethods, List.of(), derivedOpenClResource);
+    }
+
+    public GpuFrontendCompilationResult compileStructuredAsmResult(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods
+    ) {
+        return compileStructuredAsmResult(
+                kernelMethod,
+                helperMethods,
+                GpuFrontendResourcePaths.openClResource(kernelMethod.parsedMethod())
+        );
+    }
+
     public String compileStructuredAsm(
             AsmGpuMethod kernelMethod,
             List<AsmGpuMethod> helperMethods,
@@ -343,6 +362,28 @@ public final class GpuProgramCompiler {
         return asmFrontend.validateLowerAndEmitStructured(kernelMethod, helperMethods, structs);
     }
 
+    public GpuFrontendCompilationResult compileStructuredAsmResult(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            String derivedOpenClResource
+    ) {
+        return asmFrontend.compileStructured(kernelMethod, helperMethods, structs, derivedOpenClResource);
+    }
+
+    public GpuFrontendCompilationResult compileStructuredAsmResult(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs
+    ) {
+        return compileStructuredAsmResult(
+                kernelMethod,
+                helperMethods,
+                structs,
+                GpuFrontendResourcePaths.openClResource(kernelMethod.parsedMethod())
+        );
+    }
+
     public String compileStructuredAsm(
             AsmGpuMethod kernelMethod,
             List<AsmGpuMethod> helperMethods,
@@ -353,6 +394,23 @@ public final class GpuProgramCompiler {
     ) {
         try {
             return asmFrontend.validateLowerAndEmitStructured(kernelMethod, helperMethods, structs);
+        } catch (AsmFrontendException exception) {
+            reportAsmDiagnostic(kernelMethod, exception, sourceName, sourceLines, diagnosticReporter);
+            throw exception;
+        }
+    }
+
+    public GpuFrontendCompilationResult compileStructuredAsmResult(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            String derivedOpenClResource,
+            String sourceName,
+            List<String> sourceLines,
+            Consumer<String> diagnosticReporter
+    ) {
+        try {
+            return asmFrontend.compileStructured(kernelMethod, helperMethods, structs, derivedOpenClResource);
         } catch (AsmFrontendException exception) {
             reportAsmDiagnostic(kernelMethod, exception, sourceName, sourceLines, diagnosticReporter);
             throw exception;

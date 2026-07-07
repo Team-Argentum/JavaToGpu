@@ -112,6 +112,67 @@ class GpuProgramCompilerTest {
     }
 
     @Test
+    void compilesStructuredAsmProgramThroughUnifiedFacadeWithIrGpuArtifact() {
+        MethodNode helperMethodNode = methodNode(HELPERS_OWNER, "square", "(F)F", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.FLOAD, 0);
+            mv.visitVarInsn(Opcodes.FLOAD, 0);
+            mv.visitInsn(Opcodes.FMUL);
+            mv.visitInsn(Opcodes.FRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        MethodNode kernelMethodNode = methodNode(DEMO_OWNER, "kernel", "([F[F)V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
+            mv.visitCode();
+            mv.visitInsn(Opcodes.ICONST_0);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, GPU_OWNER, "get_global_id", "(I)I", false);
+            mv.visitVarInsn(Opcodes.ISTORE, 2);
+            mv.visitVarInsn(Opcodes.ALOAD, 1);
+            mv.visitVarInsn(Opcodes.ILOAD, 2);
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitVarInsn(Opcodes.ILOAD, 2);
+            mv.visitInsn(Opcodes.FALOAD);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, HELPERS_OWNER, "square", "(F)F", false);
+            mv.visitInsn(Opcodes.FASTORE);
+            mv.visitInsn(Opcodes.RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        });
+
+        AsmGpuMethod helperMethod = new AsmGpuMethod(
+                HELPERS_OWNER,
+                parsedMethod("Helpers", "sample.Helpers", "square", "float", List.of(parameter("value", "float"))),
+                helperMethodNode
+        );
+        AsmGpuMethod kernelMethod = new AsmGpuMethod(
+                DEMO_OWNER,
+                parsedMethod("Demo", "sample.Demo", "kernel", "void", List.of(
+                        globalArrayParameter("input", "float[]"),
+                        globalArrayParameter("output", "float[]")
+                )),
+                kernelMethodNode
+        );
+
+        GpuFrontendCompilationResult result = GpuProgramCompiler.createDefault().compileStructuredAsmResult(
+                kernelMethod,
+                List.of(helperMethod)
+        );
+
+        assertTrue(result.openClSource().contains("arg1[tmp2] = jtg_fn_Helpers_square_float(arg0[tmp2]);"));
+        assertEquals("asm", result.irGpuArtifact().header().sourceFrontend());
+        assertEquals("kernel", result.irGpuArtifact().module().entryMethod());
+        assertEquals("jtg_kernel", result.irGpuArtifact().module().entryEmittedName());
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().derivedOpenClResource());
+
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.openClResource());
+        assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", result.irGpuResource());
+        assertEquals(1, result.irGpuArtifact().module().helperMethods().size());
+        assertEquals("square", result.irGpuArtifact().module().helperMethods().get(0).name());
+        assertEquals("asm", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().sourceKind());
+    }
+
+    @Test
     void lowersStructuredAsmThroughUnifiedFacade() {
         MethodNode methodNode = methodNode(DEMO_OWNER, "kernel", "([F[F)V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
             mv.visitCode();

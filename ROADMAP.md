@@ -335,9 +335,9 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 - [x] Add first `IrGpu` method-body payload layer beyond the manifest foundation.
   Entry/helper methods now carry serialized `ir-text-v1` body snapshots with helper dependencies in the packaged `kernel.irgpu.properties`, while OpenCL remains the derived compatibility output.
 - [ ] Expand `IrGpu` payload to full source-of-truth coverage.
-  Initial ABI metadata is now persisted through `entryParameter.*` manifest fields: name, Java type, address space, constant flag, and OpenCL qualifiers. Remaining source-of-truth work still includes typed/reconstructable entry/helper bodies, structs, constants, launch metadata, intrinsic calls, validation version, feature flags, and enough backend-neutral payload to regenerate OpenCL directly.
+  Initial ABI, launch, validation, feature, typed-body summary, regeneration-readiness, struct, constant, and constant-data metadata are now persisted through manifest fields: `entryParameter.*`, `launch.*`, `validation.*`, `feature.*`, `methodBody.*.bodyIndex.*`, `regeneration.*`, `structMetadata.*`, `constant.*`, and `constantData.*`. Remaining source-of-truth work still includes fully reconstructable entry/helper bodies, replacing the transitional derived OpenCL fallback, and direct OpenCL reconstruction from `IrGpu`.
 - [ ] Add OpenCL-from-`IrGpu` round-trip/parity tests.
-  First parity guard is in place: OpenCL lowering now checks that packaged `IrGpu` points at the same derived OpenCL source resource as the generated descriptor and fails fast on drift. Full `IrGpu` -> OpenCL source regeneration/parity remains open until typed `IrGpu` bodies can reconstruct backend source directly.
+  First parity guard is in place: OpenCL lowering now checks that packaged `IrGpu` points at the same derived OpenCL source resource as the generated descriptor and fails fast on drift. The parity result also exposes `regeneration.*` readiness/blockers, making the current derived-source fallback explicit in lowering diagnostics. Full `IrGpu` -> OpenCL source regeneration/parity remains open until typed `IrGpu` bodies can reconstruct backend source directly.
 
 #### I3.2 Runtime compile request and compile options
 
@@ -347,12 +347,13 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
   Generated launchers, direct runtime calls, and reflection launcher helpers can pass compile args and optimizer profile without changing kernel argument ordering.
 - [x] Add compile option provenance to artifacts.
   Runtime compile snapshots and dump bundles now record backend/device identity, compile args, optimization profile, and fallback decision placeholders so generated runtime evidence can explain how a backend artifact was produced.
-- [ ] Make ASM and Java source frontends feed the same runtime compile request path.
-  Structured ASM should lower into `IrGpu` first, then use the same runtime pipeline as source-compiled kernels.
+- [x] Make ASM and Java source frontends feed the same runtime compile request path.
+
+  The shared runtime handoff helper now exists in `GpuRuntimeCompileRequestFactory`, and OpenCL runtime compile requests are built through it instead of directly constructing request records. Java-generated launchers and structured ASM converge on the same descriptor/options/device/`IrGpu` request construction path: `AsmFrontendService.compileStructured(...)` and `GpuProgramCompiler.compileStructuredAsmResult(...)` expose the same `GpuFrontendCompilationResult` shape used by Java source compilation, while `GpuFrontendCompilationResult.toKernelDescriptor(...)` / `toRuntimeCompileRequest(...)` build the runtime descriptor/request from that shared frontend result. `GpuFrontendResourcePaths` centralizes generated `kernel.cl` / `kernel.irgpu.properties` identities for Java and ASM paths, and `GpuFrontendArtifactWriter` writes the paired OpenCL + `IrGpu` artifacts through one reusable packaging sink so ASM can use the same resource emission contract as the annotation processor.
 - [x] Add strict validation for unsafe or unsupported OpenCL compile args.
   OpenCL compile options are validated before device/session lookup, reject backend-mismatched options, and pass supported build flags into `buildProgram(source, options)` instead of silently ignoring them.
-- [ ] Add structured compile option surfaces for future backends.
-  CUDA/Vulkan/Metal should expose backend-specific option models instead of reusing raw OpenCL build strings.
+- [x] Add structured compile option surfaces for future backends.
+  `GpuBackendCompileOptions` now gives OpenCL, CUDA, Vulkan/SPIR-V, and Metal separate typed option buckets while preserving legacy OpenCL `compileArgs` compatibility. Runtime compile provenance now records both the legacy OpenCL arg list and the structured backend option target/flags/properties, and OpenCL validation rejects mismatched structured backend options before compile/session work begins.
 
 #### I3.3 Backend lowering boundary
 
@@ -367,9 +368,9 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 - [x] Add no-op/stub lowerers for planned CUDA, Vulkan/SPIR-V, and Metal.
   `GpuBackendLowerers` exposes stable CUDA, VULKAN, and METAL entries that fail with explicit unsupported diagnostics until real lowerers are implemented.
 - [ ] Extend backend lowering to consume full `IrGpu` artifacts.
-  OpenCL lowering still uses the existing generated source as the source payload; after `IrGpu` bodies are stored, lowerers should lower from `IrGpu` rather than descriptor source.
+  OpenCL lowering still uses the existing generated source as the source payload. A first reconstruction plan now records whether OpenCL can select backend-neutral `IrGpu` source or must stay on the transitional derived-source fallback; after typed `IrGpu` bodies are stored, this selection point should switch lowerers from descriptor source to regenerated backend source.
 - [ ] Add backend compile log/source-map/runtime-load metadata.
-  Persist backend compile logs, source-map links, binary/source availability, and runtime load requirements in `GpuBackendModuleArtifact` or a companion artifact model.
+  `GpuBackendModuleArtifact` now carries the first backend metadata slice: source origin, source/binary availability, optional source-map resource, and runtime load mode. Runtime dumps also emit `backend-module.properties` so CI can compare backend source availability and load-mode drift. Deeper compile log/source-map integration remains open for real backend compiler outputs and future binary-capable CUDA/Vulkan/Metal paths.
 
 #### I3.4 Runtime IR optimizer entrypoint
 

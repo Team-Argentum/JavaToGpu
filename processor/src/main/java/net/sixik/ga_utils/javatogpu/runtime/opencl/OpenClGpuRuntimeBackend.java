@@ -37,6 +37,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequestFactory;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceExecutor;
@@ -1944,6 +1945,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + "; pass GpuBackendTarget.OPENCL or select a matching runtime backend"
             );
         }
+        if (compileOptions.backendOptions().backendTarget() != GpuBackendTarget.OPENCL
+                && compileOptions.backendOptions().backendTarget() != GpuBackendTarget.UNKNOWN) {
+            throw new IllegalArgumentException(
+                    "OpenCL backend cannot use structured compile options for backend "
+                            + compileOptions.backendOptions().backendTarget()
+                            + "; pass OpenCL backend options or select a matching runtime backend"
+            );
+        }
         OpenClCompileOptionValidator.toBuildOptions(compileOptions.compileArgs());
     }
 
@@ -1998,7 +2007,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     private GpuRuntimeCompileRequest buildCompileRequest(GpuKernelDescriptor descriptor) {
-        return new GpuRuntimeCompileRequest(
+        return GpuRuntimeCompileRequestFactory.fromDescriptor(
                 descriptor,
                 GpuRuntimeCompileOptions.defaults(backendTarget()),
                 compileDeviceProfile()
@@ -2006,12 +2015,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     private GpuRuntimeCompileRequest buildCompileRequest(GpuKernelInvocation invocation) {
-        GpuRuntimeCompileOptions compileOptions = invocation.compileOptions() == null
-                ? GpuRuntimeCompileOptions.defaults(backendTarget())
-                : invocation.compileOptions();
-        return new GpuRuntimeCompileRequest(
-                invocation.descriptor(),
-                compileOptions,
+        return GpuRuntimeCompileRequestFactory.fromInvocation(
+                invocation,
                 compileDeviceProfile()
         );
     }

@@ -6,6 +6,8 @@ import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
+import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.frontend.validation.GpuValidationException;
 import org.junit.jupiter.api.Test;
 
@@ -238,8 +240,25 @@ class GpuFrontendServiceTest {
         assertEquals("opencl-c", result.irGpuArtifact().backendOutputs().get(0).format());
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().backendOutputs().get(0).resource());
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().derivedOpenClResource());
+
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.openClResource());
+        assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", result.irGpuResource());
+        assertFalse(result.irGpuArtifact().regenerationMetadata().backendNeutralSourceReady());
+        assertEquals("ir-text-v1", result.irGpuArtifact().regenerationMetadata().payloadFormat());
+        assertEquals("derived-opencl-source", result.irGpuArtifact().regenerationMetadata().fallbackSource());
+        assertTrue(result.irGpuArtifact().regenerationMetadata().blockers().contains("typed-body-regeneration-not-yet-available"));
         assertEquals("opencl", result.irGpuArtifact().runtimeDefaultBackend());
         assertEquals("off", result.irGpuArtifact().runtimeOptimizationProfile());
+
+        GpuKernelDescriptor descriptor = result.toKernelDescriptor();
+        assertEquals("jtg_kernel", descriptor.kernelName());
+        assertEquals("javatogpu/sample/Demo/kernel.cl", descriptor.kernelResource());
+        assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", descriptor.irGpuResource());
+        assertEquals(result.openClSource(), descriptor.kernelSource());
+        assertEquals(2, descriptor.parameterDescriptors().size());
+        assertEquals("input", descriptor.parameterDescriptors().get(0).name());
+        assertEquals("float[]", descriptor.parameterDescriptors().get(0).javaType());
+        assertEquals(GpuKernelParameterAccess.READ_WRITE, descriptor.parameterDescriptors().get(0).access());
     }
 
     @Test
