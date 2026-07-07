@@ -8,5 +8,13 @@ public interface GpuBackendLowerer {
 
     String lowererVersion();
 
+    default GpuBackendSourceSelectionPlan sourceSelectionPlan(GpuRuntimeCompileRequest compileRequest) {
+        return GpuBackendSourceSelectionPlan.descriptorSource(
+                backendTarget(),
+                "unknown",
+                "Backend lowerer has not exposed a specialized source-selection plan"
+        );
+    }
+
     GpuBackendModuleArtifact lower(GpuRuntimeCompileRequest compileRequest);
 }

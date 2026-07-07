@@ -15,6 +15,7 @@ public record GpuBackendModuleArtifact(
         String sourceOrigin,
         boolean sourceAvailable,
         boolean binaryAvailable,
+        String compileLogResource,
         String sourceMapResource,
         String runtimeLoadMode
 ) {
@@ -40,7 +41,39 @@ public record GpuBackendModuleArtifact(
                 source != null && !source.isBlank(),
                 false,
                 "",
+                "",
                 "source-compile"
+        );
+    }
+
+    public GpuBackendModuleArtifact(
+            GpuBackendTarget backendTarget,
+            String kind,
+            String format,
+            String source,
+            String resource,
+            String artifactVersion,
+            String lowererVersion,
+            String sourceOrigin,
+            boolean sourceAvailable,
+            boolean binaryAvailable,
+            String sourceMapResource,
+            String runtimeLoadMode
+    ) {
+        this(
+                backendTarget,
+                kind,
+                format,
+                source,
+                resource,
+                artifactVersion,
+                lowererVersion,
+                sourceOrigin,
+                sourceAvailable,
+                binaryAvailable,
+                "",
+                sourceMapResource,
+                runtimeLoadMode
         );
     }
 
@@ -54,6 +87,7 @@ public record GpuBackendModuleArtifact(
         lowererVersion = normalize(lowererVersion, "unknown");
         sourceOrigin = normalize(sourceOrigin, "lowered-source");
         sourceAvailable = sourceAvailable || !source.isBlank();
+        compileLogResource = compileLogResource == null ? "" : compileLogResource;
         sourceMapResource = sourceMapResource == null ? "" : sourceMapResource;
         runtimeLoadMode = normalize(runtimeLoadMode, "source-compile");
     }
@@ -63,6 +97,16 @@ public record GpuBackendModuleArtifact(
             String resource,
             String lowererVersion
     ) {
+        return openClSource(source, resource, lowererVersion, "derived-opencl-source", "opencl-source-compile");
+    }
+
+    public static GpuBackendModuleArtifact openClSource(
+            String source,
+            String resource,
+            String lowererVersion,
+            String sourceOrigin,
+            String runtimeLoadMode
+    ) {
         return new GpuBackendModuleArtifact(
                 GpuBackendTarget.OPENCL,
                 "source",
@@ -71,11 +115,12 @@ public record GpuBackendModuleArtifact(
                 resource,
                 "opencl:source:opencl-c:v1",
                 lowererVersion,
-                "derived-opencl-source",
+                sourceOrigin,
                 source != null && !source.isBlank(),
                 false,
                 "",
-                "opencl-source-compile"
+                "",
+                runtimeLoadMode
         );
     }
 
@@ -91,6 +136,7 @@ public record GpuBackendModuleArtifact(
                 "unknown",
                 false,
                 false,
+                "",
                 "",
                 "unknown"
         );

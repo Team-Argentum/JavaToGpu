@@ -27,6 +27,15 @@ public record IrGpuRegenerationMetadata(
         );
     }
 
+    public static IrGpuRegenerationMetadata backendNeutralReady() {
+        return new IrGpuRegenerationMetadata(
+                true,
+                "ir-text-v1",
+                "irgpu-backend-neutral-source",
+                List.of()
+        );
+    }
+
     private static String normalize(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }
