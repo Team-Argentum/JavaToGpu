@@ -1,9 +1,12 @@
 package net.sixik.ga_utils.javatogpu.processors;
 
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactParser;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherInvoker;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackend;
 import org.junit.jupiter.api.Test;
@@ -82,17 +85,55 @@ class GpuCompilerProcessorTest {
                     output[id] = (sin(value) * cos(value));
                 }""", Files.readString(kernelPath));
 
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("format=javatogpu.irgpu.v1"));
+        assertTrue(irGpuManifest.contains("schemaVersion=1"));
+        assertTrue(irGpuManifest.contains("compilerArtifact=JavaToGpu"));
+        assertTrue(irGpuManifest.contains("sourceFrontend=java-source"));
+        assertTrue(irGpuManifest.contains("entryMethod=kernel"));
+        assertTrue(irGpuManifest.contains("entryEmittedName=jtg_kernel"));
+        assertTrue(irGpuManifest.contains("helper.count=0"));
+        assertTrue(irGpuManifest.contains("struct.count=0"));
+        assertTrue(irGpuManifest.contains("backendOutput.count=1"));
+        assertTrue(irGpuManifest.contains("backendOutput.0.backend=opencl"));
+        assertTrue(irGpuManifest.contains("backendOutput.0.kind=source"));
+        assertTrue(irGpuManifest.contains("backendOutput.0.format=opencl-c"));
+        assertTrue(irGpuManifest.contains("backendOutput.0.resource=javatogpu/sample/Demo/kernel.cl"));
+        assertTrue(irGpuManifest.contains("derived.opencl.resource=javatogpu/sample/Demo/kernel.cl"));
+        assertTrue(irGpuManifest.contains("runtime.defaultBackend=opencl"));
+        assertTrue(irGpuManifest.contains("runtime.optimizationProfile=off"));
+        assertTrue(irGpuManifest.contains("methodBody.count=1"));
+        assertTrue(irGpuManifest.contains("methodBody.0.role=entry"));
+        assertTrue(irGpuManifest.contains("methodBody.0.name=kernel"));
+        assertTrue(irGpuManifest.contains("methodBody.0.emittedName=jtg_kernel"));
+        assertTrue(irGpuManifest.contains("methodBody.0.format=ir-text-v1"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertEquals(1, irGpuArtifact.module().methodBodies().size());
+        assertEquals("entry", irGpuArtifact.module().methodBodies().get(0).role());
+        assertEquals("kernel", irGpuArtifact.module().methodBodies().get(0).name());
+        assertEquals("jtg_kernel", irGpuArtifact.module().methodBodies().get(0).emittedName());
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).body().contains("method jtg_kernel source=kernel"));
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).body().contains("var int id = intrinsic(get_global_id"));
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).body().contains("set output[id] = (intrinsic(sin"));
+
         Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
         assertTrue(Files.exists(launcherSourcePath));
         String launcherSource = Files.readString(launcherSourcePath);
         assertTrue(launcherSource.contains("public final class Demo_kernel_GpuLauncher"));
         assertTrue(launcherSource.contains("public static final String KERNEL_NAME = \"jtg_kernel\";"));
         assertTrue(launcherSource.contains("public static final String KERNEL_RESOURCE = \"javatogpu/sample/Demo/kernel.cl\";"));
+        assertTrue(launcherSource.contains("public static final String IRGPU_RESOURCE = \"javatogpu/sample/Demo/kernel.irgpu.properties\";"));
         assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"input\", \"float[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_ONLY)"));
         assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"output\", \"float[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
         assertTrue(launcherSource.contains("public static void invoke(float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWithGlobalWorkSize(long globalWorkSize, float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWithConfig(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithGlobalWorkSizeAndCompileOptions(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithConfigAndCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWith3DWorkSize(long globalX, long globalY, long globalZ, float[] input, float[] output)"));
 
         Path launcherClassPath = classOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.class");
@@ -114,6 +155,7 @@ class GpuCompilerProcessorTest {
             assertEquals("jtg_kernel", descriptor.kernelName());
             assertEquals("javatogpu/sample/Demo/kernel.cl", descriptor.kernelResource());
             assertEquals(Files.readString(kernelPath), descriptor.kernelSource());
+            assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", descriptor.irGpuResource());
             assertEquals(2, descriptor.parameterDescriptors().size());
             assertEquals(GpuKernelParameterAccess.READ_ONLY, descriptor.parameterDescriptors().get(0).access());
             assertEquals(GpuKernelParameterAccess.READ_WRITE, descriptor.parameterDescriptors().get(1).access());
@@ -141,6 +183,26 @@ class GpuCompilerProcessorTest {
             assertEquals(3L, explicitConfigInvocation.executionConfig().globalY());
             assertEquals(2L, explicitConfigInvocation.executionConfig().globalZ());
             assertTrue(Arrays.equals(new Object[]{input, output}, explicitConfigInvocation.arguments()));
+
+            GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                    net.sixik.ga_utils.javatogpu.api.GpuBackendTarget.OPENCL,
+                    java.util.List.of("-cl-fast-relaxed-math"),
+                    "fast"
+            );
+            capturedInvocation.set(null);
+            launcherClass.getMethod(
+                            "invokeWithConfigAndCompileOptions",
+                            net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.class,
+                            GpuRuntimeCompileOptions.class,
+                            float[].class,
+                            float[].class
+                    )
+                    .invoke(null, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(6L), compileOptions, input, output);
+            GpuKernelInvocation compileOptionsInvocation = capturedInvocation.get();
+            assertEquals(6L, compileOptionsInvocation.globalWorkSize());
+            assertEquals("fast", compileOptionsInvocation.compileOptions().optimizationProfile());
+            assertEquals(java.util.List.of("-cl-fast-relaxed-math"), compileOptionsInvocation.compileOptions().compileArgs());
+            assertTrue(Arrays.equals(new Object[]{input, output}, compileOptionsInvocation.arguments()));
 
             capturedInvocation.set(null);
             launcherClass.getMethod("invokeWith3DWorkSize", long.class, long.class, long.class, float[].class, float[].class)

@@ -34,6 +34,35 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void invokeWithCompileOptionsPassesOptionsIntoKernelInvocation() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of()
+        );
+        GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                java.util.List.of("-cl-fast-relaxed-math"),
+                "vendor-tuned"
+        );
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            GpuRuntime.invokeWithCompileOptions(GpuExecutionConfig.oneDimensional(13L), compileOptions, descriptor, new Object[0]);
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertSame(compileOptions, invocation.compileOptions());
+            assertEquals(13L, invocation.globalWorkSize());
+            assertEquals(java.util.List.of("-cl-fast-relaxed-math"), invocation.compileOptions().compileArgs());
+            assertEquals("vendor-tuned", invocation.compileOptions().optimizationProfile());
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
     void generatedLauncherInvokerWithConfigUsesGeneratedDescriptor() {
         java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
         GpuRuntimeBackend previousBackend = GpuRuntime.backend();
@@ -73,6 +102,64 @@ class GpuRuntimeTest {
             assertEquals(16L, invocation.executionConfig().globalX());
             assertEquals(8L, invocation.executionConfig().globalY());
             assertEquals(4L, invocation.executionConfig().globalZ());
+            assertSame(output, invocation.arguments()[0]);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherInvokerWithCompileOptionsUsesGeneratedDescriptor() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            int[] output = new int[4];
+            GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                    GpuBackendTarget.OPENCL,
+                    java.util.List.of("-cl-mad-enable"),
+                    "nvidia-fast"
+            );
+
+            GpuGeneratedLauncherInvoker.invokeWithCompileOptions(FixtureOwner.class, "kernel", compileOptions, output);
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertSame(compileOptions, invocation.compileOptions());
+            assertSame(output, invocation.arguments()[0]);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherInvokerWithConfigAndCompileOptionsUsesGeneratedDescriptor() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            int[] output = new int[4];
+            GpuExecutionConfig config = GpuExecutionConfig.threeDimensional(8L, 4L, 2L);
+            GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                    GpuBackendTarget.OPENCL,
+                    java.util.List.of("-cl-no-signed-zeros"),
+                    "vendor-profile"
+            );
+
+            GpuGeneratedLauncherInvoker.invokeWithConfigAndCompileOptions(
+                    FixtureOwner.class,
+                    "kernel",
+                    config,
+                    compileOptions,
+                    output
+            );
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertSame(config, invocation.executionConfig());
+            assertSame(compileOptions, invocation.compileOptions());
             assertSame(output, invocation.arguments()[0]);
         } finally {
             GpuRuntime.setBackend(previousBackend);

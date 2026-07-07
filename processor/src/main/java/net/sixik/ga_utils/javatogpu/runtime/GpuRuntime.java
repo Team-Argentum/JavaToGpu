@@ -284,6 +284,41 @@ public final class GpuRuntime {
         backend.invoke(new GpuKernelInvocation(descriptor, arguments, executionConfig));
     }
 
+    /**
+     * Invokes a generated GPU kernel with explicit runtime compile options.
+     */
+    public static void invokeWithCompileOptions(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(new GpuKernelInvocation(descriptor, arguments, compileOptions));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with explicit work size and runtime compile options.
+     */
+    public static void invokeWithCompileOptions(
+            long globalWorkSize,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(new GpuKernelInvocation(descriptor, arguments, globalWorkSize, compileOptions));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with explicit execution config and runtime compile options.
+     */
+    public static void invokeWithCompileOptions(
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(new GpuKernelInvocation(descriptor, arguments, executionConfig, compileOptions));
+    }
+
     private static GpuRuntimeScope installScopedBackend(GpuRuntimeBackend newBackend, boolean closeInstalledBackend) {
         Objects.requireNonNull(newBackend, "newBackend");
         GpuRuntimeBackend previousBackend = backend();

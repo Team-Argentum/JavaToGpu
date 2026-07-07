@@ -5,8 +5,8 @@ package net.sixik.ga_utils.javatogpu.api;
  * {@link net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary} and
  * {@link net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsicLibrary}.
  *
- * <p>At the moment the main production path is {@link #OPENCL}. {@link #CUDA} exists to keep API contracts
- * backend-aware while CUDA support is developed incrementally.
+ * <p>At the moment the main production path is {@link #OPENCL}. The other targets exist to keep API contracts
+ * backend-aware while additional backend support is developed incrementally.
  */
 public enum GpuBackendTarget {
     /**
@@ -22,5 +22,15 @@ public enum GpuBackendTarget {
     /**
      * CUDA backend.
      */
-    CUDA
+    CUDA,
+
+    /**
+     * Vulkan/SPIR-V backend.
+     */
+    VULKAN,
+
+    /**
+     * Metal backend.
+     */
+    METAL
 }

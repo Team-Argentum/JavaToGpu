@@ -1,6 +1,14 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
 import com.github.javaparser.ast.type.Type;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTextBodyRenderer;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
@@ -165,6 +173,15 @@ public final class GpuFrontendService {
             List<ParsedGpuMethod> helperMethods,
             List<ParsedGpuStruct> structs
     ) {
+        return compile(kernelMethod, helperMethods, structs, "").openClSource();
+    }
+
+    public GpuFrontendCompilationResult compile(
+            ParsedGpuMethod kernelMethod,
+            List<ParsedGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            String derivedOpenClResource
+    ) {
         List<ParsedGpuStruct> relevantStructs = selectRelevantStructs(kernelMethod, helperMethods, structs);
 
         validator.validateKernel(kernelMethod, helperMethods, relevantStructs);
@@ -174,15 +191,86 @@ public final class GpuFrontendService {
         GpuIrCompiledMethod compiledKernel = compiledMethods.get(compiledMethods.size() - 1);
         passRunner.run(compiledKernel, compiledHelpers, relevantStructs);
         validationRunner.run(compiledKernel, compiledHelpers, relevantStructs);
-        return emitter.emitProgram(
+        List<GpuIrCompiledMethod> reachableHelpers = GpuProgramAssemblySupport.selectReachableHelpers(
                 compiledKernel,
-                GpuProgramAssemblySupport.selectReachableHelpers(
-                        compiledKernel,
-                        compiledHelpers,
-                        "Lowered kernel references unknown helper: ",
-                        "Recursive @CCode helper calls are not supported: "
-                ),
+                compiledHelpers,
+                "Lowered kernel references unknown helper: ",
+                "Recursive @CCode helper calls are not supported: "
+        );
+        String openClSource = emitter.emitProgram(
+                compiledKernel,
+                reachableHelpers,
                 relevantStructs
+        );
+        return new GpuFrontendCompilationResult(
+                openClSource,
+                buildIrGpuArtifact(compiledKernel, reachableHelpers, relevantStructs, derivedOpenClResource)
+        );
+    }
+
+    private IrGpuArtifact buildIrGpuArtifact(
+            GpuIrCompiledMethod compiledKernel,
+            List<GpuIrCompiledMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            String derivedOpenClResource
+    ) {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        compiledKernel.parsedMethod().name(),
+                        compiledKernel.emittedName(),
+                        helperMethods.stream()
+                                .map(helper -> new IrGpuModuleMethod(helper.parsedMethod().name(), helper.emittedName()))
+                                .toList(),
+                        structs.stream()
+                                .map(ParsedGpuStruct::ownerQualifiedName)
+                                .toList(),
+                        buildIrGpuMethodBodies(compiledKernel, helperMethods)
+                ),
+                List.of(IrGpuBackendOutput.openClSource(derivedOpenClResource)),
+                "opencl",
+                "off"
+        );
+    }
+
+    private List<IrGpuMethodBody> buildIrGpuMethodBodies(
+            GpuIrCompiledMethod compiledKernel,
+            List<GpuIrCompiledMethod> helperMethods
+    ) {
+        ArrayList<IrGpuMethodBody> methodBodies = new ArrayList<>();
+        methodBodies.add(IrGpuMethodBody.entry(
+                compiledKernel.parsedMethod().name(),
+                compiledKernel.emittedName(),
+                IrGpuTextBodyRenderer.render(compiledKernel),
+                compiledKernel.helperDependencies(),
+                sourceLocation(compiledKernel)
+        ));
+        helperMethods.stream()
+                .map(helper -> IrGpuMethodBody.helper(
+                        helper.parsedMethod().name(),
+                        helper.emittedName(),
+                        IrGpuTextBodyRenderer.render(helper),
+                        helper.helperDependencies(),
+                        sourceLocation(helper)
+                ))
+                .forEach(methodBodies::add);
+        return List.copyOf(methodBodies);
+    }
+
+    private IrGpuSourceLocation sourceLocation(GpuIrCompiledMethod compiledMethod) {
+        ParsedGpuMethod parsedMethod = compiledMethod.parsedMethod();
+        if (parsedMethod.declaration() == null || parsedMethod.declaration().getRange().isEmpty()) {
+            return IrGpuSourceLocation.unknown(parsedMethod.name());
+        }
+        com.github.javaparser.Range range = parsedMethod.declaration().getRange().get();
+        return new IrGpuSourceLocation(
+                parsedMethod.nativeDeclaration() ? "asm" : "java-source",
+                parsedMethod.ownerQualifiedName(),
+                parsedMethod.name(),
+                range.begin.line,
+                range.begin.column,
+                range.end.line,
+                range.end.column
         );
     }
 

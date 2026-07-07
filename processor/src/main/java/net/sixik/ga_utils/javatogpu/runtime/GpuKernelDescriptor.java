@@ -6,6 +6,16 @@ public record GpuKernelDescriptor(
         String kernelName,
         String kernelResource,
         String kernelSource,
+        String irGpuResource,
         List<GpuKernelParameterDescriptor> parameterDescriptors
 ) {
+
+    public GpuKernelDescriptor(
+            String kernelName,
+            String kernelResource,
+            String kernelSource,
+            List<GpuKernelParameterDescriptor> parameterDescriptors
+    ) {
+        this(kernelName, kernelResource, kernelSource, "", parameterDescriptors);
+    }
 }

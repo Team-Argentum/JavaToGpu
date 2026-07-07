@@ -37,6 +37,56 @@ public final class GpuGeneratedLauncherInvoker {
         return null;
     }
 
+    public static Object invokeWithCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        GpuRuntime.invokeWithCompileOptions(compileOptions, descriptor(ownerClass, methodName), arguments);
+        return null;
+    }
+
+    public static Object invokeWithGlobalWorkSizeAndCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            long globalWorkSize,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        GpuRuntime.invokeWithCompileOptions(globalWorkSize, compileOptions, descriptor(ownerClass, methodName), arguments);
+        return null;
+    }
+
+    public static Object invokeWith3DWorkSizeAndCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            long globalX,
+            long globalY,
+            long globalZ,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        return invokeWithConfigAndCompileOptions(
+                ownerClass,
+                methodName,
+                GpuExecutionConfig.threeDimensional(globalX, globalY, globalZ),
+                compileOptions,
+                arguments
+        );
+    }
+
+    public static Object invokeWithConfigAndCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        GpuRuntime.invokeWithCompileOptions(executionConfig, compileOptions, descriptor(ownerClass, methodName), arguments);
+        return null;
+    }
+
     private static GpuKernelDescriptor descriptor(Class<?> ownerClass, String methodName) {
         try {
             Class<?> launcherClass = Class.forName(
