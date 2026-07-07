@@ -335,9 +335,9 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 - [x] Add first `IrGpu` method-body payload layer beyond the manifest foundation.
   Entry/helper methods now carry serialized `ir-text-v1` body snapshots with helper dependencies in the packaged `kernel.irgpu.properties`, while OpenCL remains the derived compatibility output.
 - [ ] Expand `IrGpu` payload to full source-of-truth coverage.
-  Add typed/reconstructable entry/helper bodies, structs, constants, address spaces, intrinsic calls, launch metadata, source/debug mapping, ABI metadata, validation version, and feature flags before `IrGpu` becomes the only source of truth.
+  Initial ABI metadata is now persisted through `entryParameter.*` manifest fields: name, Java type, address space, constant flag, and OpenCL qualifiers. Remaining source-of-truth work still includes typed/reconstructable entry/helper bodies, structs, constants, launch metadata, intrinsic calls, validation version, feature flags, and enough backend-neutral payload to regenerate OpenCL directly.
 - [ ] Add OpenCL-from-`IrGpu` round-trip/parity tests.
-  Validate build-time Java/ASM lowering -> `IrGpu` -> OpenCL lowering preserves current generated source behavior before enabling runtime `IrGpu` lowering by default.
+  First parity guard is in place: OpenCL lowering now checks that packaged `IrGpu` points at the same derived OpenCL source resource as the generated descriptor and fails fast on drift. Full `IrGpu` -> OpenCL source regeneration/parity remains open until typed `IrGpu` bodies can reconstruct backend source directly.
 
 #### I3.2 Runtime compile request and compile options
 
@@ -403,16 +403,16 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 
 #### I3.6 Runtime-equivalence and promotion gates
 
-- [ ] Add pre/post runtime-equivalence execution for selected optimized IR.
-  Compare original `IrGpu` lowering against optimized `IrGpu` lowering on deterministic input sets before accepting a runtime optimization family.
+- [x] Add pre/post runtime-equivalence execution for selected optimized IR.
+  Runtime backends now have an opt-in `GpuRuntimeEquivalenceExecutor` / `GpuRuntimeEquivalenceRequest` hook that can compare original and optimized compile requests before promotion. The default OpenCL path remains fail-closed and records safe `not-run` evidence, while backend/test overrides can persist real `passed` / `failed` evidence that feeds fallback and production-gate artifacts.
 - [x] Persist runtime-equivalence evidence per backend/vendor/profile.
   Runtime compile snapshots now carry a structured `runtime-equivalence.properties` artifact with status, backend, vendor, device, optimization profile, execution/equivalence flags, input/output counts, and diagnostics. The first implementation records safe `not-run` evidence until real pre/post execution is wired.
 - [x] Add rollback-on-failure at runtime.
   Runtime compile snapshots now include `fallback.properties` with fallback decision, original/optimized selection flags, and diagnostics. Equivalence failures and optimizer rollback reports automatically mark optimized IR as rejected and keep the original IR path as the safe selected artifact until real production mutation is enabled.
 - [x] Gate production optimizer profile behind A1/A2.
   Runtime compile artifacts now include a fail-closed `production-optimizer-gate.properties` diagnostic artifact. Production-like profiles such as `production`, `vendor-tuned`, and `runtime-tuned` remain blocked unless runtime equivalence executes and passes, fallback evidence is clean, the strategy is evidence-backed/non-advisory, vendor baselines are promotion-eligible, and rollback reports are clean. Current NVIDIA/AMD/Intel strategies therefore stay diagnostic-only until A1/A2 evidence is strong enough for promotion.
-- [ ] Add CI artifact checks for runtime optimizer drift.
-  Compare optimizer pass counts, accepted/rejected transformation families, fallback counts, and device-specific decisions across runs.
+- [x] Add CI artifact checks for runtime optimizer drift.
+  Runtime artifact dumps now include `runtime-optimizer-drift.properties`, a compact CI-facing summary with optimizer pass counts, applied/skipped/rolled-back/failed counts, fallback decision, selected strategy/profile, vendor baseline status, promotion eligibility, and production gate status so validation history can detect optimizer behavior drift across runs.
 
 #### I3.7 Storage and cache model
 
@@ -438,7 +438,7 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 - [x] Phase 1: dual output.
   Build produces current OpenCL source and new `IrGpu`; runtime still uses OpenCL source by default.
 - [ ] Phase 2: OpenCL-from-`IrGpu` parity.
-  Runtime can lower `IrGpu` to OpenCL and produce byte-for-byte or behavior-equivalent output for current workloads.
+  First runtime guard now validates the transitional `IrGpu` -> derived OpenCL source-resource contract before OpenCL lowering. Full byte-for-byte or behavior-equivalent OpenCL regeneration from typed `IrGpu` payload remains open.
 - [x] Phase 3 foundation: public runtime compile options.
   Users can pass OpenCL-targeted compile args and optimizer profile through direct runtime calls, generated launchers, and reflection launcher helpers; actual runtime `IrGpu` lowering remains future work.
 - [ ] Phase 4: opt-in prototype optimization.

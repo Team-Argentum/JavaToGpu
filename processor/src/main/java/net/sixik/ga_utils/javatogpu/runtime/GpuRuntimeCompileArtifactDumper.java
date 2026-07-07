@@ -36,6 +36,7 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.put("runtime-equivalence.properties", snapshot.runtimeEquivalenceEvidence().toPropertiesText());
         artifacts.put("fallback.properties", snapshot.fallbackEvidence().toPropertiesText());
         artifacts.put("production-optimizer-gate.properties", snapshot.productionOptimizerGate().toPropertiesText());
+        artifacts.put("runtime-optimizer-drift.properties", GpuRuntimeOptimizerDriftArtifact.from(snapshot).toPropertiesText());
         if (snapshot.optimizationReport().hasReports() || snapshot.productionOptimizerGate().productionProfileRequested()) {
             artifacts.put("optimizer-report.txt", snapshot.optimizationReport().toText());
         }

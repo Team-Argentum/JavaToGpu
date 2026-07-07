@@ -12,6 +12,7 @@ public final class IrGpuArtifactSerializer {
         TreeMap<String, String> properties = new TreeMap<>();
         writeHeader(properties, artifact.header());
         writeModule(properties, artifact.module());
+        writeEntryParameters(properties, artifact.entryParameters());
         writeBackendOutputs(properties, artifact.backendOutputs());
         properties.put("derived.opencl.resource", artifact.derivedOpenClResource());
         properties.put("runtime.defaultBackend", artifact.runtimeDefaultBackend());
@@ -83,6 +84,28 @@ public final class IrGpuArtifactSerializer {
         properties.put(prefix + "source.beginColumn", Integer.toString(location.beginColumn()));
         properties.put(prefix + "source.endLine", Integer.toString(location.endLine()));
         properties.put(prefix + "source.endColumn", Integer.toString(location.endColumn()));
+    }
+
+    private static void writeEntryParameters(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuEntryParameter> parameters
+    ) {
+        properties.put("entryParameter.count", Integer.toString(parameters.size()));
+        for (int index = 0; index < parameters.size(); index++) {
+            IrGpuEntryParameter parameter = parameters.get(index);
+            String prefix = "entryParameter." + index + ".";
+            properties.put(prefix + "name", parameter.name());
+            properties.put(prefix + "javaType", parameter.javaType());
+            properties.put(prefix + "addressSpace", parameter.addressSpace());
+            properties.put(prefix + "constant", Boolean.toString(parameter.constant()));
+            properties.put(prefix + "openClQualifier.count", Integer.toString(parameter.openClQualifiers().size()));
+            for (int qualifierIndex = 0; qualifierIndex < parameter.openClQualifiers().size(); qualifierIndex++) {
+                properties.put(
+                        prefix + "openClQualifier." + qualifierIndex,
+                        parameter.openClQualifiers().get(qualifierIndex)
+                );
+            }
+        }
     }
 
     private static void writeBackendOutputs(TreeMap<String, String> properties, java.util.List<IrGpuBackendOutput> outputs) {

@@ -1,10 +1,18 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendLowerer;
+import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityChecker;
+import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -35,6 +43,46 @@ class GpuBackendLowerersTest {
         assertEquals(descriptor.kernelSource(), artifact.source());
         assertEquals(descriptor.kernelResource(), artifact.resource());
         assertEquals(OpenClBackendLowerer.VERSION, artifact.lowererVersion());
+    }
+
+    @Test
+    void openClLowererAcceptsIrGpuWhenDerivedResourceMatchesDescriptorSource() {
+        GpuKernelDescriptor descriptor = sampleDescriptor();
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(irGpuArtifact(descriptor.kernelResource()))
+        );
+
+        OpenClIrGpuParityResult parityResult = OpenClIrGpuParityChecker.check(compileRequest);
+        GpuBackendModuleArtifact artifact = GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest);
+
+        assertTrue(parityResult.checked());
+        assertTrue(parityResult.compatible());
+        assertEquals(descriptor.kernelResource(), parityResult.derivedOpenClResource());
+        assertEquals(descriptor.kernelSource(), artifact.source());
+        assertEquals(descriptor.kernelResource(), artifact.resource());
+    }
+
+    @Test
+    void openClLowererRejectsIrGpuWhenDerivedOpenClResourceDriftsFromDescriptor() {
+        GpuKernelDescriptor descriptor = sampleDescriptor();
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(irGpuArtifact("javatogpu/sample/Demo/stale-kernel.cl"))
+        );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest)
+        );
+
+        assertTrue(exception.getMessage().contains("OpenCL IrGpu parity check failed"));
+        assertTrue(exception.getMessage().contains("stale-kernel.cl"));
+        assertTrue(exception.getMessage().contains(descriptor.kernelResource()));
     }
 
     @Test
@@ -69,6 +117,27 @@ class GpuBackendLowerersTest {
                 "javatogpu/sample/Demo/kernel.cl",
                 "__kernel void kernel(__global int* output) { output[0] = 1; }",
                 List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+    }
+
+    private static IrGpuArtifact irGpuArtifact(String derivedOpenClResource) {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "jtg_kernel",
+                                "body\\n  return output[0]\\n",
+                                List.of()
+                        ))
+                ),
+                List.of(IrGpuBackendOutput.openClSource(derivedOpenClResource)),
+                "opencl",
+                "off"
         );
     }
 }

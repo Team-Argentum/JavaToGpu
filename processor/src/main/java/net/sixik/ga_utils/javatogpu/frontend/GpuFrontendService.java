@@ -4,6 +4,7 @@ import com.github.javaparser.ast.type.Type;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
@@ -227,10 +228,23 @@ public final class GpuFrontendService {
                                 .toList(),
                         buildIrGpuMethodBodies(compiledKernel, helperMethods)
                 ),
+                buildEntryParameters(compiledKernel),
                 List.of(IrGpuBackendOutput.openClSource(derivedOpenClResource)),
                 "opencl",
                 "off"
         );
+    }
+
+    private List<IrGpuEntryParameter> buildEntryParameters(GpuIrCompiledMethod compiledKernel) {
+        return compiledKernel.parsedMethod().parameters().stream()
+                .map(parameter -> new IrGpuEntryParameter(
+                        parameter.name(),
+                        parameter.javaType(),
+                        parameter.addressSpace().name(),
+                        parameter.constant(),
+                        parameter.openClQualifiers()
+                ))
+                .toList();
     }
 
     private List<IrGpuMethodBody> buildIrGpuMethodBodies(

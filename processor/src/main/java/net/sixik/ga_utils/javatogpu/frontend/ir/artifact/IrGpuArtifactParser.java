@@ -40,6 +40,7 @@ public final class IrGpuArtifactParser {
         return new IrGpuArtifact(
                 header,
                 module,
+                parseEntryParameters(properties),
                 backendOutputs,
                 properties.getProperty("runtime.defaultBackend", "opencl"),
                 properties.getProperty("runtime.optimizationProfile", "off")
@@ -108,6 +109,31 @@ public final class IrGpuArtifactParser {
             dependencies.add(require(properties, prefix + "helperDependency." + index));
         }
         return List.copyOf(dependencies);
+    }
+
+    private static List<IrGpuEntryParameter> parseEntryParameters(Properties properties) {
+        int count = parseInt(properties, "entryParameter.count", 0);
+        ArrayList<IrGpuEntryParameter> parameters = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "entryParameter." + index + ".";
+            parameters.add(new IrGpuEntryParameter(
+                    require(properties, prefix + "name"),
+                    require(properties, prefix + "javaType"),
+                    properties.getProperty(prefix + "addressSpace", "PRIVATE"),
+                    Boolean.parseBoolean(properties.getProperty(prefix + "constant", "false")),
+                    parseEntryParameterQualifiers(properties, prefix)
+            ));
+        }
+        return List.copyOf(parameters);
+    }
+
+    private static List<String> parseEntryParameterQualifiers(Properties properties, String prefix) {
+        int count = parseInt(properties, prefix + "openClQualifier.count", 0);
+        ArrayList<String> qualifiers = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            qualifiers.add(require(properties, prefix + "openClQualifier." + index));
+        }
+        return List.copyOf(qualifiers);
     }
 
     private static List<IrGpuBackendOutput> parseBackendOutputs(Properties properties) {

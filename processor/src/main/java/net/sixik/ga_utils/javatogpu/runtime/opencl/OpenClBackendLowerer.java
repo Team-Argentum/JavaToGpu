@@ -24,13 +24,14 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
     @Override
     public GpuBackendModuleArtifact lower(GpuRuntimeCompileRequest compileRequest) {
         Objects.requireNonNull(compileRequest, "compileRequest");
-        compileRequest.irGpuArtifact().ifPresent(artifact -> {
-            if (!artifact.module().methodBodies().isEmpty()) {
-                // The current OpenCL production path still uses generated OpenCL source.
-                // Keeping this branch explicit proves the lowerer receives IrGpu payloads
-                // and gives future IrGpu-to-OpenCL lowering a stable entry point.
-            }
-        });
+        OpenClIrGpuParityResult parityResult = OpenClIrGpuParityChecker.check(compileRequest);
+        if (parityResult.checked() && !parityResult.compatible()) {
+            throw new IllegalStateException(
+                    "OpenCL IrGpu parity check failed: "
+                            + parityResult.toLine()
+                            + "; regenerate both kernel.cl and kernel.irgpu.properties from the same frontend output"
+            );
+        }
         return GpuBackendModuleArtifact.openClSource(
                 compileRequest.descriptor().kernelSource(),
                 compileRequest.descriptor().kernelResource(),

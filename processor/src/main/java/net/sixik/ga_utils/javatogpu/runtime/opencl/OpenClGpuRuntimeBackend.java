@@ -38,6 +38,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceExecutor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrArtifactLoader;
@@ -247,7 +250,13 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 moduleArtifact,
                 invalidationStamp,
                 GpuRuntimeCompileProvenance.from(optimizedCompileRequest),
-                optimizationResult.report()
+                optimizationResult.report(),
+                executeRuntimeEquivalence(new GpuRuntimeEquivalenceRequest(
+                        compileRequest,
+                        optimizedCompileRequest,
+                        moduleArtifact,
+                        optimizationResult.report()
+                ))
         );
         GpuRuntimeCompileCacheKey compileCacheKey = GpuRuntimeCompileCacheKey.from(
                 optimizedCompileRequest,
@@ -892,6 +901,12 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     protected GpuOptimizationStrategyDecision selectOptimizationStrategy(GpuRuntimeCompileRequest compileRequest) {
         return optimizationStrategy.select(compileRequest);
+    }
+
+    protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
+        return GpuRuntimeEquivalenceExecutor.notRun(
+                "pre/post runtime equivalence execution is not enabled for this backend"
+        ).execute(request);
     }
 
     private boolean overridesLegacyOptimizeRuntimeIr() {

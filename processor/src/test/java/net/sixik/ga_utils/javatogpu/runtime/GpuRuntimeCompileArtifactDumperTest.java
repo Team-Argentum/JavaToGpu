@@ -147,6 +147,13 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("fallback.properties").contains("originalIrSelected=false"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("status=not-requested"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("runtimeEquivalenceRequired=true"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.applied.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.rolledBack.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:opencl-nvidia-advisory"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("baselineStatus=recorded-nvidia-only"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionGateStatus=not-requested"));
         assertEquals("build ok", dump.artifact("compile.log"));
         assertEquals("equivalence:skipped", dump.artifact("runtime-validation.txt"));
         assertEquals(List.of("java-source:sample.Demo#kernel:4:17-7:5"), dump.sourceLocations());
@@ -262,7 +269,68 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("vendorPromotionEligible=false"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.0=optimization strategy must be evidence-backed and non-advisory"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.1=vendor baseline is not promotion-eligible under A1/A2 gates"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:opencl-nvidia-advisory"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedProfile=vendor-tuned"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionGateStatus=blocked"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionProfileRequested=true"));
         assertTrue(dump.artifact("optimizer-report.txt").contains("strategy:opencl-nvidia-advisory"));
+    }
+
+    @Test
+    void optimizerDriftArtifactCapturesRollbackAndFallbackCounts() {
+        IrGpuArtifact optimized = artifact("body\n  return optimized\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 2; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "fast"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(optimized),
+                List.of(
+                        GpuRuntimeIrOptimizationPassReport.applied(
+                                "optimizer:applied",
+                                "irgpu:sha256:original",
+                                "irgpu:sha256:optimized",
+                                "proof:mocked",
+                                List.of("applied safe transform")
+                        ),
+                        GpuRuntimeIrOptimizationPassReport.rolledBack(
+                                "optimizer:rollback",
+                                "irgpu:sha256:optimized",
+                                "irgpu:sha256:unsafe",
+                                "proof:failed",
+                                "unsafe proof",
+                                List.of("rolled back unsafe transform")
+                        )
+                ),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=2"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.applied.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.rolledBack.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.failed.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=optimizer-rollback"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:none"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionGateStatus=not-requested"));
     }
 
     private static GpuKernelDescriptor descriptor() {

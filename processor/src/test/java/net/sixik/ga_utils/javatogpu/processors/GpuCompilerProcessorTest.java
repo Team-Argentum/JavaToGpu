@@ -96,6 +96,15 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("entryEmittedName=jtg_kernel"));
         assertTrue(irGpuManifest.contains("helper.count=0"));
         assertTrue(irGpuManifest.contains("struct.count=0"));
+        assertTrue(irGpuManifest.contains("entryParameter.count=2"));
+        assertTrue(irGpuManifest.contains("entryParameter.0.name=input"));
+        assertTrue(irGpuManifest.contains("entryParameter.0.javaType=float[]"));
+        assertTrue(irGpuManifest.contains("entryParameter.0.addressSpace=GLOBAL"));
+        assertTrue(irGpuManifest.contains("entryParameter.0.constant=true"));
+        assertTrue(irGpuManifest.contains("entryParameter.1.name=output"));
+        assertTrue(irGpuManifest.contains("entryParameter.1.javaType=float[]"));
+        assertTrue(irGpuManifest.contains("entryParameter.1.addressSpace=GLOBAL"));
+        assertTrue(irGpuManifest.contains("entryParameter.1.constant=false"));
         assertTrue(irGpuManifest.contains("backendOutput.count=1"));
         assertTrue(irGpuManifest.contains("backendOutput.0.backend=opencl"));
         assertTrue(irGpuManifest.contains("backendOutput.0.kind=source"));
@@ -111,6 +120,13 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("methodBody.0.format=ir-text-v1"));
 
         IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertEquals(2, irGpuArtifact.entryParameters().size());
+        assertEquals("input", irGpuArtifact.entryParameters().get(0).name());
+        assertEquals("float[]", irGpuArtifact.entryParameters().get(0).javaType());
+        assertEquals("GLOBAL", irGpuArtifact.entryParameters().get(0).addressSpace());
+        assertTrue(irGpuArtifact.entryParameters().get(0).constant());
+        assertEquals("output", irGpuArtifact.entryParameters().get(1).name());
+        assertFalse(irGpuArtifact.entryParameters().get(1).constant());
         assertEquals(1, irGpuArtifact.module().methodBodies().size());
         assertEquals("entry", irGpuArtifact.module().methodBodies().get(0).role());
         assertEquals("kernel", irGpuArtifact.module().methodBodies().get(0).name());
