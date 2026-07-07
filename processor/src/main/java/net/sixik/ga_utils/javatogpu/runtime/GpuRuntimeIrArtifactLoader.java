@@ -14,10 +14,15 @@ public final class GpuRuntimeIrArtifactLoader {
     }
 
     public static Optional<IrGpuArtifact> load(GpuKernelDescriptor descriptor) {
+        return load(descriptor, null);
+    }
+
+    public static Optional<IrGpuArtifact> load(GpuKernelDescriptor descriptor, ClassLoader preferredClassLoader) {
         if (descriptor == null || descriptor.irGpuResource() == null || descriptor.irGpuResource().isBlank()) {
             return Optional.empty();
         }
-        return load(descriptor.irGpuResource(), Thread.currentThread().getContextClassLoader())
+        return load(descriptor.irGpuResource(), preferredClassLoader)
+                .or(() -> load(descriptor.irGpuResource(), Thread.currentThread().getContextClassLoader()))
                 .or(() -> load(descriptor.irGpuResource(), GpuRuntimeIrArtifactLoader.class.getClassLoader()));
     }
 

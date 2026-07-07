@@ -28,6 +28,7 @@ public final class IrGpuArtifactParser {
         IrGpuModule module = new IrGpuModule(
                 require(properties, "entryMethod"),
                 require(properties, "entryEmittedName"),
+                parseIndexedValues(properties, "entry.openClAttribute"),
                 parseHelpers(properties),
                 parseStructs(properties),
                 parseMethodBodies(properties)
@@ -60,7 +61,11 @@ public final class IrGpuArtifactParser {
         for (int index = 0; index < count; index++) {
             helpers.add(new IrGpuModuleMethod(
                     require(properties, "helper." + index + ".name"),
-                    require(properties, "helper." + index + ".emittedName")
+                    require(properties, "helper." + index + ".emittedName"),
+                    properties.getProperty("helper." + index + ".returnType", "unknown"),
+                    parseMethodParameters(properties, "helper." + index + ".parameter"),
+                    parseIndexedValues(properties, "helper." + index + ".openClAttribute"),
+                    Boolean.parseBoolean(properties.getProperty("helper." + index + ".inline", "false"))
             ));
         }
         return List.copyOf(helpers);
@@ -136,15 +141,28 @@ public final class IrGpuArtifactParser {
         ArrayList<IrGpuEntryParameter> parameters = new ArrayList<>();
         for (int index = 0; index < count; index++) {
             String prefix = "entryParameter." + index + ".";
-            parameters.add(new IrGpuEntryParameter(
-                    require(properties, prefix + "name"),
-                    require(properties, prefix + "javaType"),
-                    properties.getProperty(prefix + "addressSpace", "PRIVATE"),
-                    Boolean.parseBoolean(properties.getProperty(prefix + "constant", "false")),
-                    parseEntryParameterQualifiers(properties, prefix)
-            ));
+            parameters.add(parseParameter(properties, prefix));
         }
         return List.copyOf(parameters);
+    }
+
+    private static List<IrGpuEntryParameter> parseMethodParameters(Properties properties, String prefix) {
+        int count = parseInt(properties, prefix + ".count", 0);
+        ArrayList<IrGpuEntryParameter> parameters = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            parameters.add(parseParameter(properties, prefix + "." + index + "."));
+        }
+        return List.copyOf(parameters);
+    }
+
+    private static IrGpuEntryParameter parseParameter(Properties properties, String prefix) {
+        return new IrGpuEntryParameter(
+                require(properties, prefix + "name"),
+                require(properties, prefix + "javaType"),
+                properties.getProperty(prefix + "addressSpace", "PRIVATE"),
+                Boolean.parseBoolean(properties.getProperty(prefix + "constant", "false")),
+                parseEntryParameterQualifiers(properties, prefix)
+        );
     }
 
     private static List<String> parseEntryParameterQualifiers(Properties properties, String prefix) {

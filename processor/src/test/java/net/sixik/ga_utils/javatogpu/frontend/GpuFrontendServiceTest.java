@@ -219,6 +219,10 @@ class GpuFrontendServiceTest {
         assertEquals(1, result.irGpuArtifact().module().helperMethods().size());
         assertEquals("square", result.irGpuArtifact().module().helperMethods().get(0).name());
         assertEquals("jtg_fn_square_float", result.irGpuArtifact().module().helperMethods().get(0).emittedName());
+        assertEquals("float", result.irGpuArtifact().module().helperMethods().get(0).returnType());
+        assertEquals(1, result.irGpuArtifact().module().helperMethods().get(0).parameters().size());
+        assertEquals("value", result.irGpuArtifact().module().helperMethods().get(0).parameters().get(0).name());
+        assertEquals("float", result.irGpuArtifact().module().helperMethods().get(0).parameters().get(0).javaType());
         assertEquals(2, result.irGpuArtifact().module().methodBodies().size());
         assertEquals("entry", result.irGpuArtifact().module().methodBodies().get(0).role());
         assertEquals("kernel", result.irGpuArtifact().module().methodBodies().get(0).name());

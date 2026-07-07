@@ -35,15 +35,27 @@ public final class OpenClIrGpuSourceReconstructor implements GpuBackendSourceRec
         if (compileRequest == null || compileRequest.irGpuArtifact().isEmpty()) {
             return OpenClIrGpuReconstructionPreview.inspect(compileRequest).toSourceReconstructionResult();
         }
-        return reconstruct(compileRequest.irGpuArtifact().orElseThrow(), compileRequest.descriptor().kernelResource());
+        return reconstruct(
+                compileRequest.irGpuArtifact().orElseThrow(),
+                compileRequest.descriptor().kernelResource(),
+                compileRequest.descriptor().kernelSource()
+        );
     }
 
     public GpuBackendSourceReconstructionResult reconstruct(IrGpuArtifact artifact, String descriptorOpenClResource) {
+        return reconstruct(artifact, descriptorOpenClResource, "");
+    }
+
+    public GpuBackendSourceReconstructionResult reconstruct(
+            IrGpuArtifact artifact,
+            String descriptorOpenClResource,
+            String descriptorSource
+    ) {
         OpenClIrGpuReconstructionPreview preview = OpenClIrGpuReconstructionPreview.inspect(
                 artifact,
                 descriptorOpenClResource
         );
-        if (!preview.reconstructable() || artifact == null) {
+        if (artifact == null || !canAttemptDiagnosticEmission(preview)) {
             return preview.toSourceReconstructionResult();
         }
 
@@ -55,7 +67,7 @@ public final class OpenClIrGpuSourceReconstructor implements GpuBackendSourceRec
                     GpuBackendTarget.OPENCL,
                     preview.selectedSource(),
                     preview.payloadFormat(),
-                    "opencl-irgpu-source-compile",
+                    runtimeLoadMode(preview),
                     emission.blockers(),
                     diagnostics
             );
@@ -63,13 +75,32 @@ public final class OpenClIrGpuSourceReconstructor implements GpuBackendSourceRec
 
         java.util.ArrayList<String> diagnostics = new java.util.ArrayList<>(preview.diagnostics());
         diagnostics.addAll(emission.diagnostics());
+        diagnostics.addAll(OpenClIrGpuSourceParityComparison.compare(emission.source(), descriptorSource).diagnostics());
         return GpuBackendSourceReconstructionResult.reconstructedSource(
                     GpuBackendTarget.OPENCL,
                     emission.source(),
                     preview.selectedSource(),
                     preview.payloadFormat(),
-                    "opencl-irgpu-source-compile",
+                    runtimeLoadMode(preview),
                     diagnostics
         );
+    }
+
+    private static boolean canAttemptDiagnosticEmission(OpenClIrGpuReconstructionPreview preview) {
+        return preview != null
+                && preview.attempted()
+                && "ir-text-v1".equals(preview.payloadFormat())
+                && !preview.entryEmittedName().isBlank()
+                && preview.methodBodyCount() > 0
+                && !preview.blockers().contains("irgpu-artifact-missing")
+                && !preview.blockers().contains("irgpu-opencl-resource-drift")
+                && !preview.blockers().contains("irgpu-method-bodies-missing")
+                && !preview.blockers().contains("irgpu-entry-body-missing");
+    }
+
+    private static String runtimeLoadMode(OpenClIrGpuReconstructionPreview preview) {
+        return "irgpu-backend-neutral-source".equals(preview.selectedSource())
+                ? "opencl-irgpu-source-compile"
+                : "opencl-source-compile";
     }
 }

@@ -257,8 +257,16 @@ public final class GpuFrontendService {
                 new IrGpuModule(
                         compiledKernel.parsedMethod().name(),
                         compiledKernel.emittedName(),
+                        compiledKernel.parsedMethod().openClAttributes(),
                         helperMethods.stream()
-                                .map(helper -> new IrGpuModuleMethod(helper.parsedMethod().name(), helper.emittedName()))
+                                .map(helper -> new IrGpuModuleMethod(
+                                        helper.parsedMethod().name(),
+                                        helper.emittedName(),
+                                        helper.parsedMethod().returnType(),
+                                        buildMethodParameters(helper),
+                                        helper.parsedMethod().openClAttributes(),
+                                        helper.parsedMethod().inline()
+                                ))
                                 .toList(),
                         structs.stream()
                                 .map(ParsedGpuStruct::ownerQualifiedName)
@@ -280,7 +288,11 @@ public final class GpuFrontendService {
     }
 
     private static List<IrGpuEntryParameter> buildEntryParameters(GpuIrCompiledMethod compiledKernel) {
-        return compiledKernel.parsedMethod().parameters().stream()
+        return buildMethodParameters(compiledKernel);
+    }
+
+    private static List<IrGpuEntryParameter> buildMethodParameters(GpuIrCompiledMethod compiledMethod) {
+        return compiledMethod.parsedMethod().parameters().stream()
                 .map(parameter -> new IrGpuEntryParameter(
                         parameter.name(),
                         parameter.javaType(),

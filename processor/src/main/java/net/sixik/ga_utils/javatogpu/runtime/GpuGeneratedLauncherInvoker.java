@@ -33,7 +33,8 @@ public final class GpuGeneratedLauncherInvoker {
     }
 
     public static Object invokeWithConfig(Class<?> ownerClass, String methodName, GpuExecutionConfig executionConfig, Object... arguments) {
-        GpuRuntime.invoke(executionConfig, descriptor(ownerClass, methodName), arguments);
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        GpuRuntime.invokeFromGeneratedLauncher(binding.launcherClass(), executionConfig, binding.descriptor(), arguments);
         return null;
     }
 
@@ -43,7 +44,13 @@ public final class GpuGeneratedLauncherInvoker {
             GpuRuntimeCompileOptions compileOptions,
             Object... arguments
     ) {
-        GpuRuntime.invokeWithCompileOptions(compileOptions, descriptor(ownerClass, methodName), arguments);
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions(
+                binding.launcherClass(),
+                compileOptions,
+                binding.descriptor(),
+                arguments
+        );
         return null;
     }
 
@@ -54,7 +61,14 @@ public final class GpuGeneratedLauncherInvoker {
             GpuRuntimeCompileOptions compileOptions,
             Object... arguments
     ) {
-        GpuRuntime.invokeWithCompileOptions(globalWorkSize, compileOptions, descriptor(ownerClass, methodName), arguments);
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions(
+                binding.launcherClass(),
+                globalWorkSize,
+                compileOptions,
+                binding.descriptor(),
+                arguments
+        );
         return null;
     }
 
@@ -83,18 +97,32 @@ public final class GpuGeneratedLauncherInvoker {
             GpuRuntimeCompileOptions compileOptions,
             Object... arguments
     ) {
-        GpuRuntime.invokeWithCompileOptions(executionConfig, compileOptions, descriptor(ownerClass, methodName), arguments);
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions(
+                binding.launcherClass(),
+                executionConfig,
+                compileOptions,
+                binding.descriptor(),
+                arguments
+        );
         return null;
     }
 
     private static GpuKernelDescriptor descriptor(Class<?> ownerClass, String methodName) {
+        return launcherBinding(ownerClass, methodName).descriptor();
+    }
+
+    private static LauncherBinding launcherBinding(Class<?> ownerClass, String methodName) {
         try {
             Class<?> launcherClass = Class.forName(
                     GpuLauncherNaming.launcherClassName(ownerClass, methodName),
                     true,
                     ownerClass.getClassLoader()
             );
-            return (GpuKernelDescriptor) launcherClass.getField("KERNEL_DESCRIPTOR").get(null);
+            return new LauncherBinding(
+                    launcherClass,
+                    (GpuKernelDescriptor) launcherClass.getField("KERNEL_DESCRIPTOR").get(null)
+            );
         } catch (ClassNotFoundException exception) {
             throw new IllegalArgumentException(
                     "Generated GPU launcher not found for "
@@ -114,6 +142,9 @@ public final class GpuGeneratedLauncherInvoker {
                     exception
             );
         }
+    }
+
+    private record LauncherBinding(Class<?> launcherClass, GpuKernelDescriptor descriptor) {
     }
 
     private static Object invokeLauncherMethod(Class<?> ownerClass, String methodName, String launcherMethodName, Object... arguments) {

@@ -46,11 +46,16 @@ public final class IrGpuArtifactSerializer {
     private static void writeModule(TreeMap<String, String> properties, IrGpuModule module) {
         properties.put("entryMethod", module.entryMethod());
         properties.put("entryEmittedName", module.entryEmittedName());
+        writeStringList(properties, "entry.openClAttribute", module.entryOpenClAttributes());
         properties.put("helper.count", Integer.toString(module.helperMethods().size()));
         for (int index = 0; index < module.helperMethods().size(); index++) {
             IrGpuModuleMethod helper = module.helperMethods().get(index);
             properties.put("helper." + index + ".name", helper.name());
             properties.put("helper." + index + ".emittedName", helper.emittedName());
+            properties.put("helper." + index + ".returnType", helper.returnType());
+            properties.put("helper." + index + ".inline", Boolean.toString(helper.inline()));
+            writeStringList(properties, "helper." + index + ".openClAttribute", helper.openClAttributes());
+            writeMethodParameters(properties, "helper." + index + ".parameter", helper.parameters());
         }
         properties.put("struct.count", Integer.toString(module.structs().size()));
         for (int index = 0; index < module.structs().size(); index++) {
@@ -125,17 +130,36 @@ public final class IrGpuArtifactSerializer {
         for (int index = 0; index < parameters.size(); index++) {
             IrGpuEntryParameter parameter = parameters.get(index);
             String prefix = "entryParameter." + index + ".";
-            properties.put(prefix + "name", parameter.name());
-            properties.put(prefix + "javaType", parameter.javaType());
-            properties.put(prefix + "addressSpace", parameter.addressSpace());
-            properties.put(prefix + "constant", Boolean.toString(parameter.constant()));
-            properties.put(prefix + "openClQualifier.count", Integer.toString(parameter.openClQualifiers().size()));
-            for (int qualifierIndex = 0; qualifierIndex < parameter.openClQualifiers().size(); qualifierIndex++) {
-                properties.put(
-                        prefix + "openClQualifier." + qualifierIndex,
-                        parameter.openClQualifiers().get(qualifierIndex)
-                );
-            }
+            writeParameter(properties, prefix, parameter);
+        }
+    }
+
+    private static void writeMethodParameters(
+            TreeMap<String, String> properties,
+            String prefix,
+            java.util.List<IrGpuEntryParameter> parameters
+    ) {
+        properties.put(prefix + ".count", Integer.toString(parameters.size()));
+        for (int index = 0; index < parameters.size(); index++) {
+            writeParameter(properties, prefix + "." + index + ".", parameters.get(index));
+        }
+    }
+
+    private static void writeParameter(
+            TreeMap<String, String> properties,
+            String prefix,
+            IrGpuEntryParameter parameter
+    ) {
+        properties.put(prefix + "name", parameter.name());
+        properties.put(prefix + "javaType", parameter.javaType());
+        properties.put(prefix + "addressSpace", parameter.addressSpace());
+        properties.put(prefix + "constant", Boolean.toString(parameter.constant()));
+        properties.put(prefix + "openClQualifier.count", Integer.toString(parameter.openClQualifiers().size()));
+        for (int qualifierIndex = 0; qualifierIndex < parameter.openClQualifiers().size(); qualifierIndex++) {
+            properties.put(
+                    prefix + "openClQualifier." + qualifierIndex,
+                    parameter.openClQualifiers().get(qualifierIndex)
+            );
         }
     }
 

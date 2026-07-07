@@ -32,6 +32,8 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileCacheKey;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
@@ -42,6 +44,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceExecutor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadGateFormatter;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrArtifactLoader;
@@ -102,6 +105,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     private static final java.util.regex.Pattern DOUBLE_USAGE_PATTERN = java.util.regex.Pattern.compile("\\bdouble(?:[234])?\\b");
+    private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
     private static final Object SHARED_RUNTIME_LOCK = new Object();
     private static final Map<GpuRuntimeCompileCacheKey, OpenClCompiledKernel> SHARED_COMPILED_KERNELS = new ConcurrentHashMap<>();
     private static volatile OpenClRuntimeSession sharedSession;
@@ -236,7 +240,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         validateCompileOptions(invocation.compileOptions());
         validateCapabilitySupport(invocation.descriptor(), plan);
         GpuRuntimeCompileRequest compileRequest = buildCompileRequest(invocation)
-                .withIrGpuArtifact(GpuRuntimeIrArtifactLoader.load(invocation.descriptor()));
+                .withIrGpuArtifact(GpuRuntimeIrArtifactLoader.load(
+                        invocation.descriptor(),
+                        invocation.artifactClassLoader()
+                ));
         GpuRuntimeIrOptimizationResult optimizationResult = optimizeRuntimeIrWithReport(compileRequest);
         GpuRuntimeCompileRequest optimizedCompileRequest = optimizationResult.compileRequest();
         GpuBackendModuleArtifact moduleArtifact = lowerBackendModule(optimizedCompileRequest);
@@ -259,6 +266,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                         optimizationResult.report()
                 ))
         );
+        dumpBackendSourcePromotionWorkloadGate(artifactSnapshot);
         GpuRuntimeCompileCacheKey compileCacheKey = GpuRuntimeCompileCacheKey.from(
                 optimizedCompileRequest,
                 moduleArtifact,
@@ -2048,6 +2056,29 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     runtimeCapabilities().deviceLabel(),
                     exception
             );
+        }
+    }
+
+    private void dumpBackendSourcePromotionWorkloadGate(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(artifactSnapshot);
+            java.nio.file.Path path = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path parent = path.getParent();
+            if (parent != null) {
+                java.nio.file.Files.createDirectories(parent);
+            }
+            String gateProperties = GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                    path,
+                    artifactSnapshot.backendModuleArtifact().resource(),
+                    dump.artifact("backend-source-promotion-gate.properties")
+            );
+            java.nio.file.Files.writeString(path, gateProperties, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (RuntimeException | java.io.IOException exception) {
+            throw new IllegalStateException("Failed to write OpenCL backend source workload promotion gate", exception);
         }
     }
 

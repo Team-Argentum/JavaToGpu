@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
@@ -52,11 +53,15 @@ public record OpenClIrGpuSourceEmission(
 
         String emittedEntryBody = "";
         IrGpuMethodBody entryBody = null;
+        LinkedHashMap<String, String> emittedHelperBodies = new LinkedHashMap<>();
         for (IrGpuMethodBody methodBody : methodBodies) {
             MethodBodyInspection inspection = inspectMethodBody(methodBody, blockers, diagnostics);
             if ("entry".equals(methodBody.role())) {
                 entryBody = methodBody;
                 emittedEntryBody = inspection.emittedBody().orElse("");
+            }
+            if ("helper".equals(methodBody.role())) {
+                inspection.emittedBody().ifPresent(body -> emittedHelperBodies.put(methodBody.emittedName(), body));
             }
         }
 
@@ -64,7 +69,8 @@ public record OpenClIrGpuSourceEmission(
         OpenClIrGpuSourceAssemblyResult assemblyResult = OpenClIrGpuSourceAssembler.INSTANCE.assemble(
                 artifact,
                 entryBody,
-                emittedEntryBody
+                emittedEntryBody,
+                emittedHelperBodies
         );
         if (assemblyResult.assembled()) {
             diagnostics.addAll(assemblyResult.diagnostics());
@@ -110,9 +116,6 @@ public record OpenClIrGpuSourceEmission(
             parseResult.blockers().forEach(blocker -> add(blockers, prefix + blocker));
         }
         diagnostics.addAll(parseResult.diagnostics());
-        if ("helper".equals(role)) {
-            add(blockers, "irgpu-helper-signature-emission-not-yet-implemented");
-        }
         return new MethodBodyInspection(Optional.ofNullable(emittedBody).filter(value -> !value.isBlank()));
     }
 

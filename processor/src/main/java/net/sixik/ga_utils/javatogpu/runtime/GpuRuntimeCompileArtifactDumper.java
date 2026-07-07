@@ -50,6 +50,7 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.put("backend-diagnostics.properties", formatBackendDiagnostics(snapshot));
         artifacts.put("opencl-irgpu-reconstruction-preview.properties", formatOpenClIrGpuReconstructionPreview(snapshot));
         artifacts.put("backend-source-reconstruction.properties", formatBackendSourceReconstruction(snapshot));
+        artifacts.put("backend-source-promotion-gate.properties", formatBackendSourcePromotionGate(snapshot));
         artifacts.put("backend-source-map.properties", formatBackendSourceMap(snapshot));
         artifacts.put("runtime-optimizer-drift.properties", GpuRuntimeOptimizerDriftArtifact.from(snapshot).toPropertiesText());
         if (snapshot.optimizationReport().hasReports() || snapshot.productionOptimizerGate().productionProfileRequested()) {
@@ -184,7 +185,24 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .orElse(null);
         return OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
                 artifact,
-                snapshot.backendModuleArtifact().resource()
+                snapshot.backendModuleArtifact().resource(),
+                snapshot.backendModuleArtifact().source()
+        ).toPropertiesText();
+    }
+
+    private static String formatBackendSourcePromotionGate(GpuRuntimeCompileArtifactSnapshot snapshot) {
+        IrGpuArtifact artifact = snapshot.optimizedIrGpuArtifact()
+                .or(() -> snapshot.originalIrGpuArtifact())
+                .orElse(null);
+        GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                snapshot.backendModuleArtifact().resource(),
+                snapshot.backendModuleArtifact().source()
+        );
+        return GpuBackendSourcePromotionGate.evaluate(
+                reconstruction,
+                snapshot.runtimeEquivalenceEvidence(),
+                snapshot.fallbackEvidence()
         ).toPropertiesText();
     }
 

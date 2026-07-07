@@ -5,6 +5,7 @@ import java.util.List;
 public record IrGpuModule(
         String entryMethod,
         String entryEmittedName,
+        List<String> entryOpenClAttributes,
         List<IrGpuModuleMethod> helperMethods,
         List<String> structs,
         List<IrGpuMethodBody> methodBodies
@@ -14,12 +15,23 @@ public record IrGpuModule(
             String entryMethod,
             String entryEmittedName,
             List<IrGpuModuleMethod> helperMethods,
+            List<String> structs,
+            List<IrGpuMethodBody> methodBodies
+    ) {
+        this(entryMethod, entryEmittedName, List.of(), helperMethods, structs, methodBodies);
+    }
+
+    public IrGpuModule(
+            String entryMethod,
+            String entryEmittedName,
+            List<IrGpuModuleMethod> helperMethods,
             List<String> structs
     ) {
-        this(entryMethod, entryEmittedName, helperMethods, structs, List.of());
+        this(entryMethod, entryEmittedName, List.of(), helperMethods, structs, List.of());
     }
 
     public IrGpuModule {
+        entryOpenClAttributes = entryOpenClAttributes == null ? List.of() : List.copyOf(entryOpenClAttributes);
         helperMethods = helperMethods == null ? List.of() : List.copyOf(helperMethods);
         structs = structs == null ? List.of() : List.copyOf(structs);
         methodBodies = methodBodies == null ? List.of() : List.copyOf(methodBodies);

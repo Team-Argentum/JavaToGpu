@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
@@ -185,6 +186,12 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("runtimeLoadMode=opencl-source-compile"));
         assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("blocker.0=typed-body-regeneration-not-yet-available"));
         assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("blocker.1=irgpu-opencl-resource-drift"));
+        assertTrue(dump.hasArtifact("backend-source-promotion-gate.properties"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("status=blocked"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reviewReady=false"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reconstructed=false"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("runtimeEquivalencePassed=false"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("fallbackClean=true"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendTarget=OPENCL"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendResource=runtime/lowered/kernel.cl"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("sourceLocation.count=1"));
@@ -318,6 +325,107 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("irgpu-entry-jtg_kernel-emitted.body.length="));
         assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("OpenCL source can be reconstructed from IrGpu"));
         assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("OpenCL source emitter skeleton is present"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("status=blocked"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reviewReady=false"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reconstructed=false"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceParityChecked=false"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("runtimeEquivalencePassed=false"));
+    }
+
+    @Test
+    void dumpRecordsReconstructedSourceParityDiagnosticsWhenParameterMetadataExists() {
+        IrGpuArtifact optimized = artifact(
+                "body\n  return output[0]\n",
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of()))
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1")
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("reconstructed=true"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("sourceAvailable=true"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("blocker.count=0"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("OpenCL source assembler emitted entry kernel jtg_kernel"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("sourceParity.checked=true"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("sourceParity.matched=false"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("sourceParity.reconstructedLength="));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("sourceParity.descriptorLength="));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("status=blocked"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reconstructed=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceAvailable=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceParityChecked=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceParityMatched=false"));
+    }
+
+    @Test
+    void dumpRecordsBackendSourcePromotionReviewReadyWhenParityAndRuntimeEvidencePass() {
+        String reconstructedDescriptorSource = """
+                __kernel void jtg_kernel(__global int* output) {
+                    output[0] = 1;
+                    return;
+                }
+                """;
+        IrGpuArtifact optimized = artifact(
+                "body\n  set output[0] = 1\n  return\n",
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of()))
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                reconstructedDescriptorSource,
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimized)),
+                GpuRuntimeEquivalenceEvidence.passed(request, 2, 2, List.of("source parity runtime equivalence passed"))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("reconstructed=true"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("sourceParity.checked=true"));
+        assertTrue(dump.artifact("backend-source-reconstruction.properties").contains("sourceParity.matched=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("status=review-ready"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reviewReady=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reconstructed=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceAvailable=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceParityChecked=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceParityMatched=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("runtimeEquivalencePassed=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("fallbackClean=true"));
+        assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("diagnostic.0=backend source reconstruction is ready for promotion review"));
     }
 
     @Test
@@ -499,6 +607,14 @@ class GpuRuntimeCompileArtifactDumperTest {
     }
 
     private static IrGpuArtifact artifact(String body, IrGpuRegenerationMetadata regenerationMetadata) {
+        return artifact(body, regenerationMetadata, List.of());
+    }
+
+    private static IrGpuArtifact artifact(
+            String body,
+            IrGpuRegenerationMetadata regenerationMetadata,
+            List<IrGpuEntryParameter> entryParameters
+    ) {
         return new IrGpuArtifact(
                 IrGpuArtifactHeader.javaSourceV1(),
                 new IrGpuModule(
@@ -514,7 +630,7 @@ class GpuRuntimeCompileArtifactDumperTest {
                                 location()
                         ))
                 ),
-                List.of(),
+                entryParameters,
                 IrGpuLaunchMetadata.defaultOneDimensional(),
                 IrGpuValidationMetadata.frontendSubset(),
                 IrGpuFeatureMetadata.none(),

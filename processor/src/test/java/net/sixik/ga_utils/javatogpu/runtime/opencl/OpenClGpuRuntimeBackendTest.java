@@ -973,6 +973,89 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void writesWorkloadSourcePromotionGateFromRuntimeSnapshotWhenConfigured() throws Exception {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        Path gateFile = Files.createTempFile("javatogpu-opencl-workload-source-promotion", ".properties");
+        Files.deleteIfExists(gateFile);
+        String previousGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+        try {
+            System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", gateFile.toString());
+
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot);
+
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}));
+
+            String gateProperties = Files.readString(gateFile);
+            assertEquals("javatogpu/sample/Demo/kernel.cl", capturedSnapshot.get().backendModuleArtifact().resource());
+            assertTrue(gateProperties.contains("status=blocked"));
+            assertTrue(gateProperties.contains("reviewReady=false"));
+            assertTrue(gateProperties.contains("runtimeEquivalencePassed=false"));
+            assertTrue(gateProperties.contains("scope=real-workload"));
+            assertTrue(gateProperties.contains("productionSourceSwitching=false"));
+            assertTrue(gateProperties.contains("realWorkloadEvidence=runtime-snapshot"));
+            assertTrue(gateProperties.contains("kernel.count=1"));
+            assertTrue(gateProperties.contains("kernel.0.sourceKernelResource=javatogpu/sample/Demo/kernel.cl"));
+            assertTrue(gateProperties.contains("kernel.0.status=blocked"));
+            assertTrue(gateProperties.contains("kernel.0.diagnostic.count=5"));
+            assertTrue(gateProperties.contains("kernel.0.diagnostic.0=backend source must be reconstructed from IrGpu before promotion review"));
+            assertTrue(gateProperties.contains("blockerFamily.0.name=reconstruction"));
+            assertTrue(gateProperties.contains("blockerFamily.0.count=2"));
+            assertTrue(gateProperties.contains("blockerFamily.1.name=source-parity"));
+            assertTrue(gateProperties.contains("blockerFamily.2.name=runtime-equivalence"));
+            assertTrue(gateProperties.contains("kernel.0.blockerFamily.0.name=reconstruction"));
+        } finally {
+            if (previousGateFile == null) {
+                System.clearProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+            } else {
+                System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousGateFile);
+            }
+        }
+    }
+
+    @Test
+    void aggregatesWorkloadSourcePromotionGateAcrossKernelResources() throws Exception {
+        GpuKernelDescriptor firstDescriptor = intOutputDescriptor();
+        GpuKernelDescriptor secondDescriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/other-kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 2; }",
+                java.util.List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        Path gateFile = Files.createTempFile("javatogpu-opencl-workload-source-promotion-aggregate", ".properties");
+        Files.deleteIfExists(gateFile);
+        String previousGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+        try {
+            System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", gateFile.toString());
+
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot);
+
+            backend.invoke(new GpuKernelInvocation(firstDescriptor, new Object[]{new int[]{0}}));
+            backend.invoke(new GpuKernelInvocation(secondDescriptor, new Object[]{new int[]{0}}));
+
+            String gateProperties = Files.readString(gateFile);
+            assertTrue(gateProperties.contains("kernel.count=2"));
+            assertTrue(gateProperties.contains("kernel.0.sourceKernelResource=javatogpu/sample/Demo/kernel.cl"));
+            assertTrue(gateProperties.contains("kernel.1.sourceKernelResource=javatogpu/sample/Demo/other-kernel.cl"));
+            assertTrue(gateProperties.contains("kernel.0.realWorkloadEvidence=runtime-snapshot"));
+            assertTrue(gateProperties.contains("kernel.1.realWorkloadEvidence=runtime-snapshot"));
+            assertTrue(gateProperties.contains("kernel.0.diagnostic.0=backend source must be reconstructed from IrGpu before promotion review"));
+            assertTrue(gateProperties.contains("kernel.1.diagnostic.0=backend source must be reconstructed from IrGpu before promotion review"));
+            assertTrue(gateProperties.contains("blockerFamily.0.name=reconstruction"));
+            assertTrue(gateProperties.contains("blockerFamily.0.count=4"));
+            assertTrue(gateProperties.contains("kernel.1.blockerFamily.2.name=runtime-equivalence"));
+            assertTrue(gateProperties.contains("productionSourceSwitching=false"));
+        } finally {
+            if (previousGateFile == null) {
+                System.clearProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+            } else {
+                System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousGateFile);
+            }
+        }
+    }
+
+    @Test
     void runtimeEquivalenceFailureRejectsOptimizedIrInSnapshotArtifacts() {
         GpuKernelDescriptor descriptor = intOutputDescriptor();
         AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();

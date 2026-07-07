@@ -7,6 +7,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityChecker;
@@ -138,7 +139,14 @@ class GpuBackendLowerersTest {
         assertEquals(List.of("typed-body-regeneration-not-yet-available"), sourceResult.blockers());
         assertEquals(GpuBackendTarget.OPENCL, OpenClIrGpuSourceReconstructor.INSTANCE.backendTarget());
         assertEquals(OpenClIrGpuSourceReconstructor.VERSION, OpenClIrGpuSourceReconstructor.INSTANCE.version());
-        assertEquals(sourceResult, reconstructorResult);
+        assertTrue(reconstructorResult.attempted());
+        assertTrue(!reconstructorResult.reconstructed());
+        assertTrue(!reconstructorResult.sourceAvailable());
+        assertEquals("derived-opencl-source", reconstructorResult.selectedSource());
+        assertEquals("opencl-source-compile", reconstructorResult.runtimeLoadMode());
+        assertTrue(reconstructorResult.blockers().contains("irgpu-entry-parameter-metadata-missing"));
+        assertTrue(reconstructorResult.diagnostics().contains("irgpu-entry-jtg_kernel-parsed.statement.count=1"));
+        assertTrue(reconstructorResult.diagnostics().stream().anyMatch(diagnostic -> diagnostic.startsWith("irgpu-entry-jtg_kernel-emitted.body.length=")));
     }
 
     @Test
@@ -215,6 +223,69 @@ class GpuBackendLowerersTest {
                 """, reconstructorResult.source());
         assertTrue(reconstructorResult.diagnostics().contains("OpenCL source assembler emitted entry kernel jtg_kernel"));
         assertTrue(reconstructorResult.diagnostics().contains("OpenCL source assembler emitted 1 entry parameter(s)"));
+        assertTrue(reconstructorResult.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(reconstructorResult.diagnostics().contains("sourceParity.matched=false"));
+    }
+
+    @Test
+    void openClSourceReconstructorAssemblesFlatHelperSourceWhenHelperMetadataExists() {
+        GpuKernelDescriptor descriptor = sampleDescriptor();
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(new IrGpuModuleMethod(
+                                "square",
+                                "jtg_fn_square_float",
+                                "float",
+                                List.of(new IrGpuEntryParameter("value", "float", "PRIVATE", false, List.of()))
+                        )),
+                        List.of(),
+                        List.of(
+                                IrGpuMethodBody.entry(
+                                        "kernel",
+                                        "jtg_kernel",
+                                        "body\n  set output[0] = helper(jtg_fn_square_float args=[input[0]])\n  return\n",
+                                        List.of("jtg_fn_square_float")
+                                ),
+                                IrGpuMethodBody.helper(
+                                        "square",
+                                        "jtg_fn_square_float",
+                                        "body\n  return (value * value)\n",
+                                        List.of()
+                                )
+                        )
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "float[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())
+                ),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(IrGpuBackendOutput.openClSource(descriptor.kernelResource())),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendSourceReconstructionResult reconstructorResult = OpenClIrGpuSourceReconstructor.INSTANCE
+                .reconstruct(compileRequest);
+
+        assertTrue(reconstructorResult.reconstructed());
+        assertTrue(reconstructorResult.blockers().isEmpty());
+        assertTrue(reconstructorResult.source().contains("float jtg_fn_square_float(float value)"));
+        assertTrue(reconstructorResult.source().contains("return (value * value);"));
+        assertTrue(reconstructorResult.source().contains("output[0] = jtg_fn_square_float(input[0]);"));
+        assertTrue(reconstructorResult.source().contains("__kernel void jtg_kernel(__global float* input, __global float* output)"));
+        assertTrue(reconstructorResult.diagnostics().contains("OpenCL source assembler emitted 1 helper function(s)"));
     }
 
     @Test
@@ -260,8 +331,14 @@ class GpuBackendLowerersTest {
 
         assertEquals(backendTarget, lowerer.backendTarget());
         assertEquals("unsupported", lowerer.lowererVersion());
-        assertEquals(backendTarget, lowerer.sourceSelectionPlan(compileRequest).backendTarget());
-        assertEquals("descriptor-source", lowerer.sourceSelectionPlan(compileRequest).selectedSource());
+        GpuBackendSourceSelectionPlan sourceSelectionPlan = lowerer.sourceSelectionPlan(compileRequest);
+        String backendName = backendTarget.name().toLowerCase(java.util.Locale.ROOT);
+        assertEquals(backendTarget, sourceSelectionPlan.backendTarget());
+        assertEquals(backendName + "-lowerer-unavailable", sourceSelectionPlan.selectedSource());
+        assertEquals("irgpu-unlowered", sourceSelectionPlan.payloadFormat());
+        assertEquals(backendName + "-unsupported", sourceSelectionPlan.runtimeLoadMode());
+        assertTrue(sourceSelectionPlan.blockers().contains(backendName + "-lowerer-not-implemented"));
+        assertTrue(sourceSelectionPlan.diagnostics().contains("GPU backend lowerer is not implemented for " + backendTarget));
         assertTrue(exception.getMessage().contains("not implemented for " + backendTarget));
     }
 

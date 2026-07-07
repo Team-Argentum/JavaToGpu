@@ -189,6 +189,10 @@ class AsmFrontendServiceTest {
         assertEquals(1, result.irGpuArtifact().module().helperMethods().size());
         assertEquals("square", result.irGpuArtifact().module().helperMethods().get(0).name());
         assertEquals("jtg_fn_Helpers_square_float", result.irGpuArtifact().module().helperMethods().get(0).emittedName());
+        assertEquals("float", result.irGpuArtifact().module().helperMethods().get(0).returnType());
+        assertEquals(1, result.irGpuArtifact().module().helperMethods().get(0).parameters().size());
+        assertEquals("value", result.irGpuArtifact().module().helperMethods().get(0).parameters().get(0).name());
+        assertEquals("float", result.irGpuArtifact().module().helperMethods().get(0).parameters().get(0).javaType());
         assertEquals(2, result.irGpuArtifact().entryParameters().size());
         assertEquals("input", result.irGpuArtifact().entryParameters().get(0).name());
         assertEquals("float[]", result.irGpuArtifact().entryParameters().get(0).javaType());

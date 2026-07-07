@@ -1417,10 +1417,77 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             if (!writtenResources.add(resourcePath)) {
                 return Writer.nullWriter();
             }
-            FileObject resource = processingEnv.getFiler()
-                    .createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, method);
-            return resource.openWriter();
+            Writer sourceOutputWriter = processingEnv.getFiler()
+                    .createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, method)
+                    .openWriter();
+            Writer classOutputWriter = processingEnv.getFiler()
+                    .createResource(StandardLocation.CLASS_OUTPUT, "", resourcePath, method)
+                    .openWriter();
+            return new TeeWriter(sourceOutputWriter, classOutputWriter);
         });
+    }
+
+    /**
+     * Writes frontend artifacts both to generated sources for inspection and to class output for runtime classloader use.
+     */
+    private static final class TeeWriter extends Writer {
+        private final Writer first;
+        private final Writer second;
+
+        private TeeWriter(Writer first, Writer second) {
+            this.first = first;
+            this.second = second;
+        }
+
+        @Override
+        public void write(char[] cbuf, int off, int len) throws IOException {
+            first.write(cbuf, off, len);
+            second.write(cbuf, off, len);
+        }
+
+        @Override
+        public void flush() throws IOException {
+            IOException failure = null;
+            try {
+                first.flush();
+            } catch (IOException exception) {
+                failure = exception;
+            }
+            try {
+                second.flush();
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            IOException failure = null;
+            try {
+                first.close();
+            } catch (IOException exception) {
+                failure = exception;
+            }
+            try {
+                second.close();
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
     }
 
     private void writeLauncherSource(ExecutableElement method, String kernelSource) throws IOException {
@@ -1576,7 +1643,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 .collect(Collectors.joining(", "));
 
         if ("void".equals(method.getReturnType().toString())) {
-            return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(KERNEL_DESCRIPTOR"
+            return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+                    + buildLauncherClassName(method)
+                    + ".class, KERNEL_DESCRIPTOR"
                     + (arguments.isEmpty() ? "" : ", " + arguments)
                     + ");\n";
         }
@@ -1588,7 +1657,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(globalWorkSize, KERNEL_DESCRIPTOR"
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+                + buildLauncherClassName(method)
+                + ".class, globalWorkSize, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1597,7 +1668,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(executionConfig, KERNEL_DESCRIPTOR"
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+                + buildLauncherClassName(method)
+                + ".class, executionConfig, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1606,7 +1679,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeWithCompileOptions(compileOptions, KERNEL_DESCRIPTOR"
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+                + buildLauncherClassName(method)
+                + ".class, compileOptions, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1615,7 +1690,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeWithCompileOptions(globalWorkSize, compileOptions, KERNEL_DESCRIPTOR"
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+                + buildLauncherClassName(method)
+                + ".class, globalWorkSize, compileOptions, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1624,7 +1701,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeWithCompileOptions(executionConfig, compileOptions, KERNEL_DESCRIPTOR"
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+                + buildLauncherClassName(method)
+                + ".class, executionConfig, compileOptions, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
