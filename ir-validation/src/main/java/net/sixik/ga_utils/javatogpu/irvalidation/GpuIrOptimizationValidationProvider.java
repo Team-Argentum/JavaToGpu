@@ -37,9 +37,11 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         }
         if (request.diagnosticPolicy() == GpuIrValidationDiagnosticPolicy.DETAILED) {
             request.reportDiagnostic(report.detailedSummary());
+            report.autoVectorizationNoCandidateHint().ifPresent(request::reportDiagnostic);
             return;
         }
         request.reportDiagnostic(report.compactSummary());
+        report.autoVectorizationNoCandidateHint().ifPresent(request::reportDiagnostic);
     }
 
     private GpuIrValidationReportEntry reportEntry(

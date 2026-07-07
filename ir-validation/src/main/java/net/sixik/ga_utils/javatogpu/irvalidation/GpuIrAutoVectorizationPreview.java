@@ -14,7 +14,9 @@ public record GpuIrAutoVectorizationPreview(
         List<GpuIrAutoVectorizationRewriteCandidatePreview> rewriteCandidates,
         List<GpuIrAutoVectorizationWarningDiagnostic> warningDiagnostics,
         List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
-        List<GpuIrAutoVectorizationProofSummary> additionalProofSummaries
+        List<GpuIrAutoVectorizationProofSummary> additionalProofSummaries,
+        List<String> noCandidateBuckets,
+        List<GpuIrAutoVectorizationNoCandidateExample> noCandidateExamples
 ) {
     public GpuIrAutoVectorizationPreview(
             String methodName,
@@ -22,7 +24,28 @@ public record GpuIrAutoVectorizationPreview(
             List<GpuIrAutoVectorizationWarningDiagnostic> warningDiagnostics,
             List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
     ) {
-        this(methodName, rewriteCandidates, warningDiagnostics, rejections, List.of());
+        this(methodName, rewriteCandidates, warningDiagnostics, rejections, List.of(), List.of(), List.of());
+    }
+
+    public GpuIrAutoVectorizationPreview(
+            String methodName,
+            List<GpuIrAutoVectorizationRewriteCandidatePreview> rewriteCandidates,
+            List<GpuIrAutoVectorizationWarningDiagnostic> warningDiagnostics,
+            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
+            List<GpuIrAutoVectorizationProofSummary> additionalProofSummaries
+    ) {
+        this(methodName, rewriteCandidates, warningDiagnostics, rejections, additionalProofSummaries, List.of(), List.of());
+    }
+
+    public GpuIrAutoVectorizationPreview(
+            String methodName,
+            List<GpuIrAutoVectorizationRewriteCandidatePreview> rewriteCandidates,
+            List<GpuIrAutoVectorizationWarningDiagnostic> warningDiagnostics,
+            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
+            List<GpuIrAutoVectorizationProofSummary> additionalProofSummaries,
+            List<String> noCandidateBuckets
+    ) {
+        this(methodName, rewriteCandidates, warningDiagnostics, rejections, additionalProofSummaries, noCandidateBuckets, List.of());
     }
 
     public GpuIrAutoVectorizationPreview {
@@ -33,8 +56,16 @@ public record GpuIrAutoVectorizationPreview(
         warningDiagnostics = List.copyOf(Objects.requireNonNull(warningDiagnostics, "warningDiagnostics"));
         rejections = List.copyOf(Objects.requireNonNull(rejections, "rejections"));
         additionalProofSummaries = List.copyOf(Objects.requireNonNull(additionalProofSummaries, "additionalProofSummaries"));
+        noCandidateBuckets = List.copyOf(Objects.requireNonNull(noCandidateBuckets, "noCandidateBuckets"));
+        noCandidateExamples = List.copyOf(Objects.requireNonNull(noCandidateExamples, "noCandidateExamples"));
         if (additionalProofSummaries.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("additionalProofSummaries must not contain null entries");
+        }
+        if (noCandidateBuckets.stream().anyMatch(bucket -> bucket == null || bucket.isBlank())) {
+            throw new IllegalArgumentException("noCandidateBuckets must not contain blank entries");
+        }
+        if (noCandidateExamples.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("noCandidateExamples must not contain null entries");
         }
     }
 

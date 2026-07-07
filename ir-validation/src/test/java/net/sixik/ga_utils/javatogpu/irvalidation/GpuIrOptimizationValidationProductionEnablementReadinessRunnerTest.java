@@ -248,6 +248,8 @@ class GpuIrOptimizationValidationProductionEnablementReadinessRunnerTest {
         assertEquals("notReady/noCandidates", fields.get("autoVectorizationReadinessVerdict"));
         assertEquals("false", fields.get("autoVectorizationReadinessReadyForPrototypeRewrite"));
         assertEquals("noRewriteCandidates", fields.get("autoVectorizationReadinessFirstBlockingReason"));
+        assertEquals("bucketed", fields.get("autoVectorizationReadinessNoCandidateReadiness"));
+        assertEquals("emptyMethod", fields.get("autoVectorizationReadinessNoCandidateFirstBucket"));
     }
 
     @Test

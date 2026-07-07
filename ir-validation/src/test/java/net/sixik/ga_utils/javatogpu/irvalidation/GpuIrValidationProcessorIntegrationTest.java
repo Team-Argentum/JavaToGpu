@@ -277,6 +277,9 @@ class GpuIrValidationProcessorIntegrationTest {
 
         assertTrue("javatogpu.ir.validation.v1".equals(report.getProperty("format")));
         assertTrue("1".equals(report.getProperty("entry.count")));
+        assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCodeCounts", "{JTG-IR-AV-001=1}");
+        assertEntryValue(report, "autoVectorizationNoCandidateUniqueDiagnosticCodes", "1");
+        assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001", "1");
         assertTrue("optimization-validation".equals(report.getProperty("entry.0.provider")));
         assertTrue("kernel".equals(report.getProperty("entry.0.methodName")));
         assertTrue("true".equals(report.getProperty("entry.0.entryPoint")));
@@ -837,6 +840,9 @@ class GpuIrValidationProcessorIntegrationTest {
         Properties report = loadReport(result.generatedOutputDir().resolve("reports/javatogpu-ir-validation.properties"));
 
         assertTrue("2".equals(report.getProperty("entry.count")));
+        assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCodeCounts", "{JTG-IR-AV-001=1}");
+        assertEntryValue(report, "autoVectorizationNoCandidateUniqueDiagnosticCodes", "1");
+        assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001", "1");
         assertTrue(reportContainsMethod(report, "first", "0"));
         assertTrue(reportContainsMethod(report, "second", "1"));
         assertTrue(reportContainsMethodCounter(report, "first", "cseRewritePolicyCanRewrite", "false"));

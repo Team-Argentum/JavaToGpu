@@ -11,7 +11,9 @@ import java.util.stream.Collectors;
 public record GpuIrAutoVectorizationReport(
         String methodName,
         List<GpuIrAutoVectorizationCandidate> candidates,
-        List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
+        List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
+        List<String> noCandidateBuckets,
+        List<GpuIrAutoVectorizationNoCandidateExample> noCandidateExamples
 ) {
     public GpuIrAutoVectorizationReport {
         if (methodName == null || methodName.isBlank()) {
@@ -19,10 +21,35 @@ public record GpuIrAutoVectorizationReport(
         }
         candidates = List.copyOf(candidates);
         rejections = List.copyOf(rejections);
+        noCandidateBuckets = List.copyOf(noCandidateBuckets);
+        noCandidateExamples = List.copyOf(noCandidateExamples);
+        if (noCandidateBuckets.stream().anyMatch(bucket -> bucket == null || bucket.isBlank())) {
+            throw new IllegalArgumentException("noCandidateBuckets must not contain blank entries");
+        }
+        if (noCandidateExamples.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new IllegalArgumentException("noCandidateExamples must not contain null entries");
+        }
     }
 
     public GpuIrAutoVectorizationReport(String methodName, List<GpuIrAutoVectorizationCandidate> candidates) {
-        this(methodName, candidates, List.of());
+        this(methodName, candidates, List.of(), List.of(), List.of());
+    }
+
+    public GpuIrAutoVectorizationReport(
+            String methodName,
+            List<GpuIrAutoVectorizationCandidate> candidates,
+            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections
+    ) {
+        this(methodName, candidates, rejections, List.of(), List.of());
+    }
+
+    public GpuIrAutoVectorizationReport(
+            String methodName,
+            List<GpuIrAutoVectorizationCandidate> candidates,
+            List<GpuIrAutoVectorizationRejectionDiagnostic> rejections,
+            List<String> noCandidateBuckets
+    ) {
+        this(methodName, candidates, rejections, noCandidateBuckets, List.of());
     }
 
     public boolean hasCandidates() {
@@ -122,7 +149,9 @@ public record GpuIrAutoVectorizationReport(
                 previewRewritePriorityCandidates(),
                 previewWarningDiagnostics(),
                 rejections,
-                previewAdditionalProofSummaries()
+                previewAdditionalProofSummaries(),
+                hasCandidates() ? List.of() : noCandidateBuckets,
+                hasCandidates() ? List.of() : noCandidateExamples
         );
     }
 

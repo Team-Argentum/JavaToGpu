@@ -100,7 +100,39 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewriteDryRunDiagnostics=1")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleRewriteSafe=true")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundleDiagnostics=0")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("note[JTG-IR-AV-001]: auto-vectorization found no rewrite candidate")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("--> broken@stmt[0]")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("= bucket: scalarOnlyMethod")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("= help: keep the method scalar-only or introduce lane-wise array work before expecting vectorization")));
         assertTrue(diagnostics.stream().noneMatch(message -> message.contains("unknown variable reference: missing")));
+    }
+
+    @Test
+    void diagnosticModeReportsNoCandidateExampleHintForArrayWorkWithoutLoop() {
+        List<String> diagnostics = new ArrayList<>();
+        GpuIrValidationRequest request = new GpuIrValidationRequest(
+                method(new GpuIrMethod("copyOne", List.of(
+                        new GpuIrAssignment(
+                                arrayRead("out", new GpuIrLiteral("0")),
+                                arrayRead("input", new GpuIrLiteral("0"))
+                        )
+                )), List.of(
+                        parameter("out", "int[]"),
+                        parameter("input", "int[]")
+                )),
+                List.of(),
+                List.of(),
+                true,
+                GpuIrValidationMode.DIAGNOSTIC,
+                diagnostics::add
+        );
+
+        provider.validate(request);
+
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("note[JTG-IR-AV-001]: auto-vectorization found no rewrite candidate")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("--> copyOne@stmt[0].target")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("= bucket: arrayWorkWithoutLoop")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("= help: use a supported fixed-width lane loop such as int i = 0; i < 4; i = i + 1")));
     }
 
     @Test
@@ -181,6 +213,7 @@ class GpuIrOptimizationValidationProviderTest {
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationRewritePolicy={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorizationProofBundle={")));
         assertTrue(diagnostics.stream().anyMatch(message -> message.contains("autoVectorization={")));
+        assertTrue(diagnostics.stream().anyMatch(message -> message.contains("note[JTG-IR-AV-001]: auto-vectorization found no rewrite candidate")));
     }
 
     @Test
@@ -238,6 +271,10 @@ class GpuIrOptimizationValidationProviderTest {
         assertEntryValue(entries, "cseSkippedDominanceStatusCounts", "{}");
         assertEntryValue(entries, "autoVectorizationRewriteReadiness", "none");
         assertEntryValue(entries, "autoVectorizationCanApplyRewrite", "false");
+        assertEntryValue(entries, "autoVectorizationNoCandidateReadiness", "bucketed");
+        assertEntryValue(entries, "autoVectorizationNoCandidateNoCandidates", "true");
+        assertEntryValue(entries, "autoVectorizationNoCandidateFirstBucket", "scalarOnlyMethod");
+        assertEntryValue(entries, "autoVectorizationNoCandidateFirstRemainingWork", "skipOrDocumentScalarOnlyMethod");
         assertEntryValue(entries, "autoVectorizationProofDecisionStatus", "allow");
         assertEntryValue(entries, "autoVectorizationProofDecisionAllowRewrite", "true");
         assertEntryValue(entries, "autoVectorizationProofDecisionBlockingProofKinds", "");

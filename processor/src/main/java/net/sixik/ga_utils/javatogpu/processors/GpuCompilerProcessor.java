@@ -663,6 +663,25 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         StringBuilder builder = new StringBuilder();
         builder.append("format=javatogpu.ir.validation.v1\n");
         builder.append("entry.count=").append(irValidationReportEntries.size()).append("\n");
+        Map<String, Long> autoVectorizationNoCandidateDiagnosticCodeCounts =
+                autoVectorizationNoCandidateDiagnosticCodeCounts();
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateDiagnosticCodeCounts",
+                countSummary(autoVectorizationNoCandidateDiagnosticCodeCounts)
+        );
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateUniqueDiagnosticCodes",
+                Integer.toString(autoVectorizationNoCandidateDiagnosticCodeCounts.size())
+        );
+        autoVectorizationNoCandidateDiagnosticCodeCounts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> appendProperty(
+                        builder,
+                        "autoVectorizationNoCandidateDiagnosticCode." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
         for (int index = 0; index < irValidationReportEntries.size(); index++) {
             GpuIrValidationReportEntry entry = irValidationReportEntries.get(index);
             String prefix = "entry." + index + ".";
@@ -674,6 +693,28 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                     .forEach(value -> appendProperty(builder, prefix + value.getKey(), value.getValue()));
         }
         return builder.toString();
+    }
+
+    private Map<String, Long> autoVectorizationNoCandidateDiagnosticCodeCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (GpuIrValidationReportEntry entry : irValidationReportEntries) {
+            String code = entry.values().get("autoVectorizationNoCandidateDiagnosticCode");
+            if (code == null || code.isBlank() || "none".equals(code)) {
+                continue;
+            }
+            counts.put(code, counts.getOrDefault(code, 0L) + 1L);
+        }
+        return counts;
+    }
+
+    private String countSummary(Map<String, Long> counts) {
+        if (counts.isEmpty()) {
+            return "{}";
+        }
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(",", "{", "}"));
     }
 
     private void appendProperty(StringBuilder builder, String key, String value) {

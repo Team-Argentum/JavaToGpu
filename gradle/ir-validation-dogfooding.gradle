@@ -56,6 +56,8 @@ tasks.register('validateIrValidationExampleReports') {
             Map<String, Integer> optimizerBlockerSourceCounts = new LinkedHashMap<>()
             Map<String, Integer> optimizerBlockerFamilyCounts = new LinkedHashMap<>()
             Map<String, Integer> productionReadinessStageCounts = new LinkedHashMap<>()
+            Map<String, Integer> autoVectorizationNoCandidateBucketCounts = new LinkedHashMap<>()
+            Map<String, Integer> autoVectorizationNoCandidateDiagnosticCodeCounts = new LinkedHashMap<>()
             java.util.List<String> failures = []
             for (int index = 0; index < entryCount; index++) {
                 String safety = report.getProperty('entry.' + index + '.safety')
@@ -93,7 +95,15 @@ tasks.register('validateIrValidationExampleReports') {
                 incrementCount(optimizerBlockerSourceCounts, optimizerResult.optimizerBlockerSource)
                 incrementCount(optimizerBlockerFamilyCounts, optimizerResult.optimizerBlockerFamily)
                 incrementCount(productionReadinessStageCounts, optimizerResult.productionReadinessFirstBlockingStage)
+                incrementCount(autoVectorizationNoCandidateBucketCounts, optimizerResult.autoVectorizationNoCandidateFirstBucket)
+                incrementCount(autoVectorizationNoCandidateDiagnosticCodeCounts, optimizerResult.autoVectorizationNoCandidateDiagnosticCode)
             }
+
+            validateAutoVectorizationNoCandidateDiagnosticCodeRollup(
+                    report,
+                    reportSpec.name,
+                    autoVectorizationNoCandidateDiagnosticCodeCounts
+            )
 
             if (!failures.isEmpty()) {
                 throw new GradleException('IR validation dogfooding safety contract failed for ' + reportSpec.name
@@ -119,6 +129,12 @@ tasks.register('validateIrValidationExampleReports') {
             logger.lifecycle('IR validation dogfooding production-readiness stage summary for {}: firstBlockingStages={}',
                     reportSpec.name,
                     countSummary(productionReadinessStageCounts))
+            logger.lifecycle('IR validation dogfooding auto-vectorization no-candidate bucket summary for {}: firstBuckets={}',
+                    reportSpec.name,
+                    countSummary(autoVectorizationNoCandidateBucketCounts))
+            logger.lifecycle('IR validation dogfooding auto-vectorization no-candidate diagnostic summary for {}: codes={}',
+                    reportSpec.name,
+                    countSummary(autoVectorizationNoCandidateDiagnosticCodeCounts))
         }
     }
 }
@@ -204,7 +220,41 @@ tasks.register('validateIrValidationExampleReportBaseline') {
 }
 
 private static void incrementCount(Map<String, Integer> counts, String key) {
+    if (key == null || key.isBlank() || key == 'none') {
+        return
+    }
     counts.put(key, counts.getOrDefault(key, 0) + 1)
+}
+
+private static void validateAutoVectorizationNoCandidateDiagnosticCodeRollup(
+        Properties report,
+        String reportName,
+        Map<String, Integer> expectedCounts
+) {
+    String expectedSummary = countSummary(expectedCounts)
+    String actualSummary = requireReportValue(
+            report,
+            'autoVectorizationNoCandidateDiagnosticCodeCounts',
+            reportName
+    )
+    if (actualSummary != expectedSummary) {
+        throw new GradleException('Auto-vectorization no-candidate diagnostic-code summary drifted for '
+                + reportName + ': expected=' + expectedSummary + ' actual=' + actualSummary)
+    }
+
+    int uniqueCodes = parseReportInt(report, 'autoVectorizationNoCandidateUniqueDiagnosticCodes', reportName)
+    if (uniqueCodes != expectedCounts.size()) {
+        throw new GradleException('Auto-vectorization no-candidate diagnostic-code unique count drifted for '
+                + reportName + ': expected=' + expectedCounts.size() + ' actual=' + uniqueCodes)
+    }
+
+    expectedCounts.each { code, expectedCount ->
+        int actualCount = parseReportInt(report, 'autoVectorizationNoCandidateDiagnosticCode.' + code, reportName)
+        if (actualCount != expectedCount) {
+            throw new GradleException('Auto-vectorization no-candidate diagnostic-code count drifted for '
+                    + reportName + ' code=' + code + ': expected=' + expectedCount + ' actual=' + actualCount)
+        }
+    }
 }
 
 private static Properties loadIrValidationReport(File reportFile, String reportName) {
@@ -226,6 +276,9 @@ private static Properties persistedIrValidationBaseline(Properties report, Strin
     baseline.setProperty('format', 'javatogpu.ir.validation.persisted-baseline.v1')
     baseline.setProperty('sourceFormat', requireReportValue(report, 'format', reportName))
     baseline.setProperty('entry.count', Integer.toString(entryCount))
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateDiagnosticCodeCounts')
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateUniqueDiagnosticCodes')
+    copyDiagnosticCodeCountFields(report, baseline)
     for (int index = 0; index < entryCount; index++) {
         String prefix = 'entry.' + index + '.'
         copyRequiredBaselineField(report, baseline, reportName, prefix, 'methodName')
@@ -245,6 +298,13 @@ private static Properties persistedIrValidationBaseline(Properties report, Strin
         copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonRemainingWorkTransition')
     }
     return baseline
+}
+
+private static void copyDiagnosticCodeCountFields(Properties source, Properties target) {
+    source.stringPropertyNames()
+            .findAll { key -> key.startsWith('autoVectorizationNoCandidateDiagnosticCode.') }
+            .sort()
+            .each { key -> target.setProperty(key, source.getProperty(key)) }
 }
 
 private static void copyRequiredBaselineField(
@@ -287,6 +347,16 @@ private static List<Map<String, Object>> syntheticPersistedBaselineFailureScenar
                     name            : 'synthetic-persisted-blocker-score-regression',
                     baselineMutation: { Properties baseline -> },
                     currentMutation : { Properties current -> current.setProperty('entry.0.optimizerBlockerBaselineComparisonScoreDelta', '-1') }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-diagnostic-summary-drift',
+                    baselineMutation: { Properties baseline -> baseline.setProperty('autoVectorizationNoCandidateDiagnosticCodeCounts', '{JTG-IR-AV-001=2}') },
+                    currentMutation : { Properties current -> }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-diagnostic-count-drift',
+                    baselineMutation: { Properties baseline -> },
+                    currentMutation : { Properties current -> current.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '2') }
             ]
     ]
 }
@@ -327,6 +397,9 @@ private static void validatePersistedIrValidationBaseline(
         throw new GradleException('IR validation persisted baseline entry count changed for ' + reportName
                 + ': baseline=' + baselineEntryCount + ' current=' + currentEntryCount)
     }
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateDiagnosticCodeCounts')
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateUniqueDiagnosticCodes')
+    comparePersistedDiagnosticCodeCountFields(baseline, current, reportName)
     for (int index = 0; index < currentEntryCount; index++) {
         String prefix = 'entry.' + index + '.'
         String baselineMethod = requireReportValue(baseline, prefix + 'methodName', reportName + ' baseline')
@@ -353,6 +426,39 @@ private static void validatePersistedIrValidationBaseline(
         comparePersistedBaselineField(baseline, current, reportName, index, prefix, 'optimizerBlockerBaselineSnapshotSource')
         comparePersistedBaselineField(baseline, current, reportName, index, prefix, 'optimizerBlockerBaselineSnapshotFamily')
         comparePersistedBaselineField(baseline, current, reportName, index, prefix, 'optimizerBlockerBaselineSnapshotRemainingWork')
+    }
+}
+
+private static void comparePersistedDiagnosticCodeCountFields(
+        Properties baseline,
+        Properties current,
+        String reportName
+) {
+    Set<String> baselineKeys = diagnosticCodeCountKeys(baseline)
+    Set<String> currentKeys = diagnosticCodeCountKeys(current)
+    if (baselineKeys != currentKeys) {
+        throw new GradleException('IR validation persisted diagnostic-code keys changed for ' + reportName
+                + ': baseline=' + baselineKeys + ' current=' + currentKeys)
+    }
+    baselineKeys.each { key -> comparePersistedReportField(baseline, current, reportName, key) }
+}
+
+private static Set<String> diagnosticCodeCountKeys(Properties report) {
+    return new TreeSet<>(report.stringPropertyNames()
+            .findAll { key -> key.startsWith('autoVectorizationNoCandidateDiagnosticCode.') })
+}
+
+private static void comparePersistedReportField(
+        Properties baseline,
+        Properties current,
+        String reportName,
+        String key
+) {
+    String baselineValue = requireReportValue(baseline, key, reportName + ' baseline')
+    String currentValue = requireReportValue(current, key, reportName)
+    if (baselineValue != currentValue) {
+        throw new GradleException('IR validation persisted baseline field changed for ' + reportName
+                + ' key=' + key + ': baseline=' + baselineValue + ' current=' + currentValue)
     }
 }
 
@@ -406,6 +512,20 @@ private static Properties syntheticIrValidationContractReport() {
     report.setProperty('entry.0.autoVectorizationReadinessVerdict', 'notReady/noCandidates')
     report.setProperty('entry.0.autoVectorizationCanApplyRewrite', 'false')
     report.setProperty('entry.0.autoVectorizationCandidates', '0')
+    report.setProperty('entry.0.autoVectorizationNoCandidateReadiness', 'bucketed')
+    report.setProperty('entry.0.autoVectorizationNoCandidateNoCandidates', 'true')
+    report.setProperty('entry.0.autoVectorizationNoCandidateCandidateCount', '0')
+    report.setProperty('entry.0.autoVectorizationNoCandidateBucketCount', '1')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstBucket', 'scannerFoundNoVectorShape')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstRemainingWork', 'classifyScalarOrLoopShape')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstExampleBucket', 'scannerFoundNoVectorShape')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstExampleLocation', 'method')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstExample', 'syntheticKernel@method: scanner found no vector-shaped rewrite candidate')
+    report.setProperty('entry.0.autoVectorizationNoCandidateDiagnosticCode', 'JTG-IR-AV-001')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstHelp', 'inspect the first IR example and add a more specific scanner shape bucket if needed')
+    report.setProperty('autoVectorizationNoCandidateDiagnosticCodeCounts', '{JTG-IR-AV-001=1}')
+    report.setProperty('autoVectorizationNoCandidateUniqueDiagnosticCodes', '1')
+    report.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '1')
     report.setProperty('entry.0.optimizerBlockerVerdict', 'blocked')
     report.setProperty('entry.0.optimizerBlockerBlocked', 'true')
     report.setProperty('entry.0.optimizerBlockerSource', 'autoVectorization')
@@ -507,6 +627,30 @@ private static List<Map<String, Object>> syntheticOptimizerContractFailureScenar
             [
                     name    : 'synthetic-missing-cse-control-flow-region-readiness',
                     mutation: { Properties report -> report.remove('entry.0.cseControlFlowRegionReadiness') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-bucket',
+                    mutation: { Properties report -> report.remove('entry.0.autoVectorizationNoCandidateFirstBucket') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-example',
+                    mutation: { Properties report -> report.remove('entry.0.autoVectorizationNoCandidateFirstExample') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-example-location',
+                    mutation: { Properties report -> report.setProperty('entry.0.autoVectorizationNoCandidateFirstExampleLocation', 'none') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-diagnostic-code',
+                    mutation: { Properties report -> report.remove('entry.0.autoVectorizationNoCandidateDiagnosticCode') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-help',
+                    mutation: { Properties report -> report.setProperty('entry.0.autoVectorizationNoCandidateFirstHelp', 'none') }
+            ],
+            [
+                    name    : 'synthetic-stale-auto-vectorization-no-candidate-diagnostic-rollup',
+                    mutation: { Properties report -> report.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '0') }
             ]
     ]
 }
@@ -521,6 +665,9 @@ private static void expectOptimizerContractFailure(
     mutation.call(report)
     try {
         validateOptimizerReadinessContract(report, scenario, 0)
+        Map<String, Integer> diagnosticCodeCounts = new LinkedHashMap<>()
+        incrementCount(diagnosticCodeCounts, report.getProperty('entry.0.autoVectorizationNoCandidateDiagnosticCode'))
+        validateAutoVectorizationNoCandidateDiagnosticCodeRollup(report, scenario, diagnosticCodeCounts)
     } catch (GradleException expected) {
         return
     }
@@ -560,6 +707,17 @@ private static OptimizerReadinessContractResult validateOptimizerReadinessContra
     String cseControlFlowRegionFirstRemainingWork = requireReportValue(report, prefix + 'cseControlFlowRegionFirstRemainingWork', reportName)
     String autoVectorizationVerdict = requireReportValue(report, prefix + 'autoVectorizationReadinessVerdict', reportName)
     String autoVectorizationCanApplyRewrite = requireReportValue(report, prefix + 'autoVectorizationCanApplyRewrite', reportName)
+    String autoVectorizationNoCandidateReadiness = requireReportValue(report, prefix + 'autoVectorizationNoCandidateReadiness', reportName)
+    String autoVectorizationNoCandidateNoCandidates = requireReportValue(report, prefix + 'autoVectorizationNoCandidateNoCandidates', reportName)
+    int autoVectorizationNoCandidateCandidateCount = parseReportInt(report, prefix + 'autoVectorizationNoCandidateCandidateCount', reportName)
+    int autoVectorizationNoCandidateBucketCount = parseReportInt(report, prefix + 'autoVectorizationNoCandidateBucketCount', reportName)
+    String autoVectorizationNoCandidateFirstBucket = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstBucket', reportName)
+    String autoVectorizationNoCandidateFirstRemainingWork = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstRemainingWork', reportName)
+    String autoVectorizationNoCandidateFirstExampleBucket = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstExampleBucket', reportName)
+    String autoVectorizationNoCandidateFirstExampleLocation = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstExampleLocation', reportName)
+    String autoVectorizationNoCandidateFirstExample = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstExample', reportName)
+    String autoVectorizationNoCandidateDiagnosticCode = requireReportValue(report, prefix + 'autoVectorizationNoCandidateDiagnosticCode', reportName)
+    String autoVectorizationNoCandidateFirstHelp = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstHelp', reportName)
     String optimizerBlockerVerdict = requireReportValue(report, prefix + 'optimizerBlockerVerdict', reportName)
     String optimizerBlockerBlocked = requireReportValue(report, prefix + 'optimizerBlockerBlocked', reportName)
     String optimizerBlockerSource = requireReportValue(report, prefix + 'optimizerBlockerSource', reportName)
@@ -610,6 +768,19 @@ private static OptimizerReadinessContractResult validateOptimizerReadinessContra
     if (!['true', 'false'].contains(autoVectorizationCanApplyRewrite)) {
         throw new GradleException('Unexpected auto-vectorization rewrite flag for ' + reportName
                 + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationCanApplyRewrite)
+    }
+    if (!['bucketed', 'notApplicable'].contains(autoVectorizationNoCandidateReadiness)) {
+        throw new GradleException('Unexpected auto-vectorization no-candidate readiness for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationNoCandidateReadiness)
+    }
+    if (!['true', 'false'].contains(autoVectorizationNoCandidateNoCandidates)) {
+        throw new GradleException('Unexpected auto-vectorization no-candidate flag for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationNoCandidateNoCandidates)
+    }
+    if (autoVectorizationNoCandidateCandidateCount < 0 || autoVectorizationNoCandidateBucketCount < 0) {
+        throw new GradleException('Negative auto-vectorization no-candidate counters for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): candidates=' + autoVectorizationNoCandidateCandidateCount
+                + ' buckets=' + autoVectorizationNoCandidateBucketCount)
     }
     if (!['clear', 'blocked'].contains(cseControlFlowRegionReadiness)) {
         throw new GradleException('Unexpected CSE control-flow region readiness for ' + reportName
@@ -796,6 +967,62 @@ private static OptimizerReadinessContractResult validateOptimizerReadinessContra
         throw new GradleException('Negative auto-vectorization candidate count for ' + reportName
                 + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationCandidates)
     }
+    if (autoVectorizationNoCandidateCandidateCount != autoVectorizationCandidates) {
+        throw new GradleException('Auto-vectorization no-candidate candidate count must mirror preview candidates for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): noCandidateCandidates='
+                + autoVectorizationNoCandidateCandidateCount + ' previewCandidates=' + autoVectorizationCandidates)
+    }
+    if (autoVectorizationCandidates == 0) {
+        if (autoVectorizationNoCandidateReadiness != 'bucketed'
+                || autoVectorizationNoCandidateNoCandidates != 'true'
+                || autoVectorizationNoCandidateBucketCount == 0
+                || autoVectorizationNoCandidateFirstBucket == 'none'
+                || autoVectorizationNoCandidateFirstRemainingWork == 'none'
+                || autoVectorizationNoCandidateFirstExampleBucket == 'none'
+                || autoVectorizationNoCandidateFirstExampleLocation == 'none'
+                || autoVectorizationNoCandidateFirstExample == 'none'
+                || autoVectorizationNoCandidateDiagnosticCode == 'none'
+                || autoVectorizationNoCandidateFirstHelp == 'none') {
+            throw new GradleException('Zero-candidate auto-vectorization entries must expose actionable no-candidate buckets for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): readiness='
+                    + autoVectorizationNoCandidateReadiness + ' noCandidates=' + autoVectorizationNoCandidateNoCandidates
+                    + ' bucketCount=' + autoVectorizationNoCandidateBucketCount + ' firstBucket='
+                    + autoVectorizationNoCandidateFirstBucket + ' firstRemainingWork='
+                    + autoVectorizationNoCandidateFirstRemainingWork + ' firstExampleBucket='
+                    + autoVectorizationNoCandidateFirstExampleBucket + ' firstExampleLocation='
+                    + autoVectorizationNoCandidateFirstExampleLocation + ' firstExample='
+                    + autoVectorizationNoCandidateFirstExample + ' diagnosticCode='
+                    + autoVectorizationNoCandidateDiagnosticCode + ' firstHelp='
+                    + autoVectorizationNoCandidateFirstHelp)
+        }
+        if (autoVectorizationNoCandidateDiagnosticCode != 'JTG-IR-AV-001') {
+            throw new GradleException('Zero-candidate auto-vectorization diagnostic code must be stable for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): '
+                    + autoVectorizationNoCandidateDiagnosticCode)
+        }
+        if (autoVectorizationNoCandidateFirstExampleBucket != autoVectorizationNoCandidateFirstBucket) {
+            throw new GradleException('Zero-candidate auto-vectorization first example bucket must match first bucket for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): firstBucket='
+                    + autoVectorizationNoCandidateFirstBucket + ' firstExampleBucket='
+                    + autoVectorizationNoCandidateFirstExampleBucket)
+        }
+        if (!autoVectorizationNoCandidateFirstExample.contains(methodName + '@')) {
+            throw new GradleException('Zero-candidate auto-vectorization first example must include method-qualified location for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): '
+                    + autoVectorizationNoCandidateFirstExample)
+        }
+    } else if (autoVectorizationNoCandidateReadiness != 'notApplicable'
+            || autoVectorizationNoCandidateNoCandidates != 'false'
+            || autoVectorizationNoCandidateFirstBucket != 'none'
+            || autoVectorizationNoCandidateFirstExample != 'none'
+            || autoVectorizationNoCandidateDiagnosticCode != 'none'
+            || autoVectorizationNoCandidateFirstHelp != 'none') {
+        throw new GradleException('Candidate-bearing auto-vectorization entries must not expose no-candidate buckets for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): readiness='
+                + autoVectorizationNoCandidateReadiness + ' firstBucket=' + autoVectorizationNoCandidateFirstBucket
+                + ' firstExample=' + autoVectorizationNoCandidateFirstExample + ' diagnosticCode='
+                + autoVectorizationNoCandidateDiagnosticCode + ' firstHelp=' + autoVectorizationNoCandidateFirstHelp)
+    }
     if (optimizerGateBlocked == 'true' && optimizerGateSource == 'none') {
         throw new GradleException('Blocked optimizer gate is missing source for ' + reportName
                 + ' entry ' + index + ' (' + methodName + ')')
@@ -854,7 +1081,9 @@ private static OptimizerReadinessContractResult validateOptimizerReadinessContra
             autoVectorizationBlocked,
             optimizerBlockerSource,
             optimizerBlockerFamily,
-            productionReadinessFirstBlockingStage
+            productionReadinessFirstBlockingStage,
+            autoVectorizationNoCandidateFirstBucket,
+            autoVectorizationNoCandidateDiagnosticCode
     )
 }
 
@@ -875,6 +1104,8 @@ class OptimizerReadinessContractResult {
     final String optimizerBlockerSource
     final String optimizerBlockerFamily
     final String productionReadinessFirstBlockingStage
+    final String autoVectorizationNoCandidateFirstBucket
+    final String autoVectorizationNoCandidateDiagnosticCode
 
     OptimizerReadinessContractResult(
             boolean blocked,
@@ -884,7 +1115,9 @@ class OptimizerReadinessContractResult {
             boolean autoVectorizationBlocked,
             String optimizerBlockerSource,
             String optimizerBlockerFamily,
-            String productionReadinessFirstBlockingStage
+            String productionReadinessFirstBlockingStage,
+            String autoVectorizationNoCandidateFirstBucket,
+            String autoVectorizationNoCandidateDiagnosticCode
     ) {
         this.blocked = blocked
         this.readOnlyBlocked = readOnlyBlocked
@@ -894,5 +1127,7 @@ class OptimizerReadinessContractResult {
         this.optimizerBlockerSource = optimizerBlockerSource
         this.optimizerBlockerFamily = optimizerBlockerFamily
         this.productionReadinessFirstBlockingStage = productionReadinessFirstBlockingStage
+        this.autoVectorizationNoCandidateFirstBucket = autoVectorizationNoCandidateFirstBucket
+        this.autoVectorizationNoCandidateDiagnosticCode = autoVectorizationNoCandidateDiagnosticCode
     }
 }

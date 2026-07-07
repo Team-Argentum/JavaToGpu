@@ -48,6 +48,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
     private final GpuIrExpressionTypeResolver typeResolver;
     private final GpuIrAutoVectorizationMemoryLegalityAnalyzer memoryLegalityAnalyzer;
     private final GpuIrAutoVectorizationControlFlowBoundaryAnalyzer controlFlowBoundaryAnalyzer;
+    private final GpuIrAutoVectorizationNoCandidateShapeAnalyzer noCandidateShapeAnalyzer;
 
     public GpuIrAutoVectorizationCandidateScanner() {
         this(new GpuIrExpressionClassifier(), new GpuIrExpressionTypeResolver());
@@ -65,6 +66,7 @@ public final class GpuIrAutoVectorizationCandidateScanner {
         this.typeResolver = typeResolver;
         this.memoryLegalityAnalyzer = new GpuIrAutoVectorizationMemoryLegalityAnalyzer();
         this.controlFlowBoundaryAnalyzer = new GpuIrAutoVectorizationControlFlowBoundaryAnalyzer(this::isVectorShapedLoop);
+        this.noCandidateShapeAnalyzer = new GpuIrAutoVectorizationNoCandidateShapeAnalyzer();
     }
 
     public GpuIrAutoVectorizationReport scan(GpuIrMethod method) {
@@ -87,10 +89,26 @@ public final class GpuIrAutoVectorizationCandidateScanner {
                     GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR,
                     "missing method"
             ));
-            return new GpuIrAutoVectorizationReport("<missing>", candidates, rejections);
+            GpuIrAutoVectorizationNoCandidateShapeReport shapeReport = noCandidateShapeAnalyzer.report(null);
+            return new GpuIrAutoVectorizationReport(
+                    "<missing>",
+                    candidates,
+                    rejections,
+                    shapeReport.buckets(),
+                    shapeReport.examples()
+            );
         }
         scanStatements(method.statements(), "stmt", candidates, rejections, typeLookup);
-        return new GpuIrAutoVectorizationReport(method.name(), candidates, rejections);
+        GpuIrAutoVectorizationNoCandidateShapeReport noCandidateShapeReport = candidates.isEmpty()
+                ? noCandidateShapeAnalyzer.report(method)
+                : new GpuIrAutoVectorizationNoCandidateShapeReport(method.name(), List.of(), List.of());
+        return new GpuIrAutoVectorizationReport(
+                method.name(),
+                candidates,
+                rejections,
+                noCandidateShapeReport.buckets(),
+                noCandidateShapeReport.examples()
+        );
     }
 
     private void scanStatements(

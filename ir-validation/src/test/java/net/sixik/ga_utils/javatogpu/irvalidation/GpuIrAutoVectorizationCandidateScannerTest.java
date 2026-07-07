@@ -1127,6 +1127,20 @@ class GpuIrAutoVectorizationCandidateScannerTest {
                 List.of(),
                 List.of()
         ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationPreview(
+                "kernel",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of("")
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationReport(
+                "kernel",
+                List.of(),
+                List.of(),
+                List.of("")
+        ));
         assertThrows(IllegalArgumentException.class, () -> new GpuIrAutoVectorizationRewritePlan(
                 "kernel",
                 List.of(),
@@ -1218,6 +1232,7 @@ class GpuIrAutoVectorizationCandidateScannerTest {
 
         assertFalse(report.hasCandidates());
         assertTrue(report.hasRejections());
+        assertTrue(report.noCandidateBuckets().contains("incompleteIr"));
         assertEquals(GpuIrAutoVectorizationRejectionReason.INCOMPLETE_IR, report.rejections().get(0).reason());
         assertTrue(report.rejections().get(0).summary().contains(detail));
     }

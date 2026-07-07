@@ -30,6 +30,9 @@ public record GpuIrOptimizationValidationReport(
         GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport,
         GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations
 ) {
+    private static final GpuIrAutoVectorizationNoCandidateDiagnosticFormatter NO_CANDIDATE_DIAGNOSTIC_FORMATTER =
+            new GpuIrAutoVectorizationNoCandidateDiagnosticFormatter();
+
     public GpuIrOptimizationValidationReport {
         if (methodName == null || methodName.isBlank()) {
             throw new IllegalArgumentException("methodName must not be blank");
@@ -253,6 +256,15 @@ public record GpuIrOptimizationValidationReport(
 
     public GpuIrOptimizationValidationOptimizerBlockerIndex optimizerBlockerIndex() {
         return GpuIrOptimizationValidationOptimizerBlockerIndex.from(this);
+    }
+
+    /**
+     * Short user-facing hint that points at the first IR shape blocking candidate discovery.
+     */
+    public Optional<String> autoVectorizationNoCandidateHint() {
+        GpuIrAutoVectorizationNoCandidateBucketSummaryReport noCandidateReport =
+                autoVectorizationArtifactSnapshot().noCandidateBucketSummaryReport();
+        return NO_CANDIDATE_DIAGNOSTIC_FORMATTER.format(methodName, noCandidateReport);
     }
 
     /**

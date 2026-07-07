@@ -38,7 +38,9 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
         String rewritePolicyReadiness,
         String dryRunReadiness,
         List<String> blockingReasons,
-        List<String> remainingWork
+        List<String> remainingWork,
+        List<String> noCandidateBuckets,
+        List<GpuIrAutoVectorizationNoCandidateExample> noCandidateExamples
 ) {
     private static final String VERDICT_NO_CANDIDATES = "notReady/noCandidates";
     private static final String VERDICT_REJECTED = "notReady/rejections";
@@ -49,6 +51,60 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
     private static final String VERDICT_DRY_RUN_BLOCKED = "notReady/dryRunBlocked";
     private static final String VERDICT_RESOLUTION_MISSING = "notReady/resolvedOperationsMissing";
     private static final String VERDICT_READY = "readyForPrototypeRewrite";
+
+    public GpuIrAutoVectorizationReadinessSummaryReport(
+            String methodName,
+            String verdict,
+            int candidateCount,
+            int warningCount,
+            int rejectionCount,
+            int rewriteBlockedCandidateCount,
+            int rewritePlanGuardCount,
+            int proofBundleDiagnosticCount,
+            int unsafeProofCount,
+            int dryRunDiagnosticCount,
+            int resolvedRewriteOperationCount,
+            boolean previewCanApplyRewrite,
+            boolean proofBundleRewriteSafe,
+            boolean proofDecisionAllowsRewrite,
+            boolean rewritePolicyCanRewrite,
+            boolean dryRunSuccessful,
+            boolean resolvedRewriteOperationsAvailable,
+            String rewriteReadiness,
+            String proofDecisionStatus,
+            String rewritePolicyReadiness,
+            String dryRunReadiness,
+            List<String> blockingReasons,
+            List<String> remainingWork
+    ) {
+        this(
+                methodName,
+                verdict,
+                candidateCount,
+                warningCount,
+                rejectionCount,
+                rewriteBlockedCandidateCount,
+                rewritePlanGuardCount,
+                proofBundleDiagnosticCount,
+                unsafeProofCount,
+                dryRunDiagnosticCount,
+                resolvedRewriteOperationCount,
+                previewCanApplyRewrite,
+                proofBundleRewriteSafe,
+                proofDecisionAllowsRewrite,
+                rewritePolicyCanRewrite,
+                dryRunSuccessful,
+                resolvedRewriteOperationsAvailable,
+                rewriteReadiness,
+                proofDecisionStatus,
+                rewritePolicyReadiness,
+                dryRunReadiness,
+                blockingReasons,
+                remainingWork,
+                List.of(),
+                List.of()
+        );
+    }
 
     public GpuIrAutoVectorizationReadinessSummaryReport {
         if (methodName == null || methodName.isBlank()) {
@@ -98,6 +154,14 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
         }
         blockingReasons = List.copyOf(Objects.requireNonNull(blockingReasons, "blockingReasons"));
         remainingWork = List.copyOf(Objects.requireNonNull(remainingWork, "remainingWork"));
+        noCandidateBuckets = List.copyOf(Objects.requireNonNull(noCandidateBuckets, "noCandidateBuckets"));
+        noCandidateExamples = List.copyOf(Objects.requireNonNull(noCandidateExamples, "noCandidateExamples"));
+        if (noCandidateBuckets.stream().anyMatch(bucket -> bucket == null || bucket.isBlank())) {
+            throw new IllegalArgumentException("noCandidateBuckets must not contain blank entries");
+        }
+        if (noCandidateExamples.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("noCandidateExamples must not contain null entries");
+        }
     }
 
     public static GpuIrAutoVectorizationReadinessSummaryReport from(
@@ -150,7 +214,9 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
                 rewritePolicy.readiness().artifactValue(),
                 dryRunReport.readiness().artifactValue(),
                 blockingReasons,
-                remainingWork(blockingReasons)
+                remainingWork(blockingReasons),
+                preview.noCandidateBuckets(),
+                preview.noCandidateExamples()
         );
     }
 
@@ -187,6 +253,10 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
         return GpuIrAutoVectorizationBlockerExplanation.from(this);
     }
 
+    public GpuIrAutoVectorizationNoCandidateBucketSummaryReport noCandidateBucketSummaryReport() {
+        return GpuIrAutoVectorizationNoCandidateBucketSummaryReport.from(this);
+    }
+
     public Map<String, String> artifactFields(String prefix) {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalArgumentException("prefix must not be blank");
@@ -220,6 +290,7 @@ public record GpuIrAutoVectorizationReadinessSummaryReport(
         values.put(prefix + "RemainingWorkCount", Integer.toString(remainingWorkCount()));
         firstBlockingReason().ifPresent(reason -> values.put(prefix + "FirstBlockingReason", reason));
         firstRemainingWork().ifPresent(work -> values.put(prefix + "FirstRemainingWork", work));
+        values.putAll(noCandidateBucketSummaryReport().artifactFields(prefix + "NoCandidate"));
         values.putAll(blockerExplanation().artifactFields(prefix + "Blocker"));
         values.put(prefix + "CiSummaryLine", ciSummaryLine());
         values.put(prefix + "Summary", summary());

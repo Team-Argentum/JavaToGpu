@@ -45,6 +45,9 @@ class GpuIrAutoVectorizationReadinessSummaryReportTest {
         assertEquals("false", fields.get("autoReadinessReadyForPrototypeRewrite"));
         assertEquals("3", fields.get("autoReadinessBlockingReasonCount"));
         assertEquals("{noRewriteCandidates=1,rewritePolicyBlocksRewrite=1,dryRunNotReady=1}", fields.get("autoReadinessBlockingReasonCounts"));
+        assertEquals("bucketed", fields.get("autoReadinessNoCandidateReadiness"));
+        assertEquals("scannerFoundNoVectorShape", fields.get("autoReadinessNoCandidateFirstBucket"));
+        assertEquals("classifyScalarOrLoopShape", fields.get("autoReadinessNoCandidateFirstRemainingWork"));
         assertEquals("blocked", fields.get("autoReadinessBlockerVerdict"));
         assertEquals("candidateDiscovery.noRewriteCandidates", fields.get("autoReadinessBlockerFirstFamily"));
         assertEquals("collectRewriteCandidates", fields.get("autoReadinessBlockerFirstRemainingWork"));
