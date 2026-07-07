@@ -48,22 +48,11 @@ jobs:
       - name: Add Git for Windows to PATH
         shell: cmd
         run: |
-          if exist "C:\Program Files\Git\cmd\git.exe" (
-            echo C:\Program Files\Git\cmd>>"%GITHUB_PATH%"
-            set "PATH=C:\Program Files\Git\cmd;%PATH%"
-          )
-          if exist "C:\Program Files\Git\bin\git.exe" (
-            echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
-            set "PATH=C:\Program Files\Git\bin;%PATH%"
-          )
-          if exist "C:\Program Files (x86)\Git\cmd\git.exe" (
-            echo C:\Program Files (x86)\Git\cmd>>"%GITHUB_PATH%"
-            set "PATH=C:\Program Files (x86)\Git\cmd;%PATH%"
-          )
-          where git || (
-            echo Git for Windows was not found. Install Git 2.18+ on the runner or add git.exe to PATH.
-            exit /b 1
-          )
+          if exist "C:\Program Files\Git\cmd\git.exe" echo C:\Program Files\Git\cmd>>"%GITHUB_PATH%"
+          if exist "C:\Program Files\Git\bin\git.exe" echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
+          if exist "C:\Program Files (x86)\Git\cmd\git.exe" echo C:\Program Files (x86)\Git\cmd>>"%GITHUB_PATH%"
+          where git
+          if errorlevel 1 echo Git is not in PATH yet; checkout will use paths added through GITHUB_PATH.
 
       - name: Checkout
         uses: actions/checkout@v4
