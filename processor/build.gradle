@@ -383,6 +383,20 @@ tasks.register('openClWorkloadValidationTest', Test) {
     attachBucketStatusRecording(it)
 }
 
+tasks.register('openClIrGpuSourceReviewTest', Test) {
+    group = 'verification'
+    description = 'Runs opt-in reconstructed IrGpu source review smoke coverage without changing production gates.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.irGpuSourceReview', 'true'
+    systemProperty 'javatogpu.opencl.irGpuSourceReviewFile', layout.buildDirectory.file('reports/opencl/irgpu-source-review.properties').get().asFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.irGpuSourceReviewLaneRunsOptInSourceOnAvailableOpenClDevice'
+    }
+    attachBucketStatusRecording(it)
+}
+
 tasks.register('openClLongRunningStabilityTest', Test) {
     group = 'verification'
     description = 'Runs long-running real-device OpenCL ABI/resource stability coverage.'
@@ -443,6 +457,7 @@ tasks.register('openClNvidiaRoutine') {
     dependsOn 'openClVendorValidation'
     dependsOn 'integrationOpenClSmokeTest'
     dependsOn 'openClWorkloadValidationTest'
+    dependsOn 'openClIrGpuSourceReviewTest'
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'
@@ -454,6 +469,7 @@ tasks.register('openClOperationalRoutine') {
     dependsOn 'openClVendorValidation'
     dependsOn 'integrationOpenClSmokeTest'
     dependsOn 'openClWorkloadValidationTest'
+    dependsOn 'openClIrGpuSourceReviewTest'
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'

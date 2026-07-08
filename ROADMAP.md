@@ -362,6 +362,8 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
   Runtime artifact dumps now include `backend-source-switching-decision.properties`, which records the selected source mode, production-like profile detection, production source-switching flag, and the resulting decision (`compile-descriptor-source`, `compile-irgpu-source-review`, `compile-irgpu-source-production`, or `reject-production-irgpu-source`). This keeps production rollout explanations separate from optimizer gates and workload promotion gates.
 - [x] Centralize production-like runtime profile detection.
   `GpuRuntimeProductionProfiles` now owns the production profile classifier used by the OpenCL lowerer, backend source-switching dumps, and production optimizer gate, so future rollout profile names do not drift across runtime guards.
+- [x] Add an opt-in OpenCL `IrGpu` source review lane.
+  `openClIrGpuSourceReviewTest` runs a real-device reconstructed-`IrGpu` source smoke with `opencl.sourceSelection=irgpu` and writes `irgpu-source-review.properties`; NVIDIA/operational routines include it as a review artifact while the production workload gate remains descriptor-source and fail-closed.
 
 #### I3.3 Backend lowering boundary
 

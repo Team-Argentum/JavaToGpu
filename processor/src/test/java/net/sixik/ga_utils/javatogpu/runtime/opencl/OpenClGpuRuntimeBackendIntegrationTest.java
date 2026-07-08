@@ -39,6 +39,7 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -57,6 +58,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String LONG_RUNNING_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.longRunningSummaryFile";
     private static final String WORKLOAD_VALIDATION_PROPERTY = "javatogpu.opencl.workloadValidation";
     private static final String WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.workloadSummaryFile";
+    private static final String IRGPU_SOURCE_REVIEW_PROPERTY = "javatogpu.opencl.irGpuSourceReview";
+    private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
     private static final String IMAGE_KERNEL_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/image-kernel.irgpu.properties";
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
 
@@ -1163,7 +1166,44 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     void runsSimpleKernelFromOptInIrGpuSourceOnAvailableOpenClDevice() {
         assumeOpenClAvailable();
 
-        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+        runSimpleIrGpuSourceKernelReviewCase();
+    }
+
+    @Test
+    void irGpuSourceReviewLaneRunsOptInSourceOnAvailableOpenClDevice() {
+        assumeIrGpuSourceReviewEnabled();
+        assumeOpenClAvailable();
+
+        String status = "not run";
+        try {
+            runSimpleIrGpuSourceKernelReviewCase();
+            status = "passed";
+        } catch (org.opentest4j.TestAbortedException aborted) {
+            status = "skipped";
+            throw aborted;
+        } finally {
+            writeIrGpuSourceReviewSummary(status);
+        }
+    }
+
+    private void runSimpleIrGpuSourceKernelReviewCase() {
+        GpuKernelDescriptor descriptor = simpleIrGpuSourceKernelDescriptor();
+        float[] input = new float[]{1.0f, 2.0f, 3.0f, 4.0f};
+        float[] output = new float[]{0.0f, 0.0f, 0.0f, 0.0f};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{input, 2.5f, output},
+                    GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review")
+            ));
+        }
+
+        assertArrayEquals(new float[]{3.5f, 4.5f, 5.5f, 6.5f}, output);
+    }
+
+    private GpuKernelDescriptor simpleIrGpuSourceKernelDescriptor() {
+        return new GpuKernelDescriptor(
                 "gpu_irgpu_entry",
                 "inline://integration/simple-irgpu-source-kernel.cl",
                 """
@@ -1178,18 +1218,6 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
                 )
         );
-        float[] input = new float[]{1.0f, 2.0f, 3.0f, 4.0f};
-        float[] output = new float[]{0.0f, 0.0f, 0.0f, 0.0f};
-
-        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
-            backend.invoke(new GpuKernelInvocation(
-                    descriptor,
-                    new Object[]{input, 2.5f, output},
-                    GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review")
-            ));
-        }
-
-        assertArrayEquals(new float[]{3.5f, 4.5f, 5.5f, 6.5f}, output);
     }
 
     @Test
@@ -2875,6 +2903,13 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         );
     }
 
+    private static void assumeIrGpuSourceReviewEnabled() {
+        Assumptions.assumeTrue(
+                Boolean.getBoolean(IRGPU_SOURCE_REVIEW_PROPERTY),
+                "Skipping IrGpu source review test: set -D" + IRGPU_SOURCE_REVIEW_PROPERTY + "=true"
+        );
+    }
+
     private static void writeLongRunningSummary(OpenClLongRunningValidationSummary summary) {
         String outputPath = System.getProperty(LONG_RUNNING_SUMMARY_FILE_PROPERTY);
         if (outputPath == null || outputPath.isBlank()) {
@@ -2896,6 +2931,38 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             OpenClWorkloadValidationSummaryIO.write(Path.of(outputPath), summary);
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL workload validation summary", exception);
+        }
+    }
+
+    private static void writeIrGpuSourceReviewSummary(String status) {
+        String outputPath = System.getProperty(IRGPU_SOURCE_REVIEW_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        String normalizedStatus = status == null || status.isBlank() ? "unknown" : status;
+        String properties = "status=" + normalizedStatus + "\n"
+                + "reviewReady=" + "passed".equals(normalizedStatus) + "\n"
+                + "completedAtUtc=" + Instant.now() + "\n"
+                + "scope=opt-in-irgpu-source-review\n"
+                + "productionSourceSwitching=false\n"
+                + "sourceSelection=irgpu\n"
+                + "optimizationProfile=source-reconstruction-review\n"
+                + "kernel.count=1\n"
+                + "kernel.0.name=gpu_irgpu_entry\n"
+                + "kernel.0.resource=inline://integration/simple-irgpu-source-kernel.cl\n"
+                + "kernel.0.irGpuResource=" + SIMPLE_IRGPU_SOURCE_RESOURCE + "\n"
+                + "kernel.0.status=" + normalizedStatus + "\n"
+                + "diagnostic.count=1\n"
+                + "diagnostic.0=opt-in IrGpu source review lane does not alter production workload gate\n";
+        try {
+            Path path = Path.of(outputPath);
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(path, properties, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to write OpenCL IrGpu source review summary", exception);
         }
     }
 
