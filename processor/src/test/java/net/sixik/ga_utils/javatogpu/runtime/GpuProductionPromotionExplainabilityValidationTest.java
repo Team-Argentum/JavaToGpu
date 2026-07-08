@@ -109,4 +109,5 @@ class GpuProductionPromotionExplainabilityValidationTest {
         properties.setProperty("blocker.count", "0");
         return properties;
     }
+
 }

@@ -129,6 +129,41 @@ jobs:
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
           PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
         run: |
+          set "PRODUCTION_PROMOTION_STATUS=not-recorded"
+          set "PRODUCTION_CONTRACT_STATUS=not-recorded"
+          set "PRODUCTION_DECISION_MODE=not-recorded"
+          set "PRODUCTION_FIRST_BLOCKER=none"
+          set "PRODUCTION_FIRST_VIOLATION=none"
+          set "PRODUCTION_EXPLAINABILITY_FILE=processor\build\reports\opencl\production-promotion-explainability.properties"
+
+          if exist "%PRODUCTION_EXPLAINABILITY_FILE%" (
+            for /f "usebackq tokens=1,* delims==" %%A in ("%PRODUCTION_EXPLAINABILITY_FILE%") do (
+              if "%%A"=="status" set "PRODUCTION_PROMOTION_STATUS=%%B"
+              if "%%A"=="contract.status" set "PRODUCTION_CONTRACT_STATUS=%%B"
+              if "%%A"=="decision.mode" set "PRODUCTION_DECISION_MODE=%%B"
+              if "%%A"=="blocker.0" set "PRODUCTION_FIRST_BLOCKER=%%B"
+              if "%%A"=="contract.violation.0" set "PRODUCTION_FIRST_VIOLATION=%%B"
+            )
+          )
+
+          if defined GITHUB_STEP_SUMMARY (
+            echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
+            echo.>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| Production explainability ^| %PRODUCTION_EXPLAINABILITY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo.>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| Production promotion field ^| Value ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| status ^| %PRODUCTION_PROMOTION_STATUS% ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| contract ^| %PRODUCTION_CONTRACT_STATUS% ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| decision mode ^| %PRODUCTION_DECISION_MODE% ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| first blocker ^| %PRODUCTION_FIRST_BLOCKER% ^|>>"%GITHUB_STEP_SUMMARY%"
+            echo ^| first violation ^| %PRODUCTION_FIRST_VIOLATION% ^|>>"%GITHUB_STEP_SUMMARY%"
+          )
+
           if not "%OPENCL_VALIDATION_OUTCOME%"=="success" goto failed
           if not "%VALIDATION_REPORT_OUTCOME%"=="success" goto failed
           if not "%PRODUCTION_EXPLAINABILITY_OUTCOME%"=="success" goto failed
@@ -137,4 +172,5 @@ jobs:
 
           :failed
           echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture: openclValidation=%OPENCL_VALIDATION_OUTCOME%, validationReport=%VALIDATION_REPORT_OUTCOME%, productionExplainability=%PRODUCTION_EXPLAINABILITY_OUTCOME%
+          echo Production promotion summary: status=%PRODUCTION_PROMOTION_STATUS%, contract=%PRODUCTION_CONTRACT_STATUS%, decisionMode=%PRODUCTION_DECISION_MODE%, firstBlocker=%PRODUCTION_FIRST_BLOCKER%, firstViolation=%PRODUCTION_FIRST_VIOLATION%
           exit /b 1

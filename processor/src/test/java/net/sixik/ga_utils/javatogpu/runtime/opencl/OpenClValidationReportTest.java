@@ -596,6 +596,9 @@ class OpenClValidationReportTest {
             assertFalse(reportMarkdown.contains("runtimeIr=`unknown`"));
             assertFalse(reportMarkdown.contains("i3=`unknown`"));
             assertTrue(reportMarkdown.contains("real workload runtime snapshot captured before source promotion"));
+            assertTrue(reportMarkdown.contains("## Production Promotion Explainability"));
+            assertTrue(reportMarkdown.contains("- Contract: `valid`"));
+            assertTrue(reportMarkdown.contains("- Decision mode: `diagnostic-only`"));
             assertEquals(1, entries.size());
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("realWorkloadEvidence=runtime-snapshot"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourceSwitching=compile-irgpu-source-review=1, reject-production-irgpu-source=1"));
@@ -603,6 +606,9 @@ class OpenClValidationReportTest {
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=2, sourceSwitching=compile-irgpu-source-review, runtimeIr=optimized, productionMutation=false, i3=review-ready, families=reconstruction=1, runtime-equivalence=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source, runtimeIr=original, productionMutation=false, i3=blocked, families=source-parity=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("productionSourceSwitching=disabled"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("contract=valid"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("decisionMode=diagnostic-only"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("sourceSwitchingAllowed=false"));
             assertTrue(i3Summary.contains("status=blocked"));
             assertTrue(i3Summary.contains("kernel.count=2"));
             assertTrue(i3Summary.contains("reviewReady.count=1"));
@@ -618,6 +624,10 @@ class OpenClValidationReportTest {
             assertFalse(i3Summary.contains("runtimeIr=unknown"));
             assertTrue(i3Summary.contains("diagnostic.0=I3 workload readiness remains blocked: reviewReady=1, blocked=1"));
             assertTrue(productionExplainability.contains("status=blocked"));
+            assertTrue(productionExplainability.contains("contract.status=valid"));
+            assertTrue(productionExplainability.contains("contract.valid=true"));
+            assertTrue(productionExplainability.contains("contract.violation.count=0"));
+            assertTrue(productionExplainability.contains("decision.mode=diagnostic-only"));
             assertTrue(productionExplainability.contains("gateReviewReady=false"));
             assertTrue(productionExplainability.contains("sourceParityMatched=false"));
             assertTrue(productionExplainability.contains("runtimeEquivalencePassed=false"));
@@ -639,6 +649,60 @@ class OpenClValidationReportTest {
             restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
             restoreProperty("javatogpu.opencl.validationHistoryFile", previousHistoryFile);
             restoreProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", previousI3SummaryFile);
+            restoreProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousProductionExplainabilityFile);
+        }
+    }
+
+    @Test
+    void validationReportAndHistoryExposeInvalidProductionPromotionExplainabilityContract() throws Exception {
+        java.nio.file.Path productionExplainabilityFile = java.nio.file.Files.createTempFile(
+                "javatogpu-invalid-production-promotion-explainability", ".properties");
+        java.nio.file.Path reportFile = java.nio.file.Files.createTempFile(
+                "javatogpu-opencl-report-invalid-production-explainability", ".md");
+        java.nio.file.Path historyFile = java.nio.file.Files.createTempFile(
+                "javatogpu-opencl-history-invalid-production-explainability", ".properties");
+        java.nio.file.Files.deleteIfExists(historyFile);
+        java.nio.file.Files.writeString(productionExplainabilityFile, String.join("\n",
+                "status=blocked",
+                "kernel.count=1",
+                "i3ReviewReady.count=1",
+                "i3Blocked.count=0",
+                "productionSourceSwitchingAllowed=false",
+                "productionSourceSwitchingEnabled=false",
+                "productionMutationAllowed=false",
+                "productionMutationEnabled=false",
+                "blocker.count=0",
+                "diagnostic.0=synthetic invalid fixture intentionally omits blockers",
+                ""
+        ));
+        String previousWorkloadGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+        String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
+        String previousHistoryFile = System.getProperty("javatogpu.opencl.validationHistoryFile");
+        String previousProductionExplainabilityFile = System.getProperty(
+                "javatogpu.opencl.productionPromotionExplainabilityFile");
+        try {
+            System.clearProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+            System.setProperty("javatogpu.opencl.validationReportFile", reportFile.toString());
+            System.setProperty("javatogpu.opencl.validationHistoryFile", historyFile.toString());
+            System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", productionExplainabilityFile.toString());
+
+            OpenClValidationReporter.main(new String[0]);
+
+            String reportMarkdown = java.nio.file.Files.readString(reportFile);
+            java.util.List<OpenClValidationHistoryEntry> entries = OpenClValidationHistoryIO.readAll(historyFile);
+            assertTrue(reportMarkdown.contains("## Production Promotion Explainability"));
+            assertTrue(reportMarkdown.contains("- Contract: `invalid`"));
+            assertTrue(reportMarkdown.contains("- Decision mode: `unknown`"));
+            assertTrue(reportMarkdown.contains("- Contract violation: `blocked explainability must include at least one blocker`"));
+            assertEquals(1, entries.size());
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("contract=invalid"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("decisionMode=unknown"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains(
+                    "violation=blocked explainability must include at least one blocker"));
+        } finally {
+            restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
+            restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
+            restoreProperty("javatogpu.opencl.validationHistoryFile", previousHistoryFile);
             restoreProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousProductionExplainabilityFile);
         }
     }

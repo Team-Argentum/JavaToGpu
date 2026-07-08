@@ -1,5 +1,8 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidation;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityFormatter;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -355,7 +358,16 @@ public final class OpenClValidationReporter {
                 markdown.append("- Explainability file: `").append(explainabilityPath).append("`\n\n");
                 return;
             }
+            GpuProductionPromotionExplainabilityValidation.Result contract =
+                    GpuProductionPromotionExplainabilityValidation.validate(properties);
             markdown.append("- Status: `").append(sanitizeInline(properties.getProperty("status", "unknown"))).append("`\n");
+            markdown.append("- Contract: `").append(contract.valid() ? "valid" : "invalid").append("`\n");
+            markdown.append("- Decision mode: `")
+                    .append(sanitizeInline(properties.getProperty("decision.mode", "unknown")))
+                    .append("`\n");
+            if (!contract.valid()) {
+                markdown.append("- Contract violation: `").append(sanitizeInline(contract.firstViolation())).append("`\n");
+            }
             markdown.append("- Production source switching allowed: `")
                     .append(sanitizeInline(properties.getProperty("productionSourceSwitchingAllowed", "false")))
                     .append("`\n");
@@ -619,90 +631,10 @@ public final class OpenClValidationReporter {
             java.util.Properties i3Summary = i3SummaryPath == null || i3SummaryPath.isBlank()
                     ? new java.util.Properties()
                     : loadPropertiesIfExists(Paths.get(i3SummaryPath));
-            Files.writeString(path, formatProductionPromotionExplainability(gate, i3Summary), StandardCharsets.UTF_8);
+            Files.writeString(path, GpuProductionPromotionExplainabilityFormatter.format(gate, i3Summary), StandardCharsets.UTF_8);
         } catch (Throwable failure) {
             // Keep the validation report printable even if this optional explainability artifact cannot be written.
         }
-    }
-
-    private static String formatProductionPromotionExplainability(
-            java.util.Properties gate,
-            java.util.Properties i3Summary
-    ) {
-        if (gate == null || gate.isEmpty()) {
-            return "status=blocked\n"
-                    + "productionSourceSwitchingAllowed=false\n"
-                    + "productionMutationAllowed=false\n"
-                    + "kernel.count=0\n"
-                    + "blocker.count=1\n"
-                    + "blocker.0=workload-promotion-gate-not-recorded\n"
-                    + "diagnostic.0=production promotion is blocked because workload promotion evidence was not recorded\n";
-        }
-
-        int kernelCount = parsePositiveInt(gate.getProperty("kernel.count", "0"));
-        boolean gateReviewReady = "true".equals(gate.getProperty("reviewReady", "false"));
-        boolean sourceParityMatched = "true".equals(gate.getProperty("sourceParityMatched", "false"));
-        boolean runtimeEquivalencePassed = "true".equals(gate.getProperty("runtimeEquivalencePassed", "false"));
-        boolean productionSourceSwitchingEnabled = "true".equals(gate.getProperty("productionSourceSwitching", "false"))
-                || "enabled".equals(gate.getProperty("productionSourceSwitching", "false"));
-        boolean productionMutationEnabled = "true".equals(i3Summary.getProperty("productionMutationEnabled", "false"));
-        int i3ReviewReadyCount = parsePositiveInt(i3Summary.getProperty("reviewReady.count", "0"));
-        int i3BlockedCount = parsePositiveInt(i3Summary.getProperty("blocked.count", Integer.toString(kernelCount)));
-        boolean allKernelsI3ReviewReady = kernelCount > 0 && i3ReviewReadyCount == kernelCount && i3BlockedCount == 0;
-
-        java.util.ArrayList<String> blockers = new java.util.ArrayList<>();
-        if (!gateReviewReady) {
-            blockers.add("workload-source-promotion-gate-not-review-ready");
-        }
-        if (!sourceParityMatched) {
-            blockers.add("source-parity-not-matched");
-        }
-        if (!runtimeEquivalencePassed) {
-            blockers.add("runtime-equivalence-not-passed");
-        }
-        if (!allKernelsI3ReviewReady) {
-            blockers.add("i3-workload-readiness-not-review-ready");
-        }
-        if (!productionSourceSwitchingEnabled) {
-            blockers.add("production-source-switching-disabled");
-        }
-        if (!productionMutationEnabled) {
-            blockers.add("production-mutation-disabled");
-        }
-
-        StringBuilder builder = new StringBuilder();
-        builder.append("status=").append(blockers.isEmpty() ? "production-ready" : "blocked").append('\n');
-        builder.append("gateStatus=").append(gate.getProperty("status", "unknown")).append('\n');
-        builder.append("gateReviewReady=").append(gateReviewReady).append('\n');
-        builder.append("sourceParityMatched=").append(sourceParityMatched).append('\n');
-        builder.append("runtimeEquivalencePassed=").append(runtimeEquivalencePassed).append('\n');
-        builder.append("realWorkloadEvidence=").append(gate.getProperty("realWorkloadEvidence", "not-wired")).append('\n');
-        builder.append("kernel.count=").append(kernelCount).append('\n');
-        builder.append("i3ReviewReady.count=").append(i3ReviewReadyCount).append('\n');
-        builder.append("i3Blocked.count=").append(i3BlockedCount).append('\n');
-        builder.append("productionSourceSwitchingAllowed=").append(productionSourceSwitchingEnabled && blockers.isEmpty()).append('\n');
-        builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
-        builder.append("productionMutationAllowed=").append(productionMutationEnabled && blockers.isEmpty()).append('\n');
-        builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
-        builder.append("blocker.count=").append(blockers.size()).append('\n');
-        for (int index = 0; index < blockers.size(); index++) {
-            builder.append("blocker.").append(index).append('=').append(blockers.get(index)).append('\n');
-        }
-        builder.append("diagnostic.0=").append(productionPromotionExplainabilityDiagnostic(blockers, i3ReviewReadyCount, i3BlockedCount)).append('\n');
-        return builder.toString();
-    }
-
-    private static String productionPromotionExplainabilityDiagnostic(
-            java.util.List<String> blockers,
-            int i3ReviewReadyCount,
-            int i3BlockedCount
-    ) {
-        if (blockers.isEmpty()) {
-            return "production promotion gates are ready for explicit operator review";
-        }
-        return "production promotion remains blocked: first=" + blockers.get(0)
-                + ", i3ReviewReady=" + i3ReviewReadyCount
-                + ", i3Blocked=" + i3BlockedCount;
     }
 
     private static String formatI3ReadinessWorkloadSummary(java.util.Properties gate) {
@@ -1029,8 +961,13 @@ public final class OpenClValidationReporter {
             if (properties.isEmpty()) {
                 return "not recorded";
             }
+            GpuProductionPromotionExplainabilityValidation.Result contract =
+                    GpuProductionPromotionExplainabilityValidation.validate(properties);
             return properties.getProperty("status", "unknown")
-                    + " (sourceSwitchingAllowed=" + properties.getProperty("productionSourceSwitchingAllowed", "false")
+                    + " (contract=" + (contract.valid() ? "valid" : "invalid")
+                    + summarizeProductionPromotionContractViolation(contract)
+                    + ", decisionMode=" + properties.getProperty("decision.mode", "unknown")
+                    + ", sourceSwitchingAllowed=" + properties.getProperty("productionSourceSwitchingAllowed", "false")
                     + ", sourceSwitchingEnabled=" + properties.getProperty("productionSourceSwitchingEnabled", "false")
                     + ", mutationAllowed=" + properties.getProperty("productionMutationAllowed", "false")
                     + ", mutationEnabled=" + properties.getProperty("productionMutationEnabled", "false")
@@ -1042,6 +979,12 @@ public final class OpenClValidationReporter {
         } catch (Throwable failure) {
             return "failed to read";
         }
+    }
+
+    private static String summarizeProductionPromotionContractViolation(
+            GpuProductionPromotionExplainabilityValidation.Result contract
+    ) {
+        return contract.valid() ? "" : ", violation=" + contract.firstViolation();
     }
 
     private static String summarizeFirstProductionPromotionBlocker(java.util.Properties properties) {

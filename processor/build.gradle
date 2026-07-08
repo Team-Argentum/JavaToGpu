@@ -553,7 +553,7 @@ tasks.register('validateOpenClProductionPromotionExplainabilityContract', Test) 
     useJUnitPlatform()
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
-    filter.includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidationTest'
+    filter.includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainability*Test'
 }
 
 tasks.register('openClBackendSourcePromotionGateReport', JavaExec) {
