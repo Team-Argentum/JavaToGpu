@@ -16,6 +16,7 @@ public final class OpenClIrTextBodyParser {
     public static final OpenClIrTextBodyParser INSTANCE = new OpenClIrTextBodyParser();
 
     private static final Pattern VARIABLE = Pattern.compile("^var\\s+(\\S+)\\s+(\\S+)\\s+=\\s+(.+)$");
+    private static final Pattern PRIVATE_ARRAY = Pattern.compile("^private-array\\s+(\\S+)\\s+(\\S+)\\[(.+)]$");
     private static final Pattern ASSIGNMENT = Pattern.compile("^set\\s+(.+?)\\s+=\\s+(.+)$");
     private static final Pattern FOR = Pattern.compile("^for\\s+init=\\((.*)\\)\\s+cond=(.*)\\s+update=\\((.*)\\)$");
 
@@ -106,6 +107,13 @@ public final class OpenClIrTextBodyParser {
         if (variable.matches()) {
             return ParseStatementResult.parsed(
                     OpenClIrTextStatement.variable(lineNumber, variable.group(1), variable.group(2), variable.group(3)),
+                    index + 1
+            );
+        }
+        Matcher privateArray = PRIVATE_ARRAY.matcher(line);
+        if (privateArray.matches()) {
+            return ParseStatementResult.parsed(
+                    OpenClIrTextStatement.privateArray(lineNumber, privateArray.group(1), privateArray.group(2), privateArray.group(3)),
                     index + 1
             );
         }
@@ -318,7 +326,9 @@ public final class OpenClIrTextBodyParser {
             List<String> blockers
     ) {
         String statement = headerStatement == null ? "" : headerStatement.trim();
-        if (VARIABLE.matcher(statement).matches() || ASSIGNMENT.matcher(statement).matches()) {
+        if (VARIABLE.matcher(statement).matches()
+                || PRIVATE_ARRAY.matcher(statement).matches()
+                || ASSIGNMENT.matcher(statement).matches()) {
             return;
         }
         blockers.add("ir-text-line-" + lineNumber + "-for-" + role + "-unsupported-" + statementToken(statement));

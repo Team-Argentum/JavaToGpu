@@ -77,6 +77,7 @@ class GpuProductionPromotionDecisionTest {
         properties.setProperty("kernel.count", "2");
         properties.setProperty("i3ReviewReady.count", "2");
         properties.setProperty("i3Blocked.count", "0");
+        properties.setProperty("i3SourceReady.count", "2");
         properties.setProperty("productionSourceSwitchingAllowed", "false");
         properties.setProperty("productionSourceSwitchingEnabled", "false");
         properties.setProperty("productionMutationAllowed", "false");
@@ -93,6 +94,7 @@ class GpuProductionPromotionDecisionTest {
         properties.setProperty("kernel.count", "2");
         properties.setProperty("i3ReviewReady.count", "2");
         properties.setProperty("i3Blocked.count", "0");
+        properties.setProperty("i3SourceReady.count", "2");
         properties.setProperty("productionSourceSwitchingAllowed", "true");
         properties.setProperty("productionSourceSwitchingEnabled", "true");
         properties.setProperty("productionMutationAllowed", "true");

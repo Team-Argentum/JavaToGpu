@@ -68,6 +68,7 @@ public record GpuProductionPromotionDecision(
         }
         if (contract.i3ReviewReadyCount() == contract.kernelCount()
                 && contract.i3BlockedCount() == 0
+                && contract.i3SourceReadyCount() == contract.kernelCount()
                 && contract.blockerCount() > 0) {
             return new GpuProductionPromotionDecision(
                     REVIEW_READY,

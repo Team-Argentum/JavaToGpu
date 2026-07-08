@@ -86,6 +86,26 @@ class OpenClIrTextBodyParserTest {
     }
 
     @Test
+    void parsesPrivateArrayDeclarations() {
+        OpenClIrTextBodyParseResult result = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  private-array float scratch[4]
+                  set scratch[0] = input[0]
+                  return
+                """);
+
+        assertTrue(result.parsed());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(3, result.statements().size());
+        assertEquals(OpenClIrTextStatement.Kind.PRIVATE_ARRAY, result.statements().get(0).kind());
+        assertEquals("float", result.statements().get(0).typeName());
+        assertEquals("scratch", result.statements().get(0).target());
+        assertEquals("4", result.statements().get(0).expression());
+        assertEquals(OpenClIrTextStatement.Kind.ASSIGNMENT, result.statements().get(1).kind());
+        assertEquals(OpenClIrTextStatement.Kind.RETURN, result.statements().get(2).kind());
+    }
+
+    @Test
     void parsesSimpleSwitchBlocks() {
         OpenClIrTextBodyParseResult result = OpenClIrTextBodyParser.INSTANCE.parse("""
                 body

@@ -13,11 +13,14 @@ class GpuProductionPromotionExplainabilityFormatterTest {
 
         assertTrue(formatted.contains("status=blocked"));
         assertTrue(formatted.contains("blocker.0=workload-source-promotion-gate-not-review-ready"));
-        assertTrue(formatted.contains("blocker.1=production-source-switching-disabled"));
+        assertTrue(formatted.contains("blocker.1=i3-source-readiness-not-complete"));
+        assertTrue(formatted.contains("blocker.2=production-source-switching-disabled"));
+        assertTrue(formatted.contains("i3SourceReady.count=1"));
+        assertTrue(formatted.contains("i3SourceReady.all=false"));
         assertTrue(formatted.contains("contract.status=valid"));
         assertTrue(formatted.contains("contract.valid=true"));
         assertTrue(formatted.contains("contract.violation.count=0"));
-        assertTrue(formatted.contains("decision.mode=review-ready"));
+        assertTrue(formatted.contains("decision.mode=diagnostic-only"));
         assertTrue(formatted.contains("decision.contractValid=true"));
     }
 
@@ -28,6 +31,8 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("status=production-ready"));
         assertTrue(formatted.contains("productionSourceSwitchingAllowed=true"));
         assertTrue(formatted.contains("productionMutationAllowed=true"));
+        assertTrue(formatted.contains("i3SourceReady.count=2"));
+        assertTrue(formatted.contains("i3SourceReady.all=true"));
         assertTrue(formatted.contains("contract.status=valid"));
         assertTrue(formatted.contains("contract.violation.count=0"));
         assertTrue(formatted.contains("decision.mode=production-enabled"));
@@ -50,6 +55,7 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         Properties properties = new Properties();
         properties.setProperty("reviewReady.count", "2");
         properties.setProperty("blocked.count", "0");
+        properties.setProperty("sourceReady.count", "1");
         properties.setProperty("productionMutationEnabled", "false");
         return properties;
     }
@@ -70,6 +76,7 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         Properties properties = new Properties();
         properties.setProperty("reviewReady.count", "2");
         properties.setProperty("blocked.count", "0");
+        properties.setProperty("sourceReady.count", "2");
         properties.setProperty("productionMutationEnabled", "true");
         return properties;
     }

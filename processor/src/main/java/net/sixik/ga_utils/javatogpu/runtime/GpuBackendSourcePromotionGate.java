@@ -13,6 +13,7 @@ import java.util.Objects;
  */
 public record GpuBackendSourcePromotionGate(
         String status,
+        boolean ready,
         boolean reconstructed,
         boolean sourceAvailable,
         boolean sourceParityChecked,
@@ -102,6 +103,7 @@ public record GpuBackendSourcePromotionGate(
 
         return new GpuBackendSourcePromotionGate(
                 status,
+                reconstruction.ready(),
                 reconstruction.reconstructed(),
                 reconstruction.sourceAvailable(),
                 sourceParityChecked,
@@ -132,6 +134,7 @@ public record GpuBackendSourcePromotionGate(
         StringBuilder builder = new StringBuilder();
         builder.append("status=").append(status).append('\n');
         builder.append("reviewReady=").append(reviewReady()).append('\n');
+        builder.append("ready=").append(ready).append('\n');
         builder.append("reconstructed=").append(reconstructed).append('\n');
         builder.append("sourceAvailable=").append(sourceAvailable).append('\n');
         builder.append("sourceParityChecked=").append(sourceParityChecked).append('\n');

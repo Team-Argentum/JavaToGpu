@@ -492,6 +492,7 @@ class OpenClValidationReportTest {
                 "kernel.0.runtimeProductionMutationSafety.diagnostic.0=runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested",
                 "kernel.0.i3Readiness.status=review-ready",
                 "kernel.0.i3Readiness.selectedRuntimeIrStage=optimized",
+                "kernel.0.i3Readiness.sourceReady=true",
                 "kernel.0.i3Readiness.sourcePromotionStatus=review-ready",
                 "kernel.0.i3Readiness.sourcePromotionReviewReady=true",
                 "kernel.0.i3Readiness.optimizerProductionGateStatus=not-requested",
@@ -536,11 +537,11 @@ class OpenClValidationReportTest {
                 "kernel.1.runtimeIrHandoff.status=selected",
                 "kernel.1.runtimeIrHandoff.selectedStage=original",
                 "kernel.1.runtimeIrHandoff.optimizedDiffersFromOriginal=false",
-                "kernel.1.runtimeIrHandoff.optimizationRequiresRollback=true",
-                "kernel.1.runtimeIrHandoff.fallbackDecision=optimizer-rollback",
+                "kernel.1.runtimeIrHandoff.optimizationRequiresRollback=false",
+                "kernel.1.runtimeIrHandoff.fallbackDecision=production-ir-gate-blocked",
                 "kernel.1.runtimeIrHandoff.optimizedIrRejected=true",
                 "kernel.1.runtimeIrHandoff.diagnostic.count=1",
-                "kernel.1.runtimeIrHandoff.diagnostic.0=optimized IrGpu was rejected; original IrGpu remains selected for backend lowering",
+                "kernel.1.runtimeIrHandoff.diagnostic.0=optimized IrGpu was rejected by the production IR acceptance gate; original IrGpu remains selected",
                 "kernel.1.runtimeProductionMutationSafety.status=disabled",
                 "kernel.1.runtimeProductionMutationSafety.productionMutationEnabled=false",
                 "kernel.1.runtimeProductionMutationSafety.productionGateStatus=blocked",
@@ -550,6 +551,7 @@ class OpenClValidationReportTest {
                 "kernel.1.runtimeProductionMutationSafety.diagnostic.0=runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass",
                 "kernel.1.i3Readiness.status=blocked",
                 "kernel.1.i3Readiness.selectedRuntimeIrStage=original",
+                "kernel.1.i3Readiness.sourceReady=false",
                 "kernel.1.i3Readiness.sourcePromotionStatus=blocked",
                 "kernel.1.i3Readiness.sourcePromotionReviewReady=false",
                 "kernel.1.i3Readiness.optimizerProductionGateStatus=blocked",
@@ -559,9 +561,9 @@ class OpenClValidationReportTest {
                 "kernel.1.runtimeOptimizerDrift.status=recorded",
                 "kernel.1.runtimeOptimizerDrift.pass.count=3",
                 "kernel.1.runtimeOptimizerDrift.pass.applied.count=1",
-                "kernel.1.runtimeOptimizerDrift.pass.rolledBack.count=1",
+                "kernel.1.runtimeOptimizerDrift.pass.rolledBack.count=0",
                 "kernel.1.runtimeOptimizerDrift.pass.failed.count=1",
-                "kernel.1.runtimeOptimizerDrift.fallbackDecision=optimizer-rollback",
+                "kernel.1.runtimeOptimizerDrift.fallbackDecision=production-ir-gate-blocked",
                 "kernel.1.runtimeOptimizerDrift.selectedRuntimeIrStage=original",
                 "kernel.1.runtimeOptimizerDrift.optimizedIrRejected=true",
                 "kernel.1.runtimeOptimizerDrift.productionGateStatus=blocked",
@@ -596,21 +598,21 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Source switching decisions: `compile-irgpu-source-review=1, reject-production-irgpu-source=1`"));
             assertTrue(reportMarkdown.contains("- Blocker families: `reconstruction=1, runtime-equivalence=1, source-parity=1`"));
             assertTrue(reportMarkdown.contains("- Kernel evidence count: `2`"));
-            assertTrue(reportMarkdown.contains("- Kernel `0`: `inline://integration/image-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`compile-irgpu-source-review`, runtimeIr=`optimized`, productionMutation=`false`, i3=`review-ready`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0`: `inline://integration/image-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`compile-irgpu-source-review`, runtimeIr=`optimized`, productionMutation=`false`, sourceReady=`true`, i3=`review-ready`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` source switching: status=`review-ready`, profile=`source-reconstruction-review`, first=`IrGpu source was explicitly selected for review or smoke validation`"));
-            assertTrue(reportMarkdown.contains("- Kernel `0` runtime IR handoff: stage=`optimized`, transformed=`true`, rollback=`false`, rejected=`false`, first=`optimized IrGpu is selected for backend lowering after runtime optimizer passes`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` runtime IR handoff: stage=`optimized`, transformed=`true`, rollback=`false`, rejected=`false`, fallback=`none`, first=`optimized IrGpu is selected for backend lowering after runtime optimizer passes`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` production mutation safety: enabled=`false`, gate=`not-requested`, profileRequested=`false`, first=`runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested`"));
-            assertTrue(reportMarkdown.contains("- Kernel `0` I3 readiness: status=`review-ready`, sourcePromotion=`review-ready`, optimizerGate=`not-requested`, productionMutation=`false`, first=`I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` I3 readiness: status=`review-ready`, sourcePromotion=`review-ready`, sourceReady=`true`, optimizerGate=`not-requested`, productionMutation=`false`, first=`I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` runtime optimizer drift: passes=`2`, applied=`2`, rolledBack=`0`, failed=`0`, selected=`optimized`, fallback=`none`, gate=`not-requested`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` diagnostics: `2`; first=`backend source must be reconstructed from IrGpu before promotion review`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` reconstruction blockers: `1`; first=`irgpu-artifact-missing`"));
             assertTrue(reportMarkdown.contains("- Kernel blocker families: `reconstruction=1, runtime-equivalence=1`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1`: `inline://integration/perlin-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`, runtimeIr=`original`, productionMutation=`false`, i3=`blocked`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1`: `inline://integration/perlin-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`, runtimeIr=`original`, productionMutation=`false`, sourceReady=`false`, i3=`blocked`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` source switching: status=`blocked`, profile=`vendor-tuned`, first=`production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1` runtime IR handoff: stage=`original`, transformed=`false`, rollback=`true`, rejected=`true`, first=`optimized IrGpu was rejected; original IrGpu remains selected for backend lowering`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1` runtime IR handoff: stage=`original`, transformed=`false`, rollback=`false`, rejected=`true`, fallback=`production-ir-gate-blocked`, first=`optimized IrGpu was rejected by the production IR acceptance gate; original IrGpu remains selected`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` production mutation safety: enabled=`false`, gate=`blocked`, profileRequested=`true`, first=`runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1` I3 readiness: status=`blocked`, sourcePromotion=`blocked`, optimizerGate=`blocked`, productionMutation=`false`, first=`I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1` runtime optimizer drift: passes=`3`, applied=`1`, rolledBack=`1`, failed=`1`, selected=`original`, fallback=`optimizer-rollback`, gate=`blocked`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1` I3 readiness: status=`blocked`, sourcePromotion=`blocked`, sourceReady=`false`, optimizerGate=`blocked`, productionMutation=`false`, first=`I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1` runtime optimizer drift: passes=`3`, applied=`1`, rolledBack=`0`, failed=`1`, selected=`original`, fallback=`production-ir-gate-blocked`, gate=`blocked`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` diagnostics: `1`; first=`reconstructed source must match descriptor source before promotion review`"));
             assertTrue(reportMarkdown.contains("- Kernel blocker families: `source-parity=1`"));
             assertFalse(reportMarkdown.contains("runtimeIr=`unknown`"));
@@ -623,31 +625,37 @@ class OpenClValidationReportTest {
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("realWorkloadEvidence=runtime-snapshot"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourceSwitching=compile-irgpu-source-review=1, reject-production-irgpu-source=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernelCount=2"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=2, sourceSwitching=compile-irgpu-source-review, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/fallback=none, productionMutation=false, i3=review-ready, families=reconstruction=1, runtime-equivalence=1]"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=1/fallback=optimizer-rollback, productionMutation=false, i3=blocked, families=source-parity=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=2, sourceSwitching=compile-irgpu-source-review, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=reconstruction=1, runtime-equivalence=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("productionSourceSwitching=disabled"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("contract=valid"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("decisionMode=diagnostic-only"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("sourceSwitchingAllowed=false"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("i3SourceReady=1"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("i3SourceReadyAll=false"));
             assertTrue(i3Summary.contains("status=blocked"));
             assertTrue(i3Summary.contains("kernel.count=2"));
             assertTrue(i3Summary.contains("reviewReady.count=1"));
             assertTrue(i3Summary.contains("blocked.count=1"));
+            assertTrue(i3Summary.contains("sourceReady.count=1"));
+            assertTrue(i3Summary.contains("sourceReady.all=false"));
             assertTrue(i3Summary.contains("productionMutationEnabled=false"));
             assertTrue(i3Summary.contains("status.0.name=review-ready"));
             assertTrue(i3Summary.contains("status.1.name=blocked"));
             assertTrue(i3Summary.contains("kernel.0.i3Status=review-ready"));
+            assertTrue(i3Summary.contains("kernel.0.sourceReady=true"));
             assertTrue(i3Summary.contains("kernel.0.runtimeIr=optimized"));
             assertTrue(i3Summary.contains("kernel.0.optimizerDriftStatus=recorded"));
             assertTrue(i3Summary.contains("kernel.0.optimizerDriftPassCount=2"));
             assertTrue(i3Summary.contains("kernel.0.optimizerDriftRolledBackCount=0"));
             assertTrue(i3Summary.contains("kernel.0.optimizerDriftFallbackDecision=none"));
             assertTrue(i3Summary.contains("kernel.1.i3Status=blocked"));
+            assertTrue(i3Summary.contains("kernel.1.sourceReady=false"));
             assertTrue(i3Summary.contains("kernel.1.runtimeIr=original"));
             assertTrue(i3Summary.contains("kernel.1.optimizerDriftStatus=recorded"));
             assertTrue(i3Summary.contains("kernel.1.optimizerDriftPassCount=3"));
-            assertTrue(i3Summary.contains("kernel.1.optimizerDriftRolledBackCount=1"));
-            assertTrue(i3Summary.contains("kernel.1.optimizerDriftFallbackDecision=optimizer-rollback"));
+            assertTrue(i3Summary.contains("kernel.1.optimizerDriftRolledBackCount=0"));
+            assertTrue(i3Summary.contains("kernel.1.optimizerDriftFallbackDecision=production-ir-gate-blocked"));
             assertFalse(i3Summary.contains("i3Status=unknown"));
             assertFalse(i3Summary.contains("runtimeIr=unknown"));
             assertTrue(i3Summary.contains("diagnostic.0=I3 workload readiness remains blocked: reviewReady=1, blocked=1"));
@@ -662,14 +670,17 @@ class OpenClValidationReportTest {
             assertTrue(productionExplainability.contains("kernel.count=2"));
             assertTrue(productionExplainability.contains("i3ReviewReady.count=1"));
             assertTrue(productionExplainability.contains("i3Blocked.count=1"));
+            assertTrue(productionExplainability.contains("i3SourceReady.count=1"));
+            assertTrue(productionExplainability.contains("i3SourceReady.all=false"));
             assertTrue(productionExplainability.contains("productionSourceSwitchingAllowed=false"));
             assertTrue(productionExplainability.contains("productionMutationAllowed=false"));
             assertTrue(productionExplainability.contains("blocker.0=workload-source-promotion-gate-not-review-ready"));
             assertTrue(productionExplainability.contains("blocker.1=source-parity-not-matched"));
             assertTrue(productionExplainability.contains("blocker.2=runtime-equivalence-not-passed"));
             assertTrue(productionExplainability.contains("blocker.3=i3-workload-readiness-not-review-ready"));
-            assertTrue(productionExplainability.contains("blocker.4=production-source-switching-disabled"));
-            assertTrue(productionExplainability.contains("blocker.5=production-mutation-disabled"));
+            assertTrue(productionExplainability.contains("blocker.4=i3-source-readiness-not-complete"));
+            assertTrue(productionExplainability.contains("blocker.5=production-source-switching-disabled"));
+            assertTrue(productionExplainability.contains("blocker.6=production-mutation-disabled"));
             assertTrue(productionExplainability.contains(
                     "diagnostic.0=production promotion remains blocked: first=workload-source-promotion-gate-not-review-ready, i3ReviewReady=1, i3Blocked=1"));
         } finally {

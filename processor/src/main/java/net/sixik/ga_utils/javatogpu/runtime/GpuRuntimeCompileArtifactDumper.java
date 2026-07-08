@@ -205,8 +205,7 @@ public final class GpuRuntimeCompileArtifactDumper {
 
     private static String formatI3ReadinessSummary(GpuRuntimeCompileArtifactSnapshot snapshot) {
         GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
-        GpuBackendSourceReconstructionResult reconstruction = reconstructBackendSource(snapshot);
-        GpuBackendSourcePromotionGate sourcePromotionGate = sourcePromotionGate(snapshot, reconstruction);
+        GpuBackendSourcePromotionGate sourcePromotionGate = sourcePromotionGate(snapshot);
         GpuRuntimeProductionOptimizerGate optimizerGate = snapshot.productionOptimizerGate();
         boolean runtimeEquivalencePassed = snapshot.runtimeEquivalenceEvidence().executed()
                 && snapshot.runtimeEquivalenceEvidence().equivalent();
@@ -223,8 +222,9 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("selectedRuntimeIrIdentity=").append(selection.selectedIdentity()).append('\n');
         builder.append("optimizedIrRejected=").append(selection.optimizedRejected()).append('\n');
         builder.append("fallbackDecision=").append(selection.fallbackDecision()).append('\n');
-        builder.append("sourceReconstructed=").append(reconstruction.reconstructed()).append('\n');
-        builder.append("sourceAvailable=").append(reconstruction.sourceAvailable()).append('\n');
+        builder.append("sourceReconstructed=").append(sourcePromotionGate.reconstructed()).append('\n');
+        builder.append("sourceReady=").append(sourcePromotionGate.ready()).append('\n');
+        builder.append("sourceAvailable=").append(sourcePromotionGate.sourceAvailable()).append('\n');
         builder.append("sourceParityChecked=").append(sourcePromotionGate.sourceParityChecked()).append('\n');
         builder.append("sourceParityMatched=").append(sourcePromotionGate.sourceParityMatched()).append('\n');
         builder.append("runtimeEquivalencePassed=").append(runtimeEquivalencePassed).append('\n');
@@ -263,6 +263,13 @@ public final class GpuRuntimeCompileArtifactDumper {
                 snapshot.runtimeEquivalenceEvidence(),
                 snapshot.fallbackEvidence()
         );
+    }
+
+    private static GpuBackendSourcePromotionGate sourcePromotionGate(GpuRuntimeCompileArtifactSnapshot snapshot) {
+        if (snapshot.backendSourcePromotionGate().isPresent()) {
+            return snapshot.backendSourcePromotionGate().orElseThrow();
+        }
+        return sourcePromotionGate(snapshot, reconstructBackendSource(snapshot));
     }
 
     private static String i3ReadinessStatus(
@@ -379,64 +386,23 @@ public final class GpuRuntimeCompileArtifactDumper {
     }
 
     private static String formatBackendSourcePromotionGate(GpuRuntimeCompileArtifactSnapshot snapshot) {
-        return sourcePromotionGate(snapshot, reconstructBackendSource(snapshot)).toPropertiesText();
+        return sourcePromotionGate(snapshot).toPropertiesText();
     }
 
     private static String formatBackendSourceSwitchingDecision(GpuRuntimeCompileArtifactSnapshot snapshot) {
+        if (snapshot.backendSourceSwitchingDecision().isPresent()) {
+            return snapshot.backendSourceSwitchingDecision().orElseThrow().toPropertiesText();
+        }
         GpuRuntimeCompileProvenance provenance = snapshot.compileProvenance();
         GpuBackendModuleArtifact module = snapshot.backendModuleArtifact();
-        GpuBackendCompileOptions backendOptions = provenance.backendOptions();
-        String sourceSelection = backendOptions.properties().getOrDefault(
-                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY,
-                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_DESCRIPTOR
-        );
-        String productionSourceSwitching = backendOptions.properties().getOrDefault(
-                GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY,
-                GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED
-        );
-        String productionPromotionDecisionMode = backendOptions.productionPromotionDecisionMode();
-        boolean irGpuSourceRequested = backendOptions.requestsOpenClIrGpuSource();
-        boolean productionProfileRequested = GpuRuntimeProductionProfiles.isProductionProfile(provenance.optimizationProfile());
-        boolean productionSwitchingEnabled = backendOptions.enablesOpenClProductionSourceSwitching();
-        String status;
-        String decision;
-        String diagnostic;
-        if (!irGpuSourceRequested) {
-            status = "descriptor-default";
-            decision = "compile-descriptor-source";
-            diagnostic = "descriptor source remains selected because opencl.sourceSelection did not request IrGpu source";
-        } else if (!productionProfileRequested) {
-            status = "review-ready";
-            decision = "compile-irgpu-source-review";
-            diagnostic = "IrGpu source was explicitly selected for review or smoke validation";
-        } else if (productionSwitchingEnabled) {
-            status = "production-switch-enabled";
-            decision = "compile-irgpu-source-production";
-            diagnostic = "production source switching was explicitly enabled for a production-like profile";
-        } else {
-            status = "blocked";
-            decision = "reject-production-irgpu-source";
-            diagnostic = "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled";
-        }
-
-        StringBuilder builder = new StringBuilder();
-        builder.append("status=").append(status).append('\n');
-        builder.append("decision=").append(decision).append('\n');
-        builder.append("backendTarget=").append(module.backendTarget()).append('\n');
-        builder.append("backendFormat=").append(module.format()).append('\n');
-        builder.append("backendResource=").append(module.resource()).append('\n');
-        builder.append("sourceOrigin=").append(module.sourceOrigin()).append('\n');
-        builder.append("runtimeLoadMode=").append(module.runtimeLoadMode()).append('\n');
-        builder.append("optimizationProfile=").append(provenance.optimizationProfile()).append('\n');
-        builder.append("productionProfileRequested=").append(productionProfileRequested).append('\n');
-        builder.append("sourceSelection=").append(sourceSelection).append('\n');
-        builder.append("irGpuSourceRequested=").append(irGpuSourceRequested).append('\n');
-        builder.append("productionSourceSwitching=").append(productionSourceSwitching).append('\n');
-        builder.append("productionSourceSwitchingEnabled=").append(productionSwitchingEnabled).append('\n');
-        builder.append("productionPromotionDecisionMode=").append(productionPromotionDecisionMode).append('\n');
-        builder.append("diagnostic.count=1\n");
-        builder.append("diagnostic.0=").append(diagnostic).append('\n');
-        return builder.toString();
+        GpuBackendSourceReconstructionResult reconstruction = reconstructBackendSource(snapshot);
+        GpuBackendSourcePromotionGate sourcePromotionGate = sourcePromotionGate(snapshot, reconstruction);
+        return GpuBackendSourceSwitchingDecision.evaluate(
+                provenance,
+                module,
+                reconstruction,
+                sourcePromotionGate
+        ).toPropertiesText();
     }
 
     private static void appendBackendSourceSelectionSummary(

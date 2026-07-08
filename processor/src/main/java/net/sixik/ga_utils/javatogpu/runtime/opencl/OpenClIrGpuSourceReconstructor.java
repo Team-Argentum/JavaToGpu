@@ -9,8 +9,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 /**
  * OpenCL source reconstruction entrypoint.
  *
- * <p>This is intentionally non-mutating for now: it reports the same reconstruction decision used by
- * diagnostics, but does not synthesize OpenCL source until the IrGpu body payload is fully reconstructable.
+ * <p>This is still non-mutating with respect to runtime selection: production compilation keeps using the
+ * selected runtime source path, while this component can emit diagnostic OpenCL source when an IrGpu body
+ * payload has enough metadata to prove reconstruction behavior and parity.
  */
 public final class OpenClIrGpuSourceReconstructor implements GpuBackendSourceReconstructor {
 

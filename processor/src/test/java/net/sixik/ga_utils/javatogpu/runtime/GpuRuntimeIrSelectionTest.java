@@ -123,7 +123,56 @@ class GpuRuntimeIrSelectionTest {
         assertEquals("blocked", refreshed.runtimeIrSelection().productionIrGate().status());
         assertEquals("diagnostic-only", refreshed.runtimeIrSelection().productionIrGate().decisionMode());
         assertTrue(refreshed.runtimeIrSelection().productionIrGate().diagnostic().contains("vendor-tuned"));
-        assertEquals("optimized", refreshed.runtimeIrSelection().selectedStage());
+        assertEquals("original", refreshed.runtimeIrSelection().selectedStage());
+        assertTrue(refreshed.runtimeIrSelection().optimizedRejected());
+        assertEquals("production-ir-gate-blocked", refreshed.runtimeIrSelection().fallbackDecision());
+        assertTrue(refreshed.runtimeIrSelection().diagnostic().contains("production IR acceptance gate"));
+    }
+
+    @Test
+    void productionEnabledDecisionSelectsOptimizedArtifactWhenAllGatesPass() {
+        IrGpuArtifact original = artifact("body\n  return original\n");
+        IrGpuArtifact optimized = artifact("body\n  return optimized\n");
+        GpuRuntimeCompileRequest originalRequest = request(original);
+        GpuRuntimeCompileRequest optimizedRequest = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                        .withProductionPromotionDecision(productionEnabledDecision()),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeIrOptimizationReport report = new GpuRuntimeIrOptimizationReport(
+                Optional.of(optimized),
+                List.of(GpuRuntimeIrOptimizationPassReport.applied(
+                        "optimizer:production-safe",
+                        "irgpu:sha256:original",
+                        "irgpu:sha256:optimized",
+                        "proof:production-fixture",
+                        List.of("production fixture applied safe transform")
+                )),
+                productionBackedStrategy()
+        );
+        GpuBackendModuleArtifact backendArtifact = backendArtifact();
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                originalRequest,
+                optimizedRequest,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(optimizedRequest, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(optimizedRequest),
+                report,
+                GpuRuntimeEquivalenceEvidence.passed(optimizedRequest, 2, 2, List.of("production fixture equivalent"))
+        );
+
+        GpuRuntimeIrSelection selection = GpuRuntimeIrSelection.from(snapshot);
+
+        assertEquals(selection, snapshot.runtimeIrSelection());
+        assertEquals("accepted", snapshot.productionOptimizerGate().status());
+        assertEquals("production-enabled", selection.productionIrGate().status());
+        assertEquals(GpuProductionPromotionDecision.PRODUCTION_ENABLED, selection.productionIrGate().decisionMode());
+        assertEquals("optimized", selection.selectedStage());
+        assertTrue(selection.transformed());
+        assertFalse(selection.optimizedRejected());
+        assertEquals(GpuRuntimeCompileProvenance.NO_FALLBACK, selection.fallbackDecision());
     }
 
     private static GpuRuntimeCompileArtifactSnapshot snapshot(
@@ -183,6 +232,39 @@ class GpuRuntimeIrSelectionTest {
                 List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
                 "opencl",
                 "off"
+        );
+    }
+
+    private static GpuOptimizationStrategyDecision productionBackedStrategy() {
+        return new GpuOptimizationStrategyDecision(
+                "strategy:production-fixture",
+                "test-vendor",
+                "vendor-tuned",
+                false,
+                true,
+                "test fixture carries production evidence",
+                new GpuOptimizationVendorBaseline(
+                        "test-vendor",
+                        "production-fixture",
+                        true,
+                        true,
+                        "test-fixture",
+                        List.of("test fixture is promotion-eligible")
+                ),
+                List.of("production fixture is evidence-backed")
+        );
+    }
+
+    private static GpuProductionPromotionDecision productionEnabledDecision() {
+        return new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                "production-ready",
+                true,
+                true,
+                true,
+                "none",
+                "none",
+                "production fixture enables runtime IR mutation"
         );
     }
 }

@@ -23,6 +23,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
         GpuRuntimeFallbackEvidence fallbackEvidence,
         GpuRuntimeProductionOptimizerGate productionOptimizerGate,
         GpuRuntimeIrSelection runtimeIrSelection,
+        Optional<GpuBackendSourceSwitchingDecision> backendSourceSwitchingDecision,
+        Optional<GpuBackendSourcePromotionGate> backendSourcePromotionGate,
         List<IrGpuSourceLocation> sourceLocations,
         String compileLog,
         List<String> runtimeValidationEvidence
@@ -60,6 +62,12 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 productionOptimizerGate
         )
                 : runtimeIrSelection;
+        backendSourceSwitchingDecision = backendSourceSwitchingDecision == null
+                ? Optional.empty()
+                : backendSourceSwitchingDecision;
+        backendSourcePromotionGate = backendSourcePromotionGate == null
+                ? Optional.empty()
+                : backendSourcePromotionGate;
         sourceLocations = sourceLocations == null ? List.of() : List.copyOf(sourceLocations);
         compileLog = compileLog == null ? "" : compileLog;
         runtimeValidationEvidence = runtimeValidationEvidence == null
@@ -87,6 +95,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 GpuRuntimeFallbackEvidence.none(),
                 GpuRuntimeProductionOptimizerGate.evaluate("off", null, null, null),
                 null,
+                Optional.empty(),
+                Optional.empty(),
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -117,6 +127,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 GpuRuntimeFallbackEvidence.none(),
                 GpuRuntimeProductionOptimizerGate.evaluate("off", null, null, null),
                 null,
+                Optional.empty(),
+                Optional.empty(),
                 List.of(),
                 "",
                 List.of()
@@ -152,6 +164,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                         resolvedFallbackEvidence
                 ),
                 null,
+                Optional.empty(),
+                Optional.empty(),
                 collectSourceLocations(originalRequest, optimizedRequest),
                 "",
                 List.of()
@@ -344,6 +358,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 fallbackEvidence,
                 productionOptimizerGate,
                 runtimeIrSelection,
+                backendSourceSwitchingDecision,
+                backendSourcePromotionGate,
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -362,6 +378,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 fallbackEvidence,
                 productionOptimizerGate,
                 runtimeIrSelection,
+                backendSourceSwitchingDecision,
+                backendSourcePromotionGate,
                 sourceLocations,
                 compileLog,
                 evidence
@@ -381,6 +399,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 fallbackEvidence,
                 productionGate(resolvedProvenance, optimizationReport, runtimeEquivalenceEvidence, fallbackEvidence),
                 null,
+                Optional.empty(),
+                Optional.empty(),
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -399,6 +419,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 fallbackEvidence(report, runtimeEquivalenceEvidence),
                 productionGate(compileProvenance, report, runtimeEquivalenceEvidence, fallbackEvidence(report, runtimeEquivalenceEvidence)),
                 null,
+                Optional.empty(),
+                Optional.empty(),
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -417,6 +439,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 fallbackEvidence(optimizationReport, evidence),
                 productionGate(compileProvenance, optimizationReport, evidence, fallbackEvidence(optimizationReport, evidence)),
                 null,
+                Optional.empty(),
+                Optional.empty(),
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -435,6 +459,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 evidence,
                 productionGate(compileProvenance, optimizationReport, runtimeEquivalenceEvidence, evidence),
                 null,
+                Optional.empty(),
+                Optional.empty(),
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -453,6 +479,75 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 fallbackEvidence,
                 productionOptimizerGate,
                 selection,
+                backendSourceSwitchingDecision,
+                backendSourcePromotionGate,
+                sourceLocations,
+                compileLog,
+                runtimeValidationEvidence
+        );
+    }
+
+    public GpuRuntimeCompileArtifactSnapshot withBackendSourceSwitchingDecision(
+            GpuBackendSourceSwitchingDecision decision
+    ) {
+        return new GpuRuntimeCompileArtifactSnapshot(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                backendModuleArtifact,
+                invalidationStamp,
+                compileProvenance,
+                optimizationReport,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence,
+                productionOptimizerGate,
+                runtimeIrSelection,
+                Optional.ofNullable(decision),
+                backendSourcePromotionGate,
+                sourceLocations,
+                compileLog,
+                runtimeValidationEvidence
+        );
+    }
+
+    public GpuRuntimeCompileArtifactSnapshot withBackendSourceState(
+            GpuBackendSourcePromotionGate gate,
+            GpuBackendSourceSwitchingDecision decision
+    ) {
+        return new GpuRuntimeCompileArtifactSnapshot(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                backendModuleArtifact,
+                invalidationStamp,
+                compileProvenance,
+                optimizationReport,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence,
+                productionOptimizerGate,
+                runtimeIrSelection,
+                Optional.ofNullable(decision),
+                Optional.ofNullable(gate),
+                sourceLocations,
+                compileLog,
+                runtimeValidationEvidence
+        );
+    }
+
+    public GpuRuntimeCompileArtifactSnapshot withBackendSourcePromotionGate(
+            GpuBackendSourcePromotionGate gate
+    ) {
+        return new GpuRuntimeCompileArtifactSnapshot(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                backendModuleArtifact,
+                invalidationStamp,
+                compileProvenance,
+                optimizationReport,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence,
+                productionOptimizerGate,
+                runtimeIrSelection,
+                backendSourceSwitchingDecision,
+                Optional.ofNullable(gate),
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence

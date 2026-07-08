@@ -79,7 +79,7 @@ public record OpenClIrGpuSourceEmission(
         }
         assemblyResult.blockers().forEach(blocker -> add(blockers, blocker));
         diagnostics.addAll(assemblyResult.diagnostics());
-        diagnostics.add("OpenCL source emitter skeleton is present, but full source assembly is not complete yet");
+        diagnostics.add("OpenCL source assembly is blocked by missing IrGpu metadata or unsupported ir-text-v1 features");
         return blocked(blockers, diagnostics);
     }
 

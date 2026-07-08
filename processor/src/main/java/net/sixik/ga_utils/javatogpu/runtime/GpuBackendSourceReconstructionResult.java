@@ -10,6 +10,7 @@ import java.util.List;
 public record GpuBackendSourceReconstructionResult(
         GpuBackendTarget backendTarget,
         boolean attempted,
+        boolean ready,
         boolean reconstructed,
         String selectedSource,
         String payloadFormat,
@@ -43,6 +44,7 @@ public record GpuBackendSourceReconstructionResult(
                 backendTarget,
                 false,
                 false,
+                false,
                 selectedSource,
                 payloadFormat,
                 "",
@@ -65,12 +67,35 @@ public record GpuBackendSourceReconstructionResult(
                 backendTarget,
                 true,
                 false,
+                false,
                 selectedSource,
                 payloadFormat,
                 "",
                 selectedSource,
                 runtimeLoadMode,
                 blockers,
+                diagnostics
+        );
+    }
+
+    public static GpuBackendSourceReconstructionResult ready(
+            GpuBackendTarget backendTarget,
+            String selectedSource,
+            String payloadFormat,
+            String runtimeLoadMode,
+            List<String> diagnostics
+    ) {
+        return new GpuBackendSourceReconstructionResult(
+                backendTarget,
+                true,
+                true,
+                false,
+                selectedSource,
+                payloadFormat,
+                "",
+                selectedSource,
+                runtimeLoadMode,
+                List.of(),
                 diagnostics
         );
     }
@@ -85,6 +110,7 @@ public record GpuBackendSourceReconstructionResult(
     ) {
         return new GpuBackendSourceReconstructionResult(
                 backendTarget,
+                true,
                 true,
                 true,
                 selectedSource,
@@ -106,6 +132,8 @@ public record GpuBackendSourceReconstructionResult(
                 + backendTarget
                 + " attempted="
                 + attempted
+                + " ready="
+                + ready
                 + " reconstructed="
                 + reconstructed
                 + " selectedSource="
@@ -128,6 +156,7 @@ public record GpuBackendSourceReconstructionResult(
         StringBuilder builder = new StringBuilder();
         builder.append("backendTarget=").append(backendTarget).append('\n');
         builder.append("attempted=").append(attempted).append('\n');
+        builder.append("ready=").append(ready).append('\n');
         builder.append("reconstructed=").append(reconstructed).append('\n');
         builder.append("selectedSource=").append(selectedSource).append('\n');
         builder.append("payloadFormat=").append(payloadFormat).append('\n');

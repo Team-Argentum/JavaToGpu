@@ -151,6 +151,28 @@ class OpenClIrTextBodyEmitterTest {
     }
 
     @Test
+    void emitsPrivateArrayDeclarations() {
+        OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  private-array float scratch[4]
+                  set scratch[0] = input[0]
+                  set output[0] = scratch[0]
+                  return
+                """);
+
+        OpenClIrTextBodyEmissionResult emission = OpenClIrTextBodyEmitter.INSTANCE.emit(parseResult);
+
+        assertTrue(emission.emitted());
+        assertTrue(emission.blockers().isEmpty());
+        assertEquals("""
+                    float scratch[4];
+                    scratch[0] = input[0];
+                    output[0] = scratch[0];
+                    return;
+                """, emission.body());
+    }
+
+    @Test
     void emitsSimpleIfElseBlock() {
         OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
                 body

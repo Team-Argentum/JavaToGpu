@@ -26,6 +26,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
         int kernelCount = parseInt(properties.getProperty("kernel.count"));
         int i3ReviewReadyCount = parseInt(properties.getProperty("i3ReviewReady.count"));
         int i3BlockedCount = parseInt(properties.getProperty("i3Blocked.count"));
+        int i3SourceReadyCount = parseInt(properties.getProperty("i3SourceReady.count"));
         int blockerCount = parseInt(properties.getProperty("blocker.count"));
         boolean sourceSwitchingAllowed = propertyIsTrue(properties, "productionSourceSwitchingAllowed");
         boolean sourceSwitchingEnabled = propertyIsTrue(properties, "productionSourceSwitchingEnabled");
@@ -45,6 +46,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
                     kernelCount,
                     i3ReviewReadyCount,
                     i3BlockedCount,
+                    i3SourceReadyCount,
                     blockerCount,
                     sourceSwitchingAllowed,
                     sourceSwitchingEnabled,
@@ -71,6 +73,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
                 kernelCount,
                 i3ReviewReadyCount,
                 i3BlockedCount,
+                i3SourceReadyCount,
                 blockerCount,
                 sourceSwitchingAllowed,
                 sourceSwitchingEnabled,
@@ -84,6 +87,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
             int kernelCount,
             int i3ReviewReadyCount,
             int i3BlockedCount,
+            int i3SourceReadyCount,
             int blockerCount,
             boolean sourceSwitchingAllowed,
             boolean sourceSwitchingEnabled,
@@ -99,6 +103,9 @@ public final class GpuProductionPromotionExplainabilityValidation {
         }
         if (i3ReviewReadyCount != kernelCount || i3BlockedCount != 0) {
             violations.add("production-ready explainability does not have every workload kernel I3 review-ready");
+        }
+        if (i3SourceReadyCount != kernelCount) {
+            violations.add("production-ready explainability does not have every workload kernel source-ready");
         }
     }
 
@@ -136,6 +143,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
             int kernelCount,
             int i3ReviewReadyCount,
             int i3BlockedCount,
+            int i3SourceReadyCount,
             int blockerCount,
             boolean sourceSwitchingAllowed,
             boolean sourceSwitchingEnabled,
@@ -149,6 +157,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
             kernelCount = Math.max(0, kernelCount);
             i3ReviewReadyCount = Math.max(0, i3ReviewReadyCount);
             i3BlockedCount = Math.max(0, i3BlockedCount);
+            i3SourceReadyCount = Math.max(0, i3SourceReadyCount);
             blockerCount = Math.max(0, blockerCount);
             violations = violations == null ? List.of() : List.copyOf(violations);
         }
@@ -156,6 +165,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
         public String summary() {
             return "status=" + status
                     + ", kernels=" + kernelCount
+                    + ", sourceReady=" + i3SourceReadyCount
                     + ", blockers=" + blockerCount
                     + ", sourceSwitchingAllowed=" + sourceSwitchingAllowed
                     + ", mutationAllowed=" + mutationAllowed;

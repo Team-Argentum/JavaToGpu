@@ -424,6 +424,8 @@ public final class OpenClValidationReporter {
                 .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.selectedStage", "unknown")))
                 .append("`, productionMutation=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionMutationEnabled", "unknown")))
+                .append("`, sourceReady=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.sourceReady", "unknown")))
                 .append("`, i3=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.status", "unknown")))
                 .append("`\n");
@@ -451,6 +453,8 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.optimizationRequiresRollback", "unknown")))
                     .append("`, rejected=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.optimizedIrRejected", "unknown")))
+                    .append("`, fallback=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.fallbackDecision", "unknown")))
                     .append("`, first=`")
                     .append(sanitizeInline(runtimeIrHandoffDiagnostic))
                     .append("`\n");
@@ -477,6 +481,8 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.status", "unknown")))
                     .append("`, sourcePromotion=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.sourcePromotionStatus", "unknown")))
+                    .append("`, sourceReady=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.sourceReady", "unknown")))
                     .append("`, optimizerGate=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.optimizerProductionGateStatus", "unknown")))
                     .append("`, productionMutation=`")
@@ -664,16 +670,22 @@ public final class OpenClValidationReporter {
                     + "reviewReady.count=0\n"
                     + "blocked.count=0\n"
                     + "productionEnabled.count=0\n"
+                    + "sourceReady.count=0\n"
+                    + "sourceReady.all=false\n"
                     + "productionMutationEnabled=false\n"
                     + "diagnostic.0=backend source promotion workload gate was not recorded\n";
         }
         int kernelCount = parsePositiveInt(gate.getProperty("kernel.count", "0"));
         java.util.LinkedHashMap<String, Integer> statusCounts = new java.util.LinkedHashMap<>();
         boolean productionMutationEnabled = false;
+        int sourceReadyCount = 0;
         for (int index = 0; index < kernelCount; index++) {
             String prefix = "kernel." + index + ".";
             String status = normalizeI3ReadinessStatus(gate.getProperty(prefix + "i3Readiness.status", "unknown"));
             statusCounts.merge(status, 1, Integer::sum);
+            if ("true".equals(gate.getProperty(prefix + "i3Readiness.sourceReady", "false"))) {
+                sourceReadyCount++;
+            }
             productionMutationEnabled |= "true".equals(gate.getProperty(prefix + "i3Readiness.productionMutationEnabled", "false"));
         }
         int reviewReadyCount = statusCounts.getOrDefault("review-ready", 0);
@@ -693,6 +705,8 @@ public final class OpenClValidationReporter {
         builder.append("reviewReady.count=").append(reviewReadyCount).append('\n');
         builder.append("blocked.count=").append(blockedCount).append('\n');
         builder.append("productionEnabled.count=").append(productionEnabledCount).append('\n');
+        builder.append("sourceReady.count=").append(sourceReadyCount).append('\n');
+        builder.append("sourceReady.all=").append(kernelCount > 0 && sourceReadyCount == kernelCount).append('\n');
         builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
         builder.append("status.count=").append(statusCounts.size()).append('\n');
         int statusIndex = 0;
@@ -711,6 +725,7 @@ public final class OpenClValidationReporter {
             builder.append(prefix).append("optimizerDriftPassCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.count", "0")).append('\n');
             builder.append(prefix).append("optimizerDriftRolledBackCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
             builder.append(prefix).append("optimizerDriftFallbackDecision=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
+            builder.append(prefix).append("sourceReady=").append(gate.getProperty(prefix + "i3Readiness.sourceReady", "unknown")).append('\n');
             builder.append(prefix).append("sourcePromotionStatus=").append(gate.getProperty(prefix + "i3Readiness.sourcePromotionStatus", "unknown")).append('\n');
             builder.append(prefix).append("optimizerProductionGateStatus=").append(gate.getProperty(prefix + "i3Readiness.optimizerProductionGateStatus", "unknown")).append('\n');
             builder.append(prefix).append("productionMutationEnabled=").append(gate.getProperty(prefix + "i3Readiness.productionMutationEnabled", "unknown")).append('\n');
@@ -999,6 +1014,8 @@ public final class OpenClValidationReporter {
                     + summarizeFirstProductionPromotionBlocker(properties)
                     + ", i3ReviewReady=" + properties.getProperty("i3ReviewReady.count", "0")
                     + ", i3Blocked=" + properties.getProperty("i3Blocked.count", "0")
+                    + ", i3SourceReady=" + properties.getProperty("i3SourceReady.count", "0")
+                    + ", i3SourceReadyAll=" + properties.getProperty("i3SourceReady.all", "false")
                     + ")";
         } catch (Throwable failure) {
             return "failed to read";
@@ -1083,6 +1100,8 @@ public final class OpenClValidationReporter {
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.fallbackDecision", "unknown"))
                     .append(", productionMutation=")
                     .append(properties.getProperty("kernel." + index + ".runtimeProductionMutationSafety.productionMutationEnabled", "unknown"))
+                    .append(", sourceReady=")
+                    .append(properties.getProperty("kernel." + index + ".i3Readiness.sourceReady", "unknown"))
                     .append(", i3=")
                     .append(properties.getProperty("kernel." + index + ".i3Readiness.status", "unknown"))
                     .append(", families=")

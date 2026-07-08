@@ -23,14 +23,39 @@ class GpuBackendSourceReconstructionResultTest {
         );
 
         assertTrue(result.attempted());
+        assertFalse(result.ready());
         assertFalse(result.reconstructed());
         assertFalse(result.sourceAvailable());
         assertTrue(result.toLine().contains("selectedSource=derived-opencl-source"));
+        assertTrue(result.toLine().contains("ready=false"));
         assertTrue(result.toLine().contains("sourceAvailable=false"));
         assertTrue(result.toPropertiesText().contains("backendTarget=OPENCL"));
         assertTrue(result.toPropertiesText().contains("attempted=true"));
+        assertTrue(result.toPropertiesText().contains("ready=false"));
         assertTrue(result.toPropertiesText().contains("reconstructed=false"));
         assertTrue(result.toPropertiesText().contains("blocker.0=typed-body-regeneration-not-yet-available"));
+    }
+
+    @Test
+    void readyResultRecordsReconstructablePreviewWithoutSourcePayload() {
+        GpuBackendSourceReconstructionResult result = GpuBackendSourceReconstructionResult.ready(
+                GpuBackendTarget.OPENCL,
+                "irgpu-backend-neutral-source",
+                "ir-text-v1",
+                "opencl-irgpu-source-compile",
+                List.of("OpenCL source can be reconstructed from IrGpu when the runtime source path is enabled")
+        );
+
+        assertTrue(result.attempted());
+        assertTrue(result.ready());
+        assertFalse(result.reconstructed());
+        assertFalse(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertTrue(result.toLine().contains("ready=true"));
+        assertTrue(result.toLine().contains("reconstructed=false"));
+        assertTrue(result.toPropertiesText().contains("ready=true"));
+        assertTrue(result.toPropertiesText().contains("sourceAvailable=false"));
+        assertTrue(result.toPropertiesText().contains("diagnostic.0=OpenCL source can be reconstructed from IrGpu when the runtime source path is enabled"));
     }
 
     @Test
@@ -45,10 +70,13 @@ class GpuBackendSourceReconstructionResultTest {
         );
 
         assertTrue(result.attempted());
+        assertTrue(result.ready());
         assertTrue(result.reconstructed());
         assertTrue(result.sourceAvailable());
         assertTrue(result.toLine().contains("selectedSource=irgpu-backend-neutral-source"));
+        assertTrue(result.toLine().contains("ready=true"));
         assertTrue(result.toLine().contains("sourceAvailable=true"));
+        assertTrue(result.toPropertiesText().contains("ready=true"));
         assertTrue(result.toPropertiesText().contains("reconstructed=true"));
         assertTrue(result.toPropertiesText().contains("sourceOrigin=irgpu-backend-neutral-source"));
         assertTrue(result.toPropertiesText().contains("runtimeLoadMode=opencl-irgpu-source-compile"));

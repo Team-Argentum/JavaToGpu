@@ -19,6 +19,7 @@ public final class OpenClIrTextBodyEmitter {
     private static final String CAST_PREFIX = "cast<";
     private static final String INIT_PREFIX = "init<";
     private static final java.util.regex.Pattern VARIABLE = java.util.regex.Pattern.compile("^var\\s+(\\S+)\\s+(\\S+)\\s+=\\s+(.+)$");
+    private static final java.util.regex.Pattern PRIVATE_ARRAY = java.util.regex.Pattern.compile("^private-array\\s+(\\S+)\\s+(\\S+)\\[(.+)]$");
     private static final java.util.regex.Pattern ASSIGNMENT = java.util.regex.Pattern.compile("^set\\s+(.+?)\\s+=\\s+(.+)$");
 
     private OpenClIrTextBodyEmitter() {
@@ -51,6 +52,13 @@ public final class OpenClIrTextBodyEmitter {
                         .append(" = ")
                         .append(emitExpression(statement.expression()))
                         .append(";\n");
+                case PRIVATE_ARRAY -> builder.append(prefix)
+                        .append(emitType(statement.typeName()))
+                        .append(' ')
+                        .append(statement.target())
+                        .append('[')
+                        .append(emitExpression(statement.expression()))
+                        .append("];\n");
                 case ASSIGNMENT -> builder.append(prefix)
                         .append(statement.target())
                         .append(" = ")
@@ -137,6 +145,15 @@ public final class OpenClIrTextBodyEmitter {
         java.util.regex.Matcher variable = VARIABLE.matcher(trimmed);
         if (variable.matches()) {
             return emitType(variable.group(1)) + " " + variable.group(2) + " = " + emitExpression(variable.group(3));
+        }
+        java.util.regex.Matcher privateArray = PRIVATE_ARRAY.matcher(trimmed);
+        if (privateArray.matches()) {
+            return emitType(privateArray.group(1))
+                    + " "
+                    + privateArray.group(2)
+                    + "["
+                    + emitExpression(privateArray.group(3))
+                    + "]";
         }
         java.util.regex.Matcher assignment = ASSIGNMENT.matcher(trimmed);
         if (assignment.matches()) {

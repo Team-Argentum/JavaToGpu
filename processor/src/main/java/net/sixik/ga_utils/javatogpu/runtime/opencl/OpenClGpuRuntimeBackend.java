@@ -27,6 +27,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerers;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionGate;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingPolicy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeApiVersion;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
@@ -46,6 +49,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceExecutor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFallbackEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadGateFormatter;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
@@ -289,7 +293,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 moduleArtifact,
                 optimizerPipelineVersion()
         );
-        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = GpuRuntimeCompileArtifactSnapshot.from(
+        GpuRuntimeCompileArtifactSnapshot artifactSnapshotBase = GpuRuntimeCompileArtifactSnapshot.from(
                 compileRequest,
                 optimizedCompileRequest,
                 moduleArtifact,
@@ -297,6 +301,20 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 GpuRuntimeCompileProvenance.from(selectedCompileRequest),
                 optimizationResult.report(),
                 runtimeEquivalenceEvidence
+        );
+        GpuBackendSourcePromotionGate sourcePromotionGate = backendSourcePromotionGate(
+                selectedCompileRequest,
+                moduleArtifact,
+                runtimeEquivalenceEvidence,
+                artifactSnapshotBase.fallbackEvidence()
+        );
+        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = artifactSnapshotBase.withBackendSourceState(
+                sourcePromotionGate,
+                backendSourceSwitchingDecision(
+                        selectedCompileRequest,
+                        moduleArtifact,
+                        sourcePromotionGate
+                )
         );
         dumpBackendSourcePromotionWorkloadGate(artifactSnapshot);
         GpuRuntimeCompileCacheKey compileCacheKey = GpuRuntimeCompileCacheKey.from(
@@ -2372,7 +2390,93 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return compileKernelChecked(
                 compileRequest,
                 moduleArtifact,
-                GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact)
+                compileSnapshotWithSourcePromotion(
+                        compileRequest,
+                        moduleArtifact,
+                        GpuRuntimeEquivalenceEvidence.notRun(
+                                compileRequest,
+                                "runtime equivalence execution has not been wired for this compile request"
+                        ),
+                        GpuRuntimeFallbackEvidence.none()
+                )
+        );
+    }
+
+    private GpuRuntimeCompileArtifactSnapshot compileSnapshotWithSourcePromotion(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence,
+            GpuRuntimeFallbackEvidence fallbackEvidence
+    ) {
+        GpuBackendSourcePromotionGate promotionGate = backendSourcePromotionGate(
+                compileRequest,
+                moduleArtifact,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence
+        );
+        return GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact).withBackendSourceState(
+                promotionGate,
+                backendSourceSwitchingDecision(
+                        compileRequest,
+                        moduleArtifact,
+                        promotionGate
+                )
+        );
+    }
+
+    private GpuBackendSourcePromotionGate backendSourcePromotionGate(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence,
+            GpuRuntimeFallbackEvidence fallbackEvidence
+    ) {
+        GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                compileRequest.irGpuArtifact().orElse(null),
+                moduleArtifact.resource(),
+                moduleArtifact.source()
+        );
+        return GpuBackendSourcePromotionGate.evaluate(
+                reconstruction,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence
+        );
+    }
+
+    private GpuBackendSourceSwitchingDecision backendSourceSwitchingDecision(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuBackendSourcePromotionGate promotionGate
+    ) {
+        return GpuBackendSourceSwitchingDecision.evaluate(
+                GpuRuntimeCompileProvenance.from(compileRequest),
+                moduleArtifact,
+                reconstructionFromPromotionGate(moduleArtifact, promotionGate),
+                promotionGate,
+                GpuBackendSourceSwitchingPolicy.from(compileRequest.options().backendOptions())
+        );
+    }
+
+    private GpuBackendSourceReconstructionResult reconstructionFromPromotionGate(
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuBackendSourcePromotionGate promotionGate
+    ) {
+        if (!promotionGate.reconstructed()) {
+            return GpuBackendSourceReconstructionResult.blocked(
+                    moduleArtifact.backendTarget(),
+                    promotionGate.selectedSource(),
+                    promotionGate.payloadFormat(),
+                    promotionGate.runtimeLoadMode(),
+                    promotionGate.reconstructionBlockers(),
+                    promotionGate.reconstructionDiagnostics()
+            );
+        }
+        return GpuBackendSourceReconstructionResult.reconstructedSource(
+                moduleArtifact.backendTarget(),
+                moduleArtifact.source(),
+                promotionGate.selectedSource(),
+                promotionGate.payloadFormat(),
+                promotionGate.runtimeLoadMode(),
+                promotionGate.reconstructionDiagnostics()
         );
     }
 

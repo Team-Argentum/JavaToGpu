@@ -126,6 +126,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         Properties latestEntry = new Properties();
         copyGateProperty(latest, latestEntry, "status");
         copyGateProperty(latest, latestEntry, "reviewReady");
+        copyGateProperty(latest, latestEntry, "ready");
         copyGateProperty(latest, latestEntry, "reconstructed");
         copyGateProperty(latest, latestEntry, "sourceAvailable");
         copyGateProperty(latest, latestEntry, "sourceParityChecked");
@@ -337,6 +338,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             target.setProperty("i3Readiness.optimizedIrRejected", target.getProperty("runtimeIrHandoff.optimizedIrRejected", "false"));
             target.setProperty("i3Readiness.fallbackDecision", target.getProperty("runtimeIrHandoff.fallbackDecision", "none"));
             target.setProperty("i3Readiness.sourceReconstructed", target.getProperty("reconstructed", "unknown"));
+            target.setProperty("i3Readiness.sourceReady", target.getProperty("ready", "unknown"));
             target.setProperty("i3Readiness.sourceAvailable", target.getProperty("sourceAvailable", "unknown"));
             target.setProperty("i3Readiness.sourceParityChecked", target.getProperty("sourceParityChecked", "unknown"));
             target.setProperty("i3Readiness.sourceParityMatched", target.getProperty("sourceParityMatched", "unknown"));
@@ -365,6 +367,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyI3ReadinessSummaryProperty(source, target, "optimizedIrRejected");
         copyI3ReadinessSummaryProperty(source, target, "fallbackDecision");
         copyI3ReadinessSummaryProperty(source, target, "sourceReconstructed");
+        copyI3ReadinessSummaryProperty(source, target, "sourceReady");
         copyI3ReadinessSummaryProperty(source, target, "sourceAvailable");
         copyI3ReadinessSummaryProperty(source, target, "sourceParityChecked");
         copyI3ReadinessSummaryProperty(source, target, "sourceParityMatched");
@@ -479,6 +482,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("sourceKernelResource=").append(entry.getProperty("sourceKernelResource", "unknown")).append('\n');
         builder.append(prefix).append("status=").append(entry.getProperty("status", "unknown")).append('\n');
         builder.append(prefix).append("reviewReady=").append(entry.getProperty("reviewReady", "unknown")).append('\n');
+        builder.append(prefix).append("ready=").append(entry.getProperty("ready", "unknown")).append('\n');
         builder.append(prefix).append("reconstructed=").append(entry.getProperty("reconstructed", "unknown")).append('\n');
         builder.append(prefix).append("sourceAvailable=").append(entry.getProperty("sourceAvailable", "unknown")).append('\n');
         builder.append(prefix).append("sourceParityChecked=").append(entry.getProperty("sourceParityChecked", "unknown")).append('\n');
@@ -593,6 +597,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("i3Readiness.optimizedIrRejected=").append(entry.getProperty("i3Readiness.optimizedIrRejected", "unknown")).append('\n');
         builder.append(prefix).append("i3Readiness.fallbackDecision=").append(entry.getProperty("i3Readiness.fallbackDecision", "unknown")).append('\n');
         builder.append(prefix).append("i3Readiness.sourceReconstructed=").append(entry.getProperty("i3Readiness.sourceReconstructed", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.sourceReady=").append(entry.getProperty("i3Readiness.sourceReady", "unknown")).append('\n');
         builder.append(prefix).append("i3Readiness.sourceAvailable=").append(entry.getProperty("i3Readiness.sourceAvailable", "unknown")).append('\n');
         builder.append(prefix).append("i3Readiness.sourceParityChecked=").append(entry.getProperty("i3Readiness.sourceParityChecked", "unknown")).append('\n');
         builder.append(prefix).append("i3Readiness.sourceParityMatched=").append(entry.getProperty("i3Readiness.sourceParityMatched", "unknown")).append('\n');

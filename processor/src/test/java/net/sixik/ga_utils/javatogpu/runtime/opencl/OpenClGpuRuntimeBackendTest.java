@@ -28,16 +28,21 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadat
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationVendorBaseline;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -1027,6 +1032,12 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals("off", snapshot.compileProvenance().optimizationProfile());
         assertTrue(snapshot.compileProvenance().compileArgs().isEmpty());
         assertEquals("none", snapshot.compileProvenance().fallbackDecision());
+        assertTrue(snapshot.backendSourcePromotionGate().isPresent());
+        assertEquals("blocked", snapshot.backendSourcePromotionGate().orElseThrow().status());
+        assertTrue(snapshot.backendSourceSwitchingDecision().isPresent());
+        assertEquals("descriptor-default", snapshot.backendSourceSwitchingDecision().orElseThrow().status());
+        assertEquals("compile-descriptor-source", snapshot.backendSourceSwitchingDecision().orElseThrow().decision());
+        assertFalse(snapshot.backendSourceSwitchingDecision().orElseThrow().irGpuSourceRequested());
         assertEquals(1, snapshot.sourceLocations().size());
         assertEquals("java-source", snapshot.sourceLocations().get(0).sourceKind());
         assertEquals("kernel", snapshot.sourceLocations().get(0).methodName());
@@ -1502,6 +1513,168 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals("original", snapshot.runtimeIrSelection().selectedStage());
         assertEquals(originalIdentity, snapshot.runtimeIrSelection().selectedIdentity());
         assertTrue(snapshot.runtimeIrSelection().optimizedRejected());
+    }
+
+    @Test
+    void blockedProductionGateCompilesOriginalIrAfterSelectionFallback() throws Exception {
+        Path classpathRoot = Files.createTempDirectory("javatogpu-production-gate-blocked-resource");
+        Path artifactPath = classpathRoot.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        Files.createDirectories(artifactPath.getParent());
+        Files.writeString(artifactPath, irGpuArtifactProperties("return original"));
+        GpuKernelDescriptor descriptor = descriptorWithIrGpuResource();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        AtomicReference<GpuRuntimeCompileRequest> finalCompileRequest = new AtomicReference<>();
+
+        ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classpathRoot.toUri().toURL()}, previousClassLoader)) {
+            Thread.currentThread().setContextClassLoader(classLoader);
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected GpuRuntimeIrOptimizationResult optimizeRuntimeIrWithReport(GpuRuntimeCompileRequest compileRequest) {
+                    return optimizedRuntimeResult(compileRequest, "production blocked optimized body\n  return output[0] + 42\n", GpuOptimizationStrategyDecision.advisory(
+                            "strategy:blocked-production-fixture",
+                            "test-vendor",
+                            "vendor-tuned",
+                            "blocked production fixture remains advisory",
+                            GpuOptimizationVendorBaseline.missing("test-vendor"),
+                            List.of("production fixture is intentionally blocked")
+                    ));
+                }
+
+                @Override
+                protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
+                    return GpuRuntimeEquivalenceEvidence.passed(
+                            request.optimizedCompileRequest(),
+                            2,
+                            2,
+                            List.of("blocked production fixture remains equivalent")
+                    );
+                }
+
+                @Override
+                protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
+                    return GpuBackendModuleArtifact.openClSource(
+                            "__kernel void kernel(__global int* output) { output[0] = 2; }",
+                            "runtime/lowered/" + IrGpuArtifactIdentity.stableHash(compileRequest.irGpuArtifact().orElseThrow()) + ".cl",
+                            "test-lowerer-v1"
+                    );
+                }
+
+                @Override
+                protected OpenClCompiledKernel compileKernel(
+                        GpuRuntimeCompileRequest compileRequest,
+                        GpuBackendModuleArtifact moduleArtifact
+                ) {
+                    finalCompileRequest.set(compileRequest);
+                    return super.compileKernel(compileRequest, moduleArtifact);
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{new int[]{0}},
+                    GpuRuntimeCompileOptions.openCl(List.of(), "vendor-tuned")
+            ));
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousClassLoader);
+        }
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        String originalIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.originalIrGpuArtifact());
+        String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.optimizedIrGpuArtifact());
+        String finalCompileIdentity = IrGpuArtifactIdentity.stableIdentity(finalCompileRequest.get().irGpuArtifact());
+        assertNotEquals(originalIdentity, optimizedIdentity);
+        assertEquals(originalIdentity, finalCompileIdentity);
+        assertEquals("blocked", snapshot.productionOptimizerGate().status());
+        assertEquals("blocked", snapshot.runtimeIrSelection().productionIrGate().status());
+        assertEquals("production-ir-gate-blocked", snapshot.runtimeIrSelection().fallbackDecision());
+        assertEquals("original", snapshot.runtimeIrSelection().selectedStage());
+        assertTrue(snapshot.runtimeIrSelection().optimizedRejected());
+        assertTrue(snapshot.backendSourcePromotionGate().isPresent());
+        assertEquals("blocked", snapshot.backendSourcePromotionGate().orElseThrow().status());
+        assertTrue(snapshot.backendSourceSwitchingDecision().isPresent());
+        assertEquals("descriptor-default", snapshot.backendSourceSwitchingDecision().orElseThrow().status());
+        assertEquals("compile-descriptor-source", snapshot.backendSourceSwitchingDecision().orElseThrow().decision());
+    }
+
+    @Test
+    void productionEnabledGateCompilesOptimizedIrAfterSelection() throws Exception {
+        Path classpathRoot = Files.createTempDirectory("javatogpu-production-enabled-resource");
+        Path artifactPath = classpathRoot.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        Files.createDirectories(artifactPath.getParent());
+        Files.writeString(artifactPath, irGpuArtifactProperties("return original"));
+        GpuKernelDescriptor descriptor = descriptorWithIrGpuResource();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        AtomicReference<GpuRuntimeCompileRequest> finalCompileRequest = new AtomicReference<>();
+
+        ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classpathRoot.toUri().toURL()}, previousClassLoader)) {
+            Thread.currentThread().setContextClassLoader(classLoader);
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected GpuRuntimeIrOptimizationResult optimizeRuntimeIrWithReport(GpuRuntimeCompileRequest compileRequest) {
+                    return optimizedRuntimeResult(compileRequest, "production enabled optimized body\n  return output[0] + 42\n", productionBackedStrategyDecision());
+                }
+
+                @Override
+                protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
+                    return GpuRuntimeEquivalenceEvidence.passed(
+                            request.optimizedCompileRequest(),
+                            2,
+                            2,
+                            List.of("production enabled fixture remains equivalent")
+                    );
+                }
+
+                @Override
+                protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
+                    return GpuBackendModuleArtifact.openClSource(
+                            "__kernel void kernel(__global int* output) { output[0] = 2; }",
+                            "runtime/lowered/" + IrGpuArtifactIdentity.stableHash(compileRequest.irGpuArtifact().orElseThrow()) + ".cl",
+                            "test-lowerer-v1"
+                    );
+                }
+
+                @Override
+                protected OpenClCompiledKernel compileKernel(
+                        GpuRuntimeCompileRequest compileRequest,
+                        GpuBackendModuleArtifact moduleArtifact
+                ) {
+                    finalCompileRequest.set(compileRequest);
+                    return super.compileKernel(compileRequest, moduleArtifact);
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{new int[]{0}},
+                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                            .withProductionPromotionDecision(productionEnabledDecision())
+            ));
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousClassLoader);
+        }
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        String originalIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.originalIrGpuArtifact());
+        String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.optimizedIrGpuArtifact());
+        String finalCompileIdentity = IrGpuArtifactIdentity.stableIdentity(finalCompileRequest.get().irGpuArtifact());
+        assertNotEquals(originalIdentity, optimizedIdentity);
+        assertEquals(optimizedIdentity, finalCompileIdentity);
+        assertEquals("accepted", snapshot.productionOptimizerGate().status());
+        assertEquals("production-enabled", snapshot.runtimeIrSelection().productionIrGate().status());
+        assertEquals("optimized", snapshot.runtimeIrSelection().selectedStage());
+        assertFalse(snapshot.runtimeIrSelection().optimizedRejected());
+        assertEquals("none", snapshot.runtimeIrSelection().fallbackDecision());
+        assertTrue(snapshot.backendSourcePromotionGate().isPresent());
+        assertEquals("blocked", snapshot.backendSourcePromotionGate().orElseThrow().status());
+        assertTrue(snapshot.backendSourceSwitchingDecision().isPresent());
+        assertEquals("blocked", snapshot.backendSourceSwitchingDecision().orElseThrow().status());
+        assertEquals("reject-irgpu-source-unavailable", snapshot.backendSourceSwitchingDecision().orElseThrow().decision());
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().irGpuSourceRequested());
+        assertFalse(snapshot.backendSourceSwitchingDecision().orElseThrow().sourceReady());
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().productionProfileRequested());
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().productionSourceSwitchingEnabled());
     }
 
     @Test
@@ -3309,6 +3482,103 @@ class OpenClGpuRuntimeBackendTest {
                 java.util.List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
                 "opencl",
                 "off"
+        );
+    }
+
+    private static String irGpuArtifactProperties(String returnExpression) {
+        return """
+                # JavaToGpu backend-neutral IR artifact manifest
+                backendOutput.0.backend=opencl
+                backendOutput.0.format=opencl-c
+                backendOutput.0.kind=source
+                backendOutput.0.resource=javatogpu/sample/Demo/kernel.cl
+                backendOutput.count=1
+                compilerArtifact=JavaToGpu
+                derived.opencl.resource=javatogpu/sample/Demo/kernel.cl
+                entryEmittedName=jtg_kernel
+                entryMethod=kernel
+                format=javatogpu.irgpu.v1
+                helper.count=0
+                methodBody.0.body=method jtg_kernel source\\=kernel\\nhelpers -\\nbody\\n  %s\\n
+                methodBody.0.emittedName=jtg_kernel
+                methodBody.0.format=ir-text-v1
+                methodBody.0.helperDependency.count=0
+                methodBody.0.name=kernel
+                methodBody.0.role=entry
+                methodBody.count=1
+                runtime.defaultBackend=opencl
+                runtime.optimizationProfile=off
+                schemaVersion=1
+                sourceFrontend=java-source
+                struct.count=0
+                """.formatted(returnExpression);
+    }
+
+    private static GpuKernelDescriptor descriptorWithIrGpuResource() {
+        return new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.irgpu.properties",
+                java.util.List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+    }
+
+    private static OpenClGpuRuntimeBackend.GpuRuntimeIrOptimizationResult optimizedRuntimeResult(
+            GpuRuntimeCompileRequest compileRequest,
+            String optimizedBody,
+            GpuOptimizationStrategyDecision strategyDecision
+    ) {
+        IrGpuArtifact optimizedArtifact = testIrGpuArtifact(optimizedBody);
+        GpuRuntimeCompileRequest optimizedRequest = compileRequest.withIrGpuArtifact(java.util.Optional.of(optimizedArtifact));
+        String originalIdentity = IrGpuArtifactIdentity.stableIdentity(compileRequest.irGpuArtifact());
+        String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(optimizedRequest.irGpuArtifact());
+        return new OpenClGpuRuntimeBackend.GpuRuntimeIrOptimizationResult(
+                optimizedRequest,
+                new GpuRuntimeIrOptimizationReport(
+                        java.util.Optional.of(optimizedArtifact),
+                        List.of(GpuRuntimeIrOptimizationPassReport.applied(
+                                "test-runtime-optimizer",
+                                originalIdentity,
+                                optimizedIdentity,
+                                "test-proof",
+                                List.of("test optimizer supplied transformed IR")
+                        )),
+                        strategyDecision
+                )
+        );
+    }
+
+    private static GpuOptimizationStrategyDecision productionBackedStrategyDecision() {
+        return new GpuOptimizationStrategyDecision(
+                "strategy:production-fixture",
+                "test-vendor",
+                "vendor-tuned",
+                false,
+                true,
+                "test fixture carries production evidence",
+                new GpuOptimizationVendorBaseline(
+                        "test-vendor",
+                        "production-fixture",
+                        true,
+                        true,
+                        "test-fixture",
+                        List.of("test fixture is promotion-eligible")
+                ),
+                List.of("production fixture is evidence-backed")
+        );
+    }
+
+    private static GpuProductionPromotionDecision productionEnabledDecision() {
+        return new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                "production-ready",
+                true,
+                true,
+                true,
+                "none",
+                "none",
+                "production fixture enables runtime IR mutation"
         );
     }
 

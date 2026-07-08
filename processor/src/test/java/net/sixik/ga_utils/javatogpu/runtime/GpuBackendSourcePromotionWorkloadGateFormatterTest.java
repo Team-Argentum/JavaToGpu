@@ -47,6 +47,8 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.count"));
         assertEquals("kernel-a.cl", gate.getProperty("kernel.0.sourceKernelResource"));
         assertEquals("kernel-b.cl", gate.getProperty("kernel.1.sourceKernelResource"));
+        assertEquals("false", gate.getProperty("kernel.0.ready"));
+        assertEquals("false", gate.getProperty("kernel.0.i3Readiness.sourceReady"));
         assertEquals("not-recorded", gate.getProperty("kernel.0.sourceSwitching.decision"));
         assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitchingEnabled"));
         assertEquals("diagnostic-only", gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
@@ -214,10 +216,10 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 runtimeIrHandoffProperties(
                         "original",
                         "false",
+                        "false",
+                        "production-ir-gate-blocked",
                         "true",
-                        "optimizer-rollback",
-                        "true",
-                        "optimized IrGpu was rejected; original IrGpu remains selected for backend lowering"
+                        "optimized IrGpu was rejected by the production IR acceptance gate; original IrGpu remains selected"
                 ),
                 runtimeProductionMutationSafetyProperties(
                         "disabled",
@@ -239,9 +241,9 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 runtimeOptimizerDriftProperties(
                         "3",
                         "1",
+                        "0",
                         "1",
-                        "1",
-                        "optimizer-rollback",
+                        "production-ir-gate-blocked",
                         "original",
                         "true",
                         "vendor-tuned",
@@ -276,11 +278,11 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 gate.getProperty("kernel.0.runtimeIrHandoff.diagnostic.0")
         );
         assertEquals("original", gate.getProperty("kernel.1.runtimeIrHandoff.selectedStage"));
-        assertEquals("true", gate.getProperty("kernel.1.runtimeIrHandoff.optimizationRequiresRollback"));
-        assertEquals("optimizer-rollback", gate.getProperty("kernel.1.runtimeIrHandoff.fallbackDecision"));
+        assertEquals("false", gate.getProperty("kernel.1.runtimeIrHandoff.optimizationRequiresRollback"));
+        assertEquals("production-ir-gate-blocked", gate.getProperty("kernel.1.runtimeIrHandoff.fallbackDecision"));
         assertEquals("true", gate.getProperty("kernel.1.runtimeIrHandoff.optimizedIrRejected"));
         assertEquals(
-                "optimized IrGpu was rejected; original IrGpu remains selected for backend lowering",
+                "optimized IrGpu was rejected by the production IR acceptance gate; original IrGpu remains selected",
                 gate.getProperty("kernel.1.runtimeIrHandoff.diagnostic.0")
         );
         assertEquals("disabled", gate.getProperty("kernel.0.runtimeProductionMutationSafety.status"));
@@ -303,6 +305,8 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         );
         assertEquals("review-ready", gate.getProperty("kernel.0.i3Readiness.status"));
         assertEquals("optimized", gate.getProperty("kernel.0.i3Readiness.selectedRuntimeIrStage"));
+        assertEquals("false", gate.getProperty("kernel.0.ready"));
+        assertEquals("true", gate.getProperty("kernel.0.i3Readiness.sourceReady"));
         assertEquals("review-ready", gate.getProperty("kernel.0.i3Readiness.sourcePromotionStatus"));
         assertEquals("not-requested", gate.getProperty("kernel.0.i3Readiness.optimizerProductionGateStatus"));
         assertEquals("false", gate.getProperty("kernel.0.i3Readiness.productionMutationEnabled"));
@@ -333,8 +337,8 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("recorded", gate.getProperty("kernel.1.runtimeOptimizerDrift.status"));
         assertEquals("3", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.applied.count"));
-        assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.rolledBack.count"));
-        assertEquals("optimizer-rollback", gate.getProperty("kernel.1.runtimeOptimizerDrift.fallbackDecision"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.rolledBack.count"));
+        assertEquals("production-ir-gate-blocked", gate.getProperty("kernel.1.runtimeOptimizerDrift.fallbackDecision"));
         assertEquals("original", gate.getProperty("kernel.1.runtimeOptimizerDrift.selectedRuntimeIrStage"));
         assertEquals("true", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizedIrRejected"));
         assertEquals("vendor-tuned", gate.getProperty("kernel.1.runtimeOptimizerDrift.selectedProfile"));
@@ -357,6 +361,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         StringBuilder builder = new StringBuilder();
         builder.append("status=blocked\n");
         builder.append("reviewReady=false\n");
+        builder.append("ready=false\n");
         builder.append("reconstructed=false\n");
         builder.append("sourceAvailable=false\n");
         builder.append("sourceParityChecked=false\n");
@@ -495,6 +500,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "optimizedIrRejected=" + Boolean.toString("original".equals(selectedRuntimeIrStage)),
                 "fallbackDecision=" + ("original".equals(selectedRuntimeIrStage) ? "optimizer-rollback" : "none"),
                 "sourceReconstructed=" + sourcePromotionReviewReady,
+                "sourceReady=" + sourcePromotionReviewReady,
                 "sourceAvailable=true",
                 "sourceParityChecked=true",
                 "sourceParityMatched=" + sourcePromotionReviewReady,

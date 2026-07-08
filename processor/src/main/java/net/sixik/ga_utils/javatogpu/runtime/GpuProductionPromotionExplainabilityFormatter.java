@@ -39,7 +39,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         boolean productionMutationEnabled = "true".equals(readiness.getProperty("productionMutationEnabled", "false"));
         int i3ReviewReadyCount = parsePositiveInt(readiness.getProperty("reviewReady.count", "0"));
         int i3BlockedCount = parsePositiveInt(readiness.getProperty("blocked.count", Integer.toString(kernelCount)));
+        int i3SourceReadyCount = parsePositiveInt(readiness.getProperty("sourceReady.count", "0"));
         boolean allKernelsI3ReviewReady = kernelCount > 0 && i3ReviewReadyCount == kernelCount && i3BlockedCount == 0;
+        boolean allKernelsSourceReady = kernelCount > 0 && i3SourceReadyCount == kernelCount;
 
         List<String> blockers = new ArrayList<>();
         if (!gateReviewReady) {
@@ -53,6 +55,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         }
         if (!allKernelsI3ReviewReady) {
             blockers.add("i3-workload-readiness-not-review-ready");
+        }
+        if (!allKernelsSourceReady) {
+            blockers.add("i3-source-readiness-not-complete");
         }
         if (!productionSourceSwitchingEnabled) {
             blockers.add("production-source-switching-disabled");
@@ -71,6 +76,8 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("kernel.count=").append(kernelCount).append('\n');
         builder.append("i3ReviewReady.count=").append(i3ReviewReadyCount).append('\n');
         builder.append("i3Blocked.count=").append(i3BlockedCount).append('\n');
+        builder.append("i3SourceReady.count=").append(i3SourceReadyCount).append('\n');
+        builder.append("i3SourceReady.all=").append(allKernelsSourceReady).append('\n');
         builder.append("productionSourceSwitchingAllowed=").append(productionSourceSwitchingEnabled && blockers.isEmpty()).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
         builder.append("productionMutationAllowed=").append(productionMutationEnabled && blockers.isEmpty()).append('\n');

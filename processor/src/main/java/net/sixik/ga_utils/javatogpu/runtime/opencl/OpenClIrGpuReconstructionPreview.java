@@ -28,8 +28,6 @@ public record OpenClIrGpuReconstructionPreview(
         List<String> diagnostics
 ) {
 
-    private static final String SOURCE_PAYLOAD_NOT_GENERATED = "backend-source-payload-not-yet-generated";
-
     public OpenClIrGpuReconstructionPreview {
         selectedSource = normalize(selectedSource, "descriptor-opencl-source");
         payloadFormat = normalize(payloadFormat, "unknown");
@@ -181,17 +179,12 @@ public record OpenClIrGpuReconstructionPreview(
                     diagnostics
             );
         }
-        ArrayList<String> sourceBlockers = new ArrayList<>(blockers);
-        addBlocker(sourceBlockers, SOURCE_PAYLOAD_NOT_GENERATED);
-        ArrayList<String> sourceDiagnostics = new ArrayList<>(diagnostics);
-        sourceDiagnostics.add("OpenCL IrGpu metadata is reconstructable, but source payload emission is not implemented yet");
-        return GpuBackendSourceReconstructionResult.blocked(
+        return GpuBackendSourceReconstructionResult.ready(
                 GpuBackendTarget.OPENCL,
                 selectedSource,
                 payloadFormat,
                 runtimeLoadMode(),
-                sourceBlockers,
-                sourceDiagnostics
+                diagnostics
         );
     }
 
