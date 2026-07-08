@@ -7,6 +7,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeProductionProfiles;
 
 import java.util.Objects;
 
@@ -63,7 +64,7 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
     }
 
     private void validateProductionSourceSwitching(GpuRuntimeCompileRequest compileRequest) {
-        if (!isProductionProfile(compileRequest.options().optimizationProfile())) {
+        if (!GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile())) {
             return;
         }
         if (compileRequest.options().backendOptions().enablesOpenClProductionSourceSwitching()) {
@@ -136,11 +137,4 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
         return "opencl-source-compile";
     }
 
-    private boolean isProductionProfile(String optimizationProfile) {
-        String normalizedProfile = optimizationProfile == null ? "off" : optimizationProfile.toLowerCase(java.util.Locale.ROOT);
-        return normalizedProfile.equals("production")
-                || normalizedProfile.equals("vendor-tuned")
-                || normalizedProfile.equals("runtime-tuned")
-                || normalizedProfile.equals("prod");
-    }
 }

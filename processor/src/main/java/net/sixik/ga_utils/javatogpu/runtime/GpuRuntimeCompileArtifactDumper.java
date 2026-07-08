@@ -220,7 +220,7 @@ public final class GpuRuntimeCompileArtifactDumper {
                 GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED
         );
         boolean irGpuSourceRequested = backendOptions.requestsOpenClIrGpuSource();
-        boolean productionProfileRequested = isProductionProfile(provenance.optimizationProfile());
+        boolean productionProfileRequested = GpuRuntimeProductionProfiles.isProductionProfile(provenance.optimizationProfile());
         boolean productionSwitchingEnabled = backendOptions.enablesOpenClProductionSourceSwitching();
         String status;
         String decision;
@@ -327,11 +327,4 @@ public final class GpuRuntimeCompileArtifactDumper {
         ));
     }
 
-    private static boolean isProductionProfile(String optimizationProfile) {
-        String normalizedProfile = optimizationProfile == null ? "off" : optimizationProfile.toLowerCase(java.util.Locale.ROOT);
-        return normalizedProfile.equals("production")
-                || normalizedProfile.equals("vendor-tuned")
-                || normalizedProfile.equals("runtime-tuned")
-                || normalizedProfile.equals("prod");
-    }
 }

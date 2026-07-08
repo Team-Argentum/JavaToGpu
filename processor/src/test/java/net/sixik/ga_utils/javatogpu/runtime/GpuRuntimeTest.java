@@ -135,6 +135,18 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void productionProfileClassifierIsSharedAcrossRuntimeGates() {
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("production"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("prod"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("vendor-tuned"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("runtime-tuned"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("VENDOR-TUNED"));
+        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile("source-reconstruction-review"));
+        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile("fast"));
+        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile(null));
+    }
+
+    @Test
     void compileOptionsExposeBackendSpecificBucketsForFutureBackends() {
         GpuRuntimeCompileOptions cudaOptions = GpuRuntimeCompileOptions.cuda(
                 List.of("--use_fast_math", "--gpu-architecture=compute_89"),

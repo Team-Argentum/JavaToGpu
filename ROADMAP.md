@@ -360,6 +360,8 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
   `GpuBackendCompileOptions` now reserves `opencl.productionSourceSwitching` with values `disabled` and `enabled`. Production-like profiles (`production`, `vendor-tuned`, `runtime-tuned`, `prod`) cannot compile from reconstructed `IrGpu` source unless `opencl.sourceSelection=irgpu` and `opencl.productionSourceSwitching=enabled` are both set, keeping review/smoke tests separate from future production rollout.
 - [x] Add runtime dump evidence for backend source-switching decisions.
   Runtime artifact dumps now include `backend-source-switching-decision.properties`, which records the selected source mode, production-like profile detection, production source-switching flag, and the resulting decision (`compile-descriptor-source`, `compile-irgpu-source-review`, `compile-irgpu-source-production`, or `reject-production-irgpu-source`). This keeps production rollout explanations separate from optimizer gates and workload promotion gates.
+- [x] Centralize production-like runtime profile detection.
+  `GpuRuntimeProductionProfiles` now owns the production profile classifier used by the OpenCL lowerer, backend source-switching dumps, and production optimizer gate, so future rollout profile names do not drift across runtime guards.
 
 #### I3.3 Backend lowering boundary
 

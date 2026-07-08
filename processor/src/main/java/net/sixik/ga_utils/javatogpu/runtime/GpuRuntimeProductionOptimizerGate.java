@@ -2,7 +2,6 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -74,7 +73,7 @@ public record GpuRuntimeProductionOptimizerGate(
             GpuRuntimeFallbackEvidence fallbackEvidence
     ) {
         String profile = normalize(optimizationProfile, "off");
-        boolean productionRequested = isProductionProfile(profile);
+        boolean productionRequested = GpuRuntimeProductionProfiles.isProductionProfile(profile);
         GpuRuntimeEquivalenceEvidence equivalence = runtimeEquivalenceEvidence;
         GpuRuntimeFallbackEvidence fallback = fallbackEvidence == null ? GpuRuntimeFallbackEvidence.none() : fallbackEvidence;
         GpuRuntimeIrOptimizationReport report = optimizationReport == null
@@ -179,14 +178,6 @@ public record GpuRuntimeProductionOptimizerGate(
                 + rollbackClean
                 + " diagnostics="
                 + String.join(" | ", diagnostics);
-    }
-
-    private static boolean isProductionProfile(String profile) {
-        String normalizedProfile = normalize(profile, "off").toLowerCase(Locale.ROOT);
-        return normalizedProfile.equals("production")
-                || normalizedProfile.equals("vendor-tuned")
-                || normalizedProfile.equals("runtime-tuned")
-                || normalizedProfile.equals("prod");
     }
 
     private static String normalize(String value, String fallback) {

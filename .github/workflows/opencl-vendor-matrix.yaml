@@ -71,13 +71,19 @@ jobs:
           cache: gradle
 
       - name: Print runner and GPU context
-        shell: cmd
+        shell: powershell
         run: |
-          echo Runner: %RUNNER_NAME%
-          echo Expected vendor: %JTG_VALIDATION_VENDOR%
-          echo Expected device: %JTG_VALIDATION_DEVICE%
-          where git
-          wmic path win32_VideoController get Name,AdapterCompatibility,DriverVersion
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "Expected vendor: $env:JTG_VALIDATION_VENDOR"
+          Write-Host "Expected device: $env:JTG_VALIDATION_DEVICE"
+          Get-Command git -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.Source }
+          try {
+            Get-CimInstance Win32_VideoController |
+              Select-Object Name, AdapterCompatibility, DriverVersion |
+              Format-Table -AutoSize
+          } catch {
+            Write-Warning "Unable to query Win32_VideoController: $($_.Exception.Message)"
+          }
 
       - name: OpenCL validation routine
         id: opencl_validation
