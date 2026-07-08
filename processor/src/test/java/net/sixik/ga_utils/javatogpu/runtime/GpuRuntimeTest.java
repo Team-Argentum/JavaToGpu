@@ -90,6 +90,51 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void compileOptionsExposeOptInOpenClIrGpuSourceSelection() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClIrGpuSource(
+                List.of("-cl-fast-relaxed-math"),
+                "source-reconstruction-review"
+        );
+
+        assertEquals(GpuBackendTarget.OPENCL, options.backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.compileArgs());
+        assertEquals(GpuBackendTarget.OPENCL, options.backendOptions().backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.backendOptions().flags());
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU,
+                options.backendOptions().properties().get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY)
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertEquals("source-reconstruction-review", options.optimizationProfile());
+    }
+
+    @Test
+    void compileOptionsExposeExplicitOpenClProductionSourceSwitching() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClProductionIrGpuSource(
+                List.of("-cl-fast-relaxed-math"),
+                "vendor-tuned"
+        );
+
+        assertEquals(GpuBackendTarget.OPENCL, options.backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.compileArgs());
+        assertEquals(GpuBackendTarget.OPENCL, options.backendOptions().backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.backendOptions().flags());
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU,
+                options.backendOptions().properties().get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY)
+        );
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED,
+                options.backendOptions().properties().get(
+                        GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
+                )
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertTrue(options.backendOptions().enablesOpenClProductionSourceSwitching());
+        assertEquals("vendor-tuned", options.optimizationProfile());
+    }
+
+    @Test
     void compileOptionsExposeBackendSpecificBucketsForFutureBackends() {
         GpuRuntimeCompileOptions cudaOptions = GpuRuntimeCompileOptions.cuda(
                 List.of("--use_fast_math", "--gpu-architecture=compute_89"),

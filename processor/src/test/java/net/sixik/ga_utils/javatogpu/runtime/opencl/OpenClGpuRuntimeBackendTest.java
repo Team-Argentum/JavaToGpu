@@ -27,6 +27,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
@@ -600,6 +601,111 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals(0, capabilityLookups.get());
         assertTrue(exception.getMessage().contains("Unsupported OpenCL compile option"));
         assertTrue(exception.getMessage().contains("--cuda-fast-math"));
+    }
+
+    @Test
+    void rejectsUnsupportedOpenClSourceSelectionBeforeRuntimeCapabilityLookup() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                java.util.List.of(),
+                "diagnostic",
+                GpuBackendCompileOptions.openCl(
+                        java.util.List.of(),
+                        java.util.Map.of(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY, "compiled-binary")
+                )
+        );
+        AtomicInteger capabilityLookups = new AtomicInteger();
+
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                capabilityLookups.incrementAndGet();
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(GpuRuntimeCompileRequest compileRequest) {
+                return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:test");
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                // no-op
+            }
+        };
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}, compileOptions))
+        );
+
+        assertEquals(0, capabilityLookups.get());
+        assertTrue(exception.getMessage().contains("Unsupported OpenCL source selection compile option"));
+        assertTrue(exception.getMessage().contains("compiled-binary"));
+        assertTrue(exception.getMessage().contains(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_DESCRIPTOR));
+        assertTrue(exception.getMessage().contains(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU));
+    }
+
+    @Test
+    void rejectsUnsupportedOpenClProductionSourceSwitchingBeforeRuntimeCapabilityLookup() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                java.util.List.of(),
+                "diagnostic",
+                GpuBackendCompileOptions.openCl(
+                        java.util.List.of(),
+                        java.util.Map.of(
+                                GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY,
+                                "auto"
+                        )
+                )
+        );
+        AtomicInteger capabilityLookups = new AtomicInteger();
+
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                capabilityLookups.incrementAndGet();
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(GpuRuntimeCompileRequest compileRequest) {
+                return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:test");
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                // no-op
+            }
+        };
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}, compileOptions))
+        );
+
+        assertEquals(0, capabilityLookups.get());
+        assertTrue(exception.getMessage().contains("Unsupported OpenCL production source switching compile option"));
+        assertTrue(exception.getMessage().contains("auto"));
+        assertTrue(exception.getMessage().contains(GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED));
+        assertTrue(exception.getMessage().contains(GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED));
     }
 
     @Test

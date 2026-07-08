@@ -133,6 +133,24 @@ class OpenClIrTextBodyEmitterTest {
     }
 
     @Test
+    void emitsExpressionStatementsAsOpenClCalls() {
+        OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  expr intrinsic(write_imagef template="write_imagef({0}, {1}, {2})" args=[outputImage, coords, init<float4>(1.0f, 0.5f, 0.25f, 1.0f)])
+                  return
+                """);
+
+        OpenClIrTextBodyEmissionResult emission = OpenClIrTextBodyEmitter.INSTANCE.emit(parseResult);
+
+        assertTrue(emission.emitted());
+        assertTrue(emission.blockers().isEmpty());
+        assertEquals("""
+                    write_imagef(outputImage, coords, (float4)(1.0f, 0.5f, 0.25f, 1.0f));
+                    return;
+                """, emission.body());
+    }
+
+    @Test
     void emitsSimpleIfElseBlock() {
         OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
                 body

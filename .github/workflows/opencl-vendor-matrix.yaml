@@ -3,9 +3,7 @@ name: OpenCL Vendor Matrix
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+
   pull_request:
 
 permissions:
@@ -22,19 +20,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - vendor: amd
-            vendor_name: AMD
-            device_name: RX 7800 XT
-            artifact_suffix: amd-rx7800xt
-            runner_labels: [self-hosted, Windows, X64, amd, rx7800xt]
-            routine_task: :processor:openClOperationalRoutine
+#          - vendor: amd
+#            vendor_name: AMD
+#            device_name: RX 7800 XT
+#            artifact_suffix: amd-rx7800xt
+#            runner_labels: [self-hosted, Windows, X64, amd, rx7800xt]
+#            routine_task: :processor:openClOperationalRoutine
 
-          - vendor: nvidia
-            vendor_name: NVIDIA
-            device_name: RTX 5070
-            artifact_suffix: nvidia-rtx5070
-            runner_labels: [self-hosted, Windows, X64, nvidia, rtx5070]
-            routine_task: :processor:openClNvidiaRoutine
+#          - vendor: nvidia
+#            vendor_name: NVIDIA
+#            device_name: RTX 5070
+#            artifact_suffix: nvidia-rtx5070
+#            runner_labels: [self-hosted, Windows, X64, nvidia, rtx5070]
+#            routine_task: :processor:openClNvidiaRoutine
+
+            - vendor: nvidia
+              vendor_name: NVIDIA
+              device_name: RTX 3060
+              artifact_suffix: nvidia-rtx3060
+              runner_labels: [self-hosted, Windows, X64, nvidia, rtx3060]
+              routine_task: :processor:openClNvidiaRoutine
 
     runs-on: ${{ matrix.runner_labels }}
     timeout-minutes: 90

@@ -116,6 +116,16 @@ public final class OpenClIrTextBodyParser {
                     index + 1
             );
         }
+        if (line.startsWith("expr ")) {
+            return ParseStatementResult.parsed(
+                    OpenClIrTextStatement.expressionStatement(lineNumber, line.substring("expr ".length())),
+                    index + 1
+            );
+        }
+        if (line.equals("expr")) {
+            blockers.add("ir-text-line-" + lineNumber + "-expr-empty");
+            return ParseStatementResult.unparsed(index + 1);
+        }
         if (line.equals("return")) {
             return ParseStatementResult.parsed(OpenClIrTextStatement.returnStatement(lineNumber, ""), index + 1);
         }

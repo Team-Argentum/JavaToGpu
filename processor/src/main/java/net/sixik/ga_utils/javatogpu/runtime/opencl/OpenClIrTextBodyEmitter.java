@@ -17,6 +17,7 @@ public final class OpenClIrTextBodyEmitter {
     private static final String INTRINSIC_PREFIX = "intrinsic(";
     private static final String HELPER_PREFIX = "helper(";
     private static final String CAST_PREFIX = "cast<";
+    private static final String INIT_PREFIX = "init<";
     private static final java.util.regex.Pattern VARIABLE = java.util.regex.Pattern.compile("^var\\s+(\\S+)\\s+(\\S+)\\s+=\\s+(.+)$");
     private static final java.util.regex.Pattern ASSIGNMENT = java.util.regex.Pattern.compile("^set\\s+(.+?)\\s+=\\s+(.+)$");
 
@@ -53,6 +54,9 @@ public final class OpenClIrTextBodyEmitter {
                 case ASSIGNMENT -> builder.append(prefix)
                         .append(statement.target())
                         .append(" = ")
+                        .append(emitExpression(statement.expression()))
+                        .append(";\n");
+                case EXPRESSION -> builder.append(prefix)
                         .append(emitExpression(statement.expression()))
                         .append(";\n");
                 case RETURN -> emitReturn(builder, statement, prefix);
@@ -177,7 +181,44 @@ public final class OpenClIrTextBodyEmitter {
         if (expression == null || expression.isBlank()) {
             return "";
         }
-        return emitCastExpressions(emitHelperExpressions(emitIntrinsicExpressions(expression)));
+        return emitCastExpressions(emitInitExpressions(emitHelperExpressions(emitIntrinsicExpressions(expression))));
+    }
+
+    private static String emitInitExpressions(String expression) {
+        StringBuilder builder = new StringBuilder();
+        int index = 0;
+        while (index < expression.length()) {
+            int initStart = expression.indexOf(INIT_PREFIX, index);
+            if (initStart < 0) {
+                builder.append(expression, index, expression.length());
+                break;
+            }
+            builder.append(expression, index, initStart);
+            int typeEnd = expression.indexOf(">(", initStart + INIT_PREFIX.length());
+            if (typeEnd < 0) {
+                builder.append(expression, initStart, expression.length());
+                break;
+            }
+            int openParen = typeEnd + 1;
+            int initEnd = matchingCloseParen(expression, openParen);
+            if (initEnd < 0) {
+                builder.append(expression, initStart, expression.length());
+                break;
+            }
+            String typeName = expression.substring(initStart + INIT_PREFIX.length(), typeEnd).trim();
+            String argsText = expression.substring(openParen + 1, initEnd);
+            java.util.ArrayList<String> emittedArgs = new java.util.ArrayList<>();
+            for (String arg : splitTopLevel(argsText)) {
+                emittedArgs.add(emitExpression(arg.trim()));
+            }
+            builder.append('(')
+                    .append(emitType(typeName))
+                    .append(")(")
+                    .append(String.join(", ", emittedArgs))
+                    .append(')');
+            index = initEnd + 1;
+        }
+        return builder.toString();
     }
 
     private static String emitCastExpressions(String expression) {

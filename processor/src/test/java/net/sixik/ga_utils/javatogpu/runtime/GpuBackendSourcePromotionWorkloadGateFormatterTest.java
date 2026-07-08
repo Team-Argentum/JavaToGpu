@@ -43,9 +43,12 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("runtime-snapshot", gate.getProperty("realWorkloadEvidence"));
         assertEquals("real-workload", gate.getProperty("scope"));
         assertEquals("false", gate.getProperty("productionSourceSwitching"));
+        assertEquals("2", gate.getProperty("sourceSwitching.count"));
         assertEquals("2", gate.getProperty("kernel.count"));
         assertEquals("kernel-a.cl", gate.getProperty("kernel.0.sourceKernelResource"));
         assertEquals("kernel-b.cl", gate.getProperty("kernel.1.sourceKernelResource"));
+        assertEquals("not-recorded", gate.getProperty("kernel.0.sourceSwitching.decision"));
+        assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitchingEnabled"));
         assertEquals("not-run", gate.getProperty("kernel.0.runtimeEquivalence.status"));
         assertEquals("false", gate.getProperty("kernel.0.runtimeEquivalence.executed"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeEquivalence.diagnostic.count"));
@@ -106,6 +109,60 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         );
     }
 
+    @Test
+    void mergesSourceSwitchingDecisionEvidencePerKernel() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        writeGate(gateFile, GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-a.cl",
+                blockedGateProperties(
+                        "backend source must be reconstructed from IrGpu before promotion review"
+                ),
+                sourceSwitchingDecisionProperties(
+                        "review-ready",
+                        "compile-irgpu-source-review",
+                        "source-reconstruction-review",
+                        "false",
+                        "disabled",
+                        "false",
+                        "IrGpu source was explicitly selected for review or smoke validation"
+                )
+        ));
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-b.cl",
+                blockedGateProperties(
+                        "runtime equivalence must execute and pass before backend source promotion"
+                ),
+                sourceSwitchingDecisionProperties(
+                        "blocked",
+                        "reject-production-irgpu-source",
+                        "vendor-tuned",
+                        "true",
+                        "disabled",
+                        "false",
+                        "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled"
+                )
+        ));
+
+        assertEquals("2", gate.getProperty("sourceSwitching.count"));
+        assertEquals("compile-irgpu-source-review", gate.getProperty("kernel.0.sourceSwitching.decision"));
+        assertEquals("source-reconstruction-review", gate.getProperty("kernel.0.sourceSwitching.optimizationProfile"));
+        assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionProfileRequested"));
+        assertEquals("disabled", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitching"));
+        assertEquals("blocked", gate.getProperty("kernel.1.sourceSwitching.status"));
+        assertEquals("reject-production-irgpu-source", gate.getProperty("kernel.1.sourceSwitching.decision"));
+        assertEquals("vendor-tuned", gate.getProperty("kernel.1.sourceSwitching.optimizationProfile"));
+        assertEquals("true", gate.getProperty("kernel.1.sourceSwitching.productionProfileRequested"));
+        assertEquals("false", gate.getProperty("kernel.1.sourceSwitching.productionSourceSwitchingEnabled"));
+        assertEquals(
+                "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled",
+                gate.getProperty("kernel.1.sourceSwitching.diagnostic.0")
+        );
+    }
+
     private static void writeGate(Path gateFile, String properties) throws IOException {
         Files.writeString(gateFile, properties, StandardCharsets.UTF_8);
     }
@@ -147,5 +204,34 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
             builder.append("diagnostic.").append(index).append('=').append(diagnostics[index]).append('\n');
         }
         return builder.toString();
+    }
+
+    private static String sourceSwitchingDecisionProperties(
+            String status,
+            String decision,
+            String optimizationProfile,
+            String productionProfileRequested,
+            String productionSourceSwitching,
+            String productionSourceSwitchingEnabled,
+            String diagnostic
+    ) {
+        return String.join("\n",
+                "status=" + status,
+                "decision=" + decision,
+                "backendTarget=OPENCL",
+                "backendFormat=opencl-c",
+                "backendResource=kernel.cl",
+                "sourceOrigin=irgpu-backend-neutral-source",
+                "runtimeLoadMode=opencl-irgpu-source-compile",
+                "optimizationProfile=" + optimizationProfile,
+                "productionProfileRequested=" + productionProfileRequested,
+                "sourceSelection=irgpu",
+                "irGpuSourceRequested=true",
+                "productionSourceSwitching=" + productionSourceSwitching,
+                "productionSourceSwitchingEnabled=" + productionSourceSwitchingEnabled,
+                "diagnostic.count=1",
+                "diagnostic.0=" + diagnostic,
+                ""
+        );
     }
 }

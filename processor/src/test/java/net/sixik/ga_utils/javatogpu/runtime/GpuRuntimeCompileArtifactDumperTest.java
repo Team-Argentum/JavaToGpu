@@ -192,6 +192,12 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reconstructed=false"));
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("runtimeEquivalencePassed=false"));
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("fallbackClean=true"));
+        assertTrue(dump.hasArtifact("backend-source-switching-decision.properties"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("status=descriptor-default"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("decision=compile-descriptor-source"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=descriptor"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("irGpuSourceRequested=false"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendTarget=OPENCL"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendResource=runtime/lowered/kernel.cl"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("sourceLocation.count=1"));
@@ -330,6 +336,126 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("reconstructed=false"));
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("sourceParityChecked=false"));
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("runtimeEquivalencePassed=false"));
+    }
+
+    @Test
+    void dumpRecordsBackendSourceSwitchingReviewDecision() {
+        IrGpuArtifact optimized = artifact(
+                "body\n  return ready\n",
+                IrGpuRegenerationMetadata.backendNeutralReady()
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 2; }",
+                "javatogpu/sample/Demo/kernel.cl#irgpu-reconstructed",
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimized))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("status=review-ready"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("decision=compile-irgpu-source-review"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("optimizationProfile=source-reconstruction-review"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionProfileRequested=false"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=irgpu"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("irGpuSourceRequested=true"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
+    }
+
+    @Test
+    void dumpRecordsBackendSourceSwitchingProductionDecision() {
+        IrGpuArtifact optimized = artifact(
+                "body\n  return ready\n",
+                IrGpuRegenerationMetadata.backendNeutralReady()
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 2; }",
+                "javatogpu/sample/Demo/kernel.cl#irgpu-reconstructed",
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimized))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("status=production-switch-enabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("decision=compile-irgpu-source-production"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("optimizationProfile=vendor-tuned"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionProfileRequested=true"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=irgpu"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=enabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitchingEnabled=true"));
+    }
+
+    @Test
+    void dumpRecordsBackendSourceSwitchingBlockedProductionDecision() {
+        IrGpuArtifact optimized = artifact(
+                "body\n  return ready\n",
+                IrGpuRegenerationMetadata.backendNeutralReady()
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 2; }",
+                "javatogpu/sample/Demo/kernel.cl#irgpu-reconstructed",
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "vendor-tuned"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimized))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("status=blocked"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("decision=reject-production-irgpu-source"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("optimizationProfile=vendor-tuned"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionProfileRequested=true"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=irgpu"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitchingEnabled=false"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
+                "diagnostic.0=production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled"
+        ));
     }
 
     @Test

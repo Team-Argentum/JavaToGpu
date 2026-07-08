@@ -49,6 +49,27 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    public static GpuRuntimeCompileOptions openClIrGpuSource(List<String> compileArgs, String optimizationProfile) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                compileArgs,
+                optimizationProfile,
+                GpuBackendCompileOptions.openClIrGpuSource(compileArgs)
+        );
+    }
+
+    public static GpuRuntimeCompileOptions openClProductionIrGpuSource(
+            List<String> compileArgs,
+            String optimizationProfile
+    ) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                compileArgs,
+                optimizationProfile,
+                GpuBackendCompileOptions.openClProductionIrGpuSource(compileArgs)
+        );
+    }
+
     public static GpuRuntimeCompileOptions cuda(
             List<String> nvrtcOptions,
             Map<String, String> properties,

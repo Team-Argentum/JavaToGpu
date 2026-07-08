@@ -23,6 +23,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerers;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
@@ -2296,6 +2297,38 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + "; pass OpenCL backend options or select a matching runtime backend"
             );
         }
+        String sourceSelection = compileOptions.backendOptions()
+                .properties()
+                .get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY);
+        if (sourceSelection != null
+                && !GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_DESCRIPTOR.equals(sourceSelection)
+                && !GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU.equals(sourceSelection)) {
+            throw new IllegalArgumentException(
+                    "Unsupported OpenCL source selection compile option '"
+                            + sourceSelection
+                            + "'; supported values are '"
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_DESCRIPTOR
+                            + "' and '"
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU
+                            + "'"
+            );
+        }
+        String productionSourceSwitching = compileOptions.backendOptions()
+                .properties()
+                .get(GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY);
+        if (productionSourceSwitching != null
+                && !GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED.equals(productionSourceSwitching)
+                && !GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED.equals(productionSourceSwitching)) {
+            throw new IllegalArgumentException(
+                    "Unsupported OpenCL production source switching compile option '"
+                            + productionSourceSwitching
+                            + "'; supported values are '"
+                            + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED
+                            + "' and '"
+                            + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
+                            + "'"
+            );
+        }
         OpenClCompileOptionValidator.toBuildOptions(compileOptions.compileArgs());
     }
 
@@ -2409,7 +2442,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             String gateProperties = GpuBackendSourcePromotionWorkloadGateFormatter.merge(
                     path,
                     artifactSnapshot.backendModuleArtifact().resource(),
-                    dump.artifact("backend-source-promotion-gate.properties")
+                    dump.artifact("backend-source-promotion-gate.properties"),
+                    dump.artifact("backend-source-switching-decision.properties")
             );
             java.nio.file.Files.writeString(path, gateProperties, java.nio.charset.StandardCharsets.UTF_8);
         } catch (RuntimeException | java.io.IOException exception) {

@@ -21,7 +21,17 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     }
 
     public static String merge(Path path, String sourceKernelResource, String latestGateProperties) throws IOException {
+        return merge(path, sourceKernelResource, latestGateProperties, "");
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties
+    ) throws IOException {
         Properties latest = loadProperties(latestGateProperties);
+        Properties latestSourceSwitchingDecision = loadProperties(latestSourceSwitchingDecisionProperties);
         Properties existing = new Properties();
         if (Files.exists(path)) {
             try (InputStream inputStream = Files.newInputStream(path)) {
@@ -56,6 +66,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyGateProperty(latest, latestEntry, "selectedSource");
         copyGateProperty(latest, latestEntry, "payloadFormat");
         copyGateProperty(latest, latestEntry, "runtimeLoadMode");
+        copySourceSwitchingDecisionProperties(latestSourceSwitchingDecision, latestEntry);
         copyIndexedProperties(latest, latestEntry, "runtimeEquivalence.diagnostic");
         copyIndexedProperties(latest, latestEntry, "reconstruction.blocker");
         copyIndexedProperties(latest, latestEntry, "reconstruction.diagnostic");
@@ -118,6 +129,46 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         }
     }
 
+    private static void copySourceSwitchingDecisionProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("sourceSwitching.status", "not-recorded");
+            target.setProperty("sourceSwitching.decision", "not-recorded");
+            target.setProperty("sourceSwitching.productionProfileRequested", "unknown");
+            target.setProperty("sourceSwitching.sourceSelection", "unknown");
+            target.setProperty("sourceSwitching.irGpuSourceRequested", "unknown");
+            target.setProperty("sourceSwitching.productionSourceSwitching", "false");
+            target.setProperty("sourceSwitching.productionSourceSwitchingEnabled", "false");
+            target.setProperty("sourceSwitching.diagnostic.count", "0");
+            return;
+        }
+        copySourceSwitchingProperty(source, target, "status");
+        copySourceSwitchingProperty(source, target, "decision");
+        copySourceSwitchingProperty(source, target, "optimizationProfile");
+        copySourceSwitchingProperty(source, target, "productionProfileRequested");
+        copySourceSwitchingProperty(source, target, "sourceSelection");
+        copySourceSwitchingProperty(source, target, "irGpuSourceRequested");
+        copySourceSwitchingProperty(source, target, "productionSourceSwitching");
+        copySourceSwitchingProperty(source, target, "productionSourceSwitchingEnabled");
+        copyIndexedProperties(source, target, "sourceSwitching.diagnostic", "diagnostic");
+    }
+
+    private static void copySourceSwitchingProperty(Properties source, Properties target, String key) {
+        target.setProperty("sourceSwitching." + key, source.getProperty(key, "unknown"));
+    }
+
+    private static void copyIndexedProperties(
+            Properties source,
+            Properties target,
+            String targetKeyPrefix,
+            String sourceKeyPrefix
+    ) {
+        int count = parsePositiveInt(source.getProperty(sourceKeyPrefix + ".count", "0"));
+        target.setProperty(targetKeyPrefix + ".count", Integer.toString(count));
+        for (int index = 0; index < count; index++) {
+            target.setProperty(targetKeyPrefix + "." + index, source.getProperty(sourceKeyPrefix + "." + index, "unknown"));
+        }
+    }
+
     private static String format(LinkedHashMap<String, Properties> kernels) {
         boolean anyReviewReady = kernels.values().stream()
                 .anyMatch(entry -> "true".equals(entry.getProperty("reviewReady")));
@@ -134,6 +185,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append("realWorkloadEvidence=runtime-snapshot\n");
         builder.append("scope=real-workload\n");
         builder.append("productionSourceSwitching=false\n");
+        builder.append("sourceSwitching.count=").append(kernels.size()).append('\n');
         builder.append("kernel.count=").append(kernels.size()).append('\n');
         builder.append("blockerFamily.count=").append(aggregateFamilies.size()).append('\n');
         int familyIndex = 0;
@@ -175,6 +227,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("runtimeLoadMode=").append(entry.getProperty("runtimeLoadMode", "unknown")).append('\n');
         builder.append(prefix).append("realWorkloadEvidence=").append(entry.getProperty("realWorkloadEvidence", "runtime-snapshot")).append('\n');
         builder.append(prefix).append("productionSourceSwitching=false\n");
+        appendSourceSwitchingDecision(builder, prefix, entry);
         appendIndexedProperties(builder, prefix, entry, "runtimeEquivalence.diagnostic");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.blocker");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.diagnostic");
@@ -204,6 +257,18 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
                     .append(entry.getProperty("blockerFamily." + familyIndex + ".count", "0"))
                     .append('\n');
         }
+    }
+
+    private static void appendSourceSwitchingDecision(StringBuilder builder, String prefix, Properties entry) {
+        builder.append(prefix).append("sourceSwitching.status=").append(entry.getProperty("sourceSwitching.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("sourceSwitching.decision=").append(entry.getProperty("sourceSwitching.decision", "not-recorded")).append('\n');
+        builder.append(prefix).append("sourceSwitching.optimizationProfile=").append(entry.getProperty("sourceSwitching.optimizationProfile", "unknown")).append('\n');
+        builder.append(prefix).append("sourceSwitching.productionProfileRequested=").append(entry.getProperty("sourceSwitching.productionProfileRequested", "unknown")).append('\n');
+        builder.append(prefix).append("sourceSwitching.sourceSelection=").append(entry.getProperty("sourceSwitching.sourceSelection", "unknown")).append('\n');
+        builder.append(prefix).append("sourceSwitching.irGpuSourceRequested=").append(entry.getProperty("sourceSwitching.irGpuSourceRequested", "unknown")).append('\n');
+        builder.append(prefix).append("sourceSwitching.productionSourceSwitching=").append(entry.getProperty("sourceSwitching.productionSourceSwitching", "false")).append('\n');
+        builder.append(prefix).append("sourceSwitching.productionSourceSwitchingEnabled=").append(entry.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false")).append('\n');
+        appendIndexedProperties(builder, prefix, entry, "sourceSwitching.diagnostic");
     }
 
     private static void appendIndexedProperties(

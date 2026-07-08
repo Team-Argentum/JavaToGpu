@@ -15,6 +15,13 @@ public record GpuBackendCompileOptions(
         Map<String, String> properties
 ) {
 
+    public static final String OPENCL_SOURCE_SELECTION_PROPERTY = "opencl.sourceSelection";
+    public static final String OPENCL_SOURCE_SELECTION_DESCRIPTOR = "descriptor";
+    public static final String OPENCL_SOURCE_SELECTION_IRGPU = "irgpu";
+    public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY = "opencl.productionSourceSwitching";
+    public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED = "disabled";
+    public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED = "enabled";
+
     public GpuBackendCompileOptions {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
         flags = flags == null ? List.of() : List.copyOf(flags);
@@ -27,6 +34,29 @@ public record GpuBackendCompileOptions(
 
     public static GpuBackendCompileOptions openCl(List<String> compileArgs) {
         return new GpuBackendCompileOptions(GpuBackendTarget.OPENCL, compileArgs, Map.of());
+    }
+
+    public static GpuBackendCompileOptions openCl(List<String> compileArgs, Map<String, String> properties) {
+        return new GpuBackendCompileOptions(GpuBackendTarget.OPENCL, compileArgs, properties);
+    }
+
+    public static GpuBackendCompileOptions openClIrGpuSource(List<String> compileArgs) {
+        return openCl(
+                compileArgs,
+                Map.of(OPENCL_SOURCE_SELECTION_PROPERTY, OPENCL_SOURCE_SELECTION_IRGPU)
+        );
+    }
+
+    public static GpuBackendCompileOptions openClProductionIrGpuSource(List<String> compileArgs) {
+        return openCl(
+                compileArgs,
+                Map.of(
+                        OPENCL_SOURCE_SELECTION_PROPERTY,
+                        OPENCL_SOURCE_SELECTION_IRGPU,
+                        OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY,
+                        OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
+                )
+        );
     }
 
     public static GpuBackendCompileOptions cuda(List<String> nvrtcOptions, Map<String, String> properties) {
@@ -43,6 +73,18 @@ public record GpuBackendCompileOptions(
 
     public boolean empty() {
         return flags.isEmpty() && properties.isEmpty();
+    }
+
+    public boolean requestsOpenClIrGpuSource() {
+        return backendTarget == GpuBackendTarget.OPENCL
+                && OPENCL_SOURCE_SELECTION_IRGPU.equals(properties.get(OPENCL_SOURCE_SELECTION_PROPERTY));
+    }
+
+    public boolean enablesOpenClProductionSourceSwitching() {
+        return backendTarget == GpuBackendTarget.OPENCL
+                && OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED.equals(
+                properties.get(OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY)
+        );
     }
 
     public Map<String, String> stableProperties() {

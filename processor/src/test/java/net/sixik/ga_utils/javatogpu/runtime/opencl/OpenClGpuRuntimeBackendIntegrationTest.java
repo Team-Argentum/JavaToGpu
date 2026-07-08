@@ -29,6 +29,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -56,6 +57,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String LONG_RUNNING_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.longRunningSummaryFile";
     private static final String WORKLOAD_VALIDATION_PROPERTY = "javatogpu.opencl.workloadValidation";
     private static final String WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.workloadSummaryFile";
+    private static final String IMAGE_KERNEL_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/image-kernel.irgpu.properties";
+    private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
 
     @Test
     void runsGeneratedLauncherHelperPipelineOnAvailableOpenClDevice() throws Exception {
@@ -1035,6 +1038,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                             output[id] = pixel.x + pixel.y + pixel.z + pixel.w;
                             write_imagef(outputImage, coords, (float4)(1.0f, 0.5f, 0.25f, 1.0f));
                         }""",
+                IMAGE_KERNEL_IRGPU_RESOURCE,
                 java.util.List.of(
                         new GpuKernelParameterDescriptor("inputImage", "Image2DReadOnly", GpuKernelParameterAccess.VALUE),
                         new GpuKernelParameterDescriptor("outputImage", "Image2DWriteOnly", GpuKernelParameterAccess.VALUE),
@@ -1150,6 +1154,39 @@ class OpenClGpuRuntimeBackendIntegrationTest {
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
             backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{input, 2.5f, output}));
+        }
+
+        assertArrayEquals(new float[]{3.5f, 4.5f, 5.5f, 6.5f}, output);
+    }
+
+    @Test
+    void runsSimpleKernelFromOptInIrGpuSourceOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_irgpu_entry",
+                "inline://integration/simple-irgpu-source-kernel.cl",
+                """
+                        __kernel void gpu_irgpu_entry(__global const float* input, float scale, __global float* output) {
+                            int id = get_global_id(0);
+                            output[id] = input[id] + scale;
+                        }""",
+                SIMPLE_IRGPU_SOURCE_RESOURCE,
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scale", "float", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        float[] input = new float[]{1.0f, 2.0f, 3.0f, 4.0f};
+        float[] output = new float[]{0.0f, 0.0f, 0.0f, 0.0f};
+
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{input, 2.5f, output},
+                    GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review")
+            ));
         }
 
         assertArrayEquals(new float[]{3.5f, 4.5f, 5.5f, 6.5f}, output);

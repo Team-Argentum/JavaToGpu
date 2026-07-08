@@ -383,6 +383,7 @@ class OpenClValidationReportTest {
                 "sourceParityMatched=false",
                 "runtimeEquivalencePassed=false",
                 "realWorkloadEvidence=runtime-snapshot",
+                "sourceSwitching.count=2",
                 "blockerFamily.count=3",
                 "blockerFamily.0.name=reconstruction",
                 "blockerFamily.0.count=1",
@@ -395,6 +396,16 @@ class OpenClValidationReportTest {
                 "kernel.0.status=blocked",
                 "kernel.0.sourceParityMatched=false",
                 "kernel.0.runtimeEquivalencePassed=false",
+                "kernel.0.sourceSwitching.status=review-ready",
+                "kernel.0.sourceSwitching.decision=compile-irgpu-source-review",
+                "kernel.0.sourceSwitching.optimizationProfile=source-reconstruction-review",
+                "kernel.0.sourceSwitching.productionProfileRequested=false",
+                "kernel.0.sourceSwitching.sourceSelection=irgpu",
+                "kernel.0.sourceSwitching.irGpuSourceRequested=true",
+                "kernel.0.sourceSwitching.productionSourceSwitching=disabled",
+                "kernel.0.sourceSwitching.productionSourceSwitchingEnabled=false",
+                "kernel.0.sourceSwitching.diagnostic.count=1",
+                "kernel.0.sourceSwitching.diagnostic.0=IrGpu source was explicitly selected for review or smoke validation",
                 "kernel.0.reconstruction.blocker.count=1",
                 "kernel.0.reconstruction.blocker.0=irgpu-artifact-missing",
                 "kernel.0.reconstruction.diagnostic.count=1",
@@ -411,6 +422,16 @@ class OpenClValidationReportTest {
                 "kernel.1.status=blocked",
                 "kernel.1.sourceParityMatched=false",
                 "kernel.1.runtimeEquivalencePassed=false",
+                "kernel.1.sourceSwitching.status=blocked",
+                "kernel.1.sourceSwitching.decision=reject-production-irgpu-source",
+                "kernel.1.sourceSwitching.optimizationProfile=vendor-tuned",
+                "kernel.1.sourceSwitching.productionProfileRequested=true",
+                "kernel.1.sourceSwitching.sourceSelection=irgpu",
+                "kernel.1.sourceSwitching.irGpuSourceRequested=true",
+                "kernel.1.sourceSwitching.productionSourceSwitching=disabled",
+                "kernel.1.sourceSwitching.productionSourceSwitchingEnabled=false",
+                "kernel.1.sourceSwitching.diagnostic.count=1",
+                "kernel.1.sourceSwitching.diagnostic.0=production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled",
                 "kernel.1.diagnostic.count=1",
                 "kernel.1.diagnostic.0=reconstructed source must match descriptor source before promotion review",
                 "kernel.1.blockerFamily.count=1",
@@ -432,21 +453,25 @@ class OpenClValidationReportTest {
             String reportMarkdown = java.nio.file.Files.readString(reportFile);
             java.util.List<OpenClValidationHistoryEntry> entries = OpenClValidationHistoryIO.readAll(historyFile);
             assertTrue(reportMarkdown.contains("- Real workload evidence: `runtime-snapshot`"));
+            assertTrue(reportMarkdown.contains("- Source switching decisions: `compile-irgpu-source-review=1, reject-production-irgpu-source=1`"));
             assertTrue(reportMarkdown.contains("- Blocker families: `reconstruction=1, runtime-equivalence=1, source-parity=1`"));
             assertTrue(reportMarkdown.contains("- Kernel evidence count: `2`"));
-            assertTrue(reportMarkdown.contains("- Kernel `0`: `inline://integration/image-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0`: `inline://integration/image-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`compile-irgpu-source-review`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` source switching: status=`review-ready`, profile=`source-reconstruction-review`, first=`IrGpu source was explicitly selected for review or smoke validation`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` diagnostics: `2`; first=`backend source must be reconstructed from IrGpu before promotion review`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` reconstruction blockers: `1`; first=`irgpu-artifact-missing`"));
             assertTrue(reportMarkdown.contains("- Kernel blocker families: `reconstruction=1, runtime-equivalence=1`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1`: `inline://integration/perlin-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1`: `inline://integration/perlin-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1` source switching: status=`blocked`, profile=`vendor-tuned`, first=`production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` diagnostics: `1`; first=`reconstructed source must match descriptor source before promotion review`"));
             assertTrue(reportMarkdown.contains("- Kernel blocker families: `source-parity=1`"));
             assertTrue(reportMarkdown.contains("real workload runtime snapshot captured before source promotion"));
             assertEquals(1, entries.size());
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("realWorkloadEvidence=runtime-snapshot"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourceSwitching=compile-irgpu-source-review=1, reject-production-irgpu-source=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernelCount=2"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=2, families=reconstruction=1, runtime-equivalence=1]"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, families=source-parity=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=2, sourceSwitching=compile-irgpu-source-review, families=reconstruction=1, runtime-equivalence=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source, families=source-parity=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("productionSourceSwitching=disabled"));
         } finally {
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);

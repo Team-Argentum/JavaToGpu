@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
@@ -48,9 +49,64 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
         }
         GpuBackendSourceReconstructionResult sourceReconstructionResult = OpenClIrGpuSourceReconstructor.INSTANCE
                 .reconstruct(compileRequest);
+        if (compileRequest.options().backendOptions().requestsOpenClIrGpuSource()) {
+            validateProductionSourceSwitching(compileRequest);
+            return lowerIrGpuSource(compileRequest, sourceReconstructionResult);
+        }
         return GpuBackendModuleArtifact.openClSource(
                 compileRequest.descriptor().kernelSource(),
                 compileRequest.descriptor().kernelResource(),
+                VERSION,
+                sourceReconstructionResult.sourceOrigin(),
+                sourceReconstructionResult.runtimeLoadMode()
+        );
+    }
+
+    private void validateProductionSourceSwitching(GpuRuntimeCompileRequest compileRequest) {
+        if (!isProductionProfile(compileRequest.options().optimizationProfile())) {
+            return;
+        }
+        if (compileRequest.options().backendOptions().enablesOpenClProductionSourceSwitching()) {
+            return;
+        }
+        throw new IllegalStateException(
+                "OpenCL IrGpu source compilation was requested for production-like optimization profile '"
+                        + compileRequest.options().optimizationProfile()
+                        + "', but production source switching is disabled; pass backend option "
+                        + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
+                        + "="
+                        + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
+                        + " only after A1/A2 promotion evidence is accepted"
+        );
+    }
+
+    private GpuBackendModuleArtifact lowerIrGpuSource(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendSourceReconstructionResult sourceReconstructionResult
+    ) {
+        if (!sourceReconstructionResult.reconstructed() || !sourceReconstructionResult.sourceAvailable()) {
+            throw new IllegalStateException(
+                    "OpenCL IrGpu source compilation was requested with backend option "
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY
+                            + "="
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU
+                            + ", but reconstructed source is not available: "
+                            + sourceReconstructionResult.toLine()
+            );
+        }
+        if (!sourceReconstructionResult.diagnostics().contains("sourceParity.matched=true")) {
+            throw new IllegalStateException(
+                    "OpenCL IrGpu source compilation was requested with backend option "
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY
+                            + "="
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU
+                            + ", but reconstructed source parity has not matched descriptor source: "
+                            + sourceReconstructionResult.toLine()
+            );
+        }
+        return GpuBackendModuleArtifact.openClSource(
+                sourceReconstructionResult.source(),
+                compileRequest.descriptor().kernelResource() + "#irgpu-reconstructed",
                 VERSION,
                 sourceReconstructionResult.sourceOrigin(),
                 sourceReconstructionResult.runtimeLoadMode()
@@ -78,5 +134,13 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
             return "opencl-descriptor-source-compile";
         }
         return "opencl-source-compile";
+    }
+
+    private boolean isProductionProfile(String optimizationProfile) {
+        String normalizedProfile = optimizationProfile == null ? "off" : optimizationProfile.toLowerCase(java.util.Locale.ROOT);
+        return normalizedProfile.equals("production")
+                || normalizedProfile.equals("vendor-tuned")
+                || normalizedProfile.equals("runtime-tuned")
+                || normalizedProfile.equals("prod");
     }
 }

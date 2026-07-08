@@ -36,6 +36,10 @@ public record OpenClIrTextStatement(
         return new OpenClIrTextStatement(Kind.ASSIGNMENT, lineNumber, "", target, expression, List.of(), List.of(), List.of());
     }
 
+    public static OpenClIrTextStatement expressionStatement(int lineNumber, String expression) {
+        return new OpenClIrTextStatement(Kind.EXPRESSION, lineNumber, "", "", expression, List.of(), List.of(), List.of());
+    }
+
     public static OpenClIrTextStatement returnStatement(int lineNumber, String expression) {
         return new OpenClIrTextStatement(Kind.RETURN, lineNumber, "", "", expression, List.of(), List.of(), List.of());
     }
@@ -94,6 +98,7 @@ public record OpenClIrTextStatement(
     public enum Kind {
         VARIABLE,
         ASSIGNMENT,
+        EXPRESSION,
         RETURN,
         IF,
         FOR,

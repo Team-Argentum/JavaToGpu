@@ -67,6 +67,25 @@ class OpenClIrTextBodyParserTest {
     }
 
     @Test
+    void parsesExpressionStatements() {
+        OpenClIrTextBodyParseResult result = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  expr intrinsic(write_imagef template="write_imagef({0}, {1}, {2})" args=[outputImage, coords, init<float4>(1.0f, 0.5f, 0.25f, 1.0f)])
+                  return
+                """);
+
+        assertTrue(result.parsed());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(2, result.statements().size());
+        assertEquals(OpenClIrTextStatement.Kind.EXPRESSION, result.statements().get(0).kind());
+        assertEquals(
+                "intrinsic(write_imagef template=\"write_imagef({0}, {1}, {2})\" args=[outputImage, coords, init<float4>(1.0f, 0.5f, 0.25f, 1.0f)])",
+                result.statements().get(0).expression()
+        );
+        assertEquals(OpenClIrTextStatement.Kind.RETURN, result.statements().get(1).kind());
+    }
+
+    @Test
     void parsesSimpleSwitchBlocks() {
         OpenClIrTextBodyParseResult result = OpenClIrTextBodyParser.INSTANCE.parse("""
                 body

@@ -248,6 +248,7 @@ public final class OpenClValidationReporter {
             markdown.append("- Source parity matched: `").append(sanitizeInline(properties.getProperty("sourceParityMatched", "unknown"))).append("`\n");
             markdown.append("- Runtime equivalence passed: `").append(sanitizeInline(properties.getProperty("runtimeEquivalencePassed", "unknown"))).append("`\n");
             markdown.append("- Real workload evidence: `").append(sanitizeInline(properties.getProperty("realWorkloadEvidence", "not-wired"))).append("`\n");
+            appendBackendSourceSwitchingSummary(markdown, properties);
             appendBackendSourcePromotionWorkloadFamilySummary(markdown, properties, "");
             int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
             if (kernelCount > 0) {
@@ -293,7 +294,21 @@ public final class OpenClValidationReporter {
                 .append(sanitizeInline(properties.getProperty(prefix + "sourceParityMatched", "unknown")))
                 .append("`, runtimeEquivalence=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "runtimeEquivalencePassed", "unknown")))
+                .append("`, sourceSwitching=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.decision", "not-recorded")))
                 .append("`\n");
+        String sourceSwitchingDiagnostic = properties.getProperty(prefix + "sourceSwitching.diagnostic.0", "");
+        if (!sourceSwitchingDiagnostic.isBlank()) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` source switching: status=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.status", "not-recorded")))
+                    .append("`, profile=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.optimizationProfile", "unknown")))
+                    .append("`, first=`")
+                    .append(sanitizeInline(sourceSwitchingDiagnostic))
+                    .append("`\n");
+        }
         int diagnosticCount = parsePositiveInt(properties.getProperty(prefix + "diagnostic.count", "0"));
         if (diagnosticCount > 0) {
             markdown.append("- Kernel `")
@@ -315,6 +330,17 @@ public final class OpenClValidationReporter {
                     .append("`\n");
         }
         appendBackendSourcePromotionWorkloadFamilySummary(markdown, properties, prefix);
+    }
+
+    private static void appendBackendSourceSwitchingSummary(
+            StringBuilder markdown,
+            java.util.Properties properties
+    ) {
+        String summary = summarizeSourceSwitchingDecisions(properties);
+        if (summary.isBlank()) {
+            return;
+        }
+        markdown.append("- Source switching decisions: `").append(sanitizeInline(summary)).append("`\n");
     }
 
     private static void appendBackendSourcePromotionWorkloadFamilySummary(
@@ -562,6 +588,7 @@ public final class OpenClValidationReporter {
                     + ", sourceParityMatched=" + properties.getProperty("sourceParityMatched", "unknown")
                     + ", runtimeEquivalencePassed=" + properties.getProperty("runtimeEquivalencePassed", "unknown")
                     + ", realWorkloadEvidence=" + properties.getProperty("realWorkloadEvidence", "not-wired")
+                    + summarizeSourceSwitchingEvidence(properties)
                     + summarizeKernelEvidence(properties)
                     + summarizeSourceKernelResource(properties)
                     + ", productionSourceSwitching=disabled)";
@@ -573,6 +600,37 @@ public final class OpenClValidationReporter {
     private static String summarizeSourceKernelResource(java.util.Properties properties) {
         String sourceKernelResource = properties.getProperty("sourceKernelResource", "");
         return sourceKernelResource.isBlank() ? "" : ", sourceKernelResource=" + sourceKernelResource;
+    }
+
+    private static String summarizeSourceSwitchingEvidence(java.util.Properties properties) {
+        String summary = summarizeSourceSwitchingDecisions(properties);
+        return summary.isBlank() ? "" : ", sourceSwitching=" + summary;
+    }
+
+    private static String summarizeSourceSwitchingDecisions(java.util.Properties properties) {
+        int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+        if (kernelCount == 0) {
+            return "";
+        }
+        java.util.LinkedHashMap<String, Integer> decisionCounts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String decision = properties.getProperty("kernel." + index + ".sourceSwitching.decision", "");
+            if (decision.isBlank() || "not-recorded".equals(decision)) {
+                continue;
+            }
+            decisionCounts.merge(decision, 1, Integer::sum);
+        }
+        if (decisionCounts.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (java.util.Map.Entry<String, Integer> entry : decisionCounts.entrySet()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(entry.getKey()).append('=').append(entry.getValue());
+        }
+        return builder.toString();
     }
 
     private static String summarizeKernelEvidence(java.util.Properties properties) {
@@ -588,6 +646,8 @@ public final class OpenClValidationReporter {
                     .append(properties.getProperty("kernel." + index + ".sourceKernelResource", "unknown"))
                     .append("[diagnostics=")
                     .append(properties.getProperty("kernel." + index + ".diagnostic.count", "0"))
+                    .append(", sourceSwitching=")
+                    .append(properties.getProperty("kernel." + index + ".sourceSwitching.decision", "not-recorded"))
                     .append(", families=")
                     .append(formatBlockerFamilies(
                             properties,
