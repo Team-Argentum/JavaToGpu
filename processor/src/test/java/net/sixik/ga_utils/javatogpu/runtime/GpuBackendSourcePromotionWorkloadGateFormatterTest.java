@@ -49,6 +49,32 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("kernel-b.cl", gate.getProperty("kernel.1.sourceKernelResource"));
         assertEquals("not-recorded", gate.getProperty("kernel.0.sourceSwitching.decision"));
         assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitchingEnabled"));
+        assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeIrHandoff.status"));
+        assertEquals("original", gate.getProperty("kernel.0.runtimeIrHandoff.selectedStage"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeIrHandoff.optimizedDiffersFromOriginal"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeIrHandoff.fallbackDecision"));
+        assertEquals(
+                "runtime IR handoff artifact was not recorded; original runtime source remains selected",
+                gate.getProperty("kernel.0.runtimeIrHandoff.diagnostic.0")
+        );
+        assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeProductionMutationSafety.status"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeProductionMutationSafety.productionMutationEnabled"));
+        assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeProductionMutationSafety.productionGateStatus"));
+        assertEquals("original", gate.getProperty("kernel.0.runtimeProductionMutationSafety.selectedStage"));
+        assertEquals(
+                "production mutation remains disabled because runtime production safety evidence was not recorded",
+                gate.getProperty("kernel.0.runtimeProductionMutationSafety.diagnostic.0")
+        );
+        assertEquals("blocked", gate.getProperty("kernel.0.i3Readiness.status"));
+        assertEquals("original", gate.getProperty("kernel.0.i3Readiness.selectedRuntimeIrStage"));
+        assertEquals("blocked", gate.getProperty("kernel.0.i3Readiness.sourcePromotionStatus"));
+        assertEquals("not-recorded", gate.getProperty("kernel.0.i3Readiness.optimizerProductionGateStatus"));
+        assertEquals("false", gate.getProperty("kernel.0.i3Readiness.productionMutationEnabled"));
+        assertEquals("runtime-i3-readiness-artifact-missing", gate.getProperty("kernel.0.i3Readiness.blocker.0"));
+        assertEquals(
+                "I3 readiness evidence was not recorded for this workload kernel; treating it as blocked",
+                gate.getProperty("kernel.0.i3Readiness.diagnostic.0")
+        );
         assertEquals("not-run", gate.getProperty("kernel.0.runtimeEquivalence.status"));
         assertEquals("false", gate.getProperty("kernel.0.runtimeEquivalence.executed"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeEquivalence.diagnostic.count"));
@@ -127,6 +153,31 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "disabled",
                         "false",
                         "IrGpu source was explicitly selected for review or smoke validation"
+                ),
+                runtimeIrHandoffProperties(
+                        "optimized",
+                        "true",
+                        "false",
+                        "none",
+                        "false",
+                        "optimized IrGpu is selected for backend lowering after runtime optimizer passes"
+                ),
+                runtimeProductionMutationSafetyProperties(
+                        "disabled",
+                        "false",
+                        "not-requested",
+                        "false",
+                        "optimized",
+                        "runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested"
+                ),
+                i3ReadinessSummaryProperties(
+                        "review-ready",
+                        "optimized",
+                        "review-ready",
+                        "true",
+                        "not-requested",
+                        "false",
+                        "I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted"
                 )
         ));
 
@@ -144,6 +195,31 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "disabled",
                         "false",
                         "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled"
+                ),
+                runtimeIrHandoffProperties(
+                        "original",
+                        "false",
+                        "true",
+                        "optimizer-rollback",
+                        "true",
+                        "optimized IrGpu was rejected; original IrGpu remains selected for backend lowering"
+                ),
+                runtimeProductionMutationSafetyProperties(
+                        "disabled",
+                        "false",
+                        "blocked",
+                        "true",
+                        "original",
+                        "runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass"
+                ),
+                i3ReadinessSummaryProperties(
+                        "blocked",
+                        "original",
+                        "blocked",
+                        "false",
+                        "blocked",
+                        "false",
+                        "I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked"
                 )
         ));
 
@@ -160,6 +236,61 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals(
                 "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled",
                 gate.getProperty("kernel.1.sourceSwitching.diagnostic.0")
+        );
+        assertEquals("selected", gate.getProperty("kernel.0.runtimeIrHandoff.status"));
+        assertEquals("optimized", gate.getProperty("kernel.0.runtimeIrHandoff.selectedStage"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeIrHandoff.optimizedDiffersFromOriginal"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeIrHandoff.fallbackDecision"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeIrHandoff.optimizedIrRejected"));
+        assertEquals(
+                "optimized IrGpu is selected for backend lowering after runtime optimizer passes",
+                gate.getProperty("kernel.0.runtimeIrHandoff.diagnostic.0")
+        );
+        assertEquals("original", gate.getProperty("kernel.1.runtimeIrHandoff.selectedStage"));
+        assertEquals("true", gate.getProperty("kernel.1.runtimeIrHandoff.optimizationRequiresRollback"));
+        assertEquals("optimizer-rollback", gate.getProperty("kernel.1.runtimeIrHandoff.fallbackDecision"));
+        assertEquals("true", gate.getProperty("kernel.1.runtimeIrHandoff.optimizedIrRejected"));
+        assertEquals(
+                "optimized IrGpu was rejected; original IrGpu remains selected for backend lowering",
+                gate.getProperty("kernel.1.runtimeIrHandoff.diagnostic.0")
+        );
+        assertEquals("disabled", gate.getProperty("kernel.0.runtimeProductionMutationSafety.status"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeProductionMutationSafety.productionMutationEnabled"));
+        assertEquals("not-requested", gate.getProperty("kernel.0.runtimeProductionMutationSafety.productionGateStatus"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeProductionMutationSafety.productionProfileRequested"));
+        assertEquals("optimized", gate.getProperty("kernel.0.runtimeProductionMutationSafety.selectedStage"));
+        assertEquals(
+                "runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested",
+                gate.getProperty("kernel.0.runtimeProductionMutationSafety.diagnostic.0")
+        );
+        assertEquals("disabled", gate.getProperty("kernel.1.runtimeProductionMutationSafety.status"));
+        assertEquals("false", gate.getProperty("kernel.1.runtimeProductionMutationSafety.productionMutationEnabled"));
+        assertEquals("blocked", gate.getProperty("kernel.1.runtimeProductionMutationSafety.productionGateStatus"));
+        assertEquals("true", gate.getProperty("kernel.1.runtimeProductionMutationSafety.productionProfileRequested"));
+        assertEquals("original", gate.getProperty("kernel.1.runtimeProductionMutationSafety.selectedStage"));
+        assertEquals(
+                "runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass",
+                gate.getProperty("kernel.1.runtimeProductionMutationSafety.diagnostic.0")
+        );
+        assertEquals("review-ready", gate.getProperty("kernel.0.i3Readiness.status"));
+        assertEquals("optimized", gate.getProperty("kernel.0.i3Readiness.selectedRuntimeIrStage"));
+        assertEquals("review-ready", gate.getProperty("kernel.0.i3Readiness.sourcePromotionStatus"));
+        assertEquals("not-requested", gate.getProperty("kernel.0.i3Readiness.optimizerProductionGateStatus"));
+        assertEquals("false", gate.getProperty("kernel.0.i3Readiness.productionMutationEnabled"));
+        assertEquals("production-mutation-disabled", gate.getProperty("kernel.0.i3Readiness.blocker.0"));
+        assertEquals(
+                "I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted",
+                gate.getProperty("kernel.0.i3Readiness.diagnostic.0")
+        );
+        assertEquals("blocked", gate.getProperty("kernel.1.i3Readiness.status"));
+        assertEquals("original", gate.getProperty("kernel.1.i3Readiness.selectedRuntimeIrStage"));
+        assertEquals("blocked", gate.getProperty("kernel.1.i3Readiness.sourcePromotionStatus"));
+        assertEquals("blocked", gate.getProperty("kernel.1.i3Readiness.optimizerProductionGateStatus"));
+        assertEquals("false", gate.getProperty("kernel.1.i3Readiness.productionMutationEnabled"));
+        assertEquals("backend-source-promotion-not-review-ready", gate.getProperty("kernel.1.i3Readiness.blocker.0"));
+        assertEquals(
+                "I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked",
+                gate.getProperty("kernel.1.i3Readiness.diagnostic.0")
         );
     }
 
@@ -229,6 +360,105 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "irGpuSourceRequested=true",
                 "productionSourceSwitching=" + productionSourceSwitching,
                 "productionSourceSwitchingEnabled=" + productionSourceSwitchingEnabled,
+                "diagnostic.count=1",
+                "diagnostic.0=" + diagnostic,
+                ""
+        );
+    }
+
+    private static String runtimeIrHandoffProperties(
+            String selectedStage,
+            String optimizedDiffersFromOriginal,
+            String optimizationRequiresRollback,
+            String fallbackDecision,
+            String optimizedIrRejected,
+            String diagnostic
+    ) {
+        return String.join("\n",
+                "status=selected",
+                "selectedStage=" + selectedStage,
+                "original.present=true",
+                "optimized.present=true",
+                "selected.present=true",
+                "original.identity=irgpu:sha256:original",
+                "optimized.identity=irgpu:sha256:optimized",
+                "selected.identity=irgpu:sha256:selected",
+                "optimizedDiffersFromOriginal=" + optimizedDiffersFromOriginal,
+                "optimizationReportPresent=true",
+                "optimizationRequiresRollback=" + optimizationRequiresRollback,
+                "fallbackDecision=" + fallbackDecision,
+                "optimizedIrRejected=" + optimizedIrRejected,
+                "backendTarget=OPENCL",
+                "backendFormat=opencl-c",
+                "backendResource=kernel.cl",
+                "runtimeLoadMode=opencl-source-compile",
+                "diagnostic.count=1",
+                "diagnostic.0=" + diagnostic,
+                ""
+        );
+    }
+
+    private static String runtimeProductionMutationSafetyProperties(
+            String status,
+            String productionMutationEnabled,
+            String productionGateStatus,
+            String productionProfileRequested,
+            String selectedStage,
+            String diagnostic
+    ) {
+        return String.join("\n",
+                "status=" + status,
+                "productionMutationEnabled=" + productionMutationEnabled,
+                "productionGateStatus=" + productionGateStatus,
+                "productionProfileRequested=" + productionProfileRequested,
+                "selectedStage=" + selectedStage,
+                "optimizedSelected=" + Boolean.toString("optimized".equals(selectedStage)),
+                "optimizedDiffersFromOriginal=" + Boolean.toString("optimized".equals(selectedStage)),
+                "optimizedIrRejected=" + Boolean.toString("original".equals(selectedStage)),
+                "fallbackDecision=" + ("original".equals(selectedStage) ? "optimizer-rollback" : "none"),
+                "runtimeEquivalencePassed=false",
+                "fallbackClean=" + Boolean.toString(!"original".equals(selectedStage)),
+                "strategyEvidenceBacked=false",
+                "vendorPromotionEligible=false",
+                "rollbackClean=" + Boolean.toString(!"original".equals(selectedStage)),
+                "diagnostic.count=1",
+                "diagnostic.0=" + diagnostic,
+                ""
+        );
+    }
+
+    private static String i3ReadinessSummaryProperties(
+            String status,
+            String selectedRuntimeIrStage,
+            String sourcePromotionStatus,
+            String sourcePromotionReviewReady,
+            String optimizerProductionGateStatus,
+            String productionMutationEnabled,
+            String diagnostic
+    ) {
+        return String.join("\n",
+                "status=" + status,
+                "backendTarget=OPENCL",
+                "backendFormat=opencl-c",
+                "backendResource=kernel.cl",
+                "selectedRuntimeIrStage=" + selectedRuntimeIrStage,
+                "selectedRuntimeIrIdentity=irgpu:sha256:selected",
+                "optimizedIrRejected=" + Boolean.toString("original".equals(selectedRuntimeIrStage)),
+                "fallbackDecision=" + ("original".equals(selectedRuntimeIrStage) ? "optimizer-rollback" : "none"),
+                "sourceReconstructed=" + sourcePromotionReviewReady,
+                "sourceAvailable=true",
+                "sourceParityChecked=true",
+                "sourceParityMatched=" + sourcePromotionReviewReady,
+                "runtimeEquivalencePassed=" + sourcePromotionReviewReady,
+                "sourcePromotionStatus=" + sourcePromotionStatus,
+                "sourcePromotionReviewReady=" + sourcePromotionReviewReady,
+                "optimizerProductionGateStatus=" + optimizerProductionGateStatus,
+                "productionProfileRequested=" + Boolean.toString(!"not-requested".equals(optimizerProductionGateStatus)),
+                "productionMutationEnabled=" + productionMutationEnabled,
+                "blocker.count=" + ("review-ready".equals(status) ? "1" : "3"),
+                "blocker.0=" + ("review-ready".equals(status) ? "production-mutation-disabled" : "backend-source-promotion-not-review-ready"),
+                "blocker.1=production-optimizer-gate-not-accepted",
+                "blocker.2=production-mutation-disabled",
                 "diagnostic.count=1",
                 "diagnostic.0=" + diagnostic,
                 ""

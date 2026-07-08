@@ -30,8 +30,59 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             String latestGateProperties,
             String latestSourceSwitchingDecisionProperties
     ) throws IOException {
+        return merge(path, sourceKernelResource, latestGateProperties, latestSourceSwitchingDecisionProperties, "");
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties,
+            String latestRuntimeIrHandoffProperties
+    ) throws IOException {
+        return merge(
+                path,
+                sourceKernelResource,
+                latestGateProperties,
+                latestSourceSwitchingDecisionProperties,
+                latestRuntimeIrHandoffProperties,
+                ""
+        );
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties,
+            String latestRuntimeIrHandoffProperties,
+            String latestRuntimeProductionMutationSafetyProperties
+    ) throws IOException {
+        return merge(
+                path,
+                sourceKernelResource,
+                latestGateProperties,
+                latestSourceSwitchingDecisionProperties,
+                latestRuntimeIrHandoffProperties,
+                latestRuntimeProductionMutationSafetyProperties,
+                ""
+        );
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties,
+            String latestRuntimeIrHandoffProperties,
+            String latestRuntimeProductionMutationSafetyProperties,
+            String latestI3ReadinessSummaryProperties
+    ) throws IOException {
         Properties latest = loadProperties(latestGateProperties);
         Properties latestSourceSwitchingDecision = loadProperties(latestSourceSwitchingDecisionProperties);
+        Properties latestRuntimeIrHandoff = loadProperties(latestRuntimeIrHandoffProperties);
+        Properties latestRuntimeProductionMutationSafety = loadProperties(latestRuntimeProductionMutationSafetyProperties);
+        Properties latestI3ReadinessSummary = loadProperties(latestI3ReadinessSummaryProperties);
         Properties existing = new Properties();
         if (Files.exists(path)) {
             try (InputStream inputStream = Files.newInputStream(path)) {
@@ -67,6 +118,9 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyGateProperty(latest, latestEntry, "payloadFormat");
         copyGateProperty(latest, latestEntry, "runtimeLoadMode");
         copySourceSwitchingDecisionProperties(latestSourceSwitchingDecision, latestEntry);
+        copyRuntimeIrHandoffProperties(latestRuntimeIrHandoff, latestEntry);
+        copyRuntimeProductionMutationSafetyProperties(latestRuntimeProductionMutationSafety, latestEntry);
+        copyI3ReadinessSummaryProperties(latestI3ReadinessSummary, latestEntry);
         copyIndexedProperties(latest, latestEntry, "runtimeEquivalence.diagnostic");
         copyIndexedProperties(latest, latestEntry, "reconstruction.blocker");
         copyIndexedProperties(latest, latestEntry, "reconstruction.diagnostic");
@@ -156,6 +210,152 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         target.setProperty("sourceSwitching." + key, source.getProperty(key, "unknown"));
     }
 
+    private static void copyRuntimeIrHandoffProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("runtimeIrHandoff.status", "not-recorded");
+            target.setProperty("runtimeIrHandoff.selectedStage", "original");
+            target.setProperty("runtimeIrHandoff.original.present", "unknown");
+            target.setProperty("runtimeIrHandoff.optimized.present", "false");
+            target.setProperty("runtimeIrHandoff.selected.present", "unknown");
+            target.setProperty("runtimeIrHandoff.optimizedDiffersFromOriginal", "false");
+            target.setProperty("runtimeIrHandoff.optimizationRequiresRollback", "false");
+            target.setProperty("runtimeIrHandoff.fallbackDecision", "none");
+            target.setProperty("runtimeIrHandoff.optimizedIrRejected", "false");
+            target.setProperty("runtimeIrHandoff.backendTarget", "unknown");
+            target.setProperty("runtimeIrHandoff.backendFormat", "unknown");
+            target.setProperty("runtimeIrHandoff.backendResource", "unknown");
+            target.setProperty("runtimeIrHandoff.runtimeLoadMode", target.getProperty("runtimeLoadMode", "unknown"));
+            target.setProperty("runtimeIrHandoff.diagnostic.count", "1");
+            target.setProperty(
+                    "runtimeIrHandoff.diagnostic.0",
+                    "runtime IR handoff artifact was not recorded; original runtime source remains selected"
+            );
+            return;
+        }
+        copyRuntimeIrHandoffProperty(source, target, "status");
+        copyRuntimeIrHandoffProperty(source, target, "selectedStage");
+        copyRuntimeIrHandoffProperty(source, target, "original.present");
+        copyRuntimeIrHandoffProperty(source, target, "optimized.present");
+        copyRuntimeIrHandoffProperty(source, target, "selected.present");
+        copyRuntimeIrHandoffProperty(source, target, "original.identity");
+        copyRuntimeIrHandoffProperty(source, target, "optimized.identity");
+        copyRuntimeIrHandoffProperty(source, target, "selected.identity");
+        copyRuntimeIrHandoffProperty(source, target, "optimizedDiffersFromOriginal");
+        copyRuntimeIrHandoffProperty(source, target, "optimizationReportPresent");
+        copyRuntimeIrHandoffProperty(source, target, "optimizationRequiresRollback");
+        copyRuntimeIrHandoffProperty(source, target, "fallbackDecision");
+        copyRuntimeIrHandoffProperty(source, target, "optimizedIrRejected");
+        copyRuntimeIrHandoffProperty(source, target, "backendTarget");
+        copyRuntimeIrHandoffProperty(source, target, "backendFormat");
+        copyRuntimeIrHandoffProperty(source, target, "backendResource");
+        copyRuntimeIrHandoffProperty(source, target, "runtimeLoadMode");
+        copyIndexedProperties(source, target, "runtimeIrHandoff.diagnostic", "diagnostic");
+    }
+
+    private static void copyRuntimeIrHandoffProperty(Properties source, Properties target, String key) {
+        target.setProperty("runtimeIrHandoff." + key, source.getProperty(key, "unknown"));
+    }
+
+    private static void copyRuntimeProductionMutationSafetyProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("runtimeProductionMutationSafety.status", "not-recorded");
+            target.setProperty("runtimeProductionMutationSafety.productionMutationEnabled", "false");
+            target.setProperty("runtimeProductionMutationSafety.productionGateStatus", "not-recorded");
+            target.setProperty("runtimeProductionMutationSafety.productionProfileRequested", "unknown");
+            target.setProperty("runtimeProductionMutationSafety.selectedStage", "original");
+            target.setProperty("runtimeProductionMutationSafety.optimizedSelected", "false");
+            target.setProperty("runtimeProductionMutationSafety.optimizedDiffersFromOriginal", "false");
+            target.setProperty("runtimeProductionMutationSafety.optimizedIrRejected", "false");
+            target.setProperty("runtimeProductionMutationSafety.fallbackDecision", "none");
+            target.setProperty("runtimeProductionMutationSafety.runtimeEquivalencePassed", target.getProperty("runtimeEquivalencePassed", "unknown"));
+            target.setProperty("runtimeProductionMutationSafety.fallbackClean", target.getProperty("fallbackClean", "unknown"));
+            target.setProperty("runtimeProductionMutationSafety.strategyEvidenceBacked", "false");
+            target.setProperty("runtimeProductionMutationSafety.vendorPromotionEligible", "false");
+            target.setProperty("runtimeProductionMutationSafety.rollbackClean", "unknown");
+            target.setProperty("runtimeProductionMutationSafety.diagnostic.count", "1");
+            target.setProperty(
+                    "runtimeProductionMutationSafety.diagnostic.0",
+                    "production mutation remains disabled because runtime production safety evidence was not recorded"
+            );
+            return;
+        }
+        copyRuntimeProductionMutationSafetyProperty(source, target, "status");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "productionMutationEnabled");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "productionGateStatus");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "productionProfileRequested");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "selectedStage");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedSelected");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedDiffersFromOriginal");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedIrRejected");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "fallbackDecision");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "runtimeEquivalencePassed");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "fallbackClean");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "strategyEvidenceBacked");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "vendorPromotionEligible");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "rollbackClean");
+        copyIndexedProperties(source, target, "runtimeProductionMutationSafety.diagnostic", "diagnostic");
+    }
+
+    private static void copyRuntimeProductionMutationSafetyProperty(Properties source, Properties target, String key) {
+        target.setProperty("runtimeProductionMutationSafety." + key, source.getProperty(key, "unknown"));
+    }
+
+    private static void copyI3ReadinessSummaryProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("i3Readiness.status", "blocked");
+            target.setProperty("i3Readiness.backendTarget", "unknown");
+            target.setProperty("i3Readiness.backendFormat", "unknown");
+            target.setProperty("i3Readiness.backendResource", "unknown");
+            target.setProperty("i3Readiness.selectedRuntimeIrStage", target.getProperty("runtimeIrHandoff.selectedStage", "original"));
+            target.setProperty("i3Readiness.selectedRuntimeIrIdentity", "unknown");
+            target.setProperty("i3Readiness.optimizedIrRejected", target.getProperty("runtimeIrHandoff.optimizedIrRejected", "false"));
+            target.setProperty("i3Readiness.fallbackDecision", target.getProperty("runtimeIrHandoff.fallbackDecision", "none"));
+            target.setProperty("i3Readiness.sourceReconstructed", target.getProperty("reconstructed", "unknown"));
+            target.setProperty("i3Readiness.sourceAvailable", target.getProperty("sourceAvailable", "unknown"));
+            target.setProperty("i3Readiness.sourceParityChecked", target.getProperty("sourceParityChecked", "unknown"));
+            target.setProperty("i3Readiness.sourceParityMatched", target.getProperty("sourceParityMatched", "unknown"));
+            target.setProperty("i3Readiness.runtimeEquivalencePassed", target.getProperty("runtimeEquivalencePassed", "unknown"));
+            target.setProperty("i3Readiness.sourcePromotionStatus", target.getProperty("status", "unknown"));
+            target.setProperty("i3Readiness.sourcePromotionReviewReady", target.getProperty("reviewReady", "unknown"));
+            target.setProperty("i3Readiness.optimizerProductionGateStatus", "not-recorded");
+            target.setProperty("i3Readiness.productionProfileRequested", target.getProperty("sourceSwitching.productionProfileRequested", "unknown"));
+            target.setProperty("i3Readiness.productionMutationEnabled", "false");
+            target.setProperty("i3Readiness.blocker.count", "2");
+            target.setProperty("i3Readiness.blocker.0", "runtime-i3-readiness-artifact-missing");
+            target.setProperty("i3Readiness.blocker.1", "production-mutation-disabled");
+            target.setProperty("i3Readiness.diagnostic.count", "1");
+            target.setProperty(
+                    "i3Readiness.diagnostic.0",
+                    "I3 readiness evidence was not recorded for this workload kernel; treating it as blocked"
+            );
+            return;
+        }
+        copyI3ReadinessSummaryProperty(source, target, "status");
+        copyI3ReadinessSummaryProperty(source, target, "backendTarget");
+        copyI3ReadinessSummaryProperty(source, target, "backendFormat");
+        copyI3ReadinessSummaryProperty(source, target, "backendResource");
+        copyI3ReadinessSummaryProperty(source, target, "selectedRuntimeIrStage");
+        copyI3ReadinessSummaryProperty(source, target, "selectedRuntimeIrIdentity");
+        copyI3ReadinessSummaryProperty(source, target, "optimizedIrRejected");
+        copyI3ReadinessSummaryProperty(source, target, "fallbackDecision");
+        copyI3ReadinessSummaryProperty(source, target, "sourceReconstructed");
+        copyI3ReadinessSummaryProperty(source, target, "sourceAvailable");
+        copyI3ReadinessSummaryProperty(source, target, "sourceParityChecked");
+        copyI3ReadinessSummaryProperty(source, target, "sourceParityMatched");
+        copyI3ReadinessSummaryProperty(source, target, "runtimeEquivalencePassed");
+        copyI3ReadinessSummaryProperty(source, target, "sourcePromotionStatus");
+        copyI3ReadinessSummaryProperty(source, target, "sourcePromotionReviewReady");
+        copyI3ReadinessSummaryProperty(source, target, "optimizerProductionGateStatus");
+        copyI3ReadinessSummaryProperty(source, target, "productionProfileRequested");
+        copyI3ReadinessSummaryProperty(source, target, "productionMutationEnabled");
+        copyIndexedProperties(source, target, "i3Readiness.blocker", "blocker");
+        copyIndexedProperties(source, target, "i3Readiness.diagnostic", "diagnostic");
+    }
+
+    private static void copyI3ReadinessSummaryProperty(Properties source, Properties target, String key) {
+        target.setProperty("i3Readiness." + key, source.getProperty(key, "unknown"));
+    }
+
     private static void copyIndexedProperties(
             Properties source,
             Properties target,
@@ -228,6 +428,9 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("realWorkloadEvidence=").append(entry.getProperty("realWorkloadEvidence", "runtime-snapshot")).append('\n');
         builder.append(prefix).append("productionSourceSwitching=false\n");
         appendSourceSwitchingDecision(builder, prefix, entry);
+        appendRuntimeIrHandoff(builder, prefix, entry);
+        appendRuntimeProductionMutationSafety(builder, prefix, entry);
+        appendI3ReadinessSummary(builder, prefix, entry);
         appendIndexedProperties(builder, prefix, entry, "runtimeEquivalence.diagnostic");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.blocker");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.diagnostic");
@@ -269,6 +472,68 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("sourceSwitching.productionSourceSwitching=").append(entry.getProperty("sourceSwitching.productionSourceSwitching", "false")).append('\n');
         builder.append(prefix).append("sourceSwitching.productionSourceSwitchingEnabled=").append(entry.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false")).append('\n');
         appendIndexedProperties(builder, prefix, entry, "sourceSwitching.diagnostic");
+    }
+
+    private static void appendRuntimeIrHandoff(StringBuilder builder, String prefix, Properties entry) {
+        builder.append(prefix).append("runtimeIrHandoff.status=").append(entry.getProperty("runtimeIrHandoff.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.selectedStage=").append(entry.getProperty("runtimeIrHandoff.selectedStage", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.original.present=").append(entry.getProperty("runtimeIrHandoff.original.present", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.optimized.present=").append(entry.getProperty("runtimeIrHandoff.optimized.present", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.selected.present=").append(entry.getProperty("runtimeIrHandoff.selected.present", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.original.identity=").append(entry.getProperty("runtimeIrHandoff.original.identity", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.optimized.identity=").append(entry.getProperty("runtimeIrHandoff.optimized.identity", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.selected.identity=").append(entry.getProperty("runtimeIrHandoff.selected.identity", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.optimizedDiffersFromOriginal=").append(entry.getProperty("runtimeIrHandoff.optimizedDiffersFromOriginal", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.optimizationReportPresent=").append(entry.getProperty("runtimeIrHandoff.optimizationReportPresent", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.optimizationRequiresRollback=").append(entry.getProperty("runtimeIrHandoff.optimizationRequiresRollback", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.fallbackDecision=").append(entry.getProperty("runtimeIrHandoff.fallbackDecision", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.optimizedIrRejected=").append(entry.getProperty("runtimeIrHandoff.optimizedIrRejected", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.backendTarget=").append(entry.getProperty("runtimeIrHandoff.backendTarget", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.backendFormat=").append(entry.getProperty("runtimeIrHandoff.backendFormat", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.backendResource=").append(entry.getProperty("runtimeIrHandoff.backendResource", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeIrHandoff.runtimeLoadMode=").append(entry.getProperty("runtimeIrHandoff.runtimeLoadMode", "unknown")).append('\n');
+        appendIndexedProperties(builder, prefix, entry, "runtimeIrHandoff.diagnostic");
+    }
+
+    private static void appendRuntimeProductionMutationSafety(StringBuilder builder, String prefix, Properties entry) {
+        builder.append(prefix).append("runtimeProductionMutationSafety.status=").append(entry.getProperty("runtimeProductionMutationSafety.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.productionMutationEnabled=").append(entry.getProperty("runtimeProductionMutationSafety.productionMutationEnabled", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.productionGateStatus=").append(entry.getProperty("runtimeProductionMutationSafety.productionGateStatus", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.productionProfileRequested=").append(entry.getProperty("runtimeProductionMutationSafety.productionProfileRequested", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.selectedStage=").append(entry.getProperty("runtimeProductionMutationSafety.selectedStage", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.optimizedSelected=").append(entry.getProperty("runtimeProductionMutationSafety.optimizedSelected", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.optimizedDiffersFromOriginal=").append(entry.getProperty("runtimeProductionMutationSafety.optimizedDiffersFromOriginal", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.optimizedIrRejected=").append(entry.getProperty("runtimeProductionMutationSafety.optimizedIrRejected", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.fallbackDecision=").append(entry.getProperty("runtimeProductionMutationSafety.fallbackDecision", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.runtimeEquivalencePassed=").append(entry.getProperty("runtimeProductionMutationSafety.runtimeEquivalencePassed", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.fallbackClean=").append(entry.getProperty("runtimeProductionMutationSafety.fallbackClean", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.strategyEvidenceBacked=").append(entry.getProperty("runtimeProductionMutationSafety.strategyEvidenceBacked", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.vendorPromotionEligible=").append(entry.getProperty("runtimeProductionMutationSafety.vendorPromotionEligible", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeProductionMutationSafety.rollbackClean=").append(entry.getProperty("runtimeProductionMutationSafety.rollbackClean", "unknown")).append('\n');
+        appendIndexedProperties(builder, prefix, entry, "runtimeProductionMutationSafety.diagnostic");
+    }
+
+    private static void appendI3ReadinessSummary(StringBuilder builder, String prefix, Properties entry) {
+        builder.append(prefix).append("i3Readiness.status=").append(entry.getProperty("i3Readiness.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("i3Readiness.backendTarget=").append(entry.getProperty("i3Readiness.backendTarget", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.backendFormat=").append(entry.getProperty("i3Readiness.backendFormat", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.backendResource=").append(entry.getProperty("i3Readiness.backendResource", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.selectedRuntimeIrStage=").append(entry.getProperty("i3Readiness.selectedRuntimeIrStage", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.selectedRuntimeIrIdentity=").append(entry.getProperty("i3Readiness.selectedRuntimeIrIdentity", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.optimizedIrRejected=").append(entry.getProperty("i3Readiness.optimizedIrRejected", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.fallbackDecision=").append(entry.getProperty("i3Readiness.fallbackDecision", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.sourceReconstructed=").append(entry.getProperty("i3Readiness.sourceReconstructed", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.sourceAvailable=").append(entry.getProperty("i3Readiness.sourceAvailable", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.sourceParityChecked=").append(entry.getProperty("i3Readiness.sourceParityChecked", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.sourceParityMatched=").append(entry.getProperty("i3Readiness.sourceParityMatched", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.runtimeEquivalencePassed=").append(entry.getProperty("i3Readiness.runtimeEquivalencePassed", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.sourcePromotionStatus=").append(entry.getProperty("i3Readiness.sourcePromotionStatus", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.sourcePromotionReviewReady=").append(entry.getProperty("i3Readiness.sourcePromotionReviewReady", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.optimizerProductionGateStatus=").append(entry.getProperty("i3Readiness.optimizerProductionGateStatus", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.productionProfileRequested=").append(entry.getProperty("i3Readiness.productionProfileRequested", "unknown")).append('\n');
+        builder.append(prefix).append("i3Readiness.productionMutationEnabled=").append(entry.getProperty("i3Readiness.productionMutationEnabled", "unknown")).append('\n');
+        appendIndexedProperties(builder, prefix, entry, "i3Readiness.blocker");
+        appendIndexedProperties(builder, prefix, entry, "i3Readiness.diagnostic");
     }
 
     private static void appendIndexedProperties(

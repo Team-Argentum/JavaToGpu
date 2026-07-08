@@ -51,6 +51,10 @@ def lwjglNatives = osName.contains("win")
         ? "natives-windows"
         : (osName.contains("mac") ? "natives-macos" : "natives-linux")
 def openClBucketStatusFile = layout.buildDirectory.file('reports/opencl/bucket-status.properties').get().asFile
+def openClI3ReadinessWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/i3-readiness-workload-summary.properties').get().asFile
+def openClI3ReadinessBaselineFile = providers.gradleProperty('javatogpu.opencl.i3ReadinessBaselineFile')
+        .map { file(it) }
+        .orElse(layout.buildDirectory.file('opencl-i3-readiness-baselines/i3-readiness-workload-baseline.properties').map { it.asFile })
 
 def recordBucketStatus = { String taskName, String status ->
     Properties properties = new Properties()
@@ -420,10 +424,115 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.longRunningSummaryFile', layout.buildDirectory.file('reports/opencl/long-running-summary.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.workloadSummaryFile', layout.buildDirectory.file('reports/opencl/workload-summary.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.bucketStatusFile', openClBucketStatusFile.absolutePath
+    systemProperty 'javatogpu.opencl.irGpuSourceReviewFile', layout.buildDirectory.file('reports/opencl/irgpu-source-review.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.i3ReadinessWorkloadSummaryFile', openClI3ReadinessWorkloadSummaryFile.absolutePath
     systemProperty 'javatogpu.opencl.validationHistoryFile', layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.validationHistoryMarkdownFile', layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile.absolutePath
+}
+
+tasks.register('writeOpenClI3ReadinessWorkloadBaseline') {
+    group = 'verification'
+    description = 'Persists the current OpenCL I3 workload readiness summary as a comparison baseline.'
+    dependsOn 'openClValidationReport'
+    inputs.file(openClI3ReadinessWorkloadSummaryFile)
+    outputs.file(openClI3ReadinessBaselineFile)
+
+    doLast {
+        if (!openClI3ReadinessWorkloadSummaryFile.isFile()) {
+            throw new GradleException('Missing OpenCL I3 readiness workload summary: ' + openClI3ReadinessWorkloadSummaryFile)
+        }
+        File baselineFile = openClI3ReadinessBaselineFile.get()
+        baselineFile.parentFile.mkdirs()
+        Properties current = loadPropertiesFile(openClI3ReadinessWorkloadSummaryFile)
+        Properties baseline = openClI3ReadinessBaseline(current)
+        baselineFile.withOutputStream { stream ->
+            baseline.store(stream, 'JavaToGpu OpenCL I3 readiness workload baseline')
+        }
+        logger.lifecycle('OpenCL I3 readiness baseline written: {} kernels, status={}, reviewReady={}, blocked={} -> {}',
+                baseline.getProperty('kernel.count'),
+                baseline.getProperty('status'),
+                baseline.getProperty('reviewReady.count'),
+                baseline.getProperty('blocked.count'),
+                baselineFile)
+    }
+}
+
+tasks.register('validateOpenClI3ReadinessWorkloadBaseline') {
+    group = 'verification'
+    description = 'Compares current OpenCL I3 workload readiness summary against a persisted baseline.'
+    dependsOn 'openClValidationReport'
+    mustRunAfter 'writeOpenClI3ReadinessWorkloadBaseline'
+    inputs.file(openClI3ReadinessWorkloadSummaryFile)
+    inputs.file(openClI3ReadinessBaselineFile)
+
+    doLast {
+        File baselineFile = openClI3ReadinessBaselineFile.get()
+        if (!baselineFile.isFile()) {
+            throw new GradleException('Missing OpenCL I3 readiness baseline: ' + baselineFile
+                    + '. Run writeOpenClI3ReadinessWorkloadBaseline first or pass -Pjavatogpu.opencl.i3ReadinessBaselineFile=<file>.')
+        }
+        if (!openClI3ReadinessWorkloadSummaryFile.isFile()) {
+            throw new GradleException('Missing OpenCL I3 readiness workload summary: ' + openClI3ReadinessWorkloadSummaryFile)
+        }
+        Properties baseline = loadPropertiesFile(baselineFile)
+        Properties current = loadPropertiesFile(openClI3ReadinessWorkloadSummaryFile)
+        validateOpenClI3ReadinessBaseline(baseline, current, baselineFile)
+        logger.lifecycle('OpenCL I3 readiness baseline OK: status={}, kernels={}, reviewReady={}, blocked={}, productionEnabled={}',
+                current.getProperty('status'),
+                current.getProperty('kernel.count'),
+                current.getProperty('reviewReady.count'),
+                current.getProperty('blocked.count'),
+                current.getProperty('productionEnabled.count'))
+    }
+}
+
+tasks.register('validateOpenClI3ReadinessBaselineContract') {
+    group = 'verification'
+    description = 'Self-tests OpenCL I3 readiness baseline regression and progress comparisons.'
+
+    doLast {
+        Properties baseline = new Properties()
+        baseline.setProperty('format', 'javatogpu.opencl.i3-readiness-baseline.v1')
+        baseline.setProperty('status', 'blocked')
+        baseline.setProperty('kernel.count', '2')
+        baseline.setProperty('reviewReady.count', '1')
+        baseline.setProperty('blocked.count', '1')
+        baseline.setProperty('productionEnabled.count', '0')
+        baseline.setProperty('productionMutationEnabled', 'false')
+        baseline.setProperty('kernel.0.resource', 'kernel-a.cl')
+        baseline.setProperty('kernel.0.i3Status', 'review-ready')
+        baseline.setProperty('kernel.0.runtimeIr', 'optimized')
+        baseline.setProperty('kernel.1.resource', 'kernel-b.cl')
+        baseline.setProperty('kernel.1.i3Status', 'blocked')
+        baseline.setProperty('kernel.1.runtimeIr', 'original')
+
+        Properties equalCurrent = new Properties()
+        equalCurrent.putAll(baseline)
+        validateOpenClI3ReadinessBaseline(baseline, equalCurrent, new File('synthetic-i3-baseline.properties'))
+
+        Properties progressCurrent = new Properties()
+        progressCurrent.putAll(baseline)
+        progressCurrent.setProperty('reviewReady.count', '2')
+        progressCurrent.setProperty('blocked.count', '0')
+        progressCurrent.setProperty('kernel.1.i3Status', 'review-ready')
+        validateOpenClI3ReadinessBaseline(baseline, progressCurrent, new File('synthetic-i3-baseline.properties'))
+
+        Properties regressionCurrent = new Properties()
+        regressionCurrent.putAll(baseline)
+        regressionCurrent.setProperty('reviewReady.count', '0')
+        regressionCurrent.setProperty('blocked.count', '2')
+        regressionCurrent.setProperty('kernel.0.i3Status', 'blocked')
+        expectOpenClI3ReadinessBaselineFailure(baseline, regressionCurrent, 'review-ready regression')
+
+        Properties mutationCurrent = new Properties()
+        mutationCurrent.putAll(baseline)
+        mutationCurrent.setProperty('productionMutationEnabled', 'true')
+        expectOpenClI3ReadinessBaselineFailure(baseline, mutationCurrent, 'unexpected production mutation')
+
+        logger.lifecycle('OpenCL I3 readiness baseline contract self-test OK')
+    }
 }
 
 tasks.register('openClBackendSourcePromotionGateReport', JavaExec) {
@@ -482,4 +591,130 @@ tasks.register('benchmarkTest', Test) {
     testClassesDirs = sourceSets.benchmark.output.classesDirs
     classpath = sourceSets.benchmark.runtimeClasspath
     attachBucketStatusRecording(it)
+}
+
+private static Properties loadPropertiesFile(File file) {
+    Properties properties = new Properties()
+    file.withInputStream { stream -> properties.load(stream) }
+    return properties
+}
+
+private static Properties openClI3ReadinessBaseline(Properties current) {
+    Properties baseline = new Properties()
+    baseline.setProperty('format', 'javatogpu.opencl.i3-readiness-baseline.v1')
+    copyOpenClI3BaselineField(current, baseline, 'status')
+    copyOpenClI3BaselineField(current, baseline, 'kernel.count')
+    copyOpenClI3BaselineField(current, baseline, 'reviewReady.count')
+    copyOpenClI3BaselineField(current, baseline, 'blocked.count')
+    copyOpenClI3BaselineField(current, baseline, 'productionEnabled.count')
+    copyOpenClI3BaselineField(current, baseline, 'productionMutationEnabled')
+    int kernelCount = parseOpenClI3Int(current.getProperty('kernel.count'))
+    for (int index = 0; index < kernelCount; index++) {
+        String prefix = 'kernel.' + index + '.'
+        copyOpenClI3BaselineField(current, baseline, prefix + 'resource')
+        copyOpenClI3BaselineField(current, baseline, prefix + 'i3Status')
+        copyOpenClI3BaselineField(current, baseline, prefix + 'runtimeIr')
+        copyOpenClI3BaselineField(current, baseline, prefix + 'sourcePromotionStatus')
+        copyOpenClI3BaselineField(current, baseline, prefix + 'optimizerProductionGateStatus')
+        copyOpenClI3BaselineField(current, baseline, prefix + 'productionMutationEnabled')
+    }
+    return baseline
+}
+
+private static void copyOpenClI3BaselineField(Properties source, Properties target, String key) {
+    target.setProperty(key, source.getProperty(key, 'unknown'))
+}
+
+private static void validateOpenClI3ReadinessBaseline(Properties baseline, Properties current, File baselineFile) {
+    if (baseline.getProperty('format') != 'javatogpu.opencl.i3-readiness-baseline.v1') {
+        throw new GradleException('OpenCL I3 readiness baseline has an unsupported format in ' + baselineFile)
+    }
+    if (current.getProperty('productionMutationEnabled', 'false') == 'true') {
+        throw new GradleException('OpenCL I3 readiness unexpectedly enabled production mutation; update gates intentionally before changing the baseline')
+    }
+
+    int baselineKernelCount = parseOpenClI3Int(baseline.getProperty('kernel.count'))
+    int currentKernelCount = parseOpenClI3Int(current.getProperty('kernel.count'))
+    if (baselineKernelCount != currentKernelCount) {
+        throw new GradleException('OpenCL I3 readiness kernel count changed from ' + baselineKernelCount
+                + ' to ' + currentKernelCount + '; refresh the baseline after reviewing workload coverage')
+    }
+
+    int baselineReviewReady = parseOpenClI3Int(baseline.getProperty('reviewReady.count'))
+    int currentReviewReady = parseOpenClI3Int(current.getProperty('reviewReady.count'))
+    if (currentReviewReady < baselineReviewReady) {
+        throw new GradleException('OpenCL I3 readiness regressed: review-ready kernels dropped from '
+                + baselineReviewReady + ' to ' + currentReviewReady)
+    }
+
+    int baselineBlocked = parseOpenClI3Int(baseline.getProperty('blocked.count'))
+    int currentBlocked = parseOpenClI3Int(current.getProperty('blocked.count'))
+    if (currentBlocked > baselineBlocked) {
+        throw new GradleException('OpenCL I3 readiness regressed: blocked kernels increased from '
+                + baselineBlocked + ' to ' + currentBlocked)
+    }
+
+    int baselineProductionEnabled = parseOpenClI3Int(baseline.getProperty('productionEnabled.count'))
+    int currentProductionEnabled = parseOpenClI3Int(current.getProperty('productionEnabled.count'))
+    if (currentProductionEnabled > baselineProductionEnabled) {
+        throw new GradleException('OpenCL I3 production-enabled kernel count increased from '
+                + baselineProductionEnabled + ' to ' + currentProductionEnabled
+                + '; production promotion must be reviewed explicitly')
+    }
+
+    for (int index = 0; index < baselineKernelCount; index++) {
+        String prefix = 'kernel.' + index + '.'
+        String baselineResource = baseline.getProperty(prefix + 'resource', 'unknown')
+        String currentResource = current.getProperty(prefix + 'resource', 'unknown')
+        if (baselineResource != currentResource) {
+            throw new GradleException('OpenCL I3 readiness kernel resource drifted at index ' + index
+                    + ': baseline=' + baselineResource + ', current=' + currentResource)
+        }
+        String baselineStatus = baseline.getProperty(prefix + 'i3Status', 'unknown')
+        String currentStatus = current.getProperty(prefix + 'i3Status', 'unknown')
+        if (openClI3StatusScore(currentStatus) < openClI3StatusScore(baselineStatus)) {
+            throw new GradleException('OpenCL I3 readiness regressed for ' + baselineResource
+                    + ': ' + baselineStatus + ' -> ' + currentStatus)
+        }
+        String baselineRuntimeIr = baseline.getProperty(prefix + 'runtimeIr', 'unknown')
+        String currentRuntimeIr = current.getProperty(prefix + 'runtimeIr', 'unknown')
+        if (openClI3RuntimeIrScore(currentRuntimeIr) < openClI3RuntimeIrScore(baselineRuntimeIr)) {
+            throw new GradleException('OpenCL I3 runtime IR stage regressed for ' + baselineResource
+                    + ': ' + baselineRuntimeIr + ' -> ' + currentRuntimeIr)
+        }
+    }
+}
+
+private static void expectOpenClI3ReadinessBaselineFailure(Properties baseline, Properties current, String scenario) {
+    try {
+        validateOpenClI3ReadinessBaseline(baseline, current, new File('synthetic-i3-baseline.properties'))
+    } catch (GradleException expected) {
+        return
+    }
+    throw new GradleException('Synthetic OpenCL I3 readiness baseline scenario unexpectedly passed: ' + scenario)
+}
+
+private static int parseOpenClI3Int(String value) {
+    try {
+        return Integer.parseInt(value == null ? '0' : value.trim())
+    } catch (NumberFormatException ignored) {
+        return 0
+    }
+}
+
+private static int openClI3StatusScore(String status) {
+    return switch (status) {
+        case 'production-enabled' -> 3
+        case 'review-ready' -> 2
+        case 'blocked' -> 1
+        default -> 1
+    }
+}
+
+private static int openClI3RuntimeIrScore(String stage) {
+    return switch (stage) {
+        case 'optimized' -> 2
+        case 'original' -> 1
+        default -> 0
+    }
 }

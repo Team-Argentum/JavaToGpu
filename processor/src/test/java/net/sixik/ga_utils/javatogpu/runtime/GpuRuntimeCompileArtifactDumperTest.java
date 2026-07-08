@@ -243,6 +243,40 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("fallback.properties").contains("originalIrSelected=false"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("status=not-requested"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("runtimeEquivalenceRequired=true"));
+        assertTrue(dump.hasArtifact("runtime-ir-handoff.properties"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("status=selected"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("selectedStage=optimized"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("original.present=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimized.present=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("selected.present=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizedDiffersFromOriginal=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizationReportPresent=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizationRequiresRollback=false"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("fallbackDecision=none"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizedIrRejected=false"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("backendTarget=OPENCL"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("runtimeLoadMode=opencl-source-compile"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("diagnostic.0=optimized IrGpu is selected for backend lowering after runtime optimizer passes"));
+        assertTrue(dump.hasArtifact("runtime-production-mutation-safety.properties"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=disabled"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionGateStatus=not-requested"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionProfileRequested=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=optimized"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedDiffersFromOriginal=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("fallbackDecision=none"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("diagnostic.0=runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested"));
+        assertTrue(dump.hasArtifact("i3-readiness-summary.properties"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("status=blocked"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("selectedRuntimeIrStage=optimized"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("sourcePromotionStatus=blocked"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("sourcePromotionReviewReady=false"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("optimizerProductionGateStatus=not-requested"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("productionMutationEnabled=false"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("blocker.0=backend-source-promotion-not-review-ready"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("blocker.1=production-optimizer-gate-not-accepted"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("blocker.2=production-mutation-disabled"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.applied.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.rolledBack.count=0"));
@@ -552,6 +586,16 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("runtimeEquivalencePassed=true"));
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("fallbackClean=true"));
         assertTrue(dump.artifact("backend-source-promotion-gate.properties").contains("diagnostic.0=backend source reconstruction is ready for promotion review"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("status=review-ready"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("sourceReconstructed=true"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("sourceParityMatched=true"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("runtimeEquivalencePassed=true"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("sourcePromotionStatus=review-ready"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("sourcePromotionReviewReady=true"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("productionMutationEnabled=false"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("blocker.0=production-optimizer-gate-not-accepted"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("blocker.1=production-mutation-disabled"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("diagnostic.0=I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted"));
     }
 
     @Test
@@ -655,6 +699,21 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("vendorPromotionEligible=false"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.0=optimization strategy must be evidence-backed and non-advisory"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.1=vendor baseline is not promotion-eligible under A1/A2 gates"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=disabled"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionGateStatus=blocked"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionProfileRequested=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=original"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtimeEquivalencePassed=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("fallbackClean=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("strategyEvidenceBacked=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("vendorPromotionEligible=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("diagnostic.0=runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("status=blocked"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("optimizerProductionGateStatus=blocked"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("productionProfileRequested=true"));
+        assertTrue(dump.artifact("i3-readiness-summary.properties").contains("productionMutationEnabled=false"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:opencl-nvidia-advisory"));
@@ -717,6 +776,19 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=optimizer-rollback"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:none"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionGateStatus=not-requested"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("status=selected"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("selectedStage=original"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizedDiffersFromOriginal=false"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizationRequiresRollback=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("fallbackDecision=optimizer-rollback"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizedIrRejected=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("diagnostic.0=optimized IrGpu was rejected; original IrGpu remains selected for backend lowering"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=disabled"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=original"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedIrRejected=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("fallbackDecision=optimizer-rollback"));
     }
 
     private static GpuKernelDescriptor descriptor() {

@@ -2443,7 +2443,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     path,
                     artifactSnapshot.backendModuleArtifact().resource(),
                     dump.artifact("backend-source-promotion-gate.properties"),
-                    dump.artifact("backend-source-switching-decision.properties")
+                    dump.artifact("backend-source-switching-decision.properties"),
+                    dump.artifact("runtime-ir-handoff.properties"),
+                    dump.artifact("runtime-production-mutation-safety.properties"),
+                    dump.artifact("i3-readiness-summary.properties")
             );
             java.nio.file.Files.writeString(path, gateProperties, java.nio.charset.StandardCharsets.UTF_8);
         } catch (RuntimeException | java.io.IOException exception) {
