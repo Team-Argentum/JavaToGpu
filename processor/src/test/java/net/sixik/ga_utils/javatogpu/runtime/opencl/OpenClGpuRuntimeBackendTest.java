@@ -14,14 +14,18 @@ import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
@@ -49,6 +53,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -963,13 +968,215 @@ class OpenClGpuRuntimeBackendTest {
         GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
         assertSame(descriptor, capturedRequest.get().originalCompileRequest().descriptor());
         assertSame(descriptor, capturedRequest.get().optimizedCompileRequest().descriptor());
+        assertTrue(capturedRequest.get().hasInvocationContext());
+        assertNotSame(capturedRequest.get().invocationArguments(), capturedRequest.get().invocationArguments());
+        assertEquals(1, capturedRequest.get().invocationArguments().length);
         assertFalse(capturedRequest.get().hasOptimizedTransform());
-        assertEquals("passed", snapshot.runtimeEquivalenceEvidence().status());
+        assertEquals("passed", snapshot.runtimeEquivalenceEvidence().status(), snapshot.runtimeEquivalenceEvidence().diagnostics().toString());
         assertTrue(snapshot.runtimeEquivalenceEvidence().executed());
         assertTrue(snapshot.runtimeEquivalenceEvidence().equivalent());
         assertEquals(3, snapshot.runtimeEquivalenceEvidence().inputCaseCount());
         assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparedOutputCount());
         assertEquals("none", snapshot.fallbackEvidence().decision());
+    }
+
+    @Test
+    void runtimeEquivalencePreflightRunsIsolatedPrimitiveArrayComparison() {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        IrGpuArtifact artifact = parityMatchedIrGpuArtifact();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        ArrayList<String> compiledResources = new ArrayList<>();
+        ArrayList<String> compiledSources = new ArrayList<>();
+        int[] productionOutput = new int[]{0};
+
+        OpenClGpuRuntimeBackend backend = new EquivalenceSimulatingBackend(capturedSnapshot, 7, 7) {
+            @Override
+            protected GpuRuntimeCompileRequest optimizeRuntimeIr(GpuRuntimeCompileRequest compileRequest) {
+                return compileRequest.withIrGpuArtifact(java.util.Optional.of(artifact));
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                compiledResources.add(moduleArtifact.resource());
+                compiledSources.add(moduleArtifact.source());
+                return new OpenClCompiledKernel(compileRequest.descriptor(), moduleArtifact.resource());
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{productionOutput}));
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertEquals("passed", snapshot.runtimeEquivalenceEvidence().status(), snapshot.runtimeEquivalenceEvidence().diagnostics().toString());
+        assertTrue(snapshot.runtimeEquivalenceEvidence().executed());
+        assertTrue(snapshot.runtimeEquivalenceEvidence().equivalent());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().inputCaseCount());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparedOutputCount());
+        assertTrue(snapshot.runtimeEquivalenceEvidence().diagnostics().contains(
+                "descriptor and reconstructed OpenCL outputs matched for isolated array runtime-equivalence"
+        ));
+        assertEquals(3, compiledResources.size());
+        assertEquals("javatogpu/sample/Demo/kernel.cl", compiledResources.get(0));
+        assertTrue(compiledResources.get(1).contains("#irgpu-reconstructed-equivalence-preflight"));
+        assertEquals("javatogpu/sample/Demo/kernel.cl", compiledResources.get(2));
+        assertEquals(descriptor.kernelSource(), compiledSources.get(0));
+        assertEquals(canonicalOpenClSource(descriptor.kernelSource()), canonicalOpenClSource(compiledSources.get(1)));
+        assertEquals(descriptor.kernelSource(), compiledSources.get(2));
+        assertArrayEquals(new int[]{1}, productionOutput);
+    }
+
+    @Test
+    void runtimeEquivalenceFailsWhenIsolatedPrimitiveArrayOutputsDiffer() {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        IrGpuArtifact artifact = parityMatchedIrGpuArtifact();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        ArrayList<String> compiledResources = new ArrayList<>();
+
+        OpenClGpuRuntimeBackend backend = new EquivalenceSimulatingBackend(capturedSnapshot, 7, 9) {
+            @Override
+            protected GpuRuntimeCompileRequest optimizeRuntimeIr(GpuRuntimeCompileRequest compileRequest) {
+                return compileRequest.withIrGpuArtifact(java.util.Optional.of(artifact));
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                compiledResources.add(moduleArtifact.resource());
+                return new OpenClCompiledKernel(compileRequest.descriptor(), moduleArtifact.resource());
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}));
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertEquals("failed", snapshot.runtimeEquivalenceEvidence().status());
+        assertTrue(snapshot.runtimeEquivalenceEvidence().executed());
+        assertFalse(snapshot.runtimeEquivalenceEvidence().equivalent());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().inputCaseCount());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparedOutputCount());
+        assertTrue(snapshot.runtimeEquivalenceEvidence().diagnostics().contains(
+                "runtime-equivalence output mismatch for parameter 'output' at argument 0"
+        ));
+        assertEquals("runtime-equivalence-failed", snapshot.fallbackEvidence().decision());
+        assertTrue(compiledResources.get(1).contains("#irgpu-reconstructed-equivalence-preflight"));
+    }
+
+    @Test
+    void runtimeEquivalenceSkipsUnsupportedPrimitiveArrayComparisonWithoutProductionMutation() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* input) { return; }",
+                java.util.List.of(new GpuKernelParameterDescriptor("input", "int[]", GpuKernelParameterAccess.READ_ONLY))
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "kernel",
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        java.util.List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "kernel",
+                                "body\n  return\n",
+                                java.util.List.of()
+                        ))
+                ),
+                java.util.List.of(new net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter(
+                        "input",
+                        "int[]",
+                        "GLOBAL",
+                        false,
+                        java.util.List.of()
+                )),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.backendNeutralReady(),
+                java.util.List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        int[] input = new int[]{3};
+
+        OpenClGpuRuntimeBackend backend = new EquivalenceSimulatingBackend(capturedSnapshot, 7, 7) {
+            @Override
+            protected GpuRuntimeCompileRequest optimizeRuntimeIr(GpuRuntimeCompileRequest compileRequest) {
+                return compileRequest.withIrGpuArtifact(java.util.Optional.of(artifact));
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{input}));
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertEquals("not-run", snapshot.runtimeEquivalenceEvidence().status());
+        assertFalse(snapshot.runtimeEquivalenceEvidence().executed());
+        assertTrue(snapshot.runtimeEquivalenceEvidence().diagnostics().contains(
+                "runtime-equivalence output comparison requires at least one READ_WRITE array output"
+        ));
+        assertArrayEquals(new int[]{3}, input);
+    }
+
+    @Test
+    void runtimeEquivalenceComparesVectorArrayOutputsThroughPackedAbiBytes() {
+        GpuKernelDescriptor descriptor = float2OutputDescriptor();
+        IrGpuArtifact artifact = parityMatchedFloat2IrGpuArtifact();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        Float2[] output = new Float2[]{new Float2()};
+
+        OpenClGpuRuntimeBackend backend = new EquivalenceSimulatingBackend(capturedSnapshot, 7, 7) {
+            @Override
+            protected GpuRuntimeCompileRequest optimizeRuntimeIr(GpuRuntimeCompileRequest compileRequest) {
+                return compileRequest.withIrGpuArtifact(java.util.Optional.of(artifact));
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{output}));
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertEquals(
+                "passed",
+                snapshot.runtimeEquivalenceEvidence().status(),
+                snapshot.runtimeEquivalenceEvidence().diagnostics().toString()
+        );
+        assertTrue(snapshot.runtimeEquivalenceEvidence().executed());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparedOutputCount());
+        assertEquals(1.0f, output[0].x);
+        assertEquals(2.0f, output[0].y);
+    }
+
+    @Test
+    void runtimeEquivalenceComparesStructArrayOutputsThroughPackedAbiBytes() {
+        GpuKernelDescriptor descriptor = structOutputDescriptor();
+        IrGpuArtifact artifact = parityMatchedStructIrGpuArtifact();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        EquivalenceStructSample[] output = new EquivalenceStructSample[]{new EquivalenceStructSample()};
+
+        OpenClGpuRuntimeBackend backend = new EquivalenceSimulatingBackend(capturedSnapshot, 7, 7) {
+            @Override
+            protected GpuRuntimeCompileRequest optimizeRuntimeIr(GpuRuntimeCompileRequest compileRequest) {
+                return compileRequest.withIrGpuArtifact(java.util.Optional.of(artifact));
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{output}));
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertEquals(
+                "passed",
+                snapshot.runtimeEquivalenceEvidence().status(),
+                snapshot.runtimeEquivalenceEvidence().diagnostics().toString()
+        );
+        assertTrue(snapshot.runtimeEquivalenceEvidence().executed());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparedOutputCount());
+        assertEquals(11, output[0].x);
+        assertEquals(12.5f, output[0].y);
     }
 
     @Test
@@ -2892,6 +3099,120 @@ class OpenClGpuRuntimeBackendTest {
         );
     }
 
+    private static IrGpuArtifact parityMatchedIrGpuArtifact() {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "kernel",
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        java.util.List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "kernel",
+                                "body\n  set output[0] = 1\n",
+                                java.util.List.of()
+                        ))
+                ),
+                java.util.List.of(new net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter(
+                        "output",
+                        "int[]",
+                        "GLOBAL",
+                        false,
+                        java.util.List.of()
+                )),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.backendNeutralReady(),
+                java.util.List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact parityMatchedFloat2IrGpuArtifact() {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "kernel",
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        java.util.List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "kernel",
+                                "body\n  set output[0] = (float2)(1.0f, 2.0f)\n",
+                                java.util.List.of()
+                        ))
+                ),
+                java.util.List.of(new net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter(
+                        "output",
+                        "net.sixik.ga_utils.javatogpu.api.Float2[]",
+                        "GLOBAL",
+                        false,
+                        java.util.List.of()
+                )),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.backendNeutralReady(),
+                java.util.List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact parityMatchedStructIrGpuArtifact() {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "kernel",
+                        java.util.List.of(),
+                        java.util.List.of("typedef struct { int x; float y; } EquivalenceStructSample;"),
+                        java.util.List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "kernel",
+                                "body\n  set output[0].x = 11\n  set output[0].y = 12.5f\n",
+                                java.util.List.of()
+                        ))
+                ),
+                java.util.List.of(new net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter(
+                        "output",
+                        "EquivalenceStructSample[]",
+                        "GLOBAL",
+                        false,
+                        java.util.List.of()
+                )),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.backendNeutralReady(),
+                java.util.List.of(new IrGpuStructMetadata(
+                        EquivalenceStructSample.class.getName(),
+                        "EquivalenceStructSample",
+                        java.util.List.of(
+                                new IrGpuStructFieldMetadata("x", "int", java.util.List.of()),
+                                new IrGpuStructFieldMetadata("y", "float", java.util.List.of())
+                        ),
+                        java.util.List.of()
+                )),
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static String canonicalOpenClSource(String source) {
+        return source.replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
     private static GpuKernelDescriptor intOutputDescriptor() {
         return new GpuKernelDescriptor(
                 "kernel",
@@ -2901,8 +3222,41 @@ class OpenClGpuRuntimeBackendTest {
         );
     }
 
+    private static GpuKernelDescriptor float2OutputDescriptor() {
+        return new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global float2* output) { output[0] = (float2)(1.0f, 2.0f); }",
+                java.util.List.of(new GpuKernelParameterDescriptor(
+                        "output",
+                        "net.sixik.ga_utils.javatogpu.api.Float2[]",
+                        GpuKernelParameterAccess.READ_WRITE
+                ))
+        );
+    }
+
+    private static GpuKernelDescriptor structOutputDescriptor() {
+        return new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "typedef struct{\n"
+                        + "    int x;\n"
+                        + "    float y;\n"
+                        + "} EquivalenceStructSample;\n\n"
+                        + "__kernel void kernel(__global EquivalenceStructSample* output) {\n"
+                        + "    output[0].x = 11;\n"
+                        + "    output[0].y = 12.5f;\n"
+                        + "}",
+                java.util.List.of(new GpuKernelParameterDescriptor(
+                        "output",
+                        "EquivalenceStructSample[]",
+                        GpuKernelParameterAccess.READ_WRITE
+                ))
+        );
+    }
+
     private static class SnapshotCapturingBackend extends OpenClGpuRuntimeBackend {
-        private final AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot;
+        protected final AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot;
 
         private SnapshotCapturingBackend(AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot) {
             this.capturedSnapshot = capturedSnapshot;
@@ -2924,6 +3278,66 @@ class OpenClGpuRuntimeBackendTest {
         @Override
         protected void executeKernel(OpenClPreparedExecution execution) {
             capturedSnapshot.set(execution.compiledKernel().artifactSnapshot());
+        }
+    }
+
+    private static class EquivalenceSimulatingBackend extends SnapshotCapturingBackend {
+        private final int descriptorEquivalenceOutput;
+        private final int reconstructedEquivalenceOutput;
+
+        private EquivalenceSimulatingBackend(
+                AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot,
+                int descriptorEquivalenceOutput,
+                int reconstructedEquivalenceOutput
+        ) {
+            super(capturedSnapshot);
+            this.descriptorEquivalenceOutput = descriptorEquivalenceOutput;
+            this.reconstructedEquivalenceOutput = reconstructedEquivalenceOutput;
+        }
+
+        @Override
+        protected void executeKernel(OpenClPreparedExecution execution) {
+            for (OpenClPreparedBufferBinding binding : execution.bufferBindings()) {
+                if (binding.access() != GpuKernelParameterAccess.READ_WRITE) {
+                    continue;
+                }
+                mutateEquivalenceOutput(execution, binding.binding().sourceArray());
+            }
+            capturedSnapshot.set(execution.compiledKernel().artifactSnapshot());
+        }
+
+        private void mutateEquivalenceOutput(OpenClPreparedExecution execution, Object sourceArray) {
+            if (sourceArray instanceof int[] values && values.length > 0) {
+                if (execution.compiledKernel().cacheKey().contains("#irgpu-reconstructed-equivalence-preflight")) {
+                    values[0] = reconstructedEquivalenceOutput;
+                } else if (execution.compiledKernel().artifactSnapshot().runtimeEquivalenceEvidence().executed()) {
+                    values[0] = 1;
+                } else {
+                    values[0] = descriptorEquivalenceOutput;
+                }
+                return;
+            }
+            if (sourceArray instanceof Float2[] values && values.length > 0) {
+                values[0] = new Float2(1.0f, 2.0f);
+                return;
+            }
+            if (sourceArray instanceof EquivalenceStructSample[] values && values.length > 0) {
+                values[0] = new EquivalenceStructSample(11, 12.5f);
+            }
+        }
+    }
+
+    @GPUStruct
+    static final class EquivalenceStructSample {
+        int x;
+        float y;
+
+        EquivalenceStructSample() {
+        }
+
+        EquivalenceStructSample(int x, float y) {
+            this.x = x;
+            this.y = y;
         }
     }
 }

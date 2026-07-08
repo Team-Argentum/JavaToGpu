@@ -653,6 +653,9 @@ public final class GpuTypeSupport {
 
     private static List<String> candidateAnnotatedTypeClassNames(String declaredType) {
         List<String> candidates = new ArrayList<>();
+        if (declaredType != null && declaredType.equals(declaredType.toLowerCase(java.util.Locale.ROOT))) {
+            return candidates;
+        }
         candidates.add(declaredType);
         if (!declaredType.contains(".")) {
             candidates.add(API_PACKAGE_PREFIX + declaredType);

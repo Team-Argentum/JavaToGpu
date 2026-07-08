@@ -96,6 +96,9 @@ class GpuBackendSourceReconstructionResultTest {
         assertTrue(gate.toPropertiesText().contains("sourceParityChecked=true"));
         assertTrue(gate.toPropertiesText().contains("sourceParityMatched=false"));
         assertTrue(gate.toPropertiesText().contains("runtimeEquivalencePassed=false"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.status=not-run"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.executed=false"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.diagnostic.0=runtime equivalence was not executed"));
         assertTrue(gate.toPropertiesText().contains("diagnostic.0=reconstructed source must match descriptor source before promotion review"));
         assertTrue(gate.toPropertiesText().contains("reconstruction.blocker.count=0"));
         assertTrue(gate.toPropertiesText().contains("reconstruction.diagnostic.count=2"));
@@ -149,6 +152,11 @@ class GpuBackendSourceReconstructionResultTest {
         assertTrue(gate.toPropertiesText().contains("status=review-ready"));
         assertTrue(gate.toPropertiesText().contains("sourceParityMatched=true"));
         assertTrue(gate.toPropertiesText().contains("runtimeEquivalencePassed=true"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.status=passed"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.executed=true"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.equivalent=true"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.inputCase.count=2"));
+        assertTrue(gate.toPropertiesText().contains("runtimeEquivalence.comparedOutput.count=2"));
         assertTrue(gate.toPropertiesText().contains("diagnostic.0=backend source reconstruction is ready for promotion review"));
     }
 }

@@ -19,6 +19,12 @@ public record GpuBackendSourcePromotionGate(
         boolean sourceParityMatched,
         boolean runtimeEquivalenceRequired,
         boolean runtimeEquivalencePassed,
+        String runtimeEquivalenceStatus,
+        boolean runtimeEquivalenceExecuted,
+        boolean runtimeEquivalenceEquivalent,
+        int runtimeEquivalenceInputCaseCount,
+        int runtimeEquivalenceComparedOutputCount,
+        List<String> runtimeEquivalenceDiagnostics,
         boolean fallbackClean,
         String selectedSource,
         String payloadFormat,
@@ -33,6 +39,12 @@ public record GpuBackendSourcePromotionGate(
         selectedSource = normalize(selectedSource, "descriptor-source");
         payloadFormat = normalize(payloadFormat, "unknown");
         runtimeLoadMode = normalize(runtimeLoadMode, "source-compile");
+        runtimeEquivalenceStatus = normalize(runtimeEquivalenceStatus, "not-run");
+        runtimeEquivalenceInputCaseCount = Math.max(0, runtimeEquivalenceInputCaseCount);
+        runtimeEquivalenceComparedOutputCount = Math.max(0, runtimeEquivalenceComparedOutputCount);
+        runtimeEquivalenceDiagnostics = runtimeEquivalenceDiagnostics == null
+                ? List.of()
+                : List.copyOf(runtimeEquivalenceDiagnostics);
         reconstructionBlockers = reconstructionBlockers == null ? List.of() : List.copyOf(reconstructionBlockers);
         reconstructionDiagnostics = reconstructionDiagnostics == null ? List.of() : List.copyOf(reconstructionDiagnostics);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
@@ -96,6 +108,12 @@ public record GpuBackendSourcePromotionGate(
                 sourceParityMatched,
                 true,
                 runtimeEquivalencePassed,
+                equivalence.status(),
+                equivalence.executed(),
+                equivalence.equivalent(),
+                equivalence.inputCaseCount(),
+                equivalence.comparedOutputCount(),
+                equivalence.diagnostics(),
                 fallbackClean,
                 reconstruction.selectedSource(),
                 reconstruction.payloadFormat(),
@@ -120,6 +138,15 @@ public record GpuBackendSourcePromotionGate(
         builder.append("sourceParityMatched=").append(sourceParityMatched).append('\n');
         builder.append("runtimeEquivalenceRequired=").append(runtimeEquivalenceRequired).append('\n');
         builder.append("runtimeEquivalencePassed=").append(runtimeEquivalencePassed).append('\n');
+        builder.append("runtimeEquivalence.status=").append(runtimeEquivalenceStatus).append('\n');
+        builder.append("runtimeEquivalence.executed=").append(runtimeEquivalenceExecuted).append('\n');
+        builder.append("runtimeEquivalence.equivalent=").append(runtimeEquivalenceEquivalent).append('\n');
+        builder.append("runtimeEquivalence.inputCase.count=").append(runtimeEquivalenceInputCaseCount).append('\n');
+        builder.append("runtimeEquivalence.comparedOutput.count=").append(runtimeEquivalenceComparedOutputCount).append('\n');
+        builder.append("runtimeEquivalence.diagnostic.count=").append(runtimeEquivalenceDiagnostics.size()).append('\n');
+        for (int index = 0; index < runtimeEquivalenceDiagnostics.size(); index++) {
+            builder.append("runtimeEquivalence.diagnostic.").append(index).append('=').append(runtimeEquivalenceDiagnostics.get(index)).append('\n');
+        }
         builder.append("fallbackClean=").append(fallbackClean).append('\n');
         builder.append("selectedSource=").append(selectedSource).append('\n');
         builder.append("payloadFormat=").append(payloadFormat).append('\n');

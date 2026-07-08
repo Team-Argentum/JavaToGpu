@@ -46,6 +46,13 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.count"));
         assertEquals("kernel-a.cl", gate.getProperty("kernel.0.sourceKernelResource"));
         assertEquals("kernel-b.cl", gate.getProperty("kernel.1.sourceKernelResource"));
+        assertEquals("not-run", gate.getProperty("kernel.0.runtimeEquivalence.status"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeEquivalence.executed"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeEquivalence.diagnostic.count"));
+        assertEquals(
+                "runtime equivalence was not executed",
+                gate.getProperty("kernel.0.runtimeEquivalence.diagnostic.0")
+        );
         assertEquals("3", gate.getProperty("blockerFamily.count"));
         assertEquals("reconstruction", gate.getProperty("blockerFamily.0.name"));
         assertEquals("1", gate.getProperty("blockerFamily.0.count"));
@@ -120,6 +127,13 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         builder.append("sourceParityChecked=false\n");
         builder.append("sourceParityMatched=false\n");
         builder.append("runtimeEquivalencePassed=false\n");
+        builder.append("runtimeEquivalence.status=not-run\n");
+        builder.append("runtimeEquivalence.executed=false\n");
+        builder.append("runtimeEquivalence.equivalent=false\n");
+        builder.append("runtimeEquivalence.inputCase.count=0\n");
+        builder.append("runtimeEquivalence.comparedOutput.count=0\n");
+        builder.append("runtimeEquivalence.diagnostic.count=1\n");
+        builder.append("runtimeEquivalence.diagnostic.0=runtime equivalence was not executed\n");
         builder.append("fallbackClean=true\n");
         builder.append("selectedSource=descriptor-opencl-source\n");
         builder.append("payloadFormat=unknown\n");

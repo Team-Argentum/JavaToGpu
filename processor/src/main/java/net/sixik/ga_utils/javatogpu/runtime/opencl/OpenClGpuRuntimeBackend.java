@@ -25,6 +25,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerers;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeApiVersion;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
@@ -55,6 +56,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackend;
 import java.util.Objects;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -263,7 +267,9 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                         compileRequest,
                         optimizedCompileRequest,
                         moduleArtifact,
-                        optimizationResult.report()
+                        optimizationResult.report(),
+                        invocation.arguments(),
+                        invocation.executionConfig()
                 ))
         );
         dumpBackendSourcePromotionWorkloadGate(artifactSnapshot);
@@ -913,9 +919,338 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
-        return GpuRuntimeEquivalenceExecutor.notRun(
-                "pre/post runtime equivalence execution is not enabled for this backend"
-        ).execute(request);
+        if (request == null || request.optimizedCompileRequest().irGpuArtifact().isEmpty()) {
+            return GpuRuntimeEquivalenceExecutor.notRun(
+                    "pre/post runtime equivalence execution is not enabled for this backend"
+            ).execute(request);
+        }
+
+        GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                request.optimizedCompileRequest().irGpuArtifact().orElseThrow(),
+                request.optimizedBackendModuleArtifact().resource(),
+                request.optimizedBackendModuleArtifact().source()
+        );
+        if (!reconstruction.reconstructed() || !reconstruction.sourceAvailable()) {
+            return GpuRuntimeEquivalenceEvidence.notRun(
+                    request.optimizedCompileRequest(),
+                    "reconstructed OpenCL source is not available for runtime-equivalence preflight"
+            );
+        }
+        if (!reconstruction.diagnostics().contains("sourceParity.matched=true")) {
+            return GpuRuntimeEquivalenceEvidence.notRun(
+                    request.optimizedCompileRequest(),
+                    "reconstructed OpenCL source parity has not matched descriptor source"
+            );
+        }
+
+        GpuBackendModuleArtifact reconstructedArtifact = GpuBackendModuleArtifact.openClSource(
+                reconstruction.source(),
+                request.optimizedBackendModuleArtifact().resource() + "#irgpu-reconstructed-equivalence-preflight",
+                OpenClIrGpuSourceReconstructor.VERSION,
+                "irgpu-reconstructed-equivalence-preflight",
+                "opencl-source-equivalence-preflight"
+        );
+        try {
+            return executeArrayRuntimeEquivalence(request, reconstructedArtifact);
+        } catch (RuntimeException exception) {
+            return GpuRuntimeEquivalenceEvidence.failed(
+                    request.optimizedCompileRequest(),
+                    0,
+                    0,
+                    java.util.List.of(
+                            "reconstructed OpenCL source failed runtime-equivalence compile preflight",
+                            exception.getMessage() == null ? exception.getClass().getName() : exception.getMessage()
+                    )
+            );
+        }
+    }
+
+    private GpuRuntimeEquivalenceEvidence executeArrayRuntimeEquivalence(
+            GpuRuntimeEquivalenceRequest request,
+            GpuBackendModuleArtifact reconstructedArtifact
+    ) {
+        Object[] invocationArguments = request.invocationArguments();
+        if (invocationArguments == null) {
+            return GpuRuntimeEquivalenceEvidence.notRun(
+                    request.optimizedCompileRequest(),
+                    "runtime-equivalence output comparison requires invocation arguments"
+            );
+        }
+        ArrayEquivalencePlan equivalencePlan = arrayEquivalencePlan(
+                request.optimizedCompileRequest().descriptor(),
+                invocationArguments
+        );
+        if (!equivalencePlan.supported()) {
+            return GpuRuntimeEquivalenceEvidence.notRun(
+                    request.optimizedCompileRequest(),
+                    equivalencePlan.unsupportedReason()
+            );
+        }
+
+        Object[] descriptorArguments = cloneEquivalenceArguments(invocationArguments);
+        Object[] reconstructedArguments = cloneEquivalenceArguments(invocationArguments);
+        try (OpenClCompiledKernel descriptorKernel = compileKernel(
+                request.optimizedCompileRequest(),
+                request.optimizedBackendModuleArtifact());
+             OpenClCompiledKernel reconstructedKernel = compileKernel(
+                     request.optimizedCompileRequest(),
+                     reconstructedArtifact)) {
+            executeIsolatedRuntimeEquivalenceKernel(
+                    descriptorKernel,
+                    request.optimizedCompileRequest().descriptor(),
+                    descriptorArguments,
+                    request.executionConfig()
+            );
+            executeIsolatedRuntimeEquivalenceKernel(
+                    reconstructedKernel,
+                    request.optimizedCompileRequest().descriptor(),
+                    reconstructedArguments,
+                    request.executionConfig()
+            );
+        }
+
+        List<String> mismatches = compareEquivalenceArrayOutputs(
+                request.optimizedCompileRequest().descriptor(),
+                descriptorArguments,
+                reconstructedArguments,
+                equivalencePlan.outputIndexes()
+        );
+        if (!mismatches.isEmpty()) {
+            return GpuRuntimeEquivalenceEvidence.failed(
+                    request.optimizedCompileRequest(),
+                    1,
+                    equivalencePlan.outputIndexes().size(),
+                    mismatches
+            );
+        }
+        return GpuRuntimeEquivalenceEvidence.passed(
+                request.optimizedCompileRequest(),
+                1,
+                equivalencePlan.outputIndexes().size(),
+                List.of("descriptor and reconstructed OpenCL outputs matched for isolated array runtime-equivalence")
+        );
+    }
+
+    private void executeIsolatedRuntimeEquivalenceKernel(
+            OpenClCompiledKernel compiledKernel,
+            GpuKernelDescriptor descriptor,
+            Object[] invocationArguments,
+            net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig
+    ) {
+        OpenClKernelArguments arguments = OpenClArgumentMarshaller.marshall(descriptor, invocationArguments);
+        OpenClExecutionPlan plan = OpenClExecutionPlanner.plan(arguments);
+        OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
+        if (executionConfig != null) {
+            execution = new OpenClPreparedExecution(
+                    execution.compiledKernel(),
+                    execution.bufferBindings(),
+                    execution.localBindings(),
+                    execution.scalarBindings(),
+                    execution.argumentBindings(),
+                    executionConfig
+            );
+        }
+        executeKernelChecked(execution);
+    }
+
+    private ArrayEquivalencePlan arrayEquivalencePlan(
+            GpuKernelDescriptor descriptor,
+            Object[] invocationArguments
+    ) {
+        if (descriptor.parameterDescriptors().size() != invocationArguments.length) {
+            return ArrayEquivalencePlan.unsupported(
+                    "runtime-equivalence argument count mismatch: expected "
+                            + descriptor.parameterDescriptors().size()
+                            + " but got "
+                            + invocationArguments.length
+            );
+        }
+        List<Integer> outputIndexes = new ArrayList<>();
+        for (int index = 0; index < invocationArguments.length; index++) {
+            Object argument = invocationArguments[index];
+            GpuKernelParameterDescriptor parameter = descriptor.parameterDescriptors().get(index);
+            if (parameter.access() == net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE) {
+                if (!isEquivalenceArrayArgument(argument)) {
+                    return ArrayEquivalencePlan.unsupported(
+                            "runtime-equivalence output comparison currently supports primitive, vector, and struct array outputs only; parameter '"
+                                    + parameter.name()
+                                    + "' uses "
+                                    + runtimeArgumentType(argument)
+                    );
+                }
+                outputIndexes.add(index);
+                continue;
+            }
+            if (argument != null && argument.getClass().isArray() && !isEquivalenceArrayArgument(argument)) {
+                return ArrayEquivalencePlan.unsupported(
+                        "runtime-equivalence isolation currently supports primitive, vector, and struct array inputs only; parameter '"
+                                + parameter.name()
+                                + "' uses "
+                                + runtimeArgumentType(argument)
+                );
+            }
+        }
+        if (outputIndexes.isEmpty()) {
+            return ArrayEquivalencePlan.unsupported(
+                    "runtime-equivalence output comparison requires at least one READ_WRITE array output"
+            );
+        }
+        return ArrayEquivalencePlan.supported(outputIndexes);
+    }
+
+    private Object[] cloneEquivalenceArguments(Object[] invocationArguments) {
+        Object[] clonedArguments = invocationArguments.clone();
+        for (int index = 0; index < clonedArguments.length; index++) {
+            clonedArguments[index] = cloneEquivalenceArgument(clonedArguments[index]);
+        }
+        return clonedArguments;
+    }
+
+    private Object cloneEquivalenceArgument(Object argument) {
+        if (argument instanceof byte[] values) {
+            return values.clone();
+        }
+        if (argument instanceof short[] values) {
+            return values.clone();
+        }
+        if (argument instanceof int[] values) {
+            return values.clone();
+        }
+        if (argument instanceof long[] values) {
+            return values.clone();
+        }
+        if (argument instanceof float[] values) {
+            return values.clone();
+        }
+        if (argument instanceof double[] values) {
+            return values.clone();
+        }
+        if (argument != null && OpenClValuePacker.isStructArrayInstance(argument)) {
+            return clonePackedArray(argument, OpenClValuePacker.packStructArray(argument));
+        }
+        if (argument != null && OpenClValuePacker.isVectorArrayInstance(argument)) {
+            return clonePackedArray(argument, OpenClValuePacker.packVectorArray(argument));
+        }
+        return argument;
+    }
+
+    private Object clonePackedArray(Object sourceArray, ByteBuffer packedBytes) {
+        Object clonedArray = java.lang.reflect.Array.newInstance(
+                sourceArray.getClass().getComponentType(),
+                java.lang.reflect.Array.getLength(sourceArray)
+        );
+        ByteBuffer bytes = packedBytes.duplicate().order(ByteOrder.nativeOrder());
+        bytes.position(0);
+        if (OpenClValuePacker.isStructArrayInstance(sourceArray)) {
+            OpenClValuePacker.unpackStructArray(bytes, clonedArray);
+        } else if (OpenClValuePacker.isVectorArrayInstance(sourceArray)) {
+            OpenClValuePacker.unpackVectorArray(bytes, clonedArray);
+        }
+        return clonedArray;
+    }
+
+    private List<String> compareEquivalenceArrayOutputs(
+            GpuKernelDescriptor descriptor,
+            Object[] descriptorArguments,
+            Object[] reconstructedArguments,
+            List<Integer> outputIndexes
+    ) {
+        List<String> diagnostics = new ArrayList<>();
+        for (int outputIndex : outputIndexes) {
+            Object descriptorOutput = descriptorArguments[outputIndex];
+            Object reconstructedOutput = reconstructedArguments[outputIndex];
+            if (equivalenceArraysEqual(descriptorOutput, reconstructedOutput)) {
+                continue;
+            }
+            GpuKernelParameterDescriptor parameter = descriptor.parameterDescriptors().get(outputIndex);
+            diagnostics.add(
+                    "runtime-equivalence output mismatch for parameter '"
+                            + parameter.name()
+                            + "' at argument "
+                            + outputIndex
+            );
+        }
+        return diagnostics;
+    }
+
+    private boolean equivalenceArraysEqual(Object first, Object second) {
+        if (first instanceof byte[] firstValues && second instanceof byte[] secondValues) {
+            return Arrays.equals(firstValues, secondValues);
+        }
+        if (first instanceof short[] firstValues && second instanceof short[] secondValues) {
+            return Arrays.equals(firstValues, secondValues);
+        }
+        if (first instanceof int[] firstValues && second instanceof int[] secondValues) {
+            return Arrays.equals(firstValues, secondValues);
+        }
+        if (first instanceof long[] firstValues && second instanceof long[] secondValues) {
+            return Arrays.equals(firstValues, secondValues);
+        }
+        if (first instanceof float[] firstValues && second instanceof float[] secondValues) {
+            return Arrays.equals(firstValues, secondValues);
+        }
+        if (first instanceof double[] firstValues && second instanceof double[] secondValues) {
+            return Arrays.equals(firstValues, secondValues);
+        }
+        if (first != null
+                && second != null
+                && OpenClValuePacker.isStructArrayInstance(first)
+                && OpenClValuePacker.isStructArrayInstance(second)) {
+            return byteBuffersEqual(OpenClValuePacker.packStructArray(first), OpenClValuePacker.packStructArray(second));
+        }
+        if (first != null
+                && second != null
+                && OpenClValuePacker.isVectorArrayInstance(first)
+                && OpenClValuePacker.isVectorArrayInstance(second)) {
+            return byteBuffersEqual(OpenClValuePacker.packVectorArray(first), OpenClValuePacker.packVectorArray(second));
+        }
+        return false;
+    }
+
+    private boolean byteBuffersEqual(ByteBuffer first, ByteBuffer second) {
+        ByteBuffer firstBytes = first.duplicate();
+        ByteBuffer secondBytes = second.duplicate();
+        firstBytes.position(0);
+        secondBytes.position(0);
+        if (firstBytes.remaining() != secondBytes.remaining()) {
+            return false;
+        }
+        while (firstBytes.hasRemaining()) {
+            if (firstBytes.get() != secondBytes.get()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isEquivalenceArrayArgument(Object argument) {
+        return argument instanceof byte[]
+                || argument instanceof short[]
+                || argument instanceof int[]
+                || argument instanceof long[]
+                || argument instanceof float[]
+                || argument instanceof double[]
+                || argument != null && OpenClValuePacker.isStructArrayInstance(argument)
+                || argument != null && OpenClValuePacker.isVectorArrayInstance(argument);
+    }
+
+    private String runtimeArgumentType(Object argument) {
+        return argument == null ? "null" : argument.getClass().getName();
+    }
+
+    private record ArrayEquivalencePlan(boolean supported, List<Integer> outputIndexes, String unsupportedReason) {
+        private ArrayEquivalencePlan {
+            outputIndexes = outputIndexes == null ? List.of() : List.copyOf(outputIndexes);
+            unsupportedReason = unsupportedReason == null ? "" : unsupportedReason;
+        }
+
+        private static ArrayEquivalencePlan supported(List<Integer> outputIndexes) {
+            return new ArrayEquivalencePlan(true, outputIndexes, "");
+        }
+
+        private static ArrayEquivalencePlan unsupported(String reason) {
+            return new ArrayEquivalencePlan(false, List.of(), reason);
+        }
     }
 
     private boolean overridesLegacyOptimizeRuntimeIr() {
