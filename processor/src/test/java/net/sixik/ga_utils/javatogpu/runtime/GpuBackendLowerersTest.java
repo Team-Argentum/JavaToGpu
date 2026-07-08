@@ -27,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuBackendLowerersTest {
 
+    private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+
     @Test
     void openClLowererProducesSourceModuleArtifact() {
         GpuKernelDescriptor descriptor = sampleDescriptor();
@@ -256,7 +258,7 @@ class GpuBackendLowerersTest {
         GpuKernelDescriptor descriptor = roundTripDescriptor();
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor,
-                GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review"),
+                GpuRuntimeCompileOptions.openClIrGpuSourceReview(List.of()),
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(roundTripIrGpuArtifact(descriptor.kernelResource()))
         );
@@ -270,11 +272,51 @@ class GpuBackendLowerersTest {
     }
 
     @Test
+    void openClLowererKeepsPackagedIrGpuDescriptorSourceByDefault() {
+        GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
+        IrGpuArtifact artifact = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest);
+
+        assertEquals(descriptor.kernelSource(), moduleArtifact.source());
+        assertEquals(descriptor.kernelResource(), moduleArtifact.resource());
+        assertEquals("irgpu-backend-neutral-source", moduleArtifact.sourceOrigin());
+        assertEquals("opencl-irgpu-source-compile", moduleArtifact.runtimeLoadMode());
+    }
+
+    @Test
+    void openClLowererUsesPackagedIrGpuSourceInExplicitReviewMode() {
+        GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
+        IrGpuArtifact artifact = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.openClIrGpuSourceReview(List.of()),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest);
+
+        assertEquals(descriptor.kernelSource(), moduleArtifact.source());
+        assertEquals(descriptor.kernelResource() + "#irgpu-reconstructed", moduleArtifact.resource());
+        assertEquals("irgpu-backend-neutral-source", moduleArtifact.sourceOrigin());
+        assertEquals("opencl-irgpu-source-compile", moduleArtifact.runtimeLoadMode());
+    }
+
+    @Test
     void openClLowererUsesReconstructedPrivateArraySourceWhenExplicitlyRequestedAndParityMatched() {
         GpuKernelDescriptor descriptor = privateArrayRoundTripDescriptor();
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor,
-                GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review"),
+                GpuRuntimeCompileOptions.openClIrGpuSourceReview(List.of()),
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(privateArrayRoundTripIrGpuArtifact(descriptor.kernelResource()))
         );
@@ -362,7 +404,7 @@ class GpuBackendLowerersTest {
         GpuKernelDescriptor descriptor = sampleDescriptor();
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor,
-                GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review"),
+                GpuRuntimeCompileOptions.openClIrGpuSourceReview(List.of()),
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(irGpuArtifact(
                         descriptor.kernelResource(),
@@ -514,6 +556,25 @@ class GpuBackendLowerersTest {
                         }
                         """,
                 List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+    }
+
+    private static GpuKernelDescriptor simpleIrGpuSourceDescriptor() {
+        return new GpuKernelDescriptor(
+                "gpu_irgpu_entry",
+                "inline://integration/simple-irgpu-source-kernel.cl",
+                """
+                        __kernel void gpu_irgpu_entry(__global const float* input, float scale, __global float* output) {
+                            int id = get_global_id(0);
+                            output[id] = input[id] + scale;
+                        }
+                        """,
+                SIMPLE_IRGPU_SOURCE_RESOURCE,
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scale", "float", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
         );
     }
 

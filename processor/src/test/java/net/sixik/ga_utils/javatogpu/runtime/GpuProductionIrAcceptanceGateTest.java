@@ -14,7 +14,7 @@ class GpuProductionIrAcceptanceGateTest {
         GpuProductionIrAcceptanceGate.Result result = GpuProductionIrAcceptanceGate.evaluate(
                 "OpenCL",
                 "IrGpu source",
-                "source-reconstruction-review",
+                GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE,
                 false,
                 false,
                 GpuProductionPromotionDecision.DIAGNOSTIC_ONLY

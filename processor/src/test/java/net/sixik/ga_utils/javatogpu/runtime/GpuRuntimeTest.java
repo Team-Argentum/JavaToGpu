@@ -93,7 +93,7 @@ class GpuRuntimeTest {
     void compileOptionsExposeOptInOpenClIrGpuSourceSelection() {
         GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClIrGpuSource(
                 List.of("-cl-fast-relaxed-math"),
-                "source-reconstruction-review"
+                GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE
         );
 
         assertEquals(GpuBackendTarget.OPENCL, options.backendTarget());
@@ -105,7 +105,24 @@ class GpuRuntimeTest {
                 options.backendOptions().properties().get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY)
         );
         assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
-        assertEquals("source-reconstruction-review", options.optimizationProfile());
+        assertEquals(GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE, options.optimizationProfile());
+    }
+
+    @Test
+    void compileOptionsExposeNamedOpenClIrGpuSourceReviewPreset() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClIrGpuSourceReview(
+                List.of("-cl-fast-relaxed-math")
+        );
+
+        assertEquals(GpuBackendTarget.OPENCL, options.backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.compileArgs());
+        assertEquals(GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE, options.optimizationProfile());
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU,
+                options.backendOptions().properties().get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY)
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertTrue(!options.backendOptions().enablesOpenClProductionSourceSwitching());
     }
 
     @Test
@@ -172,7 +189,7 @@ class GpuRuntimeTest {
         assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("vendor-tuned"));
         assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("runtime-tuned"));
         assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("VENDOR-TUNED"));
-        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile("source-reconstruction-review"));
+        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile(GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE));
         assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile("fast"));
         assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile(null));
     }

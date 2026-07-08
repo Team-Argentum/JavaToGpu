@@ -151,7 +151,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 sourceSwitchingDecisionProperties(
                         "review-ready",
                         "compile-irgpu-source-review",
-                        "source-reconstruction-review",
+                        GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE,
                         "false",
                         "disabled",
                         "false",
@@ -191,7 +191,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "none",
                         "optimized",
                         "false",
-                        "source-reconstruction-review",
+                        GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE,
                         "not-requested",
                         "false"
                 )
@@ -254,7 +254,10 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
 
         assertEquals("2", gate.getProperty("sourceSwitching.count"));
         assertEquals("compile-irgpu-source-review", gate.getProperty("kernel.0.sourceSwitching.decision"));
-        assertEquals("source-reconstruction-review", gate.getProperty("kernel.0.sourceSwitching.optimizationProfile"));
+        assertEquals(
+                GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE,
+                gate.getProperty("kernel.0.sourceSwitching.optimizationProfile")
+        );
         assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionProfileRequested"));
         assertEquals("disabled", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitching"));
         assertEquals("review-ready", gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
@@ -332,7 +335,10 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
         assertEquals("optimized", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedRuntimeIrStage"));
         assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizedIrRejected"));
-        assertEquals("source-reconstruction-review", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedProfile"));
+        assertEquals(
+                GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE,
+                gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedProfile")
+        );
         assertEquals("not-requested", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionGateStatus"));
         assertEquals("recorded", gate.getProperty("kernel.1.runtimeOptimizerDrift.status"));
         assertEquals("3", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.count"));

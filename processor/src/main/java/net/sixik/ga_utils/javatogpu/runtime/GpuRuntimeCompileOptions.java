@@ -12,6 +12,8 @@ public record GpuRuntimeCompileOptions(
         GpuBackendCompileOptions backendOptions
 ) {
 
+    public static final String OPENCL_IRGPU_SOURCE_REVIEW_PROFILE = "source-reconstruction-review";
+
     public GpuRuntimeCompileOptions(
             GpuBackendTarget backendTarget,
             List<String> compileArgs,
@@ -56,6 +58,10 @@ public record GpuRuntimeCompileOptions(
                 optimizationProfile,
                 GpuBackendCompileOptions.openClIrGpuSource(compileArgs)
         );
+    }
+
+    public static GpuRuntimeCompileOptions openClIrGpuSourceReview(List<String> compileArgs) {
+        return openClIrGpuSource(compileArgs, OPENCL_IRGPU_SOURCE_REVIEW_PROFILE);
     }
 
     public static GpuRuntimeCompileOptions openClProductionIrGpuSource(

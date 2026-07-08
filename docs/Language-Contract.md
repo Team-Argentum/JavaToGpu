@@ -1,63 +1,126 @@
 # Language Contract
 
-JavaToGpu is not a general Java-to-GPU translator.
+JavaToGpu works best when GPU code is written as small, explicit kernels. This page describes the Java shapes that are intended to work today.
 
-It supports a restricted Java subset designed for predictable OpenCL code generation.
+Use this as a practical checklist while writing `@GPU` methods. For a shorter first example, start with [Getting Started](Getting-Started.md).
 
-## Supported Entry Points
+## Good Kernel Shape
 
-- `void` `@GPU` methods
-- scalar parameters
-- vector wrapper parameters
-- `@GPUStruct` value parameters
-- annotated array parameters such as `@GPUGlobal float[]`
-- image and sampler wrapper parameters
+A good first kernel usually looks like this:
 
-## Supported Control Flow
+```java
+@GPU
+public static void transform(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+    int id = GPU.get_global_id(0);
+    output[id] = GPU.sqrt(input[id]);
+}
+```
 
-- `if / else`
+Keep these rules in mind:
+
+- `@GPU` entry methods are `static` and return `void`.
+- Results are written into output arrays or other supported output parameters.
+- Array parameters should declare their address space with annotations such as `@GPUGlobal`, `@GPUConstant`, or `@GPULocal`.
+- GPU builtins should come from `GPU.*`, not from arbitrary Java library calls.
+- Kernels should avoid allocation, exceptions, recursion, virtual dispatch, and heap-heavy Java patterns.
+
+## Entry Points
+
+Supported `@GPU` entry-point parameters include:
+
+- Primitive scalar values such as `int`, `long`, `float`, and `double`.
+- Annotated arrays such as `@GPUGlobal float[] output`.
+- Vector wrappers such as `Float2`, `Float3`, `Float4`, `Int4`, and related families.
+- `@GPUStruct` value types and struct arrays where supported by the current data model.
+- Pointer/view wrappers for low-level packed-buffer workflows.
+- Image and sampler wrappers for OpenCL image workflows.
+
+Entry methods should write outputs through parameters instead of returning a value.
+
+## Control Flow
+
+The common structured control-flow forms are supported:
+
+- `if` / `else`
 - `for`
 - `while`
-- `do-while`
-- `switch / case / default`
+- `do while`
+- `switch`
 - `break`
 - `continue`
 
-## Supported Expressions
+Prefer simple loops and clear bounds. If a loop is hard for a human to reason about, it will usually be harder to validate and optimize later.
 
-- arithmetic operators
-- comparisons
-- logical operators
-- bitwise operators on integral scalar expressions
-- scalar casts between supported scalar types
-- ternary expressions
-- array access
-- struct and vector field access
-- `GPU.*` intrinsics
-- `@CCode` helpers
-- `@GPUIntrinsic` helpers
+## Expressions
 
-## Supported Types
+Supported expression patterns include:
 
-- primitive scalars
-- unsigned scalar aliases: `UByte`, `UShort`, `UInt`, `ULong`
-- pointer wrappers like `FloatPtr`, `DoublePtr`
-- address-space pointer views such as `GlobalBytePtr`
-- vector wrappers
-- `@GPUStruct` values
+- Arithmetic, comparison, logical, and bitwise operators.
+- Scalar casts between supported scalar types.
+- Ternary expressions.
+- Array reads and writes.
+- Struct and vector field access.
+- Calls to `GPU.*` builtins.
+- Calls to `@CCode` helpers.
+- Calls to explicit `@GPUIntrinsic` helpers.
 
-## Intentionally Unsupported
+For math, prefer `GPU.sin(...)`, `GPU.sqrt(...)`, `GPU.pow(...)`, and related helpers so the generated backend code is predictable.
 
-- non-`void` `@GPU` entry methods
-- arbitrary Java object allocation
-- arbitrary Java method calls
-- exceptions
-- object arrays as a general language feature
-- arrays inside `@GPUStruct` fields
-- general union-style source authoring
+## Types
 
-## Related Documents
+Common supported type families include:
 
-- [Known Limitations](Known-Limitations.md)
+- Java primitive scalars used by the current subset.
+- Unsigned aliases such as `UByte`, `UShort`, `UInt`, and `ULong`.
+- Vector wrappers such as `Float4` and `Int4`.
+- Pointer wrappers such as `FloatPtr` and `DoublePtr` for helper mutation patterns.
+- Address-space views such as `GlobalBytePtr` for packed-buffer access.
+- `@GPUStruct` values for small ABI-safe records.
+
+See [OpenCL Data Model](OpenCL-Data-Model.md) for examples of structs, vectors, pointers, packed blobs, and images.
+
+## Helpers
+
+Use `@CCode` for reusable helper methods that should become GPU helper code:
+
+```java
+@CCode(inline = true)
+static float lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+```
+
+Keep helpers GPU-friendly too. They should use supported parameter/return types and avoid normal Java object behavior.
+
+## Unsupported Java Shapes
+
+These patterns are intentionally outside the current alpha subset:
+
+- Non-`void` `@GPU` entry methods.
+- General object allocation inside kernels.
+- Arbitrary Java library calls inside kernels.
+- Virtual dispatch, interface dispatch, and dynamic method dispatch.
+- Exceptions and `try` / `catch` logic.
+- Recursion.
+- Monitors and synchronization blocks.
+- General object arrays.
+- Arrays inside `@GPUStruct` fields.
+- General union-style source authoring.
+
+When you need one of these patterns, usually the best path is to move the complex Java logic to the CPU side and pass a simpler data shape into the GPU kernel.
+
+## Practical Advice
+
+- Start with one kernel and a CPU reference test.
+- Add one GPU feature at a time.
+- Keep memory layout explicit.
+- Prefer arrays and small structs over object graphs.
+- Run validation on tiny input sizes before benchmarking larger workloads.
+
+## Read Next
+
+- [Getting Started](Getting-Started.md)
 - [OpenCL Data Model](OpenCL-Data-Model.md)
+- [Cookbook](Cookbook.md)
+- [Known Limitations](Known-Limitations.md)
 - [Troubleshooting](Troubleshooting.md)

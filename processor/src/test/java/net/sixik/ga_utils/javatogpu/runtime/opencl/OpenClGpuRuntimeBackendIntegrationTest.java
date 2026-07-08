@@ -1195,7 +1195,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             backend.invoke(new GpuKernelInvocation(
                     descriptor,
                     new Object[]{input, 2.5f, output},
-                    GpuRuntimeCompileOptions.openClIrGpuSource(List.of(), "source-reconstruction-review")
+                    GpuRuntimeCompileOptions.openClIrGpuSourceReview(List.of())
             ));
         }
 
@@ -2946,7 +2946,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 + "scope=opt-in-irgpu-source-review\n"
                 + "productionSourceSwitching=false\n"
                 + "sourceSelection=irgpu\n"
-                + "optimizationProfile=source-reconstruction-review\n"
+                + "optimizationProfile=" + GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE + "\n"
                 + "kernel.count=1\n"
                 + "kernel.0.name=gpu_irgpu_entry\n"
                 + "kernel.0.resource=inline://integration/simple-irgpu-source-kernel.cl\n"

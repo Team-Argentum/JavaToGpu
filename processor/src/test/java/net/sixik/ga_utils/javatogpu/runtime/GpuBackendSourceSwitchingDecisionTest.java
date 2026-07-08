@@ -38,7 +38,10 @@ class GpuBackendSourceSwitchingDecisionTest {
     @Test
     void blocksIrGpuSourceWhenReconstructedSourceIsUnavailable() {
         GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
-                provenance(GpuBackendCompileOptions.openClIrGpuSource(List.of()), "source-reconstruction-review"),
+                provenance(
+                        GpuBackendCompileOptions.openClIrGpuSource(List.of()),
+                        GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE
+                ),
                 module(),
                 GpuBackendSourceReconstructionResult.blocked(
                         GpuBackendTarget.OPENCL,
@@ -67,7 +70,10 @@ class GpuBackendSourceSwitchingDecisionTest {
     @Test
     void blocksIrGpuSourceWhenReconstructionIsReadyButSourcePayloadIsUnavailable() {
         GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
-                provenance(GpuBackendCompileOptions.openClIrGpuSource(List.of()), "source-reconstruction-review"),
+                provenance(
+                        GpuBackendCompileOptions.openClIrGpuSource(List.of()),
+                        GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE
+                ),
                 module(),
                 GpuBackendSourceReconstructionResult.ready(
                         GpuBackendTarget.OPENCL,
@@ -102,7 +108,10 @@ class GpuBackendSourceSwitchingDecisionTest {
         );
 
         GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
-                provenance(GpuBackendCompileOptions.openClIrGpuSource(List.of()), "source-reconstruction-review"),
+                provenance(
+                        GpuBackendCompileOptions.openClIrGpuSource(List.of()),
+                        GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE
+                ),
                 module(),
                 reconstruction,
                 GpuBackendSourcePromotionGate.evaluate(
@@ -129,7 +138,10 @@ class GpuBackendSourceSwitchingDecisionTest {
         GpuBackendSourceReconstructionResult reconstruction = parityMatchedReconstruction();
 
         GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
-                provenance(GpuBackendCompileOptions.openClIrGpuSource(List.of()), "source-reconstruction-review"),
+                provenance(
+                        GpuBackendCompileOptions.openClIrGpuSource(List.of()),
+                        GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE
+                ),
                 module(),
                 reconstruction,
                 GpuBackendSourcePromotionGate.evaluate(

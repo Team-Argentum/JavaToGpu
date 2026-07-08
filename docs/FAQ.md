@@ -1,53 +1,69 @@
 # FAQ
 
-## Can JavaToGpu run arbitrary Java code on the GPU?
+Short answers for people trying JavaToGpu in real projects.
 
-No. It compiles a restricted GPU-safe Java subset to OpenCL C. It is closer to a Java-authored kernel DSL than to transparent whole-application acceleration.
+## What is JavaToGpu?
 
-## Is JavaToGpu ready for public use?
+JavaToGpu lets you write a restricted Java method, mark it with `@GPU`, and run it as an OpenCL kernel. Think of it as Java-authored GPU kernels, not automatic acceleration for an entire Java application.
 
-Yes, as a public alpha / developer preview. It is useful for experimentation, early feedback, compiler integration, and GPU-kernel prototyping. It is not stable or cross-vendor production-ready yet.
+## Is it ready to use?
 
-## Which backend is supported today?
+Yes, as an alpha / developer preview. It is useful for experiments, early integrations, examples, benchmarks, and feedback. APIs and generated code can still change before beta.
 
-OpenCL is the active backend.
+## Which backend works today?
 
-## Is CUDA supported?
+OpenCL is the active backend today. CUDA, Vulkan, and Metal are future directions, not available user backends yet.
 
-Not yet. CUDA is planned for later.
+## Which GPUs are validated?
 
-## Which GPU vendors are validated?
+The current confidence path is NVIDIA OpenCL. AMD and Intel OpenCL validation are planned, but you should test on your own hardware before making performance or compatibility claims.
 
-The current local evidence is NVIDIA OpenCL, and the RTX 5070 path is operationally proven for repo-local alpha validation through repeated full operational routine passes. Intel and AMD validation are future promotion gates and should not be implied until tested on real hardware.
+## Can JavaToGpu run any Java method?
+
+No. GPU methods must use the supported kernel subset: primitives, arrays, supported wrappers, structs, images, samplers, and `GPU.*` builtins. Avoid allocation, exceptions, recursion, virtual dispatch, and arbitrary Java library calls inside kernels.
 
 ## Can `@GPU` methods return values?
 
-Not in the current contract. Use output buffers.
+Not currently. Write results into output arrays or other supported output parameters.
 
-## Can I use normal Java objects inside kernels?
+## Can I use normal Java objects in kernels?
 
-No. Use supported primitives, arrays, vector wrappers, structs, pointer wrappers, images, samplers, and explicit helper patterns.
+Only simple GPU-compatible data shapes are supported. Use primitives, arrays, vector wrappers, `@GPUStruct` value types, pointer views, images, and samplers. General object graphs are not supported.
 
-## Can I put arrays inside `@GPUStruct`?
+## Can `@GPUStruct` contain arrays?
 
-No. Keep arrays as kernel parameters or model packed layouts with explicit offset schemas.
+No. Keep arrays as kernel parameters, or use packed buffers with explicit offsets when you need custom layouts.
 
-## Can I feed arbitrary JVM bytecode into the ASM frontend?
+## How do I make GPU execution optional?
 
-No. The ASM frontend expects a canonical supported subset emitted intentionally by tooling you control.
+Use `GpuRuntime.trySelect(...)` with a backend policy. If no GPU backend matches, run your CPU fallback instead of relying on exceptions for normal control flow.
 
-If you are integrating an external bytecode generator, run `GpuProgramCompiler.reportStructuredAsm(...)`, `reportStructuredAsmClass(...)`, or `reportStructuredAsmArtifact(...)` first. It reports unsupported bytecode families and machine-readable `asmFailure.*` metadata without attempting to compile the method. Artifact preflight auto-detects directories, `.class` files, and `.jar` files. In CI, use `writeAndRequireStructuredAsmArtifactReport(...)` so the `.properties` report is saved before the build fails on unsupported bytecode. For broader ingestion triage, `reportStructuredAsmArtifactReadiness(...)` classifies the artifact as `supported`, `rewriteRequired`, or `rejected` and groups migration work into buckets such as `arrayMetadata`, `staticDispatchModel`, `objectModel`, and `typeSignatureModel`. For parser planning, `inventoryStructuredAsmArtifact(...)` exports risky bytecode shape counts such as virtual dispatch, field access, object allocation, array metadata, and exception/synchronization usage. If your CI wants one archived artifact, use `reportStructuredAsmArtifactSnapshot(...)`, `writeStructuredAsmArtifactSnapshot(...)`, or `writeAndRequireStructuredAsmArtifactSnapshot(...)` to combine preflight failures, readiness, and shape inventory under `asmArtifactReport.*` fields.
+## Should I enable IR validation?
 
-## How do I handle optional GPU execution?
+For normal experiments, start without it or use diagnostic mode. Enable stricter modes when you want CI to catch unsupported or optimizer-unsafe kernel shapes earlier.
 
-Use runtime selection policies and `GpuRuntime.trySelect(...)` so unsupported environments can skip or fall back without exception-driven control flow.
+## Can I inspect the generated GPU path?
 
-## What should I run before publishing results?
+Yes. Use the validation reports, runtime diagnostics, and the opt-in `GpuRuntimeCompileOptions.openClIrGpuSourceReview(...)` smoke path when you want to compare reconstructed `IrGpu` source against the normal OpenCL source path.
 
-Run:
+## Can I feed arbitrary JVM bytecode into JavaToGpu?
+
+Not yet. The ASM path is for intentionally generated bytecode that follows the supported subset. If you are building tooling around bytecode input, run the ASM report APIs first so unsupported shapes are reported cleanly before compilation.
+
+## What should I run before sharing results?
+
+On a machine with OpenCL drivers and a GPU, run:
 
 ```powershell
 .\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
 ```
 
-Then inspect `processor/build/reports/opencl/validation-report.md`.
+Then inspect:
+
+```text
+processor/build/reports/opencl/validation-report.md
+```
+
+## Where should I start reading?
+
+Start with [Getting Started](Getting-Started.md), then use [Cookbook](Cookbook.md) for copyable examples and [Known Limitations](Known-Limitations.md) before using JavaToGpu in a larger project.

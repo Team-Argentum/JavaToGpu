@@ -1,38 +1,48 @@
-# JavaToGpu Docs
+# JavaToGpu Documentation
 
-JavaToGpu is an experimental Java-to-OpenCL compiler and runtime for GPU-safe Java kernels.
+JavaToGpu lets you write a restricted Java method, mark it as a GPU kernel, and run it through the OpenCL runtime.
 
-This documentation is the public user manual for the current alpha. It focuses on what works today, what is intentionally unsupported, and how to validate the runtime on real OpenCL hardware.
+This documentation is written for users of the current alpha. It starts with practical setup and examples, then links to deeper reference pages when you need exact compiler/runtime rules.
+
+## What You Can Do Today
+
+- Write `@GPU` Java methods that operate on arrays, scalars, vectors, structs, pointers, images, and samplers.
+- Use `GPU.*` builtins for OpenCL-style indexing, math, images, barriers, atomics, and low-level helper operations.
+- Run generated kernels through `GpuRuntime.useOpenCl()` or `GpuRuntime.useOpenClSharedCache()`.
+- Pass compile options and explicit launch sizes when you need lower-level control.
+- Enable optional IR validation for stricter compiler diagnostics and CI reports.
+- Smoke-test reconstructed `IrGpu` source through the opt-in review lane without changing the production default path.
 
 ## Start Here
 
-- [Getting Started](Getting-Started.md) - install the processor, write a first kernel, and run it.
-- [Alpha Release Checklist](Alpha-Release-Checklist.md) - what should be true before publishing an alpha build.
-- [Publishing Guide](Publishing.md) - Maven Central credentials, signing, local staging, and release commands.
-- [API Overview](API-Overview.md) - public packages, annotations, wrappers, runtime APIs, and compiler entry points.
-- [Language Contract](Language-Contract.md) - the supported Java subset and explicit non-goals.
-- [Runtime Guide](Runtime-Guide.md) - OpenCL runtime scopes, fallback selection, explicit launch sizes, and ABI debug.
-- [IR Validation](IR-Validation.md) - optional strict lowered-IR validation and read-only optimizer planning checks.
-- [Validation and Operations](Validation-and-Operations.md) - local test buckets, operational routine, and evidence artifacts.
+1. [Getting Started](Getting-Started.md) - install the dependency, write a first kernel, and run it.
+2. [Cookbook](Cookbook.md) - copy small patterns for common tasks.
+3. [Runtime Guide](Runtime-Guide.md) - choose runtime scopes, launch sizes, compile options, and review-lane options.
+4. [API Overview](API-Overview.md) - learn the public packages and the most-used types.
+5. [Known Limitations](Known-Limitations.md) - understand the alpha boundaries before using it seriously.
 
-## Deeper Topics
+## Practical Topics
 
-- [OpenCL Data Model](OpenCL-Data-Model.md) - structs, vectors, pointer views, constant data, and packed blobs.
-- [ASM Contract](ASM-Contract.md) - structured ASM frontend expectations.
-- [OpenCL Runner Contract](OpenCL-Runner-Contract.md) - future Intel/NVIDIA/AMD runner requirements.
-- [Device Quirks](Device-Quirks.md) - evidence-based vendor/runtime deviations.
-- [Diagnostics Reference](Diagnostics-Reference.md) - diagnostic categories and quick fixes.
-- [Troubleshooting](Troubleshooting.md) - common compile/runtime failures.
-- [Known Limitations](Known-Limitations.md) - current alpha boundaries.
-- [Cookbook](Cookbook.md) - small copyable patterns.
-- [FAQ](FAQ.md) - short answers for common questions.
+- [OpenCL Data Model](OpenCL-Data-Model.md) - arrays, structs, vectors, pointers, packed blobs, and images.
+- [Language Contract](Language-Contract.md) - what Java shapes are supported inside GPU kernels.
+- [Troubleshooting](Troubleshooting.md) - common compile/runtime failures and fixes.
+- [FAQ](FAQ.md) - short answers to common user questions.
 
-## Current Release Position
+## Advanced Topics
 
-Recommended public label: `v0.1.0-alpha.1` or equivalent developer preview.
+- [IR Validation](IR-Validation.md) - optional strict IR checks and read-only optimizer diagnostics.
+- [Diagnostics Reference](Diagnostics-Reference.md) - diagnostic categories and how to interpret them.
+- [Validation and Operations](Validation-and-Operations.md) - local validation routines and OpenCL evidence artifacts.
+- [ASM Contract](ASM-Contract.md) - bytecode input guidance for advanced integrations.
+- [OpenCL Runner Contract](OpenCL-Runner-Contract.md) - self-hosted runner expectations for vendor validation.
+- [Device Quirks](Device-Quirks.md) - hardware/runtime-specific notes discovered from validation.
 
-The current evidence set makes the NVIDIA RTX 5070 OpenCL path operationally proven for repo-local alpha validation. It does not yet prove broad production readiness across Intel and AMD OpenCL stacks.
+## Current Alpha Position
+
+JavaToGpu is a public alpha / developer preview.
+
+The NVIDIA OpenCL path is the current proven local validation path. Intel and AMD validation are planned, but not yet part of the same confidence baseline. Treat generated code shape and runtime APIs as evolving until beta.
 
 ## Maintainer Notes
 
-Roadmaps, planning notes, historical design files, and execution checklists live in `docs-project-plan/`. Treat that folder as maintainer-facing material, not the public user manual.
+Planning notes and historical implementation details are kept outside this user manual.

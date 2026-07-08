@@ -1,49 +1,60 @@
 # Known Limitations
 
-JavaToGpu is a restricted GPU-safe subset compiler, not a general Java-to-GPU runtime.
+JavaToGpu is an alpha project. It is already useful for GPU-kernel experiments, but it is intentionally smaller than full Java.
 
-## Language Limits
+## Big Picture
 
-- `@GPU` entry methods currently return `void`.
-- Results should be written through output buffers or other supported output parameters.
-- Arbitrary Java object allocation is not supported inside GPU code.
-- Virtual dispatch, interface dispatch, dynamic dispatch, and arbitrary Java library calls are not supported inside GPU code.
-- Exceptions, monitors, synchronization blocks, recursion, and general heap/object-graph semantics are not supported.
-- Object arrays are not supported as a general language feature.
+- JavaToGpu does not move an entire Java application to the GPU automatically.
+- GPU code must be written in the supported `@GPU` subset.
+- Unsupported code should fail with a diagnostic instead of producing surprising GPU behavior.
+- Runtime behavior is still being validated across vendors and drivers.
 
-## ABI And Data Model Limits
+## Kernel Code Limits
+
+Inside `@GPU` methods, keep code simple and GPU-oriented:
+
+- `@GPU` entry methods return `void`; write results to output buffers.
+- General object allocation and object graphs are not supported.
+- Virtual/interface dispatch and arbitrary Java library calls are not supported.
+- Exceptions, recursion, monitors, and synchronization blocks are not supported.
+- Object arrays are not supported as a general kernel data model.
+
+Use `GPU.*` builtins for indexing, math, barriers, images, and other GPU operations.
+
+## Data Model Limits
 
 - Arrays inside `@GPUStruct` fields are not supported.
-- General source-level union authoring is not supported.
-- Some low-level OpenCL concepts require explicit wrappers, qualifiers, or pointer-view patterns.
-- Standalone host-side create/upload/readback helpers for every possible OpenCL image family are not part of the alpha API.
+- General Java unions or arbitrary memory overlays are not supported.
+- Some low-level layouts require explicit pointer views, qualifiers, or packed-buffer offsets.
+- Image helper coverage is alpha-level; not every OpenCL image family has a polished host-side helper yet.
 
 ## Backend Limits
 
 - OpenCL is the active backend.
-- CUDA is planned but not implemented.
-- The current local evidence set is NVIDIA OpenCL focused.
-- Intel and AMD OpenCL validation must still be run on real hardware before cross-vendor production claims.
+- CUDA, Vulkan, and Metal are planned directions, but not current user backends.
+- NVIDIA OpenCL is the current strongest validation path.
+- AMD and Intel OpenCL should be treated as hardware-specific validation targets until tested on real machines.
 
-## ASM Frontend Limits
+## ASM Input Limits
 
-- The structured ASM frontend is for intentionally generated canonical bytecode.
-- It is not a general JVM decompiler.
-- Arbitrary JVM methods should be expected to fail unless they match the supported subset.
+The ASM path is not a general JVM decompiler. It is useful when another tool intentionally emits bytecode that matches JavaToGpu's supported subset.
+
+If you want to experiment with bytecode input, run the ASM report APIs first and treat their output as a migration checklist.
 
 ## Stability Limits
 
-- Public API details can change before beta.
-- Generated launcher shape can change before beta.
-- Validation artifacts prove the tested machine and commit, not universal hardware behavior.
+- Public APIs can change before beta.
+- Generated launcher names and shapes can change before beta.
+- Validation reports prove the tested commit, machine, driver, and backend, not universal GPU behavior.
+- Performance tuning is still early; prefer correctness validation before benchmarking.
 
-## Practical Rule
+## Practical Advice
 
-If a construct cannot be lowered predictably to OpenCL C and marshalled safely through the current ABI, JavaToGpu should reject it with a diagnostic instead of accepting it implicitly.
+Start with small kernels, add one feature at a time, and keep a CPU reference implementation for tests. When something fails, check [Troubleshooting](Troubleshooting.md) before assuming it is a driver problem.
 
 ## Related Documents
 
+- [Getting Started](Getting-Started.md)
 - [Language Contract](Language-Contract.md)
-- [ASM Contract](ASM-Contract.md)
 - [OpenCL Data Model](OpenCL-Data-Model.md)
 - [Troubleshooting](Troubleshooting.md)

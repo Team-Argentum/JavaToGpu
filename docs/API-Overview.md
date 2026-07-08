@@ -1,140 +1,105 @@
 # API Overview
 
-This page is the fastest way to understand the public JavaToGpu API surface.
+This page gives a practical map of the JavaToGpu API for normal application code.
 
-## Main Packages
+## Packages You Will Use
 
-- `net.sixik.ga_utils.javatogpu.api`
-  Kernel-facing types such as `GPU`, pointer wrappers, vector wrappers, image wrappers, sampler wrappers, unsigned aliases, and address-space pointer views.
-- `net.sixik.ga_utils.javatogpu.api.annotations`
-  Source-level annotations such as `@GPU`, `@GPUGlobal`, `@GPUStruct`, `@CCode`, `@GPUIntrinsic`, and related OpenCL metadata annotations.
-- `net.sixik.ga_utils.javatogpu.runtime`
-  Runtime backend selection, execution scopes, descriptors, and explicit invocation APIs.
+- `net.sixik.ga_utils.javatogpu.api` - kernel-facing helpers such as `GPU`, vectors, pointer views, image wrappers, samplers, and unsigned aliases.
+- `net.sixik.ga_utils.javatogpu.api.annotations` - annotations for marking kernels, parameters, structs, helpers, intrinsics, attributes, and qualifiers.
+- `net.sixik.ga_utils.javatogpu.runtime` - runtime scopes, backend selection, launch configs, descriptors, compile options, and invocation helpers.
 
-## Core Annotations
+## Kernel Annotations
 
-- `@GPU`
-  Marks a Java method as a kernel entry point.
-- `@GPUGlobal`, `@GPUConstant`, `@GPULocal`
-  Declare the OpenCL address space for array and pointer-like parameters.
-- `@GPUStruct`
-  Marks a Java class as an ABI-marshalled OpenCL struct.
-- `@CCode`
-  Declares a reusable GPU helper method.
-- `@CCodeLibrary`
-  Groups reusable helper methods into a shared helper library.
-- `@GPUIntrinsic`
-  Declares a method that lowers to a backend intrinsic rather than a normal helper call.
-- `@GPUConstantData`, `@GPUExternConstantData`
-  Declare constant-data inputs for kernels.
-- `@OpenCLAttributes`
-  Attaches supported OpenCL attributes to kernels or structs.
-- `@OpenCLQualifiers`
-  Attaches low-level pointer qualifiers for explicit OpenCL signatures.
+Use these in source code that should compile to GPU code.
+
+- `@GPU` marks a static Java method as a GPU kernel entry point.
+- `@GPUGlobal`, `@GPUConstant`, and `@GPULocal` choose the OpenCL address space for array or pointer-like parameters.
+- `@GPUStruct` marks a Java class as a value type that can be marshalled to OpenCL struct layout.
+- `@CCode` marks a reusable helper method that should be emitted as GPU helper code.
+- `@CCodeLibrary` groups reusable helper methods.
+- `@GPUIntrinsic` maps a Java method to a backend intrinsic instead of a normal helper call.
+- `@OpenCLAttributes` and `@OpenCLQualifiers` expose lower-level OpenCL metadata when you need explicit signatures.
 
 ## `GPU.*` Builtins
 
-`GPU` is the main kernel builtin facade.
+Use `GPU.*` inside kernels for operations the compiler knows how to lower.
 
-Main groups:
+Common groups:
 
-- work-item indexing: `get_global_id`, `get_local_id`, `get_group_id`, `get_global_size`, `get_local_size`
-- math: `sin`, `cos`, `tan`, `sqrt`, `pow`, `exp`, `log`, `clamp`, `mix`, `smoothstep`, and many additional scalar/vector OpenCL-style helpers
-- synchronization: `barrier`, memory fence constants, local-memory helpers
-- images and samplers: image reads, writes, metadata queries, and sampler-aware overloads
-- pointer/view bridging: `GPU.global(...)`, `GPU.constant(...)`, `GPU.local(...)`
+- Work-item indexing: `get_global_id`, `get_local_id`, `get_group_id`, `get_global_size`, `get_local_size`.
+- Math: `sin`, `cos`, `tan`, `sqrt`, `pow`, `exp`, `log`, `clamp`, `mix`, `smoothstep`, and related helpers.
+- Synchronization: `barrier` and memory fence constants.
+- Images and samplers: image reads, writes, and metadata queries.
+- Pointer/view bridging: `GPU.global(...)`, `GPU.constant(...)`, `GPU.local(...)`.
 
-Use `GPU.*` when you want stable backend-recognized operations instead of ordinary Java calls.
+Prefer `GPU.*` over ordinary Java library calls inside kernels.
 
-## Value Types
+## Data Types
 
-## Scalars
+### Scalars
 
-Supported scalar shapes include:
+Supported scalar shapes include the common Java primitives used by the current subset: `byte`, `short`, `int`, `long`, `float`, `double`, and `char`.
 
-- Java primitives used by the current subset: `byte`, `short`, `int`, `long`, `float`, `double`, `char`
-- unsigned aliases: `UByte`, `UShort`, `UInt`, `ULong`
+Unsigned aliases include `UByte`, `UShort`, `UInt`, and `ULong`.
 
-## Pointer Wrappers
+### Vectors
 
-Mutable helper-oriented pointer wrappers include families such as:
-
-- `BytePtr`, `CharPtr`, `ShortPtr`, `IntPtr`, `LongPtr`, `FloatPtr`, `DoublePtr`
-
-These are useful for helper mutation patterns like `ptr.value = ...`.
-
-## Address-Space Pointer Views
-
-Address-space-aware views are used for packed/blob-style OpenCL authoring.
-
-Examples:
-
-- `GlobalBytePtr`
-- `GlobalIntPtr`
-- `GlobalFloatPtr`
-- `ConstantBytePtr`
-- `LocalFloatPtr`
-
-These support explicit view-style operations such as `add(...)`, `sub(...)`, and `as*Ptr()` where exposed.
-
-## Vector Wrappers
-
-JavaToGpu exposes OpenCL-style vector wrapper families.
-
-Examples:
+OpenCL-style vector wrapper families include:
 
 - `Float2`, `Float3`, `Float4`
 - `Int2`, `Int3`, `Int4`
 - `UInt2`, `UInt3`, `UInt4`
 - `Double2`, `Double3`, `Double4`
 
-Vectors are valid as locals, helper parameters/returns, kernel parameters, and buffer element types.
+Vectors can be locals, helper parameters/returns, kernel parameters, and buffer element types where supported.
 
-## Structs
+### Structs
 
-Use `@GPUStruct` for ABI-marshalled OpenCL structs.
+Use `@GPUStruct` for small value objects with GPU-compatible fields.
 
-Supported field categories:
+Currently supported field categories:
 
 - primitive scalar fields
 - vector fields
 - nested `@GPUStruct` fields
 
-Not supported:
+Arrays inside struct fields are not supported in the current alpha.
 
-- arrays inside struct fields
+### Pointer Views
 
-## Images And Samplers
+Pointer wrappers and address-space views are useful for low-level helpers and packed/blob data.
 
-The API includes wrapper types for OpenCL image and sampler parameters.
+Examples:
 
-Typical usage areas:
+- helper pointer wrappers: `FloatPtr`, `IntPtr`, `DoublePtr`
+- address-space views: `GlobalBytePtr`, `GlobalIntPtr`, `GlobalFloatPtr`, `ConstantBytePtr`, `LocalFloatPtr`
 
-- read-only and write-only image kernel parameters
-- sampler arguments
-- image metadata and pixel access through `GPU.*`
+Use these only when simple typed arrays are not enough.
+
+### Images And Samplers
+
+Image wrappers model OpenCL image parameters. Typical shapes include read-only images, write-only images, and `Sampler` arguments.
+
+Use image APIs when you need OpenCL image memory, filtering, channel metadata, or pixel read/write operations.
 
 ## Runtime API
 
-The main runtime entry point is `GpuRuntime`.
+The usual runtime entry point is `GpuRuntime`.
 
-Common usage patterns:
+Common calls:
 
-- `GpuRuntime.useOpenCl()`
-- `GpuRuntime.useOpenClSharedCache()`
-- `GpuRuntime.use(policy)`
-- `GpuRuntime.trySelect(policy)`
-
-Execution helpers include:
-
-- `GpuRuntime.invoke(...)`
-- `GpuExecutionConfig.oneDimensional(...)`
-- `GpuExecutionConfig.twoDimensional(...)`
-- generated launcher entry points for rewritten `@GPU` methods
+- `GpuRuntime.useOpenCl()` for a simple scoped OpenCL runtime.
+- `GpuRuntime.useOpenClSharedCache()` for repeated calls with a warm session and compile cache.
+- `GpuRuntime.use(policy)` for custom fallback policies.
+- `GpuRuntime.trySelect(policy)` for prechecking whether a GPU path is available.
+- `GpuRuntime.invoke(...)` for descriptor-based direct invocation.
+- `GpuExecutionConfig.oneDimensional(...)`, `twoDimensional(...)`, and `threeDimensional(...)` for explicit launch sizes.
+- Generated launcher methods for normal `@GPU` calls.
+- `GpuRuntimeCompileOptions.openClIrGpuSourceReview(...)` for opt-in reconstructed-`IrGpu` source smoke/review runs without changing the production default source path.
 
 ## Programmatic Compiler API
 
-If JavaToGpu is used as a backend from another compiler pipeline, use `GpuProgramCompiler`.
+Use `GpuProgramCompiler` when another compiler or tool wants to call JavaToGpu directly.
 
 Main entry points:
 
@@ -142,12 +107,12 @@ Main entry points:
 - `compileSource(...)`
 - `compileStructuredAsm(...)`
 
-Use the source frontend for normal Java kernels and the structured ASM frontend for intentionally generated canonical bytecode.
+Use normal Java source for application kernels. Use the structured ASM path only when you are building tooling that intentionally emits supported bytecode.
 
-## Recommended Reading Order
+## Recommended Reading
 
 - [Getting Started](Getting-Started.md)
-- [Language Contract](Language-Contract.md)
+- [Cookbook](Cookbook.md)
 - [Runtime Guide](Runtime-Guide.md)
 - [OpenCL Data Model](OpenCL-Data-Model.md)
-- [Cookbook](Cookbook.md)
+- [Known Limitations](Known-Limitations.md)

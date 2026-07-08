@@ -1,18 +1,10 @@
 # Getting Started
 
-This guide shows the shortest path from a Java method to an OpenCL-backed GPU call.
+This guide gets you from an ordinary Java method to a GPU-backed OpenCL call.
 
-## Requirements
+## 1. Add JavaToGpu
 
-- JDK compatible with this Gradle build.
-- A working OpenCL runtime for GPU execution.
-- For the current alpha evidence path, the NVIDIA RTX 5070 OpenCL stack is operationally proven for repo-local validation; Intel and AMD remain future validation targets.
-
-JavaToGpu can still compile and run many tests without a real GPU, but runtime validation requires OpenCL hardware and drivers.
-
-## Add The Processor
-
-Add the processor as both a dependency and an annotation processor:
+Add JavaToGpu as both a dependency and an annotation processor:
 
 ```groovy
 dependencies {
@@ -21,23 +13,11 @@ dependencies {
 }
 ```
 
-Optional strict IR validation can be enabled by adding:
+You need a JDK compatible with the project and a working OpenCL runtime for GPU execution. Many compiler tests can run without a GPU, but real kernel execution needs OpenCL drivers and hardware.
 
-```groovy
-dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
-}
+## 2. Write A Kernel
 
-tasks.withType(JavaCompile).configureEach {
-    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
-    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
-    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
-}
-```
-
-The extra artifact provides lowered-IR validation and read-only optimizer diagnostics, while the compiler options choose how aggressively builds should react, how much diagnostic detail javac prints, and whether CI should capture a machine-readable report. See [IR Validation](IR-Validation.md) for details about validation and diagnostic-output modes.
-
-## Write A Kernel
+Mark a static method with `@GPU`. Use explicit GPU-facing parameter shapes such as `@GPUGlobal float[]`, and write results into output parameters.
 
 ```java
 import net.sixik.ga_utils.javatogpu.api.GPU;
@@ -56,16 +36,16 @@ public final class DemoKernel {
 }
 ```
 
-Important rules:
+Keep first kernels simple:
 
-- `@GPU` entry methods currently return `void`.
-- Results should be written into output arrays or other supported output parameters.
-- Kernel parameters need explicit GPU-facing shapes such as `@GPUGlobal float[]`.
-- Use `GPU.*` for OpenCL-style builtins instead of arbitrary Java library calls.
+- `@GPU` entry methods return `void`.
+- Use output arrays or supported output parameters for results.
+- Use `GPU.*` for GPU builtins instead of arbitrary Java library calls.
+- Avoid object allocation, exceptions, recursion, virtual dispatch, and heap-heavy Java patterns inside kernels.
 
-## Run A Kernel
+## 3. Run The Kernel
 
-Use a runtime scope around calls that should execute through the generated launcher:
+For a one-off call, install the OpenCL runtime scope around the generated launcher call:
 
 ```java
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
@@ -76,7 +56,7 @@ try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
 }
 ```
 
-For hot paths and repeated calls, prefer the shared cache:
+For repeated calls, use the shared cache so the OpenCL session and compiled kernels stay warm:
 
 ```java
 try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
@@ -87,30 +67,47 @@ try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
 }
 ```
 
-## Validate Locally
+## 4. Validate Your Setup
 
-Run the normal processor tests:
+Run the normal test suite:
 
 ```powershell
 .\gradlew.bat :processor:test --console=plain
 ```
 
-Run the full OpenCL operational routine on a GPU machine:
+On a machine with OpenCL hardware and drivers, run the operational routine:
 
 ```powershell
 .\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
 ```
 
-OpenCL reports are written to:
+OpenCL validation reports are written under:
 
 ```text
 processor/build/reports/opencl/
 ```
 
+## 5. Optional: Add IR Validation
+
+The optional IR validation module gives stricter compiler diagnostics and CI-friendly reports.
+
+```groovy
+dependencies {
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
+}
+```
+
+Start with `diagnostic` mode. Move to strict modes only when you want builds to fail on unsupported or optimizer-unsafe IR shapes.
+
 ## Read Next
 
-- [API Overview](API-Overview.md)
-- [Language Contract](Language-Contract.md)
-- [Runtime Guide](Runtime-Guide.md)
-- [IR Validation](IR-Validation.md)
-- [Validation and Operations](Validation-and-Operations.md)
+- [Cookbook](Cookbook.md) for copyable patterns.
+- [Runtime Guide](Runtime-Guide.md) for launch sizes, fallback policies, compile options, and review-lane options.
+- [OpenCL Data Model](OpenCL-Data-Model.md) for structs, vectors, pointers, images, and packed data.
+- [Known Limitations](Known-Limitations.md) before relying on JavaToGpu in larger projects.

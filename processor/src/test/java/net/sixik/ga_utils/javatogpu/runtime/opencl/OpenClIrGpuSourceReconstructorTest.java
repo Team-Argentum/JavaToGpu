@@ -13,6 +13,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrArtifactLoader;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -22,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenClIrGpuSourceReconstructorTest {
+
+    private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+    private static final String IMAGE_KERNEL_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/image-kernel.irgpu.properties";
 
     @Test
     void reconstructsBackendNeutralReadyIrGpuSourceAndRecordsParityMatch() {
@@ -191,6 +195,61 @@ class OpenClIrGpuSourceReconstructorTest {
         assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
         assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
         assertTrue(result.diagnostics().contains("OpenCL source assembler emitted 1 helper function(s)"));
+    }
+
+    @Test
+    void reconstructsPackagedSimpleIrGpuResourceAndRecordsParityMatch() {
+        IrGpuArtifact artifact = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        String descriptorSource = """
+                __kernel void gpu_irgpu_entry(__global const float* input, float scale, __global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = input[id] + scale;
+                }
+                """;
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "inline://integration/simple-irgpu-source-kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+        assertTrue(result.diagnostics().contains("OpenCL source assembler emitted entry kernel gpu_irgpu_entry"));
+    }
+
+    @Test
+    void reconstructsPackagedImageIrGpuResourceAndRecordsParityMatch() {
+        IrGpuArtifact artifact = GpuRuntimeIrArtifactLoader.load(IMAGE_KERNEL_IRGPU_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        String descriptorSource = """
+                __kernel void gpu_image_entry(read_only image2d_t inputImage, write_only image2d_t outputImage, sampler_t sampler, __global int* output) {
+                    int id = get_global_id(0);
+                    int2 coords = (int2)(id, 0);
+                    int4 pixel = read_imagei(inputImage, sampler, coords);
+                    output[id] = pixel.x + pixel.y + pixel.z + pixel.w;
+                    write_imagef(outputImage, coords, (float4)(1.0f, 0.5f, 0.25f, 1.0f));
+                }
+                """;
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "inline://integration/image-kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+        assertTrue(result.diagnostics().contains("OpenCL source assembler emitted entry kernel gpu_image_entry"));
     }
 
     @Test
