@@ -71,6 +71,7 @@ jobs:
           cache: gradle
 
       - name: Print runner and GPU context
+        continue-on-error: true
         shell: powershell
         run: |
           Write-Host "Runner: $env:RUNNER_NAME"
@@ -86,6 +87,7 @@ jobs:
           }
 
       - name: OpenCL validation routine
+        if: always()
         id: opencl_validation
         continue-on-error: true
         shell: cmd
