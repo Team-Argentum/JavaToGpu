@@ -180,6 +180,18 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "not-requested",
                         "false",
                         "I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted"
+                ),
+                runtimeOptimizerDriftProperties(
+                        "2",
+                        "2",
+                        "0",
+                        "0",
+                        "none",
+                        "optimized",
+                        "false",
+                        "source-reconstruction-review",
+                        "not-requested",
+                        "false"
                 )
         ));
 
@@ -223,6 +235,18 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "blocked",
                         "false",
                         "I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked"
+                ),
+                runtimeOptimizerDriftProperties(
+                        "3",
+                        "1",
+                        "1",
+                        "1",
+                        "optimizer-rollback",
+                        "original",
+                        "true",
+                        "vendor-tuned",
+                        "blocked",
+                        "true"
                 )
         ));
 
@@ -297,6 +321,24 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked",
                 gate.getProperty("kernel.1.i3Readiness.diagnostic.0")
         );
+        assertEquals("recorded", gate.getProperty("kernel.0.runtimeOptimizerDrift.status"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.count"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.applied.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.rolledBack.count"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
+        assertEquals("optimized", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedRuntimeIrStage"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizedIrRejected"));
+        assertEquals("source-reconstruction-review", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedProfile"));
+        assertEquals("not-requested", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionGateStatus"));
+        assertEquals("recorded", gate.getProperty("kernel.1.runtimeOptimizerDrift.status"));
+        assertEquals("3", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.count"));
+        assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.applied.count"));
+        assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.rolledBack.count"));
+        assertEquals("optimizer-rollback", gate.getProperty("kernel.1.runtimeOptimizerDrift.fallbackDecision"));
+        assertEquals("original", gate.getProperty("kernel.1.runtimeOptimizerDrift.selectedRuntimeIrStage"));
+        assertEquals("true", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizedIrRejected"));
+        assertEquals("vendor-tuned", gate.getProperty("kernel.1.runtimeOptimizerDrift.selectedProfile"));
+        assertEquals("blocked", gate.getProperty("kernel.1.runtimeOptimizerDrift.productionGateStatus"));
     }
 
     private static void writeGate(Path gateFile, String properties) throws IOException {
@@ -468,6 +510,38 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "blocker.2=production-mutation-disabled",
                 "diagnostic.count=1",
                 "diagnostic.0=" + diagnostic,
+                ""
+        );
+    }
+
+    private static String runtimeOptimizerDriftProperties(
+            String passCount,
+            String appliedCount,
+            String rolledBackCount,
+            String failedCount,
+            String fallbackDecision,
+            String selectedRuntimeIrStage,
+            String optimizedIrRejected,
+            String selectedProfile,
+            String productionGateStatus,
+            String productionProfileRequested
+    ) {
+        return String.join("\n",
+                "pass.count=" + passCount,
+                "pass.applied.count=" + appliedCount,
+                "pass.skipped.count=0",
+                "pass.rolledBack.count=" + rolledBackCount,
+                "pass.failed.count=" + failedCount,
+                "fallbackDecision=" + fallbackDecision,
+                "selectedRuntimeIrStage=" + selectedRuntimeIrStage,
+                "selectedRuntimeIrIdentity=irgpu:sha256:selected",
+                "optimizedIrRejected=" + optimizedIrRejected,
+                "strategyName=runtime-optimizer-fixture",
+                "selectedProfile=" + selectedProfile,
+                "baselineStatus=matched",
+                "promotionEligible=false",
+                "productionGateStatus=" + productionGateStatus,
+                "productionProfileRequested=" + productionProfileRequested,
                 ""
         );
     }

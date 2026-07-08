@@ -1,7 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactSerializer;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
@@ -120,99 +119,41 @@ public final class GpuRuntimeCompileArtifactDumper {
     }
 
     private static String formatRuntimeIrHandoff(GpuRuntimeCompileArtifactSnapshot snapshot) {
-        java.util.Optional<IrGpuArtifact> originalArtifact = snapshot.originalIrGpuArtifact();
-        java.util.Optional<IrGpuArtifact> optimizedArtifact = snapshot.optimizedIrGpuArtifact();
-        java.util.Optional<IrGpuArtifact> selectedArtifact = selectedRuntimeIrArtifact(snapshot);
-        String originalIdentity = IrGpuArtifactIdentity.stableIdentity(originalArtifact);
-        String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(optimizedArtifact);
-        String selectedIdentity = IrGpuArtifactIdentity.stableIdentity(selectedArtifact);
-        boolean transformed = originalArtifact.isPresent()
-                && optimizedArtifact.isPresent()
-                && !originalIdentity.equals(optimizedIdentity);
-        boolean optimizedRejected = snapshot.fallbackEvidence().optimizedIrRejected()
-                || snapshot.optimizationReport().requiresRollback();
+        GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
+        GpuProductionIrAcceptanceGate.Result productionIrGate = selection.productionIrGate();
 
         StringBuilder builder = new StringBuilder();
-        builder.append("status=").append(selectedArtifact.isPresent() ? "selected" : "missing").append('\n');
-        builder.append("selectedStage=").append(selectedStage(snapshot, selectedArtifact)).append('\n');
-        builder.append("original.present=").append(originalArtifact.isPresent()).append('\n');
-        builder.append("optimized.present=").append(optimizedArtifact.isPresent()).append('\n');
-        builder.append("selected.present=").append(selectedArtifact.isPresent()).append('\n');
-        builder.append("original.identity=").append(originalIdentity).append('\n');
-        builder.append("optimized.identity=").append(optimizedIdentity).append('\n');
-        builder.append("selected.identity=").append(selectedIdentity).append('\n');
-        builder.append("optimizedDiffersFromOriginal=").append(transformed).append('\n');
+        builder.append("status=").append(selection.selectedArtifact().isPresent() ? "selected" : "missing").append('\n');
+        builder.append("selectedStage=").append(selection.selectedStage()).append('\n');
+        builder.append("original.present=").append(selection.originalArtifact().isPresent()).append('\n');
+        builder.append("optimized.present=").append(selection.optimizedArtifact().isPresent()).append('\n');
+        builder.append("selected.present=").append(selection.selectedArtifact().isPresent()).append('\n');
+        builder.append("original.identity=").append(selection.originalIdentity()).append('\n');
+        builder.append("optimized.identity=").append(selection.optimizedIdentity()).append('\n');
+        builder.append("selected.identity=").append(selection.selectedIdentity()).append('\n');
+        builder.append("optimizedDiffersFromOriginal=").append(selection.transformed()).append('\n');
         builder.append("optimizationReportPresent=").append(snapshot.optimizationReport().hasReports()).append('\n');
         builder.append("optimizationRequiresRollback=").append(snapshot.optimizationReport().requiresRollback()).append('\n');
-        builder.append("fallbackDecision=").append(snapshot.fallbackEvidence().decision()).append('\n');
-        builder.append("optimizedIrRejected=").append(optimizedRejected).append('\n');
+        builder.append("fallbackDecision=").append(selection.fallbackDecision()).append('\n');
+        builder.append("optimizedIrRejected=").append(selection.optimizedRejected()).append('\n');
+        builder.append("productionIrGate.status=").append(productionIrGate.status()).append('\n');
+        builder.append("productionIrGate.accepted=").append(productionIrGate.accepted()).append('\n');
+        builder.append("productionIrGate.decisionMode=").append(productionIrGate.decisionMode()).append('\n');
+        builder.append("productionIrGate.diagnostic=").append(productionIrGate.diagnostic()).append('\n');
         builder.append("backendTarget=").append(snapshot.backendModuleArtifact().backendTarget()).append('\n');
         builder.append("backendFormat=").append(snapshot.backendModuleArtifact().format()).append('\n');
         builder.append("backendResource=").append(snapshot.backendModuleArtifact().resource()).append('\n');
         builder.append("runtimeLoadMode=").append(snapshot.backendModuleArtifact().runtimeLoadMode()).append('\n');
         builder.append("diagnostic.count=1\n");
-        builder.append("diagnostic.0=").append(handoffDiagnostic(snapshot, selectedArtifact, transformed, optimizedRejected)).append('\n');
+        builder.append("diagnostic.0=").append(selection.diagnostic()).append('\n');
         return builder.toString();
     }
 
-    private static java.util.Optional<IrGpuArtifact> selectedRuntimeIrArtifact(GpuRuntimeCompileArtifactSnapshot snapshot) {
-        if (snapshot.fallbackEvidence().originalIrSelected() && snapshot.originalIrGpuArtifact().isPresent()) {
-            return snapshot.originalIrGpuArtifact();
-        }
-        if (snapshot.optimizationReport().requiresRollback() && snapshot.originalIrGpuArtifact().isPresent()) {
-            return snapshot.originalIrGpuArtifact();
-        }
-        return snapshot.optimizedIrGpuArtifact().or(() -> snapshot.originalIrGpuArtifact());
-    }
-
-    private static String selectedStage(
-            GpuRuntimeCompileArtifactSnapshot snapshot,
-            java.util.Optional<IrGpuArtifact> selectedArtifact
-    ) {
-        if (selectedArtifact.isEmpty()) {
-            return "missing";
-        }
-        String selectedIdentity = IrGpuArtifactIdentity.stableIdentity(selectedArtifact);
-        if (snapshot.originalIrGpuArtifact().isPresent()
-                && selectedIdentity.equals(IrGpuArtifactIdentity.stableIdentity(snapshot.originalIrGpuArtifact()))) {
-            return "original";
-        }
-        if (snapshot.optimizedIrGpuArtifact().isPresent()
-                && selectedIdentity.equals(IrGpuArtifactIdentity.stableIdentity(snapshot.optimizedIrGpuArtifact()))) {
-            return "optimized";
-        }
-        return "unknown";
-    }
-
-    private static String handoffDiagnostic(
-            GpuRuntimeCompileArtifactSnapshot snapshot,
-            java.util.Optional<IrGpuArtifact> selectedArtifact,
-            boolean transformed,
-            boolean optimizedRejected
-    ) {
-        if (selectedArtifact.isEmpty()) {
-            return "runtime compile has no IrGpu artifact to hand off before backend lowering";
-        }
-        if (optimizedRejected) {
-            return "optimized IrGpu was rejected; original IrGpu remains selected for backend lowering";
-        }
-        if (transformed) {
-            return "optimized IrGpu is selected for backend lowering after runtime optimizer passes";
-        }
-        if (snapshot.optimizedIrGpuArtifact().isPresent()) {
-            return "optimized IrGpu is a pass-through artifact and remains selected for backend lowering";
-        }
-        return "original IrGpu is selected for backend lowering because no optimized artifact is available";
-    }
-
     private static String formatRuntimeProductionMutationSafety(GpuRuntimeCompileArtifactSnapshot snapshot) {
-        java.util.Optional<IrGpuArtifact> selectedArtifact = selectedRuntimeIrArtifact(snapshot);
+        GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
         GpuRuntimeProductionOptimizerGate gate = snapshot.productionOptimizerGate();
-        boolean optimizedSelected = "optimized".equals(selectedStage(snapshot, selectedArtifact));
-        boolean transformed = snapshot.originalIrGpuArtifact().isPresent()
-                && snapshot.optimizedIrGpuArtifact().isPresent()
-                && !IrGpuArtifactIdentity.stableIdentity(snapshot.originalIrGpuArtifact())
-                        .equals(IrGpuArtifactIdentity.stableIdentity(snapshot.optimizedIrGpuArtifact()));
+        boolean optimizedSelected = "optimized".equals(selection.selectedStage());
+        boolean transformed = selection.transformed();
         boolean productionMutationEnabled = gate.accepted() && optimizedSelected && transformed;
 
         StringBuilder builder = new StringBuilder();
@@ -220,12 +161,11 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
         builder.append("productionGateStatus=").append(gate.status()).append('\n');
         builder.append("productionProfileRequested=").append(gate.productionProfileRequested()).append('\n');
-        builder.append("selectedStage=").append(selectedStage(snapshot, selectedArtifact)).append('\n');
+        builder.append("selectedStage=").append(selection.selectedStage()).append('\n');
         builder.append("optimizedSelected=").append(optimizedSelected).append('\n');
         builder.append("optimizedDiffersFromOriginal=").append(transformed).append('\n');
-        builder.append("optimizedIrRejected=").append(snapshot.fallbackEvidence().optimizedIrRejected()
-                || snapshot.optimizationReport().requiresRollback()).append('\n');
-        builder.append("fallbackDecision=").append(snapshot.fallbackEvidence().decision()).append('\n');
+        builder.append("optimizedIrRejected=").append(selection.optimizedRejected()).append('\n');
+        builder.append("fallbackDecision=").append(selection.fallbackDecision()).append('\n');
         builder.append("runtimeEquivalencePassed=").append(snapshot.runtimeEquivalenceEvidence().executed()
                 && snapshot.runtimeEquivalenceEvidence().equivalent()).append('\n');
         builder.append("fallbackClean=").append(GpuRuntimeFallbackEvidence.NONE.equals(snapshot.fallbackEvidence().decision())).append('\n');
@@ -264,29 +204,25 @@ public final class GpuRuntimeCompileArtifactDumper {
     }
 
     private static String formatI3ReadinessSummary(GpuRuntimeCompileArtifactSnapshot snapshot) {
-        java.util.Optional<IrGpuArtifact> selectedArtifact = selectedRuntimeIrArtifact(snapshot);
+        GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
         GpuBackendSourceReconstructionResult reconstruction = reconstructBackendSource(snapshot);
         GpuBackendSourcePromotionGate sourcePromotionGate = sourcePromotionGate(snapshot, reconstruction);
         GpuRuntimeProductionOptimizerGate optimizerGate = snapshot.productionOptimizerGate();
         boolean runtimeEquivalencePassed = snapshot.runtimeEquivalenceEvidence().executed()
                 && snapshot.runtimeEquivalenceEvidence().equivalent();
         boolean productionMutationEnabled = optimizerGate.accepted()
-                && "optimized".equals(selectedStage(snapshot, selectedArtifact))
-                && snapshot.originalIrGpuArtifact().isPresent()
-                && snapshot.optimizedIrGpuArtifact().isPresent()
-                && !IrGpuArtifactIdentity.stableIdentity(snapshot.originalIrGpuArtifact())
-                        .equals(IrGpuArtifactIdentity.stableIdentity(snapshot.optimizedIrGpuArtifact()));
+                && "optimized".equals(selection.selectedStage())
+                && selection.transformed();
 
         StringBuilder builder = new StringBuilder();
         builder.append("status=").append(i3ReadinessStatus(sourcePromotionGate, productionMutationEnabled)).append('\n');
         builder.append("backendTarget=").append(snapshot.backendModuleArtifact().backendTarget()).append('\n');
         builder.append("backendFormat=").append(snapshot.backendModuleArtifact().format()).append('\n');
         builder.append("backendResource=").append(snapshot.backendModuleArtifact().resource()).append('\n');
-        builder.append("selectedRuntimeIrStage=").append(selectedStage(snapshot, selectedArtifact)).append('\n');
-        builder.append("selectedRuntimeIrIdentity=").append(IrGpuArtifactIdentity.stableIdentity(selectedArtifact)).append('\n');
-        builder.append("optimizedIrRejected=").append(snapshot.fallbackEvidence().optimizedIrRejected()
-                || snapshot.optimizationReport().requiresRollback()).append('\n');
-        builder.append("fallbackDecision=").append(snapshot.fallbackEvidence().decision()).append('\n');
+        builder.append("selectedRuntimeIrStage=").append(selection.selectedStage()).append('\n');
+        builder.append("selectedRuntimeIrIdentity=").append(selection.selectedIdentity()).append('\n');
+        builder.append("optimizedIrRejected=").append(selection.optimizedRejected()).append('\n');
+        builder.append("fallbackDecision=").append(selection.fallbackDecision()).append('\n');
         builder.append("sourceReconstructed=").append(reconstruction.reconstructed()).append('\n');
         builder.append("sourceAvailable=").append(reconstruction.sourceAvailable()).append('\n');
         builder.append("sourceParityChecked=").append(sourcePromotionGate.sourceParityChecked()).append('\n');

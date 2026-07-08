@@ -112,6 +112,7 @@ class GpuRuntimeCompileArtifactDumperTest {
                         null,
                         null
                 ),
+                null,
                 List.of(location()),
                 "build ok",
                 List.of("equivalence:skipped")
@@ -254,6 +255,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizationRequiresRollback=false"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("fallbackDecision=none"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizedIrRejected=false"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.status=review-profile"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.accepted=true"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.decisionMode=diagnostic-only"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("backendTarget=OPENCL"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("runtimeLoadMode=opencl-source-compile"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("diagnostic.0=optimized IrGpu is selected for backend lowering after runtime optimizer passes"));
@@ -281,6 +285,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.applied.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.rolledBack.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=optimized"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=false"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:opencl-nvidia-advisory"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("baselineStatus=recorded-nvidia-only"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionGateStatus=not-requested"));
@@ -293,10 +299,14 @@ class GpuRuntimeCompileArtifactDumperTest {
     @Test
     void emptyDumpHandlesMissingSnapshot() {
         GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(null);
+        String driftProperties = GpuRuntimeOptimizerDriftArtifact.from(null).toPropertiesText();
 
         assertFalse(dump.hasArtifact("original.irgpu.properties"));
         assertFalse(dump.hasArtifact("backend-source-map.properties"));
         assertTrue(dump.sourceLocations().isEmpty());
+        assertTrue(driftProperties.contains("selectedRuntimeIrStage=missing"));
+        assertTrue(driftProperties.contains("selectedRuntimeIrIdentity=irgpu:missing"));
+        assertTrue(driftProperties.contains("optimizedIrRejected=false"));
     }
 
     @Test
@@ -763,12 +773,18 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("strategyEvidenceBacked=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("vendorPromotionEligible=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("diagnostic.0=runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.status=blocked"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.accepted=false"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.decisionMode=diagnostic-only"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.diagnostic=OpenCL runtime optimized IrGpu cannot be selected for production-like optimization profile 'vendor-tuned'"));
         assertTrue(dump.artifact("i3-readiness-summary.properties").contains("status=blocked"));
         assertTrue(dump.artifact("i3-readiness-summary.properties").contains("optimizerProductionGateStatus=blocked"));
         assertTrue(dump.artifact("i3-readiness-summary.properties").contains("productionProfileRequested=true"));
         assertTrue(dump.artifact("i3-readiness-summary.properties").contains("productionMutationEnabled=false"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=original"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=false"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:opencl-nvidia-advisory"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedProfile=vendor-tuned"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionGateStatus=blocked"));
@@ -827,6 +843,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.rolledBack.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.failed.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=optimizer-rollback"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=original"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=true"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("strategyName=strategy:none"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("productionGateStatus=not-requested"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("status=selected"));

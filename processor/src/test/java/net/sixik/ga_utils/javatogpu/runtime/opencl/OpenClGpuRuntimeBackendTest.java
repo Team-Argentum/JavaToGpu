@@ -1395,6 +1395,113 @@ class OpenClGpuRuntimeBackendTest {
         assertTrue(snapshot.fallbackEvidence().originalIrSelected());
         assertTrue(snapshot.fallbackEvidence().optimizedIrRejected());
         assertEquals("runtime-equivalence-failed", snapshot.compileProvenance().fallbackDecision());
+        assertEquals("missing", snapshot.runtimeIrSelection().selectedStage());
+        assertTrue(snapshot.runtimeIrSelection().optimizedRejected());
+        assertEquals("runtime-equivalence-failed", snapshot.runtimeIrSelection().fallbackDecision());
+    }
+
+    @Test
+    void runtimeEquivalenceFailureCompilesOriginalIrAfterSelectionFallback() throws Exception {
+        Path classpathRoot = Files.createTempDirectory("javatogpu-irgpu-fallback-resource");
+        Path artifactPath = classpathRoot.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        Files.createDirectories(artifactPath.getParent());
+        Files.writeString(artifactPath, """
+                # JavaToGpu backend-neutral IR artifact manifest
+                backendOutput.0.backend=opencl
+                backendOutput.0.format=opencl-c
+                backendOutput.0.kind=source
+                backendOutput.0.resource=javatogpu/sample/Demo/kernel.cl
+                backendOutput.count=1
+                compilerArtifact=JavaToGpu
+                derived.opencl.resource=javatogpu/sample/Demo/kernel.cl
+                entryEmittedName=jtg_kernel
+                entryMethod=kernel
+                format=javatogpu.irgpu.v1
+                helper.count=0
+                methodBody.0.body=method jtg_kernel source\\=kernel\\nhelpers -\\nbody\\n  return original\\n
+                methodBody.0.emittedName=jtg_kernel
+                methodBody.0.format=ir-text-v1
+                methodBody.0.helperDependency.count=0
+                methodBody.0.name=kernel
+                methodBody.0.role=entry
+                methodBody.count=1
+                runtime.defaultBackend=opencl
+                runtime.optimizationProfile=off
+                schemaVersion=1
+                sourceFrontend=java-source
+                struct.count=0
+                """);
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.irgpu.properties",
+                java.util.List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        AtomicReference<GpuRuntimeCompileRequest> finalCompileRequest = new AtomicReference<>();
+
+        ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classpathRoot.toUri().toURL()}, previousClassLoader)) {
+            Thread.currentThread().setContextClassLoader(classLoader);
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected GpuRuntimeIrOptimizationResult optimizeRuntimeIrWithReport(GpuRuntimeCompileRequest compileRequest) {
+                    IrGpuArtifact optimizedArtifact = testIrGpuArtifact("optimized runtime body\n  return output[0] + 42\n");
+                    GpuRuntimeCompileRequest optimizedRequest = compileRequest.withIrGpuArtifact(java.util.Optional.of(optimizedArtifact));
+                    String originalIdentity = IrGpuArtifactIdentity.stableIdentity(compileRequest.irGpuArtifact());
+                    String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(optimizedRequest.irGpuArtifact());
+                    return new GpuRuntimeIrOptimizationResult(
+                            optimizedRequest,
+                            new net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport(
+                                    java.util.Optional.of(optimizedArtifact),
+                                    List.of(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport.applied(
+                                            "test-runtime-optimizer",
+                                            originalIdentity,
+                                            optimizedIdentity,
+                                            "test-proof",
+                                            List.of("test optimizer supplied transformed IR")
+                                    ))
+                            )
+                    );
+                }
+
+                @Override
+                protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
+                    return GpuRuntimeEquivalenceEvidence.failed(
+                            request.optimizedCompileRequest(),
+                            2,
+                            1,
+                            List.of("case 1 output differs")
+                    );
+                }
+
+                @Override
+                protected OpenClCompiledKernel compileKernel(
+                        GpuRuntimeCompileRequest compileRequest,
+                        GpuBackendModuleArtifact moduleArtifact
+                ) {
+                    finalCompileRequest.set(compileRequest);
+                    return super.compileKernel(compileRequest, moduleArtifact);
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}));
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousClassLoader);
+        }
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        String originalIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.originalIrGpuArtifact());
+        String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.optimizedIrGpuArtifact());
+        String finalCompileIdentity = IrGpuArtifactIdentity.stableIdentity(finalCompileRequest.get().irGpuArtifact());
+        assertNotEquals(originalIdentity, optimizedIdentity);
+        assertEquals(originalIdentity, finalCompileIdentity);
+        assertEquals("runtime-equivalence-failed", snapshot.compileProvenance().fallbackDecision());
+        assertTrue(snapshot.fallbackEvidence().originalIrSelected());
+        assertEquals("original", snapshot.runtimeIrSelection().selectedStage());
+        assertEquals(originalIdentity, snapshot.runtimeIrSelection().selectedIdentity());
+        assertTrue(snapshot.runtimeIrSelection().optimizedRejected());
     }
 
     @Test

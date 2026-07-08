@@ -6,6 +6,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionIrAcceptanceGate;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeProductionProfiles;
 
@@ -64,21 +65,18 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
     }
 
     private void validateProductionSourceSwitching(GpuRuntimeCompileRequest compileRequest) {
-        if (!GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile())) {
-            return;
-        }
-        if (compileRequest.options().backendOptions().enablesOpenClProductionSourceSwitching()) {
-            return;
-        }
-        throw new IllegalStateException(
-                "OpenCL IrGpu source compilation was requested for production-like optimization profile '"
-                        + compileRequest.options().optimizationProfile()
-                        + "', but production source switching is disabled; pass backend option "
-                        + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
-                        + "="
-                        + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
-                        + " only after A1/A2 promotion evidence is accepted"
-        );
+        GpuProductionIrAcceptanceGate.evaluate(
+                "OpenCL",
+                "IrGpu source",
+                compileRequest.options().optimizationProfile(),
+                GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile()),
+                compileRequest.options().backendOptions().enablesOpenClProductionSourceSwitching(),
+                compileRequest.options().backendOptions().productionPromotionDecisionMode()
+        ).throwIfRejected("pass backend option "
+                + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
+                + "="
+                + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
+                + " only after accepted production-promotion evidence is loaded");
     }
 
     private GpuBackendModuleArtifact lowerIrGpuSource(

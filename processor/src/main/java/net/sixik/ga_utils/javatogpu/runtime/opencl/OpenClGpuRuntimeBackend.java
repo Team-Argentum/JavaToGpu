@@ -55,6 +55,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrSelection;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackend;
 import java.util.Objects;
 import java.util.Map;
@@ -254,9 +255,37 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         compileRequest = applyProductionPromotionDecision(compileRequest);
         GpuRuntimeIrOptimizationResult optimizationResult = optimizeRuntimeIrWithReport(compileRequest);
         GpuRuntimeCompileRequest optimizedCompileRequest = optimizationResult.compileRequest();
-        GpuBackendModuleArtifact moduleArtifact = lowerBackendModule(optimizedCompileRequest);
-        GpuRuntimeCompileInvalidationStamp invalidationStamp = GpuRuntimeCompileInvalidationStamp.from(
+        GpuBackendModuleArtifact optimizedModuleArtifact = lowerBackendModule(optimizedCompileRequest);
+        GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence = executeRuntimeEquivalence(new GpuRuntimeEquivalenceRequest(
+                compileRequest,
                 optimizedCompileRequest,
+                optimizedModuleArtifact,
+                optimizationResult.report(),
+                invocation.arguments(),
+                invocation.executionConfig()
+        ));
+        GpuRuntimeCompileArtifactSnapshot selectionSnapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                compileRequest,
+                optimizedCompileRequest,
+                optimizedModuleArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(
+                        optimizedCompileRequest,
+                        optimizedModuleArtifact,
+                        optimizerPipelineVersion()
+                ),
+                GpuRuntimeCompileProvenance.from(optimizedCompileRequest),
+                optimizationResult.report(),
+                runtimeEquivalenceEvidence
+        );
+        GpuRuntimeIrSelection runtimeIrSelection = selectionSnapshot.runtimeIrSelection();
+        GpuRuntimeCompileRequest selectedCompileRequest = optimizedCompileRequest.withIrGpuArtifact(
+                runtimeIrSelection.selectedArtifact()
+        );
+        GpuBackendModuleArtifact moduleArtifact = sameSelectedIr(optimizedCompileRequest, selectedCompileRequest)
+                ? optimizedModuleArtifact
+                : lowerBackendModule(selectedCompileRequest);
+        GpuRuntimeCompileInvalidationStamp invalidationStamp = GpuRuntimeCompileInvalidationStamp.from(
+                selectedCompileRequest,
                 moduleArtifact,
                 optimizerPipelineVersion()
         );
@@ -265,20 +294,13 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 optimizedCompileRequest,
                 moduleArtifact,
                 invalidationStamp,
-                GpuRuntimeCompileProvenance.from(optimizedCompileRequest),
+                GpuRuntimeCompileProvenance.from(selectedCompileRequest),
                 optimizationResult.report(),
-                executeRuntimeEquivalence(new GpuRuntimeEquivalenceRequest(
-                        compileRequest,
-                        optimizedCompileRequest,
-                        moduleArtifact,
-                        optimizationResult.report(),
-                        invocation.arguments(),
-                        invocation.executionConfig()
-                ))
+                runtimeEquivalenceEvidence
         );
         dumpBackendSourcePromotionWorkloadGate(artifactSnapshot);
         GpuRuntimeCompileCacheKey compileCacheKey = GpuRuntimeCompileCacheKey.from(
-                optimizedCompileRequest,
+                selectedCompileRequest,
                 moduleArtifact,
                 invalidationStamp
         );
@@ -289,7 +311,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         } else {
             compiledKernel = kernelCache.computeIfAbsent(
                     compileCacheKey,
-                    ignored -> compileKernelChecked(optimizedCompileRequest, moduleArtifact, artifactSnapshot)
+                    ignored -> compileKernelChecked(selectedCompileRequest, moduleArtifact, artifactSnapshot)
             );
         }
         OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
@@ -304,6 +326,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             );
         }
         executeKernelChecked(execution);
+    }
+
+    private static boolean sameSelectedIr(
+            GpuRuntimeCompileRequest optimizedCompileRequest,
+            GpuRuntimeCompileRequest selectedCompileRequest
+    ) {
+        return IrGpuArtifactIdentity.stableIdentity(optimizedCompileRequest.irGpuArtifact())
+                .equals(IrGpuArtifactIdentity.stableIdentity(selectedCompileRequest.irGpuArtifact()));
     }
 
     /**
@@ -2467,7 +2497,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     dump.artifact("backend-source-switching-decision.properties"),
                     dump.artifact("runtime-ir-handoff.properties"),
                     dump.artifact("runtime-production-mutation-safety.properties"),
-                    dump.artifact("i3-readiness-summary.properties")
+                    dump.artifact("i3-readiness-summary.properties"),
+                    dump.artifact("runtime-optimizer-drift.properties")
             );
             java.nio.file.Files.writeString(path, gateProperties, java.nio.charset.StandardCharsets.UTF_8);
         } catch (RuntimeException | java.io.IOException exception) {

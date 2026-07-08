@@ -10,6 +10,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
         int rolledBackPassCount,
         int failedPassCount,
         String fallbackDecision,
+        String selectedRuntimeIrStage,
+        String selectedRuntimeIrIdentity,
+        boolean optimizedIrRejected,
         String strategyName,
         String selectedProfile,
         String baselineStatus,
@@ -27,6 +30,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     0,
                     0,
                     GpuRuntimeFallbackEvidence.NONE,
+                    "missing",
+                    "irgpu:missing",
+                    false,
                     "strategy:none",
                     "off",
                     "missing",
@@ -40,13 +46,17 @@ public record GpuRuntimeOptimizerDriftArtifact(
         GpuOptimizationStrategyDecision strategy = report.strategyDecision();
         GpuOptimizationVendorBaseline baseline = strategy.vendorBaseline();
         GpuRuntimeProductionOptimizerGate gate = snapshot.productionOptimizerGate();
+        GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
         return new GpuRuntimeOptimizerDriftArtifact(
                 report.passReports().size(),
                 count(report, GpuRuntimeIrOptimizationOutcome.APPLIED),
                 count(report, GpuRuntimeIrOptimizationOutcome.SKIPPED),
                 count(report, GpuRuntimeIrOptimizationOutcome.ROLLED_BACK),
                 count(report, GpuRuntimeIrOptimizationOutcome.FAILED),
-                snapshot.fallbackEvidence().decision(),
+                selection.fallbackDecision(),
+                selection.selectedStage(),
+                selection.selectedIdentity(),
+                selection.optimizedRejected(),
                 strategy.strategyName(),
                 strategy.selectedProfile(),
                 baseline.status(),
@@ -64,6 +74,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
         builder.append("pass.rolledBack.count=").append(rolledBackPassCount).append('\n');
         builder.append("pass.failed.count=").append(failedPassCount).append('\n');
         builder.append("fallbackDecision=").append(fallbackDecision).append('\n');
+        builder.append("selectedRuntimeIrStage=").append(selectedRuntimeIrStage).append('\n');
+        builder.append("selectedRuntimeIrIdentity=").append(selectedRuntimeIrIdentity).append('\n');
+        builder.append("optimizedIrRejected=").append(optimizedIrRejected).append('\n');
         builder.append("strategyName=").append(strategyName).append('\n');
         builder.append("selectedProfile=").append(selectedProfile).append('\n');
         builder.append("baselineStatus=").append(baselineStatus).append('\n');

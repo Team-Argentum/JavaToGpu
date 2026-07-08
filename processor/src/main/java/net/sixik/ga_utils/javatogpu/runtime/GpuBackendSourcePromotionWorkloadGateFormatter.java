@@ -78,11 +78,34 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             String latestRuntimeProductionMutationSafetyProperties,
             String latestI3ReadinessSummaryProperties
     ) throws IOException {
+        return merge(
+                path,
+                sourceKernelResource,
+                latestGateProperties,
+                latestSourceSwitchingDecisionProperties,
+                latestRuntimeIrHandoffProperties,
+                latestRuntimeProductionMutationSafetyProperties,
+                latestI3ReadinessSummaryProperties,
+                ""
+        );
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties,
+            String latestRuntimeIrHandoffProperties,
+            String latestRuntimeProductionMutationSafetyProperties,
+            String latestI3ReadinessSummaryProperties,
+            String latestRuntimeOptimizerDriftProperties
+    ) throws IOException {
         Properties latest = loadProperties(latestGateProperties);
         Properties latestSourceSwitchingDecision = loadProperties(latestSourceSwitchingDecisionProperties);
         Properties latestRuntimeIrHandoff = loadProperties(latestRuntimeIrHandoffProperties);
         Properties latestRuntimeProductionMutationSafety = loadProperties(latestRuntimeProductionMutationSafetyProperties);
         Properties latestI3ReadinessSummary = loadProperties(latestI3ReadinessSummaryProperties);
+        Properties latestRuntimeOptimizerDrift = loadProperties(latestRuntimeOptimizerDriftProperties);
         Properties existing = new Properties();
         if (Files.exists(path)) {
             try (InputStream inputStream = Files.newInputStream(path)) {
@@ -121,6 +144,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyRuntimeIrHandoffProperties(latestRuntimeIrHandoff, latestEntry);
         copyRuntimeProductionMutationSafetyProperties(latestRuntimeProductionMutationSafety, latestEntry);
         copyI3ReadinessSummaryProperties(latestI3ReadinessSummary, latestEntry);
+        copyRuntimeOptimizerDriftProperties(latestRuntimeOptimizerDrift, latestEntry);
         copyIndexedProperties(latest, latestEntry, "runtimeEquivalence.diagnostic");
         copyIndexedProperties(latest, latestEntry, "reconstruction.blocker");
         copyIndexedProperties(latest, latestEntry, "reconstruction.diagnostic");
@@ -358,6 +382,48 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         target.setProperty("i3Readiness." + key, source.getProperty(key, "unknown"));
     }
 
+    private static void copyRuntimeOptimizerDriftProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("runtimeOptimizerDrift.status", "not-recorded");
+            target.setProperty("runtimeOptimizerDrift.pass.count", "0");
+            target.setProperty("runtimeOptimizerDrift.pass.applied.count", "0");
+            target.setProperty("runtimeOptimizerDrift.pass.skipped.count", "0");
+            target.setProperty("runtimeOptimizerDrift.pass.rolledBack.count", "0");
+            target.setProperty("runtimeOptimizerDrift.pass.failed.count", "0");
+            target.setProperty("runtimeOptimizerDrift.fallbackDecision", target.getProperty("runtimeIrHandoff.fallbackDecision", "none"));
+            target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrStage", target.getProperty("runtimeIrHandoff.selectedStage", "original"));
+            target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrIdentity", target.getProperty("runtimeIrHandoff.selected.identity", "unknown"));
+            target.setProperty("runtimeOptimizerDrift.optimizedIrRejected", target.getProperty("runtimeIrHandoff.optimizedIrRejected", "false"));
+            target.setProperty("runtimeOptimizerDrift.strategyName", "unknown");
+            target.setProperty("runtimeOptimizerDrift.selectedProfile", "unknown");
+            target.setProperty("runtimeOptimizerDrift.baselineStatus", "unknown");
+            target.setProperty("runtimeOptimizerDrift.promotionEligible", "false");
+            target.setProperty("runtimeOptimizerDrift.productionGateStatus", target.getProperty("runtimeProductionMutationSafety.productionGateStatus", "not-recorded"));
+            target.setProperty("runtimeOptimizerDrift.productionProfileRequested", target.getProperty("runtimeProductionMutationSafety.productionProfileRequested", "unknown"));
+            return;
+        }
+        copyRuntimeOptimizerDriftProperty(source, target, "pass.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "pass.applied.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "pass.skipped.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "pass.rolledBack.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "pass.failed.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "fallbackDecision");
+        copyRuntimeOptimizerDriftProperty(source, target, "selectedRuntimeIrStage");
+        copyRuntimeOptimizerDriftProperty(source, target, "selectedRuntimeIrIdentity");
+        copyRuntimeOptimizerDriftProperty(source, target, "optimizedIrRejected");
+        copyRuntimeOptimizerDriftProperty(source, target, "strategyName");
+        copyRuntimeOptimizerDriftProperty(source, target, "selectedProfile");
+        copyRuntimeOptimizerDriftProperty(source, target, "baselineStatus");
+        copyRuntimeOptimizerDriftProperty(source, target, "promotionEligible");
+        copyRuntimeOptimizerDriftProperty(source, target, "productionGateStatus");
+        copyRuntimeOptimizerDriftProperty(source, target, "productionProfileRequested");
+        target.setProperty("runtimeOptimizerDrift.status", "recorded");
+    }
+
+    private static void copyRuntimeOptimizerDriftProperty(Properties source, Properties target, String key) {
+        target.setProperty("runtimeOptimizerDrift." + key, source.getProperty(key, "unknown"));
+    }
+
     private static void copyIndexedProperties(
             Properties source,
             Properties target,
@@ -433,6 +499,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         appendRuntimeIrHandoff(builder, prefix, entry);
         appendRuntimeProductionMutationSafety(builder, prefix, entry);
         appendI3ReadinessSummary(builder, prefix, entry);
+        appendRuntimeOptimizerDrift(builder, prefix, entry);
         appendIndexedProperties(builder, prefix, entry, "runtimeEquivalence.diagnostic");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.blocker");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.diagnostic");
@@ -537,6 +604,25 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("i3Readiness.productionMutationEnabled=").append(entry.getProperty("i3Readiness.productionMutationEnabled", "unknown")).append('\n');
         appendIndexedProperties(builder, prefix, entry, "i3Readiness.blocker");
         appendIndexedProperties(builder, prefix, entry, "i3Readiness.diagnostic");
+    }
+
+    private static void appendRuntimeOptimizerDrift(StringBuilder builder, String prefix, Properties entry) {
+        builder.append(prefix).append("runtimeOptimizerDrift.status=").append(entry.getProperty("runtimeOptimizerDrift.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.pass.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.pass.applied.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.applied.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.pass.skipped.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.skipped.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.pass.rolledBack.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.pass.failed.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.failed.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.fallbackDecision=").append(entry.getProperty("runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.selectedRuntimeIrStage=").append(entry.getProperty("runtimeOptimizerDrift.selectedRuntimeIrStage", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.selectedRuntimeIrIdentity=").append(entry.getProperty("runtimeOptimizerDrift.selectedRuntimeIrIdentity", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.optimizedIrRejected=").append(entry.getProperty("runtimeOptimizerDrift.optimizedIrRejected", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.strategyName=").append(entry.getProperty("runtimeOptimizerDrift.strategyName", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.selectedProfile=").append(entry.getProperty("runtimeOptimizerDrift.selectedProfile", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.baselineStatus=").append(entry.getProperty("runtimeOptimizerDrift.baselineStatus", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.promotionEligible=").append(entry.getProperty("runtimeOptimizerDrift.promotionEligible", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.productionGateStatus=").append(entry.getProperty("runtimeOptimizerDrift.productionGateStatus", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.productionProfileRequested=").append(entry.getProperty("runtimeOptimizerDrift.productionProfileRequested", "unknown")).append('\n');
     }
 
     private static void appendIndexedProperties(

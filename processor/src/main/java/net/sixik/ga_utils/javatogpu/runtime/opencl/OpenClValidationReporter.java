@@ -485,6 +485,26 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(i3ReadinessDiagnostic))
                     .append("`\n");
         }
+        String optimizerDriftStatus = properties.getProperty(prefix + "runtimeOptimizerDrift.status", "not-recorded");
+        if (!"not-recorded".equals(optimizerDriftStatus)) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` runtime optimizer drift: passes=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.count", "0")))
+                    .append("`, applied=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.applied.count", "0")))
+                    .append("`, rolledBack=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.rolledBack.count", "0")))
+                    .append("`, failed=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.failed.count", "0")))
+                    .append("`, selected=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.selectedRuntimeIrStage", "unknown")))
+                    .append("`, fallback=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.fallbackDecision", "unknown")))
+                    .append("`, gate=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.productionGateStatus", "unknown")))
+                    .append("`\n");
+        }
         int diagnosticCount = parsePositiveInt(properties.getProperty(prefix + "diagnostic.count", "0"));
         if (diagnosticCount > 0) {
             markdown.append("- Kernel `")
@@ -687,6 +707,10 @@ public final class OpenClValidationReporter {
             builder.append(prefix).append("i3Status=").append(normalizeI3ReadinessStatus(
                     gate.getProperty(prefix + "i3Readiness.status", "unknown"))).append('\n');
             builder.append(prefix).append("runtimeIr=").append(gate.getProperty(prefix + "runtimeIrHandoff.selectedStage", "unknown")).append('\n');
+            builder.append(prefix).append("optimizerDriftStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.status", "not-recorded")).append('\n');
+            builder.append(prefix).append("optimizerDriftPassCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRolledBackCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftFallbackDecision=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
             builder.append(prefix).append("sourcePromotionStatus=").append(gate.getProperty(prefix + "i3Readiness.sourcePromotionStatus", "unknown")).append('\n');
             builder.append(prefix).append("optimizerProductionGateStatus=").append(gate.getProperty(prefix + "i3Readiness.optimizerProductionGateStatus", "unknown")).append('\n');
             builder.append(prefix).append("productionMutationEnabled=").append(gate.getProperty(prefix + "i3Readiness.productionMutationEnabled", "unknown")).append('\n');
@@ -1048,6 +1072,15 @@ public final class OpenClValidationReporter {
                     .append(properties.getProperty("kernel." + index + ".sourceSwitching.decision", "not-recorded"))
                     .append(", runtimeIr=")
                     .append(properties.getProperty("kernel." + index + ".runtimeIrHandoff.selectedStage", "unknown"))
+                    .append(", optimizerDrift=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.status", "not-recorded"))
+                    .append('/')
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.pass.count", "0"))
+                    .append("passes")
+                    .append("/rollback=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.pass.rolledBack.count", "0"))
+                    .append("/fallback=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.fallbackDecision", "unknown"))
                     .append(", productionMutation=")
                     .append(properties.getProperty("kernel." + index + ".runtimeProductionMutationSafety.productionMutationEnabled", "unknown"))
                     .append(", i3=")

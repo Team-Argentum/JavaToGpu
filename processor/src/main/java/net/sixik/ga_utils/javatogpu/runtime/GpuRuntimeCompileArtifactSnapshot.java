@@ -22,6 +22,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
         GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence,
         GpuRuntimeFallbackEvidence fallbackEvidence,
         GpuRuntimeProductionOptimizerGate productionOptimizerGate,
+        GpuRuntimeIrSelection runtimeIrSelection,
         List<IrGpuSourceLocation> sourceLocations,
         String compileLog,
         List<String> runtimeValidationEvidence
@@ -49,6 +50,16 @@ public record GpuRuntimeCompileArtifactSnapshot(
         productionOptimizerGate = productionOptimizerGate == null
                 ? productionGate(compileProvenance, optimizationReport, runtimeEquivalenceEvidence, fallbackEvidence)
                 : productionOptimizerGate;
+        runtimeIrSelection = runtimeIrSelection == null
+                ? GpuRuntimeIrSelection.fromFields(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                fallbackEvidence,
+                optimizationReport,
+                compileProvenance,
+                productionOptimizerGate
+        )
+                : runtimeIrSelection;
         sourceLocations = sourceLocations == null ? List.of() : List.copyOf(sourceLocations);
         compileLog = compileLog == null ? "" : compileLog;
         runtimeValidationEvidence = runtimeValidationEvidence == null
@@ -75,6 +86,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 GpuRuntimeEquivalenceEvidence.notRun(null, "runtime equivalence was not executed"),
                 GpuRuntimeFallbackEvidence.none(),
                 GpuRuntimeProductionOptimizerGate.evaluate("off", null, null, null),
+                null,
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -104,6 +116,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 GpuRuntimeEquivalenceEvidence.notRun(null, "legacy OpenCL source path has no runtime equivalence evidence"),
                 GpuRuntimeFallbackEvidence.none(),
                 GpuRuntimeProductionOptimizerGate.evaluate("off", null, null, null),
+                null,
                 List.of(),
                 "",
                 List.of()
@@ -138,6 +151,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
                         runtimeEquivalenceEvidence,
                         resolvedFallbackEvidence
                 ),
+                null,
                 collectSourceLocations(originalRequest, optimizedRequest),
                 "",
                 List.of()
@@ -329,6 +343,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 runtimeEquivalenceEvidence,
                 fallbackEvidence,
                 productionOptimizerGate,
+                runtimeIrSelection,
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -346,6 +361,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 runtimeEquivalenceEvidence,
                 fallbackEvidence,
                 productionOptimizerGate,
+                runtimeIrSelection,
                 sourceLocations,
                 compileLog,
                 evidence
@@ -353,16 +369,18 @@ public record GpuRuntimeCompileArtifactSnapshot(
     }
 
     public GpuRuntimeCompileArtifactSnapshot withCompileProvenance(GpuRuntimeCompileProvenance provenance) {
+        GpuRuntimeCompileProvenance resolvedProvenance = syncFallbackDecision(provenance, fallbackEvidence);
         return new GpuRuntimeCompileArtifactSnapshot(
                 originalIrGpuArtifact,
                 optimizedIrGpuArtifact,
                 backendModuleArtifact,
                 invalidationStamp,
-                provenance,
+                resolvedProvenance,
                 optimizationReport,
                 runtimeEquivalenceEvidence,
                 fallbackEvidence,
-                productionOptimizerGate,
+                productionGate(resolvedProvenance, optimizationReport, runtimeEquivalenceEvidence, fallbackEvidence),
+                null,
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -380,6 +398,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 runtimeEquivalenceEvidence,
                 fallbackEvidence(report, runtimeEquivalenceEvidence),
                 productionGate(compileProvenance, report, runtimeEquivalenceEvidence, fallbackEvidence(report, runtimeEquivalenceEvidence)),
+                null,
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -397,6 +416,7 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 evidence,
                 fallbackEvidence(optimizationReport, evidence),
                 productionGate(compileProvenance, optimizationReport, evidence, fallbackEvidence(optimizationReport, evidence)),
+                null,
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence
@@ -414,6 +434,25 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 runtimeEquivalenceEvidence,
                 evidence,
                 productionGate(compileProvenance, optimizationReport, runtimeEquivalenceEvidence, evidence),
+                null,
+                sourceLocations,
+                compileLog,
+                runtimeValidationEvidence
+        );
+    }
+
+    public GpuRuntimeCompileArtifactSnapshot withRuntimeIrSelection(GpuRuntimeIrSelection selection) {
+        return new GpuRuntimeCompileArtifactSnapshot(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                backendModuleArtifact,
+                invalidationStamp,
+                compileProvenance,
+                optimizationReport,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence,
+                productionOptimizerGate,
+                selection,
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence

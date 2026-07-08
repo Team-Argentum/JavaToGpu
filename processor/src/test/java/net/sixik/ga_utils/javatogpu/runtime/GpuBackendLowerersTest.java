@@ -279,16 +279,48 @@ class GpuBackendLowerersTest {
         );
 
         assertTrue(exception.getMessage().contains("production-like optimization profile 'vendor-tuned'"));
+        assertTrue(exception.getMessage().contains("backend source switching is disabled"));
         assertTrue(exception.getMessage().contains("opencl.productionSourceSwitching=enabled"));
-        assertTrue(exception.getMessage().contains("A1/A2 promotion evidence"));
+        assertTrue(exception.getMessage().contains("current decision mode=diagnostic-only"));
     }
 
     @Test
-    void openClLowererAllowsProductionIrGpuSourceOnlyWhenProductionSwitchingIsExplicitlyEnabled() {
+    void openClLowererRejectsProductionIrGpuSourceWhenDecisionIsNotProductionEnabled() {
         GpuKernelDescriptor descriptor = roundTripDescriptor();
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor,
                 GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(roundTripIrGpuArtifact(descriptor.kernelResource()))
+        );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest)
+        );
+
+        assertTrue(exception.getMessage().contains("production promotion decision mode is not production-enabled"));
+        assertTrue(exception.getMessage().contains("current decision mode=diagnostic-only"));
+    }
+
+    @Test
+    void openClLowererAllowsProductionIrGpuSourceOnlyWhenProductionSwitchingAndDecisionAreEnabled() {
+        GpuKernelDescriptor descriptor = roundTripDescriptor();
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                .openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                .withProductionPromotionDecision(new GpuProductionPromotionDecision(
+                        GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                        "production-ready",
+                        true,
+                        true,
+                        true,
+                        "none",
+                        "none",
+                        "production promotion is explicitly enabled by accepted evidence"
+                ));
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                options,
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(roundTripIrGpuArtifact(descriptor.kernelResource()))
         );
