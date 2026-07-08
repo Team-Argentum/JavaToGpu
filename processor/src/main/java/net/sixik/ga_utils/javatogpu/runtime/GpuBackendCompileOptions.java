@@ -21,6 +21,7 @@ public record GpuBackendCompileOptions(
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY = "opencl.productionSourceSwitching";
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED = "disabled";
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED = "enabled";
+    public static final String PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY = "productionPromotion.decisionMode";
 
     public GpuBackendCompileOptions {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -85,6 +86,22 @@ public record GpuBackendCompileOptions(
                 && OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED.equals(
                 properties.get(OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY)
         );
+    }
+
+    public String productionPromotionDecisionMode() {
+        return properties.getOrDefault(
+                PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY,
+                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY
+        );
+    }
+
+    public GpuBackendCompileOptions withProductionPromotionDecision(GpuProductionPromotionDecision decision) {
+        GpuProductionPromotionDecision normalized = decision == null
+                ? GpuProductionPromotionDecision.diagnosticOnly()
+                : decision;
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY, normalized.mode());
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
     }
 
     public Map<String, String> stableProperties() {

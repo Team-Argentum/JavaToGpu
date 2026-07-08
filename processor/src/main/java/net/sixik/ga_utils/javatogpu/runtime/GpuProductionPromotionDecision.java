@@ -1,6 +1,10 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import java.util.Objects;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.io.IOException;
 import java.util.Properties;
 
 /**
@@ -86,6 +90,34 @@ public record GpuProductionPromotionDecision(
                 "none",
                 "production promotion remains diagnostic-only while workload readiness or blockers are unresolved"
         );
+    }
+
+    public static GpuProductionPromotionDecision diagnosticOnly() {
+        return new GpuProductionPromotionDecision(
+                DIAGNOSTIC_ONLY,
+                GpuProductionPromotionExplainabilityValidation.BLOCKED,
+                false,
+                false,
+                false,
+                "none",
+                "none",
+                "production promotion decision was not provided; runtime stays diagnostic-only"
+        );
+    }
+
+    public static GpuProductionPromotionDecision fromExplainabilityFileOrDiagnosticOnly(Path path) {
+        if (path == null) {
+            return diagnosticOnly();
+        }
+        try {
+            Properties properties = new Properties();
+            try (java.io.Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+                properties.load(reader);
+            }
+            return fromExplainability(properties);
+        } catch (IOException | RuntimeException exception) {
+            return diagnosticOnly();
+        }
     }
 
     public String toPropertiesText() {

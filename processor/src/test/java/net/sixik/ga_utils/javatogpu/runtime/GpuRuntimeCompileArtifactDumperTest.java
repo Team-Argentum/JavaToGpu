@@ -409,6 +409,7 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=irgpu"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("irGpuSourceRequested=true"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionPromotionDecisionMode=diagnostic-only"));
     }
 
     @Test
@@ -448,6 +449,7 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=irgpu"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=enabled"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitchingEnabled=true"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionPromotionDecisionMode=diagnostic-only"));
     }
 
     @Test
@@ -487,9 +489,60 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=irgpu"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitchingEnabled=false"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionPromotionDecisionMode=diagnostic-only"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
                 "diagnostic.0=production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled"
         ));
+    }
+
+    @Test
+    void dumpRecordsProductionPromotionDecisionModeWithoutChangingSourceSwitchingGate() {
+        IrGpuArtifact optimized = artifact(
+                "body\n  return ready\n",
+                IrGpuRegenerationMetadata.backendNeutralReady()
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 2; }",
+                "javatogpu/sample/Demo/kernel.cl#irgpu-reconstructed",
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuProductionPromotionDecision decision = new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                "blocked",
+                true,
+                false,
+                false,
+                "production-source-switching-disabled",
+                "none",
+                "review-ready evidence is visible to runtime diagnostics"
+        );
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                .openClIrGpuSource(List.of(), "vendor-tuned")
+                .withProductionPromotionDecision(decision);
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                options,
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimized))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("status=blocked"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("decision=reject-production-irgpu-source"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitchingEnabled=false"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionPromotionDecisionMode=review-ready"));
     }
 
     @Test

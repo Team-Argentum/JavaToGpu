@@ -70,6 +70,15 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    public GpuRuntimeCompileOptions withProductionPromotionDecision(GpuProductionPromotionDecision decision) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withProductionPromotionDecision(decision)
+        );
+    }
+
     public static GpuRuntimeCompileOptions cuda(
             List<String> nvrtcOptions,
             Map<String, String> properties,

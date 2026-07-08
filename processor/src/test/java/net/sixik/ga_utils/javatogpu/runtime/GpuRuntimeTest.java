@@ -135,6 +135,37 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void compileOptionsCarryProductionPromotionDecisionWithoutEnablingSourceSwitching() {
+        GpuProductionPromotionDecision decision = new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                "blocked",
+                true,
+                false,
+                false,
+                "production-source-switching-disabled",
+                "none",
+                "review-ready evidence is visible to runtime diagnostics"
+        );
+
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                .openClIrGpuSource(List.of("-cl-fast-relaxed-math"), "vendor-tuned")
+                .withProductionPromotionDecision(decision);
+
+        assertEquals(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                options.backendOptions().productionPromotionDecisionMode()
+        );
+        assertEquals(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                options.backendOptions().properties().get(
+                        GpuBackendCompileOptions.PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY
+                )
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertTrue(!options.backendOptions().enablesOpenClProductionSourceSwitching());
+    }
+
+    @Test
     void productionProfileClassifierIsSharedAcrossRuntimeGates() {
         assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("production"));
         assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("prod"));

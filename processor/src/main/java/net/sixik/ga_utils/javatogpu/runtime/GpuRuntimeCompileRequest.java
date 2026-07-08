@@ -34,4 +34,8 @@ public record GpuRuntimeCompileRequest(
     public GpuRuntimeCompileRequest withIrGpuArtifact(Optional<IrGpuArtifact> artifact) {
         return new GpuRuntimeCompileRequest(descriptor, options, deviceProfile, artifact);
     }
+
+    public GpuRuntimeCompileRequest withOptions(GpuRuntimeCompileOptions compileOptions) {
+        return new GpuRuntimeCompileRequest(descriptor, compileOptions, deviceProfile, irGpuArtifact);
+    }
 }

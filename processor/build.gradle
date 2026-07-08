@@ -382,6 +382,7 @@ tasks.register('openClWorkloadValidationTest', Test) {
     systemProperty 'javatogpu.opencl.workloadValidation', 'true'
     systemProperty 'javatogpu.opencl.workloadSummaryFile', layout.buildDirectory.file('reports/opencl/workload-summary.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionPromotionExplainabilityFile', openClProductionPromotionExplainabilityFile.absolutePath
     filter {
         includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.seriousWorkloadBucketRemainsEquivalentOnAvailableOpenClDevice'
     }

@@ -192,6 +192,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             target.setProperty("sourceSwitching.irGpuSourceRequested", "unknown");
             target.setProperty("sourceSwitching.productionSourceSwitching", "false");
             target.setProperty("sourceSwitching.productionSourceSwitchingEnabled", "false");
+            target.setProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY);
             target.setProperty("sourceSwitching.diagnostic.count", "0");
             return;
         }
@@ -203,6 +204,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copySourceSwitchingProperty(source, target, "irGpuSourceRequested");
         copySourceSwitchingProperty(source, target, "productionSourceSwitching");
         copySourceSwitchingProperty(source, target, "productionSourceSwitchingEnabled");
+        copySourceSwitchingProperty(source, target, "productionPromotionDecisionMode");
         copyIndexedProperties(source, target, "sourceSwitching.diagnostic", "diagnostic");
     }
 
@@ -471,6 +473,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("sourceSwitching.irGpuSourceRequested=").append(entry.getProperty("sourceSwitching.irGpuSourceRequested", "unknown")).append('\n');
         builder.append(prefix).append("sourceSwitching.productionSourceSwitching=").append(entry.getProperty("sourceSwitching.productionSourceSwitching", "false")).append('\n');
         builder.append(prefix).append("sourceSwitching.productionSourceSwitchingEnabled=").append(entry.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false")).append('\n');
+        builder.append(prefix).append("sourceSwitching.productionPromotionDecisionMode=").append(entry.getProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY)).append('\n');
         appendIndexedProperties(builder, prefix, entry, "sourceSwitching.diagnostic");
     }
 

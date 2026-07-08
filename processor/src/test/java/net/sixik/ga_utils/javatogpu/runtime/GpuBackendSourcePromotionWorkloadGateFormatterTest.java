@@ -49,6 +49,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("kernel-b.cl", gate.getProperty("kernel.1.sourceKernelResource"));
         assertEquals("not-recorded", gate.getProperty("kernel.0.sourceSwitching.decision"));
         assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitchingEnabled"));
+        assertEquals("diagnostic-only", gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
         assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeIrHandoff.status"));
         assertEquals("original", gate.getProperty("kernel.0.runtimeIrHandoff.selectedStage"));
         assertEquals("false", gate.getProperty("kernel.0.runtimeIrHandoff.optimizedDiffersFromOriginal"));
@@ -152,6 +153,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "false",
                         "disabled",
                         "false",
+                        "review-ready",
                         "IrGpu source was explicitly selected for review or smoke validation"
                 ),
                 runtimeIrHandoffProperties(
@@ -194,6 +196,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "true",
                         "disabled",
                         "false",
+                        "diagnostic-only",
                         "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled"
                 ),
                 runtimeIrHandoffProperties(
@@ -228,11 +231,13 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("source-reconstruction-review", gate.getProperty("kernel.0.sourceSwitching.optimizationProfile"));
         assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionProfileRequested"));
         assertEquals("disabled", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitching"));
+        assertEquals("review-ready", gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
         assertEquals("blocked", gate.getProperty("kernel.1.sourceSwitching.status"));
         assertEquals("reject-production-irgpu-source", gate.getProperty("kernel.1.sourceSwitching.decision"));
         assertEquals("vendor-tuned", gate.getProperty("kernel.1.sourceSwitching.optimizationProfile"));
         assertEquals("true", gate.getProperty("kernel.1.sourceSwitching.productionProfileRequested"));
         assertEquals("false", gate.getProperty("kernel.1.sourceSwitching.productionSourceSwitchingEnabled"));
+        assertEquals("diagnostic-only", gate.getProperty("kernel.1.sourceSwitching.productionPromotionDecisionMode"));
         assertEquals(
                 "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled",
                 gate.getProperty("kernel.1.sourceSwitching.diagnostic.0")
@@ -344,6 +349,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
             String productionProfileRequested,
             String productionSourceSwitching,
             String productionSourceSwitchingEnabled,
+            String productionPromotionDecisionMode,
             String diagnostic
     ) {
         return String.join("\n",
@@ -360,6 +366,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "irGpuSourceRequested=true",
                 "productionSourceSwitching=" + productionSourceSwitching,
                 "productionSourceSwitchingEnabled=" + productionSourceSwitchingEnabled,
+                "productionPromotionDecisionMode=" + productionPromotionDecisionMode,
                 "diagnostic.count=1",
                 "diagnostic.0=" + diagnostic,
                 ""

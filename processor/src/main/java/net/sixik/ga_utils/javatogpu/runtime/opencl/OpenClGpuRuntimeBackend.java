@@ -49,6 +49,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadGateFormatter;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrArtifactLoader;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
@@ -111,6 +112,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     private static final java.util.regex.Pattern DOUBLE_USAGE_PATTERN = java.util.regex.Pattern.compile("\\bdouble(?:[234])?\\b");
     private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
+    private static final String PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY = "javatogpu.opencl.productionPromotionExplainabilityFile";
     private static final Object SHARED_RUNTIME_LOCK = new Object();
     private static final Map<GpuRuntimeCompileCacheKey, OpenClCompiledKernel> SHARED_COMPILED_KERNELS = new ConcurrentHashMap<>();
     private static volatile OpenClRuntimeSession sharedSession;
@@ -249,6 +251,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                         invocation.descriptor(),
                         invocation.artifactClassLoader()
                 ));
+        compileRequest = applyProductionPromotionDecision(compileRequest);
         GpuRuntimeIrOptimizationResult optimizationResult = optimizeRuntimeIrWithReport(compileRequest);
         GpuRuntimeCompileRequest optimizedCompileRequest = optimizationResult.compileRequest();
         GpuBackendModuleArtifact moduleArtifact = lowerBackendModule(optimizedCompileRequest);
@@ -2395,6 +2398,24 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 invocation,
                 compileDeviceProfile()
         );
+    }
+
+    private GpuRuntimeCompileRequest applyProductionPromotionDecision(GpuRuntimeCompileRequest compileRequest) {
+        Optional<GpuProductionPromotionDecision> decision = loadProductionPromotionDecision();
+        if (decision.isEmpty()) {
+            return compileRequest;
+        }
+        return compileRequest.withOptions(compileRequest.options().withProductionPromotionDecision(decision.get()));
+    }
+
+    private Optional<GpuProductionPromotionDecision> loadProductionPromotionDecision() {
+        String path = System.getProperty(PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY);
+        if (path == null || path.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(GpuProductionPromotionDecision.fromExplainabilityFileOrDiagnosticOnly(
+                java.nio.file.Paths.get(path)
+        ));
     }
 
     protected GpuRuntimeDeviceProfile compileDeviceProfile() {

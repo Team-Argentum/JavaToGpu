@@ -458,6 +458,7 @@ public final class GpuRuntimeCompileArtifactDumper {
                 GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY,
                 GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED
         );
+        String productionPromotionDecisionMode = backendOptions.productionPromotionDecisionMode();
         boolean irGpuSourceRequested = backendOptions.requestsOpenClIrGpuSource();
         boolean productionProfileRequested = GpuRuntimeProductionProfiles.isProductionProfile(provenance.optimizationProfile());
         boolean productionSwitchingEnabled = backendOptions.enablesOpenClProductionSourceSwitching();
@@ -496,6 +497,7 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("irGpuSourceRequested=").append(irGpuSourceRequested).append('\n');
         builder.append("productionSourceSwitching=").append(productionSourceSwitching).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(productionSwitchingEnabled).append('\n');
+        builder.append("productionPromotionDecisionMode=").append(productionPromotionDecisionMode).append('\n');
         builder.append("diagnostic.count=1\n");
         builder.append("diagnostic.0=").append(diagnostic).append('\n');
         return builder.toString();

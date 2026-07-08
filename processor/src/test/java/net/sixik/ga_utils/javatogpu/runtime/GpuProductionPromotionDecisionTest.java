@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +40,35 @@ class GpuProductionPromotionDecisionTest {
         assertEquals(GpuProductionPromotionDecision.PRODUCTION_ENABLED, decision.mode());
         assertTrue(decision.productionSourceSwitchingAllowed());
         assertTrue(decision.productionMutationAllowed());
+    }
+
+    @Test
+    void explainabilityFileBecomesRuntimeDecision() throws IOException {
+        Path path = Files.createTempFile("javatogpu-production-promotion", ".properties");
+        try {
+            Properties properties = blockedArtifact();
+            try (java.io.Writer writer = Files.newBufferedWriter(path)) {
+                properties.store(writer, "test production promotion explainability");
+            }
+
+            GpuProductionPromotionDecision decision = GpuProductionPromotionDecision
+                    .fromExplainabilityFileOrDiagnosticOnly(path);
+
+            assertEquals(GpuProductionPromotionDecision.REVIEW_READY, decision.mode());
+            assertTrue(decision.contractValid());
+            assertEquals("production-source-switching-disabled", decision.firstBlocker());
+        } finally {
+            Files.deleteIfExists(path);
+        }
+    }
+
+    @Test
+    void missingExplainabilityFileStaysDiagnosticOnly() {
+        GpuProductionPromotionDecision decision = GpuProductionPromotionDecision
+                .fromExplainabilityFileOrDiagnosticOnly(Path.of("missing-production-promotion-explainability.properties"));
+
+        assertEquals(GpuProductionPromotionDecision.DIAGNOSTIC_ONLY, decision.mode());
+        assertFalse(decision.contractValid());
     }
 
     private static Properties blockedArtifact() {
