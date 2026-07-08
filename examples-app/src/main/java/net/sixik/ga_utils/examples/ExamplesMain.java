@@ -399,5 +399,11 @@ public final class ExamplesMain {
 
         System.out.println("Running ASM compiler example...");
         System.out.println(AsmExamples.compileStructuredAsmExample());
+
+        System.out.println("Running IR analysis examples...");
+        System.out.println(IrAnalysisExamples.describeIrAnalysisExamples());
+        System.out.println(IrAnalysisExamples.renderOptimizerBlockerTable());
+        System.out.println(IrAnalysisExamples.renderProductionReadinessStageTable());
+        System.out.println(IrAnalysisExamples.renderRejectedKernelDiagnostic());
     }
 }

@@ -23,7 +23,10 @@ import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
@@ -67,16 +70,59 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         return new OpenClCompiledKernel(descriptor, descriptor.kernelResource(), program, kernel);
     }
 
+    public OpenClCompiledKernel compileKernel(GpuKernelDescriptor descriptor, GpuRuntimeCompileOptions compileOptions) {
+        return compileKernel(
+                GpuBackendModuleArtifact.openClSource(descriptor.kernelSource(), descriptor.kernelResource(), "legacy-opencl-source"),
+                descriptor,
+                compileOptions
+        );
+    }
+
+    public OpenClCompiledKernel compileKernel(
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        return compileKernel(
+                moduleArtifact,
+                descriptor,
+                compileOptions,
+                GpuRuntimeCompileArtifactSnapshot.legacy(descriptor)
+        );
+    }
+
+    public OpenClCompiledKernel compileKernel(
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
+        String buildOptions = OpenClCompileOptionValidator.toBuildOptions(compileOptions == null ? null : compileOptions.compileArgs());
+        OpenClProgram program = buildOptions.isBlank()
+                ? context.buildProgram(moduleArtifact.requireSource())
+                : context.buildProgram(moduleArtifact.requireSource(), buildOptions);
+        OpenClKernel kernel = program.createKernel(descriptor.kernelName());
+        String cacheKey = buildOptions.isBlank()
+                ? moduleArtifact.resource()
+                : moduleArtifact.resource() + "|opencl-options=" + buildOptions;
+        return new OpenClCompiledKernel(descriptor, cacheKey, artifactSnapshot, program, kernel);
+    }
+
     public OpenClRuntimeCapabilities capabilities() {
         OpenClValidationDeviceInfo deviceInfo = validationDeviceInfo();
         return new OpenClRuntimeCapabilities(
                 deviceInfo.deviceLabel(),
+                deviceInfo.vendor(),
+                deviceInfo.driverVersion(),
                 deviceInfo.deviceVersion(),
                 deviceInfo.supportsDoublePrecision(),
                 deviceInfo.supportsImages(),
                 deviceInfo.supportsImage3dWrites(),
                 deviceInfo.localMemoryBytes(),
-                deviceInfo.maxWorkGroupSize()
+                deviceInfo.maxWorkGroupSize(),
+                deviceInfo.computeUnits(),
+                deviceInfo.preferredVectorWidthFloat(),
+                deviceInfo.supportsSubgroups()
         );
     }
 
@@ -96,7 +142,10 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 queryIntDeviceInfo(deviceHandle, CL10.CL_DEVICE_IMAGE_SUPPORT) != 0,
                 supportsImage3dWrites(extensions, deviceVersion),
                 device.localMemoryBytes(),
-                device.maxWorkGroupSize()
+                device.maxWorkGroupSize(),
+                safeQueryIntDeviceInfo(deviceHandle, CL10.CL_DEVICE_MAX_COMPUTE_UNITS),
+                safeQueryIntDeviceInfo(deviceHandle, CL10.CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT),
+                supportsSubgroups(extensions)
         );
     }
 
@@ -753,6 +802,14 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
+    private int safeQueryIntDeviceInfo(long deviceHandle, int paramName) {
+        try {
+            return queryIntDeviceInfo(deviceHandle, paramName);
+        } catch (RuntimeException ignored) {
+            return -1;
+        }
+    }
+
     private long queryLongDeviceInfo(long deviceHandle, int paramName) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             PointerBuffer buffer = stack.mallocPointer(1);
@@ -827,6 +884,12 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         int major = Integer.parseInt(matcher.group(1));
         int minor = Integer.parseInt(matcher.group(2));
         return major > 1 || (major == 1 && minor >= 2);
+    }
+
+    private boolean supportsSubgroups(String extensions) {
+        return containsExtension(extensions, "cl_khr_subgroups")
+                || containsExtension(extensions, "cl_intel_subgroups")
+                || containsExtension(extensions, "cl_nv_pragma_unroll");
     }
 
     private boolean containsExtension(String extensions, String extension) {

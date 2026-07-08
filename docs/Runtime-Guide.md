@@ -129,6 +129,75 @@ GpuGeneratedLauncherInvoker.invokeWithGlobalWorkSize(
 
 For explicit multidimensional configs, use generated launcher config entry points or `GpuGeneratedLauncherInvoker.invokeWithConfig(...)` where applicable.
 
+## Runtime Compile Options
+
+Compile options are optional and keep the normal kernel arguments unchanged. Use them when you need backend-specific build flags or want to select a future runtime optimization profile explicitly.
+
+```java
+GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+        GpuBackendTarget.OPENCL,
+        List.of("-cl-fast-relaxed-math"),
+        "diagnostic"
+);
+
+GpuRuntime.invokeWithCompileOptions(
+        GpuExecutionConfig.oneDimensional(itemCount),
+        compileOptions,
+        descriptor,
+        input,
+        output
+);
+```
+
+Generated launchers expose the same path:
+
+```java
+OwnerClass_kernel_GpuLauncher.invokeWithConfigAndCompileOptions(
+        GpuExecutionConfig.oneDimensional(itemCount),
+        compileOptions,
+        input,
+        output
+);
+```
+
+Reflection launcher helpers also support compile options for dynamically loaded/generated kernels:
+
+```java
+GpuGeneratedLauncherInvoker.invokeWithConfigAndCompileOptions(
+        OwnerClass.class,
+        "kernel",
+        GpuExecutionConfig.oneDimensional(itemCount),
+        compileOptions,
+        input,
+        output
+);
+```
+
+The default optimization profile is `off`. Keep production code on `off` unless you are collecting diagnostics or testing an opt-in optimizer path.
+
+OpenCL compile options are validated before the runtime touches the device. Supported options include common OpenCL build flags such as `-cl-fast-relaxed-math`, `-cl-mad-enable`, `-cl-opt-disable`, `-cl-std=...`, `-DNAME=VALUE`, and `-Ipath`. Backend-mismatched options fail early with a clear Java exception instead of being ignored by the runtime.
+
+### IrGpu Source Review Lane
+
+`IrGpu` is the backend-neutral artifact that JavaToGpu is moving toward as the runtime source of truth. The normal runtime path still compiles the generated descriptor OpenCL source by default, even when an `IrGpu` artifact is packaged beside it.
+
+Use the explicit review preset when you want to smoke-test reconstructed `IrGpu -> OpenCL` source without enabling production source switching:
+
+```java
+GpuRuntimeCompileOptions compileOptions =
+        GpuRuntimeCompileOptions.openClIrGpuSourceReview(List.of());
+
+GpuRuntime.invokeWithCompileOptions(
+        GpuExecutionConfig.oneDimensional(itemCount),
+        compileOptions,
+        descriptor,
+        input,
+        output
+);
+```
+
+The preset enables the reconstructed-source review mode. Production runs keep using the normal generated OpenCL source unless you explicitly opt into future source-switching features.
+
 ## ABI Debug
 
 Enable ABI diagnostics with:

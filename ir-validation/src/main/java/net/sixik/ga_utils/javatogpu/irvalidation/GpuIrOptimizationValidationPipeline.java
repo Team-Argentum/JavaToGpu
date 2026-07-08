@@ -1,0 +1,272 @@
+package net.sixik.ga_utils.javatogpu.irvalidation;
+
+import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassContext;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassException;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Read-only optimizer validation entrypoint that combines safety and planning diagnostics.
+ */
+public final class GpuIrOptimizationValidationPipeline {
+    private final GpuIrSafetyValidator safetyValidator;
+    private final GpuIrCommonSubexpressionPlanningPass commonSubexpressionPlanningPass;
+    private final GpuIrAutoVectorizationPlanningPass autoVectorizationPlanningPass;
+    private final GpuIrOptimizationValidationMode mode;
+
+    public GpuIrOptimizationValidationPipeline() {
+        this(
+                new GpuIrSafetyValidator(),
+                new GpuIrCommonSubexpressionPlanningPass(),
+                new GpuIrAutoVectorizationPlanningPass(),
+                GpuIrOptimizationValidationMode.DIAGNOSTIC_ONLY
+        );
+    }
+
+    public GpuIrOptimizationValidationPipeline(GpuIrOptimizationValidationMode mode) {
+        this(
+                new GpuIrSafetyValidator(),
+                new GpuIrCommonSubexpressionPlanningPass(),
+                new GpuIrAutoVectorizationPlanningPass(),
+                mode
+        );
+    }
+
+    public GpuIrOptimizationValidationPipeline(
+            GpuIrSafetyValidator safetyValidator,
+            GpuIrCommonSubexpressionPlanningPass commonSubexpressionPlanningPass,
+            GpuIrAutoVectorizationPlanningPass autoVectorizationPlanningPass,
+            GpuIrOptimizationValidationMode mode
+    ) {
+        this.safetyValidator = java.util.Objects.requireNonNull(safetyValidator, "safetyValidator");
+        this.commonSubexpressionPlanningPass = java.util.Objects.requireNonNull(commonSubexpressionPlanningPass, "commonSubexpressionPlanningPass");
+        this.autoVectorizationPlanningPass = java.util.Objects.requireNonNull(autoVectorizationPlanningPass, "autoVectorizationPlanningPass");
+        this.mode = java.util.Objects.requireNonNull(mode, "mode");
+    }
+
+    public GpuIrOptimizationValidationReport validate(GpuIrPassContext context) {
+        String methodName = methodName(context);
+        Optional<String> safetyError = safetyError(context);
+        GpuIrCommonSubexpressionRewritePreview commonSubexpressionPreview = commonSubexpressionPreview(context, safetyError);
+        GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport commonSubexpressionNumericBoundaryReport = commonSubexpressionNumericBoundaryReport(
+                context,
+                safetyError,
+                methodName
+        );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport commonSubexpressionLiteralProofReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralProofReport.from(commonSubexpressionNumericBoundaryReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport commonSubexpressionLiteralCanonicalizationReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationReport.from(commonSubexpressionLiteralProofReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport commonSubexpressionLiteralNumericSemanticsProofReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralNumericSemanticsProofReport.from(commonSubexpressionLiteralCanonicalizationReport);
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport commonSubexpressionLiteralTypedNumericBlockerSummaryReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralTypedNumericBlockerSummaryReport.from(
+                        commonSubexpressionLiteralProofReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport commonSubexpressionLiteralRuntimeEquivalenceReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRuntimeEquivalenceReport.notRun(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate commonSubexpressionLiteralCanonicalizationGate =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralCanonicalizationGate.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport commonSubexpressionLiteralFingerprintDecisionReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintDecisionReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralCanonicalizationGate
+                );
+        GpuIrCommonSubexpressionArtifactSnapshot commonSubexpressionArtifactSnapshot = new GpuIrCommonSubexpressionArtifactSnapshot(
+                methodName,
+                commonSubexpressionPreview
+        );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport commonSubexpressionLiteralFingerprintParityReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralFingerprintParityReport.from(
+                        commonSubexpressionArtifactSnapshot,
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralFingerprintDecisionReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport commonSubexpressionLiteralEnablementReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralEnablementReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralFingerprintDecisionReport,
+                        commonSubexpressionLiteralFingerprintParityReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport commonSubexpressionLiteralRewritePreflightReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRewritePreflightReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralNumericSemanticsProofReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralFingerprintParityReport,
+                        commonSubexpressionLiteralEnablementReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport commonSubexpressionLiteralRewriteOperationPreviewReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralRewriteOperationPreviewReport.from(
+                        commonSubexpressionLiteralRewritePreflightReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport commonSubexpressionLiteralPromotionChecklistReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionChecklistReport.from(
+                        commonSubexpressionLiteralEnablementReport,
+                        commonSubexpressionLiteralRewritePreflightReport,
+                        commonSubexpressionLiteralRewriteOperationPreviewReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport commonSubexpressionLiteralPromotionReadinessSummaryReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralPromotionReadinessSummaryReport.from(
+                        commonSubexpressionLiteralCanonicalizationReport,
+                        commonSubexpressionLiteralTypedNumericBlockerSummaryReport,
+                        commonSubexpressionLiteralRuntimeEquivalenceReport,
+                        commonSubexpressionLiteralFingerprintDecisionReport,
+                        commonSubexpressionLiteralFingerprintParityReport,
+                        commonSubexpressionLiteralPromotionChecklistReport
+                );
+        GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport commonSubexpressionLiteralConsistencyCheckReport =
+                GpuIrCommonSubexpressionSimpleArithmeticLiteralConsistencyCheckReport.from(
+                        commonSubexpressionLiteralEnablementReport,
+                        commonSubexpressionLiteralRewritePreflightReport,
+                        commonSubexpressionLiteralRewriteOperationPreviewReport,
+                        commonSubexpressionLiteralPromotionChecklistReport
+                );
+        GpuIrAutoVectorizationPreview autoVectorizationPreview = autoVectorizationPlanningPass.preview(context);
+        GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport = autoVectorizationRewriteDryRunReport(
+                context,
+                autoVectorizationPreview,
+                safetyError
+        );
+        GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations = autoVectorizationResolvedRewriteOperations(
+                context,
+                autoVectorizationPreview,
+                autoVectorizationRewriteDryRunReport
+        );
+        GpuIrOptimizationValidationReport report = new GpuIrOptimizationValidationReport(
+                methodName,
+                safetyError,
+                commonSubexpressionPreview,
+                commonSubexpressionNumericBoundaryReport,
+                commonSubexpressionLiteralProofReport,
+                commonSubexpressionLiteralCanonicalizationReport,
+                commonSubexpressionLiteralNumericSemanticsProofReport,
+                commonSubexpressionLiteralTypedNumericBlockerSummaryReport,
+                commonSubexpressionLiteralRuntimeEquivalenceReport,
+                commonSubexpressionLiteralCanonicalizationGate,
+                commonSubexpressionLiteralFingerprintDecisionReport,
+                commonSubexpressionLiteralFingerprintParityReport,
+                commonSubexpressionLiteralEnablementReport,
+                commonSubexpressionLiteralRewritePreflightReport,
+                commonSubexpressionLiteralRewriteOperationPreviewReport,
+                commonSubexpressionLiteralPromotionChecklistReport,
+                commonSubexpressionLiteralPromotionReadinessSummaryReport,
+                commonSubexpressionLiteralConsistencyCheckReport,
+                autoVectorizationPreview,
+                autoVectorizationRewriteDryRunReport,
+                autoVectorizationResolvedRewriteOperations
+        );
+        enforceMode(report);
+        return report;
+    }
+
+    private Optional<String> safetyError(GpuIrPassContext context) {
+        try {
+            safetyValidator.run(context);
+            return Optional.empty();
+        } catch (GpuIrPassException exception) {
+            return Optional.of(exception.getMessage());
+        }
+    }
+
+    private GpuIrCommonSubexpressionRewritePreview commonSubexpressionPreview(
+            GpuIrPassContext context,
+            Optional<String> safetyError
+    ) {
+        if (safetyError.isPresent() || context == null || context.method() == null || context.method().irMethod() == null) {
+            return emptyCommonSubexpressionPreview();
+        }
+        return commonSubexpressionPlanningPass.plan(context).preview();
+    }
+
+    private GpuIrCommonSubexpressionRewritePreview emptyCommonSubexpressionPreview() {
+        return new GpuIrCommonSubexpressionRewritePreview(List.of(), List.of(), List.of());
+    }
+
+    private GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport commonSubexpressionNumericBoundaryReport(
+            GpuIrPassContext context,
+            Optional<String> safetyError,
+            String methodName
+    ) {
+        if (safetyError.isPresent() || context == null || context.method() == null || context.method().irMethod() == null) {
+            return GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.empty(methodName);
+        }
+        return GpuIrCommonSubexpressionSimpleArithmeticNumericBoundaryReport.from(context.method());
+    }
+
+    private GpuIrAutoVectorizationRewriteDryRunReport autoVectorizationRewriteDryRunReport(
+            GpuIrPassContext context,
+            GpuIrAutoVectorizationPreview preview,
+            Optional<String> safetyError
+    ) {
+        GpuIrAutoVectorizationRewritePlan plan = preview.rewritePlan();
+        if (safetyError.isPresent() || context == null || context.method() == null || context.method().irMethod() == null) {
+            return GpuIrAutoVectorizationRewriteDryRunReport.skipped(
+                    preview.methodName(),
+                    plan.candidateCount(),
+                    plan.rawInsertionOperationCount(),
+                    plan.rawReplacementOperationCount(),
+                    List.of("Auto-vectorization rewrite dry-run skipped: method context is unavailable or safety validation failed")
+            );
+        }
+        return new GpuIrAutoVectorizationRewriteApplicator().dryRun(context.method().irMethod(), plan);
+    }
+
+    private GpuIrAutoVectorizationResolvedRewriteOperations autoVectorizationResolvedRewriteOperations(
+            GpuIrPassContext context,
+            GpuIrAutoVectorizationPreview preview,
+            GpuIrAutoVectorizationRewriteDryRunReport dryRunReport
+    ) {
+        if (!dryRunReport.successful() || context == null || context.method() == null || context.method().irMethod() == null) {
+            return GpuIrAutoVectorizationResolvedRewriteOperations.empty(preview.methodName());
+        }
+        return new GpuIrAutoVectorizationRewriteApplicator().resolveOperations(
+                context.method().irMethod(),
+                preview.rewritePlan()
+        );
+    }
+
+    private void enforceMode(GpuIrOptimizationValidationReport report) {
+        if (mode == GpuIrOptimizationValidationMode.STRICT_FAIL_ON_SAFETY_ERROR && report.hasSafetyError()) {
+            throw new GpuIrPassException("IR optimization validation failed for "
+                    + report.methodName() + ": " + report.safetyError().orElseThrow());
+        }
+        if (mode == GpuIrOptimizationValidationMode.STRICT_FAIL_ON_OPTIMIZER_DIAGNOSTICS
+                && report.hasBlockingDiagnostics()) {
+            GpuIrOptimizerGatePolicyDecision policyDecision = report.optimizerGatePolicyDecision(mode);
+            throw new GpuIrPassException("IR optimization validation failed for "
+                    + report.methodName() + ": " + policyDecision.compactSummary()
+                    + "; " + report.detailedSummary());
+        }
+    }
+
+    private String methodName(GpuIrPassContext context) {
+        if (context == null || context.method() == null) {
+            return "<missing>";
+        }
+        GpuIrCompiledMethod compiledMethod = context.method();
+        GpuIrMethod irMethod = compiledMethod.irMethod();
+        if (irMethod != null && irMethod.name() != null && !irMethod.name().isBlank()) {
+            return irMethod.name();
+        }
+        if (compiledMethod.emittedName() != null && !compiledMethod.emittedName().isBlank()) {
+            return compiledMethod.emittedName();
+        }
+        return "<missing>";
+    }
+}

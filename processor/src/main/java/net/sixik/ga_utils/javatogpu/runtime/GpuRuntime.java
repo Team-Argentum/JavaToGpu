@@ -271,6 +271,17 @@ public final class GpuRuntime {
     }
 
     /**
+     * Invokes a generated GPU kernel and resolves paired frontend artifacts with the generated launcher classloader.
+     */
+    public static void invokeFromGeneratedLauncher(
+            Class<?> launcherClass,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(withLauncherClassLoader(launcherClass, new GpuKernelInvocation(descriptor, arguments)));
+    }
+
+    /**
      * Invokes a generated GPU kernel through the currently configured backend using an explicit 1D global work size.
      */
     public static void invoke(long globalWorkSize, GpuKernelDescriptor descriptor, Object... arguments) {
@@ -278,10 +289,130 @@ public final class GpuRuntime {
     }
 
     /**
+     * Invokes a generated GPU kernel with explicit 1D work size and launcher-scoped artifact resolution.
+     */
+    public static void invokeFromGeneratedLauncher(
+            Class<?> launcherClass,
+            long globalWorkSize,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(withLauncherClassLoader(
+                launcherClass,
+                new GpuKernelInvocation(descriptor, arguments, globalWorkSize)
+        ));
+    }
+
+    /**
      * Invokes a generated GPU kernel through the currently configured backend using an explicit execution config.
      */
     public static void invoke(GpuExecutionConfig executionConfig, GpuKernelDescriptor descriptor, Object... arguments) {
         backend.invoke(new GpuKernelInvocation(descriptor, arguments, executionConfig));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with explicit execution config and launcher-scoped artifact resolution.
+     */
+    public static void invokeFromGeneratedLauncher(
+            Class<?> launcherClass,
+            GpuExecutionConfig executionConfig,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(withLauncherClassLoader(
+                launcherClass,
+                new GpuKernelInvocation(descriptor, arguments, executionConfig)
+        ));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with explicit runtime compile options.
+     */
+    public static void invokeWithCompileOptions(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(new GpuKernelInvocation(descriptor, arguments, compileOptions));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with compile options and launcher-scoped artifact resolution.
+     */
+    public static void invokeFromGeneratedLauncherWithCompileOptions(
+            Class<?> launcherClass,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(withLauncherClassLoader(
+                launcherClass,
+                new GpuKernelInvocation(descriptor, arguments, compileOptions)
+        ));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with explicit work size and runtime compile options.
+     */
+    public static void invokeWithCompileOptions(
+            long globalWorkSize,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(new GpuKernelInvocation(descriptor, arguments, globalWorkSize, compileOptions));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with 1D work size, compile options, and launcher artifact resolution.
+     */
+    public static void invokeFromGeneratedLauncherWithCompileOptions(
+            Class<?> launcherClass,
+            long globalWorkSize,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(withLauncherClassLoader(
+                launcherClass,
+                new GpuKernelInvocation(descriptor, arguments, globalWorkSize, compileOptions)
+        ));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with explicit execution config and runtime compile options.
+     */
+    public static void invokeWithCompileOptions(
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(new GpuKernelInvocation(descriptor, arguments, executionConfig, compileOptions));
+    }
+
+    /**
+     * Invokes a generated GPU kernel with execution config, compile options, and launcher artifact resolution.
+     */
+    public static void invokeFromGeneratedLauncherWithCompileOptions(
+            Class<?> launcherClass,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        backend.invoke(withLauncherClassLoader(
+                launcherClass,
+                new GpuKernelInvocation(descriptor, arguments, executionConfig, compileOptions)
+        ));
+    }
+
+    private static GpuKernelInvocation withLauncherClassLoader(
+            Class<?> launcherClass,
+            GpuKernelInvocation invocation
+    ) {
+        ClassLoader classLoader = launcherClass == null ? null : launcherClass.getClassLoader();
+        return invocation.withArtifactClassLoader(classLoader);
     }
 
     private static GpuRuntimeScope installScopedBackend(GpuRuntimeBackend newBackend, boolean closeInstalledBackend) {

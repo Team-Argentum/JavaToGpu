@@ -17,3 +17,5 @@ allprojects {
 test {
     useJUnitPlatform()
 }
+
+apply from: 'gradle/ir-validation-dogfooding.gradle'

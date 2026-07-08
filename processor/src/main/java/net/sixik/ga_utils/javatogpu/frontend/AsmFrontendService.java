@@ -2,12 +2,18 @@ package net.sixik.ga_utils.javatogpu.frontend;
 
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmExpressionLifter;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
+import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmLiftingResult;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmValidationConfig;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
@@ -16,18 +22,40 @@ import org.objectweb.asm.Type;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 public final class AsmFrontendService {
 
     private final AsmExpressionLifter lifter;
     private final OpenClKernelEmitter emitter;
+    private final GpuIrPassRunner passRunner;
+    private final GpuIrValidationRunner validationRunner;
+
+    public AsmFrontendService(
+            AsmExpressionLifter lifter,
+            OpenClKernelEmitter emitter,
+            GpuIrPassRunner passRunner
+    ) {
+        this(lifter, emitter, passRunner, GpuIrValidationRunner.disabled());
+    }
+
+    public AsmFrontendService(
+            AsmExpressionLifter lifter,
+            OpenClKernelEmitter emitter,
+            GpuIrPassRunner passRunner,
+            GpuIrValidationRunner validationRunner
+    ) {
+        this.lifter = lifter;
+        this.emitter = emitter;
+        this.passRunner = passRunner;
+        this.validationRunner = validationRunner;
+    }
 
     public AsmFrontendService(
             AsmExpressionLifter lifter,
             OpenClKernelEmitter emitter
     ) {
-        this.lifter = lifter;
-        this.emitter = emitter;
+        this(lifter, emitter, GpuIrPassRunner.loadFromServiceLoader());
     }
 
     public static AsmFrontendService createDefault() {
@@ -35,9 +63,47 @@ public final class AsmFrontendService {
     }
 
     public static AsmFrontendService create(GpuIntrinsicDatabase intrinsicDatabase) {
+        return create(intrinsicDatabase, GpuIrValidationMode.OFF);
+    }
+
+    public static AsmFrontendService create(GpuIntrinsicDatabase intrinsicDatabase, GpuIrValidationMode validationMode) {
+        return create(intrinsicDatabase, validationMode, ignored -> { });
+    }
+
+    public static AsmFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            Consumer<String> diagnosticReporter
+    ) {
+        return create(
+                intrinsicDatabase,
+                validationMode,
+                GpuIrValidationDiagnosticPolicy.SUMMARY,
+                diagnosticReporter
+        );
+    }
+
+    public static AsmFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            GpuIrValidationDiagnosticPolicy diagnosticPolicy,
+            Consumer<String> diagnosticReporter
+    ) {
+        return create(intrinsicDatabase, validationMode, diagnosticPolicy, diagnosticReporter, ignored -> { });
+    }
+
+    public static AsmFrontendService create(
+            GpuIntrinsicDatabase intrinsicDatabase,
+            GpuIrValidationMode validationMode,
+            GpuIrValidationDiagnosticPolicy diagnosticPolicy,
+            Consumer<String> diagnosticReporter,
+            Consumer<GpuIrValidationReportEntry> reportSink
+    ) {
         return new AsmFrontendService(
                 new AsmExpressionLifter(intrinsicDatabase),
-                new OpenClKernelEmitter()
+                new OpenClKernelEmitter(),
+                GpuIrPassRunner.loadFromServiceLoader(),
+                GpuIrValidationRunner.loadFromServiceLoader(validationMode, diagnosticPolicy, diagnosticReporter, reportSink)
         );
     }
 
@@ -67,6 +133,15 @@ public final class AsmFrontendService {
             AsmGpuMethod kernelMethod,
             List<AsmGpuMethod> helperMethods,
             List<ParsedGpuStruct> structs
+    ) {
+        return compileStructured(kernelMethod, helperMethods, structs, "").openClSource();
+    }
+
+    public GpuFrontendCompilationResult compileStructured(
+            AsmGpuMethod kernelMethod,
+            List<AsmGpuMethod> helperMethods,
+            List<ParsedGpuStruct> structs,
+            String derivedOpenClResource
     ) {
         validateSignatureCompatibility(kernelMethod);
         helperMethods.forEach(this::validateSignatureCompatibility);
@@ -99,16 +174,23 @@ public final class AsmFrontendService {
                 OpenClKernelNaming.toEntryPointName(kernelMethod.parsedMethod().name()),
                 kernelResult.helperDependencies()
         );
-
-        return emitter.emitProgram(
+        passRunner.run(compiledKernel, compiledMethods, structs);
+        validationRunner.run(compiledKernel, compiledMethods, structs);
+        List<GpuIrCompiledMethod> reachableHelpers = GpuProgramAssemblySupport.selectReachableHelpers(
                 compiledKernel,
-                GpuProgramAssemblySupport.selectReachableHelpers(
-                        compiledKernel,
-                        compiledMethods,
-                        "Lifted ASM kernel references unknown helper: ",
-                        "Recursive ASM helper calls are not supported: "
-                ),
+                compiledMethods,
+                "Lifted ASM kernel references unknown helper: ",
+                "Recursive ASM helper calls are not supported: "
+        );
+
+        String openClSource = emitter.emitProgram(
+                compiledKernel,
+                reachableHelpers,
                 structs
+        );
+        return new GpuFrontendCompilationResult(
+                openClSource,
+                GpuFrontendService.buildIrGpuArtifact(compiledKernel, reachableHelpers, structs, derivedOpenClResource, "asm")
         );
     }
 
@@ -118,7 +200,7 @@ public final class AsmFrontendService {
         String methodLabel = method.ownerInternalName() + "." + parsedMethod.name();
 
         if (parsedMethod.parameters().size() != methodType.getArgumentTypes().length) {
-            throw new AsmFrontendException(
+            throw signatureMismatch(method,
                     "ASM frontend signature mismatch for "
                             + methodLabel
                             + ": parsed method parameter count does not match the ASM descriptor; regenerate the parsed signature from the same source/ASM pair"
@@ -129,7 +211,7 @@ public final class AsmFrontendService {
             String parsedType = parsedMethod.parameters().get(index).javaType();
             String asmType = toJavaTypeName(methodType.getArgumentTypes()[index]);
             if (!parsedType.equals(asmType)) {
-                throw new AsmFrontendException(
+                throw signatureMismatch(method,
                         "ASM frontend signature mismatch for "
                                 + methodLabel
                                 + ": parsed parameter type does not match the ASM descriptor at index "
@@ -146,7 +228,7 @@ public final class AsmFrontendService {
         String parsedReturnType = parsedMethod.returnType();
         String asmReturnType = toJavaTypeName(methodType.getReturnType());
         if (!parsedReturnType.equals(asmReturnType)) {
-            throw new AsmFrontendException(
+            throw signatureMismatch(method,
                     "ASM frontend signature mismatch for "
                             + methodLabel
                             + ": parsed return type does not match the ASM descriptor; expected "
@@ -156,6 +238,19 @@ public final class AsmFrontendService {
                             + "; regenerate the parsed signature from the same source/ASM pair"
             );
         }
+    }
+
+    private AsmFrontendException signatureMismatch(AsmGpuMethod method, String detail) {
+        return new AsmFrontendException(detail, new AsmFrontendFailureMetadata(
+                "signatureMismatch",
+                method.ownerInternalName(),
+                method.methodNode().name,
+                method.methodNode().desc,
+                0,
+                -1,
+                "",
+                detail
+        ));
     }
 
     private AsmValidationConfig validationConfig(List<AsmGpuMethod> helperMethods, List<ParsedGpuStruct> structs) {

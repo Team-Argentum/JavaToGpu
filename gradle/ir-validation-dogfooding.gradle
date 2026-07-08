@@ -1,0 +1,1465 @@
+def irValidationExamplesEnabled = providers.gradleProperty('javatogpu.enableIrValidationExamples')
+        .map { it.toBoolean() }
+        .getOrElse(false)
+
+def irValidationExampleReports = [
+        [
+                name      : 'examples-app',
+                compile   : ':examples-app:compileJava',
+                reportFile: layout.projectDirectory.file('examples-app/build/generated/sources/annotationProcessor/java/main/reports/examples-app-ir-validation.properties')
+        ],
+        [
+                name      : 'test-app',
+                compile   : ':test-app:compileJava',
+                reportFile: layout.projectDirectory.file('test-app/build/generated/sources/annotationProcessor/java/main/reports/test-app-ir-validation.properties')
+        ]
+]
+
+def irValidationBaselineDirectory = providers.gradleProperty('javatogpu.irValidationBaselineDir')
+        .map { layout.projectDirectory.dir(it) }
+        .orElse(layout.buildDirectory.dir('ir-validation-baselines'))
+
+def irValidationHealthSummaryFile = layout.buildDirectory.file('reports/ir-validation/health-summary.properties')
+
+tasks.register('validateIrValidationExampleReports') {
+    group = 'verification'
+    description = 'Verifies opt-in IR validation dogfooding reports for safety and read-only optimizer-readiness stability.'
+    dependsOn irValidationExampleReports.collect { it.compile }
+    inputs.files(irValidationExampleReports.collect { it.reportFile })
+
+    doLast {
+        if (!irValidationExamplesEnabled) {
+            throw new GradleException(
+                    'IR validation example report contract requires --project-prop javatogpu.enableIrValidationExamples=true'
+            )
+        }
+
+        irValidationExampleReports.each { reportSpec ->
+            File reportFile = reportSpec.reportFile.asFile
+            if (!reportFile.isFile()) {
+                throw new GradleException('Missing IR validation dogfooding report for ' + reportSpec.name + ': ' + reportFile)
+            }
+
+            Properties report = new Properties()
+            reportFile.withInputStream { stream -> report.load(stream) }
+
+            if (report.getProperty('format') != 'javatogpu.ir.validation.v1') {
+                throw new GradleException('Unexpected IR validation report format for ' + reportSpec.name + ': '
+                        + report.getProperty('format'))
+            }
+
+            int entryCount = parseReportInt(report, 'entry.count', reportSpec.name)
+            int safetyOk = 0
+            int optimizerBlocked = 0
+            int optimizerReadOnlyBlocked = 0
+            int csePolicyBlocked = 0
+            int cseLiteralPromotionBlocked = 0
+            int autoVectorizationBlocked = 0
+            Map<String, Integer> optimizerBlockerSourceCounts = new LinkedHashMap<>()
+            Map<String, Integer> optimizerBlockerFamilyCounts = new LinkedHashMap<>()
+            Map<String, Integer> productionReadinessStageCounts = new LinkedHashMap<>()
+            Map<String, Integer> autoVectorizationNoCandidateBucketCounts = new LinkedHashMap<>()
+            Map<String, Integer> autoVectorizationNoCandidateDiagnosticCodeCounts = new LinkedHashMap<>()
+            java.util.List<String> failures = []
+            for (int index = 0; index < entryCount; index++) {
+                String safety = report.getProperty('entry.' + index + '.safety')
+                if (safety == 'ok') {
+                    safetyOk++
+                } else if (safety == 'failed') {
+                    String methodName = report.getProperty('entry.' + index + '.methodName', '<unknown>')
+                    String safetyError = report.getProperty('entry.' + index + '.safetyError', '<missing safetyError>')
+                    failures.add(methodName + ': ' + safetyError)
+                } else {
+                    throw new GradleException('Unexpected IR validation safety state for ' + reportSpec.name
+                            + ' entry ' + index + ': ' + safety)
+                }
+
+                OptimizerReadinessContractResult optimizerResult = validateOptimizerReadinessContract(
+                        report,
+                        reportSpec.name,
+                        index
+                )
+                if (optimizerResult.blocked) {
+                    optimizerBlocked++
+                }
+                if (optimizerResult.readOnlyBlocked) {
+                    optimizerReadOnlyBlocked++
+                }
+                if (optimizerResult.csePolicyBlocked) {
+                    csePolicyBlocked++
+                }
+                if (optimizerResult.cseLiteralPromotionBlocked) {
+                    cseLiteralPromotionBlocked++
+                }
+                if (optimizerResult.autoVectorizationBlocked) {
+                    autoVectorizationBlocked++
+                }
+                incrementCount(optimizerBlockerSourceCounts, optimizerResult.optimizerBlockerSource)
+                incrementCount(optimizerBlockerFamilyCounts, optimizerResult.optimizerBlockerFamily)
+                incrementCount(productionReadinessStageCounts, optimizerResult.productionReadinessFirstBlockingStage)
+                incrementCount(autoVectorizationNoCandidateBucketCounts, optimizerResult.autoVectorizationNoCandidateFirstBucket)
+                incrementCount(autoVectorizationNoCandidateDiagnosticCodeCounts, optimizerResult.autoVectorizationNoCandidateDiagnosticCode)
+            }
+
+            validateAutoVectorizationNoCandidateDiagnosticCodeRollup(
+                    report,
+                    reportSpec.name,
+                    autoVectorizationNoCandidateDiagnosticCodeCounts
+            )
+
+            if (!failures.isEmpty()) {
+                throw new GradleException('IR validation dogfooding safety contract failed for ' + reportSpec.name
+                        + ' (' + failures.size() + '/' + entryCount + ' failed): ' + failures.join('; '))
+            }
+
+            logger.lifecycle('IR validation dogfooding safety contract OK for {}: safety.ok={} safety.failed=0 entry.count={}',
+                    reportSpec.name,
+                    safetyOk,
+                    entryCount)
+            logger.lifecycle('IR validation dogfooding optimizer-readiness contract OK for {}: blocked={} readOnlyBlocked={} csePolicyBlocked={} cseLiteralPromotionBlocked={} autoVectorizationBlocked={} entry.count={}',
+                    reportSpec.name,
+                    optimizerBlocked,
+                    optimizerReadOnlyBlocked,
+                    csePolicyBlocked,
+                    cseLiteralPromotionBlocked,
+                    autoVectorizationBlocked,
+                    entryCount)
+            logger.lifecycle('IR validation dogfooding optimizer blocker summary for {}: sources={} families={}',
+                    reportSpec.name,
+                    countSummary(optimizerBlockerSourceCounts),
+                    countSummary(optimizerBlockerFamilyCounts))
+            logger.lifecycle('IR validation dogfooding production-readiness stage summary for {}: firstBlockingStages={}',
+                    reportSpec.name,
+                    countSummary(productionReadinessStageCounts))
+            logger.lifecycle('IR validation dogfooding auto-vectorization no-candidate bucket summary for {}: firstBuckets={}',
+                    reportSpec.name,
+                    countSummary(autoVectorizationNoCandidateBucketCounts))
+            logger.lifecycle('IR validation dogfooding auto-vectorization no-candidate diagnostic summary for {}: codes={}',
+                    reportSpec.name,
+                    countSummary(autoVectorizationNoCandidateDiagnosticCodeCounts))
+        }
+    }
+}
+
+tasks.register('validateIrValidationDogfoodingContractSelfTest') {
+    group = 'verification'
+    description = 'Verifies synthetic IR validation dogfooding contract failures for optimizer blocker fields.'
+
+    doLast {
+        Properties validReport = syntheticIrValidationContractReport()
+        OptimizerReadinessContractResult validResult = validateOptimizerReadinessContract(validReport, 'synthetic-valid', 0)
+        if (!validResult.blocked
+                || validResult.optimizerBlockerSource != 'autoVectorization'
+                || validResult.productionReadinessFirstBlockingStage != 'validationBundle') {
+            throw new GradleException('Synthetic optimizer blocker contract baseline did not validate as expected')
+        }
+
+        syntheticOptimizerContractFailureScenarios().each { scenario ->
+            expectOptimizerContractFailure(scenario.name, validReport, scenario.mutation)
+        }
+
+        Properties validBaseline = persistedIrValidationBaseline(validReport, 'synthetic-valid')
+        validatePersistedIrValidationBaseline(validBaseline, validReport, 'synthetic-valid')
+        syntheticPersistedBaselineFailureScenarios().each { scenario ->
+            expectPersistedBaselineFailure(scenario.name, validBaseline, validReport, scenario.baselineMutation, scenario.currentMutation)
+        }
+
+        Properties validHealthSummary = irValidationHealthSummaryArtifact(['synthetic-valid': validReport])
+        validateIrValidationHealthSummaryArtifact(validHealthSummary, 'synthetic-health-valid')
+        syntheticHealthSummaryFailureScenarios().each { scenario ->
+            expectHealthSummaryFailure(scenario.name, validHealthSummary, scenario.mutation)
+        }
+
+        logger.lifecycle('IR validation dogfooding contract self-test OK: optimizerBlocker and persisted baseline failures fail as expected')
+    }
+}
+
+tasks.register('writeIrValidationExampleReportBaseline') {
+    group = 'verification'
+    description = 'Writes compact persisted IR validation optimizer baseline artifacts for dogfooding reports.'
+    dependsOn tasks.named('validateIrValidationExampleReports')
+    inputs.files(irValidationExampleReports.collect { it.reportFile })
+    outputs.dir(irValidationBaselineDirectory)
+
+    doLast {
+        File baselineDir = irValidationBaselineDirectory.get().asFile
+        baselineDir.mkdirs()
+        irValidationExampleReports.each { reportSpec ->
+            Properties report = loadIrValidationReport(reportSpec.reportFile.asFile, reportSpec.name)
+            Properties baseline = persistedIrValidationBaseline(report, reportSpec.name)
+            File baselineFile = new File(baselineDir, reportSpec.name + '-ir-validation-baseline.properties')
+            baselineFile.withOutputStream { stream ->
+                baseline.store(stream, 'JavaToGpu IR validation persisted optimizer baseline for ' + reportSpec.name)
+            }
+            logger.lifecycle('IR validation persisted baseline written for {}: {} entries -> {}',
+                    reportSpec.name,
+                    baseline.getProperty('entry.count'),
+                    baselineFile)
+            logger.lifecycle('IR validation persisted baseline trend for {}: {}',
+                    reportSpec.name,
+                    noCandidateTrendSummary(baseline, reportSpec.name + ' baseline'))
+        }
+    }
+}
+
+tasks.register('validateIrValidationExampleReportBaseline') {
+    group = 'verification'
+    description = 'Compares current dogfooding IR validation reports against persisted optimizer baselines.'
+    dependsOn tasks.named('validateIrValidationExampleReports')
+    mustRunAfter tasks.named('writeIrValidationExampleReportBaseline')
+    inputs.files(irValidationExampleReports.collect { it.reportFile })
+    inputs.dir(irValidationBaselineDirectory)
+
+    doLast {
+        File baselineDir = irValidationBaselineDirectory.get().asFile
+        irValidationExampleReports.each { reportSpec ->
+            File baselineFile = new File(baselineDir, reportSpec.name + '-ir-validation-baseline.properties')
+            if (!baselineFile.isFile()) {
+                throw new GradleException('Missing persisted IR validation baseline for ' + reportSpec.name
+                        + ': ' + baselineFile + '. Run writeIrValidationExampleReportBaseline first.')
+            }
+            Properties current = loadIrValidationReport(reportSpec.reportFile.asFile, reportSpec.name)
+            Properties baseline = new Properties()
+            baselineFile.withInputStream { stream -> baseline.load(stream) }
+            validatePersistedIrValidationBaseline(baseline, current, reportSpec.name)
+            logger.lifecycle('IR validation persisted baseline OK for {}: {} entries compared from {}',
+                    reportSpec.name,
+                    current.getProperty('entry.count'),
+                    baselineFile)
+            logger.lifecycle('IR validation persisted baseline trend for {}: {}',
+                    reportSpec.name,
+                    noCandidateTrendSummary(current, reportSpec.name))
+        }
+    }
+}
+
+tasks.register('writeIrValidationHealthSummary') {
+    group = 'verification'
+    description = 'Writes a compact machine-readable health summary for current IR validation dogfooding reports.'
+    dependsOn tasks.named('validateIrValidationExampleReports')
+    inputs.files(irValidationExampleReports.collect { it.reportFile })
+    outputs.file(irValidationHealthSummaryFile)
+
+    doLast {
+        Map<String, Properties> reportsByName = new LinkedHashMap<>()
+        irValidationExampleReports.each { reportSpec ->
+            reportsByName.put(reportSpec.name, loadIrValidationReport(reportSpec.reportFile.asFile, reportSpec.name))
+        }
+        Properties summary = irValidationHealthSummaryArtifact(reportsByName)
+        validateIrValidationHealthSummaryArtifact(summary, 'writeIrValidationHealthSummary')
+
+        File outputFile = irValidationHealthSummaryFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.withOutputStream { stream ->
+            summary.store(stream, 'JavaToGpu IR validation health summary')
+        }
+        logger.lifecycle('IR validation health summary written: {}', outputFile)
+        logger.lifecycle('IR validation health summary: {}', summary.getProperty('total.ciSummaryLine'))
+    }
+}
+
+private static void incrementCount(Map<String, Integer> counts, String key) {
+    if (key == null || key.isBlank() || key == 'none') {
+        return
+    }
+    counts.put(key, counts.getOrDefault(key, 0) + 1)
+}
+
+private static void mergeCounts(Map<String, Integer> target, Map<String, Integer> source) {
+    source.each { key, value -> target.put(key, target.getOrDefault(key, 0) + value) }
+}
+
+private static IrValidationHealthSummary irValidationHealthSummary(Properties report, String reportName) {
+    int entryCount = parseReportInt(report, 'entry.count', reportName)
+    int safetyOk = 0
+    int safetyFailed = 0
+    int optimizerBlocked = 0
+    int readOnlyBlocked = 0
+    Map<String, Integer> optimizerBlockerSourceCounts = new LinkedHashMap<>()
+    Map<String, Integer> productionReadinessStageCounts = new LinkedHashMap<>()
+    Map<String, Integer> noCandidateBucketCounts = new LinkedHashMap<>()
+    Map<String, Integer> noCandidateDiagnosticCodeCounts = new LinkedHashMap<>()
+
+    for (int index = 0; index < entryCount; index++) {
+        String prefix = 'entry.' + index + '.'
+        String safety = requireReportValue(report, prefix + 'safety', reportName)
+        if (safety == 'ok') {
+            safetyOk++
+        } else if (safety == 'failed') {
+            safetyFailed++
+        } else {
+            throw new GradleException('Unexpected IR validation safety state for ' + reportName
+                    + ' entry ' + index + ': ' + safety)
+        }
+
+        String optimizerVerdict = requireReportValue(report, prefix + 'optimizerLayerReadinessVerdict', reportName)
+        if (optimizerVerdict == 'blocked') {
+            optimizerBlocked++
+        }
+        String csePolicyReadiness = requireReportValue(report, prefix + 'cseRewritePolicyReadiness', reportName)
+        String blockingLayers = requireReportValue(report, prefix + 'optimizerLayerReadinessBlockingLayers', reportName)
+        if (optimizerVerdict == 'blocked'
+                && csePolicyReadiness != 'blockedBySkippedCandidate'
+                && blockingLayers.contains('cseLiteralPromotion')
+                && blockingLayers.contains('autoVectorization')) {
+            readOnlyBlocked++
+        }
+
+        incrementCount(optimizerBlockerSourceCounts, requireReportValue(report, prefix + 'optimizerBlockerSource', reportName))
+        incrementCount(productionReadinessStageCounts, requireReportValue(report, prefix + 'optimizerProductionReadinessFirstBlockingStage', reportName))
+        incrementCount(noCandidateBucketCounts, requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstBucket', reportName))
+        incrementCount(noCandidateDiagnosticCodeCounts, requireReportValue(report, prefix + 'autoVectorizationNoCandidateDiagnosticCode', reportName))
+    }
+
+    return new IrValidationHealthSummary(
+            entryCount,
+            safetyOk,
+            safetyFailed,
+            optimizerBlocked,
+            readOnlyBlocked,
+            optimizerBlockerSourceCounts,
+            productionReadinessStageCounts,
+            noCandidateBucketCounts,
+            noCandidateDiagnosticCodeCounts
+    )
+}
+
+private static Properties irValidationHealthSummaryArtifact(Map<String, Properties> reportsByName) {
+    Properties summary = new Properties()
+    summary.setProperty('format', 'javatogpu.ir.validation.health-summary.v1')
+    summary.setProperty('report.count', Integer.toString(reportsByName.size()))
+
+    int totalEntries = 0
+    int totalSafetyOk = 0
+    int totalSafetyFailed = 0
+    int totalOptimizerBlocked = 0
+    int totalReadOnlyBlocked = 0
+    Map<String, Integer> totalBlockerSourceCounts = new LinkedHashMap<>()
+    Map<String, Integer> totalProductionStageCounts = new LinkedHashMap<>()
+    Map<String, Integer> totalNoCandidateBucketCounts = new LinkedHashMap<>()
+    Map<String, Integer> totalNoCandidateDiagnosticCounts = new LinkedHashMap<>()
+
+    int reportIndex = 0
+    reportsByName.each { reportName, report ->
+        IrValidationHealthSummary health = irValidationHealthSummary(report, reportName)
+        String prefix = 'report.' + reportIndex + '.'
+        summary.setProperty(prefix + 'name', reportName)
+        summary.setProperty(prefix + 'entries', Integer.toString(health.entries))
+        summary.setProperty(prefix + 'safetyOk', Integer.toString(health.safetyOk))
+        summary.setProperty(prefix + 'safetyFailed', Integer.toString(health.safetyFailed))
+        summary.setProperty(prefix + 'optimizerBlocked', Integer.toString(health.optimizerBlocked))
+        summary.setProperty(prefix + 'readOnlyBlocked', Integer.toString(health.readOnlyBlocked))
+        summary.setProperty(prefix + 'optimizerBlockerSources', countSummary(health.optimizerBlockerSourceCounts))
+        summary.setProperty(prefix + 'productionReadinessStages', countSummary(health.productionReadinessStageCounts))
+        summary.setProperty(prefix + 'noCandidateBuckets', countSummary(health.noCandidateBucketCounts))
+        summary.setProperty(prefix + 'noCandidateDiagnosticCodes', countSummary(health.noCandidateDiagnosticCodeCounts))
+        summary.setProperty(prefix + 'ciSummaryLine', health.ciSummaryLine(reportName))
+
+        totalEntries += health.entries
+        totalSafetyOk += health.safetyOk
+        totalSafetyFailed += health.safetyFailed
+        totalOptimizerBlocked += health.optimizerBlocked
+        totalReadOnlyBlocked += health.readOnlyBlocked
+        mergeCounts(totalBlockerSourceCounts, health.optimizerBlockerSourceCounts)
+        mergeCounts(totalProductionStageCounts, health.productionReadinessStageCounts)
+        mergeCounts(totalNoCandidateBucketCounts, health.noCandidateBucketCounts)
+        mergeCounts(totalNoCandidateDiagnosticCounts, health.noCandidateDiagnosticCodeCounts)
+        reportIndex++
+    }
+
+    summary.setProperty('total.entries', Integer.toString(totalEntries))
+    summary.setProperty('total.safetyOk', Integer.toString(totalSafetyOk))
+    summary.setProperty('total.safetyFailed', Integer.toString(totalSafetyFailed))
+    summary.setProperty('total.optimizerBlocked', Integer.toString(totalOptimizerBlocked))
+    summary.setProperty('total.readOnlyBlocked', Integer.toString(totalReadOnlyBlocked))
+    summary.setProperty('total.optimizerBlockerSources', countSummary(totalBlockerSourceCounts))
+    summary.setProperty('total.productionReadinessStages', countSummary(totalProductionStageCounts))
+    summary.setProperty('total.noCandidateBuckets', countSummary(totalNoCandidateBucketCounts))
+    summary.setProperty('total.noCandidateDiagnosticCodes', countSummary(totalNoCandidateDiagnosticCounts))
+    summary.setProperty(
+            'total.ciSummaryLine',
+            'irValidationHealth reports=' + reportsByName.size()
+                    + ' entries=' + totalEntries
+                    + ' safetyFailed=' + totalSafetyFailed
+                    + ' optimizerBlocked=' + totalOptimizerBlocked
+                    + ' readOnlyBlocked=' + totalReadOnlyBlocked
+                    + ' diagnosticCodes=' + countSummary(totalNoCandidateDiagnosticCounts)
+                    + ' firstBuckets=' + countSummary(totalNoCandidateBucketCounts)
+    )
+    return summary
+}
+
+private static void validateIrValidationHealthSummaryArtifact(Properties summary, String reportName) {
+    if (summary.getProperty('format') != 'javatogpu.ir.validation.health-summary.v1') {
+        throw new GradleException('Unexpected IR validation health summary format for ' + reportName
+                + ': ' + summary.getProperty('format'))
+    }
+    int reportCount = parseReportInt(summary, 'report.count', reportName)
+    if (reportCount <= 0) {
+        throw new GradleException('IR validation health summary must contain at least one report for ' + reportName)
+    }
+    parseReportInt(summary, 'total.entries', reportName)
+    parseReportInt(summary, 'total.safetyOk', reportName)
+    parseReportInt(summary, 'total.safetyFailed', reportName)
+    parseReportInt(summary, 'total.optimizerBlocked', reportName)
+    parseReportInt(summary, 'total.readOnlyBlocked', reportName)
+    requireReportValue(summary, 'total.optimizerBlockerSources', reportName)
+    requireReportValue(summary, 'total.productionReadinessStages', reportName)
+    requireReportValue(summary, 'total.noCandidateBuckets', reportName)
+    requireReportValue(summary, 'total.noCandidateDiagnosticCodes', reportName)
+    String totalSummaryLine = requireReportValue(summary, 'total.ciSummaryLine', reportName)
+    if (!totalSummaryLine.contains('irValidationHealth reports=' + reportCount)
+            || !totalSummaryLine.contains('diagnosticCodes=')
+            || !totalSummaryLine.contains('firstBuckets=')) {
+        throw new GradleException('IR validation health summary total CI line is incomplete for ' + reportName
+                + ': ' + totalSummaryLine)
+    }
+
+    for (int index = 0; index < reportCount; index++) {
+        String prefix = 'report.' + index + '.'
+        String name = requireReportValue(summary, prefix + 'name', reportName)
+        parseReportInt(summary, prefix + 'entries', reportName)
+        parseReportInt(summary, prefix + 'safetyOk', reportName)
+        parseReportInt(summary, prefix + 'safetyFailed', reportName)
+        parseReportInt(summary, prefix + 'optimizerBlocked', reportName)
+        parseReportInt(summary, prefix + 'readOnlyBlocked', reportName)
+        requireReportValue(summary, prefix + 'optimizerBlockerSources', reportName)
+        requireReportValue(summary, prefix + 'productionReadinessStages', reportName)
+        requireReportValue(summary, prefix + 'noCandidateBuckets', reportName)
+        requireReportValue(summary, prefix + 'noCandidateDiagnosticCodes', reportName)
+        String reportSummaryLine = requireReportValue(summary, prefix + 'ciSummaryLine', reportName)
+        if (!reportSummaryLine.contains('irValidationHealth report=' + name)
+                || !reportSummaryLine.contains('diagnosticCodes=')
+                || !reportSummaryLine.contains('firstBuckets=')) {
+            throw new GradleException('IR validation health summary report CI line is incomplete for '
+                    + reportName + ' entry ' + index + ': ' + reportSummaryLine)
+        }
+    }
+}
+
+private static List<Map<String, Object>> syntheticHealthSummaryFailureScenarios() {
+    return [
+            [
+                    name    : 'synthetic-health-missing-total-summary-line',
+                    mutation: { Properties summary -> summary.remove('total.ciSummaryLine') }
+            ],
+            [
+                    name    : 'synthetic-health-missing-total-buckets',
+                    mutation: { Properties summary -> summary.remove('total.noCandidateBuckets') }
+            ],
+            [
+                    name    : 'synthetic-health-missing-total-diagnostic-codes',
+                    mutation: { Properties summary -> summary.remove('total.noCandidateDiagnosticCodes') }
+            ],
+            [
+                    name    : 'synthetic-health-missing-report-summary-line',
+                    mutation: { Properties summary -> summary.remove('report.0.ciSummaryLine') }
+            ]
+    ]
+}
+
+private static void expectHealthSummaryFailure(String scenario, Properties baseline, Closure mutation) {
+    Properties summary = new Properties()
+    summary.putAll(baseline)
+    mutation.call(summary)
+    try {
+        validateIrValidationHealthSummaryArtifact(summary, scenario)
+    } catch (GradleException expected) {
+        return
+    }
+    throw new GradleException('Synthetic IR validation health summary scenario unexpectedly passed: ' + scenario)
+}
+
+private static void validateAutoVectorizationNoCandidateDiagnosticCodeRollup(
+        Properties report,
+        String reportName,
+        Map<String, Integer> expectedCounts
+) {
+    String expectedSummary = countSummary(expectedCounts)
+    String actualSummary = requireReportValue(
+            report,
+            'autoVectorizationNoCandidateDiagnosticCodeCounts',
+            reportName
+    )
+    if (actualSummary != expectedSummary) {
+        throw new GradleException('Auto-vectorization no-candidate diagnostic-code summary drifted for '
+                + reportName + ': expected=' + expectedSummary + ' actual=' + actualSummary)
+    }
+
+    int uniqueCodes = parseReportInt(report, 'autoVectorizationNoCandidateUniqueDiagnosticCodes', reportName)
+    if (uniqueCodes != expectedCounts.size()) {
+        throw new GradleException('Auto-vectorization no-candidate diagnostic-code unique count drifted for '
+                + reportName + ': expected=' + expectedCounts.size() + ' actual=' + uniqueCodes)
+    }
+
+    expectedCounts.each { code, expectedCount ->
+        int actualCount = parseReportInt(report, 'autoVectorizationNoCandidateDiagnosticCode.' + code, reportName)
+        if (actualCount != expectedCount) {
+            throw new GradleException('Auto-vectorization no-candidate diagnostic-code count drifted for '
+                    + reportName + ' code=' + code + ': expected=' + expectedCount + ' actual=' + actualCount)
+        }
+    }
+}
+
+private static Properties loadIrValidationReport(File reportFile, String reportName) {
+    if (!reportFile.isFile()) {
+        throw new GradleException('Missing IR validation dogfooding report for ' + reportName + ': ' + reportFile)
+    }
+    Properties report = new Properties()
+    reportFile.withInputStream { stream -> report.load(stream) }
+    if (report.getProperty('format') != 'javatogpu.ir.validation.v1') {
+        throw new GradleException('Unexpected IR validation report format for ' + reportName + ': '
+                + report.getProperty('format'))
+    }
+    return report
+}
+
+private static Properties persistedIrValidationBaseline(Properties report, String reportName) {
+    Properties baseline = new Properties()
+    int entryCount = parseReportInt(report, 'entry.count', reportName)
+    baseline.setProperty('format', 'javatogpu.ir.validation.persisted-baseline.v1')
+    baseline.setProperty('sourceFormat', requireReportValue(report, 'format', reportName))
+    baseline.setProperty('entry.count', Integer.toString(entryCount))
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateBucketCounts')
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateUniqueBuckets')
+    copyCountFields(report, baseline, 'autoVectorizationNoCandidateBucket.')
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateDiagnosticCodeCounts')
+    copyRequiredBaselineField(report, baseline, reportName, '', 'autoVectorizationNoCandidateUniqueDiagnosticCodes')
+    copyCountFields(report, baseline, 'autoVectorizationNoCandidateDiagnosticCode.')
+    for (int index = 0; index < entryCount; index++) {
+        String prefix = 'entry.' + index + '.'
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'methodName')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerLayerReadinessBaselineCiOutcome')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerLayerReadinessBaselineCiDecision')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerLayerReadinessBaselineCiFailBuild')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineSnapshotVerdict')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineSnapshotSource')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineSnapshotFamily')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineSnapshotRemainingWork')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonOutcome')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonBaselineScore')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonCurrentScore')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonScoreDelta')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonSourceTransition')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonFamilyTransition')
+        copyRequiredBaselineField(report, baseline, reportName, prefix, 'optimizerBlockerBaselineComparisonRemainingWorkTransition')
+    }
+    return baseline
+}
+
+private static void copyCountFields(Properties source, Properties target, String prefix) {
+    source.stringPropertyNames()
+            .findAll { key -> key.startsWith(prefix) }
+            .sort()
+            .each { key -> target.setProperty(key, source.getProperty(key)) }
+}
+
+private static void copyRequiredBaselineField(
+        Properties source,
+        Properties target,
+        String reportName,
+        String prefix,
+        String key
+) {
+    target.setProperty(prefix + key, requireReportValue(source, prefix + key, reportName))
+}
+
+private static List<Map<String, Object>> syntheticPersistedBaselineFailureScenarios() {
+    return [
+            [
+                    name            : 'synthetic-persisted-method-mismatch',
+                    baselineMutation: { Properties baseline -> baseline.setProperty('entry.0.methodName', 'oldSyntheticKernel') },
+                    currentMutation : { Properties current -> }
+            ],
+            [
+                    name            : 'synthetic-persisted-blocker-source-change',
+                    baselineMutation: { Properties baseline -> baseline.setProperty('entry.0.optimizerBlockerBaselineSnapshotSource', 'cseRewritePolicy') },
+                    currentMutation : { Properties current -> }
+            ],
+            [
+                    name            : 'synthetic-persisted-readiness-regression',
+                    baselineMutation: { Properties baseline -> },
+                    currentMutation : { Properties current ->
+                        current.setProperty('entry.0.optimizerLayerReadinessBaselineCiOutcome', 'regressed')
+                        current.setProperty('entry.0.optimizerLayerReadinessBaselineCiDecision', 'fail/regressionDetected')
+                        current.setProperty('entry.0.optimizerLayerReadinessBaselineCiFailBuild', 'true')
+                    }
+            ],
+            [
+                    name            : 'synthetic-persisted-blocker-regression',
+                    baselineMutation: { Properties baseline -> },
+                    currentMutation : { Properties current -> current.setProperty('entry.0.optimizerBlockerBaselineComparisonOutcome', 'regressed') }
+            ],
+            [
+                    name            : 'synthetic-persisted-blocker-score-regression',
+                    baselineMutation: { Properties baseline -> },
+                    currentMutation : { Properties current -> current.setProperty('entry.0.optimizerBlockerBaselineComparisonScoreDelta', '-1') }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-diagnostic-summary-drift',
+                    baselineMutation: { Properties baseline -> baseline.setProperty('autoVectorizationNoCandidateDiagnosticCodeCounts', '{JTG-IR-AV-001=2}') },
+                    currentMutation : { Properties current -> }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-diagnostic-count-drift',
+                    baselineMutation: { Properties baseline -> },
+                    currentMutation : { Properties current -> current.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '2') }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-bucket-summary-drift',
+                    baselineMutation: { Properties baseline -> baseline.setProperty('autoVectorizationNoCandidateBucketCounts', '{scannerFoundNoVectorShape=2}') },
+                    currentMutation : { Properties current -> }
+            ],
+            [
+                    name            : 'synthetic-persisted-no-candidate-bucket-count-drift',
+                    baselineMutation: { Properties baseline -> },
+                    currentMutation : { Properties current -> current.setProperty('autoVectorizationNoCandidateBucket.scannerFoundNoVectorShape', '2') }
+            ]
+    ]
+}
+
+private static void expectPersistedBaselineFailure(
+        String scenario,
+        Properties baselineTemplate,
+        Properties currentTemplate,
+        Closure baselineMutation,
+        Closure currentMutation
+) {
+    Properties baseline = new Properties()
+    baseline.putAll(baselineTemplate)
+    Properties current = new Properties()
+    current.putAll(currentTemplate)
+    baselineMutation.call(baseline)
+    currentMutation.call(current)
+    try {
+        validatePersistedIrValidationBaseline(baseline, current, scenario)
+    } catch (GradleException expected) {
+        return
+    }
+    throw new GradleException('Synthetic persisted IR validation baseline scenario unexpectedly passed: ' + scenario)
+}
+
+private static void validatePersistedIrValidationBaseline(
+        Properties baseline,
+        Properties current,
+        String reportName
+) {
+    if (baseline.getProperty('format') != 'javatogpu.ir.validation.persisted-baseline.v1') {
+        throw new GradleException('Unexpected persisted IR validation baseline format for ' + reportName + ': '
+                + baseline.getProperty('format'))
+    }
+    int baselineEntryCount = parseReportInt(baseline, 'entry.count', reportName + ' baseline')
+    int currentEntryCount = parseReportInt(current, 'entry.count', reportName)
+    if (baselineEntryCount != currentEntryCount) {
+        throw new GradleException('IR validation persisted baseline entry count changed for ' + reportName
+                + ': baseline=' + baselineEntryCount + ' current=' + currentEntryCount)
+    }
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateBucketCounts')
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateUniqueBuckets')
+    comparePersistedCountFields(baseline, current, reportName, 'autoVectorizationNoCandidateBucket.', 'bucket')
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateDiagnosticCodeCounts')
+    comparePersistedReportField(baseline, current, reportName, 'autoVectorizationNoCandidateUniqueDiagnosticCodes')
+    comparePersistedCountFields(baseline, current, reportName, 'autoVectorizationNoCandidateDiagnosticCode.', 'diagnostic-code')
+    for (int index = 0; index < currentEntryCount; index++) {
+        String prefix = 'entry.' + index + '.'
+        String baselineMethod = requireReportValue(baseline, prefix + 'methodName', reportName + ' baseline')
+        String currentMethod = requireReportValue(current, prefix + 'methodName', reportName)
+        if (baselineMethod != currentMethod) {
+            throw new GradleException('IR validation persisted baseline method changed for ' + reportName
+                    + ' entry ' + index + ': baseline=' + baselineMethod + ' current=' + currentMethod)
+        }
+        String readinessOutcome = requireReportValue(current, prefix + 'optimizerLayerReadinessBaselineCiOutcome', reportName)
+        String readinessDecision = requireReportValue(current, prefix + 'optimizerLayerReadinessBaselineCiDecision', reportName)
+        String readinessFailBuild = requireReportValue(current, prefix + 'optimizerLayerReadinessBaselineCiFailBuild', reportName)
+        String blockerOutcome = requireReportValue(current, prefix + 'optimizerBlockerBaselineComparisonOutcome', reportName)
+        int blockerScoreDelta = parseReportInt(current, prefix + 'optimizerBlockerBaselineComparisonScoreDelta', reportName)
+        if (readinessOutcome == 'regressed' || readinessDecision == 'fail/regressionDetected' || readinessFailBuild == 'true') {
+            throw new GradleException('IR validation persisted readiness baseline regressed for ' + reportName
+                    + ' entry ' + index + ' (' + currentMethod + '): outcome=' + readinessOutcome
+                    + ' decision=' + readinessDecision + ' failBuild=' + readinessFailBuild)
+        }
+        if (blockerOutcome == 'regressed' || blockerScoreDelta < 0) {
+            throw new GradleException('IR validation persisted blocker baseline regressed for ' + reportName
+                    + ' entry ' + index + ' (' + currentMethod + '): outcome=' + blockerOutcome
+                    + ' scoreDelta=' + blockerScoreDelta)
+        }
+        comparePersistedBaselineField(baseline, current, reportName, index, prefix, 'optimizerBlockerBaselineSnapshotSource')
+        comparePersistedBaselineField(baseline, current, reportName, index, prefix, 'optimizerBlockerBaselineSnapshotFamily')
+        comparePersistedBaselineField(baseline, current, reportName, index, prefix, 'optimizerBlockerBaselineSnapshotRemainingWork')
+    }
+}
+
+private static void comparePersistedCountFields(
+        Properties baseline,
+        Properties current,
+        String reportName,
+        String prefix,
+        String label
+) {
+    Set<String> baselineKeys = countKeys(baseline, prefix)
+    Set<String> currentKeys = countKeys(current, prefix)
+    if (baselineKeys != currentKeys) {
+        throw new GradleException('IR validation persisted ' + label + ' keys changed for ' + reportName
+                + ': baseline=' + baselineKeys + ' current=' + currentKeys)
+    }
+    baselineKeys.each { key -> comparePersistedReportField(baseline, current, reportName, key) }
+}
+
+private static Set<String> countKeys(Properties report, String prefix) {
+    return new TreeSet<>(report.stringPropertyNames()
+            .findAll { key -> key.startsWith(prefix) })
+}
+
+private static void comparePersistedReportField(
+        Properties baseline,
+        Properties current,
+        String reportName,
+        String key
+) {
+    String baselineValue = requireReportValue(baseline, key, reportName + ' baseline')
+    String currentValue = requireReportValue(current, key, reportName)
+    if (baselineValue != currentValue) {
+        throw new GradleException('IR validation persisted baseline field changed for ' + reportName
+                + ' key=' + key + ': baseline=' + baselineValue + ' current=' + currentValue)
+    }
+}
+
+private static void comparePersistedBaselineField(
+        Properties baseline,
+        Properties current,
+        String reportName,
+        int index,
+        String prefix,
+        String key
+) {
+    String baselineValue = requireReportValue(baseline, prefix + key, reportName + ' baseline')
+    String currentValue = requireReportValue(current, prefix + key, reportName)
+    if (baselineValue != currentValue) {
+        throw new GradleException('IR validation persisted baseline field changed for ' + reportName
+                + ' entry ' + index + ' key=' + key + ': baseline=' + baselineValue + ' current=' + currentValue)
+    }
+}
+
+private static String countSummary(Map<String, Integer> counts) {
+    if (counts.isEmpty()) {
+        return '{}'
+    }
+    return '{' + counts.collect { key, value -> key + '=' + value }.join(',') + '}'
+}
+
+private static String noCandidateTrendSummary(Properties report, String reportName) {
+    return 'diagnosticCodes=' + requireReportValue(
+            report,
+            'autoVectorizationNoCandidateDiagnosticCodeCounts',
+            reportName
+    ) + ' firstBuckets=' + requireReportValue(
+            report,
+            'autoVectorizationNoCandidateBucketCounts',
+            reportName
+    )
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('validateIrValidationDogfoodingContractSelfTest')
+    if (irValidationExamplesEnabled) {
+        dependsOn tasks.named('validateIrValidationExampleReports')
+        dependsOn tasks.named('writeIrValidationHealthSummary')
+    }
+}
+
+private static Properties syntheticIrValidationContractReport() {
+    Properties report = new Properties()
+    report.setProperty('format', 'javatogpu.ir.validation.v1')
+    report.setProperty('entry.count', '1')
+    report.setProperty('entry.0.methodName', 'syntheticKernel')
+    report.setProperty('entry.0.safety', 'ok')
+    report.setProperty('entry.0.optimizerLayerReadinessVerdict', 'blocked')
+    report.setProperty('entry.0.optimizerLayerReadinessFirstBlockingLayer', 'autoVectorization')
+    report.setProperty('entry.0.optimizerLayerReadinessBlockingLayers', 'cseLiteralPromotion,autoVectorization')
+    report.setProperty('entry.0.optimizerGateBlocked', 'false')
+    report.setProperty('entry.0.optimizerGateSource', 'none')
+    report.setProperty('entry.0.optimizerGateFamily', 'none')
+    report.setProperty('entry.0.cseLayerReadinessVerdict', 'ready')
+    report.setProperty('entry.0.cseRewritePolicyReadiness', 'none')
+    report.setProperty('entry.0.cseControlFlowRegionReadiness', 'clear')
+    report.setProperty('entry.0.cseControlFlowRegionBlocked', 'false')
+    report.setProperty('entry.0.cseControlFlowRegionBlockedCandidates', '0')
+    report.setProperty('entry.0.cseControlFlowRegionFirstRemainingWork', 'none')
+    report.setProperty('entry.0.autoVectorizationReadinessVerdict', 'notReady/noCandidates')
+    report.setProperty('entry.0.autoVectorizationCanApplyRewrite', 'false')
+    report.setProperty('entry.0.autoVectorizationCandidates', '0')
+    report.setProperty('entry.0.autoVectorizationNoCandidateReadiness', 'bucketed')
+    report.setProperty('entry.0.autoVectorizationNoCandidateNoCandidates', 'true')
+    report.setProperty('entry.0.autoVectorizationNoCandidateCandidateCount', '0')
+    report.setProperty('entry.0.autoVectorizationNoCandidateBucketCount', '1')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstBucket', 'scannerFoundNoVectorShape')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstRemainingWork', 'classifyScalarOrLoopShape')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstExampleBucket', 'scannerFoundNoVectorShape')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstExampleLocation', 'method')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstExample', 'syntheticKernel@method: scanner found no vector-shaped rewrite candidate')
+    report.setProperty('entry.0.autoVectorizationNoCandidateDiagnosticCode', 'JTG-IR-AV-001')
+    report.setProperty('entry.0.autoVectorizationNoCandidateFirstHelp', 'inspect the first IR example and add a more specific scanner shape bucket if needed')
+    report.setProperty('autoVectorizationNoCandidateBucketCounts', '{scannerFoundNoVectorShape=1}')
+    report.setProperty('autoVectorizationNoCandidateUniqueBuckets', '1')
+    report.setProperty('autoVectorizationNoCandidateBucket.scannerFoundNoVectorShape', '1')
+    report.setProperty('autoVectorizationNoCandidateDiagnosticCodeCounts', '{JTG-IR-AV-001=1}')
+    report.setProperty('autoVectorizationNoCandidateUniqueDiagnosticCodes', '1')
+    report.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '1')
+    report.setProperty('entry.0.optimizerBlockerVerdict', 'blocked')
+    report.setProperty('entry.0.optimizerBlockerBlocked', 'true')
+    report.setProperty('entry.0.optimizerBlockerSource', 'autoVectorization')
+    report.setProperty('entry.0.optimizerBlockerFamily', 'candidateDiscovery.noRewriteCandidates')
+    report.setProperty('entry.0.optimizerBlockerRemainingWork', 'collectRewriteCandidates')
+    report.setProperty('entry.0.optimizerBlockerCseFamily', 'none')
+    report.setProperty('entry.0.optimizerBlockerAutoVectorizationFamily', 'candidateDiscovery.noRewriteCandidates')
+    report.setProperty('entry.0.optimizerBlockerCiSummaryLine', 'optimizer blocker method=syntheticKernel verdict=blocked source=autoVectorization family=candidateDiscovery.noRewriteCandidates remainingWork=collectRewriteCandidates')
+    report.setProperty('entry.0.optimizerBlockerSummary', 'optimizer blocker method=syntheticKernel verdict=blocked source=autoVectorization family=candidateDiscovery.noRewriteCandidates remainingWork=collectRewriteCandidates')
+    report.setProperty('entry.0.optimizerLayerReadinessBaselineCiMethod', 'syntheticKernel')
+    report.setProperty('entry.0.optimizerLayerReadinessBaselineCiOutcome', 'unchanged')
+    report.setProperty('entry.0.optimizerLayerReadinessBaselineCiDecision', 'accepted/noRegression')
+    report.setProperty('entry.0.optimizerLayerReadinessBaselineCiFailBuild', 'false')
+    report.setProperty('entry.0.optimizerBlockerBaselineSnapshotMethod', 'syntheticKernel')
+    report.setProperty('entry.0.optimizerBlockerBaselineSnapshotVerdict', 'blocked')
+    report.setProperty('entry.0.optimizerBlockerBaselineSnapshotSource', 'autoVectorization')
+    report.setProperty('entry.0.optimizerBlockerBaselineSnapshotFamily', 'candidateDiscovery.noRewriteCandidates')
+    report.setProperty('entry.0.optimizerBlockerBaselineSnapshotRemainingWork', 'collectRewriteCandidates')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonMethod', 'syntheticKernel')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonOutcome', 'unchanged')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonBaselineScore', '3')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonCurrentScore', '3')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonScoreDelta', '0')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonSourceTransition', 'autoVectorization->autoVectorization')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonFamilyTransition', 'candidateDiscovery.noRewriteCandidates->candidateDiscovery.noRewriteCandidates')
+    report.setProperty('entry.0.optimizerBlockerBaselineComparisonRemainingWorkTransition', 'collectRewriteCandidates->collectRewriteCandidates')
+    report.setProperty('entry.0.optimizerProductionReadinessMethod', 'syntheticKernel')
+    report.setProperty('entry.0.optimizerProductionReadinessVerdict', 'blocked/productionSwitchNotReady')
+    report.setProperty('entry.0.optimizerProductionReadinessBlocked', 'true')
+    report.setProperty('entry.0.optimizerProductionReadinessProductionMutationEnabled', 'false')
+    report.setProperty('entry.0.optimizerProductionReadinessPromotionAllowed', 'false')
+    report.setProperty('entry.0.optimizerProductionReadinessBundleVerdict', 'notReady/cseBlocked')
+    report.setProperty('entry.0.optimizerProductionReadinessFirstBlockingStage', 'validationBundle')
+    report.setProperty('entry.0.optimizerProductionReadinessStageVerdicts', '{bundle=notReady/cseBlocked,preflight=blocked/optimizerValidationBundleNotReady,switch=blocked/preflightNotReady,promotionConfidence=blocked/productionSwitchNotReady}')
+    report.setProperty('entry.0.optimizerProductionReadinessConsistent', 'true')
+    report.setProperty('entry.0.optimizerProductionReadinessAcceptance.Accepted', 'false')
+    report.setProperty('entry.0.optimizerProductionReadinessAcceptance.Reason', 'rejected/productionReadinessBlocked')
+    return report
+}
+
+private static List<Map<String, Object>> syntheticOptimizerContractFailureScenarios() {
+    return [
+            [
+                    name    : 'synthetic-missing-source',
+                    mutation: { Properties report -> report.remove('entry.0.optimizerBlockerSource') }
+            ],
+            [
+                    name    : 'synthetic-missing-family',
+                    mutation: { Properties report -> report.remove('entry.0.optimizerBlockerFamily') }
+            ],
+            [
+                    name    : 'synthetic-mismatched-verdict',
+                    mutation: { Properties report -> report.setProperty('entry.0.optimizerBlockerVerdict', 'ready') }
+            ],
+            [
+                    name    : 'synthetic-missing-remaining-work',
+                    mutation: { Properties report -> report.setProperty('entry.0.optimizerBlockerRemainingWork', 'none') }
+            ],
+            [
+                    name    : 'synthetic-wrong-readonly-source',
+                    mutation: { Properties report -> report.setProperty('entry.0.optimizerBlockerSource', 'none') }
+            ],
+            [
+                    name    : 'synthetic-missing-readiness-baseline-ci',
+                    mutation: { Properties report -> report.remove('entry.0.optimizerLayerReadinessBaselineCiMethod') }
+            ],
+            [
+                    name    : 'synthetic-missing-blocker-baseline-snapshot',
+                    mutation: { Properties report -> report.remove('entry.0.optimizerBlockerBaselineSnapshotSource') }
+            ],
+            [
+                    name    : 'synthetic-mismatched-blocker-baseline-source',
+                    mutation: { Properties report -> report.setProperty('entry.0.optimizerBlockerBaselineSnapshotSource', 'cseRewritePolicy') }
+            ],
+            [
+                    name    : 'synthetic-missing-blocker-baseline-comparison',
+                    mutation: { Properties report -> report.remove('entry.0.optimizerBlockerBaselineComparisonOutcome') }
+            ],
+            [
+                    name    : 'synthetic-missing-blocker-baseline-score-delta',
+                    mutation: { Properties report -> report.remove('entry.0.optimizerBlockerBaselineComparisonScoreDelta') }
+            ],
+            [
+                    name    : 'synthetic-blocker-baseline-regression-fails-contract',
+                    mutation: { Properties report -> report.setProperty('entry.0.optimizerBlockerBaselineComparisonOutcome', 'regressed') }
+            ],
+            [
+                    name    : 'synthetic-blocker-baseline-score-regression-fails-contract',
+                    mutation: { Properties report -> report.setProperty('entry.0.optimizerBlockerBaselineComparisonScoreDelta', '-1') }
+            ],
+            [
+                    name    : 'synthetic-missing-production-readiness-stage',
+                    mutation: { Properties report -> report.remove('entry.0.optimizerProductionReadinessFirstBlockingStage') }
+            ],
+            [
+                    name    : 'synthetic-production-readiness-mutation-enabled-fails-contract',
+                    mutation: { Properties report -> report.setProperty('entry.0.optimizerProductionReadinessProductionMutationEnabled', 'true') }
+            ],
+            [
+                    name    : 'synthetic-missing-cse-control-flow-region-readiness',
+                    mutation: { Properties report -> report.remove('entry.0.cseControlFlowRegionReadiness') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-bucket',
+                    mutation: { Properties report -> report.remove('entry.0.autoVectorizationNoCandidateFirstBucket') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-example',
+                    mutation: { Properties report -> report.remove('entry.0.autoVectorizationNoCandidateFirstExample') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-example-location',
+                    mutation: { Properties report -> report.setProperty('entry.0.autoVectorizationNoCandidateFirstExampleLocation', 'none') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-diagnostic-code',
+                    mutation: { Properties report -> report.remove('entry.0.autoVectorizationNoCandidateDiagnosticCode') }
+            ],
+            [
+                    name    : 'synthetic-missing-auto-vectorization-no-candidate-help',
+                    mutation: { Properties report -> report.setProperty('entry.0.autoVectorizationNoCandidateFirstHelp', 'none') }
+            ],
+            [
+                    name    : 'synthetic-stale-auto-vectorization-no-candidate-diagnostic-rollup',
+                    mutation: { Properties report -> report.setProperty('autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001', '0') }
+            ]
+    ]
+}
+
+private static void expectOptimizerContractFailure(
+        String scenario,
+        Properties baseline,
+        Closure mutation
+) {
+    Properties report = new Properties()
+    report.putAll(baseline)
+    mutation.call(report)
+    try {
+        validateOptimizerReadinessContract(report, scenario, 0)
+        Map<String, Integer> diagnosticCodeCounts = new LinkedHashMap<>()
+        incrementCount(diagnosticCodeCounts, report.getProperty('entry.0.autoVectorizationNoCandidateDiagnosticCode'))
+        validateAutoVectorizationNoCandidateDiagnosticCodeRollup(report, scenario, diagnosticCodeCounts)
+    } catch (GradleException expected) {
+        return
+    }
+    throw new GradleException('Synthetic optimizer blocker contract scenario unexpectedly passed: ' + scenario)
+}
+
+private static int parseReportInt(Properties report, String key, String reportName) {
+    String value = report.getProperty(key)
+    if (value == null || value.isBlank()) {
+        throw new GradleException('Missing IR validation report key for ' + reportName + ': ' + key)
+    }
+    try {
+        return Integer.parseInt(value)
+    } catch (NumberFormatException exception) {
+        throw new GradleException('Invalid integer IR validation report key for ' + reportName + ': ' + key + '=' + value, exception)
+    }
+}
+
+private static OptimizerReadinessContractResult validateOptimizerReadinessContract(
+        Properties report,
+        String reportName,
+        int index
+) {
+    String prefix = 'entry.' + index + '.'
+    String methodName = report.getProperty(prefix + 'methodName', '<unknown>')
+    String optimizerVerdict = requireReportValue(report, prefix + 'optimizerLayerReadinessVerdict', reportName)
+    String firstBlockingLayer = requireReportValue(report, prefix + 'optimizerLayerReadinessFirstBlockingLayer', reportName)
+    String blockingLayers = requireReportValue(report, prefix + 'optimizerLayerReadinessBlockingLayers', reportName)
+    String optimizerGateBlocked = requireReportValue(report, prefix + 'optimizerGateBlocked', reportName)
+    String optimizerGateSource = requireReportValue(report, prefix + 'optimizerGateSource', reportName)
+    String optimizerGateFamily = requireReportValue(report, prefix + 'optimizerGateFamily', reportName)
+    String cseLayerVerdict = requireReportValue(report, prefix + 'cseLayerReadinessVerdict', reportName)
+    String cseRewritePolicyReadiness = requireReportValue(report, prefix + 'cseRewritePolicyReadiness', reportName)
+    String cseControlFlowRegionReadiness = requireReportValue(report, prefix + 'cseControlFlowRegionReadiness', reportName)
+    String cseControlFlowRegionBlocked = requireReportValue(report, prefix + 'cseControlFlowRegionBlocked', reportName)
+    int cseControlFlowRegionBlockedCandidates = parseReportInt(report, prefix + 'cseControlFlowRegionBlockedCandidates', reportName)
+    String cseControlFlowRegionFirstRemainingWork = requireReportValue(report, prefix + 'cseControlFlowRegionFirstRemainingWork', reportName)
+    String autoVectorizationVerdict = requireReportValue(report, prefix + 'autoVectorizationReadinessVerdict', reportName)
+    String autoVectorizationCanApplyRewrite = requireReportValue(report, prefix + 'autoVectorizationCanApplyRewrite', reportName)
+    String autoVectorizationNoCandidateReadiness = requireReportValue(report, prefix + 'autoVectorizationNoCandidateReadiness', reportName)
+    String autoVectorizationNoCandidateNoCandidates = requireReportValue(report, prefix + 'autoVectorizationNoCandidateNoCandidates', reportName)
+    int autoVectorizationNoCandidateCandidateCount = parseReportInt(report, prefix + 'autoVectorizationNoCandidateCandidateCount', reportName)
+    int autoVectorizationNoCandidateBucketCount = parseReportInt(report, prefix + 'autoVectorizationNoCandidateBucketCount', reportName)
+    String autoVectorizationNoCandidateFirstBucket = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstBucket', reportName)
+    String autoVectorizationNoCandidateFirstRemainingWork = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstRemainingWork', reportName)
+    String autoVectorizationNoCandidateFirstExampleBucket = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstExampleBucket', reportName)
+    String autoVectorizationNoCandidateFirstExampleLocation = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstExampleLocation', reportName)
+    String autoVectorizationNoCandidateFirstExample = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstExample', reportName)
+    String autoVectorizationNoCandidateDiagnosticCode = requireReportValue(report, prefix + 'autoVectorizationNoCandidateDiagnosticCode', reportName)
+    String autoVectorizationNoCandidateFirstHelp = requireReportValue(report, prefix + 'autoVectorizationNoCandidateFirstHelp', reportName)
+    String optimizerBlockerVerdict = requireReportValue(report, prefix + 'optimizerBlockerVerdict', reportName)
+    String optimizerBlockerBlocked = requireReportValue(report, prefix + 'optimizerBlockerBlocked', reportName)
+    String optimizerBlockerSource = requireReportValue(report, prefix + 'optimizerBlockerSource', reportName)
+    String optimizerBlockerFamily = requireReportValue(report, prefix + 'optimizerBlockerFamily', reportName)
+    String optimizerBlockerRemainingWork = requireReportValue(report, prefix + 'optimizerBlockerRemainingWork', reportName)
+    String optimizerBlockerCseFamily = requireReportValue(report, prefix + 'optimizerBlockerCseFamily', reportName)
+    String optimizerBlockerAutoVectorizationFamily = requireReportValue(report, prefix + 'optimizerBlockerAutoVectorizationFamily', reportName)
+    String optimizerBlockerCiSummaryLine = requireReportValue(report, prefix + 'optimizerBlockerCiSummaryLine', reportName)
+    String optimizerBlockerSummary = requireReportValue(report, prefix + 'optimizerBlockerSummary', reportName)
+    String readinessBaselineCiMethod = requireReportValue(report, prefix + 'optimizerLayerReadinessBaselineCiMethod', reportName)
+    String readinessBaselineCiOutcome = requireReportValue(report, prefix + 'optimizerLayerReadinessBaselineCiOutcome', reportName)
+    String readinessBaselineCiDecision = requireReportValue(report, prefix + 'optimizerLayerReadinessBaselineCiDecision', reportName)
+    String readinessBaselineCiFailBuild = requireReportValue(report, prefix + 'optimizerLayerReadinessBaselineCiFailBuild', reportName)
+    String blockerBaselineSnapshotMethod = requireReportValue(report, prefix + 'optimizerBlockerBaselineSnapshotMethod', reportName)
+    String blockerBaselineSnapshotVerdict = requireReportValue(report, prefix + 'optimizerBlockerBaselineSnapshotVerdict', reportName)
+    String blockerBaselineSnapshotSource = requireReportValue(report, prefix + 'optimizerBlockerBaselineSnapshotSource', reportName)
+    String blockerBaselineSnapshotFamily = requireReportValue(report, prefix + 'optimizerBlockerBaselineSnapshotFamily', reportName)
+    String blockerBaselineSnapshotRemainingWork = requireReportValue(report, prefix + 'optimizerBlockerBaselineSnapshotRemainingWork', reportName)
+    String blockerBaselineComparisonMethod = requireReportValue(report, prefix + 'optimizerBlockerBaselineComparisonMethod', reportName)
+    String blockerBaselineComparisonOutcome = requireReportValue(report, prefix + 'optimizerBlockerBaselineComparisonOutcome', reportName)
+    int blockerBaselineComparisonBaselineScore = parseReportInt(report, prefix + 'optimizerBlockerBaselineComparisonBaselineScore', reportName)
+    int blockerBaselineComparisonCurrentScore = parseReportInt(report, prefix + 'optimizerBlockerBaselineComparisonCurrentScore', reportName)
+    int blockerBaselineComparisonScoreDelta = parseReportInt(report, prefix + 'optimizerBlockerBaselineComparisonScoreDelta', reportName)
+    String blockerBaselineComparisonSourceTransition = requireReportValue(report, prefix + 'optimizerBlockerBaselineComparisonSourceTransition', reportName)
+    String blockerBaselineComparisonFamilyTransition = requireReportValue(report, prefix + 'optimizerBlockerBaselineComparisonFamilyTransition', reportName)
+    String blockerBaselineComparisonRemainingWorkTransition = requireReportValue(report, prefix + 'optimizerBlockerBaselineComparisonRemainingWorkTransition', reportName)
+    String productionReadinessMethod = requireReportValue(report, prefix + 'optimizerProductionReadinessMethod', reportName)
+    String productionReadinessVerdict = requireReportValue(report, prefix + 'optimizerProductionReadinessVerdict', reportName)
+    String productionReadinessBlocked = requireReportValue(report, prefix + 'optimizerProductionReadinessBlocked', reportName)
+    String productionReadinessProductionMutationEnabled = requireReportValue(report, prefix + 'optimizerProductionReadinessProductionMutationEnabled', reportName)
+    String productionReadinessPromotionAllowed = requireReportValue(report, prefix + 'optimizerProductionReadinessPromotionAllowed', reportName)
+    String productionReadinessBundleVerdict = requireReportValue(report, prefix + 'optimizerProductionReadinessBundleVerdict', reportName)
+    String productionReadinessFirstBlockingStage = requireReportValue(report, prefix + 'optimizerProductionReadinessFirstBlockingStage', reportName)
+    String productionReadinessStageVerdicts = requireReportValue(report, prefix + 'optimizerProductionReadinessStageVerdicts', reportName)
+    String productionReadinessConsistent = requireReportValue(report, prefix + 'optimizerProductionReadinessConsistent', reportName)
+    String productionReadinessAcceptanceAccepted = requireReportValue(report, prefix + 'optimizerProductionReadinessAcceptance.Accepted', reportName)
+    String productionReadinessAcceptanceReason = requireReportValue(report, prefix + 'optimizerProductionReadinessAcceptance.Reason', reportName)
+    int autoVectorizationCandidates = parseReportInt(report, prefix + 'autoVectorizationCandidates', reportName)
+
+    if (!['ready', 'blocked'].contains(optimizerVerdict)) {
+        throw new GradleException('Unexpected optimizer-readiness verdict for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerVerdict)
+    }
+    if (!['true', 'false'].contains(optimizerGateBlocked)) {
+        throw new GradleException('Unexpected optimizer gate blocked flag for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerGateBlocked)
+    }
+    if (!['true', 'false'].contains(autoVectorizationCanApplyRewrite)) {
+        throw new GradleException('Unexpected auto-vectorization rewrite flag for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationCanApplyRewrite)
+    }
+    if (!['bucketed', 'notApplicable'].contains(autoVectorizationNoCandidateReadiness)) {
+        throw new GradleException('Unexpected auto-vectorization no-candidate readiness for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationNoCandidateReadiness)
+    }
+    if (!['true', 'false'].contains(autoVectorizationNoCandidateNoCandidates)) {
+        throw new GradleException('Unexpected auto-vectorization no-candidate flag for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationNoCandidateNoCandidates)
+    }
+    if (autoVectorizationNoCandidateCandidateCount < 0 || autoVectorizationNoCandidateBucketCount < 0) {
+        throw new GradleException('Negative auto-vectorization no-candidate counters for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): candidates=' + autoVectorizationNoCandidateCandidateCount
+                + ' buckets=' + autoVectorizationNoCandidateBucketCount)
+    }
+    if (!['clear', 'blocked'].contains(cseControlFlowRegionReadiness)) {
+        throw new GradleException('Unexpected CSE control-flow region readiness for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + cseControlFlowRegionReadiness)
+    }
+    if (!['true', 'false'].contains(cseControlFlowRegionBlocked)) {
+        throw new GradleException('Unexpected CSE control-flow region blocked flag for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + cseControlFlowRegionBlocked)
+    }
+    if (cseControlFlowRegionBlockedCandidates < 0) {
+        throw new GradleException('Negative CSE control-flow region blocked candidate count for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + cseControlFlowRegionBlockedCandidates)
+    }
+    boolean cseControlFlowRegionIsBlocked = cseControlFlowRegionReadiness == 'blocked'
+    if (cseControlFlowRegionBlocked != Boolean.toString(cseControlFlowRegionIsBlocked)) {
+        throw new GradleException('CSE control-flow region blocked flag must match readiness for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): readiness=' + cseControlFlowRegionReadiness
+                + ' blocked=' + cseControlFlowRegionBlocked)
+    }
+    if (cseControlFlowRegionIsBlocked && cseControlFlowRegionBlockedCandidates == 0) {
+        throw new GradleException('Blocked CSE control-flow region summary must expose blocked candidates for '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (!cseControlFlowRegionIsBlocked && cseControlFlowRegionBlockedCandidates != 0) {
+        throw new GradleException('Clear CSE control-flow region summary unexpectedly has blocked candidates for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): ' + cseControlFlowRegionBlockedCandidates)
+    }
+    if (cseControlFlowRegionIsBlocked && cseControlFlowRegionFirstRemainingWork != 'splitControlFlowRegionsBeforeCse') {
+        throw new GradleException('Blocked CSE control-flow region summary must expose remaining work for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): ' + cseControlFlowRegionFirstRemainingWork)
+    }
+    if (!cseControlFlowRegionIsBlocked && cseControlFlowRegionFirstRemainingWork != 'none') {
+        throw new GradleException('Clear CSE control-flow region summary unexpectedly has remaining work for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): ' + cseControlFlowRegionFirstRemainingWork)
+    }
+    if (!['ready', 'blocked'].contains(optimizerBlockerVerdict)) {
+        throw new GradleException('Unexpected optimizer blocker verdict for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerBlockerVerdict)
+    }
+    if (!['true', 'false'].contains(optimizerBlockerBlocked)) {
+        throw new GradleException('Unexpected optimizer blocker blocked flag for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerBlockerBlocked)
+    }
+
+    boolean blocked = optimizerVerdict == 'blocked'
+    boolean optimizerBlockerIsBlocked = optimizerBlockerVerdict == 'blocked'
+    if (blocked && firstBlockingLayer == 'none') {
+        throw new GradleException('Blocked optimizer-readiness entry is missing first blocker for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (!blocked && firstBlockingLayer != 'none') {
+        throw new GradleException('Ready optimizer-readiness entry unexpectedly has first blocker for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + firstBlockingLayer)
+    }
+    if (blocked && blockingLayers.isBlank()) {
+        throw new GradleException('Blocked optimizer-readiness entry is missing blocking layer list for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (optimizerBlockerIsBlocked != blocked) {
+        throw new GradleException('Optimizer blocker index verdict must match optimizer readiness for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): readiness=' + optimizerVerdict
+                + ' blocker=' + optimizerBlockerVerdict)
+    }
+    if (optimizerBlockerBlocked != Boolean.toString(optimizerBlockerIsBlocked)) {
+        throw new GradleException('Optimizer blocker index blocked flag must match verdict for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): verdict=' + optimizerBlockerVerdict
+                + ' blocked=' + optimizerBlockerBlocked)
+    }
+    if (blocked && optimizerBlockerSource == 'none') {
+        throw new GradleException('Blocked optimizer-readiness entry is missing optimizer blocker source for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (blocked && optimizerBlockerFamily == 'none') {
+        throw new GradleException('Blocked optimizer-readiness entry is missing optimizer blocker family for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (blocked && optimizerBlockerRemainingWork == 'none') {
+        throw new GradleException('Blocked optimizer-readiness entry is missing optimizer blocker remaining work for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (!blocked && optimizerBlockerSource != 'none') {
+        throw new GradleException('Ready optimizer-readiness entry unexpectedly has optimizer blocker source for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerBlockerSource)
+    }
+    if (!blocked && optimizerBlockerFamily != 'none') {
+        throw new GradleException('Ready optimizer-readiness entry unexpectedly has optimizer blocker family for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerBlockerFamily)
+    }
+    if (!optimizerBlockerCiSummaryLine.contains('method=' + methodName)
+            || !optimizerBlockerSummary.contains('method=' + methodName)) {
+        throw new GradleException('Optimizer blocker index summaries must include method identity for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+
+    if (readinessBaselineCiMethod != methodName || blockerBaselineSnapshotMethod != methodName
+            || blockerBaselineComparisonMethod != methodName) {
+        throw new GradleException('Optimizer baseline CI fields must include matching method identity for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (!['unchanged', 'improved', 'changed'].contains(readinessBaselineCiOutcome)) {
+        throw new GradleException('Unexpected optimizer readiness baseline CI outcome for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + readinessBaselineCiOutcome)
+    }
+    if (readinessBaselineCiDecision != 'accepted/noRegression' || readinessBaselineCiFailBuild != 'false') {
+        throw new GradleException('Dogfooding optimizer readiness baseline must not fail the build for self-baseline reports: '
+                + reportName + ' entry ' + index + ' (' + methodName + ') decision=' + readinessBaselineCiDecision
+                + ' failBuild=' + readinessBaselineCiFailBuild)
+    }
+    if (blockerBaselineSnapshotVerdict != optimizerBlockerVerdict
+            || blockerBaselineSnapshotSource != optimizerBlockerSource
+            || blockerBaselineSnapshotFamily != optimizerBlockerFamily
+            || blockerBaselineSnapshotRemainingWork != optimizerBlockerRemainingWork) {
+        throw new GradleException('Optimizer blocker baseline snapshot must mirror current blocker index for self-baseline reports: '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (blockerBaselineComparisonOutcome == 'regressed') {
+        throw new GradleException('Optimizer blocker baseline comparison regressed for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (blockerBaselineComparisonBaselineScore != blockerBaselineComparisonCurrentScore
+            || blockerBaselineComparisonScoreDelta != 0) {
+        throw new GradleException('Optimizer blocker baseline comparison score must compare self-baseline scores for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): baselineScore='
+                + blockerBaselineComparisonBaselineScore + ' currentScore=' + blockerBaselineComparisonCurrentScore
+                + ' scoreDelta=' + blockerBaselineComparisonScoreDelta)
+    }
+    if (blockerBaselineComparisonSourceTransition != optimizerBlockerSource + '->' + optimizerBlockerSource
+            || blockerBaselineComparisonFamilyTransition != optimizerBlockerFamily + '->' + optimizerBlockerFamily
+            || blockerBaselineComparisonRemainingWorkTransition != optimizerBlockerRemainingWork + '->' + optimizerBlockerRemainingWork) {
+        throw new GradleException('Optimizer blocker baseline comparison must compare self-baseline transitions for '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+
+    if (productionReadinessMethod != methodName) {
+        throw new GradleException('Optimizer production readiness method must match report entry for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): ' + productionReadinessMethod)
+    }
+    if (!['true', 'false'].contains(productionReadinessBlocked)
+            || !['true', 'false'].contains(productionReadinessProductionMutationEnabled)
+            || !['true', 'false'].contains(productionReadinessPromotionAllowed)
+            || !['true', 'false'].contains(productionReadinessConsistent)
+            || !['true', 'false'].contains(productionReadinessAcceptanceAccepted)) {
+        throw new GradleException('Optimizer production readiness boolean fields must be true/false for '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (productionReadinessProductionMutationEnabled != 'false' || productionReadinessPromotionAllowed != 'false') {
+        throw new GradleException('Dogfooding production readiness must stay read-only until production mutation is explicitly enabled: '
+                + reportName + ' entry ' + index + ' (' + methodName + ') mutationEnabled='
+                + productionReadinessProductionMutationEnabled + ' promotionAllowed=' + productionReadinessPromotionAllowed)
+    }
+    if (productionReadinessConsistent != 'true') {
+        throw new GradleException('Optimizer production readiness artifact must be internally consistent for '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (blocked && productionReadinessBlocked != 'true') {
+        throw new GradleException('Blocked optimizer readiness must keep production readiness blocked for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): ' + productionReadinessBlocked)
+    }
+    if (blocked && productionReadinessFirstBlockingStage == 'none') {
+        throw new GradleException('Blocked production readiness must expose first blocking stage for '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (blocked && !productionReadinessStageVerdicts.contains('bundle=' + productionReadinessBundleVerdict)) {
+        throw new GradleException('Optimizer production readiness stage verdict summary must include bundle verdict for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): stageVerdicts=' + productionReadinessStageVerdicts
+                + ' bundleVerdict=' + productionReadinessBundleVerdict)
+    }
+    if (productionReadinessVerdict == 'ready/selectedRewritePromotionAllowed') {
+        throw new GradleException('Dogfooding production readiness must not allow selected rewrite promotion yet for '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (productionReadinessAcceptanceAccepted != 'false'
+            || !productionReadinessAcceptanceReason.startsWith('rejected/')) {
+        throw new GradleException('Dogfooding production readiness acceptance must reject current read-only artifacts for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): accepted='
+                + productionReadinessAcceptanceAccepted + ' reason=' + productionReadinessAcceptanceReason)
+    }
+
+    if (autoVectorizationCanApplyRewrite == 'true') {
+        throw new GradleException('Dogfooding optimizer-readiness reports must stay read-only until production mutation is explicitly enabled: '
+                + reportName + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (autoVectorizationCandidates < 0) {
+        throw new GradleException('Negative auto-vectorization candidate count for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationCandidates)
+    }
+    if (autoVectorizationNoCandidateCandidateCount != autoVectorizationCandidates) {
+        throw new GradleException('Auto-vectorization no-candidate candidate count must mirror preview candidates for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): noCandidateCandidates='
+                + autoVectorizationNoCandidateCandidateCount + ' previewCandidates=' + autoVectorizationCandidates)
+    }
+    if (autoVectorizationCandidates == 0) {
+        if (autoVectorizationNoCandidateReadiness != 'bucketed'
+                || autoVectorizationNoCandidateNoCandidates != 'true'
+                || autoVectorizationNoCandidateBucketCount == 0
+                || autoVectorizationNoCandidateFirstBucket == 'none'
+                || autoVectorizationNoCandidateFirstRemainingWork == 'none'
+                || autoVectorizationNoCandidateFirstExampleBucket == 'none'
+                || autoVectorizationNoCandidateFirstExampleLocation == 'none'
+                || autoVectorizationNoCandidateFirstExample == 'none'
+                || autoVectorizationNoCandidateDiagnosticCode == 'none'
+                || autoVectorizationNoCandidateFirstHelp == 'none') {
+            throw new GradleException('Zero-candidate auto-vectorization entries must expose actionable no-candidate buckets for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): readiness='
+                    + autoVectorizationNoCandidateReadiness + ' noCandidates=' + autoVectorizationNoCandidateNoCandidates
+                    + ' bucketCount=' + autoVectorizationNoCandidateBucketCount + ' firstBucket='
+                    + autoVectorizationNoCandidateFirstBucket + ' firstRemainingWork='
+                    + autoVectorizationNoCandidateFirstRemainingWork + ' firstExampleBucket='
+                    + autoVectorizationNoCandidateFirstExampleBucket + ' firstExampleLocation='
+                    + autoVectorizationNoCandidateFirstExampleLocation + ' firstExample='
+                    + autoVectorizationNoCandidateFirstExample + ' diagnosticCode='
+                    + autoVectorizationNoCandidateDiagnosticCode + ' firstHelp='
+                    + autoVectorizationNoCandidateFirstHelp)
+        }
+        if (autoVectorizationNoCandidateDiagnosticCode != 'JTG-IR-AV-001') {
+            throw new GradleException('Zero-candidate auto-vectorization diagnostic code must be stable for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): '
+                    + autoVectorizationNoCandidateDiagnosticCode)
+        }
+        if (autoVectorizationNoCandidateFirstExampleBucket != autoVectorizationNoCandidateFirstBucket) {
+            throw new GradleException('Zero-candidate auto-vectorization first example bucket must match first bucket for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): firstBucket='
+                    + autoVectorizationNoCandidateFirstBucket + ' firstExampleBucket='
+                    + autoVectorizationNoCandidateFirstExampleBucket)
+        }
+        if (!autoVectorizationNoCandidateFirstExample.contains(methodName + '@')) {
+            throw new GradleException('Zero-candidate auto-vectorization first example must include method-qualified location for '
+                    + reportName + ' entry ' + index + ' (' + methodName + '): '
+                    + autoVectorizationNoCandidateFirstExample)
+        }
+    } else if (autoVectorizationNoCandidateReadiness != 'notApplicable'
+            || autoVectorizationNoCandidateNoCandidates != 'false'
+            || autoVectorizationNoCandidateFirstBucket != 'none'
+            || autoVectorizationNoCandidateFirstExample != 'none'
+            || autoVectorizationNoCandidateDiagnosticCode != 'none'
+            || autoVectorizationNoCandidateFirstHelp != 'none') {
+        throw new GradleException('Candidate-bearing auto-vectorization entries must not expose no-candidate buckets for '
+                + reportName + ' entry ' + index + ' (' + methodName + '): readiness='
+                + autoVectorizationNoCandidateReadiness + ' firstBucket=' + autoVectorizationNoCandidateFirstBucket
+                + ' firstExample=' + autoVectorizationNoCandidateFirstExample + ' diagnosticCode='
+                + autoVectorizationNoCandidateDiagnosticCode + ' firstHelp=' + autoVectorizationNoCandidateFirstHelp)
+    }
+    if (optimizerGateBlocked == 'true' && optimizerGateSource == 'none') {
+        throw new GradleException('Blocked optimizer gate is missing source for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (optimizerGateBlocked == 'true' && optimizerGateFamily == 'none') {
+        throw new GradleException('Blocked optimizer gate is missing family for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (optimizerGateBlocked == 'false' && optimizerGateSource != 'none') {
+        throw new GradleException('Unblocked optimizer gate unexpectedly has source for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerGateSource)
+    }
+    if (optimizerGateBlocked == 'false' && optimizerGateFamily != 'none') {
+        throw new GradleException('Unblocked optimizer gate unexpectedly has family for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerGateFamily)
+    }
+
+    boolean csePolicyBlocked = optimizerGateSource == 'cseRewritePolicy'
+    if (csePolicyBlocked && cseRewritePolicyReadiness != 'blockedBySkippedCandidate') {
+        throw new GradleException('CSE rewrite policy gate must expose skipped-candidate readiness for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + cseRewritePolicyReadiness)
+    }
+    if (csePolicyBlocked && optimizerBlockerSource != 'cseRewritePolicy') {
+        throw new GradleException('CSE rewrite policy blocker must be the first optimizer blocker for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerBlockerSource)
+    }
+    if (csePolicyBlocked && optimizerBlockerCseFamily == 'none') {
+        throw new GradleException('CSE rewrite policy blocker must expose CSE blocker family for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    boolean cseLiteralPromotionBlocked = blockingLayers.contains('cseLiteralPromotion')
+    boolean autoVectorizationBlocked = blockingLayers.contains('autoVectorization')
+    boolean readOnlyBlocked = blocked && !csePolicyBlocked && cseLiteralPromotionBlocked && autoVectorizationBlocked
+    if (readOnlyBlocked && autoVectorizationVerdict != 'notReady/noCandidates') {
+        throw new GradleException('Read-only optimizer blocker should report no auto-vectorization candidates for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + autoVectorizationVerdict)
+    }
+    if (readOnlyBlocked && optimizerBlockerSource != 'autoVectorization') {
+        throw new GradleException('Read-only optimizer blocker must point to auto-vectorization when CSE policy is clear for ' + reportName
+                + ' entry ' + index + ' (' + methodName + '): ' + optimizerBlockerSource)
+    }
+    if (autoVectorizationBlocked && optimizerBlockerAutoVectorizationFamily == 'none') {
+        throw new GradleException('Auto-vectorization blocker must expose auto-vectorization blocker family for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+    if (cseLayerVerdict == 'blocked' && !csePolicyBlocked) {
+        throw new GradleException('Blocked CSE layer must be reflected in the optimizer gate for ' + reportName
+                + ' entry ' + index + ' (' + methodName + ')')
+    }
+
+    return new OptimizerReadinessContractResult(
+            blocked,
+            readOnlyBlocked,
+            csePolicyBlocked,
+            cseLiteralPromotionBlocked,
+            autoVectorizationBlocked,
+            optimizerBlockerSource,
+            optimizerBlockerFamily,
+            productionReadinessFirstBlockingStage,
+            autoVectorizationNoCandidateFirstBucket,
+            autoVectorizationNoCandidateDiagnosticCode
+    )
+}
+
+private static String requireReportValue(Properties report, String key, String reportName) {
+    String value = report.getProperty(key)
+    if (value == null) {
+        throw new GradleException('Missing IR validation report key for ' + reportName + ': ' + key)
+    }
+    return value
+}
+
+class OptimizerReadinessContractResult {
+    final boolean blocked
+    final boolean readOnlyBlocked
+    final boolean csePolicyBlocked
+    final boolean cseLiteralPromotionBlocked
+    final boolean autoVectorizationBlocked
+    final String optimizerBlockerSource
+    final String optimizerBlockerFamily
+    final String productionReadinessFirstBlockingStage
+    final String autoVectorizationNoCandidateFirstBucket
+    final String autoVectorizationNoCandidateDiagnosticCode
+
+    OptimizerReadinessContractResult(
+            boolean blocked,
+            boolean readOnlyBlocked,
+            boolean csePolicyBlocked,
+            boolean cseLiteralPromotionBlocked,
+            boolean autoVectorizationBlocked,
+            String optimizerBlockerSource,
+            String optimizerBlockerFamily,
+            String productionReadinessFirstBlockingStage,
+            String autoVectorizationNoCandidateFirstBucket,
+            String autoVectorizationNoCandidateDiagnosticCode
+    ) {
+        this.blocked = blocked
+        this.readOnlyBlocked = readOnlyBlocked
+        this.csePolicyBlocked = csePolicyBlocked
+        this.cseLiteralPromotionBlocked = cseLiteralPromotionBlocked
+        this.autoVectorizationBlocked = autoVectorizationBlocked
+        this.optimizerBlockerSource = optimizerBlockerSource
+        this.optimizerBlockerFamily = optimizerBlockerFamily
+        this.productionReadinessFirstBlockingStage = productionReadinessFirstBlockingStage
+        this.autoVectorizationNoCandidateFirstBucket = autoVectorizationNoCandidateFirstBucket
+        this.autoVectorizationNoCandidateDiagnosticCode = autoVectorizationNoCandidateDiagnosticCode
+    }
+}
+
+class IrValidationHealthSummary {
+    final int entries
+    final int safetyOk
+    final int safetyFailed
+    final int optimizerBlocked
+    final int readOnlyBlocked
+    final Map<String, Integer> optimizerBlockerSourceCounts
+    final Map<String, Integer> productionReadinessStageCounts
+    final Map<String, Integer> noCandidateBucketCounts
+    final Map<String, Integer> noCandidateDiagnosticCodeCounts
+
+    IrValidationHealthSummary(
+            int entries,
+            int safetyOk,
+            int safetyFailed,
+            int optimizerBlocked,
+            int readOnlyBlocked,
+            Map<String, Integer> optimizerBlockerSourceCounts,
+            Map<String, Integer> productionReadinessStageCounts,
+            Map<String, Integer> noCandidateBucketCounts,
+            Map<String, Integer> noCandidateDiagnosticCodeCounts
+    ) {
+        this.entries = entries
+        this.safetyOk = safetyOk
+        this.safetyFailed = safetyFailed
+        this.optimizerBlocked = optimizerBlocked
+        this.readOnlyBlocked = readOnlyBlocked
+        this.optimizerBlockerSourceCounts = new LinkedHashMap<>(optimizerBlockerSourceCounts)
+        this.productionReadinessStageCounts = new LinkedHashMap<>(productionReadinessStageCounts)
+        this.noCandidateBucketCounts = new LinkedHashMap<>(noCandidateBucketCounts)
+        this.noCandidateDiagnosticCodeCounts = new LinkedHashMap<>(noCandidateDiagnosticCodeCounts)
+    }
+
+    String ciSummaryLine(String reportName) {
+        return ('irValidationHealth report=' + reportName
+                + ' entries=' + entries
+                + ' safetyFailed=' + safetyFailed
+                + ' optimizerBlocked=' + optimizerBlocked
+                + ' readOnlyBlocked=' + readOnlyBlocked
+                + ' blockerSources=' + countSummary(optimizerBlockerSourceCounts)
+                + ' productionStages=' + countSummary(productionReadinessStageCounts)
+                + ' diagnosticCodes=' + countSummary(noCandidateDiagnosticCodeCounts)
+                + ' firstBuckets=' + countSummary(noCandidateBucketCounts))
+    }
+
+    private static String countSummary(Map<String, Integer> counts) {
+        if (counts.isEmpty()) {
+            return '{}'
+        }
+        return '{' + counts.collect { key, value -> key + '=' + value }.join(',') + '}'
+    }
+}

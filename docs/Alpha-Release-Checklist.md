@@ -23,8 +23,11 @@ Avoid calling the project stable, production-ready, or cross-vendor proven until
 - `README.md` clearly says this is an alpha/developer preview.
 - `docs/` explains the supported subset, runtime setup, validation flow, and known limitations.
 - The normal processor test suite is green.
+- The optional `ir-validation` module test suite is green when releasing `javatogpu-ir-validation`.
 - The OpenCL operational routine is green on the currently available hardware.
 - The latest OpenCL validation report is generated and can be referenced in release notes.
+- `validateMavenCentralReleaseReadiness` passes for every artifact being published.
+- Maven local staging has been generated for both `javatogpu` and `javatogpu-ir-validation` when releasing both artifacts.
 - Known unsupported features are documented instead of implied to work.
 - Public docs do not include private planning-only notes as user-facing promises.
 
@@ -59,6 +62,7 @@ This is the first public alpha of JavaToGpu, an experimental Java-to-OpenCL comp
 
 - Backend: OpenCL
 - Current proven local device: NVIDIA GeForce RTX 5070
+- NVIDIA status: operationally proven for repo-local alpha validation through five full operational routine passes
 - Cross-vendor status: Intel and AMD validation pending
 
 ## Highlights
@@ -80,5 +84,7 @@ This is the first public alpha of JavaToGpu, an experimental Java-to-OpenCL comp
 ## Good Alpha Promise
 
 The right promise for this stage is: useful for experiments, compiler integrations, GPU-kernel prototyping, and feedback from early adopters.
+
+The current NVIDIA OpenCL path is operationally proven for repo-local alpha validation, but this is not a cross-vendor production-ready claim.
 
 The wrong promise is: automatic acceleration for arbitrary Java applications.

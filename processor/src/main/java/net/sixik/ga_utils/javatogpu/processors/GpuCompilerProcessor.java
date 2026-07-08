@@ -9,9 +9,15 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import net.sixik.ga_utils.javatogpu.api.GpuAnnotationSupport;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendArtifactWriter;
+import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendCompilationResult;
+import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendResourcePaths;
 import net.sixik.ga_utils.javatogpu.frontend.GpuFrontendService;
 import net.sixik.ga_utils.javatogpu.frontend.GpuStructAliasRegistry;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationDiagnosticPolicy;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
@@ -22,7 +28,6 @@ import net.sixik.ga_utils.javatogpu.frontend.parser.GpuStructParser;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
@@ -82,6 +87,8 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private final Set<String> writtenIntrinsicMetadata = new HashSet<>();
     private final Map<String, String> exportedHelperLibraries = new LinkedHashMap<>();
     private final Map<String, String> exportedIntrinsicLibraries = new LinkedHashMap<>();
+    private final List<GpuIrValidationReportEntry> irValidationReportEntries = new ArrayList<>();
+    private boolean irValidationReportWritten;
 
     private Trees trees;
 
@@ -102,7 +109,12 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     @Override
     public Set<String> getSupportedOptions() {
-        return Set.of("javatogpu.debugAbi");
+        return Set.of(
+                "javatogpu.debugAbi",
+                "javatogpu.irValidation",
+                "javatogpu.irValidationDiagnostics",
+                "javatogpu.irValidationReport"
+        );
     }
 
     @Override
@@ -150,6 +162,14 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                         "Failed to write @GPUIntrinsic library index: " + exception.getMessage()
                 );
             }
+            try {
+                writeIrValidationReport();
+            } catch (IOException exception) {
+                processingEnv.getMessager().printMessage(
+                        Diagnostic.Kind.ERROR,
+                        "Failed to write JavaToGpu IR validation report: " + exception.getMessage()
+                );
+            }
         }
 
         for (Element element : elementsAnnotatedWithAny(roundEnv, GPU_ANNOTATIONS)) {
@@ -173,10 +193,20 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                     );
                 }
                 GpuFrontendService frontendService = GpuFrontendService.create(
-                        GpuIntrinsicDatabase.createDefault(intrinsics, TARGET_BACKEND)
+                        GpuIntrinsicDatabase.createDefault(intrinsics, TARGET_BACKEND),
+                        irValidationMode(),
+                        irValidationDiagnosticPolicy(),
+                        message -> processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE, message, method),
+                        this::recordIrValidationReportEntry
                 );
-                String kernelSource = frontendService.validateLowerAndEmit(kernelMethod, helpers, structs);
-                writeKernelResource(method, kernelSource);
+                GpuFrontendCompilationResult compilationResult = frontendService.compile(
+                        kernelMethod,
+                        helpers,
+                        structs,
+                        buildResourcePath(method)
+                );
+                String kernelSource = compilationResult.openClSource();
+                writeFrontendArtifacts(method, compilationResult);
                 writeLauncherSource(method, kernelSource);
             } catch (RuntimeException | IOException exception) {
                 processingEnv.getMessager().printMessage(
@@ -622,6 +652,135 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private void writeIntrinsicLibraryIndex() throws IOException {
         writeLibraryIndex(exportedIntrinsicLibraries, INTRINSIC_LIBRARY_INDEX_PATH, "JavaToGpu reusable @GPUIntrinsic libraries");
+    }
+
+    private void writeIrValidationReport() throws IOException {
+        String reportPath = irValidationReportPath();
+        if (reportPath == null || irValidationReportWritten) {
+            return;
+        }
+        irValidationReportWritten = true;
+
+        FileObject resource = processingEnv.getFiler().createResource(StandardLocation.SOURCE_OUTPUT, "", reportPath);
+        try (Writer writer = resource.openWriter()) {
+            writer.write(buildIrValidationReportProperties());
+        }
+    }
+
+    private String buildIrValidationReportProperties() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("format=javatogpu.ir.validation.v1\n");
+        builder.append("entry.count=").append(irValidationReportEntries.size()).append("\n");
+        Map<String, Long> autoVectorizationNoCandidateDiagnosticCodeCounts =
+                autoVectorizationNoCandidateDiagnosticCodeCounts();
+        Map<String, Long> autoVectorizationNoCandidateBucketCounts =
+                autoVectorizationNoCandidateBucketCounts();
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateBucketCounts",
+                countSummary(autoVectorizationNoCandidateBucketCounts)
+        );
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateUniqueBuckets",
+                Integer.toString(autoVectorizationNoCandidateBucketCounts.size())
+        );
+        autoVectorizationNoCandidateBucketCounts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> appendProperty(
+                        builder,
+                        "autoVectorizationNoCandidateBucket." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateDiagnosticCodeCounts",
+                countSummary(autoVectorizationNoCandidateDiagnosticCodeCounts)
+        );
+        appendProperty(
+                builder,
+                "autoVectorizationNoCandidateUniqueDiagnosticCodes",
+                Integer.toString(autoVectorizationNoCandidateDiagnosticCodeCounts.size())
+        );
+        autoVectorizationNoCandidateDiagnosticCodeCounts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> appendProperty(
+                        builder,
+                        "autoVectorizationNoCandidateDiagnosticCode." + entry.getKey(),
+                        Long.toString(entry.getValue())
+                ));
+        for (int index = 0; index < irValidationReportEntries.size(); index++) {
+            GpuIrValidationReportEntry entry = irValidationReportEntries.get(index);
+            String prefix = "entry." + index + ".";
+            appendProperty(builder, prefix + "provider", entry.provider());
+            appendProperty(builder, prefix + "methodName", entry.methodName());
+            appendProperty(builder, prefix + "entryPoint", Boolean.toString(entry.entryPoint()));
+            entry.values().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(value -> appendProperty(builder, prefix + value.getKey(), value.getValue()));
+        }
+        return builder.toString();
+    }
+
+    private Map<String, Long> autoVectorizationNoCandidateBucketCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (GpuIrValidationReportEntry entry : irValidationReportEntries) {
+            String bucket = entry.values().get("autoVectorizationNoCandidateFirstBucket");
+            if (bucket == null || bucket.isBlank() || "none".equals(bucket)) {
+                continue;
+            }
+            counts.put(bucket, counts.getOrDefault(bucket, 0L) + 1L);
+        }
+        return counts;
+    }
+
+    private Map<String, Long> autoVectorizationNoCandidateDiagnosticCodeCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (GpuIrValidationReportEntry entry : irValidationReportEntries) {
+            String code = entry.values().get("autoVectorizationNoCandidateDiagnosticCode");
+            if (code == null || code.isBlank() || "none".equals(code)) {
+                continue;
+            }
+            counts.put(code, counts.getOrDefault(code, 0L) + 1L);
+        }
+        return counts;
+    }
+
+    private String countSummary(Map<String, Long> counts) {
+        if (counts.isEmpty()) {
+            return "{}";
+        }
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
+
+    private void appendProperty(StringBuilder builder, String key, String value) {
+        builder.append(escapeProperty(key))
+                .append('=')
+                .append(escapeProperty(value == null ? "" : value))
+                .append('\n');
+    }
+
+    private String escapeProperty(String value) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\' -> builder.append("\\\\");
+                case '\n' -> builder.append("\\n");
+                case '\r' -> builder.append("\\r");
+                case '\t' -> builder.append("\\t");
+                case '=', ':', '#', '!' -> builder.append('\\').append(ch);
+                default -> builder.append(ch);
+            }
+        }
+        return builder.toString();
+    }
+
+    private void recordIrValidationReportEntry(GpuIrValidationReportEntry entry) {
+        irValidationReportEntries.add(entry);
     }
 
     private void writeLibraryIndex(Map<String, String> libraries, String resourcePath, String comment) throws IOException {
@@ -1250,16 +1409,84 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 .toList();
     }
 
-    private void writeKernelResource(ExecutableElement method, String kernelSource) throws IOException {
-        String resourcePath = buildResourcePath(method);
-        if (!writtenResources.add(resourcePath)) {
-            return;
+    private void writeFrontendArtifacts(
+            ExecutableElement method,
+            GpuFrontendCompilationResult compilationResult
+    ) throws IOException {
+        GpuFrontendArtifactWriter.write(compilationResult, resourcePath -> {
+            if (!writtenResources.add(resourcePath)) {
+                return Writer.nullWriter();
+            }
+            Writer sourceOutputWriter = processingEnv.getFiler()
+                    .createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, method)
+                    .openWriter();
+            Writer classOutputWriter = processingEnv.getFiler()
+                    .createResource(StandardLocation.CLASS_OUTPUT, "", resourcePath, method)
+                    .openWriter();
+            return new TeeWriter(sourceOutputWriter, classOutputWriter);
+        });
+    }
+
+    /**
+     * Writes frontend artifacts both to generated sources for inspection and to class output for runtime classloader use.
+     */
+    private static final class TeeWriter extends Writer {
+        private final Writer first;
+        private final Writer second;
+
+        private TeeWriter(Writer first, Writer second) {
+            this.first = first;
+            this.second = second;
         }
 
-        Filer filer = processingEnv.getFiler();
-        FileObject resource = filer.createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, method);
-        try (Writer writer = resource.openWriter()) {
-            writer.write(kernelSource);
+        @Override
+        public void write(char[] cbuf, int off, int len) throws IOException {
+            first.write(cbuf, off, len);
+            second.write(cbuf, off, len);
+        }
+
+        @Override
+        public void flush() throws IOException {
+            IOException failure = null;
+            try {
+                first.flush();
+            } catch (IOException exception) {
+                failure = exception;
+            }
+            try {
+                second.flush();
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            IOException failure = null;
+            try {
+                first.close();
+            } catch (IOException exception) {
+                failure = exception;
+            }
+            try {
+                second.close();
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
         }
     }
 
@@ -1280,6 +1507,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private String buildLauncherSource(ExecutableElement method, String kernelSource, String packageName, String className) {
         String resourcePath = buildResourcePath(method);
+        String irGpuResourcePath = buildIrGpuResourcePath(method);
         String parameterSignature = method.getParameters().stream()
                 .map(this::toParameterDeclaration)
                 .collect(Collectors.joining(", "));
@@ -1292,12 +1520,14 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "public final class " + className + " {\n"
                 + "    public static final String KERNEL_NAME = " + toJavaStringLiteral(OpenClKernelNaming.toEntryPointName(method.getSimpleName().toString())) + ";\n"
                 + "    public static final String KERNEL_RESOURCE = " + toJavaStringLiteral(resourcePath) + ";\n"
+                + "    public static final String IRGPU_RESOURCE = " + toJavaStringLiteral(irGpuResourcePath) + ";\n"
                 + "    public static final String KERNEL_SOURCE = " + toJavaStringLiteral(kernelSource) + ";\n"
                 + "    public static final net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor KERNEL_DESCRIPTOR =\n"
                 + "            new net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor(\n"
                 + "                    KERNEL_NAME,\n"
                 + "                    KERNEL_RESOURCE,\n"
                 + "                    KERNEL_SOURCE,\n"
+                + "                    IRGPU_RESOURCE,\n"
                 + "                    java.util.List.of(\n"
                 + (parameterDescriptors.isEmpty() ? "" : "                    " + parameterDescriptors + "\n")
                 + "                    )\n"
@@ -1312,6 +1542,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "    }\n"
                 + emitExplicitWorkSizeLauncher(method, parameterSignature)
                 + emitExplicitExecutionConfigLauncher(method, parameterSignature)
+                + emitExplicitCompileOptionsLauncher(method, parameterSignature)
+                + emitExplicitWorkSizeCompileOptionsLauncher(method, parameterSignature)
+                + emitExplicitExecutionConfigCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicit3DWorkSizeLauncher(method, parameterSignature)
                 + "}\n";
     }
@@ -1362,13 +1595,57 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "    }\n";
     }
 
+    private String emitExplicitCompileOptionsLauncher(ExecutableElement method, String parameterSignature) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return "";
+        }
+
+        String signature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        return "\n"
+                + "    public static void invokeWithCompileOptions(" + signature + ") {\n"
+                + emitLauncherInvokeBodyWithCompileOptions(method)
+                + "    }\n";
+    }
+
+    private String emitExplicitWorkSizeCompileOptionsLauncher(ExecutableElement method, String parameterSignature) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return "";
+        }
+
+        String signature = parameterSignature.isEmpty()
+                ? "long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        return "\n"
+                + "    public static void invokeWithGlobalWorkSizeAndCompileOptions(" + signature + ") {\n"
+                + emitLauncherInvokeBodyWithExplicitWorkSizeAndCompileOptions(method)
+                + "    }\n";
+    }
+
+    private String emitExplicitExecutionConfigCompileOptionsLauncher(ExecutableElement method, String parameterSignature) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return "";
+        }
+
+        String signature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        return "\n"
+                + "    public static void invokeWithConfigAndCompileOptions(" + signature + ") {\n"
+                + emitLauncherInvokeBodyWithExecutionConfigAndCompileOptions(method)
+                + "    }\n";
+    }
+
     private String emitLauncherInvokeBody(ExecutableElement method) {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
 
         if ("void".equals(method.getReturnType().toString())) {
-            return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(KERNEL_DESCRIPTOR"
+            return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+                    + buildLauncherClassName(method)
+                    + ".class, KERNEL_DESCRIPTOR"
                     + (arguments.isEmpty() ? "" : ", " + arguments)
                     + ");\n";
         }
@@ -1380,7 +1657,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(globalWorkSize, KERNEL_DESCRIPTOR"
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+                + buildLauncherClassName(method)
+                + ".class, globalWorkSize, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1389,7 +1668,42 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invoke(executionConfig, KERNEL_DESCRIPTOR"
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+                + buildLauncherClassName(method)
+                + ".class, executionConfig, KERNEL_DESCRIPTOR"
+                + (arguments.isEmpty() ? "" : ", " + arguments)
+                + ");\n";
+    }
+
+    private String emitLauncherInvokeBodyWithCompileOptions(ExecutableElement method) {
+        String arguments = method.getParameters().stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+                + buildLauncherClassName(method)
+                + ".class, compileOptions, KERNEL_DESCRIPTOR"
+                + (arguments.isEmpty() ? "" : ", " + arguments)
+                + ");\n";
+    }
+
+    private String emitLauncherInvokeBodyWithExplicitWorkSizeAndCompileOptions(ExecutableElement method) {
+        String arguments = method.getParameters().stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+                + buildLauncherClassName(method)
+                + ".class, globalWorkSize, compileOptions, KERNEL_DESCRIPTOR"
+                + (arguments.isEmpty() ? "" : ", " + arguments)
+                + ");\n";
+    }
+
+    private String emitLauncherInvokeBodyWithExecutionConfigAndCompileOptions(ExecutableElement method) {
+        String arguments = method.getParameters().stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+                + buildLauncherClassName(method)
+                + ".class, executionConfig, compileOptions, KERNEL_DESCRIPTOR"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1454,8 +1768,20 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private String buildResourcePath(ExecutableElement method) {
         TypeElement enclosingType = (TypeElement) method.getEnclosingElement();
-        String qualifiedName = enclosingType.getQualifiedName().toString().replace('.', '/');
-        return "javatogpu/" + qualifiedName + "/" + method.getSimpleName() + ".cl";
+        return GpuFrontendResourcePaths.openClResource(
+                enclosingType.getQualifiedName().toString(),
+                enclosingType.getSimpleName().toString(),
+                method.getSimpleName().toString()
+        );
+    }
+
+    private String buildIrGpuResourcePath(ExecutableElement method) {
+        TypeElement enclosingType = (TypeElement) method.getEnclosingElement();
+        return GpuFrontendResourcePaths.irGpuResource(
+                enclosingType.getQualifiedName().toString(),
+                enclosingType.getSimpleName().toString(),
+                method.getSimpleName().toString()
+        );
     }
 
     private String buildLauncherPackageName(ExecutableElement method) {
@@ -1500,6 +1826,28 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private boolean debugAbiEnabled() {
         return Boolean.parseBoolean(processingEnv.getOptions().getOrDefault("javatogpu.debugAbi", "false"));
+    }
+
+    private GpuIrValidationMode irValidationMode() {
+        return GpuIrValidationMode.parse(processingEnv.getOptions().get("javatogpu.irValidation"));
+    }
+
+    private GpuIrValidationDiagnosticPolicy irValidationDiagnosticPolicy() {
+        return GpuIrValidationDiagnosticPolicy.parse(processingEnv.getOptions().get("javatogpu.irValidationDiagnostics"));
+    }
+
+    private String irValidationReportPath() {
+        String reportPath = processingEnv.getOptions().get("javatogpu.irValidationReport");
+        if (reportPath == null || reportPath.isBlank()) {
+            return null;
+        }
+        String normalized = reportPath.trim().replace('\\', '/');
+        if (normalized.startsWith("/") || normalized.contains(":") || normalized.contains("..")) {
+            throw new IllegalArgumentException(
+                    "javatogpu.irValidationReport must be a relative generated-source resource path"
+            );
+        }
+        return normalized;
     }
 
     private String buildAbiHintMessage(ParsedGpuMethod kernelMethod, List<ParsedGpuStruct> structs) {

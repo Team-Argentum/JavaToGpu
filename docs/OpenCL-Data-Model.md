@@ -1,60 +1,141 @@
 # OpenCL Data Model
 
-This page documents the most important low-level JavaToGpu data-model concepts.
+This page explains the data shapes you can pass between Java and GPU kernels today.
 
-## Constant Data
+For a first kernel, prefer simple annotated arrays. Move to structs, vectors, pointer views, packed blobs, and images only when the data layout really needs them.
 
-JavaToGpu supports two constant-data forms:
+## Start With Arrays
 
-- embedded constant tables via `@GPUConstantData`
-- external constant declarations via `@GPUExternConstantData`
+Most kernels should start with array parameters:
 
-These currently support primitive scalar arrays only.
+```java
+@GPU
+public static void scale(
+        @GPUGlobal float[] input,
+        @GPUGlobal float[] output,
+        float factor
+) {
+    int id = GPU.get_global_id(0);
+    output[id] = input[id] * factor;
+}
+```
+
+Common address-space annotations:
+
+- `@GPUGlobal` for normal input/output buffers.
+- `@GPUConstant` for read-only constant buffers.
+- `@GPULocal` for local/shared OpenCL memory patterns.
+
+## Scalars
+
+Scalar parameters are useful for sizes, factors, flags, and small constants.
+
+Common scalar families include Java primitives such as `int`, `long`, `float`, `double`, and supported unsigned aliases such as `UInt` or `ULong`.
+
+## Vectors
+
+Use vector wrappers when each work item naturally works with a small fixed-width value:
+
+```java
+Float4 color = new Float4(r, g, b, a);
+```
+
+Typical families include:
+
+- `Float2`, `Float3`, `Float4`
+- `Int2`, `Int3`, `Int4`
+- `UInt2`, `UInt3`, `UInt4`
+- `Double2`, `Double3`, `Double4`
+
+Vectors can be used as local values, helper parameters, helper returns, kernel parameters, and buffer element types where supported.
+
+## Structs
+
+Use `@GPUStruct` for small value objects with explicit GPU-compatible fields:
+
+```java
+@GPUStruct
+public static final class Point {
+    public float x;
+    public float y;
+}
+```
+
+Supported struct field categories:
+
+- Primitive scalar fields.
+- Vector fields.
+- Nested `@GPUStruct` fields.
+
+Arrays inside struct fields are not supported in the current alpha. Pass arrays as separate kernel parameters or use a packed-buffer layout.
+
+## Pointer Wrappers
+
+Pointer wrappers are useful for helper mutation patterns:
+
+```java
+@CCode
+static void writeAnswer(FloatPtr value) {
+    value.value = 42.0f;
+}
+```
+
+Use them when a helper needs pointer-like behavior. For ordinary kernels, arrays are usually easier to read and maintain.
 
 ## Packed Blob Views
 
-Packed blob workflows use:
+Packed blobs are useful when you already have a binary layout or want multiple logical views over one `byte[]` buffer.
 
-- a root `@GPUGlobal byte[]`
-- a small `@GPUStruct` offset schema
-- typed reads through `GlobalBytePtr.add(...).as*Ptr().value`
+Typical shape:
 
-Example pattern:
+- A root `@GPUGlobal byte[]` buffer.
+- A small `@GPUStruct` that stores offsets or layout metadata.
+- Address-space pointer views for typed reads.
+
+Example:
 
 ```java
 GlobalBytePtr root = GPU.global(blob);
 int value = root.add(view.offset + id * 4).asIntPtr().value;
 ```
 
-## Typed Address-Space Pointers
+Keep packed layouts documented on the Java side. They are powerful, but easier to misuse than typed arrays.
 
-The current pointer/view model supports:
+## Constant Data
 
-- `global`
-- `constant`
-- `local`
+JavaToGpu supports constant data for lookup tables and static read-only data.
 
-with typed wrapper families for primitive scalar pointees.
+Current forms:
 
-## Struct Rules
+- `@GPUConstantData` for embedded constant tables.
+- `@GPUExternConstantData` for external constant declarations.
 
-`@GPUStruct` supports:
+The current alpha support focuses on primitive scalar arrays.
 
-- primitive scalar fields
-- vector fields
-- nested `@GPUStruct` values
-- supported OpenCL attributes like `packed` and `aligned(...)`
+## Images And Samplers
 
-It does not support arrays inside struct fields.
+Use image wrappers when you need OpenCL image memory rather than plain buffers.
 
-## Reinterpretation Policy
+Typical image use cases:
 
-JavaToGpu does not expose general source-level union authoring.
+- Read-only image parameters.
+- Write-only image outputs.
+- Sampler-based reads.
+- Pixel/channel operations through `GPU.*` helpers.
 
-Use the typed pointer/view model instead of arbitrary overlapping storage semantics.
+Image support is still alpha-level, so validate on the target GPU and driver before relying on a specific image format in production-like tests.
 
-## Related Documents
+## Choosing A Data Shape
+
+- Use annotated arrays for most numeric workloads.
+- Use vectors for fixed-width lane data.
+- Use `@GPUStruct` for small records with explicit fields.
+- Use pointer views for packed or low-level memory layouts.
+- Use images only when OpenCL image semantics are actually needed.
+
+## Read Next
 
 - [Language Contract](Language-Contract.md)
 - [Cookbook](Cookbook.md)
+- [Runtime Guide](Runtime-Guide.md)
 - [Known Limitations](Known-Limitations.md)

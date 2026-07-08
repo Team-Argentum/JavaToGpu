@@ -13,7 +13,11 @@ record OpenClValidationHistoryEntry(
         String deviceVersion,
         String bucketSummary,
         String longRunningStatus,
-        String workloadStatus
+        String workloadStatus,
+        String irGpuSourceReviewStatus,
+        String backendSourcePromotionContractStatus,
+        String backendSourcePromotionWorkloadStatus,
+        String productionPromotionExplainabilityStatus
 ) {
 
     OpenClValidationHistoryEntry {
@@ -27,6 +31,10 @@ record OpenClValidationHistoryEntry(
         bucketSummary = normalize(bucketSummary);
         longRunningStatus = normalize(longRunningStatus);
         workloadStatus = normalize(workloadStatus);
+        irGpuSourceReviewStatus = normalize(irGpuSourceReviewStatus);
+        backendSourcePromotionContractStatus = normalize(backendSourcePromotionContractStatus);
+        backendSourcePromotionWorkloadStatus = normalize(backendSourcePromotionWorkloadStatus);
+        productionPromotionExplainabilityStatus = normalize(productionPromotionExplainabilityStatus);
     }
 
     private static String normalize(String value) {

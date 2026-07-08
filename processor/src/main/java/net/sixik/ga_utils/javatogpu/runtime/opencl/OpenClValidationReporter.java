@@ -1,5 +1,8 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidation;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityFormatter;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,6 +18,11 @@ public final class OpenClValidationReporter {
     private static final String LONG_RUNNING_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.longRunningSummaryFile";
     private static final String WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.workloadSummaryFile";
     private static final String BUCKET_STATUS_FILE_PROPERTY = "javatogpu.opencl.bucketStatusFile";
+    private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
+    private static final String BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionGateFile";
+    private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
+    private static final String I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.i3ReadinessWorkloadSummaryFile";
+    private static final String PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY = "javatogpu.opencl.productionPromotionExplainabilityFile";
     private static final String HISTORY_PROPERTIES_FILE_PROPERTY = "javatogpu.opencl.validationHistoryFile";
     private static final String HISTORY_MARKDOWN_FILE_PROPERTY = "javatogpu.opencl.validationHistoryMarkdownFile";
     private static final int MAX_HISTORY_ENTRIES = 25;
@@ -45,6 +53,10 @@ public final class OpenClValidationReporter {
         String runnerOs = env("RUNNER_OS");
         String gitSha = env("GITHUB_SHA");
         String gitRef = env("GITHUB_REF_NAME");
+        ensureBackendSourcePromotionGateArtifact();
+        ensureBackendSourcePromotionWorkloadGateArtifact();
+        ensureI3ReadinessWorkloadSummaryArtifact();
+        ensureProductionPromotionExplainabilityArtifact();
 
         markdown.append("# OpenCL Vendor Validation Snapshot\n\n");
         if (!requestedVendor.isBlank()) {
@@ -66,7 +78,11 @@ public final class OpenClValidationReporter {
 
         appendBucketStatusMatrix(markdown);
         appendWorkloadSummary(markdown);
+        appendIrGpuSourceReviewSummary(markdown);
         appendLongRunningSummary(markdown);
+        appendBackendSourcePromotionContractSummary(markdown);
+        appendBackendSourcePromotionWorkloadSummary(markdown);
+        appendProductionPromotionExplainabilitySummary(markdown);
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
             markdown.append(backend.validationReport().toMarkdown());
@@ -186,6 +202,567 @@ public final class OpenClValidationReporter {
         }
     }
 
+    private static void appendIrGpuSourceReviewSummary(StringBuilder markdown) {
+        String reviewPath = System.getProperty(IRGPU_SOURCE_REVIEW_FILE_PROPERTY);
+        if (reviewPath == null || reviewPath.isBlank()) {
+            return;
+        }
+
+        markdown.append("## IrGpu Source Review\n\n");
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(reviewPath));
+            if (properties.isEmpty()) {
+                markdown.append("- Status: `not recorded`\n");
+                markdown.append("- Review file: `").append(reviewPath).append("`\n\n");
+                return;
+            }
+            markdown.append("- Status: `").append(sanitizeInline(properties.getProperty("status", "unknown"))).append("`\n");
+            markdown.append("- Review ready: `").append(sanitizeInline(properties.getProperty("reviewReady", "unknown"))).append("`\n");
+            markdown.append("- Source selection: `").append(sanitizeInline(properties.getProperty("sourceSelection", "unknown"))).append("`\n");
+            markdown.append("- Optimization profile: `").append(sanitizeInline(properties.getProperty("optimizationProfile", "unknown"))).append("`\n");
+            markdown.append("- Production source switching: `").append(sanitizeInline(properties.getProperty("productionSourceSwitching", "unknown"))).append("`\n");
+            markdown.append("- Scope: `").append(sanitizeInline(properties.getProperty("scope", "opt-in-irgpu-source-review"))).append("`\n");
+            int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+            markdown.append("- Kernel count: `").append(kernelCount).append("`\n");
+            for (int index = 0; index < kernelCount; index++) {
+                appendIrGpuSourceReviewKernelSummary(markdown, properties, index);
+            }
+            String diagnostic = properties.getProperty("diagnostic.0", "");
+            if (!diagnostic.isBlank()) {
+                markdown.append("- Diagnostic: `").append(sanitizeInline(diagnostic)).append("`\n");
+            }
+            markdown.append("- Review file: `").append(reviewPath).append("`\n\n");
+        } catch (Throwable failure) {
+            markdown.append("- Status: `failed to read`\n");
+            markdown.append("- Review file: `").append(reviewPath).append("`\n");
+            markdown.append("- Error: `").append(sanitizeInline(failure.toString())).append("`\n\n");
+        }
+    }
+
+    private static void appendIrGpuSourceReviewKernelSummary(
+            StringBuilder markdown,
+            java.util.Properties properties,
+            int index
+    ) {
+        String prefix = "kernel." + index + ".";
+        markdown.append("- Kernel `")
+                .append(index)
+                .append("`: name=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "name", "unknown")))
+                .append("`, status=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "status", "unknown")))
+                .append("`, resource=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "resource", "unknown")))
+                .append("`, irGpuResource=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "irGpuResource", "unknown")))
+                .append("`\n");
+    }
+
+    private static void appendBackendSourcePromotionContractSummary(StringBuilder markdown) {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return;
+        }
+
+        markdown.append("## Backend Source Promotion Contract Fixture\n\n");
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(gatePath));
+            if (properties.isEmpty()) {
+                markdown.append("- Status: `not recorded`\n");
+                markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
+                return;
+            }
+            markdown.append("- Status: `").append(sanitizeInline(properties.getProperty("status", "unknown"))).append("`\n");
+            markdown.append("- Review ready: `").append(sanitizeInline(properties.getProperty("reviewReady", "unknown"))).append("`\n");
+            markdown.append("- Source parity matched: `").append(sanitizeInline(properties.getProperty("sourceParityMatched", "unknown"))).append("`\n");
+            markdown.append("- Runtime equivalence passed: `").append(sanitizeInline(properties.getProperty("runtimeEquivalencePassed", "unknown"))).append("`\n");
+            markdown.append("- Scope: `synthetic contract fixture only; not production workload promotion`\n");
+            markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
+        } catch (Throwable failure) {
+            markdown.append("- Status: `failed to read`\n");
+            markdown.append("- Gate file: `").append(gatePath).append("`\n");
+            markdown.append("- Error: `").append(sanitizeInline(failure.toString())).append("`\n\n");
+        }
+    }
+
+    private static void appendBackendSourcePromotionWorkloadSummary(StringBuilder markdown) {
+        markdown.append("## Backend Source Promotion Workload Gate\n\n");
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            markdown.append("- Status: `not-promoted`\n");
+            markdown.append("- Reason: `real workload source-promotion evidence is not wired yet`\n");
+            markdown.append("- Production source switching: `disabled`\n\n");
+            return;
+        }
+
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(gatePath));
+            if (properties.isEmpty()) {
+                markdown.append("- Status: `not recorded`\n");
+                markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
+                return;
+            }
+            String rawStatus = properties.getProperty("status", "unknown");
+            boolean unexpectedReviewReady = "review-ready".equals(rawStatus);
+            String effectiveStatus = unexpectedReviewReady ? "blocked" : rawStatus;
+            String effectiveReviewReady = unexpectedReviewReady ? "false" : properties.getProperty("reviewReady", "unknown");
+            markdown.append("- Status: `").append(sanitizeInline(effectiveStatus)).append("`\n");
+            markdown.append("- Review ready: `").append(sanitizeInline(effectiveReviewReady)).append("`\n");
+            if (unexpectedReviewReady) {
+                markdown.append("- Gate status: `review-ready`\n");
+            }
+            markdown.append("- Source parity matched: `").append(sanitizeInline(properties.getProperty("sourceParityMatched", "unknown"))).append("`\n");
+            markdown.append("- Runtime equivalence passed: `").append(sanitizeInline(properties.getProperty("runtimeEquivalencePassed", "unknown"))).append("`\n");
+            markdown.append("- Real workload evidence: `").append(sanitizeInline(properties.getProperty("realWorkloadEvidence", "not-wired"))).append("`\n");
+            appendBackendSourceSwitchingSummary(markdown, properties);
+            appendBackendSourcePromotionWorkloadFamilySummary(markdown, properties, "");
+            int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+            if (kernelCount > 0) {
+                markdown.append("- Kernel evidence count: `").append(kernelCount).append("`\n");
+                for (int index = 0; index < kernelCount; index++) {
+                    appendBackendSourcePromotionWorkloadKernelSummary(markdown, properties, index);
+                }
+            } else {
+                String sourceKernelResource = properties.getProperty("sourceKernelResource", "");
+                if (!sourceKernelResource.isBlank()) {
+                    markdown.append("- Source kernel resource: `").append(sanitizeInline(sourceKernelResource)).append("`\n");
+                }
+            }
+            markdown.append("- Reason: `").append(sanitizeInline(properties.getProperty(
+                    "reason",
+                    unexpectedReviewReady
+                            ? "unexpected workload review-ready gate cannot promote production source while source switching is disabled"
+                            : "real workload source-promotion evidence is not wired yet"
+            ))).append("`\n");
+            markdown.append("- Production source switching: `disabled`\n");
+            markdown.append("- Scope: `real workload promotion gate; fail-closed until workload evidence is wired`\n");
+            markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
+        } catch (Throwable failure) {
+            markdown.append("- Status: `failed to read`\n");
+            markdown.append("- Gate file: `").append(gatePath).append("`\n");
+            markdown.append("- Error: `").append(sanitizeInline(failure.toString())).append("`\n\n");
+        }
+    }
+
+    private static void appendProductionPromotionExplainabilitySummary(StringBuilder markdown) {
+        String explainabilityPath = System.getProperty(PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY);
+        if (explainabilityPath == null || explainabilityPath.isBlank()) {
+            return;
+        }
+
+        markdown.append("## Production Promotion Explainability\n\n");
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(explainabilityPath));
+            if (properties.isEmpty()) {
+                markdown.append("- Status: `not recorded`\n");
+                markdown.append("- Explainability file: `").append(explainabilityPath).append("`\n\n");
+                return;
+            }
+            GpuProductionPromotionExplainabilityValidation.Result contract =
+                    GpuProductionPromotionExplainabilityValidation.validate(properties);
+            markdown.append("- Status: `").append(sanitizeInline(properties.getProperty("status", "unknown"))).append("`\n");
+            markdown.append("- Contract: `").append(contract.valid() ? "valid" : "invalid").append("`\n");
+            markdown.append("- Decision mode: `")
+                    .append(sanitizeInline(properties.getProperty("decision.mode", "unknown")))
+                    .append("`\n");
+            if (!contract.valid()) {
+                markdown.append("- Contract violation: `").append(sanitizeInline(contract.firstViolation())).append("`\n");
+            }
+            markdown.append("- Production source switching allowed: `")
+                    .append(sanitizeInline(properties.getProperty("productionSourceSwitchingAllowed", "false")))
+                    .append("`\n");
+            markdown.append("- Production source switching enabled: `")
+                    .append(sanitizeInline(properties.getProperty("productionSourceSwitchingEnabled", "false")))
+                    .append("`\n");
+            markdown.append("- Production mutation allowed: `")
+                    .append(sanitizeInline(properties.getProperty("productionMutationAllowed", "false")))
+                    .append("`\n");
+            markdown.append("- Production mutation enabled: `")
+                    .append(sanitizeInline(properties.getProperty("productionMutationEnabled", "false")))
+                    .append("`\n");
+            markdown.append("- Kernel count: `").append(sanitizeInline(properties.getProperty("kernel.count", "0"))).append("`\n");
+            markdown.append("- I3 review-ready kernels: `").append(sanitizeInline(properties.getProperty("i3ReviewReady.count", "0"))).append("`\n");
+            markdown.append("- I3 blocked kernels: `").append(sanitizeInline(properties.getProperty("i3Blocked.count", "0"))).append("`\n");
+            int blockerCount = parsePositiveInt(properties.getProperty("blocker.count", "0"));
+            markdown.append("- Blocker count: `").append(blockerCount).append("`\n");
+            if (blockerCount > 0) {
+                markdown.append("- First blocker: `")
+                        .append(sanitizeInline(properties.getProperty("blocker.0", "unknown")))
+                        .append("`\n");
+            }
+            String diagnostic = properties.getProperty("diagnostic.0", "");
+            if (!diagnostic.isBlank()) {
+                markdown.append("- Diagnostic: `").append(sanitizeInline(diagnostic)).append("`\n");
+            }
+            markdown.append("- Explainability file: `").append(explainabilityPath).append("`\n\n");
+        } catch (Throwable failure) {
+            markdown.append("- Status: `failed to read`\n");
+            markdown.append("- Explainability file: `").append(explainabilityPath).append("`\n");
+            markdown.append("- Error: `").append(sanitizeInline(failure.toString())).append("`\n\n");
+        }
+    }
+
+    private static void appendBackendSourcePromotionWorkloadKernelSummary(
+            StringBuilder markdown,
+            java.util.Properties properties,
+            int index
+    ) {
+        String prefix = "kernel." + index + ".";
+        markdown.append("- Kernel `")
+                .append(index)
+                .append("`: `")
+                .append(sanitizeInline(properties.getProperty(prefix + "sourceKernelResource", "unknown")))
+                .append("`, status=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "status", "unknown")))
+                .append("`, parity=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "sourceParityMatched", "unknown")))
+                .append("`, runtimeEquivalence=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "runtimeEquivalencePassed", "unknown")))
+                .append("`, sourceSwitching=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.decision", "not-recorded")))
+                .append("`, runtimeIr=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.selectedStage", "unknown")))
+                .append("`, productionMutation=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionMutationEnabled", "unknown")))
+                .append("`, sourceReady=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.sourceReady", "unknown")))
+                .append("`, i3=`")
+                .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.status", "unknown")))
+                .append("`\n");
+        String sourceSwitchingDiagnostic = properties.getProperty(prefix + "sourceSwitching.diagnostic.0", "");
+        if (!sourceSwitchingDiagnostic.isBlank()) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` source switching: status=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.status", "not-recorded")))
+                    .append("`, profile=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.optimizationProfile", "unknown")))
+                    .append("`, first=`")
+                    .append(sanitizeInline(sourceSwitchingDiagnostic))
+                    .append("`\n");
+        }
+        String runtimeIrHandoffDiagnostic = properties.getProperty(prefix + "runtimeIrHandoff.diagnostic.0", "");
+        if (!runtimeIrHandoffDiagnostic.isBlank()) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` runtime IR handoff: stage=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.selectedStage", "unknown")))
+                    .append("`, transformed=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.optimizedDiffersFromOriginal", "unknown")))
+                    .append("`, rollback=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.optimizationRequiresRollback", "unknown")))
+                    .append("`, rejected=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.optimizedIrRejected", "unknown")))
+                    .append("`, fallback=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.fallbackDecision", "unknown")))
+                    .append("`, first=`")
+                    .append(sanitizeInline(runtimeIrHandoffDiagnostic))
+                    .append("`\n");
+        }
+        String productionMutationDiagnostic = properties.getProperty(prefix + "runtimeProductionMutationSafety.diagnostic.0", "");
+        if (!productionMutationDiagnostic.isBlank()) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` production mutation safety: enabled=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionMutationEnabled", "unknown")))
+                    .append("`, gate=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionGateStatus", "unknown")))
+                    .append("`, profileRequested=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionProfileRequested", "unknown")))
+                    .append("`, first=`")
+                    .append(sanitizeInline(productionMutationDiagnostic))
+                    .append("`\n");
+        }
+        String i3ReadinessDiagnostic = properties.getProperty(prefix + "i3Readiness.diagnostic.0", "");
+        if (!i3ReadinessDiagnostic.isBlank()) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` I3 readiness: status=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.status", "unknown")))
+                    .append("`, sourcePromotion=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.sourcePromotionStatus", "unknown")))
+                    .append("`, sourceReady=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.sourceReady", "unknown")))
+                    .append("`, optimizerGate=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.optimizerProductionGateStatus", "unknown")))
+                    .append("`, productionMutation=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.productionMutationEnabled", "unknown")))
+                    .append("`, first=`")
+                    .append(sanitizeInline(i3ReadinessDiagnostic))
+                    .append("`\n");
+        }
+        String optimizerDriftStatus = properties.getProperty(prefix + "runtimeOptimizerDrift.status", "not-recorded");
+        if (!"not-recorded".equals(optimizerDriftStatus)) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` runtime optimizer drift: passes=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.count", "0")))
+                    .append("`, applied=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.applied.count", "0")))
+                    .append("`, rolledBack=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.rolledBack.count", "0")))
+                    .append("`, failed=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.pass.failed.count", "0")))
+                    .append("`, selected=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.selectedRuntimeIrStage", "unknown")))
+                    .append("`, fallback=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.fallbackDecision", "unknown")))
+                    .append("`, gate=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.productionGateStatus", "unknown")))
+                    .append("`\n");
+        }
+        int diagnosticCount = parsePositiveInt(properties.getProperty(prefix + "diagnostic.count", "0"));
+        if (diagnosticCount > 0) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` diagnostics: `")
+                    .append(diagnosticCount)
+                    .append("`; first=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "diagnostic.0", "unknown")))
+                    .append("`\n");
+        }
+        int reconstructionBlockerCount = parsePositiveInt(properties.getProperty(prefix + "reconstruction.blocker.count", "0"));
+        if (reconstructionBlockerCount > 0) {
+            markdown.append("- Kernel `")
+                    .append(index)
+                    .append("` reconstruction blockers: `")
+                    .append(reconstructionBlockerCount)
+                    .append("`; first=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "reconstruction.blocker.0", "unknown")))
+                    .append("`\n");
+        }
+        appendBackendSourcePromotionWorkloadFamilySummary(markdown, properties, prefix);
+    }
+
+    private static void appendBackendSourceSwitchingSummary(
+            StringBuilder markdown,
+            java.util.Properties properties
+    ) {
+        String summary = summarizeSourceSwitchingDecisions(properties);
+        if (summary.isBlank()) {
+            return;
+        }
+        markdown.append("- Source switching decisions: `").append(sanitizeInline(summary)).append("`\n");
+    }
+
+    private static void appendBackendSourcePromotionWorkloadFamilySummary(
+            StringBuilder markdown,
+            java.util.Properties properties,
+            String prefix
+    ) {
+        int familyCount = parsePositiveInt(properties.getProperty(prefix + "blockerFamily.count", "0"));
+        if (familyCount == 0) {
+            return;
+        }
+        markdown.append("- ")
+                .append(prefix.isBlank() ? "Blocker families" : "Kernel blocker families")
+                .append(": `")
+                .append(formatBlockerFamilies(properties, prefix, familyCount))
+                .append("`\n");
+    }
+
+    private static void ensureBackendSourcePromotionGateArtifact() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return;
+        }
+        Path path = Paths.get(gatePath);
+        try {
+            if (Files.exists(path) && !loadPropertiesIfExists(path).isEmpty()) {
+                return;
+            }
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            String properties = net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionGate.evaluate(
+                    null,
+                    net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence.notRun(
+                            null,
+                            "operational validation has not produced backend source runtime-equivalence evidence yet"
+                    ),
+                    net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFallbackEvidence.none()
+            ).toPropertiesText();
+            Files.writeString(path, properties, StandardCharsets.UTF_8);
+        } catch (Throwable failure) {
+            // The validation report must still be printable even if this optional diagnostic artifact cannot be written.
+        }
+    }
+
+    private static void ensureBackendSourcePromotionWorkloadGateArtifact() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return;
+        }
+        Path path = Paths.get(gatePath);
+        try {
+            if (Files.exists(path) && !loadPropertiesIfExists(path).isEmpty()) {
+                return;
+            }
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            String properties = net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionGate.evaluate(
+                    null,
+                    net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence.notRun(
+                            null,
+                            "real workload source-promotion runtime-equivalence evidence is not wired yet"
+                    ),
+                    net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFallbackEvidence.none()
+            ).toPropertiesText()
+                    + "scope=real-workload\n"
+                    + "productionSourceSwitching=false\n"
+                    + "realWorkloadEvidence=not-wired\n"
+                    + "reason=real workload source-promotion runtime-equivalence evidence is not wired yet\n";
+            Files.writeString(path, properties, StandardCharsets.UTF_8);
+        } catch (Throwable failure) {
+            // The validation report must still be printable even if this optional diagnostic artifact cannot be written.
+        }
+    }
+
+    private static void ensureI3ReadinessWorkloadSummaryArtifact() {
+        String summaryPath = System.getProperty(I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY);
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (summaryPath == null || summaryPath.isBlank() || gatePath == null || gatePath.isBlank()) {
+            return;
+        }
+        try {
+            Path path = Paths.get(summaryPath);
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            java.util.Properties gate = loadPropertiesIfExists(Paths.get(gatePath));
+            Files.writeString(path, formatI3ReadinessWorkloadSummary(gate), StandardCharsets.UTF_8);
+        } catch (Throwable failure) {
+            // Validation reports should remain printable even if the optional compact CI summary cannot be written.
+        }
+    }
+
+    private static void ensureProductionPromotionExplainabilityArtifact() {
+        String outputPath = System.getProperty(PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY);
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        String i3SummaryPath = System.getProperty(I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank() || gatePath == null || gatePath.isBlank()) {
+            return;
+        }
+        try {
+            Path path = Paths.get(outputPath);
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            java.util.Properties gate = loadPropertiesIfExists(Paths.get(gatePath));
+            java.util.Properties i3Summary = i3SummaryPath == null || i3SummaryPath.isBlank()
+                    ? new java.util.Properties()
+                    : loadPropertiesIfExists(Paths.get(i3SummaryPath));
+            Files.writeString(path, GpuProductionPromotionExplainabilityFormatter.format(gate, i3Summary), StandardCharsets.UTF_8);
+        } catch (Throwable failure) {
+            // Keep the validation report printable even if this optional explainability artifact cannot be written.
+        }
+    }
+
+    private static String formatI3ReadinessWorkloadSummary(java.util.Properties gate) {
+        if (gate == null || gate.isEmpty()) {
+            return "status=not-recorded\n"
+                    + "kernel.count=0\n"
+                    + "reviewReady.count=0\n"
+                    + "blocked.count=0\n"
+                    + "productionEnabled.count=0\n"
+                    + "sourceReady.count=0\n"
+                    + "sourceReady.all=false\n"
+                    + "productionMutationEnabled=false\n"
+                    + "diagnostic.0=backend source promotion workload gate was not recorded\n";
+        }
+        int kernelCount = parsePositiveInt(gate.getProperty("kernel.count", "0"));
+        java.util.LinkedHashMap<String, Integer> statusCounts = new java.util.LinkedHashMap<>();
+        boolean productionMutationEnabled = false;
+        int sourceReadyCount = 0;
+        for (int index = 0; index < kernelCount; index++) {
+            String prefix = "kernel." + index + ".";
+            String status = normalizeI3ReadinessStatus(gate.getProperty(prefix + "i3Readiness.status", "unknown"));
+            statusCounts.merge(status, 1, Integer::sum);
+            if ("true".equals(gate.getProperty(prefix + "i3Readiness.sourceReady", "false"))) {
+                sourceReadyCount++;
+            }
+            productionMutationEnabled |= "true".equals(gate.getProperty(prefix + "i3Readiness.productionMutationEnabled", "false"));
+        }
+        int reviewReadyCount = statusCounts.getOrDefault("review-ready", 0);
+        int blockedCount = statusCounts.getOrDefault("blocked", 0);
+        int productionEnabledCount = statusCounts.getOrDefault("production-enabled", 0);
+        String status = productionEnabledCount > 0
+                ? "production-enabled"
+                : reviewReadyCount > 0 && blockedCount == 0 && kernelCount > 0 ? "review-ready" : "blocked";
+        StringBuilder builder = new StringBuilder();
+        builder.append("status=").append(status).append('\n');
+        builder.append("gateStatus=").append(gate.getProperty("status", "unknown")).append('\n');
+        builder.append("reviewReady=").append(gate.getProperty("reviewReady", "unknown")).append('\n');
+        builder.append("sourceParityMatched=").append(gate.getProperty("sourceParityMatched", "unknown")).append('\n');
+        builder.append("runtimeEquivalencePassed=").append(gate.getProperty("runtimeEquivalencePassed", "unknown")).append('\n');
+        builder.append("realWorkloadEvidence=").append(gate.getProperty("realWorkloadEvidence", "not-wired")).append('\n');
+        builder.append("kernel.count=").append(kernelCount).append('\n');
+        builder.append("reviewReady.count=").append(reviewReadyCount).append('\n');
+        builder.append("blocked.count=").append(blockedCount).append('\n');
+        builder.append("productionEnabled.count=").append(productionEnabledCount).append('\n');
+        builder.append("sourceReady.count=").append(sourceReadyCount).append('\n');
+        builder.append("sourceReady.all=").append(kernelCount > 0 && sourceReadyCount == kernelCount).append('\n');
+        builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
+        builder.append("status.count=").append(statusCounts.size()).append('\n');
+        int statusIndex = 0;
+        for (java.util.Map.Entry<String, Integer> entry : statusCounts.entrySet()) {
+            builder.append("status.").append(statusIndex).append(".name=").append(entry.getKey()).append('\n');
+            builder.append("status.").append(statusIndex).append(".count=").append(entry.getValue()).append('\n');
+            statusIndex++;
+        }
+        for (int index = 0; index < kernelCount; index++) {
+            String prefix = "kernel." + index + ".";
+            builder.append(prefix).append("resource=").append(gate.getProperty(prefix + "sourceKernelResource", "unknown")).append('\n');
+            builder.append(prefix).append("i3Status=").append(normalizeI3ReadinessStatus(
+                    gate.getProperty(prefix + "i3Readiness.status", "unknown"))).append('\n');
+            builder.append(prefix).append("runtimeIr=").append(gate.getProperty(prefix + "runtimeIrHandoff.selectedStage", "unknown")).append('\n');
+            builder.append(prefix).append("optimizerDriftStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.status", "not-recorded")).append('\n');
+            builder.append(prefix).append("optimizerDriftPassCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRolledBackCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftFallbackDecision=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
+            builder.append(prefix).append("sourceReady=").append(gate.getProperty(prefix + "i3Readiness.sourceReady", "unknown")).append('\n');
+            builder.append(prefix).append("sourcePromotionStatus=").append(gate.getProperty(prefix + "i3Readiness.sourcePromotionStatus", "unknown")).append('\n');
+            builder.append(prefix).append("optimizerProductionGateStatus=").append(gate.getProperty(prefix + "i3Readiness.optimizerProductionGateStatus", "unknown")).append('\n');
+            builder.append(prefix).append("productionMutationEnabled=").append(gate.getProperty(prefix + "i3Readiness.productionMutationEnabled", "unknown")).append('\n');
+            builder.append(prefix).append("diagnostic=").append(gate.getProperty(
+                    prefix + "i3Readiness.diagnostic.0",
+                    "I3 readiness evidence is missing for this workload kernel"
+            )).append('\n');
+        }
+        builder.append("diagnostic.0=").append(i3ReadinessWorkloadSummaryDiagnostic(status, kernelCount, reviewReadyCount, blockedCount)).append('\n');
+        return builder.toString();
+    }
+
+    private static String normalizeI3ReadinessStatus(String status) {
+        return switch (status) {
+            case "production-enabled", "review-ready", "blocked" -> status;
+            default -> "blocked";
+        };
+    }
+
+    private static String i3ReadinessWorkloadSummaryDiagnostic(
+            String status,
+            int kernelCount,
+            int reviewReadyCount,
+            int blockedCount
+    ) {
+        if (kernelCount == 0) {
+            return "I3 readiness workload gate has no runtime kernel evidence yet";
+        }
+        if ("production-enabled".equals(status)) {
+            return "I3 production mutation is enabled for at least one workload kernel";
+        }
+        if ("review-ready".equals(status)) {
+            return "all workload kernels are I3 review-ready while production mutation remains disabled";
+        }
+        return "I3 workload readiness remains blocked: reviewReady=" + reviewReadyCount + ", blocked=" + blockedCount;
+    }
+
     private static void updateHistoryArtifacts(String markdown) throws IOException {
         String historyPropertiesPath = System.getProperty(HISTORY_PROPERTIES_FILE_PROPERTY);
         String historyMarkdownPath = System.getProperty(HISTORY_MARKDOWN_FILE_PROPERTY);
@@ -225,6 +802,10 @@ public final class OpenClValidationReporter {
         String bucketSummary = summarizeBuckets();
         String longRunningStatus = summarizeLongRunningStatus();
         String workloadStatus = summarizeWorkloadStatus();
+        String irGpuSourceReviewStatus = summarizeIrGpuSourceReviewStatus();
+        String backendSourcePromotionContractStatus = summarizeBackendSourcePromotionContractStatus();
+        String backendSourcePromotionWorkloadStatus = summarizeBackendSourcePromotionWorkloadStatus();
+        String productionPromotionExplainabilityStatus = summarizeProductionPromotionExplainabilityStatus();
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
             OpenClValidationReport report = backend.validationReport();
@@ -238,7 +819,11 @@ public final class OpenClValidationReporter {
                     report.deviceVersion(),
                     bucketSummary,
                     longRunningStatus,
-                    workloadStatus
+                    workloadStatus,
+                    irGpuSourceReviewStatus,
+                    backendSourcePromotionContractStatus,
+                    backendSourcePromotionWorkloadStatus,
+                    productionPromotionExplainabilityStatus
             );
         } catch (Throwable failure) {
             return new OpenClValidationHistoryEntry(
@@ -251,7 +836,11 @@ public final class OpenClValidationReporter {
                     sanitizeInline(failure.toString()),
                     bucketSummary,
                     longRunningStatus,
-                    workloadStatus
+                    workloadStatus,
+                    irGpuSourceReviewStatus,
+                    backendSourcePromotionContractStatus,
+                    backendSourcePromotionWorkloadStatus,
+                    productionPromotionExplainabilityStatus
             );
         }
     }
@@ -308,6 +897,257 @@ public final class OpenClValidationReporter {
         } catch (Throwable failure) {
             return "failed to read";
         }
+    }
+
+    private static String summarizeIrGpuSourceReviewStatus() {
+        String reviewPath = System.getProperty(IRGPU_SOURCE_REVIEW_FILE_PROPERTY);
+        if (reviewPath == null || reviewPath.isBlank()) {
+            return "not recorded";
+        }
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(reviewPath));
+            if (properties.isEmpty()) {
+                return "not recorded";
+            }
+            return properties.getProperty("status", "unknown")
+                    + " (reviewReady=" + properties.getProperty("reviewReady", "unknown")
+                    + ", sourceSelection=" + properties.getProperty("sourceSelection", "unknown")
+                    + ", optimizationProfile=" + properties.getProperty("optimizationProfile", "unknown")
+                    + ", productionSourceSwitching=" + properties.getProperty("productionSourceSwitching", "unknown")
+                    + summarizeIrGpuSourceReviewKernelEvidence(properties)
+                    + ")";
+        } catch (Throwable failure) {
+            return "failed to read";
+        }
+    }
+
+    private static String summarizeIrGpuSourceReviewKernelEvidence(java.util.Properties properties) {
+        int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+        if (kernelCount == 0) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", kernelCount=").append(kernelCount);
+        for (int index = 0; index < kernelCount; index++) {
+            String prefix = "kernel." + index + ".";
+            builder.append(", kernel.")
+                    .append(index)
+                    .append('=')
+                    .append(properties.getProperty(prefix + "resource", "unknown"))
+                    .append("[status=")
+                    .append(properties.getProperty(prefix + "status", "unknown"))
+                    .append(", irGpuResource=")
+                    .append(properties.getProperty(prefix + "irGpuResource", "unknown"))
+                    .append(']');
+        }
+        return builder.toString();
+    }
+
+    private static String summarizeBackendSourcePromotionContractStatus() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return "not recorded";
+        }
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(gatePath));
+            if (properties.isEmpty()) {
+                return "not recorded";
+            }
+            return properties.getProperty("status", "unknown")
+                    + " (reviewReady=" + properties.getProperty("reviewReady", "unknown")
+                    + ", sourceParityMatched=" + properties.getProperty("sourceParityMatched", "unknown")
+                    + ", runtimeEquivalencePassed=" + properties.getProperty("runtimeEquivalencePassed", "unknown")
+                    + ")";
+        } catch (Throwable failure) {
+            return "failed to read";
+        }
+    }
+
+    private static String summarizeBackendSourcePromotionWorkloadStatus() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)";
+        }
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(gatePath));
+            if (properties.isEmpty()) {
+                return "not recorded";
+            }
+            String status = properties.getProperty("status", "unknown");
+            if ("review-ready".equals(status)) {
+                return "blocked (productionSourceSwitching=disabled, unexpectedWorkloadReviewReady=true)";
+            }
+            return "not-promoted (gateStatus=" + status
+                    + ", reviewReady=" + properties.getProperty("reviewReady", "unknown")
+                    + ", sourceParityMatched=" + properties.getProperty("sourceParityMatched", "unknown")
+                    + ", runtimeEquivalencePassed=" + properties.getProperty("runtimeEquivalencePassed", "unknown")
+                    + ", realWorkloadEvidence=" + properties.getProperty("realWorkloadEvidence", "not-wired")
+                    + summarizeSourceSwitchingEvidence(properties)
+                    + summarizeKernelEvidence(properties)
+                    + summarizeSourceKernelResource(properties)
+                    + ", productionSourceSwitching=disabled)";
+        } catch (Throwable failure) {
+            return "failed to read";
+        }
+    }
+
+    private static String summarizeProductionPromotionExplainabilityStatus() {
+        String explainabilityPath = System.getProperty(PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY);
+        if (explainabilityPath == null || explainabilityPath.isBlank()) {
+            return "not recorded";
+        }
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(explainabilityPath));
+            if (properties.isEmpty()) {
+                return "not recorded";
+            }
+            GpuProductionPromotionExplainabilityValidation.Result contract =
+                    GpuProductionPromotionExplainabilityValidation.validate(properties);
+            return properties.getProperty("status", "unknown")
+                    + " (contract=" + (contract.valid() ? "valid" : "invalid")
+                    + summarizeProductionPromotionContractViolation(contract)
+                    + ", decisionMode=" + properties.getProperty("decision.mode", "unknown")
+                    + ", sourceSwitchingAllowed=" + properties.getProperty("productionSourceSwitchingAllowed", "false")
+                    + ", sourceSwitchingEnabled=" + properties.getProperty("productionSourceSwitchingEnabled", "false")
+                    + ", mutationAllowed=" + properties.getProperty("productionMutationAllowed", "false")
+                    + ", mutationEnabled=" + properties.getProperty("productionMutationEnabled", "false")
+                    + ", blockers=" + properties.getProperty("blocker.count", "0")
+                    + summarizeFirstProductionPromotionBlocker(properties)
+                    + ", i3ReviewReady=" + properties.getProperty("i3ReviewReady.count", "0")
+                    + ", i3Blocked=" + properties.getProperty("i3Blocked.count", "0")
+                    + ", i3SourceReady=" + properties.getProperty("i3SourceReady.count", "0")
+                    + ", i3SourceReadyAll=" + properties.getProperty("i3SourceReady.all", "false")
+                    + ")";
+        } catch (Throwable failure) {
+            return "failed to read";
+        }
+    }
+
+    private static String summarizeProductionPromotionContractViolation(
+            GpuProductionPromotionExplainabilityValidation.Result contract
+    ) {
+        return contract.valid() ? "" : ", violation=" + contract.firstViolation();
+    }
+
+    private static String summarizeFirstProductionPromotionBlocker(java.util.Properties properties) {
+        int blockerCount = parsePositiveInt(properties.getProperty("blocker.count", "0"));
+        if (blockerCount == 0) {
+            return "";
+        }
+        return ", first=" + properties.getProperty("blocker.0", "unknown");
+    }
+
+    private static String summarizeSourceKernelResource(java.util.Properties properties) {
+        String sourceKernelResource = properties.getProperty("sourceKernelResource", "");
+        return sourceKernelResource.isBlank() ? "" : ", sourceKernelResource=" + sourceKernelResource;
+    }
+
+    private static String summarizeSourceSwitchingEvidence(java.util.Properties properties) {
+        String summary = summarizeSourceSwitchingDecisions(properties);
+        return summary.isBlank() ? "" : ", sourceSwitching=" + summary;
+    }
+
+    private static String summarizeSourceSwitchingDecisions(java.util.Properties properties) {
+        int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+        if (kernelCount == 0) {
+            return "";
+        }
+        java.util.LinkedHashMap<String, Integer> decisionCounts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String decision = properties.getProperty("kernel." + index + ".sourceSwitching.decision", "");
+            if (decision.isBlank() || "not-recorded".equals(decision)) {
+                continue;
+            }
+            decisionCounts.merge(decision, 1, Integer::sum);
+        }
+        if (decisionCounts.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (java.util.Map.Entry<String, Integer> entry : decisionCounts.entrySet()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(entry.getKey()).append('=').append(entry.getValue());
+        }
+        return builder.toString();
+    }
+
+    private static String summarizeKernelEvidence(java.util.Properties properties) {
+        int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+        if (kernelCount == 0) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", kernelCount=").append(kernelCount);
+        for (int index = 0; index < kernelCount; index++) {
+            builder.append(", kernel.")
+                    .append(index)
+                    .append("=")
+                    .append(properties.getProperty("kernel." + index + ".sourceKernelResource", "unknown"))
+                    .append("[diagnostics=")
+                    .append(properties.getProperty("kernel." + index + ".diagnostic.count", "0"))
+                    .append(", sourceSwitching=")
+                    .append(properties.getProperty("kernel." + index + ".sourceSwitching.decision", "not-recorded"))
+                    .append(", runtimeIr=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeIrHandoff.selectedStage", "unknown"))
+                    .append(", optimizerDrift=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.status", "not-recorded"))
+                    .append('/')
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.pass.count", "0"))
+                    .append("passes")
+                    .append("/rollback=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.pass.rolledBack.count", "0"))
+                    .append("/fallback=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.fallbackDecision", "unknown"))
+                    .append(", productionMutation=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeProductionMutationSafety.productionMutationEnabled", "unknown"))
+                    .append(", sourceReady=")
+                    .append(properties.getProperty("kernel." + index + ".i3Readiness.sourceReady", "unknown"))
+                    .append(", i3=")
+                    .append(properties.getProperty("kernel." + index + ".i3Readiness.status", "unknown"))
+                    .append(", families=")
+                    .append(formatBlockerFamilies(
+                            properties,
+                            "kernel." + index + ".",
+                            parsePositiveInt(properties.getProperty("kernel." + index + ".blockerFamily.count", "0"))
+                    ))
+                    .append("]");
+        }
+        return builder.toString();
+    }
+
+    private static String formatBlockerFamilies(java.util.Properties properties, String prefix, int familyCount) {
+        if (familyCount == 0) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < familyCount; index++) {
+            if (index > 0) {
+                builder.append(", ");
+            }
+            builder.append(properties.getProperty(prefix + "blockerFamily." + index + ".name", "unknown"))
+                    .append('=')
+                    .append(properties.getProperty(prefix + "blockerFamily." + index + ".count", "0"));
+        }
+        return builder.toString();
+    }
+
+    private static int parsePositiveInt(String value) {
+        try {
+            return Math.max(0, Integer.parseInt(value));
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
+    }
+
+    private static java.util.Properties loadPropertiesIfExists(Path path) throws IOException {
+        java.util.Properties properties = new java.util.Properties();
+        if (path == null || !Files.exists(path)) {
+            return properties;
+        }
+        try (java.io.InputStream inputStream = Files.newInputStream(path)) {
+            properties.load(inputStream);
+        }
+        return properties;
     }
 
     private static boolean sameRun(OpenClValidationHistoryEntry left, OpenClValidationHistoryEntry right) {

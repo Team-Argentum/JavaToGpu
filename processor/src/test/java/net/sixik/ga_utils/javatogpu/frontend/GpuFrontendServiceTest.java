@@ -6,6 +6,8 @@ import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
+import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.frontend.validation.GpuValidationException;
 import org.junit.jupiter.api.Test;
 
@@ -177,6 +179,90 @@ class GpuFrontendServiceTest {
                     int id = get_global_id(0);
                     output[id] = jtg_fn_square_float(input[id]);
                 }""", kernel);
+    }
+
+    @Test
+    void compilesKernelAndReturnsIrGpuArtifact() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = square(input[id]);
+                }
+                """;
+        String helperSource = """
+                @CCode(inline = true)
+                float square(float value) {
+                    return value * value;
+                }
+                """;
+
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        ParsedGpuMethod kernelMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+        ParsedGpuMethod helperMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(helperSource, "", "");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(helperMethod),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertTrue(result.openClSource().contains("inline float jtg_fn_square_float(float value);"));
+        assertEquals("javatogpu.irgpu.v1", result.irGpuArtifact().header().format());
+        assertEquals(1, result.irGpuArtifact().header().schemaVersion());
+        assertEquals("java-source", result.irGpuArtifact().header().sourceFrontend());
+        assertEquals("kernel", result.irGpuArtifact().module().entryMethod());
+        assertEquals("jtg_kernel", result.irGpuArtifact().module().entryEmittedName());
+        assertEquals(1, result.irGpuArtifact().module().helperMethods().size());
+        assertEquals("square", result.irGpuArtifact().module().helperMethods().get(0).name());
+        assertEquals("jtg_fn_square_float", result.irGpuArtifact().module().helperMethods().get(0).emittedName());
+        assertEquals("float", result.irGpuArtifact().module().helperMethods().get(0).returnType());
+        assertEquals(1, result.irGpuArtifact().module().helperMethods().get(0).parameters().size());
+        assertEquals("value", result.irGpuArtifact().module().helperMethods().get(0).parameters().get(0).name());
+        assertEquals("float", result.irGpuArtifact().module().helperMethods().get(0).parameters().get(0).javaType());
+        assertEquals(2, result.irGpuArtifact().module().methodBodies().size());
+        assertEquals("entry", result.irGpuArtifact().module().methodBodies().get(0).role());
+        assertEquals("kernel", result.irGpuArtifact().module().methodBodies().get(0).name());
+        assertEquals("jtg_kernel", result.irGpuArtifact().module().methodBodies().get(0).emittedName());
+        assertEquals("ir-text-v1", result.irGpuArtifact().module().methodBodies().get(0).format());
+        assertEquals("java-source", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().sourceKind());
+        assertEquals("sample.Demo", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().ownerQualifiedName());
+        assertEquals("kernel", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().methodName());
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().knownRange());
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(0).body().contains("method jtg_kernel source=kernel"));
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(0).body().contains("set output[id] = helper(jtg_fn_square_float args=[input[id]])"));
+        assertEquals("helper", result.irGpuArtifact().module().methodBodies().get(1).role());
+        assertEquals("square", result.irGpuArtifact().module().methodBodies().get(1).name());
+        assertEquals("java-source", result.irGpuArtifact().module().methodBodies().get(1).sourceLocation().sourceKind());
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(1).body().contains("return (value * value)"));
+        assertEquals(1, result.irGpuArtifact().backendOutputs().size());
+        assertEquals("opencl", result.irGpuArtifact().backendOutputs().get(0).backend());
+        assertEquals("source", result.irGpuArtifact().backendOutputs().get(0).kind());
+        assertEquals("opencl-c", result.irGpuArtifact().backendOutputs().get(0).format());
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().backendOutputs().get(0).resource());
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().derivedOpenClResource());
+
+        assertEquals("javatogpu/sample/Demo/kernel.cl", result.openClResource());
+        assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", result.irGpuResource());
+        assertFalse(result.irGpuArtifact().regenerationMetadata().backendNeutralSourceReady());
+        assertEquals("ir-text-v1", result.irGpuArtifact().regenerationMetadata().payloadFormat());
+        assertEquals("derived-opencl-source", result.irGpuArtifact().regenerationMetadata().fallbackSource());
+        assertTrue(result.irGpuArtifact().regenerationMetadata().blockers().contains("typed-body-regeneration-not-yet-available"));
+        assertEquals("opencl", result.irGpuArtifact().runtimeDefaultBackend());
+        assertEquals("off", result.irGpuArtifact().runtimeOptimizationProfile());
+
+        GpuKernelDescriptor descriptor = result.toKernelDescriptor();
+        assertEquals("jtg_kernel", descriptor.kernelName());
+        assertEquals("javatogpu/sample/Demo/kernel.cl", descriptor.kernelResource());
+        assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", descriptor.irGpuResource());
+        assertEquals(result.openClSource(), descriptor.kernelSource());
+        assertEquals(2, descriptor.parameterDescriptors().size());
+        assertEquals("input", descriptor.parameterDescriptors().get(0).name());
+        assertEquals("float[]", descriptor.parameterDescriptors().get(0).javaType());
+        assertEquals(GpuKernelParameterAccess.READ_WRITE, descriptor.parameterDescriptors().get(0).access());
     }
 
     @Test

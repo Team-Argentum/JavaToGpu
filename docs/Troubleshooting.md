@@ -1,51 +1,97 @@
 # Troubleshooting
 
-Use this page as the first stop for common JavaToGpu failures.
+Use this page when a kernel does not compile, does not launch, or behaves differently than expected.
+
+## First Checks
+
+- Make sure the method is `static` and marked with `@GPU`.
+- Keep the `@GPU` method return type as `void` and write results into output buffers.
+- Add explicit parameter annotations such as `@GPUGlobal`, `@GPUConstant`, or `@GPULocal` for array-like inputs.
+- Replace ordinary Java library calls inside kernels with supported `GPU.*` builtins.
+- Confirm your OpenCL driver is installed and visible on the machine running the test.
 
 ## Unknown `@CCode` Helper
 
-Typical message:
+This usually means the compiler found a helper call but could not match it to a known GPU helper.
 
-- `Unknown @CCode helper call in @GPU method: Helpers.foo`
+Try this:
 
-Usually means:
+- Put the helper in the same compilation input set as the kernel.
+- Check the helper owner class and method name.
+- Check the parameter and return types exactly match the call site.
+- Add `@CCode` to reusable GPU helper methods.
 
-- helper owner mismatch
-- helper not included in the compilation/input set
-- signature mismatch at the call site
+## Unsupported Parameter Type
 
-## Unsupported GPU Parameter Type
+This usually means the host method signature is too Java-like for the GPU boundary.
 
-Typical fix:
+Try this:
 
-- add `@GPUGlobal`, `@GPUConstant`, or `@GPULocal` for arrays
-- use supported wrappers for pointer/vector/struct-like values
+- Add `@GPUGlobal`, `@GPUConstant`, or `@GPULocal` to array parameters.
+- Use supported vector wrappers for vector data.
+- Use `@GPUStruct` for small value objects.
+- Use pointer views only when you really need packed or low-level buffer access.
 
-## Unsupported `@GPUStruct` Field
+## Unsupported Struct Field
 
-Typical fix:
+This usually means a struct contains a field the current ABI cannot safely marshal.
 
-- use primitive fields, vector fields, or nested structs
-- move arrays out of structs into kernel parameters
+Try this:
 
-## ABI Or Readback Failure
-
-Typical fix:
-
-- keep struct fields ABI-safe
-- use `@GPUStruct[]` for struct buffers
-- use vector wrapper arrays for vector buffers
-- add accessible no-arg constructors for readback reconstruction when required
+- Use primitive fields, vector fields, or nested `@GPUStruct` fields.
+- Move arrays out of structs and pass them as separate kernel parameters.
+- Keep structs small and explicit.
 
 ## OpenCL Build Failure
 
-Suggested order:
+If JavaToGpu generated source but OpenCL rejected it, inspect the generated OpenCL source and the validation report.
 
-1. inspect generated OpenCL source
-2. enable ABI debug with `javatogpu.opencl.debugAbi=true`
-3. check capability gates such as `DOUBLE_PRECISION` or `IMAGES`
-4. compare the failure against [Device Quirks](Device-Quirks.md)
+Good next steps:
+
+- Enable ABI debug with `javatogpu.opencl.debugAbi=true`.
+- Check whether the kernel needs capabilities such as double precision or images.
+- Remove custom compile flags and retry with defaults.
+- Compare the error with [Device Quirks](Device-Quirks.md).
+
+## Runtime Selection Failure
+
+If OpenCL cannot be selected, your application can fall back cleanly instead of failing hard.
+
+Use `GpuRuntime.trySelect(...)`:
+
+```java
+GpuRuntimeSelectionResult result = GpuRuntime.trySelect(policy);
+if (!result.matched()) {
+    cpuFallback(input, output);
+    return;
+}
+
+try (GpuRuntimeScope ignored = result.install()) {
+    DemoKernel.transform(input, output);
+}
+```
+
+## Wrong Output Values
+
+Start with correctness before performance:
+
+- Compare against a CPU reference implementation.
+- Test tiny input sizes first, such as 1, 2, 3, and 17 elements.
+- Check global work size versus buffer length.
+- Avoid reading or writing outside output buffers.
+- Avoid fast-math compile flags until the default path is correct.
 
 ## Vendor-Specific Issue
 
-If the same failure is isolated to one device stack, treat it as a candidate device quirk and record it once reproduced.
+If the same kernel works on one GPU stack and fails on another, capture the validation report and driver/device details. Treat it as a possible device quirk only after the kernel also passes the basic checks above.
+
+## Reports To Keep
+
+When debugging CI or a real GPU machine, keep these files if they exist:
+
+```text
+processor/build/reports/opencl/validation-report.md
+processor/build/reports/opencl/validation-history.md
+processor/build/reports/opencl/backend-source-promotion-gate.properties
+processor/build/test-results/
+```

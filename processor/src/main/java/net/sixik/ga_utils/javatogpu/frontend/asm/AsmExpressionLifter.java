@@ -1211,7 +1211,8 @@ public final class AsmExpressionLifter {
                     intrinsic.backendName(),
                     intrinsic.codeTemplate(),
                     intrinsic.resultType(),
-                    arguments
+                    arguments,
+                    intrinsic.argumentTypes()
             );
             if (methodType.getReturnType().getSort() == Type.VOID) {
                 state.emit(new GpuIrExpressionStatement(call));

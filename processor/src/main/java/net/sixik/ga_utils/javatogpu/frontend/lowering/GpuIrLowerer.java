@@ -665,7 +665,8 @@ public final class GpuIrLowerer {
                         intrinsic.backendName(),
                         intrinsic.codeTemplate(),
                         intrinsic.resultType(),
-                        arguments
+                        arguments,
+                        intrinsic.argumentTypes()
                 );
             }
 
@@ -680,7 +681,8 @@ public final class GpuIrLowerer {
                             intrinsic.backendName(),
                             intrinsic.codeTemplate(),
                             intrinsic.resultType(),
-                            arguments
+                            arguments,
+                            intrinsic.argumentTypes()
                     );
                 } catch (IllegalArgumentException ignored) {
                     // Fall through to helper resolution.

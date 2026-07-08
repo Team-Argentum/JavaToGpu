@@ -1,7 +1,16 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -9,6 +18,212 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuRuntimeTest {
+
+    @Test
+    void compileRequestFactoryBuildsSharedFrontendRequestWithRuntimeOptionsAndIrGpu() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.irgpu.properties",
+                List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+        GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                List.of("-cl-fast-relaxed-math"),
+                "vendor-tuned"
+        );
+        GpuRuntimeDeviceProfile deviceProfile = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "Mock GPU",
+                "Mock Vendor",
+                "Mock Driver",
+                "OpenCL 3.0 Mock",
+                48L,
+                65_536L,
+                512L,
+                1L,
+                true,
+                true,
+                false
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "jtg_kernel",
+                                "body\n  return output[0]\n",
+                                List.of()
+                        ))
+                ),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+        GpuKernelInvocation invocation = new GpuKernelInvocation(
+                descriptor,
+                new Object[]{new int[]{0}},
+                compileOptions
+        );
+
+        GpuRuntimeCompileRequest request = GpuRuntimeCompileRequestFactory.fromInvocation(
+                invocation,
+                deviceProfile,
+                Optional.of(artifact)
+        );
+
+        assertSame(descriptor, request.descriptor());
+        assertSame(compileOptions, request.options());
+        assertSame(deviceProfile, request.deviceProfile());
+        assertSame(artifact, request.irGpuArtifact().orElseThrow());
+        assertEquals(GpuBackendTarget.OPENCL, request.options().backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), request.options().compileArgs());
+        assertEquals(GpuBackendTarget.OPENCL, request.options().backendOptions().backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), request.options().backendOptions().flags());
+        assertTrue(request.options().backendOptions().properties().isEmpty());
+        assertEquals("vendor-tuned", request.options().optimizationProfile());
+    }
+
+    @Test
+    void compileOptionsExposeOptInOpenClIrGpuSourceSelection() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClIrGpuSource(
+                List.of("-cl-fast-relaxed-math"),
+                GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE
+        );
+
+        assertEquals(GpuBackendTarget.OPENCL, options.backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.compileArgs());
+        assertEquals(GpuBackendTarget.OPENCL, options.backendOptions().backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.backendOptions().flags());
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU,
+                options.backendOptions().properties().get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY)
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertEquals(GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE, options.optimizationProfile());
+    }
+
+    @Test
+    void compileOptionsExposeNamedOpenClIrGpuSourceReviewPreset() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClIrGpuSourceReview(
+                List.of("-cl-fast-relaxed-math")
+        );
+
+        assertEquals(GpuBackendTarget.OPENCL, options.backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.compileArgs());
+        assertEquals(GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE, options.optimizationProfile());
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU,
+                options.backendOptions().properties().get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY)
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertTrue(!options.backendOptions().enablesOpenClProductionSourceSwitching());
+    }
+
+    @Test
+    void compileOptionsExposeExplicitOpenClProductionSourceSwitching() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClProductionIrGpuSource(
+                List.of("-cl-fast-relaxed-math"),
+                "vendor-tuned"
+        );
+
+        assertEquals(GpuBackendTarget.OPENCL, options.backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.compileArgs());
+        assertEquals(GpuBackendTarget.OPENCL, options.backendOptions().backendTarget());
+        assertEquals(List.of("-cl-fast-relaxed-math"), options.backendOptions().flags());
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU,
+                options.backendOptions().properties().get(GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY)
+        );
+        assertEquals(
+                GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED,
+                options.backendOptions().properties().get(
+                        GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
+                )
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertTrue(options.backendOptions().enablesOpenClProductionSourceSwitching());
+        assertEquals("vendor-tuned", options.optimizationProfile());
+    }
+
+    @Test
+    void compileOptionsCarryProductionPromotionDecisionWithoutEnablingSourceSwitching() {
+        GpuProductionPromotionDecision decision = new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                "blocked",
+                true,
+                false,
+                false,
+                "production-source-switching-disabled",
+                "none",
+                "review-ready evidence is visible to runtime diagnostics"
+        );
+
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                .openClIrGpuSource(List.of("-cl-fast-relaxed-math"), "vendor-tuned")
+                .withProductionPromotionDecision(decision);
+
+        assertEquals(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                options.backendOptions().productionPromotionDecisionMode()
+        );
+        assertEquals(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                options.backendOptions().properties().get(
+                        GpuBackendCompileOptions.PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY
+                )
+        );
+        assertTrue(options.backendOptions().requestsOpenClIrGpuSource());
+        assertTrue(!options.backendOptions().enablesOpenClProductionSourceSwitching());
+    }
+
+    @Test
+    void productionProfileClassifierIsSharedAcrossRuntimeGates() {
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("production"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("prod"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("vendor-tuned"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("runtime-tuned"));
+        assertTrue(GpuRuntimeProductionProfiles.isProductionProfile("VENDOR-TUNED"));
+        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile(GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE));
+        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile("fast"));
+        assertTrue(!GpuRuntimeProductionProfiles.isProductionProfile(null));
+    }
+
+    @Test
+    void compileOptionsExposeBackendSpecificBucketsForFutureBackends() {
+        GpuRuntimeCompileOptions cudaOptions = GpuRuntimeCompileOptions.cuda(
+                List.of("--use_fast_math", "--gpu-architecture=compute_89"),
+                Map.of("linkMode", "ptx"),
+                "nvidia-fast"
+        );
+        GpuRuntimeCompileOptions vulkanOptions = GpuRuntimeCompileOptions.vulkan(
+                List.of("--target-env=vulkan1.3"),
+                Map.of("entryModel", "GLCompute"),
+                "spirv-safe"
+        );
+        GpuRuntimeCompileOptions metalOptions = GpuRuntimeCompileOptions.metal(
+                List.of("-ffast-math"),
+                Map.of("languageVersion", "3.1"),
+                "apple-fast"
+        );
+
+        assertEquals(GpuBackendTarget.CUDA, cudaOptions.backendTarget());
+        assertTrue(cudaOptions.compileArgs().isEmpty());
+        assertEquals(List.of("--use_fast_math", "--gpu-architecture=compute_89"), cudaOptions.backendOptions().flags());
+        assertEquals("ptx", cudaOptions.backendOptions().properties().get("linkMode"));
+        assertEquals("nvidia-fast", cudaOptions.optimizationProfile());
+
+        assertEquals(GpuBackendTarget.VULKAN, vulkanOptions.backendOptions().backendTarget());
+        assertEquals("GLCompute", vulkanOptions.backendOptions().properties().get("entryModel"));
+
+        assertEquals(GpuBackendTarget.METAL, metalOptions.backendOptions().backendTarget());
+        assertEquals("3.1", metalOptions.backendOptions().properties().get("languageVersion"));
+    }
 
     @Test
     void invokeWithExecutionConfigPassesConfigIntoKernelInvocation() {
@@ -28,6 +243,35 @@ class GpuRuntimeTest {
             assertEquals(11L, invocation.globalWorkSize());
             assertEquals(11L, invocation.executionConfig().globalWorkSize());
             assertEquals(1, invocation.executionConfig().dimensions());
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void invokeWithCompileOptionsPassesOptionsIntoKernelInvocation() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of()
+        );
+        GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                java.util.List.of("-cl-fast-relaxed-math"),
+                "vendor-tuned"
+        );
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            GpuRuntime.invokeWithCompileOptions(GpuExecutionConfig.oneDimensional(13L), compileOptions, descriptor, new Object[0]);
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertSame(compileOptions, invocation.compileOptions());
+            assertEquals(13L, invocation.globalWorkSize());
+            assertEquals(java.util.List.of("-cl-fast-relaxed-math"), invocation.compileOptions().compileArgs());
+            assertEquals("vendor-tuned", invocation.compileOptions().optimizationProfile());
         } finally {
             GpuRuntime.setBackend(previousBackend);
         }
@@ -73,6 +317,64 @@ class GpuRuntimeTest {
             assertEquals(16L, invocation.executionConfig().globalX());
             assertEquals(8L, invocation.executionConfig().globalY());
             assertEquals(4L, invocation.executionConfig().globalZ());
+            assertSame(output, invocation.arguments()[0]);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherInvokerWithCompileOptionsUsesGeneratedDescriptor() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            int[] output = new int[4];
+            GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                    GpuBackendTarget.OPENCL,
+                    java.util.List.of("-cl-mad-enable"),
+                    "nvidia-fast"
+            );
+
+            GpuGeneratedLauncherInvoker.invokeWithCompileOptions(FixtureOwner.class, "kernel", compileOptions, output);
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertSame(compileOptions, invocation.compileOptions());
+            assertSame(output, invocation.arguments()[0]);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherInvokerWithConfigAndCompileOptionsUsesGeneratedDescriptor() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation = new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+
+        try {
+            int[] output = new int[4];
+            GpuExecutionConfig config = GpuExecutionConfig.threeDimensional(8L, 4L, 2L);
+            GpuRuntimeCompileOptions compileOptions = new GpuRuntimeCompileOptions(
+                    GpuBackendTarget.OPENCL,
+                    java.util.List.of("-cl-no-signed-zeros"),
+                    "vendor-profile"
+            );
+
+            GpuGeneratedLauncherInvoker.invokeWithConfigAndCompileOptions(
+                    FixtureOwner.class,
+                    "kernel",
+                    config,
+                    compileOptions,
+                    output
+            );
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertSame(config, invocation.executionConfig());
+            assertSame(compileOptions, invocation.compileOptions());
             assertSame(output, invocation.arguments()[0]);
         } finally {
             GpuRuntime.setBackend(previousBackend);

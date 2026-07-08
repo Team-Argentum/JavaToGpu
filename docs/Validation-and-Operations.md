@@ -1,73 +1,129 @@
 # Validation And Operations
 
-This page describes the validation flow for the current alpha.
+This page explains how to validate JavaToGpu locally, how to capture useful evidence, and what the current alpha validation status means.
 
-## Current Operational Position
+## What To Run First
 
-The active production-confidence path is NVIDIA OpenCL because that is the currently available real hardware stack.
+For normal development, run the processor tests:
 
-Current local evidence proves the available NVIDIA path. Intel and AMD remain future cross-vendor promotion gates.
+```powershell
+.\gradlew.bat :processor:test --console=plain
+```
+
+For real OpenCL validation on a GPU machine, run the operational routine:
+
+```powershell
+.\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
+```
+
+The OpenCL reports are written under:
+
+```text
+processor/build/reports/opencl/
+```
+
+Start with `validation-report.md`. Keep the `.properties` files when debugging CI or comparing runs.
+
+## Current Alpha Position
+
+The current strongest validation path is NVIDIA OpenCL because that is the main real hardware stack used for repo-local validation.
+
+This means:
+
+- NVIDIA OpenCL is the current confidence baseline.
+- Intel and AMD should be validated on real hardware before making cross-vendor claims.
+- A green local validation run proves the tested commit, machine, driver, and backend, not universal OpenCL behavior.
 
 ## Main Validation Buckets
+
+The operational routine combines focused buckets for compile, runtime, ABI, images, local memory, stress, workloads, and report generation.
+
+Important buckets include:
 
 - `:processor:benchmarkTest`
 - `:processor:integrationOpenClSmokeTest`
 - `:processor:openClLongRunningStabilityTest`
-- `:processor:atomicsCompileTest`
 - `:processor:compileOnlyTest`
 - `:processor:imageOpenClTest`
 - `:processor:localMemoryTest`
-- `:processor:performanceStressTest`
 - `:processor:runtimeOpenClTest`
 - `:processor:structAbiTest`
 - `:processor:openClVendorValidation`
 - `:processor:openClWorkloadValidationTest`
 - `:processor:openClValidationReport`
 
-## Recommended Full Routine
+You usually do not need to run buckets one by one unless you are narrowing down a failure.
 
-Run this before publishing release notes or claiming a fresh local validation point:
+## Reports To Keep
 
-```powershell
-.\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
-```
-
-## Report Artifacts
-
-The report bundle is written to:
+When a validation run fails, keep these artifacts if they exist:
 
 ```text
-processor/build/reports/opencl/
+processor/build/reports/opencl/validation-report.md
+processor/build/reports/opencl/validation-history.md
+processor/build/reports/opencl/bucket-status.properties
+processor/build/reports/opencl/workload-summary.properties
+processor/build/reports/opencl/long-running-summary.properties
+processor/build/reports/opencl/backend-source-promotion-gate.properties
+processor/build/test-results/
 ```
 
-Important files:
+These files are more useful than a screenshot because they preserve bucket status, device details, and machine-readable failure state.
 
-- `validation-report.md` - runtime/device snapshot and feature report.
-- `validation-history.md` - rolling local validation history.
-- `validation-history.properties` - machine-readable validation history.
-- `bucket-status.properties` - per-bucket pass/fail/skip status.
-- `workload-summary.properties` - serious workload equivalence summary.
-- `long-running-summary.properties` - warm-session stability summary.
+## Optional IR Validation
 
-## What A Green Routine Proves
+For stricter compiler diagnostics or CI evidence, add `javatogpu-ir-validation` and start with diagnostic mode:
 
-- The current compiler/runtime test buckets completed on the selected machine.
-- OpenCL runtime selection and device capability reporting worked.
-- Serious workload CPU-vs-GPU equivalence checks passed.
-- Long-running warm-session reuse completed without detected ABI/resource regressions.
-- Benchmark and stress buckets produced fresh evidence.
+```groovy
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
+}
+```
 
-## What It Does Not Prove Yet
+Use `strictSafety` when CI should fail on safety diagnostics. Use `strictOptimizer` only for compiler hardening or optimizer-readiness experiments.
 
-- Universal correctness across every OpenCL implementation.
-- Intel or AMD behavior unless those devices were actually used.
-- Stable public API compatibility before beta.
-- Support for arbitrary Java bytecode or arbitrary Java application acceleration.
+See [IR Validation](IR-Validation.md) for details.
 
-## Vendor Quirks
+## Vendor Validation
 
-Record reproduced vendor-specific deviations in [Device Quirks](Device-Quirks.md). Keep quirks evidence-based and linked to report artifacts where possible.
+When adding or checking a self-hosted GPU runner, run the full operational routine on that machine and archive the OpenCL report directory.
 
-## Runner Contract
+Record:
 
-For future self-hosted machines, see [OpenCL Runner Contract](OpenCL-Runner-Contract.md).
+- Vendor and device name.
+- Driver/runtime version.
+- Command used.
+- Whether all buckets passed.
+- Any confirmed device-specific failures.
+
+If a failure reproduces only on one vendor stack, document it in [Device Quirks](Device-Quirks.md).
+
+## What Green Validation Means
+
+A green operational routine means the current repo, selected backend, driver, and hardware passed the current alpha evidence suite.
+
+It does not prove:
+
+- Every OpenCL implementation behaves the same.
+- CUDA, Vulkan, or Metal support.
+- Arbitrary Java bytecode support.
+- Stable beta/production API compatibility.
+
+## Practical Release Checklist
+
+Before publishing or announcing a new alpha build:
+
+1. Run `:processor:test`.
+2. Run `:processor:openClOperationalRoutine --rerun-tasks` on at least one GPU machine.
+3. Inspect `validation-report.md`.
+4. Keep report artifacts for the release notes or CI logs.
+5. Update [Device Quirks](Device-Quirks.md) if a vendor-specific issue is confirmed.
+
+## Read Next
+
+- [Troubleshooting](Troubleshooting.md)
+- [IR Validation](IR-Validation.md)
+- [Device Quirks](Device-Quirks.md)
+- [OpenCL Runner Contract](OpenCL-Runner-Contract.md)

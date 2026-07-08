@@ -1,0 +1,195 @@
+package net.sixik.ga_utils.javatogpu.runtime.opencl;
+
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionGate;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingPolicy;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionIrAcceptanceGate;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFallbackEvidence;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeProductionProfiles;
+
+import java.util.Objects;
+
+public final class OpenClBackendLowerer implements GpuBackendLowerer {
+
+    public static final String VERSION = "opencl-source-v1";
+
+    @Override
+    public GpuBackendTarget backendTarget() {
+        return GpuBackendTarget.OPENCL;
+    }
+
+    @Override
+    public String lowererVersion() {
+        return VERSION;
+    }
+
+    @Override
+    public GpuBackendSourceSelectionPlan sourceSelectionPlan(GpuRuntimeCompileRequest compileRequest) {
+        Objects.requireNonNull(compileRequest, "compileRequest");
+        OpenClIrGpuReconstructionPlan reconstructionPlan = OpenClIrGpuReconstructionPlan.from(
+                OpenClIrGpuParityChecker.check(compileRequest)
+        );
+        return toSourceSelectionPlan(reconstructionPlan);
+    }
+
+    @Override
+    public GpuBackendModuleArtifact lower(GpuRuntimeCompileRequest compileRequest) {
+        Objects.requireNonNull(compileRequest, "compileRequest");
+        OpenClIrGpuParityResult parityResult = OpenClIrGpuParityChecker.check(compileRequest);
+        OpenClIrGpuReconstructionPlan reconstructionPlan = OpenClIrGpuReconstructionPlan.from(parityResult);
+        if (parityResult.checked() && !parityResult.compatible()) {
+            throw new IllegalStateException(
+                    "OpenCL IrGpu parity check failed: "
+                            + parityResult.toLine()
+                            + "; reconstructionPlan="
+                            + reconstructionPlan.toLine()
+                            + "; regenerate both kernel.cl and kernel.irgpu.properties from the same frontend output"
+            );
+        }
+        GpuBackendSourceReconstructionResult sourceReconstructionResult = OpenClIrGpuSourceReconstructor.INSTANCE
+                .reconstruct(compileRequest);
+        GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy = GpuBackendSourceSwitchingPolicy.from(
+                compileRequest.options().backendOptions()
+        );
+        if (sourceSwitchingPolicy.irGpuSourceRequested()) {
+            GpuBackendSourceSwitchingDecision sourceSwitchingDecision = sourceSwitchingDecision(
+                    compileRequest,
+                    sourceReconstructionResult,
+                    sourceSwitchingPolicy
+            );
+            validateProductionSourceSwitching(compileRequest, sourceSwitchingPolicy);
+            return lowerIrGpuSource(compileRequest, sourceReconstructionResult, sourceSwitchingDecision);
+        }
+        return GpuBackendModuleArtifact.openClSource(
+                compileRequest.descriptor().kernelSource(),
+                compileRequest.descriptor().kernelResource(),
+                VERSION,
+                sourceReconstructionResult.sourceOrigin(),
+                sourceReconstructionResult.runtimeLoadMode()
+        );
+    }
+
+    private void validateProductionSourceSwitching(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy
+    ) {
+        GpuProductionIrAcceptanceGate.evaluate(
+                "OpenCL",
+                "IrGpu source",
+                compileRequest.options().optimizationProfile(),
+                GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile()),
+                sourceSwitchingPolicy.productionSourceSwitchingEnabled(),
+                sourceSwitchingPolicy.productionPromotionDecisionMode()
+        ).throwIfRejected("pass backend option "
+                + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
+                + "="
+                + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
+                + " only after accepted production-promotion evidence is loaded");
+    }
+
+    private GpuBackendModuleArtifact lowerIrGpuSource(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendSourceReconstructionResult sourceReconstructionResult,
+            GpuBackendSourceSwitchingDecision sourceSwitchingDecision
+    ) {
+        if ("reject-irgpu-source-unavailable".equals(sourceSwitchingDecision.decision())) {
+            throw new IllegalStateException(
+                    "OpenCL IrGpu source compilation was requested with backend option "
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY
+                            + "="
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU
+                            + ", but reconstructed source is not available: "
+                            + sourceReconstructionResult.toLine()
+            );
+        }
+        if ("reject-irgpu-source-parity".equals(sourceSwitchingDecision.decision())) {
+            throw new IllegalStateException(
+                    "OpenCL IrGpu source compilation was requested with backend option "
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY
+                            + "="
+                            + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_IRGPU
+                            + ", but reconstructed source parity has not matched descriptor source: "
+                            + sourceReconstructionResult.toLine()
+            );
+        }
+        if (!sourceSwitchingDecision.decision().startsWith("compile-irgpu-source-")) {
+            throw new IllegalStateException(
+                    "OpenCL IrGpu source compilation was rejected by backend source switching decision: "
+                            + sourceSwitchingDecision.toPropertiesText().replace('\n', ' ')
+            );
+        }
+        return GpuBackendModuleArtifact.openClSource(
+                sourceReconstructionResult.source(),
+                compileRequest.descriptor().kernelResource() + "#irgpu-reconstructed",
+                VERSION,
+                sourceReconstructionResult.sourceOrigin(),
+                sourceReconstructionResult.runtimeLoadMode()
+        );
+    }
+
+    private GpuBackendSourceSwitchingDecision sourceSwitchingDecision(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendSourceReconstructionResult sourceReconstructionResult,
+            GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy
+    ) {
+        GpuBackendModuleArtifact candidateArtifact = GpuBackendModuleArtifact.openClSource(
+                sourceReconstructionResult.sourceAvailable()
+                        ? sourceReconstructionResult.source()
+                        : compileRequest.descriptor().kernelSource(),
+                sourceReconstructionResult.sourceAvailable()
+                        ? compileRequest.descriptor().kernelResource() + "#irgpu-reconstructed"
+                        : compileRequest.descriptor().kernelResource(),
+                VERSION,
+                sourceReconstructionResult.sourceOrigin(),
+                sourceReconstructionResult.runtimeLoadMode()
+        );
+        GpuBackendSourcePromotionGate sourcePromotionGate = GpuBackendSourcePromotionGate.evaluate(
+                sourceReconstructionResult,
+                GpuRuntimeEquivalenceEvidence.notRun(
+                        compileRequest,
+                        "runtime equivalence is evaluated by validation/promotion gates, not by OpenCL lowering"
+                ),
+                GpuRuntimeFallbackEvidence.none()
+        );
+        return GpuBackendSourceSwitchingDecision.evaluate(
+                GpuRuntimeCompileProvenance.from(compileRequest),
+                candidateArtifact,
+                sourceReconstructionResult,
+                sourcePromotionGate,
+                sourceSwitchingPolicy
+        );
+    }
+
+    private GpuBackendSourceSelectionPlan toSourceSelectionPlan(OpenClIrGpuReconstructionPlan reconstructionPlan) {
+        Objects.requireNonNull(reconstructionPlan, "reconstructionPlan");
+        return new GpuBackendSourceSelectionPlan(
+                backendTarget(),
+                reconstructionPlan.irGpuSourceSelected(),
+                reconstructionPlan.selectedSource(),
+                reconstructionPlan.payloadFormat(),
+                runtimeLoadMode(reconstructionPlan),
+                reconstructionPlan.blockers(),
+                reconstructionPlan.diagnostics()
+        );
+    }
+
+    private String runtimeLoadMode(OpenClIrGpuReconstructionPlan reconstructionPlan) {
+        if (reconstructionPlan.irGpuSourceSelected()) {
+            return "opencl-irgpu-source-compile";
+        }
+        if ("descriptor-opencl-source".equals(reconstructionPlan.selectedSource())) {
+            return "opencl-descriptor-source-compile";
+        }
+        return "opencl-source-compile";
+    }
+
+}
