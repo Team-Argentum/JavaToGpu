@@ -49,7 +49,8 @@ final class OpenClValidationHistoryIO {
                     properties.getProperty(prefix + ".irGpuSourceReviewStatus", "not recorded"),
                     properties.getProperty(prefix + ".backendSourcePromotionContractStatus",
                             properties.getProperty(prefix + ".backendSourcePromotionStatus", "not recorded")),
-                    properties.getProperty(prefix + ".backendSourcePromotionWorkloadStatus", "not-promoted")
+                    properties.getProperty(prefix + ".backendSourcePromotionWorkloadStatus", "not-promoted"),
+                    properties.getProperty(prefix + ".productionPromotionExplainabilityStatus", "not recorded")
             ));
         }
         entries.sort(Comparator.comparing(OpenClValidationHistoryEntry::generatedAtUtc).reversed());
@@ -74,6 +75,7 @@ final class OpenClValidationHistoryIO {
             properties.setProperty(prefix + ".irGpuSourceReviewStatus", entry.irGpuSourceReviewStatus());
             properties.setProperty(prefix + ".backendSourcePromotionContractStatus", entry.backendSourcePromotionContractStatus());
             properties.setProperty(prefix + ".backendSourcePromotionWorkloadStatus", entry.backendSourcePromotionWorkloadStatus());
+            properties.setProperty(prefix + ".productionPromotionExplainabilityStatus", entry.productionPromotionExplainabilityStatus());
         }
         Path parent = path.getParent();
         if (parent != null) {
@@ -87,8 +89,8 @@ final class OpenClValidationHistoryIO {
     static void writeMarkdown(Path path, List<OpenClValidationHistoryEntry> entries) throws IOException {
         StringBuilder markdown = new StringBuilder();
         markdown.append("# OpenCL Validation History\n\n");
-        markdown.append("| Generated (UTC) | Lane | Backend | Device | Vendor | Driver | Device Version | Buckets | Long-Running | Workloads | IrGpu Source Review | Backend Source Contract Fixture | Backend Source Workload Gate |\n");
-        markdown.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
+        markdown.append("| Generated (UTC) | Lane | Backend | Device | Vendor | Driver | Device Version | Buckets | Long-Running | Workloads | IrGpu Source Review | Backend Source Contract Fixture | Backend Source Workload Gate | Production Promotion Explainability |\n");
+        markdown.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
         for (OpenClValidationHistoryEntry entry : entries) {
             markdown.append("| ")
                     .append(entry.generatedAtUtc())
@@ -116,6 +118,8 @@ final class OpenClValidationHistoryIO {
                     .append(escapeTable(entry.backendSourcePromotionContractStatus()))
                     .append(" | ")
                     .append(escapeTable(entry.backendSourcePromotionWorkloadStatus()))
+                    .append(" | ")
+                    .append(escapeTable(entry.productionPromotionExplainabilityStatus()))
                     .append(" |\n");
         }
         Path parent = path.getParent();

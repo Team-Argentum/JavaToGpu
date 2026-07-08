@@ -102,6 +102,13 @@ jobs:
         shell: cmd
         run: .\gradlew.bat :processor:openClValidationReport --console=plain --no-daemon
 
+      - name: Validate production promotion explainability
+        if: always()
+        id: production_explainability
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClProductionPromotionExplainability --console=plain --no-daemon
+
       - name: Upload OpenCL report bundle
         if: always()
         uses: actions/upload-artifact@v4
@@ -120,12 +127,14 @@ jobs:
         env:
           OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
+          PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
         run: |
           if not "%OPENCL_VALIDATION_OUTCOME%"=="success" goto failed
           if not "%VALIDATION_REPORT_OUTCOME%"=="success" goto failed
+          if not "%PRODUCTION_EXPLAINABILITY_OUTCOME%"=="success" goto failed
           echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane passed.
           exit /b 0
 
           :failed
-          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture: openclValidation=%OPENCL_VALIDATION_OUTCOME%, validationReport=%VALIDATION_REPORT_OUTCOME%
+          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture: openclValidation=%OPENCL_VALIDATION_OUTCOME%, validationReport=%VALIDATION_REPORT_OUTCOME%, productionExplainability=%PRODUCTION_EXPLAINABILITY_OUTCOME%
           exit /b 1

@@ -52,6 +52,7 @@ def lwjglNatives = osName.contains("win")
         : (osName.contains("mac") ? "natives-macos" : "natives-linux")
 def openClBucketStatusFile = layout.buildDirectory.file('reports/opencl/bucket-status.properties').get().asFile
 def openClI3ReadinessWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/i3-readiness-workload-summary.properties').get().asFile
+def openClProductionPromotionExplainabilityFile = layout.buildDirectory.file('reports/opencl/production-promotion-explainability.properties').get().asFile
 def openClI3ReadinessBaselineFile = providers.gradleProperty('javatogpu.opencl.i3ReadinessBaselineFile')
         .map { file(it) }
         .orElse(layout.buildDirectory.file('opencl-i3-readiness-baselines/i3-readiness-workload-baseline.properties').map { it.asFile })
@@ -428,6 +429,7 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.i3ReadinessWorkloadSummaryFile', openClI3ReadinessWorkloadSummaryFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionPromotionExplainabilityFile', openClProductionPromotionExplainabilityFile.absolutePath
     systemProperty 'javatogpu.opencl.validationHistoryFile', layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.validationHistoryMarkdownFile', layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile.absolutePath
 }
@@ -533,6 +535,25 @@ tasks.register('validateOpenClI3ReadinessBaselineContract') {
 
         logger.lifecycle('OpenCL I3 readiness baseline contract self-test OK')
     }
+}
+
+tasks.register('validateOpenClProductionPromotionExplainability', JavaExec) {
+    group = 'verification'
+    description = 'Validates the OpenCL production-promotion explainability artifact remains fail-closed until explicit production gates are accepted.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidatorCli'
+    args openClProductionPromotionExplainabilityFile.absolutePath
+    inputs.file(openClProductionPromotionExplainabilityFile)
+}
+
+tasks.register('validateOpenClProductionPromotionExplainabilityContract', Test) {
+    group = 'verification'
+    description = 'Self-tests OpenCL production-promotion explainability fail-closed and explicit production-ready contracts.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    filter.includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidationTest'
 }
 
 tasks.register('openClBackendSourcePromotionGateReport', JavaExec) {

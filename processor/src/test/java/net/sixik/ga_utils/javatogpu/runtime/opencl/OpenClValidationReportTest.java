@@ -96,7 +96,8 @@ class OpenClValidationReportTest {
                         "passed (perlin=passed, packedBlob=passed)",
                         "passed (reviewReady=true, sourceSelection=irgpu)",
                         "blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false)",
-                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)"
+                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)",
+                        "blocked (sourceSwitchingAllowed=false, mutationAllowed=false, blockers=3)"
                 ),
                 new OpenClValidationHistoryEntry(
                         Instant.parse("2026-07-01T12:00:00Z"),
@@ -111,7 +112,8 @@ class OpenClValidationReportTest {
                         "not recorded",
                         "not recorded",
                         "not recorded",
-                        "not-promoted"
+                        "not-promoted",
+                        "not recorded"
                 )
         );
 
@@ -138,7 +140,8 @@ class OpenClValidationReportTest {
                         "not recorded",
                         "not recorded",
                         "blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false)",
-                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)"
+                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)",
+                        "not recorded"
                 )
         );
 
@@ -170,7 +173,8 @@ class OpenClValidationReportTest {
                         workloadSummary,
                         "not recorded",
                         "blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false)",
-                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)"
+                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)",
+                        "not recorded"
                 )
         );
 
@@ -178,7 +182,7 @@ class OpenClValidationReportTest {
         String markdown = java.nio.file.Files.readString(historyMarkdownFile);
 
         assertTrue(markdown.contains(bucketSummary));
-        assertTrue(markdown.contains("| passed | " + workloadSummary + " | not recorded | blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false) | not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired) |"));
+        assertTrue(markdown.contains("| passed | " + workloadSummary + " | not recorded | blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false) | not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired) | not recorded |"));
         assertTrue(markdown.contains("openClLongRunningStabilityTest=passed"));
         assertTrue(markdown.contains("benchmarkTest=passed"));
     }
@@ -208,7 +212,8 @@ class OpenClValidationReportTest {
                         workloadSummary,
                         "not recorded",
                         "blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false)",
-                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)"
+                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)",
+                        "not recorded"
                 )
         );
 
@@ -220,7 +225,7 @@ class OpenClValidationReportTest {
         assertTrue(markdown.contains("openClWorkloadValidationTest=passed"));
         assertTrue(markdown.contains("openClLongRunningStabilityTest=passed"));
         assertTrue(markdown.contains("benchmarkTest=passed"));
-        assertTrue(markdown.contains("| passed | " + workloadSummary + " | not recorded | blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false) | not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired) |"));
+        assertTrue(markdown.contains("| passed | " + workloadSummary + " | not recorded | blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false) | not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired) | not recorded |"));
         assertTrue(!markdown.toLowerCase(java.util.Locale.ROOT).contains("c2" + "me"));
     }
 
@@ -250,7 +255,8 @@ class OpenClValidationReportTest {
                         workloadSummary,
                         "not recorded",
                         "blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false)",
-                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)"
+                        "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)",
+                        "not recorded"
                 )
         );
 
@@ -263,7 +269,7 @@ class OpenClValidationReportTest {
         assertTrue(markdown.contains("openClLongRunningStabilityTest=passed"));
         assertTrue(markdown.contains("openClWorkloadValidationTest=passed"));
         assertTrue(markdown.contains("NVIDIA CUDA / NVIDIA GeForce RTX 5070"));
-        assertTrue(markdown.contains("| passed | " + workloadSummary + " | not recorded | blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false) | not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired) |"));
+        assertTrue(markdown.contains("| passed | " + workloadSummary + " | not recorded | blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false) | not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired) | not recorded |"));
         assertTrue(!markdown.toLowerCase(java.util.Locale.ROOT).contains("cross-vendor proven"));
         assertTrue(!markdown.toLowerCase(java.util.Locale.ROOT).contains("amd=passed"));
         assertTrue(!markdown.toLowerCase(java.util.Locale.ROOT).contains("intel=passed"));
@@ -435,8 +441,11 @@ class OpenClValidationReportTest {
         java.nio.file.Path reportFile = java.nio.file.Files.createTempFile("javatogpu-opencl-report-workload-runtime-snapshot", ".md");
         java.nio.file.Path historyFile = java.nio.file.Files.createTempFile("javatogpu-opencl-history-workload-runtime-snapshot", ".properties");
         java.nio.file.Path i3SummaryFile = java.nio.file.Files.createTempFile("javatogpu-i3-readiness-workload-summary", ".properties");
+        java.nio.file.Path productionExplainabilityFile = java.nio.file.Files.createTempFile(
+                "javatogpu-production-promotion-explainability", ".properties");
         java.nio.file.Files.deleteIfExists(historyFile);
         java.nio.file.Files.deleteIfExists(i3SummaryFile);
+        java.nio.file.Files.deleteIfExists(productionExplainabilityFile);
         java.nio.file.Files.writeString(workloadGateFile, String.join("\n",
                 "status=blocked",
                 "reviewReady=false",
@@ -550,16 +559,20 @@ class OpenClValidationReportTest {
         String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
         String previousHistoryFile = System.getProperty("javatogpu.opencl.validationHistoryFile");
         String previousI3SummaryFile = System.getProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile");
+        String previousProductionExplainabilityFile = System.getProperty(
+                "javatogpu.opencl.productionPromotionExplainabilityFile");
         try {
             System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", workloadGateFile.toString());
             System.setProperty("javatogpu.opencl.validationReportFile", reportFile.toString());
             System.setProperty("javatogpu.opencl.validationHistoryFile", historyFile.toString());
             System.setProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", i3SummaryFile.toString());
+            System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", productionExplainabilityFile.toString());
 
             OpenClValidationReporter.main(new String[0]);
 
             String reportMarkdown = java.nio.file.Files.readString(reportFile);
             String i3Summary = java.nio.file.Files.readString(i3SummaryFile);
+            String productionExplainability = java.nio.file.Files.readString(productionExplainabilityFile);
             java.util.List<OpenClValidationHistoryEntry> entries = OpenClValidationHistoryIO.readAll(historyFile);
             assertTrue(reportMarkdown.contains("- Real workload evidence: `runtime-snapshot`"));
             assertTrue(reportMarkdown.contains("- Source switching decisions: `compile-irgpu-source-review=1, reject-production-irgpu-source=1`"));
@@ -604,11 +617,29 @@ class OpenClValidationReportTest {
             assertFalse(i3Summary.contains("i3Status=unknown"));
             assertFalse(i3Summary.contains("runtimeIr=unknown"));
             assertTrue(i3Summary.contains("diagnostic.0=I3 workload readiness remains blocked: reviewReady=1, blocked=1"));
+            assertTrue(productionExplainability.contains("status=blocked"));
+            assertTrue(productionExplainability.contains("gateReviewReady=false"));
+            assertTrue(productionExplainability.contains("sourceParityMatched=false"));
+            assertTrue(productionExplainability.contains("runtimeEquivalencePassed=false"));
+            assertTrue(productionExplainability.contains("kernel.count=2"));
+            assertTrue(productionExplainability.contains("i3ReviewReady.count=1"));
+            assertTrue(productionExplainability.contains("i3Blocked.count=1"));
+            assertTrue(productionExplainability.contains("productionSourceSwitchingAllowed=false"));
+            assertTrue(productionExplainability.contains("productionMutationAllowed=false"));
+            assertTrue(productionExplainability.contains("blocker.0=workload-source-promotion-gate-not-review-ready"));
+            assertTrue(productionExplainability.contains("blocker.1=source-parity-not-matched"));
+            assertTrue(productionExplainability.contains("blocker.2=runtime-equivalence-not-passed"));
+            assertTrue(productionExplainability.contains("blocker.3=i3-workload-readiness-not-review-ready"));
+            assertTrue(productionExplainability.contains("blocker.4=production-source-switching-disabled"));
+            assertTrue(productionExplainability.contains("blocker.5=production-mutation-disabled"));
+            assertTrue(productionExplainability.contains(
+                    "diagnostic.0=production promotion remains blocked: first=workload-source-promotion-gate-not-review-ready, i3ReviewReady=1, i3Blocked=1"));
         } finally {
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
             restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
             restoreProperty("javatogpu.opencl.validationHistoryFile", previousHistoryFile);
             restoreProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", previousI3SummaryFile);
+            restoreProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousProductionExplainabilityFile);
         }
     }
 
