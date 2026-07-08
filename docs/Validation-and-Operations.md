@@ -26,12 +26,13 @@ Start with `validation-report.md`. Keep the `.properties` files when debugging C
 
 ## Current Alpha Position
 
-The current strongest validation path is NVIDIA OpenCL because that is the main real hardware stack used for repo-local validation.
+The current validated OpenCL baseline covers NVIDIA and AMD hardware.
 
 This means:
 
-- NVIDIA OpenCL is the current confidence baseline.
-- Intel and AMD should be validated on real hardware before making cross-vendor claims.
+- NVIDIA RTX 3060 and RTX 5070 validation lanes are green.
+- AMD RX 7800 XT validation is green.
+- Intel should still be validated on real hardware before making broad cross-vendor claims.
 - A green local validation run proves the tested commit, machine, driver, and backend, not universal OpenCL behavior.
 
 ## Main Validation Buckets
@@ -98,7 +99,7 @@ Record:
 - Whether all buckets passed.
 - Any confirmed device-specific failures.
 
-If a failure reproduces only on one vendor stack, document it in [Device Quirks](Device-Quirks.md).
+If a failure reproduces only on one vendor stack, document it in [Device Quirks](Device-Quirks.md). Current green lanes include NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT.
 
 ## What Green Validation Means
 

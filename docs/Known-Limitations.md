@@ -32,8 +32,8 @@ Use `GPU.*` builtins for indexing, math, barriers, images, and other GPU operati
 
 - OpenCL is the active backend.
 - CUDA, Vulkan, and Metal are planned directions, but not current user backends.
-- NVIDIA OpenCL is the current strongest validation path.
-- AMD and Intel OpenCL should be treated as hardware-specific validation targets until tested on real machines.
+- NVIDIA OpenCL and AMD OpenCL are currently validated on real hardware.
+- Intel OpenCL should still be treated as a hardware-specific validation target until tested on a real runner.
 
 ## ASM Input Limits
 

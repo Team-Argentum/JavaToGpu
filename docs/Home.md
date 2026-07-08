@@ -41,7 +41,7 @@ This documentation is written for users of the current alpha. It starts with pra
 
 JavaToGpu is a public alpha / developer preview.
 
-The NVIDIA OpenCL path is the current proven local validation path. Intel and AMD validation are planned, but not yet part of the same confidence baseline. Treat generated code shape and runtime APIs as evolving until beta.
+NVIDIA OpenCL and AMD OpenCL now have green real-hardware validation lanes. Intel validation is still pending. Treat generated code shape and runtime APIs as evolving until beta.
 
 ## Maintainer Notes
 

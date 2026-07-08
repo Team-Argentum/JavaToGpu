@@ -8,28 +8,43 @@ Only add an entry after a problem is reproduced on real hardware. If a failure i
 
 No confirmed public vendor-specific quirks are recorded yet.
 
-The current strongest validation baseline is NVIDIA OpenCL. AMD and Intel validation should be recorded here once those runners produce repeatable results or confirmed issues.
+The current green validation baseline includes NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT. Intel validation should be recorded here once a runner produces repeatable results or confirmed issues.
 
 ## Clean Baselines
 
 Use this section for device stacks that have passed the operational routine without confirmed vendor-specific issues.
 
-### NVIDIA OpenCL
+### NVIDIA OpenCL / RTX 3060
 
 - Status: clean baseline.
-- Device family: NVIDIA OpenCL.
+- Device: NVIDIA GeForce RTX 3060.
+- Platform: NVIDIA CUDA OpenCL.
 - Validated command: `:processor:openClOperationalRoutine --rerun-tasks --console=plain`.
 - Covered areas: compile, runtime, ABI, images, local memory, workloads, stress, and validation report generation.
-- Result: no confirmed vendor-specific issue recorded from the current repeated NVIDIA validation evidence.
+- Result: no confirmed vendor-specific issue recorded.
+- Main report: `processor/build/reports/opencl/validation-report.md`.
+
+### NVIDIA OpenCL / RTX 5070
+
+- Status: clean baseline.
+- Device: NVIDIA GeForce RTX 5070.
+- Platform: NVIDIA CUDA OpenCL.
+- Validated command: `:processor:openClOperationalRoutine --rerun-tasks --console=plain`.
+- Covered areas: compile, runtime, ABI, images, local memory, workloads, stress, and validation report generation.
+- Result: no confirmed vendor-specific issue recorded.
+- Main report: `processor/build/reports/opencl/validation-report.md`.
+
+### AMD OpenCL / RX 7800 XT
+
+- Status: clean baseline.
+- Device: AMD RX 7800 XT / `gfx1101`.
+- Platform: AMD Accelerated Parallel Processing OpenCL.
+- Validated command: `:processor:openClOperationalRoutine --rerun-tasks --console=plain`.
+- Covered areas: compile, runtime, ABI, images, local memory, workloads, stress, and validation report generation.
+- Result: no confirmed vendor-specific issue recorded.
 - Main report: `processor/build/reports/opencl/validation-report.md`.
 
 ## Pending Coverage
-
-### AMD OpenCL
-
-- Status: pending broader validation.
-- Required evidence: full operational routine on a real AMD OpenCL runner.
-- Add entries here only for failures that reproduce and appear AMD-specific.
 
 ### Intel OpenCL
 

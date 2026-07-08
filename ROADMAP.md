@@ -17,15 +17,15 @@ Older files remain useful as detailed references, but this file is the primary e
 - [ ] Run the existing validation suite repeatedly on real Intel OpenCL hardware.
   Deferred until Intel OpenCL hardware is available locally or through a stable runner.
 - [x] Run the existing validation suite repeatedly on real NVIDIA OpenCL hardware.
-  Current recorded pass on `NVIDIA CUDA / NVIDIA GeForce RTX 5070`, driver `595.97`, platform `OpenCL 3.0 CUDA 13.2.73`: five full `:processor:openClOperationalRoutine` evidence runs are green, including four explicit `--rerun-tasks` runs with vendor validation, integration smoke, workload-equivalence, long-running stability, benchmark, bucket-status, and validation-history artifacts all passing. Latest run completed at `2026-07-06T08:26:18Z`.
-- [ ] Run the existing validation suite repeatedly on real AMD OpenCL hardware.
-  Deferred until AMD OpenCL hardware is available locally or through a stable runner.
-- [x] Establish NVIDIA-only interim operational validation mode.
-  Until Intel/AMD cards are available, A1/A2 work should use repeated NVIDIA `:processor:openClOperationalRoutine` runs as the active production-confidence signal while keeping Intel/AMD as future cross-vendor promotion gates.
+  Current recorded lanes include `NVIDIA CUDA / NVIDIA GeForce RTX 3060` and `NVIDIA CUDA / NVIDIA GeForce RTX 5070`; both pass the full `:processor:openClOperationalRoutine` evidence flow with vendor validation, integration smoke, workload-equivalence, long-running stability, benchmark, bucket-status, and validation-history artifacts all passing.
+- [x] Run the existing validation suite repeatedly on real AMD OpenCL hardware.
+  Current recorded lane: `AMD Accelerated Parallel Processing / gfx1101` on AMD RX 7800 XT, platform `OpenCL 2.1 AMD-APP (3679.0)`, device version `OpenCL 2.0 AMD-APP (3679.0)`, with the full OpenCL operational evidence flow passing.
+- [x] Establish NVIDIA/AMD interim operational validation mode.
+  A1/A2 work can now use repeated NVIDIA and AMD `:processor:openClOperationalRoutine` runs as the active production-confidence signal while keeping Intel as the remaining future cross-vendor promotion gate.
 - [x] Record vendor quirks/regressions in a maintained device-quirks document.
-  `docs/Device-Quirks.md` now records the current NVIDIA RTX 5070 clean baseline, the latest full operational evidence run, workload and long-running stability details, and explicit Intel/AMD `pending-hardware` gates for future cross-vendor promotion.
+  `docs/Device-Quirks.md` now records clean baselines for NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT, plus an explicit Intel pending-validation gate for future cross-vendor promotion.
 - [x] Promote vendor validation from "repo-local ready" to "operationally proven".
-  The NVIDIA interim validation path is now treated as operationally proven for repo-local alpha confidence: five full RTX 5070 operational evidence runs are green, including four explicit `--rerun-tasks` passes. This does not close the Intel/AMD cross-vendor gates, which remain pending hardware.
+  The NVIDIA and AMD interim validation paths are now treated as operationally proven for repo-local alpha confidence. This does not close the Intel cross-vendor gate, which remains pending hardware.
 - [x] Make validation bucket reporting failure-aware.
   Each Gradle validation bucket now records top-level suite status as `passed` / `failed` / `skipped` and finalizes with `:processor:openClValidationReport`, so failed bucket runs still leave a bucket-status matrix and Markdown report artifact for operational triage.
 - [x] Harden vendor-matrix artifact capture before lane failure.
@@ -39,9 +39,9 @@ Older files remain useful as detailed references, but this file is the primary e
 - [x] Lock runtime-equivalence and stress artifact visibility in validation history.
   The report regression suite now verifies that workload-equivalence, long-running stability, and benchmark bucket markers stay visible in generated validation history artifacts, so operational runs keep enough evidence for A1/A2 triage.
 - [x] Collect real hardware benchmark baselines on target devices.
-  Latest post-I2 baseline captured on `NVIDIA CUDA / NVIDIA GeForce RTX 5070`, driver `595.97`, including workload-equivalence, long-running stability, benchmark, bucket-status, and validation-history summaries. See `docs-project-plan/nvidia-rtx5070-baselines.md`.
+  Latest post-I2 baselines now include NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT validation artifacts, including workload-equivalence, long-running stability, benchmark, bucket-status, and validation-history summaries.
 - [x] Re-run stress/benchmark/long-running validation buckets periodically against target vendor stacks.
-  Current periodic target is the available NVIDIA stack; the latest full `:processor:openClOperationalRoutine --rerun-tasks` pass refreshed benchmark, stress, long-running, workload-equivalence, bucket-status, and validation-history evidence on `2026-07-06T08:26:18Z`. Intel/AMD repeats remain pending hardware.
+  Current periodic targets are the available NVIDIA and AMD stacks. Latest validation artifacts cover NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT lanes with benchmark, stress, long-running, workload-equivalence, bucket-status, and validation-history evidence. Intel repeats remain pending hardware.
 
 ### A3. Failure strategy and diagnostics
 
@@ -74,7 +74,7 @@ Older files remain useful as detailed references, but this file is the primary e
 - [x] Runtime configuration docs.
 - [x] Troubleshooting/diagnostics docs.
 - [x] Keep docs aligned as API/runtime behavior changes.
-  Public docs now reflect the current alpha/release posture: NVIDIA RTX 5070 is operationally proven for repo-local validation, Intel/AMD remain future cross-vendor gates, and Maven publishing covers both `javatogpu` and the optional `javatogpu-ir-validation` artifact with matching release-readiness checks.
+  Public docs now reflect the current alpha/release posture: NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT are operationally validated for repo-local confidence, Intel remains the future cross-vendor gate, and Maven publishing covers both `javatogpu` and the optional `javatogpu-ir-validation` artifact with matching release-readiness checks.
 
 ## B. Current Language/Core Coverage
 
@@ -290,7 +290,7 @@ I2 is closed for the current scope: the read-only IR Validator foundation is rea
 - [x] Design the future production mutation switch.
   `GpuIrOptimizationValidationProductionMutationSwitchContract` now exports a read-only `optimizerProductionSwitch*` contract above the A1/A2 preflight. It defines the future switch boundary, required runtime evidence, rollback requirement, cross-vendor runtime coverage, and feature-flag work while keeping production mutation disabled.
 - [x] Promote selected optimizer rewrites only after A1/A2 runtime confidence is stable.
-  `GpuIrOptimizationValidationOptimizerPromotionConfidenceContract` now exports a read-only `optimizerPromotionConfidence*` gate above the production switch contract. It keeps selected rewrite promotion blocked until A1/A2 runtime-equivalence history, long-running operational stress, NVIDIA interim coverage, cross-vendor promotion gates, and rollback evidence are stable.
+  `GpuIrOptimizationValidationOptimizerPromotionConfidenceContract` now exports a read-only `optimizerPromotionConfidence*` gate above the production switch contract. It keeps selected rewrite promotion blocked until A1/A2 runtime-equivalence history, long-running operational stress, NVIDIA/AMD interim coverage, the remaining Intel promotion gate, and rollback evidence are stable.
 - [x] Add a unified production-readiness artifact above the preflight/switch/promotion stack.
   `GpuIrOptimizationValidationProductionReadinessArtifact` now packages the validation bundle, A1/A2 production preflight, future production mutation switch contract, and promotion-confidence contract into one `optimizerProductionReadiness*` CI surface. It exposes the aggregate verdict, blocker list, remaining work, production-mutation state, consistency self-check fields, acceptance-decision fields, nested preflight/switch/promotion fields, and detached runner APIs while keeping production mutation disabled.
 - [x] Add optimizer-layer readiness baseline lifecycle surfaces for CI.
@@ -312,7 +312,7 @@ Post-I2 optimizer frontier, not blocking I2 closure:
 - [ ] Add runtime-equivalence proof artifacts for every optimizer family selected for promotion.
   Require CPU/reference and pre/post optimization evidence, machine-readable diagnostics, and failed-evidence regression tests before any production-readiness gate can move from blocked to ready.
 - [ ] Wire optimizer evidence into A1/A2 operational validation.
-  Export the I2 CI gate index into NVIDIA validation artifacts, store readiness baselines across runs, summarize first rejected optimizer gates, and keep Intel/AMD promotion gates blocked until hardware validation exists.
+  Export the I2 CI gate index into NVIDIA/AMD validation artifacts, store readiness baselines across runs, summarize first rejected optimizer gates, and keep the Intel promotion gate blocked until hardware validation exists.
 
 ### I3. Production IR pipeline and runtime backend optimization
 
@@ -434,7 +434,7 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 - [x] Keep vendor strategies advisory until evidence-backed.
   Default NVIDIA/AMD/Intel runtime strategies now explicitly report `advisoryOnly=true` and `evidenceBacked=false`; strategy decisions only annotate optimizer reports and cannot bypass proof, post-transform validation, or rollback gates.
 - [x] Add per-vendor baselines.
-  Strategy diagnostics now carry per-vendor baseline state: the current NVIDIA RTX 5070 baseline is recorded as development guidance, while AMD/Intel remain `pending-hardware` and all vendor baselines report `promotionEligible=false` until runtime-equivalence and cross-vendor evidence exists.
+  Strategy diagnostics now carry per-vendor baseline state: current NVIDIA RTX 3060/RTX 5070 and AMD RX 7800 XT baselines are recorded as development guidance, while Intel remains `pending-hardware` and all vendor baselines report `promotionEligible=false` until runtime-equivalence and broader cross-vendor evidence exists.
 
 #### I3.6 Runtime-equivalence and promotion gates
 
@@ -499,18 +499,18 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 
 If the goal is to move forward pragmatically from the current state, the best order is now:
 
-1. `A1/A2 NVIDIA-only interim operational validation`
-   Keep repeating `:processor:openClOperationalRoutine --rerun-tasks` on the available RTX 5070 stack until Intel/AMD hardware exists, preserving validation history, workload summaries, long-running summaries, and benchmark output.
+1. `A1/A2 NVIDIA/AMD interim operational validation`
+   Keep repeating `:processor:openClOperationalRoutine --rerun-tasks` on the available RTX 3060, RTX 5070, and RX 7800 XT stacks until Intel hardware exists, preserving validation history, workload summaries, long-running summaries, and benchmark output.
 2. `A3/A4 Diagnostics and runtime-stability fixes from real failures`
-   Treat any repeated NVIDIA failure, skipped workload, resource leak, or diagnostic gap as the next concrete implementation target.
+   Treat any repeated NVIDIA/AMD failure, skipped workload, resource leak, or diagnostic gap as the next concrete implementation target.
 3. `I3 Production IR pipeline foundation`
    Start with the non-mutating foundation: canonical `IrGpu` artifact, dual output beside current OpenCL source, OpenCL-from-`IrGpu` parity, runtime compile request/options, backend-lowering boundary, and source/ASM frontends feeding the same IR storage path. Keep runtime optimization profile `off` by default.
-4. `A1 Intel/AMD runner bring-up when hardware exists`
-   The cross-vendor production gate remains open until Intel and AMD OpenCL stacks can run the same bucket set.
+4. `A1 Intel runner bring-up when hardware exists`
+   The remaining cross-vendor production gate stays open until an Intel OpenCL stack can run the same bucket set.
 5. `Improved ASM parser/frontend`
    Broader ASM ingestion should lower into `IrGpu` first, then reuse the same runtime compile request, validation, backend lowering, and future optimizer path instead of growing a separate pipeline. The first broader-ASM diagnostics layer is already in place through `asmFailure.*` metadata and public preflight APIs.
 6. `I3 prototype runtime optimization`
-   After `IrGpu` storage and OpenCL parity are stable, add opt-in prototype optimization with rollback, pre/post runtime-equivalence artifacts, and NVIDIA-only evidence first. Keep production mutation disabled until A1/A2 confidence and future Intel/AMD gates are satisfied.
+   After `IrGpu` storage and OpenCL parity are stable, add opt-in prototype optimization with rollback, pre/post runtime-equivalence artifacts, and NVIDIA/AMD evidence first. Keep production mutation disabled until A1/A2 confidence and the future Intel gate are satisfied.
 7. `H Lower-priority backend/optimization work`
 
 ## Current Working Conclusion
@@ -519,7 +519,7 @@ JavaToGpu is already beyond the "toy compiler" stage.
 
 The broad repetitive intrinsic-family generation detour is now closed for current priorities, so the active focus returns to production-core/runtime validation rather than expanding optional API symmetry.
 
-After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence remains NVIDIA-only until Intel/AMD hardware is available. The next major architecture frontier is the I3 Production IR pipeline: `IrGpu` should become the stored backend-neutral artifact, while OpenCL/CUDA/Vulkan/Metal become backend lowerers selected at runtime from compile options and device profile. Broader ASM ingestion should feed that same `IrGpu` path instead of creating a second compiler pipeline.
+After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence now includes NVIDIA and AMD lanes; Intel remains the remaining hardware validation gap. The next major architecture frontier is the I3 Production IR pipeline: `IrGpu` should become the stored backend-neutral artifact, while OpenCL/CUDA/Vulkan/Metal become backend lowerers selected at runtime from compile options and device profile. Broader ASM ingestion should feed that same `IrGpu` path instead of creating a second compiler pipeline.
 
 Latest I2/L2 reconciliation: the current CI contract layer is closed for present priorities. Direct contract coverage now pins current readiness CI summaries, optimizer-gate consistency/acceptance, optimizer CI gate-index consistency/acceptance, regression/baseline CI summaries, nested artifact-field composition, and opt-in real-example dogfooding reports for `examples-app` / `test-app`. The dogfooding contract keeps safety fail-fast while treating optimizer readiness as a read-only stability artifact: production mutation must remain disabled, rewrite applicability must stay false, known CSE policy blockers are counted, and no-candidate CSE literal-promotion / auto-vectorization blockers are accepted as the current baseline. The remaining I2 items are intentionally broader frontier work: deeper transformation-safety proofs, stronger canonicalization/common-computation detection, runtime-equivalence evidence for selected optimizer families, and eventual production rewrite promotion after A1/A2 runtime confidence is stable. These should stay open until backed by runtime evidence rather than being marked complete from read-only artifact coverage alone.
 
