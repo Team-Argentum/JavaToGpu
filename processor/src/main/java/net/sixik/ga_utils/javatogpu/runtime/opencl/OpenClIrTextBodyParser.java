@@ -1,7 +1,9 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,9 +54,25 @@ public final class OpenClIrTextBodyParser {
 
         diagnostics.add("ir-text-v1 parser recognized " + statements.size() + " simple statement(s)");
         if (!blockers.isEmpty()) {
+            appendUnsupportedSummary(blockers, diagnostics);
             diagnostics.add("ir-text-v1 parser found unsupported statement(s): " + String.join(",", blockers));
         }
         return new OpenClIrTextBodyParseResult(blockers.isEmpty(), statements, blockers, diagnostics);
+    }
+
+    private static void appendUnsupportedSummary(List<String> blockers, List<String> diagnostics) {
+        LinkedHashMap<String, Integer> tokenCounts = new LinkedHashMap<>();
+        for (String blocker : blockers) {
+            unsupportedToken(blocker).ifPresent(token -> tokenCounts.merge(token, 1, Integer::sum));
+        }
+        diagnostics.add("ir-text-v1 parser blocker.count=" + blockers.size());
+        diagnostics.add("ir-text-v1 parser unsupported.token.count=" + tokenCounts.size());
+        int index = 0;
+        for (Map.Entry<String, Integer> tokenCount : tokenCounts.entrySet()) {
+            diagnostics.add("ir-text-v1 parser unsupported.token." + index + '='
+                    + tokenCount.getKey() + ":" + tokenCount.getValue());
+            index++;
+        }
     }
 
     private static ParseCursor parseBlock(
@@ -81,7 +99,7 @@ public final class OpenClIrTextBodyParser {
                 index++;
                 continue;
             }
-            if ("else".equals(line)) {
+            if ("else".equals(line) || line.startsWith("else if ")) {
                 break;
             }
             if (isSwitchCaseHeader(line)) {
@@ -183,11 +201,23 @@ public final class OpenClIrTextBodyParser {
         if (thenStatements.isEmpty()) {
             blockers.add("ir-text-line-" + (index + 1) + "-if-body-empty");
         }
-        if (nextIndex < lines.length && indentLevel(lines[nextIndex]) == indentLevel && "else".equals(lines[nextIndex].trim())) {
-            ParseCursor elseCursor = parseBlock(lines, nextIndex + 1, indentLevel + 1, elseStatements, blockers);
-            nextIndex = elseCursor.index();
-            if (elseStatements.isEmpty()) {
-                blockers.add("ir-text-line-" + (nextIndex + 1) + "-else-body-empty");
+        if (nextIndex < lines.length && indentLevel(lines[nextIndex]) == indentLevel) {
+            String nextLine = lines[nextIndex].trim();
+            if (nextLine.startsWith("else if ")) {
+                ParseStatementResult elseIf = parseIf(
+                        replaceTrimmedLine(lines, nextIndex, nextLine.substring("else ".length())),
+                        nextIndex,
+                        indentLevel,
+                        blockers
+                );
+                elseIf.statement().ifPresent(elseStatements::add);
+                nextIndex = elseIf.nextIndex();
+            } else if ("else".equals(nextLine)) {
+                ParseCursor elseCursor = parseBlock(lines, nextIndex + 1, indentLevel + 1, elseStatements, blockers);
+                nextIndex = elseCursor.index();
+                if (elseStatements.isEmpty()) {
+                    blockers.add("ir-text-line-" + (nextIndex + 1) + "-else-body-empty");
+                }
             }
         }
         return ParseStatementResult.parsed(
@@ -363,6 +393,12 @@ public final class OpenClIrTextBodyParser {
         return normalized;
     }
 
+    private static String[] replaceTrimmedLine(String[] lines, int index, String replacement) {
+        String[] copy = lines.clone();
+        copy[index] = "  ".repeat(indentLevel(lines[index])) + replacement;
+        return copy;
+    }
+
     private static int indentLevel(String rawLine) {
         int spaces = 0;
         while (spaces < rawLine.length() && rawLine.charAt(spaces) == ' ') {
@@ -374,6 +410,16 @@ public final class OpenClIrTextBodyParser {
     private static String statementToken(String line) {
         String token = line.split("\\s+", 2)[0].replaceAll("[^A-Za-z0-9_-]", "-");
         return token.isBlank() ? "unknown" : token;
+    }
+
+    private static java.util.Optional<String> unsupportedToken(String blocker) {
+        String marker = "-unsupported-";
+        int markerIndex = blocker.lastIndexOf(marker);
+        if (markerIndex < 0) {
+            return java.util.Optional.empty();
+        }
+        String token = blocker.substring(markerIndex + marker.length()).trim();
+        return token.isBlank() ? java.util.Optional.of("unknown") : java.util.Optional.of(token);
     }
 
     private static boolean isSwitchCaseHeader(String line) {

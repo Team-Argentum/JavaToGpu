@@ -68,6 +68,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class OpenClGpuRuntimeBackendTest {
 
+    private static final String SIMPLE_IRGPU_SOURCE_RESOURCE =
+            "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+
     @Test
     void irGpuArtifactIdentityIsStableAndChangesWithPayload() {
         IrGpuArtifact firstArtifact = testIrGpuArtifact("body\n  return output[0] + 1\n");
@@ -1675,6 +1678,126 @@ class OpenClGpuRuntimeBackendTest {
         assertFalse(snapshot.backendSourceSwitchingDecision().orElseThrow().sourceReady());
         assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().productionProfileRequested());
         assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().productionSourceSwitchingEnabled());
+    }
+
+    @Test
+    void productionPromotionExplainabilityFileFeedsRuntimeCompileOptions() throws Exception {
+        Path explainabilityFile = Files.createTempFile("javatogpu-production-promotion-explainability", ".properties");
+        writeProductionReadyExplainability(explainabilityFile);
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        AtomicReference<GpuRuntimeCompileRequest> capturedCompileRequest = new AtomicReference<>();
+        String previousExplainabilityFile = System.getProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
+        try {
+            System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", explainabilityFile.toString());
+
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
+                    capturedCompileRequest.set(compileRequest);
+                    return GpuBackendModuleArtifact.openClSource(
+                            "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                            "javatogpu/sample/Demo/kernel.cl",
+                            "test-lowerer-v1"
+                    );
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{new int[]{0}},
+                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+            ));
+        } finally {
+            if (previousExplainabilityFile == null) {
+                System.clearProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
+            } else {
+                System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousExplainabilityFile);
+            }
+        }
+
+        assertEquals(
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                capturedCompileRequest.get().options().backendOptions().productionPromotionDecisionMode()
+        );
+        assertTrue(capturedSnapshot.get().backendSourceSwitchingDecision().isPresent());
+        assertEquals(
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                capturedSnapshot.get().backendSourceSwitchingDecision().orElseThrow().productionPromotionDecisionMode()
+        );
+    }
+
+    @Test
+    void productionReadyExplainabilityAndPackagedIrGpuCanReachProductionSourceSwitching() throws Exception {
+        Path explainabilityFile = Files.createTempFile("javatogpu-production-source-switching-explainability", ".properties");
+        writeProductionReadyExplainability(explainabilityFile);
+        GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        String previousExplainabilityFile = System.getProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
+        try {
+            System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", explainabilityFile.toString());
+
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
+                    return GpuRuntimeEquivalenceEvidence.passed(
+                            request.optimizedCompileRequest(),
+                            1,
+                            1,
+                            List.of("packaged IrGpu source remained equivalent before production source switching")
+                    );
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{new float[]{1.0f}, 2.0f, new float[]{0.0f}},
+                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+            ));
+        } finally {
+            if (previousExplainabilityFile == null) {
+                System.clearProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
+            } else {
+                System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousExplainabilityFile);
+            }
+        }
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertTrue(snapshot.backendSourceSwitchingDecision().isPresent());
+        assertEquals(
+                "production-switch-enabled",
+                snapshot.backendSourceSwitchingDecision().orElseThrow().status(),
+                snapshot.backendSourceSwitchingDecision().orElseThrow().toPropertiesText()
+        );
+        assertEquals("compile-irgpu-source-production", snapshot.backendSourceSwitchingDecision().orElseThrow().decision());
+        assertEquals(
+                descriptor.kernelResource() + "#irgpu-reconstructed",
+                snapshot.backendSourceSwitchingDecision().orElseThrow().backendResource()
+        );
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().sourceReady());
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().sourceAvailable());
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().sourceParityMatched());
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().productionSourceSwitchingEnabled());
+        assertEquals(
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                snapshot.backendSourceSwitchingDecision().orElseThrow().productionPromotionDecisionMode()
+        );
+    }
+
+    @Test
+    void missingProductionPromotionExplainabilityFileKeepsRuntimeDiagnosticOnly() throws Exception {
+        Path missingExplainabilityFile = Files.createTempDirectory("javatogpu-missing-production-promotion")
+                .resolve("missing-production-promotion-explainability.properties");
+
+        assertProductionPromotionExplainabilityFileKeepsRuntimeDiagnosticOnly(missingExplainabilityFile);
+    }
+
+    @Test
+    void invalidProductionPromotionExplainabilityFileKeepsRuntimeDiagnosticOnly() throws Exception {
+        Path invalidExplainabilityFile = Files.createTempFile("javatogpu-invalid-production-promotion", ".properties");
+        Files.writeString(invalidExplainabilityFile, "not a properties file with a valid production promotion contract\n");
+
+        assertProductionPromotionExplainabilityFileKeepsRuntimeDiagnosticOnly(invalidExplainabilityFile);
     }
 
     @Test
@@ -3524,6 +3647,25 @@ class OpenClGpuRuntimeBackendTest {
         );
     }
 
+    private static GpuKernelDescriptor simpleIrGpuSourceDescriptor() {
+        return new GpuKernelDescriptor(
+                "gpu_irgpu_entry",
+                "inline://integration/simple-irgpu-source-kernel.cl",
+                """
+                        __kernel void gpu_irgpu_entry(__global const float* input, float scale, __global float* output) {
+                            int id = get_global_id(0);
+                            output[id] = input[id] + scale;
+                        }
+                        """,
+                SIMPLE_IRGPU_SOURCE_RESOURCE,
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scale", "float", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+    }
+
     private static OpenClGpuRuntimeBackend.GpuRuntimeIrOptimizationResult optimizedRuntimeResult(
             GpuRuntimeCompileRequest compileRequest,
             String optimizedBody,
@@ -3580,6 +3722,76 @@ class OpenClGpuRuntimeBackendTest {
                 "none",
                 "production fixture enables runtime IR mutation"
         );
+    }
+
+    private static void writeProductionReadyExplainability(Path path) throws java.io.IOException {
+        java.util.Properties properties = new java.util.Properties();
+        properties.setProperty("status", "production-ready");
+        properties.setProperty("kernel.count", "1");
+        properties.setProperty("i3ReviewReady.count", "1");
+        properties.setProperty("i3Blocked.count", "0");
+        properties.setProperty("i3SourceReady.count", "1");
+        properties.setProperty("productionSourceSwitchingAllowed", "true");
+        properties.setProperty("productionSourceSwitchingEnabled", "true");
+        properties.setProperty("productionSourceSwitchingEnabled.count", "1");
+        properties.setProperty("productionSourceSwitchingEnabled.all", "true");
+        properties.setProperty("productionPromotionDecisionMode.productionEnabled.count", "1");
+        properties.setProperty("productionPromotionDecisionMode.productionEnabled.all", "true");
+        properties.setProperty("sourceSwitching.productionDecision.count", "1");
+        properties.setProperty("sourceSwitching.productionDecision.all", "true");
+        properties.setProperty("productionMutationAllowed", "true");
+        properties.setProperty("productionMutationEnabled", "true");
+        properties.setProperty("blocker.count", "0");
+        try (java.io.Writer writer = Files.newBufferedWriter(path)) {
+            properties.store(writer, "test production promotion explainability");
+        }
+    }
+
+    private static void assertProductionPromotionExplainabilityFileKeepsRuntimeDiagnosticOnly(
+            Path explainabilityFile
+    ) throws java.io.IOException {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        AtomicReference<GpuRuntimeCompileRequest> capturedCompileRequest = new AtomicReference<>();
+        String previousExplainabilityFile = System.getProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
+        try {
+            System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", explainabilityFile.toString());
+
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
+                    capturedCompileRequest.set(compileRequest);
+                    return GpuBackendModuleArtifact.openClSource(
+                            "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                            "javatogpu/sample/Demo/kernel.cl",
+                            "test-lowerer-v1"
+                    );
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{new int[]{0}},
+                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+            ));
+        } finally {
+            if (previousExplainabilityFile == null) {
+                System.clearProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
+            } else {
+                System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousExplainabilityFile);
+            }
+        }
+
+        assertEquals(
+                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY,
+                capturedCompileRequest.get().options().backendOptions().productionPromotionDecisionMode()
+        );
+        assertTrue(capturedSnapshot.get().backendSourceSwitchingDecision().isPresent());
+        assertEquals(
+                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY,
+                capturedSnapshot.get().backendSourceSwitchingDecision().orElseThrow().productionPromotionDecisionMode()
+        );
+        assertTrue(capturedSnapshot.get().backendSourceSwitchingDecision().orElseThrow().productionSourceSwitchingEnabled());
     }
 
     private static IrGpuArtifact parityMatchedIrGpuArtifact() {

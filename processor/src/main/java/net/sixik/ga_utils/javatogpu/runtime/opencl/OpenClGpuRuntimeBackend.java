@@ -2432,7 +2432,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     ) {
         GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
                 compileRequest.irGpuArtifact().orElse(null),
-                moduleArtifact.resource(),
+                compileRequest.descriptor().kernelResource(),
                 moduleArtifact.source()
         );
         return GpuBackendSourcePromotionGate.evaluate(

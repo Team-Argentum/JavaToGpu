@@ -28,8 +28,14 @@ public final class GpuProductionPromotionExplainabilityValidation {
         int i3BlockedCount = parseInt(properties.getProperty("i3Blocked.count"));
         int i3SourceReadyCount = parseInt(properties.getProperty("i3SourceReady.count"));
         int blockerCount = parseInt(properties.getProperty("blocker.count"));
+        int productionSourceSwitchingEnabledCount = parseInt(properties.getProperty("productionSourceSwitchingEnabled.count"));
+        int productionPromotionDecisionEnabledCount = parseInt(properties.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
+        int productionSourceDecisionCount = parseInt(properties.getProperty("sourceSwitching.productionDecision.count"));
         boolean sourceSwitchingAllowed = propertyIsTrue(properties, "productionSourceSwitchingAllowed");
         boolean sourceSwitchingEnabled = propertyIsTrue(properties, "productionSourceSwitchingEnabled");
+        boolean allSourceSwitchingEnabled = propertyIsTrue(properties, "productionSourceSwitchingEnabled.all");
+        boolean allPromotionDecisionsEnabled = propertyIsTrue(properties, "productionPromotionDecisionMode.productionEnabled.all");
+        boolean allProductionSourceDecisions = propertyIsTrue(properties, "sourceSwitching.productionDecision.all");
         boolean mutationAllowed = propertyIsTrue(properties, "productionMutationAllowed");
         boolean mutationEnabled = propertyIsTrue(properties, "productionMutationEnabled");
 
@@ -48,8 +54,14 @@ public final class GpuProductionPromotionExplainabilityValidation {
                     i3BlockedCount,
                     i3SourceReadyCount,
                     blockerCount,
+                    productionSourceSwitchingEnabledCount,
+                    productionPromotionDecisionEnabledCount,
+                    productionSourceDecisionCount,
                     sourceSwitchingAllowed,
                     sourceSwitchingEnabled,
+                    allSourceSwitchingEnabled,
+                    allPromotionDecisionsEnabled,
+                    allProductionSourceDecisions,
                     mutationAllowed,
                     mutationEnabled,
                     violations
@@ -59,6 +71,9 @@ public final class GpuProductionPromotionExplainabilityValidation {
                     blockerCount,
                     sourceSwitchingAllowed,
                     sourceSwitchingEnabled,
+                    allSourceSwitchingEnabled,
+                    allPromotionDecisionsEnabled,
+                    allProductionSourceDecisions,
                     mutationAllowed,
                     mutationEnabled,
                     violations
@@ -75,8 +90,14 @@ public final class GpuProductionPromotionExplainabilityValidation {
                 i3BlockedCount,
                 i3SourceReadyCount,
                 blockerCount,
+                productionSourceSwitchingEnabledCount,
+                productionPromotionDecisionEnabledCount,
+                productionSourceDecisionCount,
                 sourceSwitchingAllowed,
                 sourceSwitchingEnabled,
+                allSourceSwitchingEnabled,
+                allPromotionDecisionsEnabled,
+                allProductionSourceDecisions,
                 mutationAllowed,
                 mutationEnabled,
                 violations
@@ -89,8 +110,14 @@ public final class GpuProductionPromotionExplainabilityValidation {
             int i3BlockedCount,
             int i3SourceReadyCount,
             int blockerCount,
+            int productionSourceSwitchingEnabledCount,
+            int productionPromotionDecisionEnabledCount,
+            int productionSourceDecisionCount,
             boolean sourceSwitchingAllowed,
             boolean sourceSwitchingEnabled,
+            boolean allSourceSwitchingEnabled,
+            boolean allPromotionDecisionsEnabled,
+            boolean allProductionSourceDecisions,
             boolean mutationAllowed,
             boolean mutationEnabled,
             List<String> violations
@@ -100,6 +127,15 @@ public final class GpuProductionPromotionExplainabilityValidation {
         }
         if (!sourceSwitchingAllowed || !sourceSwitchingEnabled || !mutationAllowed || !mutationEnabled) {
             violations.add("production-ready explainability does not have every production toggle enabled");
+        }
+        if (productionSourceSwitchingEnabledCount != kernelCount || !allSourceSwitchingEnabled) {
+            violations.add("production-ready explainability does not have source switching enabled for every workload kernel");
+        }
+        if (productionPromotionDecisionEnabledCount != kernelCount || !allPromotionDecisionsEnabled) {
+            violations.add("production-ready explainability does not have production promotion decisions enabled for every workload kernel");
+        }
+        if (productionSourceDecisionCount != kernelCount || !allProductionSourceDecisions) {
+            violations.add("production-ready explainability does not have production IrGpu source decisions for every workload kernel");
         }
         if (i3ReviewReadyCount != kernelCount || i3BlockedCount != 0) {
             violations.add("production-ready explainability does not have every workload kernel I3 review-ready");
@@ -113,6 +149,9 @@ public final class GpuProductionPromotionExplainabilityValidation {
             int blockerCount,
             boolean sourceSwitchingAllowed,
             boolean sourceSwitchingEnabled,
+            boolean allSourceSwitchingEnabled,
+            boolean allPromotionDecisionsEnabled,
+            boolean allProductionSourceDecisions,
             boolean mutationAllowed,
             boolean mutationEnabled,
             List<String> violations
@@ -122,6 +161,9 @@ public final class GpuProductionPromotionExplainabilityValidation {
         }
         if (sourceSwitchingAllowed || sourceSwitchingEnabled || mutationAllowed || mutationEnabled) {
             violations.add("blocked explainability cannot enable production source switching or mutation");
+        }
+        if (allSourceSwitchingEnabled || allPromotionDecisionsEnabled || allProductionSourceDecisions) {
+            violations.add("blocked explainability cannot mark every workload kernel production-source-ready");
         }
     }
 
@@ -145,8 +187,14 @@ public final class GpuProductionPromotionExplainabilityValidation {
             int i3BlockedCount,
             int i3SourceReadyCount,
             int blockerCount,
+            int productionSourceSwitchingEnabledCount,
+            int productionPromotionDecisionEnabledCount,
+            int productionSourceDecisionCount,
             boolean sourceSwitchingAllowed,
             boolean sourceSwitchingEnabled,
+            boolean allSourceSwitchingEnabled,
+            boolean allPromotionDecisionsEnabled,
+            boolean allProductionSourceDecisions,
             boolean mutationAllowed,
             boolean mutationEnabled,
             List<String> violations
@@ -159,6 +207,9 @@ public final class GpuProductionPromotionExplainabilityValidation {
             i3BlockedCount = Math.max(0, i3BlockedCount);
             i3SourceReadyCount = Math.max(0, i3SourceReadyCount);
             blockerCount = Math.max(0, blockerCount);
+            productionSourceSwitchingEnabledCount = Math.max(0, productionSourceSwitchingEnabledCount);
+            productionPromotionDecisionEnabledCount = Math.max(0, productionPromotionDecisionEnabledCount);
+            productionSourceDecisionCount = Math.max(0, productionSourceDecisionCount);
             violations = violations == null ? List.of() : List.copyOf(violations);
         }
 
@@ -166,6 +217,8 @@ public final class GpuProductionPromotionExplainabilityValidation {
             return "status=" + status
                     + ", kernels=" + kernelCount
                     + ", sourceReady=" + i3SourceReadyCount
+                    + ", sourceSwitchingEnabled=" + productionSourceSwitchingEnabledCount
+                    + ", productionDecisions=" + productionSourceDecisionCount
                     + ", blockers=" + blockerCount
                     + ", sourceSwitchingAllowed=" + sourceSwitchingAllowed
                     + ", mutationAllowed=" + mutationAllowed;

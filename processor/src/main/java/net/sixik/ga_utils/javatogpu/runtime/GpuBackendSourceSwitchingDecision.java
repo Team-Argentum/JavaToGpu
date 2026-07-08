@@ -28,6 +28,7 @@ public record GpuBackendSourceSwitchingDecision(
         boolean sourceParityMatched,
         String sourcePromotionStatus,
         boolean sourcePromotionReviewReady,
+        String sourcePromotionFirstBlocker,
         String productionSourceSwitching,
         boolean productionSourceSwitchingEnabled,
         String productionPromotionDecisionMode,
@@ -45,6 +46,7 @@ public record GpuBackendSourceSwitchingDecision(
         optimizationProfile = normalize(optimizationProfile, "off");
         sourceSelection = normalize(sourceSelection, GpuBackendSourceSwitchingPolicy.SOURCE_SELECTION_DESCRIPTOR);
         sourcePromotionStatus = normalize(sourcePromotionStatus, "blocked");
+        sourcePromotionFirstBlocker = normalize(sourcePromotionFirstBlocker, "none");
         productionSourceSwitching = normalize(
                 productionSourceSwitching,
                 GpuBackendSourceSwitchingPolicy.PRODUCTION_SOURCE_SWITCHING_DISABLED
@@ -133,14 +135,22 @@ public record GpuBackendSourceSwitchingDecision(
             status = "review-ready";
             decision = "compile-irgpu-source-review";
             diagnostic = "IrGpu source was explicitly selected for review or smoke validation";
-        } else if (productionSwitchingEnabled) {
-            status = "production-switch-enabled";
-            decision = "compile-irgpu-source-production";
-            diagnostic = "production source switching was explicitly enabled for a production-like profile";
-        } else {
+        } else if (!productionSwitchingEnabled) {
             status = "blocked";
             decision = "reject-production-irgpu-source";
             diagnostic = "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled";
+        } else if (!resolvedPromotionGate.reviewReady()) {
+            status = "blocked";
+            decision = "reject-production-irgpu-source";
+            diagnostic = "production-like profile requested IrGpu source but backend source promotion gate is not review-ready";
+        } else if (!GpuProductionPromotionDecision.PRODUCTION_ENABLED.equals(productionPromotionDecisionMode)) {
+            status = "blocked";
+            decision = "reject-production-irgpu-source";
+            diagnostic = "production-like profile requested IrGpu source but production promotion decision is not production-enabled";
+        } else {
+            status = "production-switch-enabled";
+            decision = "compile-irgpu-source-production";
+            diagnostic = "production source switching was explicitly enabled for a production-like profile";
         }
 
         return new GpuBackendSourceSwitchingDecision(
@@ -162,6 +172,7 @@ public record GpuBackendSourceSwitchingDecision(
                 resolvedPromotionGate.sourceParityMatched(),
                 resolvedPromotionGate.status(),
                 resolvedPromotionGate.reviewReady(),
+                firstSourcePromotionBlocker(resolvedPromotionGate),
                 productionSourceSwitching,
                 productionSwitchingEnabled,
                 productionPromotionDecisionMode,
@@ -189,6 +200,7 @@ public record GpuBackendSourceSwitchingDecision(
         builder.append("sourceParityMatched=").append(sourceParityMatched).append('\n');
         builder.append("sourcePromotionStatus=").append(sourcePromotionStatus).append('\n');
         builder.append("sourcePromotionReviewReady=").append(sourcePromotionReviewReady).append('\n');
+        builder.append("sourcePromotionFirstBlocker=").append(sourcePromotionFirstBlocker).append('\n');
         builder.append("productionSourceSwitching=").append(productionSourceSwitching).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
         builder.append("productionPromotionDecisionMode=").append(productionPromotionDecisionMode).append('\n');
@@ -199,5 +211,12 @@ public record GpuBackendSourceSwitchingDecision(
 
     private static String normalize(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String firstSourcePromotionBlocker(GpuBackendSourcePromotionGate gate) {
+        if (gate == null || gate.reviewReady()) {
+            return "none";
+        }
+        return gate.diagnostics().isEmpty() ? "source-promotion-gate-not-review-ready" : gate.diagnostics().get(0);
     }
 }

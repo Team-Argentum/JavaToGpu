@@ -427,16 +427,33 @@ public final class GpuFrontendService {
                 sourceLocation(compiledKernel, sourceFrontend)
         ));
         helperMethods.stream()
-                .map(helper -> IrGpuMethodBody.helper(
-                        helper.parsedMethod().name(),
-                        helper.emittedName(),
-                        IrGpuTextBodyRenderer.render(helper),
-                        buildBodyIndex(helper),
-                        helper.helperDependencies(),
-                        sourceLocation(helper, sourceFrontend)
-                ))
+                .map(helper -> buildIrGpuHelperMethodBody(helper, sourceFrontend))
                 .forEach(methodBodies::add);
         return List.copyOf(methodBodies);
+    }
+
+    private static IrGpuMethodBody buildIrGpuHelperMethodBody(
+            GpuIrCompiledMethod helper,
+            String sourceFrontend
+    ) {
+        IrGpuSourceLocation sourceLocation = sourceLocation(helper, sourceFrontend);
+        if (!helper.parsedMethod().nativeCode().isBlank()) {
+            return IrGpuMethodBody.nativeOpenClHelper(
+                    helper.parsedMethod().name(),
+                    helper.emittedName(),
+                    helper.parsedMethod().nativeCode(),
+                    helper.helperDependencies(),
+                    sourceLocation
+            );
+        }
+        return IrGpuMethodBody.helper(
+                helper.parsedMethod().name(),
+                helper.emittedName(),
+                IrGpuTextBodyRenderer.render(helper),
+                buildBodyIndex(helper),
+                helper.helperDependencies(),
+                sourceLocation
+        );
     }
 
     private static IrGpuBodyIndex buildBodyIndex(GpuIrCompiledMethod compiledMethod) {

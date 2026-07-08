@@ -218,6 +218,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             target.setProperty("sourceSwitching.productionSourceSwitching", "false");
             target.setProperty("sourceSwitching.productionSourceSwitchingEnabled", "false");
             target.setProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY);
+            target.setProperty("sourceSwitching.sourcePromotionFirstBlocker", "source-switching-decision-not-recorded");
             target.setProperty("sourceSwitching.diagnostic.count", "0");
             return;
         }
@@ -230,6 +231,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copySourceSwitchingProperty(source, target, "productionSourceSwitching");
         copySourceSwitchingProperty(source, target, "productionSourceSwitchingEnabled");
         copySourceSwitchingProperty(source, target, "productionPromotionDecisionMode");
+        copySourceSwitchingProperty(source, target, "sourcePromotionFirstBlocker");
         copyIndexedProperties(source, target, "sourceSwitching.diagnostic", "diagnostic");
     }
 
@@ -443,19 +445,49 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     private static String format(LinkedHashMap<String, Properties> kernels) {
         boolean anyReviewReady = kernels.values().stream()
                 .anyMatch(entry -> "true".equals(entry.getProperty("reviewReady")));
+        boolean allReviewReady = !kernels.isEmpty()
+                && kernels.values().stream().allMatch(entry -> "true".equals(entry.getProperty("reviewReady")));
         boolean allSourceParityMatched = !kernels.isEmpty()
                 && kernels.values().stream().allMatch(entry -> "true".equals(entry.getProperty("sourceParityMatched")));
         boolean allRuntimeEquivalencePassed = !kernels.isEmpty()
                 && kernels.values().stream().allMatch(entry -> "true".equals(entry.getProperty("runtimeEquivalencePassed")));
+        long productionSourceSwitchingEnabledCount = kernels.values().stream()
+                .filter(GpuBackendSourcePromotionWorkloadGateFormatter::entryProductionSourceSwitchingEnabled)
+                .count();
+        long productionPromotionEnabledCount = kernels.values().stream()
+                .filter(GpuBackendSourcePromotionWorkloadGateFormatter::entryProductionPromotionEnabled)
+                .count();
+        long productionSourceDecisionCount = kernels.values().stream()
+                .filter(GpuBackendSourcePromotionWorkloadGateFormatter::entryProductionSourceDecision)
+                .count();
+        boolean allProductionSourceSwitchingEnabled = !kernels.isEmpty()
+                && productionSourceSwitchingEnabledCount == kernels.size();
+        boolean allProductionPromotionEnabled = !kernels.isEmpty()
+                && productionPromotionEnabledCount == kernels.size();
+        boolean allProductionSourceDecisions = !kernels.isEmpty()
+                && productionSourceDecisionCount == kernels.size();
+        boolean productionSourceSwitchingEnabled = allReviewReady
+                && allSourceParityMatched
+                && allRuntimeEquivalencePassed
+                && allProductionSourceSwitchingEnabled
+                && allProductionPromotionEnabled
+                && allProductionSourceDecisions;
+        String status = productionSourceSwitchingEnabled ? "production-enabled" : allReviewReady ? "review-ready" : "blocked";
         LinkedHashMap<String, Integer> aggregateFamilies = aggregatePromotionBlockerFamilies(kernels);
         StringBuilder builder = new StringBuilder();
-        builder.append("status=blocked\n");
-        builder.append("reviewReady=false\n");
+        builder.append("status=").append(status).append('\n');
+        builder.append("reviewReady=").append(allReviewReady).append('\n');
         builder.append("sourceParityMatched=").append(allSourceParityMatched).append('\n');
         builder.append("runtimeEquivalencePassed=").append(allRuntimeEquivalencePassed).append('\n');
         builder.append("realWorkloadEvidence=runtime-snapshot\n");
         builder.append("scope=real-workload\n");
-        builder.append("productionSourceSwitching=false\n");
+        builder.append("productionSourceSwitching=").append(productionSourceSwitchingEnabled ? "enabled" : "false").append('\n');
+        builder.append("productionSourceSwitchingEnabled.count=").append(productionSourceSwitchingEnabledCount).append('\n');
+        builder.append("productionSourceSwitchingEnabled.all=").append(allProductionSourceSwitchingEnabled).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.count=").append(productionPromotionEnabledCount).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(allProductionPromotionEnabled).append('\n');
+        builder.append("sourceSwitching.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
+        builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
         builder.append("sourceSwitching.count=").append(kernels.size()).append('\n');
         builder.append("kernel.count=").append(kernels.size()).append('\n');
         builder.append("blockerFamily.count=").append(aggregateFamilies.size()).append('\n');
@@ -465,7 +497,9 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             builder.append("blockerFamily.").append(familyIndex).append(".count=").append(family.getValue()).append('\n');
             familyIndex++;
         }
-        builder.append("reason=").append(anyReviewReady
+        builder.append("reason=").append(productionSourceSwitchingEnabled
+                ? "all workload kernels reached production IrGpu source switching with accepted promotion evidence"
+                : anyReviewReady
                 ? "one or more workload kernels reached review-ready, but production source switching is disabled"
                 : "real workload runtime snapshots remain fail-closed until source promotion is explicitly enabled")
                 .append('\n');
@@ -498,7 +532,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("payloadFormat=").append(entry.getProperty("payloadFormat", "unknown")).append('\n');
         builder.append(prefix).append("runtimeLoadMode=").append(entry.getProperty("runtimeLoadMode", "unknown")).append('\n');
         builder.append(prefix).append("realWorkloadEvidence=").append(entry.getProperty("realWorkloadEvidence", "runtime-snapshot")).append('\n');
-        builder.append(prefix).append("productionSourceSwitching=false\n");
+        builder.append(prefix).append("productionSourceSwitching=").append(entryProductionSourceSwitching(entry)).append('\n');
         appendSourceSwitchingDecision(builder, prefix, entry);
         appendRuntimeIrHandoff(builder, prefix, entry);
         appendRuntimeProductionMutationSafety(builder, prefix, entry);
@@ -545,6 +579,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("sourceSwitching.productionSourceSwitching=").append(entry.getProperty("sourceSwitching.productionSourceSwitching", "false")).append('\n');
         builder.append(prefix).append("sourceSwitching.productionSourceSwitchingEnabled=").append(entry.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false")).append('\n');
         builder.append(prefix).append("sourceSwitching.productionPromotionDecisionMode=").append(entry.getProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY)).append('\n');
+        builder.append(prefix).append("sourceSwitching.sourcePromotionFirstBlocker=").append(entry.getProperty("sourceSwitching.sourcePromotionFirstBlocker", "unknown")).append('\n');
         appendIndexedProperties(builder, prefix, entry, "sourceSwitching.diagnostic");
     }
 
@@ -660,6 +695,29 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             }
         }
         return families;
+    }
+
+    private static String entryProductionSourceSwitching(Properties entry) {
+        return entryProductionSourceSwitchingEnabled(entry)
+                && entryProductionPromotionEnabled(entry)
+                && entryProductionSourceDecision(entry)
+                ? "enabled"
+                : "false";
+    }
+
+    private static boolean entryProductionSourceSwitchingEnabled(Properties entry) {
+        return "true".equals(entry.getProperty("sourceSwitching.productionSourceSwitchingEnabled"))
+                || "enabled".equals(entry.getProperty("sourceSwitching.productionSourceSwitching"));
+    }
+
+    private static boolean entryProductionPromotionEnabled(Properties entry) {
+        return GpuProductionPromotionDecision.PRODUCTION_ENABLED.equals(
+                entry.getProperty("sourceSwitching.productionPromotionDecisionMode")
+        );
+    }
+
+    private static boolean entryProductionSourceDecision(Properties entry) {
+        return "compile-irgpu-source-production".equals(entry.getProperty("sourceSwitching.decision"));
     }
 
     private static int parsePositiveInt(String value) {

@@ -37,6 +37,30 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         boolean productionSourceSwitchingEnabled = "true".equals(gate.getProperty("productionSourceSwitching", "false"))
                 || "enabled".equals(gate.getProperty("productionSourceSwitching", "false"));
         boolean productionMutationEnabled = "true".equals(readiness.getProperty("productionMutationEnabled", "false"));
+        int productionSourceSwitchingEnabledCount = parsePositiveInt(
+                gate.getProperty("productionSourceSwitchingEnabled.count", productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0")
+        );
+        boolean allProductionSourceSwitchingEnabled = propertyIsTrue(
+                gate,
+                "productionSourceSwitchingEnabled.all",
+                productionSourceSwitchingEnabled && productionSourceSwitchingEnabledCount == kernelCount
+        );
+        int productionPromotionDecisionEnabledCount = parsePositiveInt(
+                gate.getProperty("productionPromotionDecisionMode.productionEnabled.count", productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0")
+        );
+        boolean allProductionPromotionDecisionsEnabled = propertyIsTrue(
+                gate,
+                "productionPromotionDecisionMode.productionEnabled.all",
+                productionPromotionDecisionEnabledCount == kernelCount && productionPromotionDecisionEnabledCount > 0
+        );
+        int productionSourceDecisionCount = parsePositiveInt(
+                gate.getProperty("sourceSwitching.productionDecision.count", productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0")
+        );
+        boolean allProductionSourceDecisions = propertyIsTrue(
+                gate,
+                "sourceSwitching.productionDecision.all",
+                productionSourceDecisionCount == kernelCount && productionSourceDecisionCount > 0
+        );
         int i3ReviewReadyCount = parsePositiveInt(readiness.getProperty("reviewReady.count", "0"));
         int i3BlockedCount = parsePositiveInt(readiness.getProperty("blocked.count", Integer.toString(kernelCount)));
         int i3SourceReadyCount = parsePositiveInt(readiness.getProperty("sourceReady.count", "0"));
@@ -62,6 +86,15 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         if (!productionSourceSwitchingEnabled) {
             blockers.add("production-source-switching-disabled");
         }
+        if (!allProductionSourceSwitchingEnabled) {
+            blockers.add("production-source-switching-not-enabled-for-all-kernels");
+        }
+        if (!allProductionPromotionDecisionsEnabled) {
+            blockers.add("production-promotion-decision-not-enabled-for-all-kernels");
+        }
+        if (!allProductionSourceDecisions) {
+            blockers.add("production-source-decision-not-compiled-for-all-kernels");
+        }
         if (!productionMutationEnabled) {
             blockers.add("production-mutation-disabled");
         }
@@ -80,6 +113,12 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("i3SourceReady.all=").append(allKernelsSourceReady).append('\n');
         builder.append("productionSourceSwitchingAllowed=").append(productionSourceSwitchingEnabled && blockers.isEmpty()).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
+        builder.append("productionSourceSwitchingEnabled.count=").append(productionSourceSwitchingEnabledCount).append('\n');
+        builder.append("productionSourceSwitchingEnabled.all=").append(allProductionSourceSwitchingEnabled).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.count=").append(productionPromotionDecisionEnabledCount).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(allProductionPromotionDecisionsEnabled).append('\n');
+        builder.append("sourceSwitching.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
+        builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
         builder.append("productionMutationAllowed=").append(productionMutationEnabled && blockers.isEmpty()).append('\n');
         builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
         builder.append("blocker.count=").append(blockers.size()).append('\n');
@@ -129,6 +168,11 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         return "production promotion remains blocked: first=" + blockers.get(0)
                 + ", i3ReviewReady=" + i3ReviewReadyCount
                 + ", i3Blocked=" + i3BlockedCount;
+    }
+
+    private static boolean propertyIsTrue(Properties properties, String key, boolean fallback) {
+        String value = properties.getProperty(key);
+        return value == null || value.isBlank() ? fallback : "true".equals(value);
     }
 
     private static int parsePositiveInt(String value) {

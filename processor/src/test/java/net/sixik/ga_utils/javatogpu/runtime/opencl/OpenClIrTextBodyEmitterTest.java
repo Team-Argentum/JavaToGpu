@@ -110,6 +110,25 @@ class OpenClIrTextBodyEmitterTest {
     }
 
     @Test
+    void emitsPrivatePointerLikeLocalsAsStorageValues() {
+        OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  var FloatPtr ptr = input[id]
+                  expr helper(jtg_fn_clamp_FloatPtr args=[(&ptr)])
+                  set output[id] = ptr
+                """);
+
+        OpenClIrTextBodyEmissionResult emission = OpenClIrTextBodyEmitter.INSTANCE.emit(parseResult);
+
+        assertTrue(emission.emitted());
+        assertEquals("""
+                    float ptr = input[id];
+                    jtg_fn_clamp_FloatPtr((&ptr));
+                    output[id] = ptr;
+                """, emission.body());
+    }
+
+    @Test
     void lowersOpaqueIntrinsicTemplatesRecursively() {
         OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
                 method jtg_kernel source=kernel
@@ -146,6 +165,44 @@ class OpenClIrTextBodyEmitterTest {
         assertTrue(emission.blockers().isEmpty());
         assertEquals("""
                     write_imagef(outputImage, coords, (float4)(1.0f, 0.5f, 0.25f, 1.0f));
+                    return;
+                """, emission.body());
+    }
+
+    @Test
+    void lowersStructInitializersToOpenClCompoundLiterals() {
+        OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  var Vec2 value = init<Vec2>(input[0], (input[0] + 1.0f))
+                  set output[0] = value.x
+                  return
+                """);
+
+        OpenClIrTextBodyEmissionResult emission = OpenClIrTextBodyEmitter.INSTANCE.emit(parseResult);
+
+        assertTrue(emission.emitted());
+        assertEquals("""
+                    Vec2 value = (Vec2){input[0], (input[0] + 1.0f)};
+                    output[0] = value.x;
+                    return;
+                """, emission.body());
+    }
+
+    @Test
+    void keepsVectorInitializersAsOpenClVectorCasts() {
+        OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  var Float2 value = init<Float2>(input[0], (input[0] + 1.0f))
+                  set output[0] = value.x
+                  return
+                """);
+
+        OpenClIrTextBodyEmissionResult emission = OpenClIrTextBodyEmitter.INSTANCE.emit(parseResult);
+
+        assertTrue(emission.emitted());
+        assertEquals("""
+                    float2 value = (float2)(input[0], (input[0] + 1.0f));
+                    output[0] = value.x;
                     return;
                 """, emission.body());
     }
@@ -191,6 +248,74 @@ class OpenClIrTextBodyEmitterTest {
                         output[0] = value;
                     } else {
                         output[0] = 0;
+                    }
+                    return;
+                """, emission.body());
+    }
+
+    @Test
+    void emitsElseIfBlockAsNestedOpenClBranch() {
+        OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  if (value > 0)
+                    set output[0] = value
+                  else if (value < 0)
+                    set output[0] = (0 - value)
+                  else
+                    set output[0] = 0
+                  return
+                """);
+
+        OpenClIrTextBodyEmissionResult emission = OpenClIrTextBodyEmitter.INSTANCE.emit(parseResult);
+
+        assertTrue(parseResult.parsed(), parseResult.blockers().toString());
+        assertTrue(emission.emitted());
+        assertEquals("""
+                    if ((value > 0)) {
+                        output[0] = value;
+                    } else {
+                        if ((value < 0)) {
+                            output[0] = (0 - value);
+                        } else {
+                            output[0] = 0;
+                        }
+                    }
+                    return;
+                """, emission.body());
+    }
+
+    @Test
+    void emitsElseIfChainAsNestedOpenClBranches() {
+        OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  if (value > 1)
+                    set output[0] = 3
+                  else if (value == 1)
+                    set output[0] = 2
+                  else if (value == 0)
+                    set output[0] = 1
+                  else
+                    set output[0] = 0
+                  return
+                """);
+
+        OpenClIrTextBodyEmissionResult emission = OpenClIrTextBodyEmitter.INSTANCE.emit(parseResult);
+
+        assertTrue(parseResult.parsed(), parseResult.blockers().toString());
+        assertTrue(emission.emitted());
+        assertEquals("""
+                    if ((value > 1)) {
+                        output[0] = 3;
+                    } else {
+                        if ((value == 1)) {
+                            output[0] = 2;
+                        } else {
+                            if ((value == 0)) {
+                                output[0] = 1;
+                            } else {
+                                output[0] = 0;
+                            }
+                        }
                     }
                     return;
                 """, emission.body());

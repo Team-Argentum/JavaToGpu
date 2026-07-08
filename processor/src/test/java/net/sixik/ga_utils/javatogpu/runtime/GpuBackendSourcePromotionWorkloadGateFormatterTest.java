@@ -52,6 +52,10 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("not-recorded", gate.getProperty("kernel.0.sourceSwitching.decision"));
         assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitchingEnabled"));
         assertEquals("diagnostic-only", gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
+        assertEquals(
+                "source-switching-decision-not-recorded",
+                gate.getProperty("kernel.0.sourceSwitching.sourcePromotionFirstBlocker")
+        );
         assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeIrHandoff.status"));
         assertEquals("original", gate.getProperty("kernel.0.runtimeIrHandoff.selectedStage"));
         assertEquals("false", gate.getProperty("kernel.0.runtimeIrHandoff.optimizedDiffersFromOriginal"));
@@ -156,6 +160,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "disabled",
                         "false",
                         "review-ready",
+                        "none",
                         "IrGpu source was explicitly selected for review or smoke validation"
                 ),
                 runtimeIrHandoffProperties(
@@ -211,6 +216,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "disabled",
                         "false",
                         "diagnostic-only",
+                        "runtime equivalence must execute and pass before backend source promotion",
                         "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled"
                 ),
                 runtimeIrHandoffProperties(
@@ -261,12 +267,17 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionProfileRequested"));
         assertEquals("disabled", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitching"));
         assertEquals("review-ready", gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
+        assertEquals("none", gate.getProperty("kernel.0.sourceSwitching.sourcePromotionFirstBlocker"));
         assertEquals("blocked", gate.getProperty("kernel.1.sourceSwitching.status"));
         assertEquals("reject-production-irgpu-source", gate.getProperty("kernel.1.sourceSwitching.decision"));
         assertEquals("vendor-tuned", gate.getProperty("kernel.1.sourceSwitching.optimizationProfile"));
         assertEquals("true", gate.getProperty("kernel.1.sourceSwitching.productionProfileRequested"));
         assertEquals("false", gate.getProperty("kernel.1.sourceSwitching.productionSourceSwitchingEnabled"));
         assertEquals("diagnostic-only", gate.getProperty("kernel.1.sourceSwitching.productionPromotionDecisionMode"));
+        assertEquals(
+                "runtime equivalence must execute and pass before backend source promotion",
+                gate.getProperty("kernel.1.sourceSwitching.sourcePromotionFirstBlocker")
+        );
         assertEquals(
                 "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled",
                 gate.getProperty("kernel.1.sourceSwitching.diagnostic.0")
@@ -351,6 +362,84 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("blocked", gate.getProperty("kernel.1.runtimeOptimizerDrift.productionGateStatus"));
     }
 
+    @Test
+    void marksWorkloadProductionEnabledWhenEveryKernelUsesAcceptedIrGpuSourceSwitching() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-production.cl",
+                reviewReadyGateProperties(),
+                sourceSwitchingDecisionProperties(
+                        "production-switch-enabled",
+                        "compile-irgpu-source-production",
+                        "vendor-tuned",
+                        "true",
+                        "enabled",
+                        "true",
+                        GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                        "none",
+                        "production source switching was explicitly enabled for a production-like profile"
+                ),
+                runtimeIrHandoffProperties(
+                        "optimized",
+                        "true",
+                        "false",
+                        "none",
+                        "false",
+                        "optimized IrGpu is selected for backend lowering after runtime optimizer passes"
+                ),
+                runtimeProductionMutationSafetyProperties(
+                        "enabled",
+                        "true",
+                        "accepted",
+                        "true",
+                        "optimized",
+                        "production mutation is enabled after runtime production gates accepted optimized IrGpu"
+                ),
+                i3ReadinessSummaryProperties(
+                        "production-enabled",
+                        "optimized",
+                        "review-ready",
+                        "true",
+                        "accepted",
+                        "true",
+                        "I3 pipeline is production-enabled for this runtime compile snapshot"
+                ),
+                runtimeOptimizerDriftProperties(
+                        "3",
+                        "3",
+                        "0",
+                        "0",
+                        "none",
+                        "optimized",
+                        "false",
+                        "vendor-tuned",
+                        "accepted",
+                        "true"
+                )
+        ));
+
+        assertEquals("production-enabled", gate.getProperty("status"));
+        assertEquals("true", gate.getProperty("reviewReady"));
+        assertEquals("enabled", gate.getProperty("productionSourceSwitching"));
+        assertEquals("1", gate.getProperty("productionSourceSwitchingEnabled.count"));
+        assertEquals("true", gate.getProperty("productionSourceSwitchingEnabled.all"));
+        assertEquals("1", gate.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
+        assertEquals("true", gate.getProperty("productionPromotionDecisionMode.productionEnabled.all"));
+        assertEquals("1", gate.getProperty("sourceSwitching.productionDecision.count"));
+        assertEquals("true", gate.getProperty("sourceSwitching.productionDecision.all"));
+        assertEquals(
+                "all workload kernels reached production IrGpu source switching with accepted promotion evidence",
+                gate.getProperty("reason")
+        );
+        assertEquals("enabled", gate.getProperty("kernel.0.productionSourceSwitching"));
+        assertEquals("production-switch-enabled", gate.getProperty("kernel.0.sourceSwitching.status"));
+        assertEquals("compile-irgpu-source-production", gate.getProperty("kernel.0.sourceSwitching.decision"));
+        assertEquals(GpuProductionPromotionDecision.PRODUCTION_ENABLED, gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
+        assertEquals("none", gate.getProperty("kernel.0.sourceSwitching.sourcePromotionFirstBlocker"));
+    }
+
     private static void writeGate(Path gateFile, String properties) throws IOException {
         Files.writeString(gateFile, properties, StandardCharsets.UTF_8);
     }
@@ -395,6 +484,37 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         return builder.toString();
     }
 
+    private static String reviewReadyGateProperties() {
+        return String.join("\n",
+                "status=review-ready",
+                "reviewReady=true",
+                "ready=true",
+                "reconstructed=true",
+                "sourceAvailable=true",
+                "sourceParityChecked=true",
+                "sourceParityMatched=true",
+                "runtimeEquivalencePassed=true",
+                "runtimeEquivalence.status=passed",
+                "runtimeEquivalence.executed=true",
+                "runtimeEquivalence.equivalent=true",
+                "runtimeEquivalence.inputCase.count=3",
+                "runtimeEquivalence.comparedOutput.count=1",
+                "runtimeEquivalence.diagnostic.count=1",
+                "runtimeEquivalence.diagnostic.0=deterministic pre/post outputs matched",
+                "fallbackClean=true",
+                "selectedSource=irgpu-backend-neutral-source",
+                "payloadFormat=ir-text-v1",
+                "runtimeLoadMode=opencl-irgpu-source-compile",
+                "reconstruction.blocker.count=0",
+                "reconstruction.diagnostic.count=2",
+                "reconstruction.diagnostic.0=sourceParity.checked=true",
+                "reconstruction.diagnostic.1=sourceParity.matched=true",
+                "diagnostic.count=1",
+                "diagnostic.0=backend source reconstruction is ready for promotion review",
+                ""
+        );
+    }
+
     private static String sourceSwitchingDecisionProperties(
             String status,
             String decision,
@@ -403,6 +523,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
             String productionSourceSwitching,
             String productionSourceSwitchingEnabled,
             String productionPromotionDecisionMode,
+            String sourcePromotionFirstBlocker,
             String diagnostic
     ) {
         return String.join("\n",
@@ -420,6 +541,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "productionSourceSwitching=" + productionSourceSwitching,
                 "productionSourceSwitchingEnabled=" + productionSourceSwitchingEnabled,
                 "productionPromotionDecisionMode=" + productionPromotionDecisionMode,
+                "sourcePromotionFirstBlocker=" + sourcePromotionFirstBlocker,
                 "diagnostic.count=1",
                 "diagnostic.0=" + diagnostic,
                 ""

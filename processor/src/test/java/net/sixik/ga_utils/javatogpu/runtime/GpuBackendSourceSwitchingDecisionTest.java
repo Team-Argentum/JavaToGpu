@@ -116,7 +116,7 @@ class GpuBackendSourceSwitchingDecisionTest {
                 reconstruction,
                 GpuBackendSourcePromotionGate.evaluate(
                         reconstruction,
-                        GpuRuntimeEquivalenceEvidence.notRun(null, "runtime equivalence was not executed"),
+                        GpuRuntimeEquivalenceEvidence.passed(null, 1, 1, List.of("production source fixture equivalent")),
                         GpuRuntimeFallbackEvidence.none()
                 )
         );
@@ -191,12 +191,16 @@ class GpuBackendSourceSwitchingDecisionTest {
         GpuBackendSourceReconstructionResult reconstruction = parityMatchedReconstruction();
 
         GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
-                provenance(GpuBackendCompileOptions.openClProductionIrGpuSource(List.of()), "vendor-tuned"),
+                provenance(
+                        GpuBackendCompileOptions.openClProductionIrGpuSource(List.of())
+                                .withProductionPromotionDecision(productionEnabledDecision()),
+                        "vendor-tuned"
+                ),
                 module(),
                 reconstruction,
                 GpuBackendSourcePromotionGate.evaluate(
                         reconstruction,
-                        GpuRuntimeEquivalenceEvidence.notRun(null, "runtime equivalence was not executed"),
+                        GpuRuntimeEquivalenceEvidence.passed(null, 1, 1, List.of("production source fixture equivalent")),
                         GpuRuntimeFallbackEvidence.none()
                 )
         );
@@ -206,6 +210,120 @@ class GpuBackendSourceSwitchingDecisionTest {
         assertTrue(decision.productionProfileRequested());
         assertTrue(decision.productionSourceSwitchingEnabled());
         assertEquals("enabled", decision.productionSourceSwitching());
+        assertEquals("production-enabled", decision.productionPromotionDecisionMode());
+    }
+
+    @Test
+    void blocksProductionIrGpuSourceUntilSourcePromotionGateIsReviewReady() {
+        GpuBackendSourceReconstructionResult reconstruction = parityMatchedReconstruction();
+
+        GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
+                provenance(
+                        GpuBackendCompileOptions.openClProductionIrGpuSource(List.of())
+                                .withProductionPromotionDecision(productionEnabledDecision()),
+                        "vendor-tuned"
+                ),
+                module(),
+                reconstruction,
+                GpuBackendSourcePromotionGate.evaluate(
+                        reconstruction,
+                        GpuRuntimeEquivalenceEvidence.notRun(null, "runtime equivalence was not executed"),
+                        GpuRuntimeFallbackEvidence.none()
+                )
+        );
+
+        assertEquals("blocked", decision.status());
+        assertEquals("reject-production-irgpu-source", decision.decision());
+        assertTrue(decision.productionProfileRequested());
+        assertTrue(decision.productionSourceSwitchingEnabled());
+        assertEquals("production-enabled", decision.productionPromotionDecisionMode());
+        assertFalse(decision.sourcePromotionReviewReady());
+        assertTrue(decision.toPropertiesText().contains(
+                "sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion"
+        ));
+        assertTrue(decision.toPropertiesText().contains(
+                "diagnostic.0=production-like profile requested IrGpu source but backend source promotion gate is not review-ready"
+        ));
+    }
+
+    @Test
+    void blocksProductionIrGpuSourceUntilProductionPromotionDecisionIsEnabled() {
+        GpuBackendSourceReconstructionResult reconstruction = parityMatchedReconstruction();
+
+        GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
+                provenance(GpuBackendCompileOptions.openClProductionIrGpuSource(List.of()), "vendor-tuned"),
+                module(),
+                reconstruction,
+                GpuBackendSourcePromotionGate.evaluate(
+                        reconstruction,
+                        GpuRuntimeEquivalenceEvidence.passed(null, 1, 1, List.of("production source fixture equivalent")),
+                        GpuRuntimeFallbackEvidence.none()
+                )
+        );
+
+        assertEquals("blocked", decision.status());
+        assertEquals("reject-production-irgpu-source", decision.decision());
+        assertTrue(decision.productionProfileRequested());
+        assertTrue(decision.productionSourceSwitchingEnabled());
+        assertEquals("diagnostic-only", decision.productionPromotionDecisionMode());
+        assertTrue(decision.toPropertiesText().contains(
+                "diagnostic.0=production-like profile requested IrGpu source but production promotion decision is not production-enabled"
+        ));
+    }
+
+    @Test
+    void blocksProductionIrGpuSourceWhenPromotionDecisionIsOnlyReviewReady() {
+        GpuBackendSourceReconstructionResult reconstruction = parityMatchedReconstruction();
+
+        GpuBackendSourceSwitchingDecision decision = GpuBackendSourceSwitchingDecision.evaluate(
+                provenance(
+                        GpuBackendCompileOptions.openClProductionIrGpuSource(List.of())
+                                .withProductionPromotionDecision(reviewReadyDecision()),
+                        "vendor-tuned"
+                ),
+                module(),
+                reconstruction,
+                GpuBackendSourcePromotionGate.evaluate(
+                        reconstruction,
+                        GpuRuntimeEquivalenceEvidence.passed(null, 1, 1, List.of("production source fixture equivalent")),
+                        GpuRuntimeFallbackEvidence.none()
+                )
+        );
+
+        assertEquals("blocked", decision.status());
+        assertEquals("reject-production-irgpu-source", decision.decision());
+        assertTrue(decision.productionProfileRequested());
+        assertTrue(decision.productionSourceSwitchingEnabled());
+        assertEquals("review-ready", decision.productionPromotionDecisionMode());
+        assertTrue(decision.toPropertiesText().contains(
+                "diagnostic.0=production-like profile requested IrGpu source but production promotion decision is not production-enabled"
+        ));
+    }
+
+    private static GpuProductionPromotionDecision reviewReadyDecision() {
+        return new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.REVIEW_READY,
+                "blocked",
+                true,
+                false,
+                false,
+                "production-source-switching-disabled",
+                "none",
+                "test review-ready production promotion decision"
+        );
+    }
+
+    private static GpuProductionPromotionDecision productionEnabledDecision() {
+        return new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                "production-ready",
+                true,
+                true,
+                true,
+                "none",
+                "none",
+                "test production promotion decision"
+        );
     }
 
     private static GpuBackendSourceReconstructionResult parityMatchedReconstruction() {

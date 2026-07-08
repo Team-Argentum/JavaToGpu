@@ -437,6 +437,8 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.status", "not-recorded")))
                     .append("`, profile=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.optimizationProfile", "unknown")))
+                    .append("`, sourcePromotionFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.sourcePromotionFirstBlocker", "unknown")))
                     .append("`, first=`")
                     .append(sanitizeInline(sourceSwitchingDiagnostic))
                     .append("`\n");
@@ -1087,6 +1089,8 @@ public final class OpenClValidationReporter {
                     .append(properties.getProperty("kernel." + index + ".diagnostic.count", "0"))
                     .append(", sourceSwitching=")
                     .append(properties.getProperty("kernel." + index + ".sourceSwitching.decision", "not-recorded"))
+                    .append("/sourcePromotionFirstBlocker=")
+                    .append(properties.getProperty("kernel." + index + ".sourceSwitching.sourcePromotionFirstBlocker", "unknown"))
                     .append(", runtimeIr=")
                     .append(properties.getProperty("kernel." + index + ".runtimeIrHandoff.selectedStage", "unknown"))
                     .append(", optimizerDrift=")

@@ -476,6 +476,7 @@ class OpenClValidationReportTest {
                 "kernel.0.sourceSwitching.irGpuSourceRequested=true",
                 "kernel.0.sourceSwitching.productionSourceSwitching=disabled",
                 "kernel.0.sourceSwitching.productionSourceSwitchingEnabled=false",
+                "kernel.0.sourceSwitching.sourcePromotionFirstBlocker=none",
                 "kernel.0.sourceSwitching.diagnostic.count=1",
                 "kernel.0.sourceSwitching.diagnostic.0=IrGpu source was explicitly selected for review or smoke validation",
                 "kernel.0.runtimeIrHandoff.status=selected",
@@ -530,6 +531,7 @@ class OpenClValidationReportTest {
                 "kernel.1.sourceSwitching.irGpuSourceRequested=true",
                 "kernel.1.sourceSwitching.productionSourceSwitching=disabled",
                 "kernel.1.sourceSwitching.productionSourceSwitchingEnabled=false",
+                "kernel.1.sourceSwitching.sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion",
                 "kernel.1.sourceSwitching.diagnostic.count=1",
                 "kernel.1.sourceSwitching.diagnostic.0=production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled",
                 "kernel.1.runtimeIrHandoff.status=selected",
@@ -600,7 +602,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains(
                     "- Kernel `0` source switching: status=`review-ready`, profile=`"
                             + net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE
-                            + "`, first=`IrGpu source was explicitly selected for review or smoke validation`"
+                            + "`, sourcePromotionFirstBlocker=`none`, first=`IrGpu source was explicitly selected for review or smoke validation`"
             ));
             assertTrue(reportMarkdown.contains("- Kernel `0` runtime IR handoff: stage=`optimized`, transformed=`true`, rollback=`false`, rejected=`false`, fallback=`none`, first=`optimized IrGpu is selected for backend lowering after runtime optimizer passes`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` production mutation safety: enabled=`false`, gate=`not-requested`, profileRequested=`false`, first=`runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested`"));
@@ -609,7 +611,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Kernel `0` diagnostics: `1`; first=`packaged IrGpu source reconstructed from runtime artifact loader with descriptor parity`"));
             assertFalse(reportMarkdown.contains("- Kernel `0` reconstruction blockers:"));
             assertTrue(reportMarkdown.contains("- Kernel `1`: `inline://integration/perlin-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`, runtimeIr=`original`, productionMutation=`false`, sourceReady=`false`, i3=`blocked`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1` source switching: status=`blocked`, profile=`vendor-tuned`, first=`production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1` source switching: status=`blocked`, profile=`vendor-tuned`, sourcePromotionFirstBlocker=`runtime equivalence must execute and pass before backend source promotion`, first=`production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` runtime IR handoff: stage=`original`, transformed=`false`, rollback=`false`, rejected=`true`, fallback=`production-ir-gate-blocked`, first=`optimized IrGpu was rejected by the production IR acceptance gate; original IrGpu remains selected`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` production mutation safety: enabled=`false`, gate=`blocked`, profileRequested=`true`, first=`runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` I3 readiness: status=`blocked`, sourcePromotion=`blocked`, sourceReady=`false`, optimizerGate=`blocked`, productionMutation=`false`, first=`I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked`"));
@@ -626,8 +628,8 @@ class OpenClValidationReportTest {
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("realWorkloadEvidence=runtime-snapshot"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourceSwitching=compile-irgpu-source-review=1, reject-production-irgpu-source=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernelCount=2"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review/sourcePromotionFirstBlocker=none, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source/sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("productionSourceSwitching=disabled"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("contract=valid"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("decisionMode=diagnostic-only"));
@@ -681,7 +683,10 @@ class OpenClValidationReportTest {
             assertTrue(productionExplainability.contains("blocker.3=i3-workload-readiness-not-review-ready"));
             assertTrue(productionExplainability.contains("blocker.4=i3-source-readiness-not-complete"));
             assertTrue(productionExplainability.contains("blocker.5=production-source-switching-disabled"));
-            assertTrue(productionExplainability.contains("blocker.6=production-mutation-disabled"));
+            assertTrue(productionExplainability.contains("blocker.6=production-source-switching-not-enabled-for-all-kernels"));
+            assertTrue(productionExplainability.contains("blocker.7=production-promotion-decision-not-enabled-for-all-kernels"));
+            assertTrue(productionExplainability.contains("blocker.8=production-source-decision-not-compiled-for-all-kernels"));
+            assertTrue(productionExplainability.contains("blocker.9=production-mutation-disabled"));
             assertTrue(productionExplainability.contains(
                     "diagnostic.0=production promotion remains blocked: first=workload-source-promotion-gate-not-review-ready, i3ReviewReady=1, i3Blocked=1"));
         } finally {

@@ -97,6 +97,25 @@ public record IrGpuMethodBody(
         return new IrGpuMethodBody("helper", name, emittedName, "ir-text-v1", body, bodyIndex, helperDependencies, sourceLocation);
     }
 
+    public static IrGpuMethodBody nativeOpenClHelper(
+            String name,
+            String emittedName,
+            String nativeBody,
+            List<String> helperDependencies,
+            IrGpuSourceLocation sourceLocation
+    ) {
+        return new IrGpuMethodBody(
+                "helper",
+                name,
+                emittedName,
+                "opencl-native-body-v1",
+                nativeBody,
+                IrGpuBodyIndex.empty(),
+                helperDependencies,
+                sourceLocation
+        );
+    }
+
     private static String normalize(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }

@@ -31,6 +31,12 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("status=production-ready"));
         assertTrue(formatted.contains("productionSourceSwitchingAllowed=true"));
         assertTrue(formatted.contains("productionMutationAllowed=true"));
+        assertTrue(formatted.contains("productionSourceSwitchingEnabled.count=2"));
+        assertTrue(formatted.contains("productionSourceSwitchingEnabled.all=true"));
+        assertTrue(formatted.contains("productionPromotionDecisionMode.productionEnabled.count=2"));
+        assertTrue(formatted.contains("productionPromotionDecisionMode.productionEnabled.all=true"));
+        assertTrue(formatted.contains("sourceSwitching.productionDecision.count=2"));
+        assertTrue(formatted.contains("sourceSwitching.productionDecision.all=true"));
         assertTrue(formatted.contains("i3SourceReady.count=2"));
         assertTrue(formatted.contains("i3SourceReady.all=true"));
         assertTrue(formatted.contains("contract.status=valid"));
@@ -67,6 +73,12 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("sourceParityMatched", "true");
         properties.setProperty("runtimeEquivalencePassed", "true");
         properties.setProperty("productionSourceSwitching", "enabled");
+        properties.setProperty("productionSourceSwitchingEnabled.count", "2");
+        properties.setProperty("productionSourceSwitchingEnabled.all", "true");
+        properties.setProperty("productionPromotionDecisionMode.productionEnabled.count", "2");
+        properties.setProperty("productionPromotionDecisionMode.productionEnabled.all", "true");
+        properties.setProperty("sourceSwitching.productionDecision.count", "2");
+        properties.setProperty("sourceSwitching.productionDecision.all", "true");
         properties.setProperty("realWorkloadEvidence", "runtime-snapshot");
         properties.setProperty("kernel.count", "2");
         return properties;
