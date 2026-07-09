@@ -38,6 +38,11 @@ public final class GpuProductionPromotionExplainabilityValidation {
         boolean allProductionSourceDecisions = propertyIsTrue(properties, "sourceSwitching.productionDecision.all");
         boolean mutationAllowed = propertyIsTrue(properties, "productionMutationAllowed");
         boolean mutationEnabled = propertyIsTrue(properties, "productionMutationEnabled");
+        boolean backendPromotionArtifactSupportComplete = propertyIsTrue(
+                properties,
+                "backendPromotionArtifactSupport.complete",
+                true
+        );
 
         ArrayList<String> violations = new ArrayList<>();
         if (kernelCount <= 0) {
@@ -64,6 +69,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
                     allProductionSourceDecisions,
                     mutationAllowed,
                     mutationEnabled,
+                    backendPromotionArtifactSupportComplete,
                     violations
             );
         } else if (BLOCKED.equals(status)) {
@@ -120,6 +126,7 @@ public final class GpuProductionPromotionExplainabilityValidation {
             boolean allProductionSourceDecisions,
             boolean mutationAllowed,
             boolean mutationEnabled,
+            boolean backendPromotionArtifactSupportComplete,
             List<String> violations
     ) {
         if (blockerCount != 0) {
@@ -143,6 +150,9 @@ public final class GpuProductionPromotionExplainabilityValidation {
         if (i3SourceReadyCount != kernelCount) {
             violations.add("production-ready explainability does not have every workload kernel source-ready");
         }
+        if (!backendPromotionArtifactSupportComplete) {
+            violations.add("production-ready explainability does not have complete backend promotion artifact support");
+        }
     }
 
     private static void validateBlocked(
@@ -159,16 +169,18 @@ public final class GpuProductionPromotionExplainabilityValidation {
         if (blockerCount <= 0) {
             violations.add("blocked explainability must include at least one blocker");
         }
-        if (sourceSwitchingAllowed || sourceSwitchingEnabled || mutationAllowed || mutationEnabled) {
-            violations.add("blocked explainability cannot enable production source switching or mutation");
-        }
-        if (allSourceSwitchingEnabled || allPromotionDecisionsEnabled || allProductionSourceDecisions) {
-            violations.add("blocked explainability cannot mark every workload kernel production-source-ready");
+        if (sourceSwitchingAllowed || mutationAllowed) {
+            violations.add("blocked explainability cannot allow production source switching or mutation");
         }
     }
 
     private static boolean propertyIsTrue(Properties properties, String key) {
         return "true".equals(properties.getProperty(key, "false"));
+    }
+
+    private static boolean propertyIsTrue(Properties properties, String key, boolean fallback) {
+        String value = properties.getProperty(key);
+        return value == null || value.isBlank() ? fallback : "true".equals(value);
     }
 
     private static int parseInt(String value) {

@@ -291,6 +291,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.applied.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.rolledBack.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.accepted.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.blocking.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=optimized"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=false"));
@@ -1230,6 +1233,7 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("vendorPromotionEligible=false"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.0=optimization strategy must be evidence-backed and non-advisory"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.1=vendor baseline is not promotion-eligible under A1/A2 gates"));
+        assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.2=accepted optimizer proof artifact is required before production promotion"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=disabled"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionGateStatus=blocked"));
@@ -1290,7 +1294,11 @@ class GpuRuntimeCompileArtifactDumperTest {
                         "irgpu:sha256:optimized",
                         "proof:production-fixture",
                         List.of("production fixture applied safe transform")
-                )),
+                ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "runtime-equivalence",
+                        "accepted/passed",
+                        java.util.Map.of("runtimeEquivalencePassed", "true")
+                ))),
                 productionBackedStrategy()
         );
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
@@ -1311,6 +1319,7 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("fallbackClean=true"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("strategyEvidenceBacked=true"));
         assertTrue(dump.artifact("production-optimizer-gate.properties").contains("vendorPromotionEligible=true"));
+        assertTrue(dump.artifact("production-optimizer-gate.properties").contains("diagnostic.0=all production optimizer gates passed"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("selectedStage=optimized"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("optimizedIrRejected=false"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("fallbackDecision=none"));
@@ -1329,6 +1338,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("i3-readiness-summary.properties").contains("productionMutationEnabled=true"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.applied.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.accepted.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.blocking.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=optimized"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=false"));
@@ -1368,6 +1380,11 @@ class GpuRuntimeCompileArtifactDumperTest {
                                 "proof:failed",
                                 "unsafe proof",
                                 List.of("rolled back unsafe transform")
+                        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                                "runtime-equivalence",
+                                "rejected/blockingResultsPresent",
+                                java.util.Map.of("runtimeEquivalencePassed", "false")
+                        )
                         )
                 ),
                 GpuOptimizationStrategyDecision.none(request)
@@ -1387,6 +1404,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.applied.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.rolledBack.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("pass.failed.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.accepted.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.blocking.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=optimizer-rollback"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=original"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=true"));

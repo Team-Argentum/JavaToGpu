@@ -1,6 +1,10 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactSupport;
+
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -23,10 +27,48 @@ public record OpenClValidationReport(
         boolean supportsDoublePrecision,
         boolean supportsImages,
         boolean supportsImage3dWrites,
+        GpuPromotionArtifactSupport promotionArtifactSupport,
         long localMemoryBytes,
         long maxWorkGroupSize,
         OpenClRuntimeStatistics statistics
 ) {
+
+    public OpenClValidationReport(
+            Instant generatedAtUtc,
+            String backendName,
+            String cacheMode,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String deviceVersion,
+            String platformName,
+            String platformVersion,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsImage3dWrites,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            OpenClRuntimeStatistics statistics
+    ) {
+        this(
+                generatedAtUtc,
+                backendName,
+                cacheMode,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                deviceVersion,
+                platformName,
+                platformVersion,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsImage3dWrites,
+                GpuPromotionArtifactSupport.complete(GpuBackendTarget.OPENCL),
+                localMemoryBytes,
+                maxWorkGroupSize,
+                statistics
+        );
+    }
 
     public OpenClValidationReport {
         generatedAtUtc = Objects.requireNonNull(generatedAtUtc, "generatedAtUtc");
@@ -38,6 +80,9 @@ public record OpenClValidationReport(
         deviceVersion = safe(deviceVersion);
         platformName = safe(platformName);
         platformVersion = safe(platformVersion);
+        promotionArtifactSupport = promotionArtifactSupport == null
+                ? GpuPromotionArtifactSupport.none(GpuBackendTarget.OPENCL)
+                : promotionArtifactSupport;
         statistics = Objects.requireNonNull(statistics, "statistics");
     }
 
@@ -66,6 +111,18 @@ public record OpenClValidationReport(
         markdown.append("- Images: `").append(yesNo(supportsImages)).append("`\n");
         markdown.append("- 3D image writes: `").append(yesNo(supportsImage3dWrites)).append("`\n\n");
 
+        markdown.append("## Production Promotion Artifacts\n\n");
+        markdown.append("- Backend target: `").append(promotionArtifactSupport.backendTarget()).append("`\n");
+        markdown.append("- Complete support: `").append(yesNo(promotionArtifactSupport.complete())).append("`\n");
+        markdown.append("- Supported artifact count: `").append(promotionArtifactSupport.supportedArtifacts().size()).append("`\n");
+        markdown.append("- Missing artifact count: `").append(promotionArtifactSupport.missingArtifacts().size()).append("`\n");
+        markdown.append("- Supported artifacts: `")
+                .append(joinArtifacts(promotionArtifactSupport.supportedArtifacts()))
+                .append("`\n");
+        markdown.append("- Missing artifacts: `")
+                .append(joinArtifacts(promotionArtifactSupport.missingArtifacts()))
+                .append("`\n\n");
+
         markdown.append("## Counters\n\n");
         markdown.append("- Invocation count: `").append(statistics.invocationCount()).append("`\n");
         markdown.append("- Compile count: `").append(statistics.compileCount()).append("`\n");
@@ -81,5 +138,9 @@ public record OpenClValidationReport(
 
     private static String yesNo(boolean value) {
         return value ? "yes" : "no";
+    }
+
+    private static String joinArtifacts(List<String> artifacts) {
+        return artifacts == null || artifacts.isEmpty() ? "none" : String.join(", ", artifacts);
     }
 }

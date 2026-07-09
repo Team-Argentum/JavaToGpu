@@ -149,7 +149,11 @@ class GpuRuntimeIrSelectionTest {
                         "irgpu:sha256:optimized",
                         "proof:production-fixture",
                         List.of("production fixture applied safe transform")
-                )),
+                ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "runtime-equivalence",
+                        "accepted/passed",
+                        java.util.Map.of("runtimeEquivalencePassed", "true")
+                ))),
                 productionBackedStrategy()
         );
         GpuBackendModuleArtifact backendArtifact = backendArtifact();
@@ -173,6 +177,51 @@ class GpuRuntimeIrSelectionTest {
         assertTrue(selection.transformed());
         assertFalse(selection.optimizedRejected());
         assertEquals(GpuRuntimeCompileProvenance.NO_FALLBACK, selection.fallbackDecision());
+    }
+
+    @Test
+    void productionEnabledDecisionStillSelectsOriginalWhenAcceptedProofArtifactIsMissing() {
+        IrGpuArtifact original = artifact("body\n  return original\n");
+        IrGpuArtifact optimized = artifact("body\n  return optimized\n");
+        GpuRuntimeCompileRequest originalRequest = request(original);
+        GpuRuntimeCompileRequest optimizedRequest = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                        .withProductionPromotionDecision(productionEnabledDecision()),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeIrOptimizationReport report = new GpuRuntimeIrOptimizationReport(
+                Optional.of(optimized),
+                List.of(GpuRuntimeIrOptimizationPassReport.applied(
+                        "optimizer:production-safe",
+                        "irgpu:sha256:original",
+                        "irgpu:sha256:optimized",
+                        "proof:production-fixture",
+                        List.of("production fixture applied safe transform without accepted proof artifact")
+                )),
+                productionBackedStrategy()
+        );
+        GpuBackendModuleArtifact backendArtifact = backendArtifact();
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                originalRequest,
+                optimizedRequest,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(optimizedRequest, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(optimizedRequest),
+                report,
+                GpuRuntimeEquivalenceEvidence.passed(optimizedRequest, 2, 2, List.of("production fixture equivalent"))
+        );
+
+        GpuRuntimeIrSelection selection = GpuRuntimeIrSelection.from(snapshot);
+
+        assertEquals("blocked", snapshot.productionOptimizerGate().status());
+        assertTrue(snapshot.productionOptimizerGate().diagnostics().contains(
+                "accepted optimizer proof artifact is required before production promotion"
+        ));
+        assertEquals("original", selection.selectedStage());
+        assertTrue(selection.optimizedRejected());
+        assertEquals("production-ir-gate-blocked", selection.fallbackDecision());
     }
 
     private static GpuRuntimeCompileArtifactSnapshot snapshot(

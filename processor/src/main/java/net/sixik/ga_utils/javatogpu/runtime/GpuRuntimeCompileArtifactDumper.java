@@ -45,18 +45,18 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.put("runtime-equivalence.properties", snapshot.runtimeEquivalenceEvidence().toPropertiesText());
         artifacts.put("fallback.properties", snapshot.fallbackEvidence().toPropertiesText());
         artifacts.put("production-optimizer-gate.properties", snapshot.productionOptimizerGate().toPropertiesText());
-        artifacts.put("runtime-ir-handoff.properties", formatRuntimeIrHandoff(snapshot));
-        artifacts.put("runtime-production-mutation-safety.properties", formatRuntimeProductionMutationSafety(snapshot));
-        artifacts.put("i3-readiness-summary.properties", formatI3ReadinessSummary(snapshot));
+        artifacts.put(GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF, formatRuntimeIrHandoff(snapshot));
+        artifacts.put(GpuPromotionArtifactRegistry.RUNTIME_PRODUCTION_MUTATION_SAFETY, formatRuntimeProductionMutationSafety(snapshot));
+        artifacts.put(GpuPromotionArtifactRegistry.I3_READINESS_SUMMARY, formatI3ReadinessSummary(snapshot));
         artifacts.put("backend-source-selection.properties", formatBackendSourceSelection(snapshot));
         artifacts.put("backend-module.properties", formatBackendModule(snapshot.backendModuleArtifact()));
         artifacts.put("backend-diagnostics.properties", formatBackendDiagnostics(snapshot));
         artifacts.put("opencl-irgpu-reconstruction-preview.properties", formatOpenClIrGpuReconstructionPreview(snapshot));
         artifacts.put("backend-source-reconstruction.properties", formatBackendSourceReconstruction(snapshot));
-        artifacts.put("backend-source-promotion-gate.properties", formatBackendSourcePromotionGate(snapshot));
-        artifacts.put("backend-source-switching-decision.properties", formatBackendSourceSwitchingDecision(snapshot));
+        artifacts.put(GpuPromotionArtifactRegistry.BACKEND_SOURCE_PROMOTION_GATE, formatBackendSourcePromotionGate(snapshot));
+        artifacts.put(GpuPromotionArtifactRegistry.BACKEND_SOURCE_SWITCHING_DECISION, formatBackendSourceSwitchingDecision(snapshot));
         artifacts.put("backend-source-map.properties", formatBackendSourceMap(snapshot));
-        artifacts.put("runtime-optimizer-drift.properties", GpuRuntimeOptimizerDriftArtifact.from(snapshot).toPropertiesText());
+        artifacts.put(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT, GpuRuntimeOptimizerDriftArtifact.from(snapshot).toPropertiesText());
         if (snapshot.optimizationReport().hasReports() || snapshot.productionOptimizerGate().productionProfileRequested()) {
             artifacts.put("optimizer-report.txt", snapshot.optimizationReport().toText());
         }

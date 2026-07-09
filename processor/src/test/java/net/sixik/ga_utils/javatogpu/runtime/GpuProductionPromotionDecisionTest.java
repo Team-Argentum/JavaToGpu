@@ -43,6 +43,21 @@ class GpuProductionPromotionDecisionTest {
     }
 
     @Test
+    void productionReadyArtifactWithIncompleteBackendPromotionSupportStaysDiagnosticOnly() {
+        Properties properties = productionReadyArtifact();
+        properties.setProperty("backendPromotionArtifactSupport.complete", "false");
+        properties.setProperty("backendPromotionArtifactSupport.missing.count", "1");
+
+        GpuProductionPromotionDecision decision = GpuProductionPromotionDecision.fromExplainability(properties);
+
+        assertEquals(GpuProductionPromotionDecision.DIAGNOSTIC_ONLY, decision.mode());
+        assertFalse(decision.contractValid());
+        assertFalse(decision.productionSourceSwitchingAllowed());
+        assertFalse(decision.productionMutationAllowed());
+        assertTrue(decision.firstViolation().contains("backend promotion artifact support"));
+    }
+
+    @Test
     void explainabilityFileBecomesRuntimeDecision() throws IOException {
         Path path = Files.createTempFile("javatogpu-production-promotion", ".properties");
         try {
@@ -105,6 +120,8 @@ class GpuProductionPromotionDecisionTest {
         properties.setProperty("sourceSwitching.productionDecision.all", "true");
         properties.setProperty("productionMutationAllowed", "true");
         properties.setProperty("productionMutationEnabled", "true");
+        properties.setProperty("backendPromotionArtifactSupport.complete", "true");
+        properties.setProperty("backendPromotionArtifactSupport.missing.count", "0");
         properties.setProperty("blocker.count", "0");
         return properties;
     }

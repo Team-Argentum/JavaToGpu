@@ -34,13 +34,13 @@ class GpuProductionPromotionExplainabilityValidationTest {
     @Test
     void rejectsBlockedArtifactWithProductionMutationEnabled() {
         Properties properties = blockedArtifact();
-        properties.setProperty("productionMutationEnabled", "true");
+        properties.setProperty("productionMutationAllowed", "true");
 
         GpuProductionPromotionExplainabilityValidation.Result result =
                 GpuProductionPromotionExplainabilityValidation.validate(properties);
 
         assertFalse(result.valid());
-        assertTrue(result.firstViolation().contains("blocked explainability cannot enable"));
+        assertTrue(result.firstViolation().contains("blocked explainability cannot allow"));
     }
 
     @Test
@@ -93,6 +93,18 @@ class GpuProductionPromotionExplainabilityValidationTest {
         assertTrue(result.violations().stream().anyMatch(value -> value.contains("source-ready")));
     }
 
+    @Test
+    void rejectsProductionReadyArtifactWithoutCompleteBackendPromotionArtifactSupport() {
+        Properties properties = productionReadyArtifact();
+        properties.setProperty("backendPromotionArtifactSupport.complete", "false");
+
+        GpuProductionPromotionExplainabilityValidation.Result result =
+                GpuProductionPromotionExplainabilityValidation.validate(properties);
+
+        assertFalse(result.valid());
+        assertTrue(result.violations().stream().anyMatch(value -> value.contains("backend promotion artifact support")));
+    }
+
     private static Properties blockedArtifact() {
         Properties properties = new Properties();
         properties.setProperty("status", "blocked");
@@ -127,6 +139,7 @@ class GpuProductionPromotionExplainabilityValidationTest {
         properties.setProperty("sourceSwitching.productionDecision.all", "true");
         properties.setProperty("productionMutationAllowed", "true");
         properties.setProperty("productionMutationEnabled", "true");
+        properties.setProperty("backendPromotionArtifactSupport.complete", "true");
         properties.setProperty("blocker.count", "0");
         return properties;
     }

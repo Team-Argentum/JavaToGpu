@@ -33,6 +33,16 @@ public interface GpuRuntimeBackend {
     }
 
     /**
+     * Describes which backend-neutral production-promotion artifacts this backend can emit.
+     *
+     * <p>The default is intentionally fail-closed so newly added backends do not accidentally look production-promotion
+     * ready before they wire the required runtime artifact surface.</p>
+     */
+    default GpuPromotionArtifactSupport promotionArtifactSupport() {
+        return GpuPromotionArtifactSupport.none(backendTarget());
+    }
+
+    /**
      * Executes one GPU kernel invocation.
      *
      * @param invocation descriptor and launch arguments for the generated kernel call

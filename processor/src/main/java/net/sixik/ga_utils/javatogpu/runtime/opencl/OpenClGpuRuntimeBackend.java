@@ -36,6 +36,8 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactSupport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileCacheKey;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
@@ -241,6 +243,11 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     @Override
+    public GpuPromotionArtifactSupport promotionArtifactSupport() {
+        return GpuPromotionArtifactSupport.complete(backendTarget());
+    }
+
+    @Override
     public final void invoke(GpuKernelInvocation invocation) {
         invocationCount.incrementAndGet();
         if (OpenClAbiDebug.enabled()) {
@@ -385,6 +392,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 deviceInfo.supportsDoublePrecision(),
                 deviceInfo.supportsImages(),
                 deviceInfo.supportsImage3dWrites(),
+                promotionArtifactSupport(),
                 deviceInfo.localMemoryBytes(),
                 deviceInfo.maxWorkGroupSize(),
                 statistics()
@@ -2597,12 +2605,12 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             String gateProperties = GpuBackendSourcePromotionWorkloadGateFormatter.merge(
                     path,
                     artifactSnapshot.backendModuleArtifact().resource(),
-                    dump.artifact("backend-source-promotion-gate.properties"),
-                    dump.artifact("backend-source-switching-decision.properties"),
-                    dump.artifact("runtime-ir-handoff.properties"),
-                    dump.artifact("runtime-production-mutation-safety.properties"),
-                    dump.artifact("i3-readiness-summary.properties"),
-                    dump.artifact("runtime-optimizer-drift.properties")
+                    dump.artifact(GpuPromotionArtifactRegistry.BACKEND_SOURCE_PROMOTION_GATE),
+                    dump.artifact(GpuPromotionArtifactRegistry.BACKEND_SOURCE_SWITCHING_DECISION),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_PRODUCTION_MUTATION_SAFETY),
+                    dump.artifact(GpuPromotionArtifactRegistry.I3_READINESS_SUMMARY),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT)
             );
             java.nio.file.Files.writeString(path, gateProperties, java.nio.charset.StandardCharsets.UTF_8);
         } catch (RuntimeException | java.io.IOException exception) {

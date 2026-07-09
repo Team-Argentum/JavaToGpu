@@ -45,6 +45,23 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("decision.productionMutationAllowed=true"));
     }
 
+    @Test
+    void blocksProductionReadyWhenBackendPromotionArtifactSupportIsIncomplete() {
+        String formatted = GpuProductionPromotionExplainabilityFormatter.format(
+                productionReadyGate(),
+                productionReadyReadiness(),
+                incompletePromotionArtifactSupport()
+        );
+
+        assertTrue(formatted.contains("status=blocked"));
+        assertTrue(formatted.contains("backendPromotionArtifactSupport.complete=false"));
+        assertTrue(formatted.contains("backendPromotionArtifactSupport.missing.count=1"));
+        assertTrue(formatted.contains("blocker.0=backend-promotion-artifact-support-incomplete"));
+        assertTrue(formatted.contains("productionSourceSwitchingAllowed=false"));
+        assertTrue(formatted.contains("productionMutationAllowed=false"));
+        assertTrue(formatted.contains("contract.status=valid"));
+    }
+
     private static Properties blockedWorkloadGate() {
         Properties properties = new Properties();
         properties.setProperty("status", "blocked");
@@ -90,6 +107,15 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("blocked.count", "0");
         properties.setProperty("sourceReady.count", "2");
         properties.setProperty("productionMutationEnabled", "true");
+        return properties;
+    }
+
+    private static Properties incompletePromotionArtifactSupport() {
+        Properties properties = new Properties();
+        properties.setProperty("complete", "false");
+        properties.setProperty("supported.count", "10");
+        properties.setProperty("missing.count", "1");
+        properties.setProperty("missing.0", GpuPromotionArtifactRegistry.BACKEND_PROMOTION_ARTIFACT_SUPPORT);
         return properties;
     }
 }

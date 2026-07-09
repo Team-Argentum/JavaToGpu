@@ -17,6 +17,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
         String selectedProfile,
         String baselineStatus,
         boolean promotionEligible,
+        int proofArtifactCount,
+        int acceptedProofArtifactCount,
+        int blockingProofArtifactCount,
         String productionGateStatus,
         boolean productionProfileRequested
 ) {
@@ -37,6 +40,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     "off",
                     "missing",
                     false,
+                    0,
+                    0,
+                    0,
                     "not-requested",
                     false
             );
@@ -61,6 +67,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
                 strategy.selectedProfile(),
                 baseline.status(),
                 baseline.promotionEligible(),
+                proofArtifactCount(report),
+                acceptedProofArtifactCount(report),
+                blockingProofArtifactCount(report),
                 gate.status(),
                 gate.productionProfileRequested()
         );
@@ -81,6 +90,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
         builder.append("selectedProfile=").append(selectedProfile).append('\n');
         builder.append("baselineStatus=").append(baselineStatus).append('\n');
         builder.append("promotionEligible=").append(promotionEligible).append('\n');
+        builder.append("proofArtifact.count=").append(proofArtifactCount).append('\n');
+        builder.append("proofArtifact.accepted.count=").append(acceptedProofArtifactCount).append('\n');
+        builder.append("proofArtifact.blocking.count=").append(blockingProofArtifactCount).append('\n');
         builder.append("productionGateStatus=").append(productionGateStatus).append('\n');
         builder.append("productionProfileRequested=").append(productionProfileRequested).append('\n');
         return builder.toString();
@@ -90,5 +102,44 @@ public record GpuRuntimeOptimizerDriftArtifact(
         return (int) report.passReports().stream()
                 .filter(passReport -> passReport.outcome() == outcome)
                 .count();
+    }
+
+    private static int proofArtifactCount(GpuRuntimeIrOptimizationReport report) {
+        return (int) report.passReports().stream()
+                .filter(GpuRuntimeOptimizerDriftArtifact::hasProofArtifact)
+                .count();
+    }
+
+    private static int acceptedProofArtifactCount(GpuRuntimeIrOptimizationReport report) {
+        return (int) report.passReports().stream()
+                .filter(GpuRuntimeOptimizerDriftArtifact::hasProofArtifact)
+                .filter(passReport -> isAcceptedVerdict(passReport.proofArtifact().verdict()))
+                .count();
+    }
+
+    private static int blockingProofArtifactCount(GpuRuntimeIrOptimizationReport report) {
+        return (int) report.passReports().stream()
+                .filter(GpuRuntimeOptimizerDriftArtifact::hasProofArtifact)
+                .filter(passReport -> isBlockingVerdict(passReport.proofArtifact().verdict()))
+                .count();
+    }
+
+    private static boolean hasProofArtifact(GpuRuntimeIrOptimizationPassReport passReport) {
+        GpuRuntimeIrOptimizationProofArtifact proofArtifact = passReport.proofArtifact();
+        return proofArtifact != null
+                && (!"none".equals(proofArtifact.source()) || !proofArtifact.fields().isEmpty());
+    }
+
+    private static boolean isAcceptedVerdict(String verdict) {
+        String normalized = verdict == null ? "" : verdict.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("accepted") || normalized.contains("passed") || normalized.contains("ready");
+    }
+
+    private static boolean isBlockingVerdict(String verdict) {
+        String normalized = verdict == null ? "" : verdict.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("reject")
+                || normalized.contains("block")
+                || normalized.contains("fail")
+                || normalized.contains("invalid");
     }
 }

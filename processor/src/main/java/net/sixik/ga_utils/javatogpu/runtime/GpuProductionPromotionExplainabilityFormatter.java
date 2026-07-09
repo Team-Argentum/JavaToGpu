@@ -18,12 +18,29 @@ public final class GpuProductionPromotionExplainabilityFormatter {
     }
 
     public static String format(Properties workloadGate, Properties i3Summary) {
+        return format(workloadGate, i3Summary, completePromotionArtifactSupport());
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport
+    ) {
         Properties gate = workloadGate == null ? new Properties() : workloadGate;
         Properties readiness = i3Summary == null ? new Properties() : i3Summary;
+        Properties promotionSupport = backendPromotionArtifactSupport == null
+                ? new Properties()
+                : backendPromotionArtifactSupport;
+        boolean backendPromotionArtifactSupportComplete = propertyIsTrue(
+                promotionSupport,
+                "complete",
+                false
+        );
         if (gate.isEmpty()) {
             return appendContractFields("status=blocked\n"
                     + "productionSourceSwitchingAllowed=false\n"
                     + "productionMutationAllowed=false\n"
+                    + "backendPromotionArtifactSupport.complete=" + backendPromotionArtifactSupportComplete + "\n"
                     + "kernel.count=0\n"
                     + "blocker.count=1\n"
                     + "blocker.0=workload-promotion-gate-not-recorded\n"
@@ -98,6 +115,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         if (!productionMutationEnabled) {
             blockers.add("production-mutation-disabled");
         }
+        if (!backendPromotionArtifactSupportComplete) {
+            blockers.add("backend-promotion-artifact-support-incomplete");
+        }
 
         StringBuilder builder = new StringBuilder();
         builder.append("status=").append(blockers.isEmpty() ? "production-ready" : "blocked").append('\n');
@@ -121,6 +141,13 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
         builder.append("productionMutationAllowed=").append(productionMutationEnabled && blockers.isEmpty()).append('\n');
         builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
+        builder.append("backendPromotionArtifactSupport.complete=").append(backendPromotionArtifactSupportComplete).append('\n');
+        builder.append("backendPromotionArtifactSupport.supported.count=").append(parsePositiveInt(
+                promotionSupport.getProperty("supported.count", "0")
+        )).append('\n');
+        builder.append("backendPromotionArtifactSupport.missing.count=").append(parsePositiveInt(
+                promotionSupport.getProperty("missing.count", "0")
+        )).append('\n');
         builder.append("blocker.count=").append(blockers.size()).append('\n');
         for (int index = 0; index < blockers.size(); index++) {
             builder.append("blocker.").append(index).append('=').append(blockers.get(index)).append('\n');
@@ -173,6 +200,17 @@ public final class GpuProductionPromotionExplainabilityFormatter {
     private static boolean propertyIsTrue(Properties properties, String key, boolean fallback) {
         String value = properties.getProperty(key);
         return value == null || value.isBlank() ? fallback : "true".equals(value);
+    }
+
+    private static Properties completePromotionArtifactSupport() {
+        Properties properties = new Properties();
+        properties.setProperty("complete", "true");
+        properties.setProperty(
+                "supported.count",
+                Integer.toString(GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.size())
+        );
+        properties.setProperty("missing.count", "0");
+        return properties;
     }
 
     private static int parsePositiveInt(String value) {

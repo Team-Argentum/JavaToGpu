@@ -16,6 +16,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
@@ -56,7 +57,7 @@ public final class OpenClBackendSourcePromotionGateReporter {
         }
 
         GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot());
-        String gateProperties = dump.artifact("backend-source-promotion-gate.properties");
+        String gateProperties = dump.artifact(GpuPromotionArtifactRegistry.BACKEND_SOURCE_PROMOTION_GATE);
         Path path = Paths.get(gatePath);
         Path parent = path.getParent();
         if (parent != null) {

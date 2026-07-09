@@ -474,6 +474,10 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
                 && allProductionSourceDecisions;
         String status = productionSourceSwitchingEnabled ? "production-enabled" : allReviewReady ? "review-ready" : "blocked";
         LinkedHashMap<String, Integer> aggregateFamilies = aggregatePromotionBlockerFamilies(kernels);
+        LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockers = aggregateSourcePromotionFirstBlockers(kernels);
+        LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockerFamilies = aggregateSourcePromotionFirstBlockerFamilies(
+                aggregateSourcePromotionFirstBlockers
+        );
         StringBuilder builder = new StringBuilder();
         builder.append("status=").append(status).append('\n');
         builder.append("reviewReady=").append(allReviewReady).append('\n');
@@ -489,6 +493,20 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append("sourceSwitching.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
         builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
         builder.append("sourceSwitching.count=").append(kernels.size()).append('\n');
+        builder.append("sourceSwitching.sourcePromotionFirstBlocker.count=").append(aggregateSourcePromotionFirstBlockers.size()).append('\n');
+        int sourcePromotionBlockerIndex = 0;
+        for (Map.Entry<String, Integer> blocker : aggregateSourcePromotionFirstBlockers.entrySet()) {
+            builder.append("sourceSwitching.sourcePromotionFirstBlocker.").append(sourcePromotionBlockerIndex).append(".name=").append(blocker.getKey()).append('\n');
+            builder.append("sourceSwitching.sourcePromotionFirstBlocker.").append(sourcePromotionBlockerIndex).append(".count=").append(blocker.getValue()).append('\n');
+            sourcePromotionBlockerIndex++;
+        }
+        builder.append("sourceSwitching.sourcePromotionFirstBlockerFamily.count=").append(aggregateSourcePromotionFirstBlockerFamilies.size()).append('\n');
+        int sourcePromotionBlockerFamilyIndex = 0;
+        for (Map.Entry<String, Integer> family : aggregateSourcePromotionFirstBlockerFamilies.entrySet()) {
+            builder.append("sourceSwitching.sourcePromotionFirstBlockerFamily.").append(sourcePromotionBlockerFamilyIndex).append(".name=").append(family.getKey()).append('\n');
+            builder.append("sourceSwitching.sourcePromotionFirstBlockerFamily.").append(sourcePromotionBlockerFamilyIndex).append(".count=").append(family.getValue()).append('\n');
+            sourcePromotionBlockerFamilyIndex++;
+        }
         builder.append("kernel.count=").append(kernels.size()).append('\n');
         builder.append("blockerFamily.count=").append(aggregateFamilies.size()).append('\n');
         int familyIndex = 0;
@@ -653,6 +671,9 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("runtimeOptimizerDrift.pass.skipped.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.skipped.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.pass.rolledBack.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.pass.failed.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.failed.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.accepted.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.blocking.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.fallbackDecision=").append(entry.getProperty("runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.selectedRuntimeIrStage=").append(entry.getProperty("runtimeOptimizerDrift.selectedRuntimeIrStage", "unknown")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.selectedRuntimeIrIdentity=").append(entry.getProperty("runtimeOptimizerDrift.selectedRuntimeIrIdentity", "unknown")).append('\n');
@@ -693,6 +714,29 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
                 int count = parsePositiveInt(entry.getProperty("blockerFamily." + familyIndex + ".count", "0"));
                 families.merge(family, count, Integer::sum);
             }
+        }
+        return families;
+    }
+
+    private static LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockers(LinkedHashMap<String, Properties> kernels) {
+        LinkedHashMap<String, Integer> blockers = new LinkedHashMap<>();
+        for (Properties entry : kernels.values()) {
+            String blocker = entry.getProperty("sourceSwitching.sourcePromotionFirstBlocker", "unknown");
+            if (blocker.isBlank() || "none".equals(blocker) || "unknown".equals(blocker)) {
+                continue;
+            }
+            blockers.merge(blocker, 1, Integer::sum);
+        }
+        return blockers;
+    }
+
+    private static LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockerFamilies(
+            LinkedHashMap<String, Integer> blockers
+    ) {
+        LinkedHashMap<String, Integer> families = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> blocker : blockers.entrySet()) {
+            String family = GpuBackendSourcePromotionBlockerClassifier.classify(blocker.getKey());
+            families.merge(family, blocker.getValue(), Integer::sum);
         }
         return families;
     }

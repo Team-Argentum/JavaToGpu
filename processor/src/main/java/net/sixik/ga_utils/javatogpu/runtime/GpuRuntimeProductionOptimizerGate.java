@@ -84,6 +84,7 @@ public record GpuRuntimeProductionOptimizerGate(
         boolean fallbackClean = GpuRuntimeFallbackEvidence.NONE.equals(fallback.decision());
         boolean strategyEvidenceBacked = report.strategyDecision().evidenceBacked() && !report.strategyDecision().advisoryOnly();
         boolean vendorPromotionEligible = report.strategyDecision().vendorBaseline().promotionEligible();
+        boolean acceptedProofEvidencePresent = hasAcceptedProofEvidence(report);
         boolean rollbackClean = !report.requiresRollback();
         List<String> diagnostics = new ArrayList<>();
 
@@ -115,6 +116,9 @@ public record GpuRuntimeProductionOptimizerGate(
         if (!vendorPromotionEligible) {
             diagnostics.add("vendor baseline is not promotion-eligible under A1/A2 gates");
         }
+        if (!acceptedProofEvidencePresent) {
+            diagnostics.add("accepted optimizer proof artifact is required before production promotion");
+        }
         if (!rollbackClean) {
             diagnostics.add("optimizer rollback/failure reports block production promotion");
         }
@@ -139,6 +143,23 @@ public record GpuRuntimeProductionOptimizerGate(
 
     public boolean accepted() {
         return "accepted".equals(status);
+    }
+
+    private static boolean hasAcceptedProofEvidence(GpuRuntimeIrOptimizationReport report) {
+        return report.passReports().stream()
+                .map(GpuRuntimeIrOptimizationPassReport::proofArtifact)
+                .filter(GpuRuntimeProductionOptimizerGate::hasProofArtifact)
+                .anyMatch(proofArtifact -> isAcceptedVerdict(proofArtifact.verdict()));
+    }
+
+    private static boolean hasProofArtifact(GpuRuntimeIrOptimizationProofArtifact proofArtifact) {
+        return proofArtifact != null
+                && (!"none".equals(proofArtifact.source()) || !proofArtifact.fields().isEmpty());
+    }
+
+    private static boolean isAcceptedVerdict(String verdict) {
+        String normalized = verdict == null ? "" : verdict.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("accepted") || normalized.contains("passed") || normalized.contains("ready");
     }
 
     public String toPropertiesText() {

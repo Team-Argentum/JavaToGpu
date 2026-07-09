@@ -44,6 +44,15 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("real-workload", gate.getProperty("scope"));
         assertEquals("false", gate.getProperty("productionSourceSwitching"));
         assertEquals("2", gate.getProperty("sourceSwitching.count"));
+        assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count"));
+        assertEquals(
+                "source-switching-decision-not-recorded",
+                gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.0.name")
+        );
+        assertEquals("2", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.0.count"));
+        assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.count"));
+        assertEquals("other", gate.getProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.name"));
+        assertEquals("2", gate.getProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.count"));
         assertEquals("2", gate.getProperty("kernel.count"));
         assertEquals("kernel-a.cl", gate.getProperty("kernel.0.sourceKernelResource"));
         assertEquals("kernel-b.cl", gate.getProperty("kernel.1.sourceKernelResource"));
@@ -259,6 +268,15 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         ));
 
         assertEquals("2", gate.getProperty("sourceSwitching.count"));
+        assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count"));
+        assertEquals(
+                "runtime equivalence must execute and pass before backend source promotion",
+                gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.0.name")
+        );
+        assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.0.count"));
+        assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.count"));
+        assertEquals("runtime-equivalence", gate.getProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.name"));
+        assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.count"));
         assertEquals("compile-irgpu-source-review", gate.getProperty("kernel.0.sourceSwitching.decision"));
         assertEquals(
                 GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE,
@@ -429,6 +447,8 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("true", gate.getProperty("productionPromotionDecisionMode.productionEnabled.all"));
         assertEquals("1", gate.getProperty("sourceSwitching.productionDecision.count"));
         assertEquals("true", gate.getProperty("sourceSwitching.productionDecision.all"));
+        assertEquals("0", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count"));
+        assertEquals("0", gate.getProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.count"));
         assertEquals(
                 "all workload kernels reached production IrGpu source switching with accepted promotion evidence",
                 gate.getProperty("reason")
@@ -666,6 +686,9 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "pass.skipped.count=0",
                 "pass.rolledBack.count=" + rolledBackCount,
                 "pass.failed.count=" + failedCount,
+                "proofArtifact.count=2",
+                "proofArtifact.accepted.count=1",
+                "proofArtifact.blocking.count=1",
                 "fallbackDecision=" + fallbackDecision,
                 "selectedRuntimeIrStage=" + selectedRuntimeIrStage,
                 "selectedRuntimeIrIdentity=irgpu:sha256:selected",
