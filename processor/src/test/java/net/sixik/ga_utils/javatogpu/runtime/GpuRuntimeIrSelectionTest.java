@@ -137,7 +137,8 @@ class GpuRuntimeIrSelectionTest {
         GpuRuntimeCompileRequest optimizedRequest = new GpuRuntimeCompileRequest(
                 descriptor(),
                 GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                        .withProductionPromotionDecision(productionEnabledDecision()),
+                        .withProductionPromotionDecision(productionEnabledDecision())
+                        .withProductionPromotionOperatorAccepted(true),
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(optimized)
         );
@@ -187,7 +188,8 @@ class GpuRuntimeIrSelectionTest {
         GpuRuntimeCompileRequest optimizedRequest = new GpuRuntimeCompileRequest(
                 descriptor(),
                 GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                        .withProductionPromotionDecision(productionEnabledDecision()),
+                        .withProductionPromotionDecision(productionEnabledDecision())
+                        .withProductionPromotionOperatorAccepted(true),
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(optimized)
         );

@@ -18,7 +18,8 @@ public final class GpuProductionIrAcceptanceGate {
             String optimizationProfile,
             boolean productionProfileRequested,
             boolean backendSourceSwitchingEnabled,
-            String decisionMode
+            String decisionMode,
+            boolean operatorAccepted
     ) {
         String normalizedBackendName = normalize(backendName, "GPU backend");
         String normalizedSourceName = normalize(sourceName, "IrGpu source");
@@ -49,11 +50,20 @@ public final class GpuProductionIrAcceptanceGate {
                     "production promotion decision mode is not production-enabled"
             );
         }
+        if (!operatorAccepted) {
+            return rejected(
+                    normalizedBackendName,
+                    normalizedSourceName,
+                    normalizedOptimizationProfile,
+                    normalizedDecisionMode,
+                    "production promotion was not explicitly accepted by the operator"
+            );
+        }
         return new Result(true, "production-enabled", normalizedDecisionMode, normalizedBackendName
                 + " " + normalizedSourceName
                 + " may be selected for production-like optimization profile '"
                 + normalizedOptimizationProfile
-                + "' because backend source switching and production decision are both enabled");
+                + "' because backend source switching, production decision, and operator acceptance are enabled");
     }
 
     private static Result rejected(

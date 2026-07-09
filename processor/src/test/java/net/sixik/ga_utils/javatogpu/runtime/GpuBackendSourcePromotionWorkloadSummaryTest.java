@@ -18,10 +18,13 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("runtimeEquivalencePassed", "false");
         properties.setProperty("realWorkloadEvidence", "runtime-snapshot");
         properties.setProperty("productionSourceSwitching", "false");
+        properties.setProperty("productionPromotionOperatorAccepted.count", "1");
+        properties.setProperty("productionPromotionOperatorAccepted.all", "true");
         properties.setProperty("kernel.count", "1");
         properties.setProperty("kernel.0.sourceKernelResource", "inline://integration/perlin-kernel.cl");
         properties.setProperty("kernel.0.diagnostic.count", "1");
         properties.setProperty("kernel.0.sourceSwitching.decision", "reject-production-irgpu-source");
+        properties.setProperty("kernel.0.sourceSwitching.productionPromotionOperatorAccepted", "true");
         properties.setProperty(
                 "kernel.0.sourceSwitching.sourcePromotionFirstBlocker",
                 "runtime equivalence must execute and pass before backend source promotion"
@@ -62,9 +65,14 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertEquals(2, summary.optimizerProofArtifactCount());
         assertEquals(1, summary.optimizerAcceptedProofArtifactCount());
         assertEquals(1, summary.optimizerBlockingProofArtifactCount());
+        assertEquals(1, summary.productionPromotionOperatorAcceptedCount());
+        assertEquals("true", summary.productionPromotionOperatorAcceptedAll());
         assertTrue(summary.historyStatus().contains("gateStatus=blocked"));
         assertTrue(summary.historyStatus().contains("realWorkloadEvidence=runtime-snapshot"));
+        assertTrue(summary.historyStatus().contains("productionPromotionOperatorAccepted=1/1"));
+        assertTrue(summary.historyStatus().contains("productionPromotionOperatorAcceptedAll=true"));
         assertTrue(summary.historyStatus().contains("kernelCount=1"));
+        assertTrue(summary.historyStatus().contains("sourceSwitching=reject-production-irgpu-source/operatorAccepted=true"));
         assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1"));
         assertTrue(summary.historyStatus().contains("families=source-parity=1"));
     }
@@ -113,7 +121,10 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("runtimeEquivalencePassed", "true");
         properties.setProperty("realWorkloadEvidence", "runtime-snapshot");
         properties.setProperty("productionSourceSwitching", "false");
+        properties.setProperty("productionPromotionOperatorAccepted.count", "0");
+        properties.setProperty("productionPromotionOperatorAccepted.all", "false");
         properties.setProperty("kernel.0.sourceSwitching.decision", "compile-descriptor-source");
+        properties.setProperty("kernel.0.sourceSwitching.productionPromotionOperatorAccepted", "false");
         properties.setProperty(
                 "kernel.0.sourceSwitching.sourcePromotionFirstBlocker",
                 "backend source must be reconstructed from IrGpu before promotion review"
@@ -128,6 +139,8 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(formatted.contains("reviewReady=false\n"));
         assertTrue(formatted.contains("sourceParityMatched=true\n"));
         assertTrue(formatted.contains("runtimeEquivalencePassed=true\n"));
+        assertTrue(formatted.contains("productionPromotionOperatorAccepted.count=0\n"));
+        assertTrue(formatted.contains("productionPromotionOperatorAccepted.all=false\n"));
         assertTrue(formatted.contains("sourceSwitching.decisions=compile-descriptor-source=1\n"));
         assertTrue(formatted.contains("sourcePromotionFirstBlockerFamily.0.name=reconstruction\n"));
         assertTrue(formatted.contains("sourcePromotionFirstBlockerFamily.0.count=1\n"));

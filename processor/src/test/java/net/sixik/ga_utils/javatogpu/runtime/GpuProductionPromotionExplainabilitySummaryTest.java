@@ -41,6 +41,10 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(summary.historyStatus().contains("first=workload-source-promotion-gate-not-review-ready"));
         assertTrue(summary.historyStatus().contains("i3SourceReadyAll=false"));
         assertTrue(summary.historyStatus().contains("backendPromotionArtifactSupportComplete=unknown"));
+        assertTrue(summary.historyStatus().contains("controlledSourceSwitching=not-recorded"));
+        assertTrue(summary.historyStatus().contains("controlledRealWorkloadCoverage=0/0"));
+        assertTrue(summary.historyStatus().contains("readinessChecklistReady=0"));
+        assertTrue(summary.historyStatus().contains("readinessChecklistBlocked=0"));
     }
 
     @Test
@@ -82,6 +86,16 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         properties.setProperty("i3SourceReady.all", "false");
         properties.setProperty("blocker.count", "1");
         properties.setProperty("blocker.0", "production-mutation-disabled");
+        properties.setProperty("controlledProductionSourceSwitching.status", "passed");
+        properties.setProperty("controlledProductionSourceSwitching.kernel.count", "7");
+        properties.setProperty("controlledProductionSourceSwitching.realWorkload.covered.count", "1");
+        properties.setProperty("controlledProductionSourceSwitching.realWorkload.total.count", "2");
+        properties.setProperty("controlledProductionSourceSwitching.realWorkload.uncovered.count", "1");
+        properties.setProperty("controlledProductionSourceSwitching.realWorkload.covered.all", "false");
+        properties.setProperty("readinessChecklist.ready.count", "4");
+        properties.setProperty("readinessChecklist.blocked.count", "4");
+        properties.setProperty("readinessChecklist.ready.all", "false");
+        properties.setProperty("readinessChecklist.firstBlocked", "production-source-switching-enabled");
 
         GpuProductionPromotionExplainabilitySummary summary =
                 GpuProductionPromotionExplainabilitySummary.fromProperties(properties);
@@ -95,6 +109,16 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("productionMutationEnabled=false\n"));
         assertTrue(formatted.contains("backendPromotionArtifactSupport.complete=unknown\n"));
         assertTrue(formatted.contains("backendPromotionArtifactSupport.missing.count=0\n"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.status=passed\n"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.kernel.count=7\n"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.count=1\n"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.total.count=2\n"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.uncovered.count=1\n"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.all=false\n"));
+        assertTrue(formatted.contains("readinessChecklist.ready.count=4\n"));
+        assertTrue(formatted.contains("readinessChecklist.blocked.count=4\n"));
+        assertTrue(formatted.contains("readinessChecklist.ready.all=false\n"));
+        assertTrue(formatted.contains("readinessChecklist.firstBlocked=production-source-switching-enabled\n"));
         assertTrue(formatted.contains("blocker.0=production-mutation-disabled\n"));
         assertTrue(formatted.contains("historyStatus=blocked"));
     }

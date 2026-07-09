@@ -1325,6 +1325,9 @@ class OpenClGpuRuntimeBackendTest {
             assertTrue(gateProperties.contains("kernel.count=1"));
             assertTrue(gateProperties.contains("kernel.0.sourceKernelResource=javatogpu/sample/Demo/kernel.cl"));
             assertTrue(gateProperties.contains("kernel.0.status=blocked"));
+            assertTrue(gateProperties.contains("kernel.0.runtimeOptimizerDrift.status=recorded"));
+            assertTrue(gateProperties.contains("kernel.0.runtimeOptimizerDrift.pass.count=0"));
+            assertTrue(gateProperties.contains("kernel.0.runtimeOptimizerDrift.proofArtifact.count=0"));
             assertTrue(gateProperties.contains("kernel.0.diagnostic.count=5"));
             assertTrue(gateProperties.contains("kernel.0.diagnostic.0=backend source must be reconstructed from IrGpu before promotion review"));
             assertTrue(gateProperties.contains("blockerFamily.0.name=reconstruction"));
@@ -1368,6 +1371,8 @@ class OpenClGpuRuntimeBackendTest {
             assertTrue(gateProperties.contains("kernel.1.sourceKernelResource=javatogpu/sample/Demo/other-kernel.cl"));
             assertTrue(gateProperties.contains("kernel.0.realWorkloadEvidence=runtime-snapshot"));
             assertTrue(gateProperties.contains("kernel.1.realWorkloadEvidence=runtime-snapshot"));
+            assertTrue(gateProperties.contains("kernel.0.runtimeOptimizerDrift.status=recorded"));
+            assertTrue(gateProperties.contains("kernel.1.runtimeOptimizerDrift.status=recorded"));
             assertTrue(gateProperties.contains("kernel.0.diagnostic.0=backend source must be reconstructed from IrGpu before promotion review"));
             assertTrue(gateProperties.contains("kernel.1.diagnostic.0=backend source must be reconstructed from IrGpu before promotion review"));
             assertTrue(gateProperties.contains("blockerFamily.0.name=reconstruction"));
@@ -1658,6 +1663,7 @@ class OpenClGpuRuntimeBackendTest {
                     new Object[]{new int[]{0}},
                     GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
                             .withProductionPromotionDecision(productionEnabledDecision())
+                            .withProductionPromotionOperatorAccepted(true)
             ));
         } finally {
             Thread.currentThread().setContextClassLoader(previousClassLoader);
@@ -1742,6 +1748,7 @@ class OpenClGpuRuntimeBackendTest {
                     new Object[]{new int[]{0}},
                     GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
                             .withProductionPromotionDecision(productionEnabledDecision())
+                            .withProductionPromotionOperatorAccepted(true)
             ));
         } finally {
             Thread.currentThread().setContextClassLoader(previousClassLoader);
@@ -1836,6 +1843,7 @@ class OpenClGpuRuntimeBackendTest {
                     descriptor,
                     new Object[]{new float[]{1.0f}, 2.0f, new float[]{0.0f}},
                     GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                            .withProductionPromotionOperatorAccepted(true)
             ));
         } finally {
             if (previousExplainabilityFile == null) {
@@ -1861,6 +1869,7 @@ class OpenClGpuRuntimeBackendTest {
         assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().sourceAvailable());
         assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().sourceParityMatched());
         assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().productionSourceSwitchingEnabled());
+        assertTrue(snapshot.backendSourceSwitchingDecision().orElseThrow().productionPromotionOperatorAccepted());
         assertEquals(
                 GpuProductionPromotionDecision.PRODUCTION_ENABLED,
                 snapshot.backendSourceSwitchingDecision().orElseThrow().productionPromotionDecisionMode()

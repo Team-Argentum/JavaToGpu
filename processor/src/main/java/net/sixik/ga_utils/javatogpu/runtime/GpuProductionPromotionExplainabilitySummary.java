@@ -25,7 +25,17 @@ public record GpuProductionPromotionExplainabilitySummary(
         int i3SourceReadyCount,
         String i3SourceReadyAll,
         String backendPromotionArtifactSupportComplete,
-        int backendPromotionArtifactSupportMissingCount
+        int backendPromotionArtifactSupportMissingCount,
+        String controlledProductionSourceSwitchingStatus,
+        int controlledProductionSourceSwitchingKernelCount,
+        int controlledProductionSourceSwitchingRealWorkloadCoveredCount,
+        int controlledProductionSourceSwitchingRealWorkloadTotalCount,
+        int controlledProductionSourceSwitchingRealWorkloadUncoveredCount,
+        String controlledProductionSourceSwitchingRealWorkloadCoveredAll,
+        int readinessChecklistReadyCount,
+        int readinessChecklistBlockedCount,
+        String readinessChecklistReadyAll,
+        String readinessChecklistFirstBlocked
 ) {
 
     public static GpuProductionPromotionExplainabilitySummary notRecorded() {
@@ -46,7 +56,17 @@ public record GpuProductionPromotionExplainabilitySummary(
                 0,
                 "false",
                 "unknown",
-                0
+                0,
+                "not-recorded",
+                0,
+                0,
+                0,
+                0,
+                "false",
+                0,
+                0,
+                "false",
+                "none"
         );
     }
 
@@ -74,7 +94,26 @@ public record GpuProductionPromotionExplainabilitySummary(
                 parsePositiveInt(properties.getProperty("i3SourceReady.count", Integer.toString(contract.i3SourceReadyCount()))),
                 properties.getProperty("i3SourceReady.all", "false"),
                 properties.getProperty("backendPromotionArtifactSupport.complete", "unknown"),
-                parsePositiveInt(properties.getProperty("backendPromotionArtifactSupport.missing.count", "0"))
+                parsePositiveInt(properties.getProperty("backendPromotionArtifactSupport.missing.count", "0")),
+                properties.getProperty("controlledProductionSourceSwitching.status", "not-recorded"),
+                parsePositiveInt(properties.getProperty("controlledProductionSourceSwitching.kernel.count", "0")),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionSourceSwitching.realWorkload.covered.count",
+                        "0"
+                )),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionSourceSwitching.realWorkload.total.count",
+                        "0"
+                )),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionSourceSwitching.realWorkload.uncovered.count",
+                        "0"
+                )),
+                properties.getProperty("controlledProductionSourceSwitching.realWorkload.covered.all", "false"),
+                parsePositiveInt(properties.getProperty("readinessChecklist.ready.count", "0")),
+                parsePositiveInt(properties.getProperty("readinessChecklist.blocked.count", "0")),
+                properties.getProperty("readinessChecklist.ready.all", "false"),
+                properties.getProperty("readinessChecklist.firstBlocked", "none")
         );
     }
 
@@ -110,6 +149,16 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + ", i3SourceReadyAll=" + i3SourceReadyAll
                 + ", backendPromotionArtifactSupportComplete=" + backendPromotionArtifactSupportComplete
                 + ", backendPromotionArtifactSupportMissing=" + backendPromotionArtifactSupportMissingCount
+                + ", controlledSourceSwitching=" + controlledProductionSourceSwitchingStatus
+                + ", controlledSourceSwitchingKernels=" + controlledProductionSourceSwitchingKernelCount
+                + ", controlledRealWorkloadCoverage=" + controlledProductionSourceSwitchingRealWorkloadCoveredCount
+                + "/" + controlledProductionSourceSwitchingRealWorkloadTotalCount
+                + ", controlledRealWorkloadUncovered=" + controlledProductionSourceSwitchingRealWorkloadUncoveredCount
+                + ", controlledRealWorkloadCoverageAll=" + controlledProductionSourceSwitchingRealWorkloadCoveredAll
+                + ", readinessChecklistReady=" + readinessChecklistReadyCount
+                + ", readinessChecklistBlocked=" + readinessChecklistBlockedCount
+                + ", readinessChecklistReadyAll=" + readinessChecklistReadyAll
+                + ", readinessChecklistFirstBlocked=" + readinessChecklistFirstBlocked
                 + ")";
     }
 

@@ -379,11 +379,12 @@ class GpuBackendLowerersTest {
                         "production-ready",
                         true,
                         true,
-                        true,
-                        "none",
-                        "none",
-                        "production promotion is explicitly enabled by accepted evidence"
-                ));
+                true,
+                "none",
+                "none",
+                "production promotion is explicitly enabled by accepted evidence"
+                ))
+                .withProductionPromotionOperatorAccepted(true);
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor,
                 options,

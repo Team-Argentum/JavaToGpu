@@ -3,8 +3,10 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 /**
  * Formats backend-neutral production-promotion explainability artifacts.
@@ -26,11 +28,23 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             Properties i3Summary,
             Properties backendPromotionArtifactSupport
     ) {
+        return format(workloadGate, i3Summary, backendPromotionArtifactSupport, new Properties());
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation
+    ) {
         Properties gate = workloadGate == null ? new Properties() : workloadGate;
         Properties readiness = i3Summary == null ? new Properties() : i3Summary;
         Properties promotionSupport = backendPromotionArtifactSupport == null
                 ? new Properties()
                 : backendPromotionArtifactSupport;
+        Properties controlledSourceSwitching = controlledProductionSourceSwitchingValidation == null
+                ? new Properties()
+                : controlledProductionSourceSwitchingValidation;
         boolean backendPromotionArtifactSupportComplete = propertyIsTrue(
                 promotionSupport,
                 "complete",
@@ -83,6 +97,66 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         int i3SourceReadyCount = parsePositiveInt(readiness.getProperty("sourceReady.count", "0"));
         boolean allKernelsI3ReviewReady = kernelCount > 0 && i3ReviewReadyCount == kernelCount && i3BlockedCount == 0;
         boolean allKernelsSourceReady = kernelCount > 0 && i3SourceReadyCount == kernelCount;
+        String controlledSourceSwitchingStatus = controlledSourceSwitching.getProperty("status", "not-recorded");
+        int controlledSourceSwitchingKernelCount = parsePositiveInt(
+                controlledSourceSwitching.getProperty("kernel.count", "0")
+        );
+        ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage =
+                controlledSourceSwitchingCoverage(gate, controlledSourceSwitching);
+
+        List<ReadinessChecklistItem> readinessChecklist = List.of(
+                new ReadinessChecklistItem(
+                        "workload-gate-review-ready",
+                        gateReviewReady,
+                        "real workload source-promotion gate is review-ready",
+                        "real workload source-promotion gate is not review-ready"
+                ),
+                new ReadinessChecklistItem(
+                        "source-parity-matched",
+                        sourceParityMatched,
+                        "generated source and packaged IrGpu source match",
+                        "generated source and packaged IrGpu source do not match"
+                ),
+                new ReadinessChecklistItem(
+                        "runtime-equivalence-passed",
+                        runtimeEquivalencePassed,
+                        "runtime equivalence evidence passed",
+                        "runtime equivalence evidence has not passed"
+                ),
+                new ReadinessChecklistItem(
+                        "i3-source-ready",
+                        allKernelsSourceReady,
+                        "all workload kernels are I3 source-ready",
+                        "one or more workload kernels are not I3 source-ready"
+                ),
+                new ReadinessChecklistItem(
+                        "controlled-source-switching-covered",
+                        controlledSourceSwitchingCoverage.allCovered(),
+                        "controlled production source-switching lane covers all real workload resources",
+                        "controlled production source-switching lane does not cover every real workload resource"
+                ),
+                new ReadinessChecklistItem(
+                        "promotion-artifacts-complete",
+                        backendPromotionArtifactSupportComplete,
+                        "backend promotion artifact support is complete",
+                        "backend promotion artifact support is incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "production-source-switching-enabled",
+                        productionSourceSwitchingEnabled
+                                && allProductionSourceSwitchingEnabled
+                                && allProductionPromotionDecisionsEnabled
+                                && allProductionSourceDecisions,
+                        "production source switching is enabled for all workload kernels",
+                        "production source switching remains disabled or incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "production-mutation-enabled",
+                        productionMutationEnabled,
+                        "production mutation is enabled",
+                        "production mutation remains disabled"
+                )
+        );
 
         List<String> blockers = new ArrayList<>();
         if (!gateReviewReady) {
@@ -148,12 +222,115 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("backendPromotionArtifactSupport.missing.count=").append(parsePositiveInt(
                 promotionSupport.getProperty("missing.count", "0")
         )).append('\n');
+        builder.append("controlledProductionSourceSwitching.status=")
+                .append(controlledSourceSwitchingStatus)
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.kernel.count=")
+                .append(controlledSourceSwitchingKernelCount)
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.reviewReady=")
+                .append(controlledSourceSwitching.getProperty("reviewReady", "false"))
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.productionSourceSwitching=")
+                .append(controlledSourceSwitching.getProperty("productionSourceSwitching", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.productionPromotionDecisionMode=")
+                .append(controlledSourceSwitching.getProperty("productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY))
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.covered.count=")
+                .append(controlledSourceSwitchingCoverage.coveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.total.count=")
+                .append(controlledSourceSwitchingCoverage.realWorkloadResources().size())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.uncovered.count=")
+                .append(controlledSourceSwitchingCoverage.uncoveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.covered.all=")
+                .append(controlledSourceSwitchingCoverage.allCovered())
+                .append('\n');
+        appendIndexedResources(builder, "controlledProductionSourceSwitching.realWorkload.covered",
+                controlledSourceSwitchingCoverage.coveredResources());
+        appendIndexedResources(builder, "controlledProductionSourceSwitching.realWorkload.uncovered",
+                controlledSourceSwitchingCoverage.uncoveredResources());
+        appendReadinessChecklist(builder, readinessChecklist);
         builder.append("blocker.count=").append(blockers.size()).append('\n');
         for (int index = 0; index < blockers.size(); index++) {
             builder.append("blocker.").append(index).append('=').append(blockers.get(index)).append('\n');
         }
         builder.append("diagnostic.0=").append(diagnostic(blockers, i3ReviewReadyCount, i3BlockedCount)).append('\n');
         return appendContractFields(builder.toString());
+    }
+
+    private static ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage(
+            Properties workloadGate,
+            Properties controlledSourceSwitching
+    ) {
+        List<String> realWorkloadResources = resources(workloadGate, "sourceKernelResource");
+        Set<String> controlledResources = new LinkedHashSet<>(resources(controlledSourceSwitching, "resource"));
+        List<String> coveredResources = new ArrayList<>();
+        List<String> uncoveredResources = new ArrayList<>();
+        for (String resource : realWorkloadResources) {
+            if (controlledResources.contains(resource)) {
+                coveredResources.add(resource);
+            } else {
+                uncoveredResources.add(resource);
+            }
+        }
+        return new ControlledSourceSwitchingCoverage(realWorkloadResources, coveredResources, uncoveredResources);
+    }
+
+    private static List<String> resources(Properties properties, String suffix) {
+        int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+        List<String> resources = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String resource = properties.getProperty("kernel." + index + "." + suffix, "").trim();
+            if (!resource.isBlank() && seen.add(resource)) {
+                resources.add(resource);
+            }
+        }
+        return resources;
+    }
+
+    private static void appendIndexedResources(StringBuilder builder, String prefix, List<String> resources) {
+        for (int index = 0; index < resources.size(); index++) {
+            builder.append(prefix).append('.').append(index).append(".resource=")
+                    .append(resources.get(index))
+                    .append('\n');
+        }
+    }
+
+    private static void appendReadinessChecklist(StringBuilder builder, List<ReadinessChecklistItem> checklist) {
+        int readyCount = 0;
+        List<ReadinessChecklistItem> blocked = new ArrayList<>();
+        for (ReadinessChecklistItem item : checklist) {
+            if (item.ready()) {
+                readyCount++;
+            } else {
+                blocked.add(item);
+            }
+        }
+
+        builder.append("readinessChecklist.item.count=").append(checklist.size()).append('\n');
+        builder.append("readinessChecklist.ready.count=").append(readyCount).append('\n');
+        builder.append("readinessChecklist.blocked.count=").append(blocked.size()).append('\n');
+        builder.append("readinessChecklist.ready.all=").append(blocked.isEmpty()).append('\n');
+        builder.append("readinessChecklist.firstBlocked=")
+                .append(blocked.isEmpty() ? "none" : blocked.get(0).name())
+                .append('\n');
+        for (int index = 0; index < checklist.size(); index++) {
+            ReadinessChecklistItem item = checklist.get(index);
+            builder.append("readinessChecklist.item.").append(index).append(".name=")
+                    .append(item.name())
+                    .append('\n');
+            builder.append("readinessChecklist.item.").append(index).append(".ready=")
+                    .append(item.ready())
+                    .append('\n');
+            builder.append("readinessChecklist.item.").append(index).append(".diagnostic=")
+                    .append(item.diagnostic())
+                    .append('\n');
+        }
     }
 
     private static String appendContractFields(String propertiesText) {
@@ -218,6 +395,27 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             return Math.max(0, Integer.parseInt(value == null ? "0" : value.trim()));
         } catch (NumberFormatException ignored) {
             return 0;
+        }
+    }
+
+    private record ControlledSourceSwitchingCoverage(
+            List<String> realWorkloadResources,
+            List<String> coveredResources,
+            List<String> uncoveredResources
+    ) {
+        boolean allCovered() {
+            return !realWorkloadResources.isEmpty() && uncoveredResources.isEmpty();
+        }
+    }
+
+    private record ReadinessChecklistItem(
+            String name,
+            boolean ready,
+            String readyDiagnostic,
+            String blockedDiagnostic
+    ) {
+        String diagnostic() {
+            return ready ? readyDiagnostic : blockedDiagnostic;
         }
     }
 }

@@ -12,7 +12,8 @@ public record GpuBackendSourceSwitchingPolicy(
         boolean irGpuSourceRequested,
         String productionSourceSwitching,
         boolean productionSourceSwitchingEnabled,
-        String productionPromotionDecisionMode
+        String productionPromotionDecisionMode,
+        boolean productionPromotionOperatorAccepted
 ) {
 
     public static final String SOURCE_SELECTION_DESCRIPTOR = "descriptor";
@@ -35,7 +36,8 @@ public record GpuBackendSourceSwitchingPolicy(
                 false,
                 PRODUCTION_SOURCE_SWITCHING_DISABLED,
                 false,
-                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY
+                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY,
+                false
         );
     }
 
@@ -66,7 +68,8 @@ public record GpuBackendSourceSwitchingPolicy(
                 SOURCE_SELECTION_IRGPU.equals(sourceSelection),
                 productionSourceSwitching,
                 PRODUCTION_SOURCE_SWITCHING_ENABLED.equals(productionSourceSwitching),
-                resolved.productionPromotionDecisionMode()
+                resolved.productionPromotionDecisionMode(),
+                resolved.productionPromotionOperatorAccepted()
         );
     }
 
@@ -76,7 +79,8 @@ public record GpuBackendSourceSwitchingPolicy(
                 irGpuSourceRequested,
                 productionSourceSwitching,
                 productionSourceSwitchingEnabled,
-                decisionMode
+                decisionMode,
+                productionPromotionOperatorAccepted
         );
     }
 

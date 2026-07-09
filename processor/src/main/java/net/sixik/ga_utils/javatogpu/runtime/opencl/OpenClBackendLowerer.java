@@ -79,7 +79,8 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
                 compileRequest.options().optimizationProfile(),
                 GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile()),
                 sourceSwitchingPolicy.productionSourceSwitchingEnabled(),
-                sourceSwitchingPolicy.productionPromotionDecisionMode()
+                sourceSwitchingPolicy.productionPromotionDecisionMode(),
+                sourceSwitchingPolicy.productionPromotionOperatorAccepted()
         ).throwIfRejected("pass backend option "
                 + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
                 + "="

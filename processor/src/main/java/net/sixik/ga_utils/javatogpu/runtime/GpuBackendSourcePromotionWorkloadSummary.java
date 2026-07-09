@@ -17,6 +17,8 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         String runtimeEquivalencePassed,
         String realWorkloadEvidence,
         String productionSourceSwitching,
+        int productionPromotionOperatorAcceptedCount,
+        String productionPromotionOperatorAcceptedAll,
         String sourceKernelResource,
         int kernelCount,
         int optimizerProofArtifactCount,
@@ -36,6 +38,8 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 "unknown",
                 "not-wired",
                 "disabled",
+                0,
+                "false",
                 "",
                 0,
                 0,
@@ -53,6 +57,14 @@ public record GpuBackendSourcePromotionWorkloadSummary(
             return notRecorded();
         }
         int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+        int productionPromotionOperatorAcceptedCount = parsePositiveInt(properties.getProperty(
+                "productionPromotionOperatorAccepted.count",
+                String.valueOf(countKernelBooleanProperty(
+                        properties,
+                        kernelCount,
+                        "sourceSwitching.productionPromotionOperatorAccepted"
+                ))
+        ));
         return new GpuBackendSourcePromotionWorkloadSummary(
                 properties.getProperty("status", "unknown"),
                 properties.getProperty("reviewReady", "unknown"),
@@ -60,6 +72,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 properties.getProperty("runtimeEquivalencePassed", "unknown"),
                 properties.getProperty("realWorkloadEvidence", "not-wired"),
                 properties.getProperty("productionSourceSwitching", "disabled"),
+                productionPromotionOperatorAcceptedCount,
+                properties.getProperty(
+                        "productionPromotionOperatorAccepted.all",
+                        String.valueOf(kernelCount > 0 && productionPromotionOperatorAcceptedCount == kernelCount)
+                ),
                 properties.getProperty("sourceKernelResource", ""),
                 kernelCount,
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.proofArtifact.count"),
@@ -84,6 +101,12 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 + ", sourceParityMatched=" + sourceParityMatched
                 + ", runtimeEquivalencePassed=" + runtimeEquivalencePassed
                 + ", realWorkloadEvidence=" + realWorkloadEvidence
+                + ", productionPromotionOperatorAccepted="
+                + productionPromotionOperatorAcceptedCount
+                + "/"
+                + kernelCount
+                + ", productionPromotionOperatorAcceptedAll="
+                + productionPromotionOperatorAcceptedAll
                 + sourceSwitchingEvidenceText()
                 + kernelEvidence
                 + sourceKernelResourceText()
@@ -170,6 +193,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append(properties.getProperty("kernel." + index + ".diagnostic.count", "0"))
                     .append(", sourceSwitching=")
                     .append(properties.getProperty("kernel." + index + ".sourceSwitching.decision", "not-recorded"))
+                    .append("/operatorAccepted=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".sourceSwitching.productionPromotionOperatorAccepted",
+                            "false"
+                    ))
                     .append("/sourcePromotionFirstBlocker=")
                     .append(properties.getProperty("kernel." + index + ".sourceSwitching.sourcePromotionFirstBlocker", "unknown"))
                     .append(", runtimeIr=")
@@ -263,5 +291,15 @@ public record GpuBackendSourcePromotionWorkloadSummary(
             sum += parsePositiveInt(properties.getProperty("kernel." + index + "." + propertyName, "0"));
         }
         return sum;
+    }
+
+    private static int countKernelBooleanProperty(Properties properties, int kernelCount, String propertyName) {
+        int count = 0;
+        for (int index = 0; index < kernelCount; index++) {
+            if ("true".equals(properties.getProperty("kernel." + index + "." + propertyName))) {
+                count++;
+            }
+        }
+        return count;
     }
 }

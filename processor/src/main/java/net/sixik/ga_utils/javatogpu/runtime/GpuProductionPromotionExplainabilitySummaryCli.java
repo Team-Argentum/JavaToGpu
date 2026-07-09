@@ -66,6 +66,28 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("backendPromotionArtifactSupport.missing.count=")
                 .append(summary.backendPromotionArtifactSupportMissingCount())
                 .append('\n');
+        builder.append("controlledProductionSourceSwitching.status=")
+                .append(summary.controlledProductionSourceSwitchingStatus())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.kernel.count=")
+                .append(summary.controlledProductionSourceSwitchingKernelCount())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.covered.count=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadCoveredCount())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.total.count=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadTotalCount())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.uncovered.count=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadUncoveredCount())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.covered.all=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadCoveredAll())
+                .append('\n');
+        builder.append("readinessChecklist.ready.count=").append(summary.readinessChecklistReadyCount()).append('\n');
+        builder.append("readinessChecklist.blocked.count=").append(summary.readinessChecklistBlockedCount()).append('\n');
+        builder.append("readinessChecklist.ready.all=").append(summary.readinessChecklistReadyAll()).append('\n');
+        builder.append("readinessChecklist.firstBlocked=").append(summary.readinessChecklistFirstBlocked()).append('\n');
         builder.append("historyStatus=").append(summary.historyStatus()).append('\n');
         return builder.toString();
     }

@@ -169,6 +169,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "disabled",
                         "false",
                         "review-ready",
+                        "false",
                         "none",
                         "IrGpu source was explicitly selected for review or smoke validation"
                 ),
@@ -225,6 +226,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "disabled",
                         "false",
                         "diagnostic-only",
+                        "false",
                         "runtime equivalence must execute and pass before backend source promotion",
                         "production-like profile requested IrGpu source but opencl.productionSourceSwitching is disabled"
                 ),
@@ -361,6 +363,9 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.count"));
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.applied.count"));
         assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.rolledBack.count"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.accepted.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.blocking.count"));
         assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
         assertEquals("optimized", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedRuntimeIrStage"));
         assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizedIrRejected"));
@@ -373,6 +378,9 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("3", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.applied.count"));
         assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.pass.rolledBack.count"));
+        assertEquals("2", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.count"));
+        assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.accepted.count"));
+        assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.blocking.count"));
         assertEquals("production-ir-gate-blocked", gate.getProperty("kernel.1.runtimeOptimizerDrift.fallbackDecision"));
         assertEquals("original", gate.getProperty("kernel.1.runtimeOptimizerDrift.selectedRuntimeIrStage"));
         assertEquals("true", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizedIrRejected"));
@@ -396,6 +404,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                         "enabled",
                         "true",
                         GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                        "true",
                         "none",
                         "production source switching was explicitly enabled for a production-like profile"
                 ),
@@ -445,6 +454,8 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("true", gate.getProperty("productionSourceSwitchingEnabled.all"));
         assertEquals("1", gate.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
         assertEquals("true", gate.getProperty("productionPromotionDecisionMode.productionEnabled.all"));
+        assertEquals("1", gate.getProperty("productionPromotionOperatorAccepted.count"));
+        assertEquals("true", gate.getProperty("productionPromotionOperatorAccepted.all"));
         assertEquals("1", gate.getProperty("sourceSwitching.productionDecision.count"));
         assertEquals("true", gate.getProperty("sourceSwitching.productionDecision.all"));
         assertEquals("0", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count"));
@@ -457,7 +468,81 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("production-switch-enabled", gate.getProperty("kernel.0.sourceSwitching.status"));
         assertEquals("compile-irgpu-source-production", gate.getProperty("kernel.0.sourceSwitching.decision"));
         assertEquals(GpuProductionPromotionDecision.PRODUCTION_ENABLED, gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
+        assertEquals("true", gate.getProperty("kernel.0.sourceSwitching.productionPromotionOperatorAccepted"));
         assertEquals("none", gate.getProperty("kernel.0.sourceSwitching.sourcePromotionFirstBlocker"));
+    }
+
+    @Test
+    void keepsWorkloadReviewReadyUntilOperatorAcceptsProductionPromotion() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-production.cl",
+                reviewReadyGateProperties(),
+                sourceSwitchingDecisionProperties(
+                        "blocked",
+                        "reject-production-irgpu-source",
+                        "vendor-tuned",
+                        "true",
+                        "enabled",
+                        "true",
+                        GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                        "false",
+                        "none",
+                        "production-like profile requested IrGpu source but production promotion was not explicitly accepted by the operator"
+                ),
+                runtimeIrHandoffProperties(
+                        "optimized",
+                        "true",
+                        "false",
+                        "none",
+                        "false",
+                        "optimized IrGpu is selected for backend lowering after runtime optimizer passes"
+                ),
+                runtimeProductionMutationSafetyProperties(
+                        "disabled",
+                        "false",
+                        "blocked",
+                        "true",
+                        "optimized",
+                        "production mutation remains disabled until operator acceptance is explicit"
+                ),
+                i3ReadinessSummaryProperties(
+                        "review-ready",
+                        "optimized",
+                        "review-ready",
+                        "true",
+                        "blocked",
+                        "false",
+                        "I3 source pipeline is review-ready, but operator acceptance is missing"
+                ),
+                runtimeOptimizerDriftProperties(
+                        "3",
+                        "3",
+                        "0",
+                        "0",
+                        "production-ir-gate-blocked",
+                        "original",
+                        "true",
+                        "vendor-tuned",
+                        "blocked",
+                        "true"
+                )
+        ));
+
+        assertEquals("review-ready", gate.getProperty("status"));
+        assertEquals("false", gate.getProperty("productionSourceSwitching"));
+        assertEquals("1", gate.getProperty("productionSourceSwitchingEnabled.count"));
+        assertEquals("true", gate.getProperty("productionSourceSwitchingEnabled.all"));
+        assertEquals("1", gate.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
+        assertEquals("true", gate.getProperty("productionPromotionDecisionMode.productionEnabled.all"));
+        assertEquals("0", gate.getProperty("productionPromotionOperatorAccepted.count"));
+        assertEquals("false", gate.getProperty("productionPromotionOperatorAccepted.all"));
+        assertEquals("0", gate.getProperty("sourceSwitching.productionDecision.count"));
+        assertEquals("false", gate.getProperty("sourceSwitching.productionDecision.all"));
+        assertEquals("false", gate.getProperty("kernel.0.productionSourceSwitching"));
+        assertEquals("false", gate.getProperty("kernel.0.sourceSwitching.productionPromotionOperatorAccepted"));
     }
 
     private static void writeGate(Path gateFile, String properties) throws IOException {
@@ -543,6 +628,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
             String productionSourceSwitching,
             String productionSourceSwitchingEnabled,
             String productionPromotionDecisionMode,
+            String productionPromotionOperatorAccepted,
             String sourcePromotionFirstBlocker,
             String diagnostic
     ) {
@@ -561,6 +647,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "productionSourceSwitching=" + productionSourceSwitching,
                 "productionSourceSwitchingEnabled=" + productionSourceSwitchingEnabled,
                 "productionPromotionDecisionMode=" + productionPromotionDecisionMode,
+                "productionPromotionOperatorAccepted=" + productionPromotionOperatorAccepted,
                 "sourcePromotionFirstBlocker=" + sourcePromotionFirstBlocker,
                 "diagnostic.count=1",
                 "diagnostic.0=" + diagnostic,

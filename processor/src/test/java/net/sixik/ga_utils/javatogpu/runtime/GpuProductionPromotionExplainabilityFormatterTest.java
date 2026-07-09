@@ -39,6 +39,9 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("sourceSwitching.productionDecision.all=true"));
         assertTrue(formatted.contains("i3SourceReady.count=2"));
         assertTrue(formatted.contains("i3SourceReady.all=true"));
+        assertTrue(formatted.contains("readinessChecklist.ready.count=7"));
+        assertTrue(formatted.contains("readinessChecklist.blocked.count=1"));
+        assertTrue(formatted.contains("readinessChecklist.firstBlocked=controlled-source-switching-covered"));
         assertTrue(formatted.contains("contract.status=valid"));
         assertTrue(formatted.contains("contract.violation.count=0"));
         assertTrue(formatted.contains("decision.mode=production-enabled"));
@@ -62,6 +65,38 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("contract.status=valid"));
     }
 
+    @Test
+    void recordsControlledProductionSourceSwitchingEvidenceWithoutEnablingProduction() {
+        String formatted = GpuProductionPromotionExplainabilityFormatter.format(
+                blockedWorkloadGate(),
+                blockedReadiness(),
+                completePromotionArtifactSupport(),
+                controlledProductionSourceSwitchingValidation()
+        );
+
+        assertTrue(formatted.contains("status=blocked"));
+        assertTrue(formatted.contains("productionSourceSwitchingAllowed=false"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.status=passed"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.kernel.count=7"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.productionSourceSwitching=enabled"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.productionPromotionDecisionMode=production-enabled"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.count=1"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.total.count=2"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.uncovered.count=1"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.all=false"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.0.resource=kernel-a.cl"));
+        assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.uncovered.0.resource=kernel-b.cl"));
+        assertTrue(formatted.contains("readinessChecklist.item.count=8"));
+        assertTrue(formatted.contains("readinessChecklist.ready.count=3"));
+        assertTrue(formatted.contains("readinessChecklist.blocked.count=5"));
+        assertTrue(formatted.contains("readinessChecklist.ready.all=false"));
+        assertTrue(formatted.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
+        assertTrue(formatted.contains("readinessChecklist.item.0.name=workload-gate-review-ready"));
+        assertTrue(formatted.contains("readinessChecklist.item.0.ready=false"));
+        assertTrue(formatted.contains("blocker.0=workload-source-promotion-gate-not-review-ready"));
+        assertTrue(formatted.contains("contract.status=valid"));
+    }
+
     private static Properties blockedWorkloadGate() {
         Properties properties = new Properties();
         properties.setProperty("status", "blocked");
@@ -71,6 +106,8 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("productionSourceSwitching", "false");
         properties.setProperty("realWorkloadEvidence", "runtime-snapshot");
         properties.setProperty("kernel.count", "2");
+        properties.setProperty("kernel.0.sourceKernelResource", "kernel-a.cl");
+        properties.setProperty("kernel.1.sourceKernelResource", "kernel-b.cl");
         return properties;
     }
 
@@ -116,6 +153,27 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("supported.count", "10");
         properties.setProperty("missing.count", "1");
         properties.setProperty("missing.0", GpuPromotionArtifactRegistry.BACKEND_PROMOTION_ARTIFACT_SUPPORT);
+        return properties;
+    }
+
+    private static Properties completePromotionArtifactSupport() {
+        Properties properties = new Properties();
+        properties.setProperty("complete", "true");
+        properties.setProperty("supported.count", "11");
+        properties.setProperty("missing.count", "0");
+        return properties;
+    }
+
+    private static Properties controlledProductionSourceSwitchingValidation() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "passed");
+        properties.setProperty("reviewReady", "true");
+        properties.setProperty("kernel.count", "7");
+        properties.setProperty("kernel.0.resource", "inline://integration/simple-irgpu-source-kernel.cl");
+        properties.setProperty("kernel.1.resource", "kernel-a.cl");
+        properties.setProperty("kernel.2.resource", "inline://integration/dual-buffer-int-kernel.cl");
+        properties.setProperty("productionSourceSwitching", "enabled");
+        properties.setProperty("productionPromotionDecisionMode", GpuProductionPromotionDecision.PRODUCTION_ENABLED);
         return properties;
     }
 }

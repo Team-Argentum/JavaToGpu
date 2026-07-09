@@ -85,6 +85,15 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    public GpuRuntimeCompileOptions withProductionPromotionOperatorAccepted(boolean accepted) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withProductionPromotionOperatorAccepted(accepted)
+        );
+    }
+
     public static GpuRuntimeCompileOptions cuda(
             List<String> nvrtcOptions,
             Map<String, String> properties,

@@ -32,6 +32,7 @@ public record GpuBackendSourceSwitchingDecision(
         String productionSourceSwitching,
         boolean productionSourceSwitchingEnabled,
         String productionPromotionDecisionMode,
+        boolean productionPromotionOperatorAccepted,
         String diagnostic
 ) {
 
@@ -108,6 +109,7 @@ public record GpuBackendSourceSwitchingDecision(
         String sourceSelection = policy.sourceSelection();
         String productionSourceSwitching = policy.productionSourceSwitching();
         String productionPromotionDecisionMode = policy.productionPromotionDecisionMode();
+        boolean productionPromotionOperatorAccepted = policy.productionPromotionOperatorAccepted();
         boolean irGpuSourceRequested = policy.irGpuSourceRequested();
         boolean productionProfileRequested = GpuRuntimeProductionProfiles.isProductionProfile(
                 resolvedProvenance.optimizationProfile()
@@ -147,10 +149,14 @@ public record GpuBackendSourceSwitchingDecision(
             status = "blocked";
             decision = "reject-production-irgpu-source";
             diagnostic = "production-like profile requested IrGpu source but production promotion decision is not production-enabled";
+        } else if (!productionPromotionOperatorAccepted) {
+            status = "blocked";
+            decision = "reject-production-irgpu-source";
+            diagnostic = "production-like profile requested IrGpu source but production promotion was not explicitly accepted by the operator";
         } else {
             status = "production-switch-enabled";
             decision = "compile-irgpu-source-production";
-            diagnostic = "production source switching was explicitly enabled for a production-like profile";
+            diagnostic = "production source switching was explicitly enabled and operator-accepted for a production-like profile";
         }
 
         return new GpuBackendSourceSwitchingDecision(
@@ -176,6 +182,7 @@ public record GpuBackendSourceSwitchingDecision(
                 productionSourceSwitching,
                 productionSwitchingEnabled,
                 productionPromotionDecisionMode,
+                productionPromotionOperatorAccepted,
                 diagnostic
         );
     }
@@ -204,6 +211,7 @@ public record GpuBackendSourceSwitchingDecision(
         builder.append("productionSourceSwitching=").append(productionSourceSwitching).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
         builder.append("productionPromotionDecisionMode=").append(productionPromotionDecisionMode).append('\n');
+        builder.append("productionPromotionOperatorAccepted=").append(productionPromotionOperatorAccepted).append('\n');
         builder.append("diagnostic.count=1\n");
         builder.append("diagnostic.0=").append(diagnostic).append('\n');
         return builder.toString();

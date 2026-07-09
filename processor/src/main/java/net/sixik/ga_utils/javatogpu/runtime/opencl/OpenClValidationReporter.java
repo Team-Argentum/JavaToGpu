@@ -22,6 +22,8 @@ public final class OpenClValidationReporter {
     private static final String WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.workloadSummaryFile";
     private static final String BUCKET_STATUS_FILE_PROPERTY = "javatogpu.opencl.bucketStatusFile";
     private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
+    private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY =
+            "javatogpu.opencl.productionSourceSwitchingValidationFile";
     private static final String BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionGateFile";
     private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
     private static final String I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.i3ReadinessWorkloadSummaryFile";
@@ -84,6 +86,7 @@ public final class OpenClValidationReporter {
         appendBucketStatusMatrix(markdown);
         appendWorkloadSummary(markdown);
         appendIrGpuSourceReviewSummary(markdown);
+        appendProductionSourceSwitchingValidationSummary(markdown);
         appendLongRunningSummary(markdown);
         appendBackendSourcePromotionContractSummary(markdown);
         appendBackendSourcePromotionWorkloadSummary(markdown);
@@ -281,6 +284,48 @@ public final class OpenClValidationReporter {
                 .append("`\n");
     }
 
+    private static void appendProductionSourceSwitchingValidationSummary(StringBuilder markdown) {
+        String validationPath = System.getProperty(PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY);
+        if (validationPath == null || validationPath.isBlank()) {
+            return;
+        }
+
+        markdown.append("## Controlled Production Source Switching\n\n");
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(validationPath));
+            if (properties.isEmpty()) {
+                markdown.append("- Status: `not recorded`\n");
+                markdown.append("- Validation file: `").append(validationPath).append("`\n\n");
+                return;
+            }
+            markdown.append("- Status: `").append(sanitizeInline(properties.getProperty("status", "unknown"))).append("`\n");
+            markdown.append("- Review ready: `").append(sanitizeInline(properties.getProperty("reviewReady", "unknown"))).append("`\n");
+            markdown.append("- Source selection: `").append(sanitizeInline(properties.getProperty("sourceSelection", "unknown"))).append("`\n");
+            markdown.append("- Optimization profile: `").append(sanitizeInline(properties.getProperty("optimizationProfile", "unknown"))).append("`\n");
+            markdown.append("- Production source switching: `").append(sanitizeInline(properties.getProperty("productionSourceSwitching", "unknown"))).append("`\n");
+            markdown.append("- Production decision mode: `")
+                    .append(sanitizeInline(properties.getProperty("productionPromotionDecisionMode", "unknown")))
+                    .append("`\n");
+            markdown.append("- Scope: `")
+                    .append(sanitizeInline(properties.getProperty("scope", "controlled-production-source-switching-smoke")))
+                    .append("`\n");
+            int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+            markdown.append("- Kernel count: `").append(kernelCount).append("`\n");
+            for (int index = 0; index < kernelCount; index++) {
+                appendIrGpuSourceReviewKernelSummary(markdown, properties, index);
+            }
+            String diagnostic = properties.getProperty("diagnostic.0", "");
+            if (!diagnostic.isBlank()) {
+                markdown.append("- Diagnostic: `").append(sanitizeInline(diagnostic)).append("`\n");
+            }
+            markdown.append("- Validation file: `").append(validationPath).append("`\n\n");
+        } catch (Throwable failure) {
+            markdown.append("- Status: `failed to read`\n");
+            markdown.append("- Validation file: `").append(validationPath).append("`\n");
+            markdown.append("- Error: `").append(sanitizeInline(failure.toString())).append("`\n\n");
+        }
+    }
+
     private static void appendBackendSourcePromotionContractSummary(StringBuilder markdown) {
         String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY);
         if (gatePath == null || gatePath.isBlank()) {
@@ -337,6 +382,15 @@ public final class OpenClValidationReporter {
             markdown.append("- Source parity matched: `").append(sanitizeInline(properties.getProperty("sourceParityMatched", "unknown"))).append("`\n");
             markdown.append("- Runtime equivalence passed: `").append(sanitizeInline(properties.getProperty("runtimeEquivalencePassed", "unknown"))).append("`\n");
             markdown.append("- Real workload evidence: `").append(sanitizeInline(properties.getProperty("realWorkloadEvidence", "not-wired"))).append("`\n");
+            GpuBackendSourcePromotionWorkloadSummary workloadSummary =
+                    GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+            markdown.append("- Production promotion operator accepted: `")
+                    .append(workloadSummary.productionPromotionOperatorAcceptedCount())
+                    .append("/")
+                    .append(workloadSummary.kernelCount())
+                    .append("`, all=`")
+                    .append(sanitizeInline(workloadSummary.productionPromotionOperatorAcceptedAll()))
+                    .append("`\n");
             appendBackendSourceSwitchingSummary(markdown, properties);
             appendBackendSourcePromotionWorkloadFamilySummary(markdown, properties, "");
             int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
@@ -403,6 +457,33 @@ public final class OpenClValidationReporter {
             markdown.append("- Production mutation enabled: `")
                     .append(sanitizeInline(summary.productionMutationEnabled()))
                     .append("`\n");
+            markdown.append("- Controlled source switching smoke: `")
+                    .append(sanitizeInline(summary.controlledProductionSourceSwitchingStatus()))
+                    .append("`\n");
+            markdown.append("- Controlled source switching kernels: `")
+                    .append(summary.controlledProductionSourceSwitchingKernelCount())
+                    .append("`\n");
+            markdown.append("- Controlled real workload coverage: `")
+                    .append(summary.controlledProductionSourceSwitchingRealWorkloadCoveredCount())
+                    .append("/")
+                    .append(summary.controlledProductionSourceSwitchingRealWorkloadTotalCount())
+                    .append("`\n");
+            markdown.append("- Controlled real workload coverage all: `")
+                    .append(sanitizeInline(summary.controlledProductionSourceSwitchingRealWorkloadCoveredAll()))
+                    .append("`\n");
+            markdown.append("- Production readiness checklist: `")
+                    .append(summary.readinessChecklistReadyCount())
+                    .append(" ready / ")
+                    .append(summary.readinessChecklistBlockedCount())
+                    .append(" blocked`\n");
+            markdown.append("- Production readiness checklist all: `")
+                    .append(sanitizeInline(summary.readinessChecklistReadyAll()))
+                    .append("`\n");
+            if (summary.readinessChecklistBlockedCount() > 0) {
+                markdown.append("- First readiness blocker: `")
+                        .append(sanitizeInline(summary.readinessChecklistFirstBlocked()))
+                        .append("`\n");
+            }
             markdown.append("- Kernel count: `").append(summary.kernelCount()).append("`\n");
             markdown.append("- I3 review-ready kernels: `").append(summary.i3ReviewReadyCount()).append("`\n");
             markdown.append("- I3 blocked kernels: `").append(summary.i3BlockedCount()).append("`\n");
@@ -442,6 +523,11 @@ public final class OpenClValidationReporter {
                 .append(sanitizeInline(properties.getProperty(prefix + "runtimeEquivalencePassed", "unknown")))
                 .append("`, sourceSwitching=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.decision", "not-recorded")))
+                .append("`, operatorAccepted=`")
+                .append(sanitizeInline(properties.getProperty(
+                        prefix + "sourceSwitching.productionPromotionOperatorAccepted",
+                        "false"
+                )))
                 .append("`, runtimeIr=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.selectedStage", "unknown")))
                 .append("`, productionMutation=`")
@@ -461,6 +547,11 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.optimizationProfile", "unknown")))
                     .append("`, sourcePromotionFirstBlocker=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.sourcePromotionFirstBlocker", "unknown")))
+                    .append("`, operatorAccepted=`")
+                    .append(sanitizeInline(properties.getProperty(
+                            prefix + "sourceSwitching.productionPromotionOperatorAccepted",
+                            "false"
+                    )))
                     .append("`, first=`")
                     .append(sanitizeInline(sourceSwitchingDiagnostic))
                     .append("`\n");
@@ -688,6 +779,7 @@ public final class OpenClValidationReporter {
         String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
         String i3SummaryPath = System.getProperty(I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY);
         String supportPath = System.getProperty(BACKEND_PROMOTION_ARTIFACT_SUPPORT_FILE_PROPERTY);
+        String controlledProductionSourceSwitchingPath = System.getProperty(PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY);
         if (outputPath == null || outputPath.isBlank() || gatePath == null || gatePath.isBlank()) {
             return;
         }
@@ -704,12 +796,17 @@ public final class OpenClValidationReporter {
             java.util.Properties backendPromotionArtifactSupport = supportPath == null || supportPath.isBlank()
                     ? openClBackendPromotionArtifactSupportProperties()
                     : loadPropertiesIfExists(Paths.get(supportPath));
+            java.util.Properties controlledProductionSourceSwitchingValidation = controlledProductionSourceSwitchingPath == null
+                    || controlledProductionSourceSwitchingPath.isBlank()
+                    ? new java.util.Properties()
+                    : loadPropertiesIfExists(Paths.get(controlledProductionSourceSwitchingPath));
             Files.writeString(
                     path,
                     GpuProductionPromotionExplainabilityFormatter.format(
                             gate,
                             i3Summary,
-                            backendPromotionArtifactSupport
+                            backendPromotionArtifactSupport,
+                            controlledProductionSourceSwitchingValidation
                     ),
                     StandardCharsets.UTF_8
             );
@@ -866,6 +963,7 @@ public final class OpenClValidationReporter {
         String longRunningStatus = summarizeLongRunningStatus();
         String workloadStatus = summarizeWorkloadStatus();
         String irGpuSourceReviewStatus = summarizeIrGpuSourceReviewStatus();
+        String productionSourceSwitchingValidationStatus = summarizeProductionSourceSwitchingValidationStatus();
         String backendSourcePromotionContractStatus = summarizeBackendSourcePromotionContractStatus();
         String backendSourcePromotionWorkloadStatus = summarizeBackendSourcePromotionWorkloadStatus();
         String productionPromotionExplainabilityStatus = summarizeProductionPromotionExplainabilityStatus();
@@ -884,6 +982,7 @@ public final class OpenClValidationReporter {
                     longRunningStatus,
                     workloadStatus,
                     irGpuSourceReviewStatus,
+                    productionSourceSwitchingValidationStatus,
                     backendSourcePromotionContractStatus,
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus
@@ -901,6 +1000,7 @@ public final class OpenClValidationReporter {
                     longRunningStatus,
                     workloadStatus,
                     irGpuSourceReviewStatus,
+                    productionSourceSwitchingValidationStatus,
                     backendSourcePromotionContractStatus,
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus
@@ -1003,6 +1103,28 @@ public final class OpenClValidationReporter {
                     .append(']');
         }
         return builder.toString();
+    }
+
+    private static String summarizeProductionSourceSwitchingValidationStatus() {
+        String validationPath = System.getProperty(PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY);
+        if (validationPath == null || validationPath.isBlank()) {
+            return "not recorded";
+        }
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(validationPath));
+            if (properties.isEmpty()) {
+                return "not recorded";
+            }
+            return properties.getProperty("status", "unknown")
+                    + " (reviewReady=" + properties.getProperty("reviewReady", "unknown")
+                    + ", sourceSelection=" + properties.getProperty("sourceSelection", "unknown")
+                    + ", productionSourceSwitching=" + properties.getProperty("productionSourceSwitching", "unknown")
+                    + ", productionDecision=" + properties.getProperty("productionPromotionDecisionMode", "unknown")
+                    + summarizeIrGpuSourceReviewKernelEvidence(properties)
+                    + ")";
+        } catch (Throwable failure) {
+            return "failed to read";
+        }
     }
 
     private static String summarizeBackendSourcePromotionContractStatus() {

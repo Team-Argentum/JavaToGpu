@@ -461,7 +461,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
                 descriptor(),
                 GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                        .withProductionPromotionDecision(productionEnabledDecision()),
+                        .withProductionPromotionDecision(productionEnabledDecision())
+                        .withProductionPromotionOperatorAccepted(true),
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(optimized)
         );
@@ -497,6 +498,7 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=enabled"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitchingEnabled=true"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionPromotionDecisionMode=production-enabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionPromotionOperatorAccepted=true"));
     }
 
     @Test
@@ -798,6 +800,7 @@ class GpuRuntimeCompileArtifactDumperTest {
                 "disabled",
                 false,
                 "precomputed-mode",
+                false,
                 "precomputed source switching decision was supplied by runtime backend"
         );
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
@@ -884,6 +887,7 @@ class GpuRuntimeCompileArtifactDumperTest {
                 "disabled",
                 false,
                 "precomputed-mode",
+                false,
                 "precomputed source switching decision was supplied by runtime backend"
         );
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
@@ -1282,7 +1286,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         GpuRuntimeCompileRequest optimizedRequest = new GpuRuntimeCompileRequest(
                 descriptor(),
                 GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                        .withProductionPromotionDecision(productionEnabledDecision()),
+                        .withProductionPromotionDecision(productionEnabledDecision())
+                        .withProductionPromotionOperatorAccepted(true),
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
                 Optional.of(optimized)
         );

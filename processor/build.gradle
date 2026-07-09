@@ -57,6 +57,7 @@ def openClProductionPromotionExplainabilitySummaryFile = layout.buildDirectory.f
 def openClBackendPromotionArtifactSupportFile = layout.buildDirectory.file('reports/opencl/backend-promotion-artifact-support.properties').get().asFile
 def openClBackendSourcePromotionWorkloadGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile
 def openClBackendSourcePromotionWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-summary.properties').get().asFile
+def openClProductionSourceSwitchingValidationFile = layout.buildDirectory.file('reports/opencl/production-source-switching-validation.properties').get().asFile
 def openClI3ReadinessBaselineFile = providers.gradleProperty('javatogpu.opencl.i3ReadinessBaselineFile')
         .map { file(it) }
         .orElse(layout.buildDirectory.file('opencl-i3-readiness-baselines/i3-readiness-workload-baseline.properties').map { it.asFile })
@@ -410,6 +411,20 @@ tasks.register('openClIrGpuSourceReviewTest', Test) {
     attachBucketStatusRecording(it)
 }
 
+tasks.register('openClProductionSourceSwitchingValidationTest', Test) {
+    group = 'verification'
+    description = 'Runs controlled opt-in OpenCL IrGpu production source-switching smoke coverage.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidation', 'true'
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionSourceSwitchingLaneRunsPackagedIrGpuSourceOnAvailableOpenClDevice'
+    }
+    attachBucketStatusRecording(it)
+}
+
 tasks.register('openClLongRunningStabilityTest', Test) {
     group = 'verification'
     description = 'Runs long-running real-device OpenCL ABI/resource stability coverage.'
@@ -434,6 +449,7 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.workloadSummaryFile', layout.buildDirectory.file('reports/opencl/workload-summary.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.bucketStatusFile', openClBucketStatusFile.absolutePath
     systemProperty 'javatogpu.opencl.irGpuSourceReviewFile', layout.buildDirectory.file('reports/opencl/irgpu-source-review.properties').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', openClBackendSourcePromotionWorkloadGateFile.absolutePath
     systemProperty 'javatogpu.opencl.i3ReadinessWorkloadSummaryFile', openClI3ReadinessWorkloadSummaryFile.absolutePath
