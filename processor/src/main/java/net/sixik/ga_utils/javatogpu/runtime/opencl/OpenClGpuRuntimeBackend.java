@@ -48,6 +48,8 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequestFactory;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceExecutor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
@@ -131,6 +133,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     private final OpenClExecutionPreparer executionPreparer = new OpenClExecutionPreparer(bufferRegistry);
     private final GpuRuntimeIrOptimizerRegistry irOptimizerRegistry;
     private final GpuOptimizationStrategy optimizationStrategy;
+    private final GpuRuntimeDevicePolicyRegistry devicePolicyRegistry;
     private final Map<String, Object> nativeBuffers = new ConcurrentHashMap<>();
     private final AtomicLong invocationCount = new AtomicLong();
     private final AtomicLong compileCount = new AtomicLong();
@@ -169,9 +172,24 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuRuntimeIrOptimizerRegistry irOptimizerRegistry,
             GpuOptimizationStrategy optimizationStrategy
     ) {
+        this(
+                cacheMode,
+                irOptimizerRegistry,
+                optimizationStrategy,
+                GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns()
+        );
+    }
+
+    protected OpenClGpuRuntimeBackend(
+            CacheMode cacheMode,
+            GpuRuntimeIrOptimizerRegistry irOptimizerRegistry,
+            GpuOptimizationStrategy optimizationStrategy,
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry
+    ) {
         this.cacheMode = Objects.requireNonNull(cacheMode, "cacheMode");
         this.irOptimizerRegistry = Objects.requireNonNull(irOptimizerRegistry, "irOptimizerRegistry");
         this.optimizationStrategy = Objects.requireNonNull(optimizationStrategy, "optimizationStrategy");
+        this.devicePolicyRegistry = Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
     }
 
     /**
@@ -315,12 +333,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 runtimeEquivalenceEvidence,
                 artifactSnapshotBase.fallbackEvidence()
         );
-        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = artifactSnapshotBase.withBackendSourceState(
-                sourcePromotionGate,
-                backendSourceSwitchingDecision(
-                        selectedCompileRequest,
-                        moduleArtifact,
-                        sourcePromotionGate
+        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = withRuntimeDeviceSelection(
+                artifactSnapshotBase.withBackendSourceState(
+                        sourcePromotionGate,
+                        backendSourceSwitchingDecision(
+                                selectedCompileRequest,
+                                moduleArtifact,
+                                sourcePromotionGate
+                        )
                 )
         );
         dumpBackendSourcePromotionWorkloadGate(artifactSnapshot);
@@ -1396,7 +1416,12 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected OpenClRuntimeSession createSession() {
-        return OpenClRuntimeSession.createDefault();
+        return OpenClRuntimeSession.createDefault(devicePolicyRegistry);
+    }
+
+    protected Optional<GpuRuntimeDeviceSelection> runtimeDeviceSelection() {
+        OpenClRuntimeSession currentSession = cacheMode == CacheMode.SHARED ? sharedSession : session;
+        return Optional.ofNullable(currentSession).map(OpenClRuntimeSession::deviceSelection);
     }
 
     protected OpenClValidationDeviceInfo runtimeValidationDeviceInfo() {
@@ -2422,14 +2447,24 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 runtimeEquivalenceEvidence,
                 fallbackEvidence
         );
-        return GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact).withBackendSourceState(
-                promotionGate,
-                backendSourceSwitchingDecision(
-                        compileRequest,
-                        moduleArtifact,
-                        promotionGate
+        return withRuntimeDeviceSelection(
+                GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact).withBackendSourceState(
+                        promotionGate,
+                        backendSourceSwitchingDecision(
+                                compileRequest,
+                                moduleArtifact,
+                                promotionGate
+                        )
                 )
         );
+    }
+
+    private GpuRuntimeCompileArtifactSnapshot withRuntimeDeviceSelection(
+            GpuRuntimeCompileArtifactSnapshot snapshot
+    ) {
+        return runtimeDeviceSelection()
+                .map(snapshot::withDeviceSelection)
+                .orElse(snapshot);
     }
 
     private GpuBackendSourcePromotionGate backendSourcePromotionGate(
@@ -2561,20 +2596,25 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected GpuRuntimeDeviceProfile compileDeviceProfile() {
-        OpenClRuntimeCapabilities capabilities = runtimeCapabilities();
+        OpenClRuntimeCapabilities runtimeCapabilities = runtimeCapabilities();
+        String backendName = cacheMode == CacheMode.SHARED ? "OpenCL (shared cache)" : "OpenCL";
+        OpenClRuntimeSession currentSession = cacheMode == CacheMode.SHARED ? sharedSession : session;
+        if (currentSession != null) {
+            return currentSession.deviceProfile().withBackendName(backendName);
+        }
         return GpuRuntimeDeviceProfile.openCl(
-                cacheMode == CacheMode.SHARED ? "OpenCL (shared cache)" : "OpenCL",
-                capabilities.deviceLabel(),
-                capabilities.vendor(),
-                capabilities.driverVersion(),
-                capabilities.deviceVersion(),
-                capabilities.computeUnits(),
-                capabilities.localMemoryBytes(),
-                capabilities.maxWorkGroupSize(),
-                capabilities.preferredVectorWidthFloat(),
-                capabilities.supportsDoublePrecision(),
-                capabilities.supportsImages(),
-                capabilities.supportsSubgroups()
+                backendName,
+                runtimeCapabilities.deviceLabel(),
+                runtimeCapabilities.vendor(),
+                runtimeCapabilities.driverVersion(),
+                runtimeCapabilities.deviceVersion(),
+                runtimeCapabilities.computeUnits(),
+                runtimeCapabilities.localMemoryBytes(),
+                runtimeCapabilities.maxWorkGroupSize(),
+                runtimeCapabilities.preferredVectorWidthFloat(),
+                runtimeCapabilities.supportsDoublePrecision(),
+                runtimeCapabilities.supportsImages(),
+                runtimeCapabilities.supportsSubgroups()
         );
     }
 

@@ -8,6 +8,7 @@ public record IrGpuMethodBody(
         String emittedName,
         String format,
         String body,
+        IrGpuTypedBody typedBody,
         IrGpuBodyIndex bodyIndex,
         List<String> helperDependencies,
         IrGpuSourceLocation sourceLocation
@@ -21,7 +22,7 @@ public record IrGpuMethodBody(
             String body,
             List<String> helperDependencies
     ) {
-        this(role, name, emittedName, format, body, IrGpuBodyIndex.empty(), helperDependencies, IrGpuSourceLocation.unknown(name));
+        this(role, name, emittedName, format, body, IrGpuTypedBody.none(), IrGpuBodyIndex.empty(), helperDependencies, IrGpuSourceLocation.unknown(name));
     }
 
     public IrGpuMethodBody(
@@ -33,7 +34,20 @@ public record IrGpuMethodBody(
             List<String> helperDependencies,
             IrGpuSourceLocation sourceLocation
     ) {
-        this(role, name, emittedName, format, body, IrGpuBodyIndex.empty(), helperDependencies, sourceLocation);
+        this(role, name, emittedName, format, body, IrGpuTypedBody.none(), IrGpuBodyIndex.empty(), helperDependencies, sourceLocation);
+    }
+
+    public IrGpuMethodBody(
+            String role,
+            String name,
+            String emittedName,
+            String format,
+            String body,
+            IrGpuBodyIndex bodyIndex,
+            List<String> helperDependencies,
+            IrGpuSourceLocation sourceLocation
+    ) {
+        this(role, name, emittedName, format, body, IrGpuTypedBody.none(), bodyIndex, helperDependencies, sourceLocation);
     }
 
     public IrGpuMethodBody {
@@ -42,6 +56,7 @@ public record IrGpuMethodBody(
         emittedName = normalize(emittedName, "");
         format = normalize(format, "ir-text-v1");
         body = body == null ? "" : body;
+        typedBody = typedBody == null ? IrGpuTypedBody.none() : typedBody;
         bodyIndex = bodyIndex == null ? IrGpuBodyIndex.empty() : bodyIndex;
         helperDependencies = helperDependencies == null ? List.of() : List.copyOf(helperDependencies);
         sourceLocation = sourceLocation == null ? IrGpuSourceLocation.unknown(name) : sourceLocation;
@@ -69,7 +84,19 @@ public record IrGpuMethodBody(
             List<String> helperDependencies,
             IrGpuSourceLocation sourceLocation
     ) {
-        return new IrGpuMethodBody("entry", name, emittedName, "ir-text-v1", body, bodyIndex, helperDependencies, sourceLocation);
+        return entry(name, emittedName, body, IrGpuTypedBody.none(), bodyIndex, helperDependencies, sourceLocation);
+    }
+
+    public static IrGpuMethodBody entry(
+            String name,
+            String emittedName,
+            String body,
+            IrGpuTypedBody typedBody,
+            IrGpuBodyIndex bodyIndex,
+            List<String> helperDependencies,
+            IrGpuSourceLocation sourceLocation
+    ) {
+        return new IrGpuMethodBody("entry", name, emittedName, "ir-text-v1", body, typedBody, bodyIndex, helperDependencies, sourceLocation);
     }
 
     public static IrGpuMethodBody helper(String name, String emittedName, String body, List<String> helperDependencies) {
@@ -94,7 +121,19 @@ public record IrGpuMethodBody(
             List<String> helperDependencies,
             IrGpuSourceLocation sourceLocation
     ) {
-        return new IrGpuMethodBody("helper", name, emittedName, "ir-text-v1", body, bodyIndex, helperDependencies, sourceLocation);
+        return helper(name, emittedName, body, IrGpuTypedBody.none(), bodyIndex, helperDependencies, sourceLocation);
+    }
+
+    public static IrGpuMethodBody helper(
+            String name,
+            String emittedName,
+            String body,
+            IrGpuTypedBody typedBody,
+            IrGpuBodyIndex bodyIndex,
+            List<String> helperDependencies,
+            IrGpuSourceLocation sourceLocation
+    ) {
+        return new IrGpuMethodBody("helper", name, emittedName, "ir-text-v1", body, typedBody, bodyIndex, helperDependencies, sourceLocation);
     }
 
     public static IrGpuMethodBody nativeOpenClHelper(
@@ -110,6 +149,7 @@ public record IrGpuMethodBody(
                 emittedName,
                 "opencl-native-body-v1",
                 nativeBody,
+                IrGpuTypedBody.none(),
                 IrGpuBodyIndex.empty(),
                 helperDependencies,
                 sourceLocation

@@ -1,6 +1,9 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
@@ -28,6 +31,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GpuBackendLowerersTest {
 
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+
+    @Test
+    void backendLowerersExposeStableExtensionMetadata() {
+        GpuBackendLowerer lowerer = GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL);
+
+        assertEquals("backend-lowerer:opencl", lowerer.extensionId());
+        assertEquals(lowerer.lowererVersion(), lowerer.extensionVersion());
+        assertEquals(java.util.Set.of(GpuExtensionCapability.BACKEND_LOWERING), lowerer.extensionCapabilities());
+        assertEquals(GpuExtensionPhase.BACKEND_LOWERING, lowerer.extensionPhase());
+        assertEquals(GpuExtensionPermission.PRODUCTION_AFFECTING, lowerer.extensionPermission());
+    }
 
     @Test
     void openClLowererProducesSourceModuleArtifact() {

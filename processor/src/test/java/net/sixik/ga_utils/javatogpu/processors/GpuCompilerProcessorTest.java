@@ -136,6 +136,9 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("methodBody.0.name=kernel"));
         assertTrue(irGpuManifest.contains("methodBody.0.emittedName=jtg_kernel"));
         assertTrue(irGpuManifest.contains("methodBody.0.format=ir-text-v1"));
+        assertTrue(irGpuManifest.contains("methodBody.0.typed.format=ir-tree-v1"));
+        assertTrue(irGpuManifest.contains("methodBody.0.typed.root.count=3"));
+        assertTrue(irGpuManifest.contains("methodBody.0.typed.node.count="));
         assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statement.count=3"));
         assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statementKind.0=GpuIrVariableDeclaration"));
         assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statementKind.1=GpuIrAssignment"));
@@ -176,6 +179,10 @@ class GpuCompilerProcessorTest {
         assertEquals("kernel", irGpuArtifact.module().methodBodies().get(0).name());
         assertEquals("jtg_kernel", irGpuArtifact.module().methodBodies().get(0).emittedName());
         assertEquals(3, irGpuArtifact.module().methodBodies().get(0).bodyIndex().statementCount());
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).typedBody().available());
+        assertEquals(3, irGpuArtifact.module().methodBodies().get(0).typedBody().rootNodeIds().size());
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).typedBody().nodes().stream()
+                .anyMatch(node -> "GpuIrBinary".equals(node.kind())));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().statementKinds().contains("GpuIrAssignment"));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().intrinsicCalls().contains("sin"));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().writesMemory());

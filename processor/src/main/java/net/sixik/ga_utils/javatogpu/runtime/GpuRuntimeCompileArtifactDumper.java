@@ -17,6 +17,8 @@ import java.util.Map;
  */
 public final class GpuRuntimeCompileArtifactDumper {
 
+    public static final String RUNTIME_DEVICE_SELECTION_ARTIFACT = "runtime-device-selection.properties";
+
     private GpuRuntimeCompileArtifactDumper() {
     }
 
@@ -43,6 +45,10 @@ public final class GpuRuntimeCompileArtifactDumper {
         }
         artifacts.put("backend." + snapshot.backendModuleArtifact().format(), snapshot.backendModuleArtifact().source());
         artifacts.put("compile-provenance.properties", snapshot.compileProvenance().toPropertiesText());
+        snapshot.deviceSelection().ifPresent(selection -> artifacts.put(
+                RUNTIME_DEVICE_SELECTION_ARTIFACT,
+                formatProperties(selection.artifactFields("deviceSelection"))
+        ));
         artifacts.put("runtime-equivalence.properties", snapshot.runtimeEquivalenceEvidence().toPropertiesText());
         artifacts.put("fallback.properties", snapshot.fallbackEvidence().toPropertiesText());
         artifacts.put("production-optimizer-gate.properties", snapshot.productionOptimizerGate().toPropertiesText());
@@ -97,6 +103,16 @@ public final class GpuRuntimeCompileArtifactDumper {
                 + location.endLine()
                 + ":"
                 + location.endColumn();
+    }
+
+    private static String formatProperties(Map<String, String> fields) {
+        StringBuilder builder = new StringBuilder();
+        fields.forEach((key, value) -> builder
+                .append(key)
+                .append('=')
+                .append(safePropertyValue(value))
+                .append('\n'));
+        return builder.toString();
     }
 
     private static String formatRegenerationMetadata(GpuRuntimeCompileArtifactSnapshot snapshot) {

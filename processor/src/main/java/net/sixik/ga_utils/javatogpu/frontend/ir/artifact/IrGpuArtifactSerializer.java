@@ -71,6 +71,7 @@ public final class IrGpuArtifactSerializer {
             properties.put(prefix + "emittedName", methodBody.emittedName());
             properties.put(prefix + "format", methodBody.format());
             properties.put(prefix + "body", methodBody.body());
+            writeTypedBody(properties, prefix + "typed.", methodBody.typedBody());
             writeBodyIndex(properties, prefix, methodBody.bodyIndex());
             writeSourceLocation(properties, prefix, methodBody.sourceLocation());
             properties.put(prefix + "helperDependency.count", Integer.toString(methodBody.helperDependencies().size()));
@@ -80,6 +81,62 @@ public final class IrGpuArtifactSerializer {
                         methodBody.helperDependencies().get(dependencyIndex)
                 );
             }
+        }
+    }
+
+    private static void writeTypedBody(
+            TreeMap<String, String> properties,
+            String prefix,
+            IrGpuTypedBody typedBody
+    ) {
+        IrGpuTypedBody body = typedBody == null ? IrGpuTypedBody.none() : typedBody;
+        properties.put(prefix + "format", body.format());
+        properties.put(prefix + "root.count", Integer.toString(body.rootNodeIds().size()));
+        for (int index = 0; index < body.rootNodeIds().size(); index++) {
+            properties.put(prefix + "root." + index, Integer.toString(body.rootNodeIds().get(index)));
+        }
+        properties.put(prefix + "node.count", Integer.toString(body.nodes().size()));
+        for (int nodeIndex = 0; nodeIndex < body.nodes().size(); nodeIndex++) {
+            IrGpuTypedNode node = body.nodes().get(nodeIndex);
+            String nodePrefix = prefix + "node." + nodeIndex + ".";
+            properties.put(nodePrefix + "id", Integer.toString(node.id()));
+            properties.put(nodePrefix + "kind", node.kind());
+            writeNamedValues(properties, nodePrefix + "attribute", node.attributes());
+            writeNamedChildLists(properties, nodePrefix + "child", node.children());
+        }
+    }
+
+    private static void writeNamedValues(
+            TreeMap<String, String> properties,
+            String prefix,
+            Map<String, String> values
+    ) {
+        java.util.TreeMap<String, String> sorted = new java.util.TreeMap<>(values == null ? Map.of() : values);
+        properties.put(prefix + ".count", Integer.toString(sorted.size()));
+        int index = 0;
+        for (Map.Entry<String, String> entry : sorted.entrySet()) {
+            properties.put(prefix + "." + index + ".name", entry.getKey());
+            properties.put(prefix + "." + index + ".value", entry.getValue());
+            index++;
+        }
+    }
+
+    private static void writeNamedChildLists(
+            TreeMap<String, String> properties,
+            String prefix,
+            Map<String, java.util.List<Integer>> children
+    ) {
+        java.util.TreeMap<String, java.util.List<Integer>> sorted = new java.util.TreeMap<>(children == null ? Map.of() : children);
+        properties.put(prefix + ".count", Integer.toString(sorted.size()));
+        int index = 0;
+        for (Map.Entry<String, java.util.List<Integer>> entry : sorted.entrySet()) {
+            String childPrefix = prefix + "." + index + ".";
+            properties.put(childPrefix + "name", entry.getKey());
+            properties.put(childPrefix + "node.count", Integer.toString(entry.getValue().size()));
+            for (int childIndex = 0; childIndex < entry.getValue().size(); childIndex++) {
+                properties.put(childPrefix + "node." + childIndex, Integer.toString(entry.getValue().get(childIndex)));
+            }
+            index++;
         }
     }
 

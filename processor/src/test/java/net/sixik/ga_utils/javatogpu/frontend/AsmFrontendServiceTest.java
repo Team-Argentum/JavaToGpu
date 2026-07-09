@@ -202,6 +202,8 @@ class AsmFrontendServiceTest {
         assertTrue(result.irGpuArtifact().module().methodBodies().get(0).body().contains("method jtg_kernel source=kernel"));
         assertTrue(result.irGpuArtifact().module().methodBodies().get(0).bodyIndex().helperCalls().contains("jtg_fn_Helpers_square_float"));
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().derivedOpenClResource());
+        assertEquals(false, result.irGpuArtifact().optimizerPolicyMetadata().fastMath());
+        assertEquals("default-strict", result.irGpuArtifact().optimizerPolicyMetadata().source());
 
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.openClResource());
         assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", result.irGpuResource());

@@ -92,12 +92,65 @@ public final class IrGpuArtifactParser {
                     require(properties, prefix + "emittedName"),
                     require(properties, prefix + "format"),
                     require(properties, prefix + "body"),
+                    parseTypedBody(properties, prefix + "typed."),
                     parseBodyIndex(properties, prefix),
                     parseMethodBodyDependencies(properties, prefix),
                     parseSourceLocation(properties, prefix)
             ));
         }
         return List.copyOf(methodBodies);
+    }
+
+    private static IrGpuTypedBody parseTypedBody(Properties properties, String prefix) {
+        String format = properties.getProperty(prefix + "format", "none");
+        int rootCount = parseInt(properties, prefix + "root.count", 0);
+        ArrayList<Integer> roots = new ArrayList<>();
+        for (int index = 0; index < rootCount; index++) {
+            roots.add(parseInt(properties, prefix + "root." + index));
+        }
+        int nodeCount = parseInt(properties, prefix + "node.count", 0);
+        ArrayList<IrGpuTypedNode> nodes = new ArrayList<>();
+        for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+            String nodePrefix = prefix + "node." + nodeIndex + ".";
+            nodes.add(new IrGpuTypedNode(
+                    parseInt(properties, nodePrefix + "id"),
+                    require(properties, nodePrefix + "kind"),
+                    parseNamedValues(properties, nodePrefix + "attribute"),
+                    parseNamedChildLists(properties, nodePrefix + "child")
+            ));
+        }
+        return new IrGpuTypedBody(format, roots, nodes);
+    }
+
+    private static java.util.Map<String, String> parseNamedValues(Properties properties, String prefix) {
+        int count = parseInt(properties, prefix + ".count", 0);
+        java.util.LinkedHashMap<String, String> values = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < count; index++) {
+            values.put(
+                    require(properties, prefix + "." + index + ".name"),
+                    properties.getProperty(prefix + "." + index + ".value", "")
+            );
+        }
+        return java.util.Map.copyOf(values);
+    }
+
+    private static java.util.Map<String, java.util.List<Integer>> parseNamedChildLists(
+            Properties properties,
+            String prefix
+    ) {
+        int count = parseInt(properties, prefix + ".count", 0);
+        java.util.LinkedHashMap<String, java.util.List<Integer>> children = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < count; index++) {
+            String childPrefix = prefix + "." + index + ".";
+            String name = require(properties, childPrefix + "name");
+            int nodeCount = parseInt(properties, childPrefix + "node.count", 0);
+            ArrayList<Integer> nodeIds = new ArrayList<>();
+            for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+                nodeIds.add(parseInt(properties, childPrefix + "node." + nodeIndex));
+            }
+            children.put(name, List.copyOf(nodeIds));
+        }
+        return java.util.Map.copyOf(children);
     }
 
     private static IrGpuBodyIndex parseBodyIndex(Properties properties, String prefix) {

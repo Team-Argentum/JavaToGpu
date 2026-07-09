@@ -27,7 +27,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
         Optional<GpuBackendSourcePromotionGate> backendSourcePromotionGate,
         List<IrGpuSourceLocation> sourceLocations,
         String compileLog,
-        List<String> runtimeValidationEvidence
+        List<String> runtimeValidationEvidence,
+        Optional<GpuRuntimeDeviceSelection> deviceSelection
 ) {
 
     public GpuRuntimeCompileArtifactSnapshot {
@@ -73,6 +74,44 @@ public record GpuRuntimeCompileArtifactSnapshot(
         runtimeValidationEvidence = runtimeValidationEvidence == null
                 ? List.of()
                 : List.copyOf(runtimeValidationEvidence);
+        deviceSelection = deviceSelection == null ? Optional.empty() : deviceSelection;
+    }
+
+    public GpuRuntimeCompileArtifactSnapshot(
+            Optional<IrGpuArtifact> originalIrGpuArtifact,
+            Optional<IrGpuArtifact> optimizedIrGpuArtifact,
+            GpuBackendModuleArtifact backendModuleArtifact,
+            GpuRuntimeCompileInvalidationStamp invalidationStamp,
+            GpuRuntimeCompileProvenance compileProvenance,
+            GpuRuntimeIrOptimizationReport optimizationReport,
+            GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence,
+            GpuRuntimeFallbackEvidence fallbackEvidence,
+            GpuRuntimeProductionOptimizerGate productionOptimizerGate,
+            GpuRuntimeIrSelection runtimeIrSelection,
+            Optional<GpuBackendSourceSwitchingDecision> backendSourceSwitchingDecision,
+            Optional<GpuBackendSourcePromotionGate> backendSourcePromotionGate,
+            List<IrGpuSourceLocation> sourceLocations,
+            String compileLog,
+            List<String> runtimeValidationEvidence
+    ) {
+        this(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                backendModuleArtifact,
+                invalidationStamp,
+                compileProvenance,
+                optimizationReport,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence,
+                productionOptimizerGate,
+                runtimeIrSelection,
+                backendSourceSwitchingDecision,
+                backendSourcePromotionGate,
+                sourceLocations,
+                compileLog,
+                runtimeValidationEvidence,
+                Optional.empty()
+        );
     }
 
     public GpuRuntimeCompileArtifactSnapshot(
@@ -99,7 +138,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 Optional.empty(),
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                Optional.empty()
         );
     }
 
@@ -382,7 +422,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 backendSourcePromotionGate,
                 sourceLocations,
                 compileLog,
-                evidence
+                evidence,
+                deviceSelection
         );
     }
 
@@ -403,7 +444,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 Optional.empty(),
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                deviceSelection
         );
     }
 
@@ -423,7 +465,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 Optional.empty(),
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                deviceSelection
         );
     }
 
@@ -443,7 +486,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 Optional.empty(),
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                deviceSelection
         );
     }
 
@@ -463,7 +507,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 Optional.empty(),
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                deviceSelection
         );
     }
 
@@ -483,7 +528,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 backendSourcePromotionGate,
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                deviceSelection
         );
     }
 
@@ -505,7 +551,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 backendSourcePromotionGate,
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                deviceSelection
         );
     }
 
@@ -528,7 +575,8 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 Optional.ofNullable(gate),
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                deviceSelection
         );
     }
 
@@ -550,7 +598,29 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 Optional.ofNullable(gate),
                 sourceLocations,
                 compileLog,
-                runtimeValidationEvidence
+                runtimeValidationEvidence,
+                Optional.empty()
+        );
+    }
+
+    public GpuRuntimeCompileArtifactSnapshot withDeviceSelection(GpuRuntimeDeviceSelection selection) {
+        return new GpuRuntimeCompileArtifactSnapshot(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                backendModuleArtifact,
+                invalidationStamp,
+                compileProvenance,
+                optimizationReport,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence,
+                productionOptimizerGate,
+                runtimeIrSelection,
+                backendSourceSwitchingDecision,
+                backendSourcePromotionGate,
+                sourceLocations,
+                compileLog,
+                runtimeValidationEvidence,
+                Optional.ofNullable(selection)
         );
     }
 }

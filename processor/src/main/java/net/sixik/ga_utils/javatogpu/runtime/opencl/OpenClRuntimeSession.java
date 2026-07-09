@@ -23,12 +23,21 @@ import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.lwjgl.PointerBuffer;
@@ -42,26 +51,82 @@ public final class OpenClRuntimeSession implements AutoCloseable {
 
     private static final Pattern OPENCL_VERSION_PATTERN = Pattern.compile("OpenCL\\s+(\\d+)\\.(\\d+)");
     private static final int CL_DEPTH = 0x10BD;
+    private static final int CL_DEVICE_HOST_UNIFIED_MEMORY = 0x1035;
 
     private final OpenClDevice device;
     private final OpenClContext context;
     private final OpenClCommandQueue queue;
+    private final GpuRuntimeDeviceProfile deviceProfile;
+    private final GpuRuntimeDeviceSelection deviceSelection;
 
-    private OpenClRuntimeSession(OpenClDevice device, OpenClContext context, OpenClCommandQueue queue) {
+    private OpenClRuntimeSession(
+            OpenClDevice device,
+            OpenClContext context,
+            OpenClCommandQueue queue,
+            GpuRuntimeDeviceProfile deviceProfile,
+            GpuRuntimeDeviceSelection deviceSelection
+    ) {
         this.device = device;
         this.context = context;
         this.queue = queue;
+        this.deviceProfile = deviceProfile;
+        this.deviceSelection = deviceSelection;
     }
 
     public static OpenClRuntimeSession createDefault() {
-        OpenClDevice device = OpenClDevices.selectBest();
-        if (device == null) {
+        return createDefault(GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns());
+    }
+
+    public static OpenClRuntimeSession createDefault(GpuRuntimeDevicePolicyRegistry devicePolicyRegistry) {
+        Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
+        List<OpenClDevice> devices = OpenClDevices.list(CL10.CL_DEVICE_TYPE_ALL);
+        if (devices.isEmpty()) {
             throw new IllegalStateException("No OpenCL device found");
         }
 
+        ArrayList<GpuRuntimeDeviceProfile> profiles = new ArrayList<>(devices.size());
+        for (int index = 0; index < devices.size(); index++) {
+            profiles.add(deviceProfile(devices.get(index), index));
+        }
+        GpuRuntimeDeviceSelection selection = selectDevice(devicePolicyRegistry, profiles);
+        int selectedIndex = selectedDeviceIndex(profiles, selection);
+        OpenClDevice device = devices.get(selectedIndex);
+
         OpenClContext context = OpenClContext.create(device);
         OpenClCommandQueue queue = context.createQueue(true);
-        return new OpenClRuntimeSession(device, context, queue);
+        return new OpenClRuntimeSession(device, context, queue, profiles.get(selectedIndex), selection);
+    }
+
+    static GpuRuntimeDeviceSelection selectDevice(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            List<GpuRuntimeDeviceProfile> profiles
+    ) {
+        return devicePolicyRegistry.select(GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                profiles
+        ));
+    }
+
+    static int selectedDeviceIndex(
+            List<GpuRuntimeDeviceProfile> profiles,
+            GpuRuntimeDeviceSelection selection
+    ) {
+        GpuRuntimeDeviceProfile selected = selection.selectedDevice().orElseThrow(() -> new IllegalStateException(
+                "OpenCL device selection failed: " + selection.firstBlocker()
+                        + (selection.diagnostics().isEmpty()
+                        ? ""
+                        : "; " + String.join("; ", selection.diagnostics()))
+        ));
+        for (int index = 0; index < profiles.size(); index++) {
+            if (profiles.get(index) == selected) {
+                return index;
+            }
+        }
+        int selectedIndex = profiles.indexOf(selected);
+        if (selectedIndex < 0) {
+            throw new IllegalStateException("OpenCL device policy selected a profile outside the discovered candidate set");
+        }
+        return selectedIndex;
     }
 
     public OpenClCompiledKernel compileKernel(GpuKernelDescriptor descriptor) {
@@ -126,7 +191,52 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         );
     }
 
+    public GpuRuntimeDeviceProfile deviceProfile() {
+        return deviceProfile;
+    }
+
+    public GpuRuntimeDeviceSelection deviceSelection() {
+        return deviceSelection;
+    }
+
     public OpenClValidationDeviceInfo validationDeviceInfo() {
+        return validationDeviceInfo(device);
+    }
+
+    private static GpuRuntimeDeviceProfile deviceProfile(OpenClDevice device, int discoveryIndex) {
+        OpenClValidationDeviceInfo deviceInfo = validationDeviceInfo(device);
+        boolean unifiedMemory = safeQueryIntDeviceInfo(device.device(), CL_DEVICE_HOST_UNIFIED_MEMORY) > 0;
+        return GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-" + discoveryIndex,
+                deviceInfo.deviceLabel(),
+                deviceInfo.vendor(),
+                deviceInfo.driverVersion(),
+                deviceInfo.deviceVersion(),
+                classifyDevice(device, unifiedMemory),
+                deviceInfo.computeUnits(),
+                device.globalMemoryBytes(),
+                deviceInfo.localMemoryBytes(),
+                deviceInfo.maxWorkGroupSize(),
+                deviceInfo.preferredVectorWidthFloat(),
+                unifiedMemory,
+                deviceInfo.supportsDoublePrecision(),
+                deviceInfo.supportsImages(),
+                deviceInfo.supportsSubgroups()
+        );
+    }
+
+    private static GpuDeviceClassTarget classifyDevice(OpenClDevice device, boolean unifiedMemory) {
+        if ((device.deviceType() & CL10.CL_DEVICE_TYPE_CPU) != 0L) {
+            return GpuDeviceClassTarget.CPU;
+        }
+        if ((device.deviceType() & CL10.CL_DEVICE_TYPE_GPU) != 0L) {
+            return unifiedMemory ? GpuDeviceClassTarget.IGPU : GpuDeviceClassTarget.DGPU;
+        }
+        return GpuDeviceClassTarget.UNKNOWN;
+    }
+
+    private static OpenClValidationDeviceInfo validationDeviceInfo(OpenClDevice device) {
         long deviceHandle = device.device();
         String extensions = queryStringDeviceInfo(deviceHandle, CL10.CL_DEVICE_EXTENSIONS);
         String deviceVersion = queryStringDeviceInfo(deviceHandle, CL10.CL_DEVICE_VERSION);
@@ -791,7 +901,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         return queue;
     }
 
-    private int queryIntDeviceInfo(long deviceHandle, int paramName) {
+    private static int queryIntDeviceInfo(long deviceHandle, int paramName) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer buffer = stack.malloc(Integer.BYTES);
             OpenClException.check(
@@ -802,7 +912,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
-    private int safeQueryIntDeviceInfo(long deviceHandle, int paramName) {
+    private static int safeQueryIntDeviceInfo(long deviceHandle, int paramName) {
         try {
             return queryIntDeviceInfo(deviceHandle, paramName);
         } catch (RuntimeException ignored) {
@@ -810,7 +920,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
-    private long queryLongDeviceInfo(long deviceHandle, int paramName) {
+    private static long queryLongDeviceInfo(long deviceHandle, int paramName) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             PointerBuffer buffer = stack.mallocPointer(1);
             OpenClException.check(
@@ -821,7 +931,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
-    private String queryStringDeviceInfo(long deviceHandle, int paramName) {
+    private static String queryStringDeviceInfo(long deviceHandle, int paramName) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             PointerBuffer sizeBuffer = stack.mallocPointer(1);
             OpenClException.check(
@@ -845,7 +955,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
-    private String queryStringPlatformInfo(long platformHandle, int paramName) {
+    private static String queryStringPlatformInfo(long platformHandle, int paramName) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             PointerBuffer sizeBuffer = stack.mallocPointer(1);
             OpenClException.check(
@@ -869,11 +979,11 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
-    private boolean supportsDoublePrecision(String extensions) {
+    private static boolean supportsDoublePrecision(String extensions) {
         return containsExtension(extensions, "cl_khr_fp64") || containsExtension(extensions, "cl_amd_fp64");
     }
 
-    private boolean supportsImage3dWrites(String extensions, String deviceVersion) {
+    private static boolean supportsImage3dWrites(String extensions, String deviceVersion) {
         if (containsExtension(extensions, "cl_khr_3d_image_writes")) {
             return true;
         }
@@ -886,13 +996,13 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         return major > 1 || (major == 1 && minor >= 2);
     }
 
-    private boolean supportsSubgroups(String extensions) {
+    private static boolean supportsSubgroups(String extensions) {
         return containsExtension(extensions, "cl_khr_subgroups")
                 || containsExtension(extensions, "cl_intel_subgroups")
                 || containsExtension(extensions, "cl_nv_pragma_unroll");
     }
 
-    private boolean containsExtension(String extensions, String extension) {
+    private static boolean containsExtension(String extensions, String extension) {
         if (extensions == null || extensions.isBlank()) {
             return false;
         }

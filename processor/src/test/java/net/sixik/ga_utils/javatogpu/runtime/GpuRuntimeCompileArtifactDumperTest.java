@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
@@ -120,7 +121,7 @@ class GpuRuntimeCompileArtifactDumperTest {
                 List.of(location()),
                 "build ok",
                 List.of("equivalence:skipped")
-        );
+        ).withDeviceSelection(deviceSelection());
 
         GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
 
@@ -234,6 +235,16 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendOption.property.count=0"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("optimizationProfile=fast"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("fallbackDecision=none"));
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_DEVICE_SELECTION_ARTIFACT));
+        String deviceSelectionArtifact = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_DEVICE_SELECTION_ARTIFACT);
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.selected=true"));
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.selectedDeviceKey=OPENCL:opencl-1"));
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.selected.deviceLabel=Mock GPU"));
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.selected.deviceClass=dgpu"));
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.candidate.0.globalMemoryBytes=8589934592"));
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.policy.0.policyId=javatogpu.device.backend-compatibility"));
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.execution.0.extensionId=javatogpu.device.backend-compatibility"));
+        assertTrue(deviceSelectionArtifact.contains("deviceSelection.execution.0.outcome=SUCCEEDED"));
         assertTrue(dump.artifact("optimizer-report.txt").contains("outcome=APPLIED"));
         assertTrue(dump.artifact("optimizer-report.txt").contains("strategy:opencl-nvidia-advisory"));
         assertTrue(dump.artifact("optimizer-report.txt").contains("advisoryOnly=true"));
@@ -1608,6 +1619,33 @@ class GpuRuntimeCompileArtifactDumperTest {
                 "javatogpu/sample/Demo/kernel.cl",
                 "__kernel void kernel(__global int* output) { output[0] = 1; }",
                 List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+    }
+
+    private static GpuRuntimeDeviceSelection deviceSelection() {
+        GpuRuntimeDeviceProfile profile = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-1",
+                "Mock GPU",
+                "Mock Vendor",
+                "Mock Driver",
+                "OpenCL 3.0 Mock",
+                GpuDeviceClassTarget.DGPU,
+                48L,
+                8L * 1024L * 1024L * 1024L,
+                65_536L,
+                512L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        return GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                        List.of(profile)
+                )
         );
     }
 

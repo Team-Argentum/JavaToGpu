@@ -8,33 +8,29 @@ import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import java.util.Set;
 
 /**
- * One explicit runtime IR optimization pass inside a staged production pipeline.
+ * One structural typed-IR peephole analysis or rewrite proposal rule.
  */
 @FunctionalInterface
-public interface GpuRuntimeIrOptimizationPass extends GpuExtension {
+public interface GpuRuntimeIrPeepholeRule extends GpuExtension {
 
-    GpuRuntimeIrOptimizationReport run(GpuRuntimeIrOptimizationRequest request);
+    GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context);
 
-    default GpuRuntimeIrOptimizationStage stage() {
-        return GpuRuntimeIrOptimizationStage.TRANSFORM;
-    }
-
-    default String passName() {
+    default String ruleId() {
         return getClass().getName();
     }
 
-    default String passVersion() {
-        return passName();
+    default String ruleVersion() {
+        return "1";
     }
 
     @Override
     default String extensionId() {
-        return passName();
+        return ruleId();
     }
 
     @Override
     default String extensionVersion() {
-        return passVersion();
+        return ruleVersion();
     }
 
     @Override
@@ -50,12 +46,5 @@ public interface GpuRuntimeIrOptimizationPass extends GpuExtension {
     @Override
     default GpuExtensionPermission extensionPermission() {
         return GpuExtensionPermission.MUTATION_PROPOSAL;
-    }
-
-    /**
-     * Returns whether this pass may change strict floating-point behavior.
-     */
-    default boolean requiresFastMath() {
-        return false;
     }
 }

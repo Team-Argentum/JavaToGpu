@@ -228,6 +228,9 @@ class GpuFrontendServiceTest {
         assertEquals("kernel", result.irGpuArtifact().module().methodBodies().get(0).name());
         assertEquals("jtg_kernel", result.irGpuArtifact().module().methodBodies().get(0).emittedName());
         assertEquals("ir-text-v1", result.irGpuArtifact().module().methodBodies().get(0).format());
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(0).typedBody().available());
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(0).typedBody().nodes().stream()
+                .anyMatch(node -> "GpuIrHelperCall".equals(node.kind())));
         assertEquals("java-source", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().sourceKind());
         assertEquals("sample.Demo", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().ownerQualifiedName());
         assertEquals("kernel", result.irGpuArtifact().module().methodBodies().get(0).sourceLocation().methodName());
@@ -235,6 +238,7 @@ class GpuFrontendServiceTest {
         assertTrue(result.irGpuArtifact().module().methodBodies().get(0).body().contains("method jtg_kernel source=kernel"));
         assertTrue(result.irGpuArtifact().module().methodBodies().get(0).body().contains("set output[id] = helper(jtg_fn_square_float args=[input[id]])"));
         assertEquals("helper", result.irGpuArtifact().module().methodBodies().get(1).role());
+        assertTrue(result.irGpuArtifact().module().methodBodies().get(1).typedBody().available());
         assertEquals("square", result.irGpuArtifact().module().methodBodies().get(1).name());
         assertEquals("java-source", result.irGpuArtifact().module().methodBodies().get(1).sourceLocation().sourceKind());
         assertTrue(result.irGpuArtifact().module().methodBodies().get(1).body().contains("return (value * value)"));

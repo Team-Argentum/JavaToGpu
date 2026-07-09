@@ -17,6 +17,7 @@ import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
@@ -38,6 +39,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
@@ -51,6 +55,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -71,6 +76,45 @@ class OpenClGpuRuntimeBackendTest {
 
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE =
             "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+
+    @Test
+    void finalCompileSnapshotCarriesAvailableRuntimeDeviceSelection() {
+        GpuRuntimeDeviceProfile profile = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-0",
+                "Mock GPU",
+                "Mock Vendor",
+                "Mock Driver",
+                "OpenCL 3.0 Mock",
+                GpuDeviceClassTarget.DGPU,
+                48L,
+                8L * 1024L * 1024L * 1024L,
+                65_536L,
+                512L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                        List.of(profile)
+                )
+        );
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+            @Override
+            protected Optional<GpuRuntimeDeviceSelection> runtimeDeviceSelection() {
+                return Optional.of(selection);
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(intOutputDescriptor(), new Object[]{new int[]{0}}));
+
+        assertSame(selection, capturedSnapshot.get().deviceSelection().orElseThrow());
+    }
 
     @Test
     void irGpuArtifactIdentityIsStableAndChangesWithPayload() {

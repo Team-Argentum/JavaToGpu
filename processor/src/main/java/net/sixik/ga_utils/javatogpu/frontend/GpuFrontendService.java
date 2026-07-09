@@ -1,5 +1,6 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.type.Type;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
@@ -19,6 +20,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTextBodyRenderer;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedBodyBuilder;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
@@ -341,7 +343,12 @@ public final class GpuFrontendService {
     }
 
     private static IrGpuOptimizerPolicyMetadata buildOptimizerPolicyMetadata(GpuIrCompiledMethod compiledKernel) {
-        return compiledKernel.parsedMethod().declaration().getAnnotationByName("GPUOptimize")
+        MethodDeclaration declaration = compiledKernel.parsedMethod().declaration();
+        if (declaration == null) {
+            return IrGpuOptimizerPolicyMetadata.defaultStrict();
+        }
+
+        return declaration.getAnnotationByName("GPUOptimize")
                 .map(annotation -> {
                     boolean fastMath = annotation.isNormalAnnotationExpr()
                             && annotation.asNormalAnnotationExpr().getPairs().stream()
@@ -438,6 +445,7 @@ public final class GpuFrontendService {
                 compiledKernel.parsedMethod().name(),
                 compiledKernel.emittedName(),
                 IrGpuTextBodyRenderer.render(compiledKernel),
+                IrGpuTypedBodyBuilder.fromStatements(compiledKernel.irMethod().statements()),
                 buildBodyIndex(compiledKernel),
                 compiledKernel.helperDependencies(),
                 sourceLocation(compiledKernel, sourceFrontend)
@@ -466,6 +474,7 @@ public final class GpuFrontendService {
                 helper.parsedMethod().name(),
                 helper.emittedName(),
                 IrGpuTextBodyRenderer.render(helper),
+                IrGpuTypedBodyBuilder.fromStatements(helper.irMethod().statements()),
                 buildBodyIndex(helper),
                 helper.helperDependencies(),
                 sourceLocation

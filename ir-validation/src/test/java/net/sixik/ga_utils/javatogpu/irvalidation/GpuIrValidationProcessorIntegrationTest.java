@@ -284,6 +284,11 @@ class GpuIrValidationProcessorIntegrationTest {
         assertEntryValue(report, "autoVectorizationNoCandidateUniqueDiagnosticCodes", "1");
         assertEntryValue(report, "autoVectorizationNoCandidateDiagnosticCode.JTG-IR-AV-001", "1");
         assertTrue("optimization-validation".equals(report.getProperty("entry.0.provider")));
+        assertTrue("javatogpu.ir-validation".equals(report.getProperty("entry.0.extensionId")));
+        assertTrue("1".equals(report.getProperty("entry.0.extensionVersion")));
+        assertTrue("optimization-validation.aggregate".equals(report.getProperty("entry.0.ruleId")));
+        assertTrue("WARNING".equals(report.getProperty("entry.0.severity")));
+        assertTrue(report.getProperty("entry.0.sourceAnchor", "").startsWith("java:"));
         assertTrue("kernel".equals(report.getProperty("entry.0.methodName")));
         assertTrue("true".equals(report.getProperty("entry.0.entryPoint")));
         assertTrue("DIAGNOSTIC".equals(report.getProperty("entry.0.mode")));

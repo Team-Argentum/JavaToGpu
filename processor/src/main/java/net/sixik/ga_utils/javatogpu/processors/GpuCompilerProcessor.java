@@ -713,6 +713,11 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             GpuIrValidationReportEntry entry = irValidationReportEntries.get(index);
             String prefix = "entry." + index + ".";
             appendProperty(builder, prefix + "provider", entry.provider());
+            appendProperty(builder, prefix + "extensionId", entry.extensionId());
+            appendProperty(builder, prefix + "extensionVersion", entry.extensionVersion());
+            appendProperty(builder, prefix + "ruleId", entry.ruleId());
+            appendProperty(builder, prefix + "severity", entry.severity().name());
+            appendProperty(builder, prefix + "sourceAnchor", entry.sourceAnchor());
             appendProperty(builder, prefix + "methodName", entry.methodName());
             appendProperty(builder, prefix + "entryPoint", Boolean.toString(entry.entryPoint()));
             entry.values().entrySet().stream()
