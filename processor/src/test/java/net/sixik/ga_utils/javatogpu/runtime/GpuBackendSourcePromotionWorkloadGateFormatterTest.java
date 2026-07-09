@@ -366,6 +366,9 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.accepted.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.blocking.count"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
+        assertEquals("cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary"));
         assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
         assertEquals("optimized", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedRuntimeIrStage"));
         assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizedIrRejected"));
@@ -381,6 +384,9 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.accepted.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.blocking.count"));
+        assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
+        assertEquals("vector[passes=2, acceptedProof=1, blockingProof=1, rolledBack=1, failed=0, promotionReady=false]", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.summary"));
         assertEquals("production-ir-gate-blocked", gate.getProperty("kernel.1.runtimeOptimizerDrift.fallbackDecision"));
         assertEquals("original", gate.getProperty("kernel.1.runtimeOptimizerDrift.selectedRuntimeIrStage"));
         assertEquals("true", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizedIrRejected"));
@@ -776,6 +782,11 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "proofArtifact.count=2",
                 "proofArtifact.accepted.count=1",
                 "proofArtifact.blocking.count=1",
+                "optimizerFamily.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "2" : "1"),
+                "optimizerFamily.promotionReady.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "optimizerFamily.summary=" + ("optimized".equals(selectedRuntimeIrStage)
+                        ? "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"
+                        : "vector[passes=2, acceptedProof=1, blockingProof=1, rolledBack=1, failed=0, promotionReady=false]"),
                 "fallbackDecision=" + fallbackDecision,
                 "selectedRuntimeIrStage=" + selectedRuntimeIrStage,
                 "selectedRuntimeIrIdentity=irgpu:sha256:selected",

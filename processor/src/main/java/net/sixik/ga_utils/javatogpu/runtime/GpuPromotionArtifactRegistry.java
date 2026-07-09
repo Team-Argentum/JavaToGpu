@@ -21,6 +21,8 @@ public final class GpuPromotionArtifactRegistry {
     public static final String RUNTIME_IR_HANDOFF = "runtime-ir-handoff.properties";
     public static final String RUNTIME_PRODUCTION_MUTATION_SAFETY = "runtime-production-mutation-safety.properties";
     public static final String RUNTIME_OPTIMIZER_DRIFT = "runtime-optimizer-drift.properties";
+    public static final String RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD =
+            "runtime-optimizer-family-equivalence-payload.properties";
 
     public static final List<String> PROMOTION_ARTIFACTS = List.of(
             I3_READINESS_SUMMARY,
@@ -33,7 +35,8 @@ public final class GpuPromotionArtifactRegistry {
             BACKEND_PROMOTION_ARTIFACT_SUPPORT,
             RUNTIME_IR_HANDOFF,
             RUNTIME_PRODUCTION_MUTATION_SAFETY,
-            RUNTIME_OPTIMIZER_DRIFT
+            RUNTIME_OPTIMIZER_DRIFT,
+            RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD
     );
 
     private GpuPromotionArtifactRegistry() {

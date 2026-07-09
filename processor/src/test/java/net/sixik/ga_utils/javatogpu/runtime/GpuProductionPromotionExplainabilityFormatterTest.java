@@ -17,6 +17,12 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("blocker.2=production-source-switching-disabled"));
         assertTrue(formatted.contains("i3SourceReady.count=1"));
         assertTrue(formatted.contains("i3SourceReady.all=false"));
+        assertTrue(formatted.contains("optimizerFamily.count=2"));
+        assertTrue(formatted.contains("optimizerFamily.promotionReady.count=1"));
+        assertTrue(formatted.contains("optimizerFamily.summary=cse[passes=1, acceptedProof=1"));
+        assertTrue(formatted.contains("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=false"));
+        assertTrue(formatted.contains("optimizerFamily.promotionPreflightReady=false"));
+        assertTrue(formatted.contains("optimizer-family-runtime-equivalence-history-baseline-missing"));
         assertTrue(formatted.contains("contract.status=valid"));
         assertTrue(formatted.contains("contract.valid=true"));
         assertTrue(formatted.contains("contract.violation.count=0"));
@@ -39,7 +45,7 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("sourceSwitching.productionDecision.all=true"));
         assertTrue(formatted.contains("i3SourceReady.count=2"));
         assertTrue(formatted.contains("i3SourceReady.all=true"));
-        assertTrue(formatted.contains("readinessChecklist.ready.count=7"));
+        assertTrue(formatted.contains("readinessChecklist.ready.count=8"));
         assertTrue(formatted.contains("readinessChecklist.blocked.count=1"));
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=controlled-source-switching-covered"));
         assertTrue(formatted.contains("contract.status=valid"));
@@ -86,9 +92,9 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.all=false"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.0.resource=kernel-a.cl"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.uncovered.0.resource=kernel-b.cl"));
-        assertTrue(formatted.contains("readinessChecklist.item.count=8"));
+        assertTrue(formatted.contains("readinessChecklist.item.count=9"));
         assertTrue(formatted.contains("readinessChecklist.ready.count=3"));
-        assertTrue(formatted.contains("readinessChecklist.blocked.count=5"));
+        assertTrue(formatted.contains("readinessChecklist.blocked.count=6"));
         assertTrue(formatted.contains("readinessChecklist.ready.all=false"));
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
         assertTrue(formatted.contains("readinessChecklist.item.0.name=workload-gate-review-ready"));
@@ -106,6 +112,12 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("productionSourceSwitching", "false");
         properties.setProperty("realWorkloadEvidence", "runtime-snapshot");
         properties.setProperty("kernel.count", "2");
+        properties.setProperty("optimizerFamily.count", "2");
+        properties.setProperty("optimizerFamily.promotionReady.count", "1");
+        properties.setProperty(
+                "optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"
+        );
         properties.setProperty("kernel.0.sourceKernelResource", "kernel-a.cl");
         properties.setProperty("kernel.1.sourceKernelResource", "kernel-b.cl");
         return properties;
@@ -135,6 +147,7 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("sourceSwitching.productionDecision.all", "true");
         properties.setProperty("realWorkloadEvidence", "runtime-snapshot");
         properties.setProperty("kernel.count", "2");
+        properties.setProperty("optimizerFamily.runtimeEquivalenceHistoryBaselineReady", "true");
         return properties;
     }
 
@@ -159,7 +172,7 @@ class GpuProductionPromotionExplainabilityFormatterTest {
     private static Properties completePromotionArtifactSupport() {
         Properties properties = new Properties();
         properties.setProperty("complete", "true");
-        properties.setProperty("supported.count", "11");
+        properties.setProperty("supported.count", "12");
         properties.setProperty("missing.count", "0");
         return properties;
     }

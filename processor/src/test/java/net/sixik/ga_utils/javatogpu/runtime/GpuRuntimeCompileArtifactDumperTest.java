@@ -294,6 +294,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.accepted.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.blocking.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.promotionReady.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.summary=test-v1[passes=1, acceptedProof=0, blockingProof=0, rolledBack=0, failed=0, promotionReady=false]"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=optimized"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=false"));
@@ -317,6 +320,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(driftProperties.contains("selectedRuntimeIrStage=missing"));
         assertTrue(driftProperties.contains("selectedRuntimeIrIdentity=irgpu:missing"));
         assertTrue(driftProperties.contains("optimizedIrRejected=false"));
+        assertTrue(driftProperties.contains("optimizerFamily.count=0"));
+        assertTrue(driftProperties.contains("optimizerFamily.summary="));
     }
 
     @Test
@@ -1269,6 +1274,97 @@ class GpuRuntimeCompileArtifactDumperTest {
     }
 
     @Test
+    void dumpRecordsOptimizerFamilyRuntimeEquivalencePayloadCompleteness() {
+        IrGpuArtifact optimized = artifact("body\n  return optimized\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 2; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "vendor-tuned"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimized)
+        );
+        GpuRuntimeIrOptimizationPassReport completeCsePayload = GpuRuntimeIrOptimizationPassReport.applied(
+                "optimizer:cse-v1",
+                "irgpu:sha256:original",
+                "irgpu:sha256:cse",
+                "proof:accepted",
+                List.of("CSE runtime-equivalence payload captured")
+        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                "ir-validation",
+                "accepted",
+                java.util.Map.of(
+                        "optimizerFamily", "cse",
+                        "runtimeEquivalencePayload.present", "true",
+                        "runtimeEquivalencePayload.cpuReference.present", "true",
+                        "runtimeEquivalencePayload.preOptimizationOutput.present", "true",
+                        "runtimeEquivalencePayload.postOptimizationOutput.present", "true",
+                        "runtimeEquivalencePayload.tolerance.present", "true",
+                        "runtimeEquivalencePayload.failureFixture.present", "true"
+                )
+        ));
+        GpuRuntimeIrOptimizationPassReport incompleteVectorPayload = GpuRuntimeIrOptimizationPassReport.applied(
+                "optimizer:vector-v1",
+                "irgpu:sha256:cse",
+                "irgpu:sha256:vector",
+                "proof:accepted",
+                List.of("vector payload still needs tolerance metadata")
+        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                "ir-validation",
+                "accepted",
+                java.util.Map.of(
+                        "optimizerFamily", "vector",
+                        "runtimeEquivalencePayload.present", "true",
+                        "runtimeEquivalencePayload.cpuReference.present", "true",
+                        "runtimeEquivalencePayload.preOptimizationOutput.present", "true",
+                        "runtimeEquivalencePayload.postOptimizationOutput.present", "true"
+                )
+        ));
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(optimized),
+                List.of(completeCsePayload, incompleteVectorPayload),
+                productionBackedStrategy()
+        );
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport,
+                GpuRuntimeEquivalenceEvidence.passed(request, 2, 2, List.of("optimizer family payload outputs matched"))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String payload = dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD);
+
+        assertTrue(payload.contains("status=recorded"));
+        assertTrue(payload.contains("runtimeEquivalence.passed=true"));
+        assertTrue(payload.contains("family.count=2"));
+        assertTrue(payload.contains("family.0.name=cse"));
+        assertTrue(payload.contains("family.0.runtimePayload.present=true"));
+        assertTrue(payload.contains("family.0.cpuReference.present=true"));
+        assertTrue(payload.contains("family.0.preOptimizationOutput.present=true"));
+        assertTrue(payload.contains("family.0.postOptimizationOutput.present=true"));
+        assertTrue(payload.contains("family.0.tolerance.present=true"));
+        assertTrue(payload.contains("family.0.failureFixture.present=true"));
+        assertTrue(payload.contains("family.0.complete=true"));
+        assertTrue(payload.contains("family.0.firstMissing=none"));
+        assertTrue(payload.contains("family.1.name=vector"));
+        assertTrue(payload.contains("family.1.runtimePayload.present=true"));
+        assertTrue(payload.contains("family.1.tolerance.present=false"));
+        assertTrue(payload.contains("family.1.failureFixture.present=false"));
+        assertTrue(payload.contains("family.1.complete=false"));
+        assertTrue(payload.contains("family.1.firstMissing=tolerance-metadata"));
+        assertTrue(payload.contains("family.complete.count=1"));
+        assertTrue(payload.contains("family.complete.all=false"));
+    }
+
+    @Test
     void productionEnabledRuntimeArtifactsSelectOptimizedIrOnlyAfterAllGatesPass() {
         IrGpuArtifact original = artifact("body\n  return original\n");
         IrGpuArtifact optimized = artifact("body\n  return optimized\n");
@@ -1346,6 +1442,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.accepted.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.blocking.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.promotionReady.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.summary=production-safe[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=none"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=optimized"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=false"));
@@ -1412,6 +1511,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.count=1"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.accepted.count=0"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("proofArtifact.blocking.count=1"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.count=2"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.promotionReady.count=0"));
+        assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizerFamily.summary=applied[passes=1, acceptedProof=0, blockingProof=0, rolledBack=0, failed=0, promotionReady=false], rollback[passes=1, acceptedProof=0, blockingProof=1, rolledBack=1, failed=0, promotionReady=false]"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("fallbackDecision=optimizer-rollback"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("selectedRuntimeIrStage=original"));
         assertTrue(dump.artifact("runtime-optimizer-drift.properties").contains("optimizedIrRejected=true"));

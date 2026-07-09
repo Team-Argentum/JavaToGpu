@@ -39,7 +39,7 @@ class OpenClValidationReportTest {
         assertTrue(markdown.contains("- 3D image writes: `no`"));
         assertTrue(markdown.contains("## Production Promotion Artifacts"));
         assertTrue(markdown.contains("- Complete support: `yes`"));
-        assertTrue(markdown.contains("- Supported artifact count: `11`"));
+        assertTrue(markdown.contains("- Supported artifact count: `12`"));
         assertTrue(markdown.contains("- Missing artifacts: `none`"));
         assertTrue(markdown.contains("- Compile cache hits: `2`"));
     }
@@ -551,7 +551,7 @@ class OpenClValidationReportTest {
             assertTrue(explainability.contains("controlledProductionSourceSwitching.realWorkload.total.count=1"));
             assertTrue(explainability.contains("controlledProductionSourceSwitching.realWorkload.uncovered.count=0"));
             assertTrue(explainability.contains("controlledProductionSourceSwitching.realWorkload.covered.all=true"));
-        assertTrue(explainability.contains("readinessChecklist.ready.count=4"));
+        assertTrue(explainability.contains("readinessChecklist.ready.count=5"));
         assertTrue(explainability.contains("readinessChecklist.blocked.count=4"));
         assertTrue(explainability.contains("readinessChecklist.ready.all=false"));
         assertTrue(explainability.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
@@ -561,9 +561,11 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Controlled real workload coverage: `1/1`"));
             assertTrue(reportMarkdown.contains("- Controlled real workload coverage all: `true`"));
             assertTrue(reportMarkdown.contains("- Production promotion operator accepted: `0/1`, all=`false`"));
-        assertTrue(reportMarkdown.contains("- Production readiness checklist: `4 ready / 4 blocked`"));
+        assertTrue(reportMarkdown.contains("- Production readiness checklist: `5 ready / 4 blocked`"));
         assertTrue(reportMarkdown.contains("- Production readiness checklist all: `false`"));
         assertTrue(reportMarkdown.contains("- First readiness blocker: `workload-gate-review-ready`"));
+            assertTrue(reportMarkdown.contains("- Optimizer families: `0`"));
+            assertTrue(reportMarkdown.contains("- Optimizer promotion-ready families: `0`"));
         } finally {
             restoreProperty("javatogpu.opencl.productionSourceSwitchingValidationFile", previousValidationFile);
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
@@ -780,7 +782,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Kernel `0` runtime IR handoff: stage=`optimized`, transformed=`true`, rollback=`false`, rejected=`false`, fallback=`none`, first=`optimized IrGpu is selected for backend lowering after runtime optimizer passes`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` production mutation safety: enabled=`false`, gate=`not-requested`, profileRequested=`false`, first=`runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` I3 readiness: status=`review-ready`, sourcePromotion=`review-ready`, sourceReady=`true`, optimizerGate=`not-requested`, productionMutation=`false`, first=`I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted`"));
-            assertTrue(reportMarkdown.contains("- Kernel `0` runtime optimizer drift: passes=`2`, applied=`2`, rolledBack=`0`, failed=`0`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, selected=`optimized`, fallback=`none`, gate=`not-requested`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` runtime optimizer drift: passes=`2`, applied=`2`, rolledBack=`0`, failed=`0`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, optimizerFamilies=`0`, promotionReadyFamilies=`0`, selected=`optimized`, fallback=`none`, gate=`not-requested`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` diagnostics: `1`; first=`packaged IrGpu source reconstructed from runtime artifact loader with descriptor parity`"));
             assertFalse(reportMarkdown.contains("- Kernel `0` reconstruction blockers:"));
             assertTrue(reportMarkdown.contains("- Kernel `1`: `inline://integration/perlin-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`, operatorAccepted=`false`, runtimeIr=`original`, productionMutation=`false`, sourceReady=`false`, i3=`blocked`"));
@@ -788,7 +790,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Kernel `1` runtime IR handoff: stage=`original`, transformed=`false`, rollback=`false`, rejected=`true`, fallback=`production-ir-gate-blocked`, first=`optimized IrGpu was rejected by the production IR acceptance gate; original IrGpu remains selected`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` production mutation safety: enabled=`false`, gate=`blocked`, profileRequested=`true`, first=`runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` I3 readiness: status=`blocked`, sourcePromotion=`blocked`, sourceReady=`false`, optimizerGate=`blocked`, productionMutation=`false`, first=`I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1` runtime optimizer drift: passes=`3`, applied=`1`, rolledBack=`0`, failed=`1`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, selected=`original`, fallback=`production-ir-gate-blocked`, gate=`blocked`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1` runtime optimizer drift: passes=`3`, applied=`1`, rolledBack=`0`, failed=`1`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, optimizerFamilies=`0`, promotionReadyFamilies=`0`, selected=`original`, fallback=`production-ir-gate-blocked`, gate=`blocked`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` diagnostics: `1`; first=`reconstructed source must match descriptor source before promotion review`"));
             assertTrue(reportMarkdown.contains("- Kernel blocker families: `source-parity=1`"));
             assertFalse(reportMarkdown.contains("runtimeIr=`unknown`"));
@@ -797,20 +799,24 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("## Production Promotion Explainability"));
             assertTrue(reportMarkdown.contains("- Contract: `valid`"));
             assertTrue(reportMarkdown.contains("- Decision mode: `diagnostic-only`"));
+            assertTrue(reportMarkdown.contains("- Optimizer payload-complete families: `0`"));
+            assertTrue(reportMarkdown.contains("- Optimizer payload complete all: `false`"));
             assertEquals(1, entries.size());
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("realWorkloadEvidence=runtime-snapshot"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourceSwitching=compile-irgpu-source-review=1, reject-production-irgpu-source=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourcePromotionFirstBlockers=runtime equivalence must execute and pass before backend source promotion=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourcePromotionFirstBlockerFamilies=runtime-equivalence=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernelCount=2"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review/operatorAccepted=false/sourcePromotionFirstBlocker=none, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source/operatorAccepted=false/sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review/operatorAccepted=false/sourcePromotionFirstBlocker=none, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source/operatorAccepted=false/sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("productionSourceSwitching=disabled"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("contract=valid"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("decisionMode=diagnostic-only"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("sourceSwitchingAllowed=false"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("i3SourceReady=1"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("i3SourceReadyAll=false"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("optimizerFamilies=0"));
+            assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("optimizerPromotionReadyFamilies=0"));
             assertTrue(i3Summary.contains("status=blocked"));
             assertTrue(i3Summary.contains("kernel.count=2"));
             assertTrue(i3Summary.contains("reviewReady.count=1"));
@@ -866,6 +872,80 @@ class OpenClValidationReportTest {
             assertTrue(productionExplainability.contains("blocker.9=production-mutation-disabled"));
             assertTrue(productionExplainability.contains(
                     "diagnostic.0=production promotion remains blocked: first=workload-source-promotion-gate-not-review-ready, i3ReviewReady=1, i3Blocked=1"));
+        } finally {
+            restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
+            restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
+            restoreProperty("javatogpu.opencl.validationHistoryFile", previousHistoryFile);
+            restoreProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", previousI3SummaryFile);
+            restoreProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousProductionExplainabilityFile);
+        }
+    }
+
+    @Test
+    void productionExplainabilityDerivesOptimizerFamilyBaselineFromValidationHistory() throws Exception {
+        java.nio.file.Path workloadGateFile = java.nio.file.Files.createTempFile(
+                "javatogpu-optimizer-family-baseline-workload", ".properties");
+        java.nio.file.Path reportFile = java.nio.file.Files.createTempFile(
+                "javatogpu-optimizer-family-baseline-report", ".md");
+        java.nio.file.Path historyFile = java.nio.file.Files.createTempFile(
+                "javatogpu-optimizer-family-baseline-history", ".properties");
+        java.nio.file.Path i3SummaryFile = java.nio.file.Files.createTempFile(
+                "javatogpu-optimizer-family-baseline-i3", ".properties");
+        java.nio.file.Path productionExplainabilityFile = java.nio.file.Files.createTempFile(
+                "javatogpu-optimizer-family-baseline-explainability", ".properties");
+        OpenClValidationHistoryIO.writeAll(historyFile, java.util.List.of(new OpenClValidationHistoryEntry(
+                Instant.parse("2026-07-01T12:00:00Z"),
+                "nvidia",
+                "OpenCL",
+                "NVIDIA CUDA / Test GPU",
+                "NVIDIA Corporation",
+                "test-driver",
+                "OpenCL 3.0 CUDA",
+                "openClWorkloadValidationTest=passed",
+                "passed",
+                "passed",
+                "passed",
+                "passed",
+                "review-ready (runtimeEquivalencePassed=true)",
+                "blocked, runtimeEquivalencePassed=true, optimizerPromotionReadyFamilies=1, kernel.0=kernel.cl[optimizerDrift=recorded/1passes/promotionReadyFamilies=1]",
+                "blocked, contract=valid, runtimeEquivalencePassed=true, optimizerPromotionReadyFamilies=1"
+        )));
+        java.nio.file.Files.writeString(workloadGateFile, String.join("\n",
+                "status=review-ready",
+                "reviewReady=true",
+                "sourceParityMatched=true",
+                "runtimeEquivalencePassed=true",
+                "productionSourceSwitching=false",
+                "realWorkloadEvidence=runtime-snapshot",
+                "kernel.count=1",
+                "kernel.0.sourceKernelResource=kernel.cl",
+                "optimizerFamily.count=1",
+                "optimizerFamily.promotionReady.count=1",
+                "optimizerFamily.summary=cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]",
+                ""
+        ));
+        String previousWorkloadGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+        String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
+        String previousHistoryFile = System.getProperty("javatogpu.opencl.validationHistoryFile");
+        String previousI3SummaryFile = System.getProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile");
+        String previousProductionExplainabilityFile = System.getProperty(
+                "javatogpu.opencl.productionPromotionExplainabilityFile");
+        try {
+            System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", workloadGateFile.toString());
+            System.setProperty("javatogpu.opencl.validationReportFile", reportFile.toString());
+            System.setProperty("javatogpu.opencl.validationHistoryFile", historyFile.toString());
+            System.setProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", i3SummaryFile.toString());
+            System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", productionExplainabilityFile.toString());
+
+            OpenClValidationReporter.main(new String[0]);
+
+            String productionExplainability = java.nio.file.Files.readString(productionExplainabilityFile);
+            assertTrue(productionExplainability.contains("optimizerFamily.count=1"));
+            assertTrue(productionExplainability.contains("optimizerFamily.promotionReady.count=1"));
+            assertTrue(productionExplainability.contains("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=true"));
+            assertTrue(productionExplainability.contains("optimizerFamily.promotionPreflightReady=true"));
+            assertFalse(productionExplainability.contains("optimizer-family-runtime-equivalence-history-baseline-missing"));
+            assertTrue(productionExplainability.contains("productionSourceSwitchingAllowed=false"));
         } finally {
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
             restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
@@ -1052,7 +1132,7 @@ class OpenClValidationReportTest {
             String reportMarkdown = java.nio.file.Files.readString(reportFile);
             assertTrue(supportProperties.contains("backendTarget=OPENCL"));
             assertTrue(supportProperties.contains("complete=true"));
-            assertTrue(supportProperties.contains("supported.count=11"));
+            assertTrue(supportProperties.contains("supported.count=12"));
             assertTrue(supportProperties.contains("missing.count=0"));
             assertTrue(supportProperties.contains("supported.0=i3-readiness-summary.properties"));
             assertTrue(supportProperties.contains("backend-promotion-artifact-support.properties"));

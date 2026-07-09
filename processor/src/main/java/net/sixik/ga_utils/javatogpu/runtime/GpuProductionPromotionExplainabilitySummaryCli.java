@@ -60,6 +60,23 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("i3Blocked.count=").append(summary.i3BlockedCount()).append('\n');
         builder.append("i3SourceReady.count=").append(summary.i3SourceReadyCount()).append('\n');
         builder.append("i3SourceReady.all=").append(summary.i3SourceReadyAll()).append('\n');
+        builder.append("optimizerFamily.count=").append(summary.optimizerFamilyCount()).append('\n');
+        builder.append("optimizerFamily.promotionReady.count=")
+                .append(summary.optimizerFamilyPromotionReadyCount())
+                .append('\n');
+        builder.append("optimizerFamily.summary=").append(summary.optimizerFamilySummary()).append('\n');
+        builder.append("optimizerFamilyPayload.complete.count=")
+                .append(summary.optimizerFamilyPayloadCompleteCount())
+                .append('\n');
+        builder.append("optimizerFamilyPayload.complete.all=")
+                .append(summary.optimizerFamilyPayloadCompleteAll())
+                .append('\n');
+        builder.append("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=")
+                .append(summary.optimizerFamilyRuntimeEquivalenceHistoryBaselineReady())
+                .append('\n');
+        builder.append("optimizerFamily.promotionPreflightReady=")
+                .append(summary.optimizerFamilyPromotionPreflightReady())
+                .append('\n');
         builder.append("backendPromotionArtifactSupport.complete=")
                 .append(summary.backendPromotionArtifactSupportComplete())
                 .append('\n');

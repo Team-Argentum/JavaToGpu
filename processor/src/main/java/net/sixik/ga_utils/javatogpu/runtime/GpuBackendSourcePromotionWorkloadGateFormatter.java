@@ -100,12 +100,37 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             String latestI3ReadinessSummaryProperties,
             String latestRuntimeOptimizerDriftProperties
     ) throws IOException {
+        return merge(
+                path,
+                sourceKernelResource,
+                latestGateProperties,
+                latestSourceSwitchingDecisionProperties,
+                latestRuntimeIrHandoffProperties,
+                latestRuntimeProductionMutationSafetyProperties,
+                latestI3ReadinessSummaryProperties,
+                latestRuntimeOptimizerDriftProperties,
+                ""
+        );
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties,
+            String latestRuntimeIrHandoffProperties,
+            String latestRuntimeProductionMutationSafetyProperties,
+            String latestI3ReadinessSummaryProperties,
+            String latestRuntimeOptimizerDriftProperties,
+            String latestOptimizerFamilyEquivalencePayloadProperties
+    ) throws IOException {
         Properties latest = loadProperties(latestGateProperties);
         Properties latestSourceSwitchingDecision = loadProperties(latestSourceSwitchingDecisionProperties);
         Properties latestRuntimeIrHandoff = loadProperties(latestRuntimeIrHandoffProperties);
         Properties latestRuntimeProductionMutationSafety = loadProperties(latestRuntimeProductionMutationSafetyProperties);
         Properties latestI3ReadinessSummary = loadProperties(latestI3ReadinessSummaryProperties);
         Properties latestRuntimeOptimizerDrift = loadProperties(latestRuntimeOptimizerDriftProperties);
+        Properties latestOptimizerFamilyEquivalencePayload = loadProperties(latestOptimizerFamilyEquivalencePayloadProperties);
         Properties existing = new Properties();
         if (Files.exists(path)) {
             try (InputStream inputStream = Files.newInputStream(path)) {
@@ -146,6 +171,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyRuntimeProductionMutationSafetyProperties(latestRuntimeProductionMutationSafety, latestEntry);
         copyI3ReadinessSummaryProperties(latestI3ReadinessSummary, latestEntry);
         copyRuntimeOptimizerDriftProperties(latestRuntimeOptimizerDrift, latestEntry);
+        copyOptimizerFamilyEquivalencePayloadProperties(latestOptimizerFamilyEquivalencePayload, latestEntry);
         copyIndexedProperties(latest, latestEntry, "runtimeEquivalence.diagnostic");
         copyIndexedProperties(latest, latestEntry, "reconstruction.blocker");
         copyIndexedProperties(latest, latestEntry, "reconstruction.diagnostic");
@@ -420,6 +446,9 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.count");
         copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.accepted.count");
         copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.blocking.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.promotionReady.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.summary");
         copyRuntimeOptimizerDriftProperty(source, target, "fallbackDecision");
         copyRuntimeOptimizerDriftProperty(source, target, "selectedRuntimeIrStage");
         copyRuntimeOptimizerDriftProperty(source, target, "selectedRuntimeIrIdentity");
@@ -435,6 +464,25 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
     private static void copyRuntimeOptimizerDriftProperty(Properties source, Properties target, String key) {
         target.setProperty("runtimeOptimizerDrift." + key, source.getProperty(key, "unknown"));
+    }
+
+    private static void copyOptimizerFamilyEquivalencePayloadProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("optimizerFamilyPayload.status", "not-recorded");
+            target.setProperty("optimizerFamilyPayload.family.count", "0");
+            target.setProperty("optimizerFamilyPayload.family.complete.count", "0");
+            target.setProperty("optimizerFamilyPayload.family.complete.all", "false");
+            return;
+        }
+        copyOptimizerFamilyEquivalencePayloadProperty(source, target, "status");
+        copyOptimizerFamilyEquivalencePayloadProperty(source, target, "runtimeEquivalence.passed");
+        copyOptimizerFamilyEquivalencePayloadProperty(source, target, "family.count");
+        copyOptimizerFamilyEquivalencePayloadProperty(source, target, "family.complete.count");
+        copyOptimizerFamilyEquivalencePayloadProperty(source, target, "family.complete.all");
+    }
+
+    private static void copyOptimizerFamilyEquivalencePayloadProperty(Properties source, Properties target, String key) {
+        target.setProperty("optimizerFamilyPayload." + key, source.getProperty(key, "unknown"));
     }
 
     private static void copyIndexedProperties(
@@ -691,6 +739,9 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.accepted.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.blocking.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.promotionReady.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.summary=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.summary", "none")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.fallbackDecision=").append(entry.getProperty("runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.selectedRuntimeIrStage=").append(entry.getProperty("runtimeOptimizerDrift.selectedRuntimeIrStage", "unknown")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.selectedRuntimeIrIdentity=").append(entry.getProperty("runtimeOptimizerDrift.selectedRuntimeIrIdentity", "unknown")).append('\n');
@@ -701,6 +752,11 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("runtimeOptimizerDrift.promotionEligible=").append(entry.getProperty("runtimeOptimizerDrift.promotionEligible", "unknown")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.productionGateStatus=").append(entry.getProperty("runtimeOptimizerDrift.productionGateStatus", "unknown")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.productionProfileRequested=").append(entry.getProperty("runtimeOptimizerDrift.productionProfileRequested", "unknown")).append('\n');
+        builder.append(prefix).append("optimizerFamilyPayload.status=").append(entry.getProperty("optimizerFamilyPayload.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("optimizerFamilyPayload.runtimeEquivalence.passed=").append(entry.getProperty("optimizerFamilyPayload.runtimeEquivalence.passed", "unknown")).append('\n');
+        builder.append(prefix).append("optimizerFamilyPayload.family.count=").append(entry.getProperty("optimizerFamilyPayload.family.count", "0")).append('\n');
+        builder.append(prefix).append("optimizerFamilyPayload.family.complete.count=").append(entry.getProperty("optimizerFamilyPayload.family.complete.count", "0")).append('\n');
+        builder.append(prefix).append("optimizerFamilyPayload.family.complete.all=").append(entry.getProperty("optimizerFamilyPayload.family.complete.all", "false")).append('\n');
     }
 
     private static void appendIndexedProperties(

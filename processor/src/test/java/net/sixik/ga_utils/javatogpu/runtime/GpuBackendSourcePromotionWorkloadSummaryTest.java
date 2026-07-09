@@ -36,6 +36,12 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count", "2");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.accepted.count", "1");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.blocking.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "2");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "1");
+        properties.setProperty(
+                "kernel.0.runtimeOptimizerDrift.optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"
+        );
         properties.setProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision", "production-ir-gate-blocked");
         properties.setProperty("kernel.0.runtimeProductionMutationSafety.productionMutationEnabled", "false");
         properties.setProperty("kernel.0.i3Readiness.sourceReady", "false");
@@ -65,15 +71,24 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertEquals(2, summary.optimizerProofArtifactCount());
         assertEquals(1, summary.optimizerAcceptedProofArtifactCount());
         assertEquals(1, summary.optimizerBlockingProofArtifactCount());
+        assertEquals(2, summary.optimizerFamilyCount());
+        assertEquals(1, summary.optimizerFamilyPromotionReadyCount());
+        assertEquals(
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]",
+                summary.optimizerFamilySummary()
+        );
         assertEquals(1, summary.productionPromotionOperatorAcceptedCount());
         assertEquals("true", summary.productionPromotionOperatorAcceptedAll());
         assertTrue(summary.historyStatus().contains("gateStatus=blocked"));
         assertTrue(summary.historyStatus().contains("realWorkloadEvidence=runtime-snapshot"));
         assertTrue(summary.historyStatus().contains("productionPromotionOperatorAccepted=1/1"));
         assertTrue(summary.historyStatus().contains("productionPromotionOperatorAcceptedAll=true"));
+        assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
+        assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=1"));
         assertTrue(summary.historyStatus().contains("kernelCount=1"));
         assertTrue(summary.historyStatus().contains("sourceSwitching=reject-production-irgpu-source/operatorAccepted=true"));
-        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1"));
+        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/optimizerFamilies=2/promotionReadyFamilies=1"));
         assertTrue(summary.historyStatus().contains("families=source-parity=1"));
     }
 
@@ -102,6 +117,38 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
     }
 
     @Test
+    void aggregatesOptimizerFamilyReadinessAcrossMultipleKernels() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "1");
+        properties.setProperty(
+                "kernel.0.runtimeOptimizerDrift.optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]"
+        );
+        properties.setProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.count", "1");
+        properties.setProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0");
+        properties.setProperty(
+                "kernel.1.runtimeOptimizerDrift.optimizerFamily.summary",
+                "cse[passes=2, acceptedProof=1, blockingProof=1, rolledBack=1, failed=0, promotionReady=false]"
+        );
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+
+        assertEquals(2, summary.optimizerFamilyCount());
+        assertEquals(1, summary.optimizerFamilyPromotionReadyCount());
+        assertEquals(
+                "cse[passes=3, acceptedProof=2, blockingProof=1, rolledBack=1, failed=0, promotionReady=false]",
+                summary.optimizerFamilySummary()
+        );
+        assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
+        assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=3"));
+    }
+
+    @Test
     void emptyPropertiesRemainNotRecorded() {
         GpuBackendSourcePromotionWorkloadSummary summary =
                 GpuBackendSourcePromotionWorkloadSummary.fromProperties(new Properties());
@@ -125,6 +172,9 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("productionPromotionOperatorAccepted.all", "false");
         properties.setProperty("kernel.0.sourceSwitching.decision", "compile-descriptor-source");
         properties.setProperty("kernel.0.sourceSwitching.productionPromotionOperatorAccepted", "false");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "0");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary", "none");
         properties.setProperty(
                 "kernel.0.sourceSwitching.sourcePromotionFirstBlocker",
                 "backend source must be reconstructed from IrGpu before promotion review"
@@ -147,6 +197,9 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(formatted.contains("optimizerProofArtifact.count=0\n"));
         assertTrue(formatted.contains("optimizerProofArtifact.accepted.count=0\n"));
         assertTrue(formatted.contains("optimizerProofArtifact.blocking.count=0\n"));
+        assertTrue(formatted.contains("optimizerFamily.count=0\n"));
+        assertTrue(formatted.contains("optimizerFamily.promotionReady.count=0\n"));
+        assertTrue(formatted.contains("optimizerFamily.summary=none\n"));
         assertTrue(formatted.contains("historyStatus=not-promoted"));
     }
 }

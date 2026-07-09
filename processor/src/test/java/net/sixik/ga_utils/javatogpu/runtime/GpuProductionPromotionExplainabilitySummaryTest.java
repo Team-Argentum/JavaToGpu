@@ -25,6 +25,12 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         properties.setProperty("i3Blocked.count", "1");
         properties.setProperty("i3SourceReady.count", "1");
         properties.setProperty("i3SourceReady.all", "false");
+        properties.setProperty("optimizerFamily.count", "2");
+        properties.setProperty("optimizerFamily.promotionReady.count", "1");
+        properties.setProperty(
+                "optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"
+        );
         properties.setProperty("blocker.count", "2");
         properties.setProperty("blocker.0", "workload-source-promotion-gate-not-review-ready");
         properties.setProperty("blocker.1", "production-mutation-disabled");
@@ -40,6 +46,11 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(summary.historyStatus().contains("blockers=2"));
         assertTrue(summary.historyStatus().contains("first=workload-source-promotion-gate-not-review-ready"));
         assertTrue(summary.historyStatus().contains("i3SourceReadyAll=false"));
+        assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
+        assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("optimizerRuntimeEquivalenceHistoryBaselineReady=false"));
+        assertTrue(summary.historyStatus().contains("optimizerPromotionPreflightReady=true"));
+        assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=1"));
         assertTrue(summary.historyStatus().contains("backendPromotionArtifactSupportComplete=unknown"));
         assertTrue(summary.historyStatus().contains("controlledSourceSwitching=not-recorded"));
         assertTrue(summary.historyStatus().contains("controlledRealWorkloadCoverage=0/0"));
@@ -84,6 +95,12 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         properties.setProperty("i3Blocked.count", "0");
         properties.setProperty("i3SourceReady.count", "0");
         properties.setProperty("i3SourceReady.all", "false");
+        properties.setProperty("optimizerFamily.count", "2");
+        properties.setProperty("optimizerFamily.promotionReady.count", "1");
+        properties.setProperty(
+                "optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]"
+        );
         properties.setProperty("blocker.count", "1");
         properties.setProperty("blocker.0", "production-mutation-disabled");
         properties.setProperty("controlledProductionSourceSwitching.status", "passed");
@@ -107,6 +124,11 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("decision.mode=diagnostic-only\n"));
         assertTrue(formatted.contains("productionSourceSwitchingAllowed=false\n"));
         assertTrue(formatted.contains("productionMutationEnabled=false\n"));
+        assertTrue(formatted.contains("optimizerFamily.count=2\n"));
+        assertTrue(formatted.contains("optimizerFamily.promotionReady.count=1\n"));
+        assertTrue(formatted.contains("optimizerFamily.summary=cse[passes=1"));
+        assertTrue(formatted.contains("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=false\n"));
+        assertTrue(formatted.contains("optimizerFamily.promotionPreflightReady=true\n"));
         assertTrue(formatted.contains("backendPromotionArtifactSupport.complete=unknown\n"));
         assertTrue(formatted.contains("backendPromotionArtifactSupport.missing.count=0\n"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.status=passed\n"));

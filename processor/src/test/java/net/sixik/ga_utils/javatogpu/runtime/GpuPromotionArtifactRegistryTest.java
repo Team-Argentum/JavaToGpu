@@ -20,11 +20,15 @@ class GpuPromotionArtifactRegistryTest {
         assertEquals("runtime-ir-handoff.properties", GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF);
         assertEquals("runtime-production-mutation-safety.properties", GpuPromotionArtifactRegistry.RUNTIME_PRODUCTION_MUTATION_SAFETY);
         assertEquals("runtime-optimizer-drift.properties", GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT);
+        assertEquals(
+                "runtime-optimizer-family-equivalence-payload.properties",
+                GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD
+        );
     }
 
     @Test
     void keepsPromotionArtifactListStableAndUnique() {
-        assertEquals(11, GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.size());
+        assertEquals(12, GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.size());
         assertEquals(
                 GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.size(),
                 GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.stream().distinct().count()
@@ -37,6 +41,9 @@ class GpuPromotionArtifactRegistryTest {
         ));
         assertTrue(GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.contains(
                 GpuPromotionArtifactRegistry.BACKEND_PROMOTION_ARTIFACT_SUPPORT
+        ));
+        assertTrue(GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.contains(
+                GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD
         ));
     }
 
@@ -59,13 +66,15 @@ class GpuPromotionArtifactRegistryTest {
                 java.util.List.of(
                         GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF,
                         GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF,
-                        GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT
+                        GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT,
+                        GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD
                 )
         );
 
-        assertEquals(2, support.supportedArtifacts().size());
+        assertEquals(3, support.supportedArtifacts().size());
         assertTrue(support.supports(GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF));
         assertTrue(support.supports(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT));
+        assertTrue(support.supports(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD));
         assertTrue(support.missingArtifacts().contains(GpuPromotionArtifactRegistry.I3_READINESS_SUMMARY));
         assertTrue(!support.complete());
     }
@@ -94,7 +103,7 @@ class GpuPromotionArtifactRegistryTest {
         assertTrue(properties.contains("complete=false"));
         assertTrue(properties.contains("supported.count=1"));
         assertTrue(properties.contains("supported.0=runtime-ir-handoff.properties"));
-        assertTrue(properties.contains("missing.count=10"));
-        assertTrue(properties.contains("registry.count=11"));
+        assertTrue(properties.contains("missing.count=11"));
+        assertTrue(properties.contains("registry.count=12"));
     }
 }

@@ -487,6 +487,23 @@ public final class OpenClValidationReporter {
             markdown.append("- Kernel count: `").append(summary.kernelCount()).append("`\n");
             markdown.append("- I3 review-ready kernels: `").append(summary.i3ReviewReadyCount()).append("`\n");
             markdown.append("- I3 blocked kernels: `").append(summary.i3BlockedCount()).append("`\n");
+            markdown.append("- Optimizer families: `")
+                    .append(summary.optimizerFamilyCount())
+                    .append("`\n");
+            markdown.append("- Optimizer promotion-ready families: `")
+                    .append(summary.optimizerFamilyPromotionReadyCount())
+                    .append("`\n");
+            markdown.append("- Optimizer payload-complete families: `")
+                    .append(summary.optimizerFamilyPayloadCompleteCount())
+                    .append("`\n");
+            markdown.append("- Optimizer payload complete all: `")
+                    .append(sanitizeInline(summary.optimizerFamilyPayloadCompleteAll()))
+                    .append("`\n");
+            if (!"none".equals(summary.optimizerFamilySummary())) {
+                markdown.append("- Optimizer family summary: `")
+                        .append(sanitizeInline(summary.optimizerFamilySummary()))
+                        .append("`\n");
+            }
             markdown.append("- Blocker count: `").append(summary.blockerCount()).append("`\n");
             if (summary.blockerCount() > 0) {
                 markdown.append("- First blocker: `")
@@ -624,6 +641,10 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.proofArtifact.accepted.count", "0")))
                     .append("`, blockingProof=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.proofArtifact.blocking.count", "0")))
+                    .append("`, optimizerFamilies=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.optimizerFamily.count", "0")))
+                    .append("`, promotionReadyFamilies=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0")))
                     .append("`, selected=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.selectedRuntimeIrStage", "unknown")))
                     .append("`, fallback=`")
@@ -800,6 +821,7 @@ public final class OpenClValidationReporter {
                     || controlledProductionSourceSwitchingPath.isBlank()
                     ? new java.util.Properties()
                     : loadPropertiesIfExists(Paths.get(controlledProductionSourceSwitchingPath));
+            applyOptimizerFamilyRuntimeEquivalenceHistoryBaseline(gate);
             Files.writeString(
                     path,
                     GpuProductionPromotionExplainabilityFormatter.format(
@@ -813,6 +835,66 @@ public final class OpenClValidationReporter {
         } catch (Throwable failure) {
             // Keep the validation report printable even if this optional explainability artifact cannot be written.
         }
+    }
+
+    private static void applyOptimizerFamilyRuntimeEquivalenceHistoryBaseline(java.util.Properties gate) {
+        int promotionReadyFamilies = parsePositiveInt(gate.getProperty("optimizerFamily.promotionReady.count", "0"));
+        if (promotionReadyFamilies == 0 || gate.containsKey("optimizerFamily.runtimeEquivalenceHistoryBaselineReady")) {
+            return;
+        }
+        gate.setProperty(
+                "optimizerFamily.runtimeEquivalenceHistoryBaselineReady",
+                Boolean.toString(hasOptimizerFamilyRuntimeEquivalenceHistoryBaseline())
+        );
+    }
+
+    private static boolean hasOptimizerFamilyRuntimeEquivalenceHistoryBaseline() {
+        String historyPropertiesPath = System.getProperty(HISTORY_PROPERTIES_FILE_PROPERTY);
+        if (historyPropertiesPath == null || historyPropertiesPath.isBlank()) {
+            return false;
+        }
+        try {
+            return OpenClValidationHistoryIO.readAll(Paths.get(historyPropertiesPath)).stream()
+                    .anyMatch(OpenClValidationReporter::hasOptimizerFamilyRuntimeEquivalenceHistoryBaseline);
+        } catch (Throwable failure) {
+            return false;
+        }
+    }
+
+    private static boolean hasOptimizerFamilyRuntimeEquivalenceHistoryBaseline(OpenClValidationHistoryEntry entry) {
+        String workloadStatus = entry.backendSourcePromotionWorkloadStatus();
+        String explainabilityStatus = entry.productionPromotionExplainabilityStatus();
+        return containsPositiveOptimizerFamilies(workloadStatus)
+                && containsRuntimeEquivalencePassed(workloadStatus)
+                && containsRuntimeEquivalencePassed(explainabilityStatus);
+    }
+
+    private static boolean containsPositiveOptimizerFamilies(String status) {
+        return containsPositiveMetric(status, "optimizerPromotionReadyFamilies=")
+                || containsPositiveMetric(status, "promotionReadyFamilies=");
+    }
+
+    private static boolean containsRuntimeEquivalencePassed(String status) {
+        return status != null && status.contains("runtimeEquivalencePassed=true");
+    }
+
+    private static boolean containsPositiveMetric(String status, String token) {
+        if (status == null) {
+            return false;
+        }
+        int start = status.indexOf(token);
+        if (start < 0) {
+            return false;
+        }
+        int valueStart = start + token.length();
+        int valueEnd = valueStart;
+        while (valueEnd < status.length() && Character.isDigit(status.charAt(valueEnd))) {
+            valueEnd++;
+        }
+        if (valueEnd == valueStart) {
+            return false;
+        }
+        return parsePositiveInt(status.substring(valueStart, valueEnd)) > 0;
     }
 
     private static java.util.Properties openClBackendPromotionArtifactSupportProperties() throws IOException {

@@ -69,6 +69,17 @@ public final class GpuBackendSourcePromotionWorkloadSummaryCli {
         builder.append("optimizerProofArtifact.blocking.count=")
                 .append(summary.optimizerBlockingProofArtifactCount())
                 .append('\n');
+        builder.append("optimizerFamily.count=").append(summary.optimizerFamilyCount()).append('\n');
+        builder.append("optimizerFamily.promotionReady.count=")
+                .append(summary.optimizerFamilyPromotionReadyCount())
+                .append('\n');
+        builder.append("optimizerFamily.summary=").append(summary.optimizerFamilySummary()).append('\n');
+        builder.append("optimizerFamilyPayload.complete.count=")
+                .append(summary.optimizerFamilyPayloadCompleteCount())
+                .append('\n');
+        builder.append("optimizerFamilyPayload.complete.all=")
+                .append(summary.optimizerFamilyPayloadCompleteAll())
+                .append('\n');
         builder.append("historyStatus=").append(summary.historyStatus()).append('\n');
         return builder.toString();
     }

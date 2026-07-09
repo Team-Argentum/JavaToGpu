@@ -2610,7 +2610,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF),
                     dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_PRODUCTION_MUTATION_SAFETY),
                     dump.artifact(GpuPromotionArtifactRegistry.I3_READINESS_SUMMARY),
-                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT)
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD)
             );
             java.nio.file.Files.writeString(path, gateProperties, java.nio.charset.StandardCharsets.UTF_8);
         } catch (RuntimeException | java.io.IOException exception) {

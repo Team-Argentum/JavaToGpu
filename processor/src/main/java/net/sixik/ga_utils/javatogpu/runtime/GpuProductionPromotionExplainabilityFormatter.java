@@ -97,6 +97,22 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         int i3SourceReadyCount = parsePositiveInt(readiness.getProperty("sourceReady.count", "0"));
         boolean allKernelsI3ReviewReady = kernelCount > 0 && i3ReviewReadyCount == kernelCount && i3BlockedCount == 0;
         boolean allKernelsSourceReady = kernelCount > 0 && i3SourceReadyCount == kernelCount;
+        int optimizerFamilyCount = parsePositiveInt(gate.getProperty("optimizerFamily.count", "0"));
+        int optimizerFamilyPromotionReadyCount = parsePositiveInt(
+                gate.getProperty("optimizerFamily.promotionReady.count", "0")
+        );
+        String optimizerFamilySummary = gate.getProperty("optimizerFamily.summary", "none");
+        int optimizerFamilyPayloadCompleteCount = parsePositiveInt(
+                gate.getProperty("optimizerFamilyPayload.complete.count", "0")
+        );
+        String optimizerFamilyPayloadCompleteAll = gate.getProperty("optimizerFamilyPayload.complete.all", "false");
+        boolean optimizerFamilyRuntimeEquivalenceHistoryBaselineReady = propertyIsTrue(
+                gate,
+                "optimizerFamily.runtimeEquivalenceHistoryBaselineReady",
+                false
+        );
+        boolean optimizerFamilyPromotionPreflightReady = optimizerFamilyPromotionReadyCount == 0
+                || optimizerFamilyRuntimeEquivalenceHistoryBaselineReady;
         String controlledSourceSwitchingStatus = controlledSourceSwitching.getProperty("status", "not-recorded");
         int controlledSourceSwitchingKernelCount = parsePositiveInt(
                 controlledSourceSwitching.getProperty("kernel.count", "0")
@@ -140,6 +156,12 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                         backendPromotionArtifactSupportComplete,
                         "backend promotion artifact support is complete",
                         "backend promotion artifact support is incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "optimizer-family-runtime-equivalence-history-baseline",
+                        optimizerFamilyPromotionPreflightReady,
+                        "optimizer family promotion candidates have A1/A2 runtime-equivalence history baseline evidence",
+                        "optimizer family promotion candidates require A1/A2 runtime-equivalence history baseline evidence"
                 ),
                 new ReadinessChecklistItem(
                         "production-source-switching-enabled",
@@ -192,6 +214,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         if (!backendPromotionArtifactSupportComplete) {
             blockers.add("backend-promotion-artifact-support-incomplete");
         }
+        if (!optimizerFamilyPromotionPreflightReady) {
+            blockers.add("optimizer-family-runtime-equivalence-history-baseline-missing");
+        }
 
         StringBuilder builder = new StringBuilder();
         builder.append("status=").append(blockers.isEmpty() ? "production-ready" : "blocked").append('\n');
@@ -205,6 +230,17 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("i3Blocked.count=").append(i3BlockedCount).append('\n');
         builder.append("i3SourceReady.count=").append(i3SourceReadyCount).append('\n');
         builder.append("i3SourceReady.all=").append(allKernelsSourceReady).append('\n');
+        builder.append("optimizerFamily.count=").append(optimizerFamilyCount).append('\n');
+        builder.append("optimizerFamily.promotionReady.count=").append(optimizerFamilyPromotionReadyCount).append('\n');
+        builder.append("optimizerFamily.summary=").append(optimizerFamilySummary).append('\n');
+        builder.append("optimizerFamilyPayload.complete.count=").append(optimizerFamilyPayloadCompleteCount).append('\n');
+        builder.append("optimizerFamilyPayload.complete.all=").append(optimizerFamilyPayloadCompleteAll).append('\n');
+        builder.append("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=")
+                .append(optimizerFamilyRuntimeEquivalenceHistoryBaselineReady)
+                .append('\n');
+        builder.append("optimizerFamily.promotionPreflightReady=")
+                .append(optimizerFamilyPromotionPreflightReady)
+                .append('\n');
         builder.append("productionSourceSwitchingAllowed=").append(productionSourceSwitchingEnabled && blockers.isEmpty()).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
         builder.append("productionSourceSwitchingEnabled.count=").append(productionSourceSwitchingEnabledCount).append('\n');

@@ -24,6 +24,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         int optimizerProofArtifactCount,
         int optimizerAcceptedProofArtifactCount,
         int optimizerBlockingProofArtifactCount,
+        int optimizerFamilyCount,
+        int optimizerFamilyPromotionReadyCount,
+        String optimizerFamilySummary,
+        int optimizerFamilyPayloadCompleteCount,
+        String optimizerFamilyPayloadCompleteAll,
         String sourceSwitchingDecisions,
         String sourcePromotionFirstBlockers,
         String sourcePromotionFirstBlockerFamilies,
@@ -45,6 +50,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 0,
                 0,
                 0,
+                0,
+                0,
+                "none",
+                0,
+                "false",
                 "",
                 "",
                 "",
@@ -82,6 +92,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.proofArtifact.count"),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.proofArtifact.accepted.count"),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.proofArtifact.blocking.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerFamily.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerFamily.promotionReady.count"),
+                summarizeOptimizerFamilies(properties, kernelCount),
+                sumKernelProperty(properties, kernelCount, "optimizerFamilyPayload.family.complete.count"),
+                allKernelBooleanProperty(properties, kernelCount, "optimizerFamilyPayload.family.complete.all"),
                 summarizeSourceSwitchingDecisions(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockers(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockerFamilies(properties, kernelCount),
@@ -107,6 +122,15 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 + kernelCount
                 + ", productionPromotionOperatorAcceptedAll="
                 + productionPromotionOperatorAcceptedAll
+                + ", optimizerFamilies="
+                + optimizerFamilyCount
+                + ", optimizerPromotionReadyFamilies="
+                + optimizerFamilyPromotionReadyCount
+                + ", optimizerPayloadCompleteFamilies="
+                + optimizerFamilyPayloadCompleteCount
+                + ", optimizerPayloadCompleteAll="
+                + optimizerFamilyPayloadCompleteAll
+                + optimizerFamilySummaryText()
                 + sourceSwitchingEvidenceText()
                 + kernelEvidence
                 + sourceKernelResourceText()
@@ -129,6 +153,86 @@ public record GpuBackendSourcePromotionWorkloadSummary(
 
     private String sourceKernelResourceText() {
         return sourceKernelResource.isBlank() ? "" : ", sourceKernelResource=" + sourceKernelResource;
+    }
+
+    private String optimizerFamilySummaryText() {
+        return optimizerFamilySummary == null || optimizerFamilySummary.isBlank() || "none".equals(optimizerFamilySummary)
+                ? ""
+                : ", optimizerFamilySummary=" + optimizerFamilySummary;
+    }
+
+    private static String summarizeOptimizerFamilies(Properties properties, int kernelCount) {
+        Map<String, OptimizerFamilyAggregate> families = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String summary = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.optimizerFamily.summary",
+                    ""
+            );
+            mergeOptimizerFamilySummary(families, summary);
+        }
+        if (families.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (OptimizerFamilyAggregate family : families.values()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(family.name())
+                    .append("[passes=")
+                    .append(family.passCount())
+                    .append(", acceptedProof=")
+                    .append(family.acceptedProofCount())
+                    .append(", blockingProof=")
+                    .append(family.blockingProofCount())
+                    .append(", rolledBack=")
+                    .append(family.rolledBackCount())
+                    .append(", failed=")
+                    .append(family.failedCount())
+                    .append(", promotionReady=")
+                    .append(family.promotionReady())
+                    .append(']');
+        }
+        return builder.toString();
+    }
+
+    private static void mergeOptimizerFamilySummary(
+            Map<String, OptimizerFamilyAggregate> families,
+            String summary
+    ) {
+        if (summary == null || summary.isBlank() || "none".equals(summary)) {
+            return;
+        }
+        for (String entry : summary.split("\\], ")) {
+            String normalized = entry.endsWith("]") ? entry : entry + "]";
+            int start = normalized.indexOf('[');
+            int end = normalized.lastIndexOf(']');
+            if (start <= 0 || end <= start) {
+                continue;
+            }
+            String name = normalized.substring(0, start);
+            Map<String, String> fields = parseOptimizerFamilyFields(normalized.substring(start + 1, end));
+            OptimizerFamilyAggregate existing = families.getOrDefault(name, OptimizerFamilyAggregate.empty(name));
+            families.put(name, existing.add(
+                    parsePositiveInt(fields.getOrDefault("passes", "0")),
+                    parsePositiveInt(fields.getOrDefault("acceptedProof", "0")),
+                    parsePositiveInt(fields.getOrDefault("blockingProof", "0")),
+                    parsePositiveInt(fields.getOrDefault("rolledBack", "0")),
+                    parsePositiveInt(fields.getOrDefault("failed", "0"))
+            ));
+        }
+    }
+
+    private static Map<String, String> parseOptimizerFamilyFields(String fieldsText) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (String field : fieldsText.split(", ")) {
+            int separator = field.indexOf('=');
+            if (separator <= 0 || separator == field.length() - 1) {
+                continue;
+            }
+            fields.put(field.substring(0, separator), field.substring(separator + 1));
+        }
+        return fields;
     }
 
     private static String summarizeSourcePromotionFirstBlockerFamilies(Properties properties, int kernelCount) {
@@ -215,6 +319,17 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.proofArtifact.accepted.count", "0"))
                     .append("/blockingProof=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.proofArtifact.blocking.count", "0"))
+                    .append("/optimizerFamilies=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.optimizerFamily.count", "0"))
+                    .append("/promotionReadyFamilies=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.optimizerFamily.promotionReady.count",
+                            "0"
+                    ))
+                    .append("/payloadCompleteFamilies=")
+                    .append(properties.getProperty("kernel." + index + ".optimizerFamilyPayload.family.complete.count", "0"))
+                    .append("/payloadCompleteAll=")
+                    .append(properties.getProperty("kernel." + index + ".optimizerFamilyPayload.family.complete.all", "false"))
                     .append("/fallback=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.fallbackDecision", "unknown"))
                     .append(", productionMutation=")
@@ -301,5 +416,44 @@ public record GpuBackendSourcePromotionWorkloadSummary(
             }
         }
         return count;
+    }
+
+    private static String allKernelBooleanProperty(Properties properties, int kernelCount, String propertyName) {
+        return Boolean.toString(kernelCount > 0 && countKernelBooleanProperty(properties, kernelCount, propertyName) == kernelCount);
+    }
+
+    private record OptimizerFamilyAggregate(
+            String name,
+            int passCount,
+            int acceptedProofCount,
+            int blockingProofCount,
+            int rolledBackCount,
+            int failedCount
+    ) {
+
+        private static OptimizerFamilyAggregate empty(String name) {
+            return new OptimizerFamilyAggregate(name, 0, 0, 0, 0, 0);
+        }
+
+        private OptimizerFamilyAggregate add(
+                int passCount,
+                int acceptedProofCount,
+                int blockingProofCount,
+                int rolledBackCount,
+                int failedCount
+        ) {
+            return new OptimizerFamilyAggregate(
+                    name,
+                    this.passCount + passCount,
+                    this.acceptedProofCount + acceptedProofCount,
+                    this.blockingProofCount + blockingProofCount,
+                    this.rolledBackCount + rolledBackCount,
+                    this.failedCount + failedCount
+            );
+        }
+
+        private boolean promotionReady() {
+            return acceptedProofCount > 0 && blockingProofCount == 0 && rolledBackCount == 0 && failedCount == 0;
+        }
     }
 }

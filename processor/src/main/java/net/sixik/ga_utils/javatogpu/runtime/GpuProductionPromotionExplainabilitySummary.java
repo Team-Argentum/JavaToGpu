@@ -24,6 +24,13 @@ public record GpuProductionPromotionExplainabilitySummary(
         int i3BlockedCount,
         int i3SourceReadyCount,
         String i3SourceReadyAll,
+        int optimizerFamilyCount,
+        int optimizerFamilyPromotionReadyCount,
+        String optimizerFamilySummary,
+        int optimizerFamilyPayloadCompleteCount,
+        String optimizerFamilyPayloadCompleteAll,
+        String optimizerFamilyRuntimeEquivalenceHistoryBaselineReady,
+        String optimizerFamilyPromotionPreflightReady,
         String backendPromotionArtifactSupportComplete,
         int backendPromotionArtifactSupportMissingCount,
         String controlledProductionSourceSwitchingStatus,
@@ -55,6 +62,13 @@ public record GpuProductionPromotionExplainabilitySummary(
                 0,
                 0,
                 "false",
+                0,
+                0,
+                "none",
+                0,
+                "false",
+                "false",
+                "true",
                 "unknown",
                 0,
                 "not-recorded",
@@ -93,6 +107,13 @@ public record GpuProductionPromotionExplainabilitySummary(
                 parsePositiveInt(properties.getProperty("i3Blocked.count", Integer.toString(contract.i3BlockedCount()))),
                 parsePositiveInt(properties.getProperty("i3SourceReady.count", Integer.toString(contract.i3SourceReadyCount()))),
                 properties.getProperty("i3SourceReady.all", "false"),
+                parsePositiveInt(properties.getProperty("optimizerFamily.count", "0")),
+                parsePositiveInt(properties.getProperty("optimizerFamily.promotionReady.count", "0")),
+                properties.getProperty("optimizerFamily.summary", "none"),
+                parsePositiveInt(properties.getProperty("optimizerFamilyPayload.complete.count", "0")),
+                properties.getProperty("optimizerFamilyPayload.complete.all", "false"),
+                properties.getProperty("optimizerFamily.runtimeEquivalenceHistoryBaselineReady", "false"),
+                properties.getProperty("optimizerFamily.promotionPreflightReady", "true"),
                 properties.getProperty("backendPromotionArtifactSupport.complete", "unknown"),
                 parsePositiveInt(properties.getProperty("backendPromotionArtifactSupport.missing.count", "0")),
                 properties.getProperty("controlledProductionSourceSwitching.status", "not-recorded"),
@@ -147,6 +168,15 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + ", i3Blocked=" + i3BlockedCount
                 + ", i3SourceReady=" + i3SourceReadyCount
                 + ", i3SourceReadyAll=" + i3SourceReadyAll
+                + ", optimizerFamilies=" + optimizerFamilyCount
+                + ", optimizerPromotionReadyFamilies=" + optimizerFamilyPromotionReadyCount
+                + ", optimizerPayloadCompleteFamilies=" + optimizerFamilyPayloadCompleteCount
+                + ", optimizerPayloadCompleteAll=" + optimizerFamilyPayloadCompleteAll
+                + ", optimizerRuntimeEquivalenceHistoryBaselineReady="
+                + optimizerFamilyRuntimeEquivalenceHistoryBaselineReady
+                + ", optimizerPromotionPreflightReady="
+                + optimizerFamilyPromotionPreflightReady
+                + optimizerFamilySummaryText()
                 + ", backendPromotionArtifactSupportComplete=" + backendPromotionArtifactSupportComplete
                 + ", backendPromotionArtifactSupportMissing=" + backendPromotionArtifactSupportMissingCount
                 + ", controlledSourceSwitching=" + controlledProductionSourceSwitchingStatus
@@ -160,6 +190,12 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + ", readinessChecklistReadyAll=" + readinessChecklistReadyAll
                 + ", readinessChecklistFirstBlocked=" + readinessChecklistFirstBlocked
                 + ")";
+    }
+
+    private String optimizerFamilySummaryText() {
+        return optimizerFamilySummary == null || optimizerFamilySummary.isBlank() || "none".equals(optimizerFamilySummary)
+                ? ""
+                : ", optimizerFamilySummary=" + optimizerFamilySummary;
     }
 
     private static int parsePositiveInt(String value) {
