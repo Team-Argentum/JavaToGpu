@@ -1296,14 +1296,55 @@ class GpuRuntimeCompileArtifactDumperTest {
         ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
                 "ir-validation",
                 "accepted",
-                java.util.Map.of(
-                        "optimizerFamily", "cse",
-                        "runtimeEquivalencePayload.present", "true",
-                        "runtimeEquivalencePayload.cpuReference.present", "true",
-                        "runtimeEquivalencePayload.preOptimizationOutput.present", "true",
-                        "runtimeEquivalencePayload.postOptimizationOutput.present", "true",
-                        "runtimeEquivalencePayload.tolerance.present", "true",
-                        "runtimeEquivalencePayload.failureFixture.present", "true"
+                java.util.Map.ofEntries(
+                        java.util.Map.entry("optimizerFamily", "cse"),
+                        java.util.Map.entry("runtimeEquivalencePayload.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.failureFixture.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.resource", "artifact://payload/cse"),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.cpuReference.resource",
+                                "artifact://payload/cse/cpu-reference.bin"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.preOptimizationOutput.resource",
+                                "artifact://payload/cse/pre-output.bin"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.postOptimizationOutput.resource",
+                                "artifact://payload/cse/post-output.bin"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.tolerance.resource",
+                                "artifact://payload/cse/tolerance.properties"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.failureFixture.resource",
+                                "artifact://payload/cse/failure-fixture.json"
+                        ),
+                        java.util.Map.entry(
+                                "cseRuntimeEquivalencePayload.CpuReference",
+                                "inputCases=3, comparedOutputs=1, outputNames=outA"
+                        ),
+                        java.util.Map.entry(
+                                "cseRuntimeEquivalencePayload.PreOptimizationOutput",
+                                "plans=1, insertions=1, skipped=0"
+                        ),
+                        java.util.Map.entry(
+                                "cseRuntimeEquivalencePayload.PostOptimizationOutput",
+                                "replacements=1, equivalent=true, successful=true"
+                        ),
+                        java.util.Map.entry(
+                                "cseRuntimeEquivalencePayload.Tolerance",
+                                "mode=exact-int, diagnostics=0, diagnosticFamilies={}"
+                        ),
+                        java.util.Map.entry(
+                                "cseRuntimeEquivalencePayload.FailureFixture",
+                                "none"
+                        )
                 )
         ));
         GpuRuntimeIrOptimizationPassReport incompleteVectorPayload = GpuRuntimeIrOptimizationPassReport.applied(
@@ -1354,12 +1395,39 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(payload.contains("family.0.failureFixture.present=true"));
         assertTrue(payload.contains("family.0.complete=true"));
         assertTrue(payload.contains("family.0.firstMissing=none"));
+        assertTrue(payload.contains("family.0.proof.source.summary=ir-validation=1"));
+        assertTrue(payload.contains("family.0.proof.verdict.summary=accepted=1"));
+        assertTrue(payload.contains("family.0.payload.resource.summary=artifact://payload/cse=1"));
+        assertTrue(payload.contains("family.0.pass.0.optimizerVersion=optimizer:cse-v1"));
+        assertTrue(payload.contains("family.0.pass.0.outcome=APPLIED"));
+        assertTrue(payload.contains("family.0.pass.0.proofStatus=proof:accepted"));
+        assertTrue(payload.contains("family.0.pass.0.proof.source=ir-validation"));
+        assertTrue(payload.contains("family.0.pass.0.proof.verdict=accepted"));
+        assertTrue(payload.contains("family.0.pass.0.payload.resource=artifact://payload/cse"));
+        assertTrue(payload.contains("family.0.pass.0.cpuReference.resource=artifact://payload/cse/cpu-reference.bin"));
+        assertTrue(payload.contains("family.0.pass.0.preOptimizationOutput.resource=artifact://payload/cse/pre-output.bin"));
+        assertTrue(payload.contains("family.0.pass.0.postOptimizationOutput.resource=artifact://payload/cse/post-output.bin"));
+        assertTrue(payload.contains("family.0.pass.0.tolerance.resource=artifact://payload/cse/tolerance.properties"));
+        assertTrue(payload.contains("family.0.pass.0.failureFixture.resource=artifact://payload/cse/failure-fixture.json"));
+        assertTrue(payload.contains("family.0.pass.0.cpuReference.payload=inputCases=3, comparedOutputs=1, outputNames=outA"));
+        assertTrue(payload.contains("family.0.pass.0.preOptimizationOutput.payload=plans=1, insertions=1, skipped=0"));
+        assertTrue(payload.contains("family.0.pass.0.postOptimizationOutput.payload=replacements=1, equivalent=true, successful=true"));
+        assertTrue(payload.contains("family.0.pass.0.tolerance.payload=mode=exact-int, diagnostics=0, diagnosticFamilies={}"));
+        assertTrue(payload.contains("family.0.pass.0.failureFixture.payload=none"));
+        assertTrue(payload.contains("family.0.pass.0.firstDiagnostic=CSE runtime-equivalence payload captured"));
         assertTrue(payload.contains("family.1.name=vector"));
         assertTrue(payload.contains("family.1.runtimePayload.present=true"));
         assertTrue(payload.contains("family.1.tolerance.present=false"));
         assertTrue(payload.contains("family.1.failureFixture.present=false"));
         assertTrue(payload.contains("family.1.complete=false"));
         assertTrue(payload.contains("family.1.firstMissing=tolerance-metadata"));
+        assertTrue(payload.contains("family.1.proof.source.summary=ir-validation=1"));
+        assertTrue(payload.contains("family.1.payload.resource.summary=not-recorded=1"));
+        assertTrue(payload.contains("family.1.pass.0.payload.resource=not-recorded"));
+        assertTrue(payload.contains("family.1.pass.0.tolerance.resource=not-recorded"));
+        assertTrue(payload.contains("family.1.pass.0.cpuReference.payload=not-recorded"));
+        assertTrue(payload.contains("family.1.pass.0.tolerance.payload=not-recorded"));
+        assertTrue(payload.contains("family.1.pass.0.firstDiagnostic=vector payload still needs tolerance metadata"));
         assertTrue(payload.contains("family.complete.count=1"));
         assertTrue(payload.contains("family.complete.all=false"));
     }

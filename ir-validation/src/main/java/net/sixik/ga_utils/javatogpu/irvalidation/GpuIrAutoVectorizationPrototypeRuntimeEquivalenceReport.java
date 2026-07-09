@@ -100,6 +100,12 @@ public record GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport(
         values.put(prefix + "ComparedOutputNames", String.join(",", comparedOutputs));
         values.put(prefix + "Diagnostics", Integer.toString(diagnosticCount()));
         values.put(prefix + "HasDiagnostics", Boolean.toString(hasDiagnostics()));
+        values.put(prefix + "Payload.InputCases", Integer.toString(inputCaseCount));
+        values.put(prefix + "Payload.CpuReference", cpuReferencePayload());
+        values.put(prefix + "Payload.PreOptimizationOutput", preOptimizationOutputPayload());
+        values.put(prefix + "Payload.PostOptimizationOutput", postOptimizationOutputPayload());
+        values.put(prefix + "Payload.Tolerance", tolerancePayload());
+        values.put(prefix + "Payload.FailureFixture", failureFixturePayload());
         GpuIrRuntimeEquivalenceDiagnosticFamilies.putArtifactFields(values, prefix, diagnostics);
         if (hasDiagnostics()) {
             values.put(prefix + "FirstDiagnostic", firstDiagnostic());
@@ -127,5 +133,38 @@ public record GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport(
                 + " appliedRewrites=" + rewriteReport.appliedRewriteCount()
                 + " appliedRewriteFamilies=" + rewriteReport.appliedRewriteFamilyCountersSummary()
                 + (hasDiagnostics() ? " firstDiagnostic=" + firstDiagnostic() : "");
+    }
+
+    private String cpuReferencePayload() {
+        return "inputCases=" + inputCaseCount
+                + ", comparedOutputs=" + comparedOutputCount()
+                + ", outputNames=" + joinedComparedOutputs();
+    }
+
+    private String preOptimizationOutputPayload() {
+        return "method=" + rewriteReport.method().name()
+                + ", appliedRewrites=" + rewriteReport.appliedRewriteCount()
+                + ", families=" + rewriteReport.appliedRewriteFamilyCountersSummary();
+    }
+
+    private String postOptimizationOutputPayload() {
+        return "equivalent=" + equivalent
+                + ", successful=" + successful()
+                + ", comparedOutputs=" + comparedOutputCount();
+    }
+
+    private String tolerancePayload() {
+        return "mode=exact-int-lane, diagnostics=" + diagnosticCount()
+                + ", diagnosticFamilies=" + GpuIrRuntimeEquivalenceDiagnosticFamilies.countsSummary(diagnostics);
+    }
+
+    private String failureFixturePayload() {
+        return hasDiagnostics()
+                ? String.join(" | ", diagnostics)
+                : "none";
+    }
+
+    private String joinedComparedOutputs() {
+        return comparedOutputs.isEmpty() ? "none" : String.join(",", comparedOutputs);
     }
 }

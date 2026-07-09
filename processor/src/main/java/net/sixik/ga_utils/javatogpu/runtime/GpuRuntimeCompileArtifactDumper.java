@@ -10,6 +10,7 @@ import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuSourceReconstructo
 
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Converts runtime compile snapshots into comparable text artifacts for diagnostics and tests.
@@ -282,6 +283,30 @@ public final class GpuRuntimeCompileArtifactDumper {
             builder.append(prefix).append("failureFixture.present=").append(family.failureFixturePresent()).append('\n');
             builder.append(prefix).append("complete=").append(complete).append('\n');
             builder.append(prefix).append("firstMissing=").append(family.firstMissing(runtimeEquivalencePassed)).append('\n');
+            builder.append(prefix).append("proof.source.summary=").append(family.proofSourceSummary()).append('\n');
+            builder.append(prefix).append("proof.verdict.summary=").append(family.proofVerdictSummary()).append('\n');
+            builder.append(prefix).append("payload.resource.summary=").append(family.payloadResourceSummary()).append('\n');
+            for (int passIndex = 0; passIndex < family.passTraces().size(); passIndex++) {
+                OptimizerFamilyPassTrace passTrace = family.passTraces().get(passIndex);
+                String passPrefix = prefix + "pass." + passIndex + ".";
+                builder.append(passPrefix).append("optimizerVersion=").append(passTrace.optimizerVersion()).append('\n');
+                builder.append(passPrefix).append("outcome=").append(passTrace.outcome()).append('\n');
+                builder.append(passPrefix).append("proofStatus=").append(passTrace.proofStatus()).append('\n');
+                builder.append(passPrefix).append("proof.source=").append(passTrace.proofSource()).append('\n');
+                builder.append(passPrefix).append("proof.verdict=").append(passTrace.proofVerdict()).append('\n');
+                builder.append(passPrefix).append("payload.resource=").append(passTrace.payloadResource()).append('\n');
+                builder.append(passPrefix).append("cpuReference.resource=").append(passTrace.cpuReferenceResource()).append('\n');
+                builder.append(passPrefix).append("preOptimizationOutput.resource=").append(passTrace.preOptimizationOutputResource()).append('\n');
+                builder.append(passPrefix).append("postOptimizationOutput.resource=").append(passTrace.postOptimizationOutputResource()).append('\n');
+                builder.append(passPrefix).append("tolerance.resource=").append(passTrace.toleranceResource()).append('\n');
+                builder.append(passPrefix).append("failureFixture.resource=").append(passTrace.failureFixtureResource()).append('\n');
+                builder.append(passPrefix).append("cpuReference.payload=").append(passTrace.cpuReferencePayload()).append('\n');
+                builder.append(passPrefix).append("preOptimizationOutput.payload=").append(passTrace.preOptimizationOutputPayload()).append('\n');
+                builder.append(passPrefix).append("postOptimizationOutput.payload=").append(passTrace.postOptimizationOutputPayload()).append('\n');
+                builder.append(passPrefix).append("tolerance.payload=").append(passTrace.tolerancePayload()).append('\n');
+                builder.append(passPrefix).append("failureFixture.payload=").append(passTrace.failureFixturePayload()).append('\n');
+                builder.append(passPrefix).append("firstDiagnostic=").append(passTrace.firstDiagnostic()).append('\n');
+            }
             index++;
         }
         builder.append("family.complete.count=").append(completeFamilyCount).append('\n');
@@ -310,15 +335,18 @@ public final class GpuRuntimeCompileArtifactDumper {
             boolean preOptimizationOutputPresent,
             boolean postOptimizationOutputPresent,
             boolean tolerancePresent,
-            boolean failureFixturePresent
+            boolean failureFixturePresent,
+            List<OptimizerFamilyPassTrace> passTraces
     ) {
 
         private static OptimizerFamilyPayload empty(String name) {
-            return new OptimizerFamilyPayload(name, 0, false, false, false, false, false, false);
+            return new OptimizerFamilyPayload(name, 0, false, false, false, false, false, false, List.of());
         }
 
         private OptimizerFamilyPayload add(GpuRuntimeIrOptimizationPassReport passReport) {
-            java.util.Map<String, String> fields = passReport.proofArtifact().fields();
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            List<OptimizerFamilyPassTrace> updatedPassTraces = new java.util.ArrayList<>(passTraces);
+            updatedPassTraces.add(OptimizerFamilyPassTrace.from(passReport));
             return new OptimizerFamilyPayload(
                     name,
                     passCount + 1,
@@ -327,7 +355,8 @@ public final class GpuRuntimeCompileArtifactDumper {
                     preOptimizationOutputPresent || fieldIsTrue(fields, "runtimeEquivalencePayload.preOptimizationOutput.present"),
                     postOptimizationOutputPresent || fieldIsTrue(fields, "runtimeEquivalencePayload.postOptimizationOutput.present"),
                     tolerancePresent || fieldIsTrue(fields, "runtimeEquivalencePayload.tolerance.present"),
-                    failureFixturePresent || fieldIsTrue(fields, "runtimeEquivalencePayload.failureFixture.present")
+                    failureFixturePresent || fieldIsTrue(fields, "runtimeEquivalencePayload.failureFixture.present"),
+                    List.copyOf(updatedPassTraces)
             );
         }
 
@@ -365,10 +394,150 @@ public final class GpuRuntimeCompileArtifactDumper {
             }
             return "none";
         }
+
+        private String proofSourceSummary() {
+            return compactSummary(passTraces.stream()
+                    .map(OptimizerFamilyPassTrace::proofSource)
+                    .toList());
+        }
+
+        private String proofVerdictSummary() {
+            return compactSummary(passTraces.stream()
+                    .map(OptimizerFamilyPassTrace::proofVerdict)
+                    .toList());
+        }
+
+        private String payloadResourceSummary() {
+            return compactSummary(passTraces.stream()
+                    .map(OptimizerFamilyPassTrace::payloadResource)
+                    .toList());
+        }
     }
 
-    private static boolean fieldIsTrue(java.util.Map<String, String> fields, String key) {
+    private record OptimizerFamilyPassTrace(
+            String optimizerVersion,
+            String outcome,
+            String proofStatus,
+            String proofSource,
+            String proofVerdict,
+            String payloadResource,
+            String cpuReferenceResource,
+            String preOptimizationOutputResource,
+            String postOptimizationOutputResource,
+            String toleranceResource,
+            String failureFixtureResource,
+            String cpuReferencePayload,
+            String preOptimizationOutputPayload,
+            String postOptimizationOutputPayload,
+            String tolerancePayload,
+            String failureFixturePayload,
+            String firstDiagnostic
+    ) {
+
+        private static OptimizerFamilyPassTrace from(GpuRuntimeIrOptimizationPassReport passReport) {
+            GpuRuntimeIrOptimizationProofArtifact proofArtifact = passReport.proofArtifact();
+            Map<String, String> fields = proofArtifact.fields();
+            return new OptimizerFamilyPassTrace(
+                    safePropertyValue(passReport.optimizerVersion()),
+                    safePropertyValue(passReport.outcome().name()),
+                    safePropertyValue(passReport.proofStatus()),
+                    safePropertyValue(proofArtifact.source()),
+                    safePropertyValue(proofArtifact.verdict()),
+                    firstField(fields,
+                            "runtimeEquivalencePayload.resource",
+                            "runtimeEquivalencePayload.path",
+                            "runtimeEquivalencePayload.id"),
+                    firstField(fields,
+                            "runtimeEquivalencePayload.cpuReference.resource",
+                            "runtimeEquivalencePayload.cpuReference.path",
+                            "runtimeEquivalencePayload.cpuReference.id"),
+                    firstField(fields,
+                            "runtimeEquivalencePayload.preOptimizationOutput.resource",
+                            "runtimeEquivalencePayload.preOptimizationOutput.path",
+                            "runtimeEquivalencePayload.preOptimizationOutput.id"),
+                    firstField(fields,
+                            "runtimeEquivalencePayload.postOptimizationOutput.resource",
+                            "runtimeEquivalencePayload.postOptimizationOutput.path",
+                            "runtimeEquivalencePayload.postOptimizationOutput.id"),
+                    firstField(fields,
+                            "runtimeEquivalencePayload.tolerance.resource",
+                            "runtimeEquivalencePayload.tolerance.path",
+                            "runtimeEquivalencePayload.tolerance.id"),
+                    firstField(fields,
+                            "runtimeEquivalencePayload.failureFixture.resource",
+                            "runtimeEquivalencePayload.failureFixture.path",
+                            "runtimeEquivalencePayload.failureFixture.id"),
+                    payloadField(fields, "Payload.CpuReference"),
+                    payloadField(fields, "Payload.PreOptimizationOutput"),
+                    payloadField(fields, "Payload.PostOptimizationOutput"),
+                    payloadField(fields, "Payload.Tolerance"),
+                    payloadField(fields, "Payload.FailureFixture"),
+                    passReport.diagnostics().isEmpty()
+                            ? "none"
+                            : safePropertyValue(passReport.diagnostics().get(0))
+            );
+        }
+    }
+
+    private static boolean fieldIsTrue(Map<String, String> fields, String key) {
         return "true".equalsIgnoreCase(fields.getOrDefault(key, "false"));
+    }
+
+    private static String firstField(Map<String, String> fields, String... keys) {
+        for (String key : keys) {
+            String value = fields.getOrDefault(key, "");
+            if (!value.isBlank()) {
+                return safePropertyValue(value);
+            }
+        }
+        return "not-recorded";
+    }
+
+    private static String payloadField(Map<String, String> fields, String suffix) {
+        String directKey = "runtimeEquivalencePayload." + suffix;
+        String directValue = fields.getOrDefault(directKey, "");
+        if (!directValue.isBlank()) {
+            return safePropertyValue(directValue);
+        }
+        String bestKey = "";
+        String bestValue = "";
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            if (entry.getKey().endsWith(suffix) && !entry.getValue().isBlank()) {
+                if (bestKey.isBlank() || entry.getKey().length() < bestKey.length()) {
+                    bestKey = entry.getKey();
+                    bestValue = entry.getValue();
+                }
+            }
+        }
+        return bestValue.isBlank() ? "not-recorded" : safePropertyValue(bestValue);
+    }
+
+    private static String compactSummary(List<String> values) {
+        LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+        for (String value : values) {
+            String normalized = safePropertyValue(value);
+            counts.put(normalized, counts.getOrDefault(normalized, 0) + 1);
+        }
+        if (counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(entry.getKey()).append('=').append(entry.getValue());
+        }
+        return builder.toString();
+    }
+
+    private static String safePropertyValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "none";
+        }
+        return value.replace('\r', ' ')
+                .replace('\n', ' ')
+                .trim();
     }
 
     private static GpuBackendSourceReconstructionResult reconstructBackendSource(GpuRuntimeCompileArtifactSnapshot snapshot) {
