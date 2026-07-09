@@ -221,6 +221,51 @@ class AsmFrontendServiceTest {
     }
 
     @Test
+    void preservesGpuDeviceConstraintFromAsmParsedMethodMetadata() {
+        ParsedGpuMethod parsedKernel = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser().parseMethod(
+                """
+                        @GPU
+                        @GPUDeviceConstraint(
+                            backends = {GpuBackendTarget.OPENCL},
+                            vendors = {GpuVendorTarget.AMD},
+                            deviceClasses = {GpuDeviceClassTarget.DGPU},
+                            requiredFeatures = {"images"}
+                        )
+                        void kernel(@GPUGlobal float[] output) {
+                            output[0] = 1.0f;
+                        }
+                        """,
+                "Demo",
+                "sample.Demo"
+        );
+        MethodNode methodNode = methodNode(
+                DEMO_OWNER,
+                "kernel",
+                "([F)V",
+                Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+                mv -> {
+                    mv.visitCode();
+                    mv.visitInsn(Opcodes.RETURN);
+                    mv.visitMaxs(0, 0);
+                    mv.visitEnd();
+                }
+        );
+
+        GpuFrontendCompilationResult result = AsmFrontendService.createDefault().compileStructured(
+                new AsmGpuMethod(DEMO_OWNER, parsedKernel, methodNode),
+                List.of(),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertEquals("asm", result.irGpuArtifact().header().sourceFrontend());
+        var constraint = result.irGpuArtifact().entryDeviceConstraint().orElseThrow();
+        assertEquals(List.of(net.sixik.ga_utils.javatogpu.api.GpuVendorTarget.AMD), constraint.supportedVendors());
+        assertEquals(List.of(net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget.DGPU), constraint.supportedDeviceClasses());
+        assertEquals(List.of("images"), constraint.requiredFeatures());
+    }
+
+    @Test
     void rejectsParsedAndAsmSignatureMismatch() {
         MethodNode method = methodNode(DEMO_OWNER, "kernel", "([F[F)V", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, mv -> {
             mv.visitCode();

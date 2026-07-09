@@ -91,6 +91,24 @@ public record GpuRuntimeDeviceSelection(
         return Collections.unmodifiableMap(fields);
     }
 
+    public GpuRuntimeDeviceSelection withAdditionalDiagnostics(List<String> additionalDiagnostics) {
+        if (additionalDiagnostics == null || additionalDiagnostics.isEmpty()) {
+            return this;
+        }
+        java.util.ArrayList<String> combined = new java.util.ArrayList<>(diagnostics);
+        combined.addAll(additionalDiagnostics);
+        return new GpuRuntimeDeviceSelection(
+                selectedDevice,
+                rankedCandidates,
+                policyDecisions,
+                executionReports,
+                compileOptionsValid,
+                failedClosed,
+                firstBlocker,
+                combined
+        );
+    }
+
     private static void appendIntegerMap(
             LinkedHashMap<String, String> fields,
             String prefix,

@@ -45,6 +45,8 @@ public final class GpuRuntimeDevicePolicyRegistry {
     public static GpuRuntimeDevicePolicyRegistry loadWithBuiltIns() {
         ArrayList<GpuRuntimeDevicePolicy> loaded = new ArrayList<>();
         loaded.add(new GpuRuntimeBackendCompatibilityDevicePolicy());
+        loaded.add(new GpuRuntimeExplicitDeviceOverridePolicy());
+        loaded.add(new GpuRuntimeMethodDeviceConstraintPolicy());
         ServiceLoader.load(GpuRuntimeDevicePolicy.class, GpuRuntimeDevicePolicy.class.getClassLoader())
                 .forEach(loaded::add);
         loaded.sort(Comparator

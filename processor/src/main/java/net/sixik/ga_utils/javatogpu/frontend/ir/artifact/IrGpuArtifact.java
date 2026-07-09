@@ -16,8 +16,82 @@ public record IrGpuArtifact(
         List<IrGpuConstantDataMetadata> constantData,
         List<IrGpuBackendOutput> backendOutputs,
         String runtimeDefaultBackend,
-        String runtimeOptimizationProfile
+        String runtimeOptimizationProfile,
+        List<IrGpuMethodDeviceConstraint> methodDeviceConstraints,
+        List<IrGpuMethodFallbackVariant> methodFallbackVariants
 ) {
+
+    public IrGpuArtifact(
+            IrGpuArtifactHeader header,
+            IrGpuModule module,
+            List<IrGpuEntryParameter> entryParameters,
+            IrGpuLaunchMetadata launchMetadata,
+            IrGpuValidationMetadata validationMetadata,
+            IrGpuFeatureMetadata featureMetadata,
+            IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata,
+            IrGpuRegenerationMetadata regenerationMetadata,
+            List<IrGpuStructMetadata> structMetadata,
+            List<IrGpuConstantMetadata> constants,
+            List<IrGpuConstantDataMetadata> constantData,
+            List<IrGpuBackendOutput> backendOutputs,
+            String runtimeDefaultBackend,
+            String runtimeOptimizationProfile,
+            List<IrGpuMethodDeviceConstraint> methodDeviceConstraints
+    ) {
+        this(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                methodDeviceConstraints,
+                List.of()
+        );
+    }
+
+    public IrGpuArtifact(
+            IrGpuArtifactHeader header,
+            IrGpuModule module,
+            List<IrGpuEntryParameter> entryParameters,
+            IrGpuLaunchMetadata launchMetadata,
+            IrGpuValidationMetadata validationMetadata,
+            IrGpuFeatureMetadata featureMetadata,
+            IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata,
+            IrGpuRegenerationMetadata regenerationMetadata,
+            List<IrGpuStructMetadata> structMetadata,
+            List<IrGpuConstantMetadata> constants,
+            List<IrGpuConstantDataMetadata> constantData,
+            List<IrGpuBackendOutput> backendOutputs,
+            String runtimeDefaultBackend,
+            String runtimeOptimizationProfile
+    ) {
+        this(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                List.of()
+        );
+    }
 
     public IrGpuArtifact(
             IrGpuArtifactHeader header,
@@ -182,6 +256,8 @@ public record IrGpuArtifact(
         runtimeOptimizationProfile = runtimeOptimizationProfile == null || runtimeOptimizationProfile.isBlank()
                 ? "off"
                 : runtimeOptimizationProfile;
+        methodDeviceConstraints = methodDeviceConstraints == null ? List.of() : List.copyOf(methodDeviceConstraints);
+        methodFallbackVariants = methodFallbackVariants == null ? List.of() : List.copyOf(methodFallbackVariants);
     }
 
     public String derivedOpenClResource() {
@@ -191,5 +267,61 @@ public record IrGpuArtifact(
                 .map(IrGpuBackendOutput::resource)
                 .findFirst()
                 .orElse("");
+    }
+
+    public java.util.Optional<IrGpuMethodDeviceConstraint> entryDeviceConstraint() {
+        return methodDeviceConstraints.stream()
+                .filter(constraint -> constraint.methodName().equals(module.entryMethod())
+                        || constraint.emittedName().equals(module.entryEmittedName()))
+                .findFirst();
+    }
+
+    public java.util.Optional<IrGpuMethodFallbackVariant> entryFallbackVariant() {
+        return methodFallbackVariants.stream()
+                .filter(variant -> variant.methodName().equals(module.entryMethod())
+                        || variant.emittedName().equals(module.entryEmittedName()))
+                .findFirst();
+    }
+
+    public IrGpuArtifact withMethodDeviceConstraints(List<IrGpuMethodDeviceConstraint> constraints) {
+        return new IrGpuArtifact(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                constraints,
+                methodFallbackVariants
+        );
+    }
+
+    public IrGpuArtifact withMethodFallbackVariants(List<IrGpuMethodFallbackVariant> variants) {
+        return new IrGpuArtifact(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                methodDeviceConstraints,
+                variants
+        );
     }
 }

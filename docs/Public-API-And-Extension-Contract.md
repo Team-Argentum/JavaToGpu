@@ -42,6 +42,95 @@ For vendor or device-specific metadata, narrow the selector explicitly:
 
 Runtime device selection should be deterministic by default. The runtime should prefer supported discrete GPUs over integrated GPUs or CPU OpenCL devices, apply known-good validation evidence when available, and still allow explicit user overrides for advanced deployments.
 
+Use `@GPUDeviceConstraint` when a kernel or helper is only valid on specific backends, vendors, device classes, or capabilities:
+
+```java
+@GPU
+@GPUDeviceConstraint(
+        backends = {GpuBackendTarget.OPENCL},
+        vendors = {GpuVendorTarget.NVIDIA, GpuVendorTarget.AMD},
+        deviceClasses = {GpuDeviceClassTarget.DGPU},
+        requiredFeatures = {"fp64"}
+)
+static void doubleKernel(@GPUGlobal double[] output) {
+    output[GPU.get_global_id(0)] = 1.0;
+}
+```
+
+The compiler stores this as per-method `methodDeviceConstraint.*` metadata in `kernel.irgpu.properties`. Java and ASM compilation paths use the same normalized model. Before OpenCL creates a context, `GpuRuntimeMethodDeviceConstraintPolicy` rejects candidates with an unsupported backend, vendor, device class, or missing required feature. Current portable feature names are `fp64`, `images`, and `subgroups`; unknown required features fail closed.
+
+Use `GpuRuntimeDeviceOverride` through compile options when a deployment requires a specific device identity, vendor, label, or class:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withDeviceOverride(GpuRuntimeDeviceOverride.byVendor("NVIDIA"));
+
+GpuKernelInvocation invocation = new GpuKernelInvocation(
+        descriptor,
+        arguments,
+        options
+);
+```
+
+Available selectors include `byDeviceId(...)`, `byVendor(...)`, `byDeviceLabel(...)`, and `byDeviceClass(...)`. A directly constructed override may combine selectors; all populated selectors must match. Device ids are exact, while vendor and device-label selectors use case-insensitive containment so stable tokens such as `NVIDIA`, `AMD`, `Intel`, or `RTX 5070` can match full driver labels.
+
+Overrides and method constraints are required constraints, not advisory score hints. If no candidate matches, selection fails with `GpuRuntimeDeviceSelectionException`. The first OpenCL context is created from the concrete kernel descriptor, loaded IrGpu metadata, and compile options. A later request is re-evaluated against the original candidate set; if it requires another device, the same exception is raised and the caller must create a new runtime scope/backend instance. JavaToGpu does not silently execute the request on the already active but incompatible device.
+
+### Runtime failure hierarchy
+
+Public runtime failures extend `GpuRuntimeException`. The base contract exposes a stable error code, `GpuRuntimeFailurePhase`, concise summary, immutable `GpuRuntimeDiagnosticContext`, Rust-like `diagnosticText()`, help messages, and the original cause. Backend implementations should translate low-level driver/runtime failures once and must not double-wrap an existing `GpuRuntimeException`.
+
+The OpenCL backend currently maps device selection, fallback variant selection, backend initialization, compile-option validation, argument marshalling/execution configuration, capability validation, kernel compilation, and kernel execution into dedicated public subclasses. `GpuRuntimeDiagnosticContext` records kernel and resource identity, the `IrGpu` GPU-method source anchor, the compiler-indexed Java call site, backend, selected device, compile args, and optimization profile. Its `artifactFields(...)` method provides a properties-compatible representation for future failure artifacts and telemetry.
+
+Generated launchers do not catch these exceptions. They propagate them to the user's call site so application code can implement an explicit fallback:
+
+```java
+try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+    DemoKernel.transform(input, output);
+} catch (GpuRuntimeException exception) {
+    CpuFallback.transform(input, output);
+}
+```
+
+The annotation processor emits deterministic caller indexes under `META-INF/javatogpu/call-sites/`, including the exact invocation expression, source range, caller class/method, and target GPU method. Runtime resolves these records through the generated launcher's artifact classloader and attaches the selected record to `GpuRuntimeDiagnosticContext.callSite()`. If compiler metadata is unavailable, runtime falls back to a stack-trace anchor without hiding the failure. The method-body rewriter does not alter the caller's exception table, so structured failures remain catchable in the original user-authored `try/catch` region.
+
+### Method fallback variants
+
+Use `@GPUFallbackVariant` when one logical operation has multiple device-specific implementations:
+
+```java
+@GPU
+@GPUFallbackVariant(group = "noise", id = "dgpu", priority = 100)
+@GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.DGPU})
+static void noiseDiscrete(@GPUGlobal float[] output) {
+    output[GPU.get_global_id(0)] = discreteGpuPath();
+}
+
+@GPU
+@GPUFallbackVariant(group = "noise", id = "igpu", priority = 10)
+@GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.IGPU})
+static void noiseIntegrated(@GPUGlobal float[] output) {
+    output[GPU.get_global_id(0)] = integratedGpuPath();
+}
+```
+
+The compiler stores group id, variant id, priority, compatibility note, source method, and emitted method identity as `methodFallbackVariant.*` metadata in each `kernel.irgpu.properties` artifact. Generated launchers pass variants from the same annotation-processing run to runtime as immutable fallback descriptors. Alternative OpenCL source is loaded lazily from the generated resource only if that variant is selected.
+
+Fallback methods must expose the same launch ABI: parameter count, Java parameter types, and `GpuKernelParameterAccess` values must match. Parameter names may differ. Runtime rejects an ABI-incompatible variant before backend compilation.
+
+OpenCL evaluates each variant through the normal device policy pipeline. Hard constraints include backend compatibility, explicit device override, `@GPUDeviceConstraint`, and required features. Accepted pairs are ordered by device score, then fallback priority, variant id, resource, and kernel name. This preserves the default dGPU preference instead of allowing a high-priority iGPU fallback to pull work away from a stronger compatible dGPU. Selection diagnostics name the chosen group/variant and explain skipped variants.
+
+When an OpenCL session already exists, fallback planning considers only the active device. It may select another compatible method implementation for that device, but it cannot switch the session to different hardware. If no variant supports the active device, runtime throws `GpuRuntimeMethodVariantSelectionException`; callers must open a new runtime scope/backend to permit another device selection.
+
+Fallback implementations may be distributed across separately compiled modules or libraries. For every owner that declares fallback variants, the annotation processor generates a `GpuRuntimeMethodVariantProvider` implementation and registers it through `META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantProvider`.
+
+`GpuRuntimeMethodVariantRegistry` loads providers with the generated launcher's classloader, validates provider ids and versions, rejects null or malformed registrations, and fails closed when two providers export different descriptors for the same `groupId + variantId`. Registrations are sorted by group, variant id, kernel resource, and kernel name before selection. The runtime then merges them with launcher-local descriptors and validates the canonical `IrGpu` fallback metadata before considering a variant.
+
+Third-party libraries may implement `GpuRuntimeMethodVariantProvider` directly when their kernels are produced outside the normal annotation processor, but each descriptor must point to a runtime-visible kernel source and `IrGpu` resource. Generated providers are the preferred path because they keep descriptor ABI, resource paths, and method metadata synchronized automatically.
+
+Classpath and automatic-module packaging work through the generated service resource. Strict named JPMS modules may require an explicit `provides GpuRuntimeMethodVariantProvider with ...` declaration because Java annotation processors cannot safely modify an existing `module-info.java`.
+
 ## Optimizer evidence
 
 Method-level optimizer intent should be declared with `@GPUOptimize`. The default is strict floating-point behavior:
@@ -148,4 +237,4 @@ OpenCL now enumerates all platforms/devices through Packager before creating a c
 
 The live OpenCL session retains the complete selection result and compile requests reuse the selected profile. Runtime compile snapshots carry the selection through the backend-neutral `GpuRuntimeCompileArtifactSnapshot` contract. Artifact dumps emit `runtime-device-selection.properties` with selected-device metadata, ranked candidates, policy decisions, capability facts, quirks, compile-option diagnostics, extension execution outcomes, failure policies, blockers, and final diagnostics.
 
-Explicit user overrides, request-specific re-evaluation for method compatibility or non-default compile options, normalized persistence of all non-device extension phases, and equivalent CUDA/Vulkan/SPIR-V/Metal discovery remain open work.
+Normalized persistence of all non-device extension phases, automatic multi-session switching, and equivalent CUDA/Vulkan/SPIR-V/Metal discovery remain open work.

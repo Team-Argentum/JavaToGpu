@@ -33,11 +33,14 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelectionException;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.lwjgl.PointerBuffer;
@@ -78,6 +81,27 @@ public final class OpenClRuntimeSession implements AutoCloseable {
     }
 
     public static OpenClRuntimeSession createDefault(GpuRuntimeDevicePolicyRegistry devicePolicyRegistry) {
+        return createDefault(
+                devicePolicyRegistry,
+                null,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+        );
+    }
+
+    public static OpenClRuntimeSession createDefault(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        return createDefault(devicePolicyRegistry, descriptor, compileOptions, Optional.empty());
+    }
+
+    public static OpenClRuntimeSession createDefault(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            Optional<IrGpuArtifact> irGpuArtifact
+    ) {
         Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
         List<OpenClDevice> devices = OpenClDevices.list(CL10.CL_DEVICE_TYPE_ALL);
         if (devices.isEmpty()) {
@@ -88,7 +112,13 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         for (int index = 0; index < devices.size(); index++) {
             profiles.add(deviceProfile(devices.get(index), index));
         }
-        GpuRuntimeDeviceSelection selection = selectDevice(devicePolicyRegistry, profiles);
+        GpuRuntimeDeviceSelection selection = selectDevice(
+                devicePolicyRegistry,
+                profiles,
+                descriptor,
+                compileOptions,
+                irGpuArtifact
+        );
         int selectedIndex = selectedDeviceIndex(profiles, selection);
         OpenClDevice device = devices.get(selectedIndex);
 
@@ -97,13 +127,54 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         return new OpenClRuntimeSession(device, context, queue, profiles.get(selectedIndex), selection);
     }
 
+    static List<GpuRuntimeDeviceProfile> discoverDeviceProfiles() {
+        List<OpenClDevice> devices = OpenClDevices.list(CL10.CL_DEVICE_TYPE_ALL);
+        if (devices.isEmpty()) {
+            throw new IllegalStateException("No OpenCL device found");
+        }
+        ArrayList<GpuRuntimeDeviceProfile> profiles = new ArrayList<>(devices.size());
+        for (int index = 0; index < devices.size(); index++) {
+            profiles.add(deviceProfile(devices.get(index), index));
+        }
+        return List.copyOf(profiles);
+    }
+
     static GpuRuntimeDeviceSelection selectDevice(
             GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
             List<GpuRuntimeDeviceProfile> profiles
     ) {
-        return devicePolicyRegistry.select(GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+        return selectDevice(
+                devicePolicyRegistry,
+                profiles,
+                null,
                 GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
-                profiles
+                Optional.empty()
+        );
+    }
+
+    static GpuRuntimeDeviceSelection selectDevice(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            List<GpuRuntimeDeviceProfile> profiles,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        return selectDevice(devicePolicyRegistry, profiles, descriptor, compileOptions, Optional.empty());
+    }
+
+    static GpuRuntimeDeviceSelection selectDevice(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            List<GpuRuntimeDeviceProfile> profiles,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            Optional<IrGpuArtifact> irGpuArtifact
+    ) {
+        return devicePolicyRegistry.select(new GpuRuntimeDevicePolicyContext(
+                descriptor,
+                compileOptions == null
+                        ? GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                        : compileOptions,
+                profiles,
+                irGpuArtifact
         ));
     }
 
@@ -111,11 +182,12 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             List<GpuRuntimeDeviceProfile> profiles,
             GpuRuntimeDeviceSelection selection
     ) {
-        GpuRuntimeDeviceProfile selected = selection.selectedDevice().orElseThrow(() -> new IllegalStateException(
+        GpuRuntimeDeviceProfile selected = selection.selectedDevice().orElseThrow(() -> new GpuRuntimeDeviceSelectionException(
                 "OpenCL device selection failed: " + selection.firstBlocker()
                         + (selection.diagnostics().isEmpty()
                         ? ""
-                        : "; " + String.join("; ", selection.diagnostics()))
+                        : "; " + String.join("; ", selection.diagnostics())),
+                selection
         ));
         for (int index = 0; index < profiles.size(); index++) {
             if (profiles.get(index) == selected) {
@@ -124,7 +196,10 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
         int selectedIndex = profiles.indexOf(selected);
         if (selectedIndex < 0) {
-            throw new IllegalStateException("OpenCL device policy selected a profile outside the discovered candidate set");
+            throw new GpuRuntimeDeviceSelectionException(
+                    "OpenCL device policy selected a profile outside the discovered candidate set",
+                    selection
+            );
         }
         return selectedIndex;
     }

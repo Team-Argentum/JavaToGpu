@@ -177,6 +177,56 @@ The default optimization profile is `off`. Keep production code on `off` unless 
 
 OpenCL compile options are validated before the runtime touches the device. Supported options include common OpenCL build flags such as `-cl-fast-relaxed-math`, `-cl-mad-enable`, `-cl-opt-disable`, `-cl-std=...`, `-DNAME=VALUE`, and `-Ipath`. Backend-mismatched options fail early with a clear Java exception instead of being ignored by the runtime.
 
+## Runtime Failures And Fallbacks
+
+All structured runtime failures extend `GpuRuntimeException`. Use the base type when every GPU failure should take the same fallback path:
+
+```java
+try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+    DemoKernel.transform(input, output);
+} catch (GpuRuntimeException exception) {
+    System.err.println(exception.diagnosticText());
+    CpuFallback.transform(input, output);
+}
+```
+
+Use a specific subtype when recovery differs by phase:
+
+```java
+try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+    DemoKernel.transform(input, output);
+} catch (GpuRuntimeDeviceSelectionException | GpuRuntimeMethodVariantSelectionException exception) {
+    CpuFallback.transform(input, output);
+} catch (GpuRuntimeKernelCompilationException exception) {
+    reportBrokenKernel(exception.context(), exception.getCause());
+    throw exception;
+}
+```
+
+The public hierarchy includes:
+
+- `GpuRuntimeDeviceSelectionException` - no compatible device or active-session mismatch.
+- `GpuRuntimeMethodVariantSelectionException` - no compatible fallback method implementation.
+- `GpuRuntimeBackendUnavailableException` - native backend/session initialization failed.
+- `GpuRuntimeCompileOptionsException` - backend compile arguments are invalid.
+- `GpuRuntimeInvocationException` - Java arguments or execution configuration do not match the kernel ABI.
+- `GpuRuntimeCapabilityException` - the selected device lacks a required capability or resource budget.
+- `GpuRuntimeKernelCompilationException` - driver/backend kernel build failed.
+- `GpuRuntimeKernelExecutionException` - binding, enqueue, synchronization, or readback failed.
+
+Every exception provides:
+
+- `code()` - stable identifier such as `JTG-RUNTIME-COMPILE-001`.
+- `phase()` - a `GpuRuntimeFailurePhase` value.
+- `summary()` - concise failure description.
+- `context()` - kernel, resource, backend, device, compile args, optimization profile, GPU method location, and original Java call site.
+- `diagnosticText()` - pre-rendered Rust-like diagnostic suitable for logs.
+- `getCause()` - the original backend/driver failure when one exists.
+
+The annotation processor records calls to local and dependency-provided `@GPU` methods in `META-INF/javatogpu/call-sites/<binary-class-name>.properties`. At runtime, JavaToGpu matches the active caller stack frame against this index and prefers the exact original Java invocation expression in `diagnosticText()`. The `IrGpu` method source location remains available separately in `context().sourceLocation()`, while `context().callSite()` exposes the caller class/method, file, range, expression, target method, and whether the anchor came from the compiler index or stack-trace fallback.
+
+Method-body rewriting preserves the caller's original exception table. A rewritten GPU call remains inside the same user-authored `try/catch` region, so `catch (GpuRuntimeException exception)` can reliably invoke a CPU, device, method-variant, or backend fallback.
+
 ### IrGpu Source Review Lane
 
 `IrGpu` is the backend-neutral artifact that JavaToGpu is moving toward as the runtime source of truth. The normal runtime path still compiles the generated descriptor OpenCL source by default, even when an `IrGpu` artifact is packaged beside it.

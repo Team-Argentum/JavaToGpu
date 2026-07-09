@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -10,7 +12,8 @@ import java.util.Optional;
 public record GpuRuntimeDevicePolicyContext(
         Optional<GpuKernelDescriptor> descriptor,
         GpuRuntimeCompileOptions compileOptions,
-        List<GpuRuntimeDeviceProfile> candidates
+        List<GpuRuntimeDeviceProfile> candidates,
+        Optional<IrGpuArtifact> irGpuArtifact
 ) {
 
     public GpuRuntimeDevicePolicyContext {
@@ -19,6 +22,7 @@ public record GpuRuntimeDevicePolicyContext(
                 ? GpuRuntimeCompileOptions.defaults(null)
                 : compileOptions;
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
+        irGpuArtifact = irGpuArtifact == null ? Optional.empty() : irGpuArtifact;
     }
 
     public GpuRuntimeDevicePolicyContext(
@@ -26,7 +30,16 @@ public record GpuRuntimeDevicePolicyContext(
             GpuRuntimeCompileOptions compileOptions,
             List<GpuRuntimeDeviceProfile> candidates
     ) {
-        this(Optional.ofNullable(descriptor), compileOptions, candidates);
+        this(Optional.ofNullable(descriptor), compileOptions, candidates, Optional.empty());
+    }
+
+    public GpuRuntimeDevicePolicyContext(
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            List<GpuRuntimeDeviceProfile> candidates,
+            Optional<IrGpuArtifact> irGpuArtifact
+    ) {
+        this(Optional.ofNullable(descriptor), compileOptions, candidates, irGpuArtifact);
     }
 
     public static GpuRuntimeDevicePolicyContext fromRequest(GpuRuntimeCompileRequest request) {
@@ -34,7 +47,8 @@ public record GpuRuntimeDevicePolicyContext(
         return new GpuRuntimeDevicePolicyContext(
                 Optional.of(value.descriptor()),
                 value.options(),
-                List.of(value.deviceProfile())
+                List.of(value.deviceProfile()),
+                value.irGpuArtifact()
         );
     }
 
@@ -42,7 +56,7 @@ public record GpuRuntimeDevicePolicyContext(
             GpuRuntimeCompileOptions compileOptions,
             List<GpuRuntimeDeviceProfile> candidates
     ) {
-        return new GpuRuntimeDevicePolicyContext(Optional.empty(), compileOptions, candidates);
+        return new GpuRuntimeDevicePolicyContext(Optional.empty(), compileOptions, candidates, Optional.empty());
     }
 
     public static String deviceKey(GpuRuntimeDeviceProfile profile) {

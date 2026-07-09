@@ -16,6 +16,8 @@ Use these in source code that should compile to GPU code.
 - `@GPUGlobal`, `@GPUConstant`, and `@GPULocal` choose the OpenCL address space for array or pointer-like parameters.
 - `@GPUWorkGroupSize` declares a portable required work-group size for the kernel.
 - `@GPUOptimize` records method-level optimizer policy such as `fastMath`; the default remains strict.
+- `@GPUDeviceConstraint` restricts a method to supported backends, vendors, device classes, and required runtime features.
+- `@GPUFallbackVariant` groups ABI-compatible implementations that runtime may choose for different devices.
 - `@GPUStruct` marks a Java class as a value type that can be marshalled to OpenCL struct layout.
 - `@CCode` marks a reusable helper method that should be emitted as GPU helper code.
 - `@CCodeLibrary` groups reusable helper methods.
@@ -33,6 +35,46 @@ static void kernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
+
+Use a device constraint when a method requires specific hardware capabilities:
+
+```java
+@GPU
+@GPUDeviceConstraint(
+        vendors = {GpuVendorTarget.NVIDIA, GpuVendorTarget.AMD},
+        deviceClasses = {GpuDeviceClassTarget.DGPU},
+        requiredFeatures = {"fp64"}
+)
+static void doubleKernel(@GPUGlobal double[] output) {
+    output[GPU.get_global_id(0)] = 1.0;
+}
+```
+
+If no discovered device satisfies the constraint, runtime selection throws `GpuRuntimeDeviceSelectionException` before kernel compilation.
+
+Use fallback variants when the same logical operation needs different implementations for dGPU and iGPU devices:
+
+```java
+@GPU
+@GPUFallbackVariant(group = "noise", id = "dgpu", priority = 100)
+@GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.DGPU})
+static void noiseDiscrete(@GPUGlobal float[] output) {
+    output[GPU.get_global_id(0)] = expensiveScalarPath();
+}
+
+@GPU
+@GPUFallbackVariant(group = "noise", id = "igpu", priority = 10)
+@GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.IGPU})
+static void noiseIntegrated(@GPUGlobal float[] output) {
+    output[GPU.get_global_id(0)] = memoryFriendlyPath();
+}
+```
+
+All methods in a fallback group must have the same parameter count, Java parameter types, and GPU access modes. Runtime first chooses the best compatible device, then uses variant priority and stable ids as tie-breakers. Explicit device overrides remain mandatory constraints. An active OpenCL scope does not switch to another device; create a new scope/backend when a later call requires different hardware.
+
+Fallback variants may live in another library or Gradle module. The annotation processor generates a `GpuRuntimeMethodVariantProvider` and `META-INF/services` registration for every owner that declares fallback variants. Runtime discovers those providers through the generated launcher's classloader, so a dependency JAR can contribute another implementation without the application importing or calling that implementation directly. Conflicting group/variant ids fail closed.
+
+When using strict named JPMS modules, add an explicit `provides GpuRuntimeMethodVariantProvider with ...` bridge if the generated service resource is not visible through the module layer. Normal classpath and automatic-module usage requires no additional configuration.
 
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
 
@@ -121,7 +163,25 @@ Common calls:
 - `GpuRuntime.invoke(...)` for descriptor-based direct invocation.
 - `GpuExecutionConfig.oneDimensional(...)`, `twoDimensional(...)`, and `threeDimensional(...)` for explicit launch sizes.
 - Generated launcher methods for normal `@GPU` calls.
+- Automatic method-variant selection for generated launchers that declare `@GPUFallbackVariant`.
 - `GpuRuntimeCompileOptions.openClIrGpuSourceReview(...)` for opt-in reconstructed-`IrGpu` source smoke/review runs without changing the production default source path.
+
+Runtime failures share the public `GpuRuntimeException` base type. Catch a specific subtype when recovery depends on the phase, or catch the base type for a general CPU/backend fallback:
+
+```java
+try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+    DemoKernel.transform(input, output);
+} catch (GpuRuntimeDeviceSelectionException exception) {
+    CpuFallback.transform(input, output);
+} catch (GpuRuntimeException exception) {
+    System.err.println(exception.diagnosticText());
+    CpuFallback.transform(input, output);
+}
+```
+
+Important subtypes include `GpuRuntimeMethodVariantSelectionException`, `GpuRuntimeBackendUnavailableException`, `GpuRuntimeCompileOptionsException`, `GpuRuntimeInvocationException`, `GpuRuntimeCapabilityException`, `GpuRuntimeKernelCompilationException`, and `GpuRuntimeKernelExecutionException`. Every structured exception exposes `code()`, `phase()`, `summary()`, `context()`, `diagnosticText()`, and the original `getCause()`.
+
+Build-time call-site indexes let `diagnosticText()` point at the exact Java expression that invoked a local or dependency-provided `@GPU` method. The same `GpuRuntimeDiagnosticContext` keeps the GPU method location, selected backend/device, compile arguments, and optimization profile. Bytecode rewriting preserves the caller's original `try/catch` region, so the fallback example above remains valid after the annotated method body is replaced with its generated launcher invocation.
 
 ## Programmatic Compiler API
 

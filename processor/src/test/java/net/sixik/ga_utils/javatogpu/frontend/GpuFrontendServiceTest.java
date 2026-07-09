@@ -1,5 +1,10 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactParser;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactSerializer;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
@@ -267,6 +272,85 @@ class GpuFrontendServiceTest {
         assertEquals("input", descriptor.parameterDescriptors().get(0).name());
         assertEquals("float[]", descriptor.parameterDescriptors().get(0).javaType());
         assertEquals(GpuKernelParameterAccess.READ_WRITE, descriptor.parameterDescriptors().get(0).access());
+    }
+
+    @Test
+    void persistsGpuDeviceConstraintThroughIrGpuRoundTrip() {
+        String methodSource = """
+                @GPU
+                @GPUDeviceConstraint(
+                    backends = {GpuBackendTarget.OPENCL},
+                    vendors = {GpuVendorTarget.NVIDIA},
+                    deviceClasses = {GpuDeviceClassTarget.DGPU},
+                    requiredFeatures = {"fp64", "images"}
+                )
+                void kernel(@GPUGlobal double[] output) {
+                    output[0] = 1.0;
+                }
+                """;
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        ParsedGpuMethod kernelMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertEquals(1, result.irGpuArtifact().methodDeviceConstraints().size());
+        var constraint = result.irGpuArtifact().entryDeviceConstraint().orElseThrow();
+        assertEquals(List.of(GpuBackendTarget.OPENCL), constraint.supportedBackends());
+        assertEquals(List.of(GpuVendorTarget.NVIDIA), constraint.supportedVendors());
+        assertEquals(List.of(GpuDeviceClassTarget.DGPU), constraint.supportedDeviceClasses());
+        assertEquals(List.of("fp64", "images"), constraint.requiredFeatures());
+        assertEquals("GPUDeviceConstraint", constraint.source());
+
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        var reparsed = IrGpuArtifactParser.parse(manifest).entryDeviceConstraint().orElseThrow();
+        assertEquals(constraint, reparsed);
+        assertTrue(manifest.contains("methodDeviceConstraint.0.vendor.0=NVIDIA"));
+        assertTrue(manifest.contains("methodDeviceConstraint.0.requiredFeature.1=images"));
+    }
+
+    @Test
+    void persistsGpuFallbackVariantThroughIrGpuRoundTrip() {
+        String methodSource = """
+                @GPU
+                @GPUFallbackVariant(
+                    group = "noise-sample",
+                    id = "dgpu-fast",
+                    priority = 120,
+                    compatibilityNote = "Prefer discrete GPUs"
+                )
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        ParsedGpuMethod kernelMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        var variant = result.irGpuArtifact().entryFallbackVariant().orElseThrow();
+        assertEquals("noise-sample", variant.groupId());
+        assertEquals("dgpu-fast", variant.variantId());
+        assertEquals(120, variant.priority());
+        assertEquals("Prefer discrete GPUs", variant.compatibilityNote());
+
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        var reparsed = IrGpuArtifactParser.parse(manifest).entryFallbackVariant().orElseThrow();
+        assertEquals(variant, reparsed);
+        assertTrue(manifest.contains("methodFallbackVariant.0.groupId=noise-sample"));
+        assertTrue(manifest.contains("methodFallbackVariant.0.variantId=dgpu-fast"));
+        assertTrue(manifest.contains("methodFallbackVariant.0.priority=120"));
     }
 
     @Test

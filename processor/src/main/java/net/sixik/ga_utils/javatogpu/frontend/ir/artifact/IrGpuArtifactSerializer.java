@@ -17,6 +17,8 @@ public final class IrGpuArtifactSerializer {
         writeValidationMetadata(properties, artifact.validationMetadata());
         writeFeatureMetadata(properties, artifact.featureMetadata());
         writeOptimizerPolicyMetadata(properties, artifact.optimizerPolicyMetadata());
+        writeMethodDeviceConstraints(properties, artifact.methodDeviceConstraints());
+        writeMethodFallbackVariants(properties, artifact.methodFallbackVariants());
         writeRegenerationMetadata(properties, artifact.regenerationMetadata());
         writeStructMetadata(properties, artifact.structMetadata());
         writeConstants(properties, artifact.constants());
@@ -81,6 +83,56 @@ public final class IrGpuArtifactSerializer {
                         methodBody.helperDependencies().get(dependencyIndex)
                 );
             }
+        }
+    }
+
+    private static void writeMethodDeviceConstraints(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuMethodDeviceConstraint> constraints
+    ) {
+        java.util.List<IrGpuMethodDeviceConstraint> values = constraints == null ? java.util.List.of() : constraints;
+        properties.put("methodDeviceConstraint.count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuMethodDeviceConstraint constraint = values.get(index);
+            String prefix = "methodDeviceConstraint." + index + ".";
+            properties.put(prefix + "methodName", constraint.methodName());
+            properties.put(prefix + "emittedName", constraint.emittedName());
+            properties.put(prefix + "source", constraint.source());
+            writeStringList(
+                    properties,
+                    prefix + "backend",
+                    constraint.supportedBackends().stream().map(Enum::name).toList()
+            );
+            writeStringList(
+                    properties,
+                    prefix + "vendor",
+                    constraint.supportedVendors().stream().map(Enum::name).toList()
+            );
+            writeStringList(
+                    properties,
+                    prefix + "deviceClass",
+                    constraint.supportedDeviceClasses().stream().map(Enum::name).toList()
+            );
+            writeStringList(properties, prefix + "requiredFeature", constraint.requiredFeatures());
+        }
+    }
+
+    private static void writeMethodFallbackVariants(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuMethodFallbackVariant> variants
+    ) {
+        java.util.List<IrGpuMethodFallbackVariant> values = variants == null ? java.util.List.of() : variants;
+        properties.put("methodFallbackVariant.count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuMethodFallbackVariant variant = values.get(index);
+            String prefix = "methodFallbackVariant." + index + ".";
+            properties.put(prefix + "methodName", variant.methodName());
+            properties.put(prefix + "emittedName", variant.emittedName());
+            properties.put(prefix + "groupId", variant.groupId());
+            properties.put(prefix + "variantId", variant.variantId());
+            properties.put(prefix + "priority", Integer.toString(variant.priority()));
+            properties.put(prefix + "compatibilityNote", variant.compatibilityNote());
+            properties.put(prefix + "source", variant.source());
         }
     }
 

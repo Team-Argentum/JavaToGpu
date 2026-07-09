@@ -407,6 +407,32 @@ public final class GpuRuntime {
         ));
     }
 
+    /**
+     * Invokes one generated method with its deterministic runtime fallback variants.
+     *
+     * <p>The backend receives every descriptor and selects a compatible method/device pair before compilation. This
+     * method is intentionally shaped as one universal generated-launcher entry point so future execution configuration
+     * and backend options do not require another fallback-specific overload family.</p>
+     */
+    public static void invokeVariantsFromGeneratedLauncher(
+            Class<?> launcherClass,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            List<GpuKernelDescriptor> fallbackDescriptors,
+            Object... arguments
+    ) {
+        ClassLoader classLoader = launcherClass == null ? null : launcherClass.getClassLoader();
+        backend.invoke(new GpuKernelInvocation(
+                descriptor,
+                arguments,
+                executionConfig,
+                compileOptions,
+                classLoader,
+                fallbackDescriptors
+        ));
+    }
+
     private static GpuKernelInvocation withLauncherClassLoader(
             Class<?> launcherClass,
             GpuKernelInvocation invocation

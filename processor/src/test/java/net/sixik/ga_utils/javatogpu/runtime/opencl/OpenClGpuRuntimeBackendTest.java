@@ -42,13 +42,22 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceOverride;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelectionException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendUnavailableException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCapabilityException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSiteResolver;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptionsException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationProofArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInvocationException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeKernelCompilationException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeKernelExecutionException;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -114,6 +123,72 @@ class OpenClGpuRuntimeBackendTest {
         backend.invoke(new GpuKernelInvocation(intOutputDescriptor(), new Object[]{new int[]{0}}));
 
         assertSame(selection, capturedSnapshot.get().deviceSelection().orElseThrow());
+    }
+
+    @Test
+    void activeSessionRejectsRequestThatRequiresAnotherDevice() {
+        GpuRuntimeDeviceProfile nvidia = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-0",
+                "NVIDIA RTX",
+                "NVIDIA",
+                "driver",
+                "OpenCL 3.0",
+                GpuDeviceClassTarget.DGPU,
+                48L,
+                8L * 1024L * 1024L * 1024L,
+                65_536L,
+                512L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceProfile amd = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-1",
+                "AMD Radeon",
+                "AMD",
+                "driver",
+                "OpenCL 3.0",
+                GpuDeviceClassTarget.DGPU,
+                32L,
+                8L * 1024L * 1024L * 1024L,
+                65_536L,
+                512L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceSelection activeSelection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                        List.of(nvidia, amd)
+                )
+        );
+        OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(new AtomicReference<>()) {
+            @Override
+            protected Optional<GpuRuntimeDeviceSelection> runtimeDeviceSelection() {
+                return Optional.of(activeSelection);
+            }
+        };
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .withDeviceOverride(GpuRuntimeDeviceOverride.byVendor("AMD"));
+
+        GpuRuntimeDeviceSelectionException exception = assertThrows(
+                GpuRuntimeDeviceSelectionException.class,
+                () -> backend.invoke(new GpuKernelInvocation(
+                        intOutputDescriptor(),
+                        new Object[]{new int[]{0}},
+                        options
+                ))
+        );
+
+        assertTrue(exception.getMessage().contains("create a new runtime scope/backend instance"));
+        assertEquals("AMD Radeon", exception.selection().selectedDevice().orElseThrow().deviceLabel());
     }
 
     @Test
@@ -646,8 +721,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        GpuRuntimeCompileOptionsException exception = assertThrows(
+                GpuRuntimeCompileOptionsException.class,
                 () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}, compileOptions))
         );
 
@@ -695,8 +770,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        GpuRuntimeCompileOptionsException exception = assertThrows(
+                GpuRuntimeCompileOptionsException.class,
                 () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}, compileOptions))
         );
 
@@ -749,8 +824,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        GpuRuntimeCompileOptionsException exception = assertThrows(
+                GpuRuntimeCompileOptionsException.class,
                 () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}, compileOptions))
         );
 
@@ -796,8 +871,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        GpuRuntimeCompileOptionsException exception = assertThrows(
+                GpuRuntimeCompileOptionsException.class,
                 () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}, compileOptions))
         );
 
@@ -1952,8 +2027,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        UnsupportedOperationException exception = org.junit.jupiter.api.Assertions.assertThrows(
-                UnsupportedOperationException.class,
+        GpuRuntimeInvocationException exception = org.junit.jupiter.api.Assertions.assertThrows(
+                GpuRuntimeInvocationException.class,
                 () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[0]))
         );
 
@@ -2275,8 +2350,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        GpuRuntimeInvocationException exception = assertThrows(
+                GpuRuntimeInvocationException.class,
                 () -> backend.invoke(new GpuKernelInvocation(
                         descriptor,
                         new Object[]{new float[]{1.0f, 2.0f}, new float[]{0.0f}}
@@ -2314,8 +2389,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        GpuRuntimeInvocationException exception = assertThrows(
+                GpuRuntimeInvocationException.class,
                 () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new Object[]{new Object()}}))
         );
 
@@ -2350,8 +2425,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        UnsupportedOperationException exception = assertThrows(
-                UnsupportedOperationException.class,
+        GpuRuntimeCapabilityException exception = assertThrows(
+                GpuRuntimeCapabilityException.class,
                 () -> backend.invoke(new GpuKernelInvocation(
                         descriptor,
                         new Object[]{new double[]{1.0d}, new double[]{0.0d}}
@@ -2393,8 +2468,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        UnsupportedOperationException exception = assertThrows(
-                UnsupportedOperationException.class,
+        GpuRuntimeCapabilityException exception = assertThrows(
+                GpuRuntimeCapabilityException.class,
                 () -> backend.invoke(new GpuKernelInvocation(
                         descriptor,
                         new Object[]{Image2DReadOnly.borrowed(1L, 1, 1), Sampler.borrowed(2L), new int[]{0}}
@@ -2436,8 +2511,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        UnsupportedOperationException exception = assertThrows(
-                UnsupportedOperationException.class,
+        GpuRuntimeCapabilityException exception = assertThrows(
+                GpuRuntimeCapabilityException.class,
                 () -> backend.invoke(new GpuKernelInvocation(
                         descriptor,
                         new Object[]{Image3DReadOnly.borrowed(1L, 1, 1, 1), Image3DWriteOnly.borrowed(2L, 1, 1, 1), Sampler.borrowed(3L), new int[]{0}}
@@ -2477,8 +2552,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        UnsupportedOperationException exception = assertThrows(
-                UnsupportedOperationException.class,
+        GpuRuntimeCapabilityException exception = assertThrows(
+                GpuRuntimeCapabilityException.class,
                 () -> backend.invoke(new GpuKernelInvocation(
                         descriptor,
                         new Object[]{new float[]{1.0f, 2.0f, 3.0f}, new float[]{0.0f}}
@@ -2510,8 +2585,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        UnsupportedOperationException exception = org.junit.jupiter.api.Assertions.assertThrows(
-                UnsupportedOperationException.class,
+        GpuRuntimeBackendUnavailableException exception = org.junit.jupiter.api.Assertions.assertThrows(
+                GpuRuntimeBackendUnavailableException.class,
                 () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new float[]{1.0f}}))
         );
 
@@ -2520,7 +2595,7 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
-    void formatsKernelBuildFailuresWithKernelAndDeviceContext() {
+    void formatsKernelBuildFailuresWithKernelAndDeviceContext() throws java.io.IOException {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
                 "javatogpu/sample/Demo/kernel.cl",
@@ -2542,20 +2617,38 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new float[]{0.0f}}))
-        );
+        String expression = "GpuShowcase.basicMath(input, output)";
+        GpuRuntimeKernelCompilationException exception;
+        try (URLClassLoader callSiteClassLoader = callSiteClassLoader(
+                "formatsKernelBuildFailuresWithKernelAndDeviceContext",
+                expression
+        )) {
+            exception = assertThrows(
+                    GpuRuntimeKernelCompilationException.class,
+                    () -> backend.invoke(new GpuKernelInvocation(
+                            descriptor,
+                            new Object[]{new float[]{0.0f}}
+                    ).withArtifactClassLoader(callSiteClassLoader))
+            );
+        }
 
         assertTrue(exception.getMessage().contains(
                 "OpenCL kernel build failed for kernel kernel on device Fake GPU [javatogpu/sample/Demo/kernel.cl]: driver build log: unknown type name 'half16'"
         ));
         assertTrue(exception.getMessage().contains("enable ABI debug"));
         assertTrue(exception.getMessage().contains("Device-Quirks.md"));
+        assertEquals("JTG-RUNTIME-COMPILE-001", exception.code());
+        assertTrue(exception.diagnosticText().startsWith("error[JTG-RUNTIME-COMPILE-001]:"));
+        assertTrue(exception.diagnosticText().contains("--> OpenClGpuRuntimeBackendTest.java:1:1"));
+        assertEquals("kernel", exception.context().kernelName());
+        assertEquals("Fake GPU", exception.context().deviceLabel());
+        assertEquals("compiler-index", exception.context().callSite().source());
+        assertEquals(expression, exception.context().callSite().expression());
+        assertTrue(exception.diagnosticText().contains(expression));
     }
 
     @Test
-    void formatsKernelExecutionFailuresWithKernelAndDeviceContext() {
+    void formatsKernelExecutionFailuresWithKernelAndDeviceContext() throws java.io.IOException {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
                 "javatogpu/sample/Demo/kernel.cl",
@@ -2582,15 +2675,30 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
 
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new float[]{0.0f}}))
-        );
+        String expression = "GpuShowcase.basicMath(input, output)";
+        GpuRuntimeKernelExecutionException exception;
+        try (URLClassLoader callSiteClassLoader = callSiteClassLoader(
+                "formatsKernelExecutionFailuresWithKernelAndDeviceContext",
+                expression
+        )) {
+            exception = assertThrows(
+                    GpuRuntimeKernelExecutionException.class,
+                    () -> backend.invoke(new GpuKernelInvocation(
+                            descriptor,
+                            new Object[]{new float[]{0.0f}}
+                    ).withArtifactClassLoader(callSiteClassLoader))
+            );
+        }
 
         assertTrue(exception.getMessage().contains(
                 "OpenCL kernel execution failed for kernel kernel on device Fake GPU: clEnqueueNDRangeKernel failed: CL_OUT_OF_RESOURCES"
         ));
         assertTrue(exception.getMessage().contains("fallback backend"));
+        assertEquals("JTG-RUNTIME-EXECUTE-001", exception.code());
+        assertTrue(exception.diagnosticText().startsWith("error[JTG-RUNTIME-EXECUTE-001]:"));
+        assertEquals("compiler-index", exception.context().callSite().source());
+        assertEquals(expression, exception.context().callSite().expression());
+        assertTrue(exception.diagnosticText().contains(expression));
     }
 
     @Test
@@ -4110,6 +4218,36 @@ class OpenClGpuRuntimeBackendTest {
                         "EquivalenceStructSample[]",
                         GpuKernelParameterAccess.READ_WRITE
                 ))
+        );
+    }
+
+    private static URLClassLoader callSiteClassLoader(
+            String callerMethodName,
+            String expression
+    ) throws java.io.IOException {
+        Path root = Files.createTempDirectory("javatogpu-runtime-call-site");
+        Path resource = root.resolve(GpuRuntimeCallSiteResolver.resourcePath(
+                OpenClGpuRuntimeBackendTest.class.getName()
+        ));
+        Files.createDirectories(resource.getParent());
+        Files.writeString(resource, String.join("\n",
+                "format=javatogpu.call-sites.v1",
+                "callSite.count=1",
+                "callSite.0.callerClassName=" + OpenClGpuRuntimeBackendTest.class.getName(),
+                "callSite.0.callerMethodName=" + callerMethodName,
+                "callSite.0.sourceName=OpenClGpuRuntimeBackendTest.java",
+                "callSite.0.line=1",
+                "callSite.0.column=1",
+                "callSite.0.endLine=1",
+                "callSite.0.endColumn=" + expression.length(),
+                "callSite.0.expression=" + expression,
+                "callSite.0.targetOwnerName=unknown",
+                "callSite.0.targetMethodName=unknown",
+                ""
+        ));
+        return new URLClassLoader(
+                new URL[]{root.toUri().toURL()},
+                OpenClGpuRuntimeBackendTest.class.getClassLoader()
         );
     }
 

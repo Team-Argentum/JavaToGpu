@@ -3,6 +3,11 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodDeviceConstraint;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -65,6 +70,128 @@ class GpuRuntimeDevicePolicyRegistryTest {
         assertEquals("Small dGPU", selection.selectedDevice().orElseThrow().deviceLabel());
         assertEquals("dgpu", selection.artifactFields("device").get("device.candidate.0.deviceClass"));
         assertTrue(selection.rankedCandidates().get(0).totalScore() > selection.rankedCandidates().get(1).totalScore());
+    }
+
+    @Test
+    void explicitVendorOverrideSelectsMatchingDeviceInsteadOfAutomaticWinner() {
+        GpuRuntimeDeviceProfile integrated = classifiedDevice(
+                "opencl-0",
+                "Intel Arc Integrated",
+                "Intel",
+                GpuDeviceClassTarget.IGPU,
+                8,
+                true
+        );
+        GpuRuntimeDeviceProfile discrete = classifiedDevice(
+                "opencl-1",
+                "NVIDIA RTX",
+                "NVIDIA Corporation",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                false
+        );
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .withDeviceOverride(GpuRuntimeDeviceOverride.byVendor("Intel"));
+
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                new GpuRuntimeDevicePolicyContext(descriptor(), options, List.of(integrated, discrete))
+        );
+
+        assertEquals("Intel Arc Integrated", selection.selectedDevice().orElseThrow().deviceLabel());
+        assertTrue(selection.rankedCandidates().stream()
+                .filter(ranking -> ranking.profile() == discrete)
+                .findFirst()
+                .orElseThrow()
+                .rejected());
+        assertEquals(
+                GpuRuntimeExplicitDeviceOverridePolicy.POLICY_ID,
+                selection.artifactFields("device").get("device.policy.1.policyId")
+        );
+    }
+
+    @Test
+    void unmatchedExplicitOverrideRejectsSelectionFailClosed() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .withDeviceOverride(GpuRuntimeDeviceOverride.byDeviceId("missing-device"));
+
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                new GpuRuntimeDevicePolicyContext(
+                        descriptor(),
+                        options,
+                        List.of(classifiedDevice(
+                                "opencl-0",
+                                "NVIDIA RTX",
+                                "NVIDIA",
+                                GpuDeviceClassTarget.DGPU,
+                                48,
+                                false
+                        ))
+                )
+        );
+
+        assertTrue(selection.selectedDevice().isEmpty());
+        assertEquals("compatible-device-missing", selection.firstBlocker());
+        assertTrue(selection.diagnostics().stream().anyMatch(value -> value.contains("matched no discovered candidates")));
+    }
+
+    @Test
+    void irGpuMethodConstraintRejectsIncompatibleVendorBeforeCompile() {
+        GpuRuntimeDeviceProfile nvidia = classifiedDevice(
+                "opencl-0",
+                "NVIDIA RTX",
+                "NVIDIA",
+                GpuDeviceClassTarget.DGPU,
+                64,
+                false
+        );
+        GpuRuntimeDeviceProfile amd = classifiedDevice(
+                "opencl-1",
+                "AMD Radeon",
+                "AMD",
+                GpuDeviceClassTarget.DGPU,
+                32,
+                false
+        );
+        IrGpuArtifact artifact = constrainedArtifact(new IrGpuMethodDeviceConstraint(
+                "kernel",
+                "jtg_kernel",
+                List.of(GpuBackendTarget.OPENCL),
+                List.of(net.sixik.ga_utils.javatogpu.api.GpuVendorTarget.AMD),
+                List.of(GpuDeviceClassTarget.DGPU),
+                List.of("fp64"),
+                "test"
+        ));
+
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                new GpuRuntimeDevicePolicyContext(
+                        descriptor(),
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                        List.of(nvidia, amd),
+                        java.util.Optional.of(artifact)
+                )
+        );
+
+        assertEquals("AMD Radeon", selection.selectedDevice().orElseThrow().deviceLabel());
+        assertTrue(selection.rankedCandidates().stream()
+                .filter(ranking -> ranking.profile() == nvidia)
+                .findFirst()
+                .orElseThrow()
+                .rejected());
+        assertEquals(
+                GpuRuntimeMethodDeviceConstraintPolicy.POLICY_ID,
+                selection.artifactFields("device").get("device.policy.2.policyId")
+        );
+    }
+
+    @Test
+    void deviceOverrideSurvivesCompileOptionDerivations() {
+        GpuRuntimeDeviceOverride override = GpuRuntimeDeviceOverride.byDeviceLabel("RTX 5070");
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .withDeviceOverride(override)
+                .withProductionPromotionOperatorAccepted(true)
+                .withProductionPromotionDecision(GpuProductionPromotionDecision.diagnosticOnly());
+
+        assertEquals(override, options.deviceOverride());
     }
 
     @Test
@@ -263,5 +390,15 @@ class GpuRuntimeDevicePolicyRegistryTest {
                 return extensionId;
             }
         };
+    }
+
+    private static IrGpuArtifact constrainedArtifact(IrGpuMethodDeviceConstraint constraint) {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule("kernel", "jtg_kernel", List.of(), List.of(), List.of()),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        ).withMethodDeviceConstraints(List.of(constraint));
     }
 }

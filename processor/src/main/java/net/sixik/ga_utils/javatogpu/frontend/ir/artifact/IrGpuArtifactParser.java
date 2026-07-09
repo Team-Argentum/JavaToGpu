@@ -1,5 +1,9 @@
 package net.sixik.ga_utils.javatogpu.frontend.ir.artifact;
 
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -52,8 +56,52 @@ public final class IrGpuArtifactParser {
                 parseConstantData(properties),
                 backendOutputs,
                 properties.getProperty("runtime.defaultBackend", "opencl"),
-                properties.getProperty("runtime.optimizationProfile", "off")
+                properties.getProperty("runtime.optimizationProfile", "off"),
+                parseMethodDeviceConstraints(properties),
+                parseMethodFallbackVariants(properties)
         );
+    }
+
+    private static List<IrGpuMethodFallbackVariant> parseMethodFallbackVariants(Properties properties) {
+        int count = parseInt(properties, "methodFallbackVariant.count", 0);
+        ArrayList<IrGpuMethodFallbackVariant> variants = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "methodFallbackVariant." + index + ".";
+            variants.add(new IrGpuMethodFallbackVariant(
+                    require(properties, prefix + "methodName"),
+                    require(properties, prefix + "emittedName"),
+                    require(properties, prefix + "groupId"),
+                    properties.getProperty(prefix + "variantId", ""),
+                    parseInt(properties, prefix + "priority", 0),
+                    properties.getProperty(prefix + "compatibilityNote", ""),
+                    properties.getProperty(prefix + "source", "GPUFallbackVariant")
+            ));
+        }
+        return List.copyOf(variants);
+    }
+
+    private static List<IrGpuMethodDeviceConstraint> parseMethodDeviceConstraints(Properties properties) {
+        int count = parseInt(properties, "methodDeviceConstraint.count", 0);
+        ArrayList<IrGpuMethodDeviceConstraint> constraints = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "methodDeviceConstraint." + index + ".";
+            constraints.add(new IrGpuMethodDeviceConstraint(
+                    require(properties, prefix + "methodName"),
+                    require(properties, prefix + "emittedName"),
+                    parseIndexedValues(properties, prefix + "backend").stream()
+                            .map(GpuBackendTarget::valueOf)
+                            .toList(),
+                    parseIndexedValues(properties, prefix + "vendor").stream()
+                            .map(GpuVendorTarget::valueOf)
+                            .toList(),
+                    parseIndexedValues(properties, prefix + "deviceClass").stream()
+                            .map(GpuDeviceClassTarget::valueOf)
+                            .toList(),
+                    parseIndexedValues(properties, prefix + "requiredFeature"),
+                    properties.getProperty(prefix + "source", "default-unconstrained")
+            ));
+        }
+        return List.copyOf(constraints);
     }
 
     private static List<IrGpuModuleMethod> parseHelpers(Properties properties) {

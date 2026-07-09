@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuMethodBodyRewriterTest {
@@ -29,6 +30,87 @@ class GpuMethodBodyRewriterTest {
                 "net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal",
                 "net.sixik.ga_utils.javatogpu.api.annotations.GPU"
         );
+    }
+
+    @Test
+    void preservesCallerTryCatchForStructuredRuntimeFailures() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-rewriter-catch-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-rewriter-catch-generated");
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeException;
+
+                public class CatchingDemo {
+                    public static GpuRuntimeException captured;
+
+                    @GPU
+                    public static void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        output[0] = input[0];
+                    }
+
+                    public static boolean run(float[] input, float[] output) {
+                        try {
+                            kernel(input, output);
+                            return false;
+                        } catch (GpuRuntimeException exception) {
+                            captured = exception;
+                            return true;
+                        }
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject("sample.CatchingDemo", source))
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+            assertTrue(task.call());
+        }
+
+        Path ownerClassFile = classOutputDir.resolve("sample/CatchingDemo.class");
+        assertTrue(new GpuMethodBodyRewriter().rewriteClassFile(ownerClassFile));
+
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(invocation -> {
+            throw new GpuRuntimeInvocationException(
+                    "forced structured runtime failure",
+                    GpuRuntimeDiagnosticContext.unknown(),
+                    null
+            );
+        });
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new URL[]{classOutputDir.toUri().toURL()},
+                GpuMethodBodyRewriterTest.class.getClassLoader()
+        )) {
+            Class<?> ownerClass = Class.forName("sample.CatchingDemo", true, classLoader);
+            Object caught = ownerClass.getMethod("run", float[].class, float[].class)
+                    .invoke(null, new float[]{1.0f}, new float[1]);
+
+            assertEquals(Boolean.TRUE, caught);
+            assertInstanceOf(
+                    GpuRuntimeInvocationException.class,
+                    ownerClass.getField("captured").get(null)
+            );
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Failed to verify rewritten caller exception semantics", exception);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
     }
 
     private static void assertRewrittenKernelInvocation(String globalAnnotationImport, String gpuAnnotationName) throws IOException {

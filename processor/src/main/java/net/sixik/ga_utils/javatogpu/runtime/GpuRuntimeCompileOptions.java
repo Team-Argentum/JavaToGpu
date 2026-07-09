@@ -9,7 +9,8 @@ public record GpuRuntimeCompileOptions(
         GpuBackendTarget backendTarget,
         List<String> compileArgs,
         String optimizationProfile,
-        GpuBackendCompileOptions backendOptions
+        GpuBackendCompileOptions backendOptions,
+        GpuRuntimeDeviceOverride deviceOverride
 ) {
 
     public static final String OPENCL_IRGPU_SOURCE_REVIEW_PROFILE = "source-reconstruction-review";
@@ -25,7 +26,23 @@ public record GpuRuntimeCompileOptions(
                 optimizationProfile,
                 backendTarget == GpuBackendTarget.OPENCL
                         ? GpuBackendCompileOptions.openCl(compileArgs)
-                        : GpuBackendCompileOptions.empty(backendTarget)
+                        : GpuBackendCompileOptions.empty(backendTarget),
+                GpuRuntimeDeviceOverride.automatic()
+        );
+    }
+
+    public GpuRuntimeCompileOptions(
+            GpuBackendTarget backendTarget,
+            List<String> compileArgs,
+            String optimizationProfile,
+            GpuBackendCompileOptions backendOptions
+    ) {
+        this(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions,
+                GpuRuntimeDeviceOverride.automatic()
         );
     }
 
@@ -36,6 +53,7 @@ public record GpuRuntimeCompileOptions(
                 ? "off"
                 : optimizationProfile;
         backendOptions = normalizeBackendOptions(backendTarget, compileArgs, backendOptions);
+        deviceOverride = deviceOverride == null ? GpuRuntimeDeviceOverride.automatic() : deviceOverride;
     }
 
     public static GpuRuntimeCompileOptions defaults(GpuBackendTarget backendTarget) {
@@ -81,7 +99,8 @@ public record GpuRuntimeCompileOptions(
                 backendTarget,
                 compileArgs,
                 optimizationProfile,
-                backendOptions.withProductionPromotionDecision(decision)
+                backendOptions.withProductionPromotionDecision(decision),
+                deviceOverride
         );
     }
 
@@ -90,7 +109,18 @@ public record GpuRuntimeCompileOptions(
                 backendTarget,
                 compileArgs,
                 optimizationProfile,
-                backendOptions.withProductionPromotionOperatorAccepted(accepted)
+                backendOptions.withProductionPromotionOperatorAccepted(accepted),
+                deviceOverride
+        );
+    }
+
+    public GpuRuntimeCompileOptions withDeviceOverride(GpuRuntimeDeviceOverride override) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions,
+                override
         );
     }
 

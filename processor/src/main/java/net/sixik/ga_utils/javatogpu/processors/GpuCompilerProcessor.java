@@ -3,9 +3,14 @@ package net.sixik.ga_utils.javatogpu.processors;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import net.sixik.ga_utils.javatogpu.backend.GpuBackendSupport;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import net.sixik.ga_utils.javatogpu.api.GpuAnnotationSupport;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
@@ -51,6 +56,7 @@ import java.io.InputStream;
 import java.io.Writer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -61,34 +67,33 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@SupportedAnnotationTypes({
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPU",
-        "net.sixik.ga_utils.javatogpu.api.annotations.CCode",
-        "net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary",
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic",
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsicLibrary",
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant",
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPUConstantData",
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPUExternConstantData",
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPULocal",
-        "net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct"
-})
+@SupportedAnnotationTypes("*")
 public final class GpuCompilerProcessor extends AbstractProcessor {
 
+    private static final String CALL_SITE_METADATA_PREFIX = "META-INF/javatogpu/call-sites/";
     private static final String HELPER_METADATA_PREFIX = "META-INF/javatogpu/ccode/";
     private static final String HELPER_LIBRARY_INDEX_PATH = HELPER_METADATA_PREFIX + "index.properties";
     private static final String INTRINSIC_METADATA_PREFIX = "META-INF/javatogpu/intrinsics/";
     private static final String INTRINSIC_LIBRARY_INDEX_PATH = INTRINSIC_METADATA_PREFIX + "index.properties";
+    private static final String FALLBACK_VARIANT_PROVIDER_TYPE =
+            "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantProvider";
+    private static final String FALLBACK_VARIANT_SERVICE_PATH = "META-INF/services/" + FALLBACK_VARIANT_PROVIDER_TYPE;
+    private static final List<String> GPU_FALLBACK_VARIANT_ANNOTATIONS = List.of(
+            "net.sixik.ga_utils.javatogpu.api.annotations.GPUFallbackVariant"
+    );
     private static final GpuBackendTarget TARGET_BACKEND = GpuBackendTarget.OPENCL;
 
     private final Set<String> writtenResources = new HashSet<>();
     private final Set<String> writtenLaunchers = new HashSet<>();
     private final Set<String> writtenHelperMetadata = new HashSet<>();
     private final Set<String> writtenIntrinsicMetadata = new HashSet<>();
+    private final Set<String> writtenFallbackVariantProviders = new HashSet<>();
+    private final Set<String> writtenCallSiteMetadata = new HashSet<>();
     private final Map<String, String> exportedHelperLibraries = new LinkedHashMap<>();
     private final Map<String, String> exportedIntrinsicLibraries = new LinkedHashMap<>();
     private final List<GpuIrValidationReportEntry> irValidationReportEntries = new ArrayList<>();
     private boolean irValidationReportWritten;
+    private boolean fallbackVariantServiceWritten;
 
     private Trees trees;
 
@@ -128,6 +133,14 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         collectExportedHelperLibraries(roundEnv);
         collectExportedIntrinsicLibraries(roundEnv);
 
+        try {
+            writeGpuCallSiteMetadata(roundEnv);
+        } catch (IOException exception) {
+            processingEnv.getMessager().printMessage(
+                    Diagnostic.Kind.ERROR,
+                    "Failed to write GPU call-site metadata: " + exception.getMessage()
+            );
+        }
         try {
             writeHelperMetadata(roundEnv);
         } catch (IOException exception) {
@@ -172,7 +185,15 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             }
         }
 
-        for (Element element : elementsAnnotatedWithAny(roundEnv, GPU_ANNOTATIONS)) {
+        Set<? extends Element> gpuElements = elementsAnnotatedWithAny(roundEnv, GPU_ANNOTATIONS);
+        List<ExecutableElement> gpuMethods = gpuElements.stream()
+                .filter(element -> element.getKind() == ElementKind.METHOD)
+                .map(ExecutableElement.class::cast)
+                .toList();
+        if (!validateFallbackGroups(gpuMethods)) {
+            return false;
+        }
+        for (Element element : gpuElements) {
             if (element.getKind() != ElementKind.METHOD) {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "@GPU can only be used on methods", element);
                 continue;
@@ -207,7 +228,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 );
                 String kernelSource = compilationResult.openClSource();
                 writeFrontendArtifacts(method, compilationResult);
-                writeLauncherSource(method, kernelSource);
+                writeLauncherSource(method, kernelSource, gpuMethods);
             } catch (RuntimeException | IOException exception) {
                 processingEnv.getMessager().printMessage(
                         Diagnostic.Kind.ERROR,
@@ -219,7 +240,187 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             }
         }
 
-        return true;
+        try {
+            writeFallbackVariantProviders(gpuMethods);
+        } catch (IOException exception) {
+            processingEnv.getMessager().printMessage(
+                    Diagnostic.Kind.ERROR,
+                    "Failed to write @GPUFallbackVariant providers: " + exception.getMessage()
+            );
+        }
+
+        return false;
+    }
+
+    /**
+     * Indexes Java expressions that invoke GPU methods so runtime failures can point at the original call site.
+     */
+    private void writeGpuCallSiteMetadata(RoundEnvironment roundEnv) throws IOException {
+        Map<String, List<CompileTimeGpuCallSite>> callSitesByCaller = collectGpuCallSites(roundEnv);
+        for (Map.Entry<String, List<CompileTimeGpuCallSite>> entry : callSitesByCaller.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .toList()) {
+            String resourcePath = CALL_SITE_METADATA_PREFIX
+                    + entry.getKey().replace('.', '/')
+                    + ".properties";
+            if (!writtenCallSiteMetadata.add(resourcePath)) {
+                continue;
+            }
+            List<CompileTimeGpuCallSite> callSites = entry.getValue().stream()
+                    .sorted(Comparator
+                            .comparing(CompileTimeGpuCallSite::callerMethodName)
+                            .thenComparingInt(CompileTimeGpuCallSite::line)
+                            .thenComparingInt(CompileTimeGpuCallSite::column)
+                            .thenComparing(CompileTimeGpuCallSite::targetOwnerName)
+                            .thenComparing(CompileTimeGpuCallSite::targetMethodName))
+                    .toList();
+            String content = buildGpuCallSiteMetadata(callSites);
+            Element origin = callSites.get(0).callerOwner();
+            Writer sourceOutputWriter = processingEnv.getFiler()
+                    .createResource(StandardLocation.SOURCE_OUTPUT, "", resourcePath, origin)
+                    .openWriter();
+            Writer classOutputWriter = processingEnv.getFiler()
+                    .createResource(StandardLocation.CLASS_OUTPUT, "", resourcePath, origin)
+                    .openWriter();
+            try (Writer writer = new TeeWriter(sourceOutputWriter, classOutputWriter)) {
+                writer.write(content);
+            }
+        }
+    }
+
+    private Map<String, List<CompileTimeGpuCallSite>> collectGpuCallSites(RoundEnvironment roundEnv) {
+        Map<String, List<CompileTimeGpuCallSite>> callSitesByCaller = new LinkedHashMap<>();
+        SourcePositions sourcePositions = trees.getSourcePositions();
+        for (Element rootElement : roundEnv.getRootElements()) {
+            TreePath rootPath = trees.getPath(rootElement);
+            if (rootPath == null) {
+                continue;
+            }
+            CompilationUnitTree compilationUnit = rootPath.getCompilationUnit();
+            new TreePathScanner<Void, Void>() {
+                @Override
+                public Void visitMethodInvocation(MethodInvocationTree invocation, Void unused) {
+                    TreePath invocationPath = getCurrentPath();
+                    Element targetElement = trees.getElement(invocationPath);
+                    if (targetElement instanceof ExecutableElement targetMethod
+                            && hasAnyAnnotation(targetMethod, GPU_ANNOTATIONS)) {
+                        CompileTimeGpuCallSite callSite = toGpuCallSite(
+                                invocationPath,
+                                compilationUnit,
+                                sourcePositions,
+                                targetMethod
+                        );
+                        if (callSite != null) {
+                            callSitesByCaller.computeIfAbsent(
+                                    callSite.callerClassName(),
+                                    ignored -> new ArrayList<>()
+                            ).add(callSite);
+                        }
+                    }
+                    return super.visitMethodInvocation(invocation, unused);
+                }
+            }.scan(rootPath, null);
+        }
+        return callSitesByCaller;
+    }
+
+    private CompileTimeGpuCallSite toGpuCallSite(
+            TreePath invocationPath,
+            CompilationUnitTree compilationUnit,
+            SourcePositions sourcePositions,
+            ExecutableElement targetMethod
+    ) {
+        ExecutableElement callerMethod = null;
+        TypeElement callerOwner = null;
+        for (TreePath current = invocationPath.getParentPath(); current != null; current = current.getParentPath()) {
+            Element element = trees.getElement(current);
+            if (callerMethod == null
+                    && current.getLeaf() instanceof MethodTree
+                    && element instanceof ExecutableElement executableElement) {
+                callerMethod = executableElement;
+            }
+            if (element instanceof TypeElement typeElement) {
+                callerOwner = typeElement;
+                break;
+            }
+        }
+        if (callerMethod == null || callerOwner == null) {
+            return null;
+        }
+
+        long startPosition = sourcePositions.getStartPosition(compilationUnit, invocationPath.getLeaf());
+        long endPosition = sourcePositions.getEndPosition(compilationUnit, invocationPath.getLeaf());
+        if (startPosition == Diagnostic.NOPOS || endPosition == Diagnostic.NOPOS) {
+            return null;
+        }
+        long inclusiveEndPosition = Math.max(startPosition, endPosition - 1L);
+        TypeElement targetOwner = targetMethod.getEnclosingElement() instanceof TypeElement typeElement
+                ? typeElement
+                : null;
+        return new CompileTimeGpuCallSite(
+                processingEnv.getElementUtils().getBinaryName(callerOwner).toString(),
+                callerMethod.getSimpleName().toString(),
+                sourceFileName(compilationUnit),
+                toPositionInt(compilationUnit.getLineMap().getLineNumber(startPosition)),
+                toPositionInt(compilationUnit.getLineMap().getColumnNumber(startPosition)),
+                toPositionInt(compilationUnit.getLineMap().getLineNumber(inclusiveEndPosition)),
+                toPositionInt(compilationUnit.getLineMap().getColumnNumber(inclusiveEndPosition)),
+                invocationPath.getLeaf().toString(),
+                targetOwner == null ? "unknown" : targetOwner.getQualifiedName().toString(),
+                targetMethod.getSimpleName().toString(),
+                callerOwner
+        );
+    }
+
+    private String buildGpuCallSiteMetadata(List<CompileTimeGpuCallSite> callSites) {
+        StringBuilder builder = new StringBuilder();
+        appendProperty(builder, "format", "javatogpu.call-sites.v1");
+        appendProperty(builder, "callSite.count", Integer.toString(callSites.size()));
+        for (int index = 0; index < callSites.size(); index++) {
+            CompileTimeGpuCallSite callSite = callSites.get(index);
+            String prefix = "callSite." + index + ".";
+            appendProperty(builder, prefix + "callerClassName", callSite.callerClassName());
+            appendProperty(builder, prefix + "callerMethodName", callSite.callerMethodName());
+            appendProperty(builder, prefix + "sourceName", callSite.sourceName());
+            appendProperty(builder, prefix + "line", Integer.toString(callSite.line()));
+            appendProperty(builder, prefix + "column", Integer.toString(callSite.column()));
+            appendProperty(builder, prefix + "endLine", Integer.toString(callSite.endLine()));
+            appendProperty(builder, prefix + "endColumn", Integer.toString(callSite.endColumn()));
+            appendProperty(builder, prefix + "expression", callSite.expression());
+            appendProperty(builder, prefix + "targetOwnerName", callSite.targetOwnerName());
+            appendProperty(builder, prefix + "targetMethodName", callSite.targetMethodName());
+        }
+        return builder.toString();
+    }
+
+    private String sourceFileName(CompilationUnitTree compilationUnit) {
+        String name = compilationUnit.getSourceFile() == null
+                ? "unknown"
+                : compilationUnit.getSourceFile().getName();
+        int slashIndex = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        return slashIndex < 0 ? name : name.substring(slashIndex + 1);
+    }
+
+    private int toPositionInt(long position) {
+        if (position < 0L || position > Integer.MAX_VALUE) {
+            return -1;
+        }
+        return (int) position;
+    }
+
+    private record CompileTimeGpuCallSite(
+            String callerClassName,
+            String callerMethodName,
+            String sourceName,
+            int line,
+            int column,
+            int endLine,
+            int endColumn,
+            String expression,
+            String targetOwnerName,
+            String targetMethodName,
+            TypeElement callerOwner
+    ) {
     }
 
     private void registerAnnotatedTypes(ExecutableElement method) {
@@ -1495,7 +1696,11 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         }
     }
 
-    private void writeLauncherSource(ExecutableElement method, String kernelSource) throws IOException {
+    private void writeLauncherSource(
+            ExecutableElement method,
+            String kernelSource,
+            List<ExecutableElement> gpuMethods
+    ) throws IOException {
         String packageName = buildLauncherPackageName(method);
         String className = buildLauncherClassName(method);
         String qualifiedName = packageName + "." + className;
@@ -1503,14 +1708,20 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
             return;
         }
 
-        String launcherSource = buildLauncherSource(method, kernelSource, packageName, className);
+        String launcherSource = buildLauncherSource(method, kernelSource, packageName, className, gpuMethods);
         FileObject sourceFile = processingEnv.getFiler().createSourceFile(qualifiedName, method);
         try (Writer writer = sourceFile.openWriter()) {
             writer.write(launcherSource);
         }
     }
 
-    private String buildLauncherSource(ExecutableElement method, String kernelSource, String packageName, String className) {
+    private String buildLauncherSource(
+            ExecutableElement method,
+            String kernelSource,
+            String packageName,
+            String className,
+            List<ExecutableElement> gpuMethods
+    ) {
         String resourcePath = buildResourcePath(method);
         String irGpuResourcePath = buildIrGpuResourcePath(method);
         String parameterSignature = method.getParameters().stream()
@@ -1519,6 +1730,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String returnType = method.getReturnType().toString();
         String parameterDescriptors = method.getParameters().stream()
                 .map(this::toParameterDescriptorSource)
+                .collect(Collectors.joining(",\n                    "));
+        String fallbackDescriptors = fallbackMethodsFor(method, gpuMethods).stream()
+                .map(this::toFallbackDescriptorSource)
                 .collect(Collectors.joining(",\n                    "));
 
         return "package " + packageName + ";\n\n"
@@ -1537,6 +1751,10 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + (parameterDescriptors.isEmpty() ? "" : "                    " + parameterDescriptors + "\n")
                 + "                    )\n"
                 + "            );\n\n"
+                + "    public static final java.util.List<net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor> KERNEL_FALLBACK_DESCRIPTORS =\n"
+                + "            java.util.List.of(\n"
+                + (fallbackDescriptors.isEmpty() ? "" : "                    " + fallbackDescriptors + "\n")
+                + "            );\n\n"
                 + "    private " + className + "() {\n"
                 + "    }\n\n"
                 + "    public static String kernelSource() {\n"
@@ -1551,6 +1769,251 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + emitExplicitWorkSizeCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicitExecutionConfigCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicit3DWorkSizeLauncher(method, parameterSignature)
+                + "}\n";
+    }
+
+    private List<ExecutableElement> fallbackMethodsFor(
+            ExecutableElement method,
+            List<ExecutableElement> gpuMethods
+    ) {
+        String groupId = readStringAnnotationValue(
+                method,
+                GPU_FALLBACK_VARIANT_ANNOTATIONS,
+                "group",
+                ""
+        ).trim();
+        if (groupId.isBlank()) {
+            return List.of();
+        }
+        return gpuMethods.stream()
+                .filter(candidate -> candidate != method)
+                .filter(candidate -> groupId.equals(readStringAnnotationValue(
+                        candidate,
+                        GPU_FALLBACK_VARIANT_ANNOTATIONS,
+                        "group",
+                        ""
+                ).trim()))
+                .sorted(java.util.Comparator
+                        .comparingInt((ExecutableElement candidate) -> readIntAnnotationValue(
+                                candidate,
+                                GPU_FALLBACK_VARIANT_ANNOTATIONS,
+                                "priority",
+                                0
+                        )).reversed()
+                        .thenComparing(this::fallbackVariantId)
+                        .thenComparing(this::buildResourcePath))
+                .toList();
+    }
+
+    private boolean validateFallbackGroups(List<ExecutableElement> gpuMethods) {
+        LinkedHashMap<String, List<ExecutableElement>> groups = new LinkedHashMap<>();
+        boolean valid = true;
+        for (ExecutableElement method : gpuMethods) {
+            if (!hasAnyAnnotation(method, GPU_FALLBACK_VARIANT_ANNOTATIONS)) {
+                continue;
+            }
+            String groupId = readStringAnnotationValue(
+                    method,
+                    GPU_FALLBACK_VARIANT_ANNOTATIONS,
+                    "group",
+                    ""
+            ).trim();
+            if (groupId.isBlank()) {
+                processingEnv.getMessager().printMessage(
+                        Diagnostic.Kind.ERROR,
+                        "@GPUFallbackVariant group must not be blank",
+                        method
+                );
+                valid = false;
+                continue;
+            }
+            groups.computeIfAbsent(groupId, ignored -> new ArrayList<>()).add(method);
+        }
+
+        for (Map.Entry<String, List<ExecutableElement>> entry : groups.entrySet()) {
+            List<ExecutableElement> variants = entry.getValue();
+            ExecutableElement reference = variants.get(0);
+            LinkedHashMap<String, ExecutableElement> variantIds = new LinkedHashMap<>();
+            for (ExecutableElement variant : variants) {
+                String variantId = fallbackVariantId(variant);
+                ExecutableElement previous = variantIds.putIfAbsent(variantId, variant);
+                if (previous != null) {
+                    processingEnv.getMessager().printMessage(
+                            Diagnostic.Kind.ERROR,
+                            "Duplicate @GPUFallbackVariant id '" + variantId + "' in group '" + entry.getKey() + "'",
+                            variant
+                    );
+                    valid = false;
+                }
+                String mismatch = fallbackAbiMismatch(reference, variant);
+                if (!mismatch.isBlank()) {
+                    processingEnv.getMessager().printMessage(
+                            Diagnostic.Kind.ERROR,
+                            "@GPUFallbackVariant group '" + entry.getKey() + "' has incompatible launch ABI: " + mismatch,
+                            variant
+                    );
+                    valid = false;
+                }
+            }
+        }
+        return valid;
+    }
+
+    private String fallbackAbiMismatch(ExecutableElement reference, ExecutableElement candidate) {
+        if (!reference.getReturnType().toString().equals(candidate.getReturnType().toString())) {
+            return "return type " + candidate.getReturnType() + " does not match " + reference.getReturnType();
+        }
+        if (reference.getParameters().size() != candidate.getParameters().size()) {
+            return "parameter count " + candidate.getParameters().size()
+                    + " does not match " + reference.getParameters().size();
+        }
+        for (int index = 0; index < reference.getParameters().size(); index++) {
+            VariableElement expected = reference.getParameters().get(index);
+            VariableElement actual = candidate.getParameters().get(index);
+            String expectedType = launcherParameterType(expected.asType());
+            String actualType = launcherParameterType(actual.asType());
+            if (!expectedType.equals(actualType)) {
+                return "parameter " + index + " type " + actualType + " does not match " + expectedType;
+            }
+            String expectedAccess = resolveParameterAccess(expected);
+            String actualAccess = resolveParameterAccess(actual);
+            if (!expectedAccess.equals(actualAccess)) {
+                return "parameter " + index + " access " + actualAccess + " does not match " + expectedAccess;
+            }
+        }
+        return "";
+    }
+
+    private String fallbackVariantId(ExecutableElement method) {
+        String variantId = readStringAnnotationValue(
+                method,
+                GPU_FALLBACK_VARIANT_ANNOTATIONS,
+                "id",
+                ""
+        ).trim();
+        return variantId.isBlank() ? method.getSimpleName().toString() : variantId;
+    }
+
+    private String toFallbackDescriptorSource(ExecutableElement method) {
+        String parameterDescriptors = method.getParameters().stream()
+                .map(this::toParameterDescriptorSource)
+                .collect(Collectors.joining(", "));
+        return "new net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor("
+                + toJavaStringLiteral(OpenClKernelNaming.toEntryPointName(method.getSimpleName().toString())) + ", "
+                + toJavaStringLiteral(buildResourcePath(method)) + ", "
+                + "\"\", "
+                + toJavaStringLiteral(buildIrGpuResourcePath(method)) + ", "
+                + "java.util.List.of(" + parameterDescriptors + ")"
+                + ")";
+    }
+
+    private void writeFallbackVariantProviders(List<ExecutableElement> gpuMethods) throws IOException {
+        LinkedHashMap<String, List<ExecutableElement>> methodsByProvider = new LinkedHashMap<>();
+        for (ExecutableElement method : gpuMethods) {
+            if (!hasAnyAnnotation(method, GPU_FALLBACK_VARIANT_ANNOTATIONS)) {
+                continue;
+            }
+            String qualifiedName = buildFallbackProviderQualifiedName(method);
+            methodsByProvider.computeIfAbsent(qualifiedName, ignored -> new ArrayList<>()).add(method);
+        }
+        if (methodsByProvider.isEmpty()) {
+            return;
+        }
+
+        ArrayList<String> providerNames = new ArrayList<>();
+        for (Map.Entry<String, List<ExecutableElement>> entry : methodsByProvider.entrySet()) {
+            String qualifiedName = entry.getKey();
+            if (!writtenFallbackVariantProviders.add(qualifiedName)) {
+                providerNames.add(qualifiedName);
+                continue;
+            }
+            List<ExecutableElement> methods = entry.getValue().stream()
+                    .sorted(java.util.Comparator
+                            .comparing((ExecutableElement method) -> readStringAnnotationValue(
+                                    method,
+                                    GPU_FALLBACK_VARIANT_ANNOTATIONS,
+                                    "group",
+                                    ""
+                            ))
+                            .thenComparing(this::fallbackVariantId)
+                            .thenComparing(this::buildResourcePath))
+                    .toList();
+            FileObject sourceFile = processingEnv.getFiler().createSourceFile(
+                    qualifiedName,
+                    methods.toArray(Element[]::new)
+            );
+            try (Writer writer = sourceFile.openWriter()) {
+                writer.write(buildFallbackProviderSource(qualifiedName, methods));
+            }
+            providerNames.add(qualifiedName);
+        }
+
+        if (!fallbackVariantServiceWritten) {
+            fallbackVariantServiceWritten = true;
+            FileObject serviceFile = processingEnv.getFiler().createResource(
+                    StandardLocation.CLASS_OUTPUT,
+                    "",
+                    FALLBACK_VARIANT_SERVICE_PATH,
+                    gpuMethods.toArray(Element[]::new)
+            );
+            try (Writer writer = serviceFile.openWriter()) {
+                providerNames.stream().sorted().forEach(providerName -> {
+                    try {
+                        writer.write(providerName);
+                        writer.write('\n');
+                    } catch (IOException exception) {
+                        throw new java.io.UncheckedIOException(exception);
+                    }
+                });
+            } catch (java.io.UncheckedIOException exception) {
+                throw exception.getCause();
+            }
+        }
+    }
+
+    private String buildFallbackProviderQualifiedName(ExecutableElement method) {
+        return buildLauncherPackageName(method) + "." + buildFallbackProviderClassName(method);
+    }
+
+    private String buildFallbackProviderClassName(ExecutableElement method) {
+        List<String> ownerNames = collectOwnerNames(method);
+        ownerNames.add("GpuFallbackVariantProvider");
+        return String.join("_", ownerNames);
+    }
+
+    private String buildFallbackProviderSource(
+            String qualifiedName,
+            List<ExecutableElement> methods
+    ) {
+        int separator = qualifiedName.lastIndexOf('.');
+        String packageName = qualifiedName.substring(0, separator);
+        String className = qualifiedName.substring(separator + 1);
+        TypeElement owner = (TypeElement) methods.get(0).getEnclosingElement();
+        String registrations = methods.stream()
+                .map(method -> "new net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantRegistration("
+                        + toJavaStringLiteral(readStringAnnotationValue(
+                        method,
+                        GPU_FALLBACK_VARIANT_ANNOTATIONS,
+                        "group",
+                        ""
+                ).trim()) + ", "
+                        + toJavaStringLiteral(fallbackVariantId(method)) + ", "
+                        + toFallbackDescriptorSource(method)
+                        + ")")
+                .collect(Collectors.joining(",\n                    "));
+        return "package " + packageName + ";\n\n"
+                + "public final class " + className
+                + " implements net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantProvider {\n"
+                + "    @Override\n"
+                + "    public String providerId() {\n"
+                + "        return " + toJavaStringLiteral("generated:" + owner.getQualifiedName()) + ";\n"
+                + "    }\n\n"
+                + "    @Override\n"
+                + "    public java.util.List<net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantRegistration> variants() {\n"
+                + "        return java.util.List.of(\n"
+                + (registrations.isEmpty() ? "" : "                    " + registrations + "\n")
+                + "        );\n"
+                + "    }\n"
                 + "}\n";
     }
 
@@ -1648,9 +2111,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 .collect(Collectors.joining(", "));
 
         if ("void".equals(method.getReturnType().toString())) {
-            return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+            return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeVariantsFromGeneratedLauncher("
                     + buildLauncherClassName(method)
-                    + ".class, KERNEL_DESCRIPTOR"
+                    + ".class, null, null, KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
                     + (arguments.isEmpty() ? "" : ", " + arguments)
                     + ");\n";
         }
@@ -1662,9 +2125,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeVariantsFromGeneratedLauncher("
                 + buildLauncherClassName(method)
-                + ".class, globalWorkSize, KERNEL_DESCRIPTOR"
+                + ".class, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(globalWorkSize), null, KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1673,9 +2136,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncher("
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeVariantsFromGeneratedLauncher("
                 + buildLauncherClassName(method)
-                + ".class, executionConfig, KERNEL_DESCRIPTOR"
+                + ".class, executionConfig, null, KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1684,9 +2147,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeVariantsFromGeneratedLauncher("
                 + buildLauncherClassName(method)
-                + ".class, compileOptions, KERNEL_DESCRIPTOR"
+                + ".class, null, compileOptions, KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1695,9 +2158,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeVariantsFromGeneratedLauncher("
                 + buildLauncherClassName(method)
-                + ".class, globalWorkSize, compileOptions, KERNEL_DESCRIPTOR"
+                + ".class, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(globalWorkSize), compileOptions, KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
@@ -1706,9 +2169,9 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
                 .collect(Collectors.joining(", "));
-        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeFromGeneratedLauncherWithCompileOptions("
+        return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeVariantsFromGeneratedLauncher("
                 + buildLauncherClassName(method)
-                + ".class, executionConfig, compileOptions, KERNEL_DESCRIPTOR"
+                + ".class, executionConfig, compileOptions, KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }
