@@ -94,6 +94,23 @@ class GpuMethodParserTest {
     }
 
     @Test
+    void parsesPortableWorkGroupSizeAsOpenClAttribute() {
+        String methodSource = """
+                @GPUWorkGroupSize(x = 8, y = 4, z = 2)
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(1, method.openClAttributes().size());
+        assertEquals("reqd_work_group_size(8, 4, 2)", method.openClAttributes().get(0));
+    }
+
+    @Test
     void parsesConstantAndLocalAddressSpaces() {
         String methodSource = """
                 @GPU

@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.frontend.parser;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.expr.LiteralStringValueExpr;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.expr.TextBlockLiteralExpr;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -13,6 +14,7 @@ import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class GpuMethodParser {
@@ -61,7 +63,7 @@ public final class GpuMethodParser {
                 List.copyOf(constantData),
                 declaration,
                 parseInlineFlag(declaration),
-                GpuStructParser.parseOpenClAttributes(declaration.getAnnotations()),
+                parseOpenClAttributes(declaration),
                 parseNativeCode(declaration),
                 parseAnnotationStringValue(declaration, "support"),
                 parseAnnotationStringValue(declaration, "callback"),
@@ -93,6 +95,45 @@ public final class GpuMethodParser {
                 constant,
                 GpuStructParser.parseStringListAnnotation(parameter.getAnnotations(), "OpenCLQualifiers", "OpenCLQualifiers")
         );
+    }
+
+    private List<String> parseOpenClAttributes(MethodDeclaration declaration) {
+        List<String> attributes = new ArrayList<>(GpuStructParser.parseOpenClAttributes(declaration.getAnnotations()));
+        parseWorkGroupSizeAttribute(declaration).ifPresent(attributes::add);
+        return List.copyOf(attributes);
+    }
+
+    private java.util.Optional<String> parseWorkGroupSizeAttribute(MethodDeclaration declaration) {
+        return declaration.getAnnotationByName("GPUWorkGroupSize")
+                .map(this::workGroupSizeAttribute);
+    }
+
+    private String workGroupSizeAttribute(AnnotationExpr annotation) {
+        int x = parseIntAnnotationValue(annotation, "x", 1, "GPUWorkGroupSize");
+        int y = parseIntAnnotationValue(annotation, "y", 1, "GPUWorkGroupSize");
+        int z = parseIntAnnotationValue(annotation, "z", 1, "GPUWorkGroupSize");
+        if (x <= 0 || y <= 0 || z <= 0) {
+            throw new IllegalArgumentException("GPUWorkGroupSize dimensions must be positive integers");
+        }
+        return "reqd_work_group_size(" + x + ", " + y + ", " + z + ")";
+    }
+
+    private int parseIntAnnotationValue(AnnotationExpr annotation, String propertyName, int defaultValue, String errorLabel) {
+        if (!annotation.isNormalAnnotationExpr()) {
+            return defaultValue;
+        }
+        return annotation.asNormalAnnotationExpr().getPairs().stream()
+                .filter(pair -> pair.getNameAsString().equals(propertyName))
+                .findFirst()
+                .map(pair -> parsePositiveIntLiteral(pair.getValue(), errorLabel + "." + propertyName))
+                .orElse(defaultValue);
+    }
+
+    private int parsePositiveIntLiteral(com.github.javaparser.ast.expr.Expression expression, String errorLabel) {
+        if (expression.isIntegerLiteralExpr()) {
+            return expression.asIntegerLiteralExpr().asInt();
+        }
+        throw new IllegalArgumentException(errorLabel + " must be an integer literal: " + expression);
     }
 
     private GpuAddressSpace resolveAddressSpace(boolean isGlobal, boolean isConstantAddressSpace, boolean isLocal) {

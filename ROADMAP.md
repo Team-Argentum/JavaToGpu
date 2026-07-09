@@ -528,7 +528,24 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
 - [x] Add runtime-facing production-promotion decision states.
   `GpuProductionPromotionDecision` translates production-promotion explainability into the small set of runtime-facing modes needed by the future production IR pipeline: `diagnostic-only`, `review-ready`, and `production-enabled`. Generated explainability artifacts now include `decision.*` fields so runtime and CI callers can consume the promotion mode directly instead of reinterpreting every gate field.
 
-#### I3.7 Storage and cache model
+#### I3.7 Public extension hooks and third-party integration SPI
+
+- [ ] Define a stable extension registry for compiler/runtime hooks.
+  JavaToGpu should expose deliberate SPI entrypoints instead of forcing companies or downstream libraries to fork the compiler for custom validation, optimization, device policy, diagnostics, or backend integration. The registry should discover extensions through a controlled mechanism such as `ServiceLoader`, assign each extension a stable id/version/capability set, and record loaded extensions in build/runtime artifacts so CI can explain which third-party logic participated in a compile.
+- [ ] Split extension hooks by pipeline phase and permission level.
+  Hooks should be explicit about what they are allowed to do: read-only validation, diagnostic reporting, IR optimization proposal, backend lowering contribution, device-selection policy, runtime-equivalence executor, promotion gate, or artifact writer. Read-only hooks may run broadly, while mutating hooks must require an optimizer profile, proof artifacts, rollback support, and production-promotion acceptance before they can affect selected IR or backend source.
+- [ ] Add extension safety contracts and fail-closed behavior.
+  A faulty third-party extension must not silently corrupt generated code. Extension failures should be isolated, reported with Rust-like diagnostics where possible, and downgraded or rejected according to the active strictness profile. Production-like profiles should fail closed when a required extension is missing, incompatible, throws unexpectedly, emits invalid metadata, or proposes a mutation without accepted runtime-equivalence/proof evidence.
+- [ ] Allow third-party validators to extend the existing IR Validator model.
+  The current optional `ir-validation` module proves the shape: downstream libraries should be able to add extra IR rules, domain-specific restrictions, company coding standards, backend compatibility checks, and optimizer proof checks without patching the core processor. Reports should merge extension diagnostics into the same summary/properties surfaces while preserving extension ids, rule ids, severity, source anchors, and first-blocking diagnostic fields.
+- [ ] Allow third-party optimizer and peephole passes without core forks.
+  External libraries should be able to contribute `GpuRuntimeIrOptimizationPass` / peephole-style rules for domain-specific patterns, but only as proof-producing proposals. The runtime optimizer must keep original/optimized/selected IR identities, extension pass reports, rollback reasons, and runtime-equivalence evidence so custom passes remain reviewable and cannot bypass the same promotion gates as built-in passes.
+- [ ] Allow third-party backend/device policy modules.
+  Future CUDA/Vulkan/Metal/vendor-specific work should not require all policy to live in core. Extensions should be able to contribute device ranking hints, vendor quirks, capability detectors, backend lowerer support, compile-option validation, and method-compatibility policies. Core runtime should still own deterministic conflict resolution, user overrides, artifact reporting, and fail-closed production promotion.
+- [ ] Persist extension participation in `IrGpu` and runtime artifacts.
+  `kernel.irgpu.properties`, runtime compile snapshots, optimizer drift artifacts, promotion gates, and validation history should record extension ids, versions, phases, decisions, diagnostics, and whether each extension was advisory or production-affecting. This keeps generated artifacts auditable when a project depends on company-specific plugins or third-party GPU libraries.
+
+#### I3.8 Storage and cache model
 
 - [x] Replace descriptor-only runtime compile cache identity with compile-request-aware keys.
   Cache identity now includes descriptor metadata, compile options, optimizer profile, target device profile, and lowered backend module artifact identity so backend/optimizer variants do not collide.
