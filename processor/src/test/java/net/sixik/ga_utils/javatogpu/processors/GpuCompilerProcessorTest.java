@@ -117,6 +117,8 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("feature.required.count=0"));
         assertTrue(irGpuManifest.contains("feature.optional.count=1"));
         assertTrue(irGpuManifest.contains("feature.optional.0=opencl-source-compat"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.fastMath=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.source=default-strict"));
         assertTrue(irGpuManifest.contains("regeneration.backendNeutralSourceReady=false"));
         assertTrue(irGpuManifest.contains("regeneration.payloadFormat=ir-text-v1"));
         assertTrue(irGpuManifest.contains("regeneration.fallbackSource=derived-opencl-source"));
@@ -160,6 +162,8 @@ class GpuCompilerProcessorTest {
         assertFalse(irGpuArtifact.validationMetadata().optimizerEvidenceRequired());
         assertTrue(irGpuArtifact.featureMetadata().requiredFeatures().isEmpty());
         assertEquals(List.of("opencl-source-compat"), irGpuArtifact.featureMetadata().optionalFeatures());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().fastMath());
+        assertEquals("default-strict", irGpuArtifact.optimizerPolicyMetadata().source());
         assertFalse(irGpuArtifact.regenerationMetadata().backendNeutralSourceReady());
         assertEquals("ir-text-v1", irGpuArtifact.regenerationMetadata().payloadFormat());
         assertEquals("derived-opencl-source", irGpuArtifact.regenerationMetadata().fallbackSource());
@@ -303,6 +307,60 @@ class GpuCompilerProcessorTest {
         } finally {
             GpuRuntime.setBackend(previousBackend);
         }
+    }
+
+    @Test
+    void generatedIrGpuManifestPreservesFastMathOptimizerPolicy() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-fast-math-policy-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-fast-math-policy-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUOptimize;
+
+                public class Demo {
+                    @GPUOptimize(fastMath = true)
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = input[id] * 2.0f + 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("optimizerPolicy.fastMath=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.source=GPUOptimize"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertTrue(irGpuArtifact.optimizerPolicyMetadata().fastMath());
+        assertEquals("GPUOptimize", irGpuArtifact.optimizerPolicyMetadata().source());
     }
 
     @Test

@@ -13,6 +13,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
@@ -277,6 +278,7 @@ public final class GpuFrontendService {
                 buildLaunchMetadata(compiledKernel),
                 IrGpuValidationMetadata.frontendSubset(),
                 buildFeatureMetadata(compiledKernel),
+                buildOptimizerPolicyMetadata(compiledKernel),
                 IrGpuRegenerationMetadata.transitionalIrText(),
                 buildStructMetadata(structs),
                 buildConstantMetadata(compiledKernel, helperMethods, structs),
@@ -336,6 +338,20 @@ public final class GpuFrontendService {
             }
         }
         return new IrGpuFeatureMetadata(requiredFeatures, List.of("opencl-source-compat"));
+    }
+
+    private static IrGpuOptimizerPolicyMetadata buildOptimizerPolicyMetadata(GpuIrCompiledMethod compiledKernel) {
+        return compiledKernel.parsedMethod().declaration().getAnnotationByName("GPUOptimize")
+                .map(annotation -> {
+                    boolean fastMath = annotation.isNormalAnnotationExpr()
+                            && annotation.asNormalAnnotationExpr().getPairs().stream()
+                            .filter(pair -> pair.getNameAsString().equals("fastMath"))
+                            .findFirst()
+                            .map(pair -> Boolean.parseBoolean(pair.getValue().toString()))
+                            .orElse(false);
+                    return IrGpuOptimizerPolicyMetadata.fromGpuOptimize(fastMath);
+                })
+                .orElseGet(IrGpuOptimizerPolicyMetadata::defaultStrict);
     }
 
     private static List<IrGpuStructMetadata> buildStructMetadata(List<ParsedGpuStruct> structs) {

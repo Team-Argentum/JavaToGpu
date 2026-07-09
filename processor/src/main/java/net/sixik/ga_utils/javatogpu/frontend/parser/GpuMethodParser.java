@@ -93,8 +93,18 @@ public final class GpuMethodParser {
                 parameter.getTypeAsString(),
                 resolveAddressSpace(isGlobal, isConstantAddressSpace, isLocal),
                 constant,
-                GpuStructParser.parseStringListAnnotation(parameter.getAnnotations(), "OpenCLQualifiers", "OpenCLQualifiers")
+                parseOpenClQualifiers(parameter)
         );
+    }
+
+    private List<String> parseOpenClQualifiers(Parameter parameter) {
+        List<String> qualifiers = new ArrayList<>(GpuStructParser.parseStringListAnnotation(
+                parameter.getAnnotations(),
+                "OpenCLQualifiers",
+                "OpenCLQualifiers"
+        ));
+        qualifiers.addAll(GpuStructParser.parseGpuAttributesForOpenCl(parameter.getAnnotations()));
+        return List.copyOf(qualifiers);
     }
 
     private List<String> parseOpenClAttributes(MethodDeclaration declaration) {

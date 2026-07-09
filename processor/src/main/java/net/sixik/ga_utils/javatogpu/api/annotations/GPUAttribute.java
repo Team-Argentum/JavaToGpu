@@ -5,6 +5,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -32,6 +33,7 @@ import java.lang.annotation.Target;
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.FIELD, ElementType.METHOD, ElementType.PARAMETER})
+@Repeatable(GPUAttributes.class)
 public @interface GPUAttribute {
 
     /**

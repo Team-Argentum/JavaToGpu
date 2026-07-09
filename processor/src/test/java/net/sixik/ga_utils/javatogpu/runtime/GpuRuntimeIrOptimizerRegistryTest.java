@@ -249,6 +249,40 @@ class GpuRuntimeIrOptimizerRegistryTest {
     }
 
     @Test
+    void optimizationRequestExposesFastMathPolicyFromIrGpuArtifact() {
+        IrGpuArtifact fastMathArtifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry("kernel", "jtg_kernel", "body\n  return original\n", List.of()))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+
+        GpuRuntimeIrOptimizationRequest request = request(fastMathArtifact);
+        GpuRuntimeIrOptimizationRequest missingArtifactRequest = new GpuRuntimeIrOptimizationRequest(
+                request.compileRequest().withIrGpuArtifact(Optional.empty()),
+                Optional.empty()
+        );
+
+        assertTrue(request.fastMathEnabled());
+        assertEquals("GPUOptimize", request.optimizerPolicy().source());
+        assertFalse(missingArtifactRequest.fastMathEnabled());
+        assertEquals("default-strict", missingArtifactRequest.optimizerPolicy().source());
+    }
+
+    @Test
     void defaultVendorStrategiesStayAdvisoryUntilEvidenceBacked() {
         assertAdvisoryVendorStrategy(
                 "NVIDIA Corporation",

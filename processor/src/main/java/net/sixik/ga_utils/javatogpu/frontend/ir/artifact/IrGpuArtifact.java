@@ -9,6 +9,7 @@ public record IrGpuArtifact(
         IrGpuLaunchMetadata launchMetadata,
         IrGpuValidationMetadata validationMetadata,
         IrGpuFeatureMetadata featureMetadata,
+        IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata,
         IrGpuRegenerationMetadata regenerationMetadata,
         List<IrGpuStructMetadata> structMetadata,
         List<IrGpuConstantMetadata> constants,
@@ -32,6 +33,7 @@ public record IrGpuArtifact(
                 IrGpuLaunchMetadata.defaultOneDimensional(),
                 IrGpuValidationMetadata.frontendSubset(),
                 IrGpuFeatureMetadata.none(),
+                IrGpuOptimizerPolicyMetadata.defaultStrict(),
                 IrGpuRegenerationMetadata.transitionalIrText(),
                 List.of(),
                 List.of(),
@@ -57,6 +59,7 @@ public record IrGpuArtifact(
                 IrGpuLaunchMetadata.defaultOneDimensional(),
                 IrGpuValidationMetadata.frontendSubset(),
                 IrGpuFeatureMetadata.none(),
+                IrGpuOptimizerPolicyMetadata.defaultStrict(),
                 IrGpuRegenerationMetadata.transitionalIrText(),
                 List.of(),
                 List.of(),
@@ -86,10 +89,72 @@ public record IrGpuArtifact(
                 launchMetadata,
                 validationMetadata,
                 featureMetadata,
+                IrGpuOptimizerPolicyMetadata.defaultStrict(),
+                regenerationMetadata,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile
+        );
+    }
+
+    public IrGpuArtifact(
+            IrGpuArtifactHeader header,
+            IrGpuModule module,
+            List<IrGpuEntryParameter> entryParameters,
+            IrGpuLaunchMetadata launchMetadata,
+            IrGpuValidationMetadata validationMetadata,
+            IrGpuFeatureMetadata featureMetadata,
+            IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata,
+            IrGpuRegenerationMetadata regenerationMetadata,
+            List<IrGpuBackendOutput> backendOutputs,
+            String runtimeDefaultBackend,
+            String runtimeOptimizationProfile
+    ) {
+        this(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
                 regenerationMetadata,
                 List.of(),
                 List.of(),
                 List.of(),
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile
+        );
+    }
+
+    public IrGpuArtifact(
+            IrGpuArtifactHeader header,
+            IrGpuModule module,
+            List<IrGpuEntryParameter> entryParameters,
+            IrGpuLaunchMetadata launchMetadata,
+            IrGpuValidationMetadata validationMetadata,
+            IrGpuFeatureMetadata featureMetadata,
+            IrGpuRegenerationMetadata regenerationMetadata,
+            List<IrGpuStructMetadata> structMetadata,
+            List<IrGpuConstantMetadata> constants,
+            List<IrGpuConstantDataMetadata> constantData,
+            List<IrGpuBackendOutput> backendOutputs,
+            String runtimeDefaultBackend,
+            String runtimeOptimizationProfile
+    ) {
+        this(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                IrGpuOptimizerPolicyMetadata.defaultStrict(),
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
                 backendOutputs,
                 runtimeDefaultBackend,
                 runtimeOptimizationProfile
@@ -101,6 +166,9 @@ public record IrGpuArtifact(
         launchMetadata = launchMetadata == null ? IrGpuLaunchMetadata.defaultOneDimensional() : launchMetadata;
         validationMetadata = validationMetadata == null ? IrGpuValidationMetadata.frontendSubset() : validationMetadata;
         featureMetadata = featureMetadata == null ? IrGpuFeatureMetadata.none() : featureMetadata;
+        optimizerPolicyMetadata = optimizerPolicyMetadata == null
+                ? IrGpuOptimizerPolicyMetadata.defaultStrict()
+                : optimizerPolicyMetadata;
         regenerationMetadata = regenerationMetadata == null
                 ? IrGpuRegenerationMetadata.transitionalIrText()
                 : regenerationMetadata;

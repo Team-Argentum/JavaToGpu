@@ -45,6 +45,7 @@ public final class IrGpuArtifactParser {
                 parseLaunchMetadata(properties),
                 parseValidationMetadata(properties),
                 parseFeatureMetadata(properties),
+                parseOptimizerPolicyMetadata(properties),
                 parseRegenerationMetadata(properties),
                 parseStructMetadata(properties),
                 parseConstants(properties),
@@ -194,6 +195,13 @@ public final class IrGpuArtifactParser {
         return new IrGpuFeatureMetadata(
                 parseIndexedValues(properties, "feature.required"),
                 parseIndexedValues(properties, "feature.optional")
+        );
+    }
+
+    private static IrGpuOptimizerPolicyMetadata parseOptimizerPolicyMetadata(Properties properties) {
+        return new IrGpuOptimizerPolicyMetadata(
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.fastMath", "false")),
+                properties.getProperty("optimizerPolicy.source", "default-strict")
         );
     }
 

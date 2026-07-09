@@ -16,6 +16,7 @@ public final class IrGpuArtifactSerializer {
         writeLaunchMetadata(properties, artifact.launchMetadata());
         writeValidationMetadata(properties, artifact.validationMetadata());
         writeFeatureMetadata(properties, artifact.featureMetadata());
+        writeOptimizerPolicyMetadata(properties, artifact.optimizerPolicyMetadata());
         writeRegenerationMetadata(properties, artifact.regenerationMetadata());
         writeStructMetadata(properties, artifact.structMetadata());
         writeConstants(properties, artifact.constants());
@@ -194,6 +195,17 @@ public final class IrGpuArtifactSerializer {
         for (int index = 0; index < metadata.optionalFeatures().size(); index++) {
             properties.put("feature.optional." + index, metadata.optionalFeatures().get(index));
         }
+    }
+
+    private static void writeOptimizerPolicyMetadata(
+            TreeMap<String, String> properties,
+            IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata
+    ) {
+        IrGpuOptimizerPolicyMetadata metadata = optimizerPolicyMetadata == null
+                ? IrGpuOptimizerPolicyMetadata.defaultStrict()
+                : optimizerPolicyMetadata;
+        properties.put("optimizerPolicy.fastMath", Boolean.toString(metadata.fastMath()));
+        properties.put("optimizerPolicy.source", metadata.source());
     }
 
     private static void writeRegenerationMetadata(

@@ -22,10 +22,14 @@ Mark a static method with `@GPU`. Use explicit GPU-facing parameter shapes such 
 ```java
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUOptimize;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSize;
 
 public final class DemoKernel {
 
     @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+    @GPUWorkGroupSize(x = 64)
+    @GPUOptimize(fastMath = false)
     public static void transform(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output
@@ -41,7 +45,10 @@ Keep first kernels simple:
 - `@GPU` entry methods return `void`.
 - Use output arrays or supported output parameters for results.
 - Use `GPU.*` for GPU builtins instead of arbitrary Java library calls.
+- Use portable annotations such as `@GPUWorkGroupSize` and `@GPUOptimize` before raw backend attributes.
 - Avoid object allocation, exceptions, recursion, virtual dispatch, and heap-heavy Java patterns inside kernels.
+
+`@GPUOptimize(fastMath = false)` is the safe default. Use `fastMath = true` only when you explicitly allow future proof-backed optimizer passes to use non-strict floating-point rewrites.
 
 ## 3. Run The Kernel
 

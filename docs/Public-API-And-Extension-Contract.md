@@ -14,10 +14,11 @@ static void kernel(@GPUGlobal float[] output) {
 }
 ```
 
-Use `@GPUAttribute` only when no portable annotation exists yet:
+Use `@GPUAttribute` only when no portable annotation exists yet. It supports repeated usage on the same method, field, type, or parameter:
 
 ```java
 @GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "reqd_work_group_size(8, 8, 1)")
+@GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "vec_type_hint(float4)")
 @GPU
 static void kernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
@@ -35,13 +36,26 @@ For vendor or device-specific metadata, narrow the selector explicitly:
 )
 ```
 
-`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only code, but new backend-specific metadata should prefer `@GPUAttribute`.
+`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only code, but new backend-specific metadata should prefer `@GPUAttribute`. Generic OpenCL emission should not apply vendor/device-specific raw attributes until device-aware lowering is available.
 
 ## Runtime selection
 
 Runtime device selection should be deterministic by default. The runtime should prefer supported discrete GPUs over integrated GPUs or CPU OpenCL devices, apply known-good validation evidence when available, and still allow explicit user overrides for advanced deployments.
 
 ## Optimizer evidence
+
+Method-level optimizer intent should be declared with `@GPUOptimize`. The default is strict floating-point behavior:
+
+```java
+@GPU
+@GPUOptimize(fastMath = false)
+static void strictKernel(@GPUGlobal float[] output) {
+    output[GPU.get_global_id(0)] = 1.0f;
+}
+```
+
+`fastMath = true` only records permission for future proof-backed rewrites. It does not bypass runtime-equivalence,
+rollback, or production-promotion gates.
 
 Any mutating runtime optimizer, peephole pass, vendor rewrite, or third-party optimization hook must produce evidence before it can affect production code:
 

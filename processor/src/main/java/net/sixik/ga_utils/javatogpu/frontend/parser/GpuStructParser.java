@@ -8,10 +8,15 @@ import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.ArrayInitializerExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.NormalAnnotationExpr;
 import com.github.javaparser.ast.expr.LiteralStringValueExpr;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.expr.TextBlockLiteralExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+import net.sixik.ga_utils.javatogpu.backend.GpuBackendSupport;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
@@ -106,7 +111,99 @@ public final class GpuStructParser {
     }
 
     static List<String> parseOpenClAttributes(NodeList<AnnotationExpr> annotations) {
-        return parseStringListAnnotation(annotations, "OpenCLAttributes", "OpenCLAttributes");
+        List<String> attributes = new ArrayList<>(parseStringListAnnotation(
+                annotations,
+                "OpenCLAttributes",
+                "OpenCLAttributes"
+        ));
+        attributes.addAll(parseGpuAttributesForOpenCl(annotations));
+        return List.copyOf(attributes);
+    }
+
+    static List<String> parseGpuAttributesForOpenCl(NodeList<AnnotationExpr> annotations) {
+        ArrayList<String> attributes = new ArrayList<>();
+        for (AnnotationExpr annotation : annotations) {
+            if (annotation.getNameAsString().equals("GPUAttribute")) {
+                if (supportsOpenClAttributeSelector(annotation)) {
+                    attributes.addAll(attributeValues(annotation, "GPUAttribute"));
+                }
+                continue;
+            }
+            if (annotation.getNameAsString().equals("GPUAttributes")) {
+                for (AnnotationExpr nestedAttribute : nestedGpuAttributes(annotation)) {
+                    if (supportsOpenClAttributeSelector(nestedAttribute)) {
+                        attributes.addAll(attributeValues(nestedAttribute, "GPUAttribute"));
+                    }
+                }
+            }
+        }
+        return List.copyOf(attributes);
+    }
+
+    private static List<AnnotationExpr> nestedGpuAttributes(AnnotationExpr annotation) {
+        Expression value = annotation.isSingleMemberAnnotationExpr()
+                ? annotation.asSingleMemberAnnotationExpr().getMemberValue()
+                : annotation.asNormalAnnotationExpr().getPairs().stream()
+                .filter(pair -> pair.getNameAsString().equals("value"))
+                .findFirst()
+                .map(pair -> pair.getValue())
+                .orElseThrow(() -> new IllegalArgumentException("GPUAttributes must declare a value"));
+        if (value instanceof ArrayInitializerExpr arrayInitializerExpr) {
+            return arrayInitializerExpr.getValues().stream()
+                    .map(GpuStructParser::nestedGpuAttribute)
+                    .toList();
+        }
+        return List.of(nestedGpuAttribute(value));
+    }
+
+    private static AnnotationExpr nestedGpuAttribute(Expression expression) {
+        if (expression instanceof NormalAnnotationExpr normalAnnotationExpr
+                && normalAnnotationExpr.getNameAsString().equals("GPUAttribute")) {
+            return normalAnnotationExpr;
+        }
+        throw new IllegalArgumentException("GPUAttributes values must be GPUAttribute annotations: " + expression);
+    }
+
+    private static boolean supportsOpenClAttributeSelector(AnnotationExpr annotation) {
+        if (!annotation.isNormalAnnotationExpr()) {
+            throw new IllegalArgumentException("GPUAttribute must declare backend and value properties");
+        }
+        GpuBackendTarget backend = annotation.asNormalAnnotationExpr().getPairs().stream()
+                .filter(pair -> pair.getNameAsString().equals("backend"))
+                .findFirst()
+                .map(pair -> GpuBackendSupport.parseBackendTarget(pair.getValue()))
+                .orElseThrow(() -> new IllegalArgumentException("GPUAttribute must declare a backend"));
+        GpuVendorTarget vendor = annotation.asNormalAnnotationExpr().getPairs().stream()
+                .filter(pair -> pair.getNameAsString().equals("vendor"))
+                .findFirst()
+                .map(pair -> parseVendorTarget(pair.getValue()))
+                .orElse(GpuVendorTarget.ANY);
+        GpuDeviceClassTarget deviceClass = annotation.asNormalAnnotationExpr().getPairs().stream()
+                .filter(pair -> pair.getNameAsString().equals("deviceClass"))
+                .findFirst()
+                .map(pair -> parseDeviceClassTarget(pair.getValue()))
+                .orElse(GpuDeviceClassTarget.ANY);
+        return backend == GpuBackendTarget.OPENCL
+                && (vendor == GpuVendorTarget.ANY || vendor == GpuVendorTarget.UNKNOWN)
+                && (deviceClass == GpuDeviceClassTarget.ANY || deviceClass == GpuDeviceClassTarget.UNKNOWN);
+    }
+
+    private static GpuVendorTarget parseVendorTarget(Expression expression) {
+        return GpuVendorTarget.valueOf(enumName(expression, "GPU vendor target"));
+    }
+
+    private static GpuDeviceClassTarget parseDeviceClassTarget(Expression expression) {
+        return GpuDeviceClassTarget.valueOf(enumName(expression, "GPU device class target"));
+    }
+
+    private static String enumName(Expression expression, String label) {
+        if (expression.isFieldAccessExpr()) {
+            return expression.asFieldAccessExpr().getNameAsString();
+        }
+        if (expression.isNameExpr()) {
+            return expression.asNameExpr().getNameAsString();
+        }
+        throw new IllegalArgumentException("Unsupported " + label + " expression: " + expression);
     }
 
     static List<String> parseStringListAnnotation(

@@ -14,15 +14,41 @@ Use these in source code that should compile to GPU code.
 
 - `@GPU` marks a static Java method as a GPU kernel entry point.
 - `@GPUGlobal`, `@GPUConstant`, and `@GPULocal` choose the OpenCL address space for array or pointer-like parameters.
+- `@GPUWorkGroupSize` declares a portable required work-group size for the kernel.
+- `@GPUOptimize` records method-level optimizer policy such as `fastMath`; the default remains strict.
 - `@GPUStruct` marks a Java class as a value type that can be marshalled to OpenCL struct layout.
 - `@CCode` marks a reusable helper method that should be emitted as GPU helper code.
 - `@CCodeLibrary` groups reusable helper methods.
 - `@GPUIntrinsic` maps a Java method to a backend intrinsic instead of a normal helper call.
-- `@OpenCLAttributes` and `@OpenCLQualifiers` expose lower-level OpenCL metadata when you need explicit signatures.
+- `@GPUAttribute` is the backend-aware raw escape hatch for metadata JavaToGpu does not model portably yet.
+- `@OpenCLAttributes` and `@OpenCLQualifiers` remain OpenCL-only compatibility annotations for existing code.
+
+Prefer portable annotations first. Use raw attributes only for backend-specific code that cannot be expressed through the normal API.
+
+```java
+@GPU
+@GPUWorkGroupSize(x = 8, y = 8, z = 1)
+@GPUOptimize(fastMath = false)
+static void kernel(@GPUGlobal float[] output) {
+    output[GPU.get_global_id(0)] = 1.0f;
+}
+```
+
+If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
+
+```java
+@GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "vec_type_hint(float4)")
+@GPU
+static void openClOnlyKernel(@GPUGlobal float[] output) {
+    output[GPU.get_global_id(0)] = 1.0f;
+}
+```
 
 ## `GPU.*` Builtins
 
 Use `GPU.*` inside kernels for operations the compiler knows how to lower.
+
+`GPU.*` is intentionally OpenCL-style. Even when CUDA, Vulkan/SPIR-V, or Metal lowerers are added, user code should keep the same `GPU` facade instead of switching to backend-specific Java dialects.
 
 Common groups:
 
