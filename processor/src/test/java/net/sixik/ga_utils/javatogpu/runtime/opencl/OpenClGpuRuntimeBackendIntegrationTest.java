@@ -31,6 +31,11 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestCache;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestMode;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestOutcome;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestProfile;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -49,8 +54,10 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Random;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenClGpuRuntimeBackendIntegrationTest {
@@ -66,6 +73,42 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String IMAGE_KERNEL_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/image-kernel.irgpu.properties";
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
     private static final String DUAL_BUFFER_INT_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/dual-buffer-int-kernel.irgpu.properties";
+
+    @Test
+    void runsRequiredStartupDeviceSelfTestOnAvailableOpenClDevice() {
+        assumeOpenClAvailable();
+        GpuRuntimeDeviceSelfTestCache cache = new GpuRuntimeDeviceSelfTestCache();
+        GpuRuntimeDevicePolicyRegistry registry = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(cache);
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions.defaults(
+                net.sixik.ga_utils.javatogpu.api.GpuBackendTarget.OPENCL
+        ).withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.REQUIRED);
+
+        try (OpenClRuntimeSession session = OpenClRuntimeSession.createDefault(
+                registry,
+                null,
+                compileOptions
+        )) {
+            List<net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestResult> results =
+                    cache.resultsFor(session.deviceProfile());
+            assertEquals(1, results.size());
+            assertEquals(GpuRuntimeDeviceSelfTestOutcome.PASSED, results.get(0).outcome());
+            assertEquals(OpenClRuntimeDeviceSelfTestRunner.RUNNER_ID, results.get(0).identity().runnerId());
+            GpuRuntimeDeviceSelfTestProfile expectedProfile =
+                    GpuRuntimeDeviceSelfTestProfile.forDevice(session.deviceProfile());
+            assertEquals(expectedProfile.profileId(), results.get(0).performance().workloadProfile());
+            assertEquals(expectedProfile.transferModel(), results.get(0).performance().transferModel());
+            assertTrue(results.get(0).performance().available());
+            assertEquals(5, results.get(0).performance().computeSamples().sampleCount());
+            assertEquals(5, results.get(0).performance().transferSamples().sampleCount());
+            assertTrue(results.get(0).performance().computeOperationsPerSecond() > 0L);
+            assertTrue(results.get(0).performance().transferBytesPerSecond() > 0L);
+            Map<String, String> fields = session.deviceSelection().artifactFields("device");
+            assertTrue(fields.values().contains("accepted"));
+            assertTrue(fields.values().stream().anyMatch(value ->
+                    value.endsWith("performance.computeOperationsPerSecond")
+            ));
+        }
+    }
 
     @Test
     void runsGeneratedLauncherHelperPipelineOnAvailableOpenClDevice() throws Exception {

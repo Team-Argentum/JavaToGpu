@@ -34,6 +34,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelectionException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTests;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -103,6 +104,9 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             Optional<IrGpuArtifact> irGpuArtifact
     ) {
         Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
+        GpuRuntimeCompileOptions resolvedCompileOptions = compileOptions == null
+                ? GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                : compileOptions;
         List<OpenClDevice> devices = OpenClDevices.list(CL10.CL_DEVICE_TYPE_ALL);
         if (devices.isEmpty()) {
             throw new IllegalStateException("No OpenCL device found");
@@ -112,11 +116,12 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         for (int index = 0; index < devices.size(); index++) {
             profiles.add(deviceProfile(devices.get(index), index));
         }
+        prepareDeviceSelfTests(devicePolicyRegistry, devices, profiles, resolvedCompileOptions);
         GpuRuntimeDeviceSelection selection = selectDevice(
                 devicePolicyRegistry,
                 profiles,
                 descriptor,
-                compileOptions,
+                resolvedCompileOptions,
                 irGpuArtifact
         );
         int selectedIndex = selectedDeviceIndex(profiles, selection);
@@ -128,6 +133,16 @@ public final class OpenClRuntimeSession implements AutoCloseable {
     }
 
     static List<GpuRuntimeDeviceProfile> discoverDeviceProfiles() {
+        return discoverDeviceProfiles(
+                GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+        );
+    }
+
+    static List<GpuRuntimeDeviceProfile> discoverDeviceProfiles(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
         List<OpenClDevice> devices = OpenClDevices.list(CL10.CL_DEVICE_TYPE_ALL);
         if (devices.isEmpty()) {
             throw new IllegalStateException("No OpenCL device found");
@@ -136,7 +151,29 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         for (int index = 0; index < devices.size(); index++) {
             profiles.add(deviceProfile(devices.get(index), index));
         }
+        prepareDeviceSelfTests(
+                devicePolicyRegistry,
+                devices,
+                profiles,
+                compileOptions == null
+                        ? GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                        : compileOptions
+        );
         return List.copyOf(profiles);
+    }
+
+    private static void prepareDeviceSelfTests(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            List<OpenClDevice> devices,
+            List<GpuRuntimeDeviceProfile> profiles,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        GpuRuntimeDeviceSelfTests.prepare(
+                compileOptions.backendOptions().deviceSelfTestMode(),
+                profiles,
+                new OpenClRuntimeDeviceSelfTestRunner(devices, profiles),
+                devicePolicyRegistry.deviceSelfTestCache()
+        );
     }
 
     static GpuRuntimeDeviceSelection selectDevice(

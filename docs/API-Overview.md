@@ -76,6 +76,28 @@ Fallback variants may live in another library or Gradle module. The annotation p
 
 When using strict named JPMS modules, add an explicit `provides GpuRuntimeMethodVariantProvider with ...` bridge if the generated service resource is not visible through the module layer. Normal classpath and automatic-module usage requires no additional configuration.
 
+## Startup Device Self-Tests
+
+OpenCL can validate discovered devices before final selection. Configure the behavior through `GpuRuntimeCompileOptions`:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.REQUIRED);
+```
+
+- `AUTO` runs the self-test when multiple devices are discovered.
+- `DISABLED` skips self-test execution and cached evidence.
+- `REQUIRED` rejects any candidate without passed correctness evidence.
+
+The runtime chooses smaller workloads for iGPU and CPU OpenCL devices. Unified-memory iGPUs use a separate transfer model, and performance rates are compared only with compatible workload and transfer profiles. Compute and transfer timing are scored independently, so noise in one metric does not erase stable evidence from the other. Use these results for deterministic startup ranking, not as a general benchmark.
+
+## Runtime IR Analysis
+
+The built-in runtime pipeline analyzes typed `IrGpu` before optimization. The first analysis estimates register pressure from parameters, local values, vector widths, private arrays, and expression complexity. It is advisory and does not rewrite code or satisfy production optimizer proof requirements.
+
+When an estimate is close to or above the current device-profile budget, `optimizer-report.txt` contains a diagnostic and `runtime-ir-analysis.properties` contains machine-readable per-method fields. Treat the values as conservative planning evidence until backend compiler register/occupancy reports and real vendor hardware baselines are available.
+
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
 
 ```java
@@ -164,6 +186,7 @@ Common calls:
 - `GpuExecutionConfig.oneDimensional(...)`, `twoDimensional(...)`, and `threeDimensional(...)` for explicit launch sizes.
 - Generated launcher methods for normal `@GPU` calls.
 - Automatic method-variant selection for generated launchers that declare `@GPUFallbackVariant`.
+- `GpuRuntimeCompileOptions.withDeviceSelfTestMode(...)` for `AUTO`, `DISABLED`, or strict `REQUIRED` startup correctness evidence.
 - `GpuRuntimeCompileOptions.openClIrGpuSourceReview(...)` for opt-in reconstructed-`IrGpu` source smoke/review runs without changing the production default source path.
 
 Runtime failures share the public `GpuRuntimeException` base type. Catch a specific subtype when recovery depends on the phase, or catch the base type for a general CPU/backend fallback:
@@ -182,6 +205,8 @@ try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
 Important subtypes include `GpuRuntimeMethodVariantSelectionException`, `GpuRuntimeBackendUnavailableException`, `GpuRuntimeCompileOptionsException`, `GpuRuntimeInvocationException`, `GpuRuntimeCapabilityException`, `GpuRuntimeKernelCompilationException`, and `GpuRuntimeKernelExecutionException`. Every structured exception exposes `code()`, `phase()`, `summary()`, `context()`, `diagnosticText()`, and the original `getCause()`.
 
 Build-time call-site indexes let `diagnosticText()` point at the exact Java expression that invoked a local or dependency-provided `@GPU` method. The same `GpuRuntimeDiagnosticContext` keeps the GPU method location, selected backend/device, compile arguments, and optimization profile. Bytecode rewriting preserves the caller's original `try/catch` region, so the fallback example above remains valid after the annotated method body is replaced with its generated launcher invocation.
+
+When OpenCL discovers multiple devices, the default `AUTO` startup policy runs a small compile/enqueue/readback correctness kernel on each candidate before final selection. Failed devices are rejected; passed evidence is cached by hardware, driver, runtime, runner, and compiler identity. Passed devices also receive bounded compute and host/device transfer measurements. Only trimmed-median samples inside the noise limit affect ranking; noisy measurements remain telemetry. Use `DISABLED` when startup latency matters more than validation, or `REQUIRED` when even a single-device deployment must provide passed evidence.
 
 ## Programmatic Compiler API
 

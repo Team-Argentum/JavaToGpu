@@ -177,6 +177,52 @@ The default optimization profile is `off`. Keep production code on `off` unless 
 
 OpenCL compile options are validated before the runtime touches the device. Supported options include common OpenCL build flags such as `-cl-fast-relaxed-math`, `-cl-mad-enable`, `-cl-opt-disable`, `-cl-std=...`, `-DNAME=VALUE`, and `-Ipath`. Backend-mismatched options fail early with a clear Java exception instead of being ignored by the runtime.
 
+### Startup Device Self-Tests
+
+OpenCL performs a bounded compile, enqueue, and readback correctness smoke before selecting among multiple discovered devices. Passed evidence contributes to deterministic ranking; failed correctness evidence rejects the device before JavaToGpu creates the production OpenCL context.
+
+The default mode is `AUTO`: self-tests run when multiple device candidates are present and are skipped for a single candidate. Override this per invocation when startup latency or strict deployment validation matters:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.REQUIRED);
+```
+
+- `AUTO` - run self-tests for multi-device discovery and reuse cached evidence.
+- `DISABLED` - do not run or apply self-test evidence.
+- `REQUIRED` - require passed evidence for every selectable candidate, including single-device systems.
+
+Evidence is cached for the current process. The identity includes backend, device id/label/vendor, device class, unified-memory topology, driver version, runtime API version, self-test runner id/version, and JavaToGpu compiler identity. Changing any of those values invalidates the old entry.
+
+After correctness passes, OpenCL performs one warm-up plus five measured compute and host/device round-trip samples. JavaToGpu discards the minimum and maximum sample and uses the median of the remaining three. The runtime selects a bounded workload profile from the detected device class:
+
+| Device class | Profile | Compute workload | One-way transfer | Noise limit | Compute / transfer score caps |
+| --- | --- | ---: | ---: | ---: | ---: |
+| dGPU | `dgpu-balanced-v1` | 262,144 items x 128 iterations | 4 MiB | 300 permille | 3,000,000 / 1,000,000 |
+| iGPU | `igpu-unified-v1` or `igpu-conservative-v1` | 131,072 items x 64 iterations | 2 MiB | 400 permille | 2,000,000 / 250,000 |
+| CPU OpenCL | `cpu-opencl-conservative-v1` | 32,768 items x 32 iterations | 1 MiB | 500 permille | 500,000 / 100,000 |
+
+An iGPU with unified memory uses the `unified-memory-round-trip` transfer model. Dedicated, integrated, unified, and host-memory rates are compared only with results from the same transfer model; compute rates are compared only inside the same workload profile. This prevents a small iGPU workload or shared-memory transfer path from being ranked directly against a dGPU-sized workload.
+
+Compute and transfer stability are evaluated independently. Stable compute evidence may still affect ranking when transfer timing is noisy, and the reverse is also true. A noisy metric remains visible in selection artifacts but receives zero score. These measurements are a short startup ranking smoke, not a general GPU benchmark; real Intel/AMD iGPU validation, register-pressure stress, long-running stability, and persistent-cache policies remain roadmap work.
+
+### Register-Pressure Analysis
+
+The default runtime IR pipeline performs an advisory register-pressure analysis before transformation passes. It reads typed `IrGpu` method bodies and estimates the peak number of simultaneously required value slots from:
+
+- kernel and helper parameters;
+- local scalar and vector declarations;
+- private arrays;
+- nested expression evaluation pressure;
+- branches, loops, and switch bodies.
+
+The result uses `LOW`, `MODERATE`, `HIGH`, `CRITICAL`, or `UNAVAILABLE`. Device-class and vendor profiles provide conservative budgets, for example 64 value slots for the initial NVIDIA/AMD dGPU profile and 24 for the initial iGPU profile. These values are planning heuristics, not the physical register count reported by the GPU compiler. Driver compilers may allocate, merge, spill, or eliminate values differently.
+
+High and critical estimates add optimizer diagnostics with the hottest method, estimated value-register count, advisory budget, and suggested reductions such as fewer simultaneously live temporaries, smaller private arrays, narrower vectors, or less unrolling. The analysis never changes the selected IR and never counts as accepted optimizer proof.
+
+Artifact dumps store the complete result in `runtime-ir-analysis.properties`. Per-method fields include parameter, local, private-array, expression-peak, budget, utilization, level, and typed-node counts. Future OpenCL/CUDA/Vulkan/Metal compiler reports can replace the heuristic while keeping this artifact contract stable.
+
 ## Runtime Failures And Fallbacks
 
 All structured runtime failures extend `GpuRuntimeException`. Use the base type when every GPU failure should take the same fallback path:

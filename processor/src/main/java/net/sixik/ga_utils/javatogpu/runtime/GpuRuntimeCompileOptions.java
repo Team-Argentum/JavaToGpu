@@ -53,6 +53,7 @@ public record GpuRuntimeCompileOptions(
                 ? "off"
                 : optimizationProfile;
         backendOptions = normalizeBackendOptions(backendTarget, compileArgs, backendOptions);
+        backendOptions.deviceSelfTestMode();
         deviceOverride = deviceOverride == null ? GpuRuntimeDeviceOverride.automatic() : deviceOverride;
     }
 
@@ -121,6 +122,16 @@ public record GpuRuntimeCompileOptions(
                 optimizationProfile,
                 backendOptions,
                 override
+        );
+    }
+
+    public GpuRuntimeCompileOptions withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode mode) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withDeviceSelfTestMode(mode),
+                deviceOverride
         );
     }
 

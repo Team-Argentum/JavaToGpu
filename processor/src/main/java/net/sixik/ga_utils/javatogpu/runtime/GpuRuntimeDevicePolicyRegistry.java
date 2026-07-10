@@ -25,10 +25,17 @@ public final class GpuRuntimeDevicePolicyRegistry {
 
     private final List<GpuRuntimeDevicePolicy> policies;
     private final GpuExtensionRegistry extensionRegistry;
+    private final GpuRuntimeDeviceSelfTestCache deviceSelfTestCache;
 
     private GpuRuntimeDevicePolicyRegistry(List<GpuRuntimeDevicePolicy> policies) {
         this.policies = List.copyOf(policies);
         validateUniquePolicyIds(this.policies);
+        this.deviceSelfTestCache = this.policies.stream()
+                .filter(GpuRuntimeDeviceSelfTestPolicy.class::isInstance)
+                .map(GpuRuntimeDeviceSelfTestPolicy.class::cast)
+                .map(GpuRuntimeDeviceSelfTestPolicy::cache)
+                .findFirst()
+                .orElseGet(GpuRuntimeDeviceSelfTestCache::shared);
         this.extensionRegistry = GpuExtensionRegistry.of(this.policies);
         this.extensionRegistry.requirePipelineContract(
                 "runtime device policy pipeline",
@@ -43,10 +50,17 @@ public final class GpuRuntimeDevicePolicyRegistry {
     }
 
     public static GpuRuntimeDevicePolicyRegistry loadWithBuiltIns() {
+        return loadWithBuiltIns(GpuRuntimeDeviceSelfTestCache.shared());
+    }
+
+    public static GpuRuntimeDevicePolicyRegistry loadWithBuiltIns(GpuRuntimeDeviceSelfTestCache selfTestCache) {
         ArrayList<GpuRuntimeDevicePolicy> loaded = new ArrayList<>();
         loaded.add(new GpuRuntimeBackendCompatibilityDevicePolicy());
         loaded.add(new GpuRuntimeExplicitDeviceOverridePolicy());
         loaded.add(new GpuRuntimeMethodDeviceConstraintPolicy());
+        loaded.add(new GpuRuntimeDeviceSelfTestPolicy(
+                Objects.requireNonNull(selfTestCache, "selfTestCache")
+        ));
         ServiceLoader.load(GpuRuntimeDevicePolicy.class, GpuRuntimeDevicePolicy.class.getClassLoader())
                 .forEach(loaded::add);
         loaded.sort(Comparator
@@ -144,6 +158,10 @@ public final class GpuRuntimeDevicePolicyRegistry {
 
     public GpuExtensionRegistry extensionRegistry() {
         return extensionRegistry;
+    }
+
+    public GpuRuntimeDeviceSelfTestCache deviceSelfTestCache() {
+        return deviceSelfTestCache;
     }
 
     private static void validateUniquePolicyIds(List<GpuRuntimeDevicePolicy> policies) {

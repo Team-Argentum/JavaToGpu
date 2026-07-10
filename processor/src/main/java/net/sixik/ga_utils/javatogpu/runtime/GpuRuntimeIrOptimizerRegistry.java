@@ -69,6 +69,7 @@ public final class GpuRuntimeIrOptimizerRegistry {
 
     public static GpuRuntimeIrOptimizerRegistry loadFromServiceLoader() {
         java.util.ArrayList<GpuRuntimeIrOptimizationPass> loadedPasses = new java.util.ArrayList<>();
+        loadedPasses.add(new GpuRuntimeRegisterPressureAnalysisPass());
         ServiceLoader.load(GpuRuntimeIrOptimizationPass.class, GpuRuntimeIrOptimizationPass.class.getClassLoader())
                 .forEach(loadedPasses::add);
         ServiceLoader.load(GpuRuntimeIrOptimizer.class, GpuRuntimeIrOptimizer.class.getClassLoader())

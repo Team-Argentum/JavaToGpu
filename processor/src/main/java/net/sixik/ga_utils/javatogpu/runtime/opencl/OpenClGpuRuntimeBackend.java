@@ -511,7 +511,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         List<GpuRuntimeDeviceProfile> profiles = runtimeDeviceSelection()
                 .flatMap(GpuRuntimeDeviceSelection::selectedDevice)
                 .map(List::of)
-                .orElseGet(OpenClRuntimeSession::discoverDeviceProfiles);
+                .orElseGet(() -> OpenClRuntimeSession.discoverDeviceProfiles(
+                        devicePolicyRegistry,
+                        compileOptions
+                ));
         return Optional.of(GpuRuntimeMethodVariantSelector.select(
                 invocation.descriptor(),
                 invocation.fallbackDescriptors(),

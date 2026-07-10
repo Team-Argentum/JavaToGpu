@@ -185,6 +185,10 @@ public record GpuRuntimeIrOptimizationPassReport(
         );
     }
 
+    public boolean analysisOnly() {
+        return "true".equalsIgnoreCase(proofArtifact.fields().getOrDefault("analysisOnly", "false"));
+    }
+
     private static String normalize(String value, String fallback) {
         return value == null || value.isBlank() ? Objects.requireNonNull(fallback, "fallback") : value;
     }

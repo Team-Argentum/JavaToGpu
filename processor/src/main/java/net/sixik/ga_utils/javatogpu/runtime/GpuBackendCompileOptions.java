@@ -23,6 +23,7 @@ public record GpuBackendCompileOptions(
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED = "enabled";
     public static final String PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY = "productionPromotion.decisionMode";
     public static final String PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY = "productionPromotion.operatorAccepted";
+    public static final String RUNTIME_DEVICE_SELF_TEST_PROPERTY = "runtime.deviceSelfTest";
 
     public GpuBackendCompileOptions {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -100,6 +101,10 @@ public record GpuBackendCompileOptions(
         return "true".equals(properties.getOrDefault(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, "false"));
     }
 
+    public GpuRuntimeDeviceSelfTestMode deviceSelfTestMode() {
+        return GpuRuntimeDeviceSelfTestMode.parse(properties.get(RUNTIME_DEVICE_SELF_TEST_PROPERTY));
+    }
+
     public GpuBackendCompileOptions withProductionPromotionDecision(GpuProductionPromotionDecision decision) {
         GpuProductionPromotionDecision normalized = decision == null
                 ? GpuProductionPromotionDecision.diagnosticOnly()
@@ -112,6 +117,13 @@ public record GpuBackendCompileOptions(
     public GpuBackendCompileOptions withProductionPromotionOperatorAccepted(boolean accepted) {
         Map<String, String> updated = new LinkedHashMap<>(properties);
         updated.put(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, Boolean.toString(accepted));
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode mode) {
+        GpuRuntimeDeviceSelfTestMode normalized = mode == null ? GpuRuntimeDeviceSelfTestMode.AUTO : mode;
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(RUNTIME_DEVICE_SELF_TEST_PROPERTY, normalized.optionValue());
         return new GpuBackendCompileOptions(backendTarget, flags, updated);
     }
 

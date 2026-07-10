@@ -147,6 +147,7 @@ public record GpuRuntimeProductionOptimizerGate(
 
     private static boolean hasAcceptedProofEvidence(GpuRuntimeIrOptimizationReport report) {
         return report.passReports().stream()
+                .filter(passReport -> !passReport.analysisOnly())
                 .map(GpuRuntimeIrOptimizationPassReport::proofArtifact)
                 .filter(GpuRuntimeProductionOptimizerGate::hasProofArtifact)
                 .anyMatch(proofArtifact -> isAcceptedVerdict(proofArtifact.verdict()));

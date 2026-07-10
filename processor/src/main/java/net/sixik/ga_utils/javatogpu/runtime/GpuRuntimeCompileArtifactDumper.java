@@ -71,6 +71,10 @@ public final class GpuRuntimeCompileArtifactDumper {
         if (snapshot.optimizationReport().hasReports() || snapshot.productionOptimizerGate().productionProfileRequested()) {
             artifacts.put("optimizer-report.txt", snapshot.optimizationReport().toText());
         }
+        String runtimeIrAnalysis = formatRuntimeIrAnalysis(snapshot.optimizationReport());
+        if (!runtimeIrAnalysis.isBlank()) {
+            artifacts.put("runtime-ir-analysis.properties", runtimeIrAnalysis);
+        }
         if (!snapshot.compileLog().isBlank()) {
             artifacts.put("compile.log", snapshot.compileLog());
         }
@@ -267,6 +271,9 @@ public final class GpuRuntimeCompileArtifactDumper {
     private static String formatOptimizerFamilyEquivalencePayload(GpuRuntimeCompileArtifactSnapshot snapshot) {
         LinkedHashMap<String, OptimizerFamilyPayload> families = new LinkedHashMap<>();
         for (GpuRuntimeIrOptimizationPassReport passReport : snapshot.optimizationReport().passReports()) {
+            if (passReport.analysisOnly()) {
+                continue;
+            }
             String familyName = optimizerFamilyName(passReport);
             OptimizerFamilyPayload existing = families.getOrDefault(familyName, OptimizerFamilyPayload.empty(familyName));
             families.put(familyName, existing.add(passReport));
@@ -327,6 +334,39 @@ public final class GpuRuntimeCompileArtifactDumper {
         }
         builder.append("family.complete.count=").append(completeFamilyCount).append('\n');
         builder.append("family.complete.all=").append(!families.isEmpty() && completeFamilyCount == families.size()).append('\n');
+        return builder.toString();
+    }
+
+    private static String formatRuntimeIrAnalysis(GpuRuntimeIrOptimizationReport report) {
+        List<GpuRuntimeIrOptimizationPassReport> analysisReports = report.passReports().stream()
+                .filter(GpuRuntimeIrOptimizationPassReport::analysisOnly)
+                .toList();
+        if (analysisReports.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("status=recorded\n");
+        builder.append("analysis.count=").append(analysisReports.size()).append('\n');
+        for (int index = 0; index < analysisReports.size(); index++) {
+            GpuRuntimeIrOptimizationPassReport passReport = analysisReports.get(index);
+            String prefix = "analysis." + index + ".";
+            builder.append(prefix).append("passVersion=")
+                    .append(safePropertyValue(passReport.optimizerVersion())).append('\n');
+            builder.append(prefix).append("stage=").append(passReport.stage()).append('\n');
+            builder.append(prefix).append("outcome=").append(passReport.outcome()).append('\n');
+            builder.append(prefix).append("proofStatus=")
+                    .append(safePropertyValue(passReport.proofStatus())).append('\n');
+            builder.append(prefix).append("diagnostic.count=").append(passReport.diagnostics().size()).append('\n');
+            for (int diagnosticIndex = 0; diagnosticIndex < passReport.diagnostics().size(); diagnosticIndex++) {
+                builder.append(prefix).append("diagnostic.").append(diagnosticIndex).append('=')
+                        .append(safePropertyValue(passReport.diagnostics().get(diagnosticIndex))).append('\n');
+            }
+            passReport.proofArtifact().fields().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> builder.append(prefix).append("field.")
+                            .append(safePropertyValue(entry.getKey())).append('=')
+                            .append(safePropertyValue(entry.getValue())).append('\n'));
+        }
         return builder.toString();
     }
 

@@ -64,7 +64,7 @@ public record GpuRuntimeOptimizerDriftArtifact(
         GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
         Map<String, OptimizerFamilyEvidence> optimizerFamilies = optimizerFamilies(report);
         return new GpuRuntimeOptimizerDriftArtifact(
-                report.passReports().size(),
+                optimizationPassCount(report),
                 count(report, GpuRuntimeIrOptimizationOutcome.APPLIED),
                 count(report, GpuRuntimeIrOptimizationOutcome.SKIPPED),
                 count(report, GpuRuntimeIrOptimizationOutcome.ROLLED_BACK),
@@ -86,6 +86,12 @@ public record GpuRuntimeOptimizerDriftArtifact(
                 gate.status(),
                 gate.productionProfileRequested()
         );
+    }
+
+    private static int optimizationPassCount(GpuRuntimeIrOptimizationReport report) {
+        return (int) report.passReports().stream()
+                .filter(passReport -> !passReport.analysisOnly())
+                .count();
     }
 
     public String toPropertiesText() {
@@ -116,18 +122,21 @@ public record GpuRuntimeOptimizerDriftArtifact(
 
     private static int count(GpuRuntimeIrOptimizationReport report, GpuRuntimeIrOptimizationOutcome outcome) {
         return (int) report.passReports().stream()
+                .filter(passReport -> !passReport.analysisOnly())
                 .filter(passReport -> passReport.outcome() == outcome)
                 .count();
     }
 
     private static int proofArtifactCount(GpuRuntimeIrOptimizationReport report) {
         return (int) report.passReports().stream()
+                .filter(passReport -> !passReport.analysisOnly())
                 .filter(GpuRuntimeOptimizerDriftArtifact::hasProofArtifact)
                 .count();
     }
 
     private static int acceptedProofArtifactCount(GpuRuntimeIrOptimizationReport report) {
         return (int) report.passReports().stream()
+                .filter(passReport -> !passReport.analysisOnly())
                 .filter(GpuRuntimeOptimizerDriftArtifact::hasProofArtifact)
                 .filter(passReport -> isAcceptedVerdict(passReport.proofArtifact().verdict()))
                 .count();
@@ -135,6 +144,7 @@ public record GpuRuntimeOptimizerDriftArtifact(
 
     private static int blockingProofArtifactCount(GpuRuntimeIrOptimizationReport report) {
         return (int) report.passReports().stream()
+                .filter(passReport -> !passReport.analysisOnly())
                 .filter(GpuRuntimeOptimizerDriftArtifact::hasProofArtifact)
                 .filter(passReport -> isBlockingVerdict(passReport.proofArtifact().verdict()))
                 .count();
@@ -149,6 +159,9 @@ public record GpuRuntimeOptimizerDriftArtifact(
     private static Map<String, OptimizerFamilyEvidence> optimizerFamilies(GpuRuntimeIrOptimizationReport report) {
         Map<String, OptimizerFamilyEvidence> families = new LinkedHashMap<>();
         for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (passReport.analysisOnly()) {
+                continue;
+            }
             String familyName = optimizerFamilyName(passReport);
             OptimizerFamilyEvidence existing = families.getOrDefault(familyName, OptimizerFamilyEvidence.empty(familyName));
             families.put(familyName, existing.add(passReport));

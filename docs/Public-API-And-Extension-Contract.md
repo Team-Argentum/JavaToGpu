@@ -77,6 +77,22 @@ Available selectors include `byDeviceId(...)`, `byVendor(...)`, `byDeviceLabel(.
 
 Overrides and method constraints are required constraints, not advisory score hints. If no candidate matches, selection fails with `GpuRuntimeDeviceSelectionException`. The first OpenCL context is created from the concrete kernel descriptor, loaded IrGpu metadata, and compile options. A later request is re-evaluated against the original candidate set; if it requires another device, the same exception is raised and the caller must create a new runtime scope/backend instance. JavaToGpu does not silently execute the request on the already active but incompatible device.
 
+Startup correctness evidence participates in the same deterministic policy pipeline. `GpuRuntimeDeviceSelfTestMode.AUTO` runs backend self-tests when multiple candidates are discovered, `DISABLED` bypasses self-test evidence, and `REQUIRED` rejects candidates without a passed result. OpenCL's runner compiles bounded kernels, validates deterministic readback, and then collects one warm-up plus five compute and transfer samples. A failed correctness result is a hard rejection, not a negative score hint.
+
+Performance evidence uses a trimmed median: minimum and maximum samples are discarded and at least three samples must remain. `GpuRuntimeDeviceSelfTestProfile` selects bounded workload size, transfer model, noise threshold, and score caps from device class and unified-memory topology. dGPU uses `dgpu-balanced-v1`; iGPU uses `igpu-unified-v1` or `igpu-conservative-v1`; CPU OpenCL uses `cpu-opencl-conservative-v1`. iGPU and CPU profiles deliberately use smaller workloads and lower transfer score caps than dGPU.
+
+Compute rates are normalized only against stable evidence with the same workload profile. Transfer rates are normalized only against stable evidence with the same transfer model, so unified-memory, dedicated-memory, integrated-memory, and host-memory round trips are not treated as equivalent measurements. Compute and transfer stability are independent: a noisy metric is exported as telemetry with zero score without suppressing the other stable metric. Score caps preserve the core dGPU over iGPU/CPU class preference.
+
+`GpuRuntimeDeviceSelfTestIdentity` binds cached evidence to backend, device id/label/vendor, device class, unified-memory topology, driver, runtime API version, runner id/version, and compiler identity. The built-in cache is process-local and removes stale entries when the same runner is replaced by another runner/compiler identity. Persistent cache storage, expiry, real Intel/AMD iGPU validation, register-pressure buckets, and long-running stability evidence are intentionally separate contracts.
+
+### Runtime IR analysis evidence
+
+`GpuRuntimeRegisterPressureAnalysisPass` is a built-in analysis-only runtime pass at `TARGET_PROFILE_ANALYSIS`. It estimates typed-`IrGpu` value pressure using conservative parameter, local, private-array, vector-width, and expression-peak accounting. `GpuRuntimeRegisterPressureBudget` selects the initial advisory budget from backend-neutral device class and vendor data. The current budget is not a promise about physical registers or occupancy.
+
+Analysis-only passes store `analysisOnly=true` in their field maps. Core must exclude those reports from accepted/blocking optimizer proof counts, optimizer-family promotion readiness, runtime-equivalence family payload requirements, and production mutation authorization. They may still appear in `optimizer-report.txt` and must be persisted in `runtime-ir-analysis.properties` for diagnostics, CI comparison, and future adaptive planning.
+
+The register-pressure artifact contract includes model version, budget source, availability, aggregate level, hottest method, utilization, and per-method parameter/local/private-array/expression counts. Future backend compiler feedback may refine estimates but should preserve these stable backend-neutral field meanings.
+
 ### Runtime failure hierarchy
 
 Public runtime failures extend `GpuRuntimeException`. The base contract exposes a stable error code, `GpuRuntimeFailurePhase`, concise summary, immutable `GpuRuntimeDiagnosticContext`, Rust-like `diagnosticText()`, help messages, and the original cause. Backend implementations should translate low-level driver/runtime failures once and must not double-wrap an existing `GpuRuntimeException`.
@@ -232,6 +248,8 @@ Policies provide evidence and constraints, not the final answer. `GpuRuntimeDevi
 - equal scores are resolved by stable device identity;
 - advisory failures are isolated, while production-profile failures stop selection;
 - invalid compile options or a failed-closed policy produce no selected device.
+
+Backend adapters prepare correctness evidence through `GpuRuntimeDeviceSelfTestRunner` and `GpuRuntimeDeviceSelfTests.prepare(...)`, then `GpuRuntimeDeviceSelfTestPolicy` consumes the shared cache as a normal read-only device policy. This separates native backend execution from core ranking: future CUDA, Vulkan, and Metal adapters can provide their own bounded runner without changing the selection algorithm or artifact format.
 
 OpenCL now enumerates all platforms/devices through Packager before creating a context. It builds profiles with runtime device ids, vendor/driver/version data, device class, compute units, global/local memory, work-group limits, vector width, unified-memory state, and supported feature flags. The registry selects a profile, OpenCL maps that exact profile back to the native device, and only then calls `OpenClContext.create(...)`.
 
