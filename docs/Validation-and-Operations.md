@@ -52,6 +52,8 @@ Important buckets include:
 - `:processor:openClVendorValidation`
 - `:processor:openClWorkloadValidationTest`
 - `:processor:openClBackendSourcePromotionCandidateGate`
+- `:processor:writeOpenClBackendSourcePromotionManifestTemplate`
+- `:processor:validateOpenClBackendSourcePromotionManifest`
 - `:processor:openClValidationReport`
 
 You usually do not need to run buckets one by one unless you are narrowing down a failure.
@@ -70,12 +72,16 @@ processor/build/reports/opencl/backend-source-promotion-gate.properties
 processor/build/reports/opencl/backend-source-promotion-workload-gate.properties
 processor/build/reports/opencl/production-source-switching-validation.properties
 processor/build/reports/opencl/backend-source-promotion-candidate-gate.properties
+processor/build/reports/opencl/backend-source-promotion-manifest-template.properties
+processor/build/reports/opencl/backend-source-promotion-manifest-validation.properties
 processor/build/test-results/
 ```
 
 These files are more useful than a screenshot because they preserve bucket status, device details, and machine-readable failure state.
 
 The candidate gate combines the real-workload gate with controlled source-switching acceptance for the same kernel resources and device identity. `review-ready` means the candidate evidence is complete; default production source switching and production mutation remain disabled.
+
+Manual `workflow_dispatch` runs expose `production_promotion_manifest_mode=skip|template|validate`. Use `template` to archive a pending device-specific manifest bound to that run's `github.sha`. After approving and committing the manifest, use `validate` with `production_promotion_manifest_file`, the original SHA in `production_promotion_candidate_git_sha`, and a single matching `validation_lane`. Candidate SHA-256 and identity bindings prevent reuse for another GPU, driver, candidate artifact, or source state.
 
 ## Optional IR Validation
 

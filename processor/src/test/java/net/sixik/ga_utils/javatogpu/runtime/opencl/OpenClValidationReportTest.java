@@ -1350,8 +1350,15 @@ class OpenClValidationReportTest {
             assertTrue(workflow.contains("uses: actions/cache/save@v4"));
             assertTrue(workflow.contains("launch_advisory_negative_fixture:"));
             assertTrue(workflow.contains("validation_lane:"));
+            assertTrue(workflow.contains("production_promotion_manifest_mode:"));
+            assertTrue(workflow.contains("production_promotion_manifest_file:"));
+            assertTrue(workflow.contains("production_promotion_candidate_git_sha:"));
             assertTrue(workflow.contains("github.event.inputs.validation_lane == 'nvidia'"));
             assertTrue(workflow.contains("github.event.inputs.validation_lane == 'amd'"));
+            assertTrue(workflow.contains(":processor:writeOpenClBackendSourcePromotionManifestTemplate"));
+            assertTrue(workflow.contains(":processor:validateOpenClBackendSourcePromotionManifest"));
+            assertTrue(workflow.contains("JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA"));
+            assertTrue(workflow.contains("steps.production_promotion_manifest_validation.outcome != 'success'"));
             assertTrue(workflow.contains(":processor:prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
             assertTrue(workflow.contains("env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true'"));
             assertTrue(workflow.contains("LAUNCH_ADVISORY_DRIFT_OUTCOME%\"==\"failure"));

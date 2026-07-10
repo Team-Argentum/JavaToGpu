@@ -213,6 +213,8 @@ OpenCL production source switching applies the same fail-closed principle throug
 
 `GpuBackendSourcePromotionCandidateGate` is the operational join between real-workload source-parity/runtime-equivalence evidence and controlled identity-bound acceptance. It requires complete per-resource evidence and fails closed when a workload, acceptance, or identity binding is absent. Its `review-ready` status authorizes review of a production candidate only; it does not authorize default source switching or production mutation.
 
+`GpuBackendSourcePromotionManifest` adds a separate human approval boundary. The manifest is valid only when its Git SHA, candidate-artifact SHA-256, backend target, device vendor/label, driver, kernel count, and ordered kernel resources match the reviewed candidate exactly. Approval metadata must be explicit and timestamped. A valid manifest remains `manual-review-only`; runtime code must not interpret it as permission to enable default source switching or production mutation.
+
 Extension execution is reported through `GpuExtensionExecutionReport` with a stable outcome and failure policy:
 
 - `SUCCEEDED` and `SKIPPED` describe normal execution decisions;

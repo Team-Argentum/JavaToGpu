@@ -364,6 +364,31 @@ Hardware validation joins the real-workload promotion evidence with controlled i
 
 This artifact is a review boundary, not a runtime enablement switch. A review-ready candidate still records `defaultProductionSourceSwitching=disabled` and `productionMutation=disabled`; normal application execution continues to use the default generated OpenCL source.
 
+### Manual Promotion Manifest
+
+After reviewing a candidate artifact, generate a pending manifest template bound to its exact bytes, Git commit, device identity, driver, and kernel resources:
+
+```powershell
+.\gradlew.bat :processor:writeOpenClBackendSourcePromotionManifestTemplate `
+  -PopenClPromotionGitSha=<full-git-sha> `
+  --console=plain --no-daemon
+```
+
+The template is written to `processor/build/reports/opencl/backend-source-promotion-manifest-template.properties`. Change `status` to `approved` and fill `approval.id`, `approval.approvedBy`, and `approval.approvedAtUtc`; do not alter any `binding.*` or `authorization.*` fields.
+
+Validate the reviewed manifest with:
+
+```powershell
+.\gradlew.bat :processor:validateOpenClBackendSourcePromotionManifest `
+  -PopenClPromotionManifestFile=<manifest-path> `
+  -PopenClPromotionGitSha=<candidate-run-full-git-sha> `
+  --console=plain --no-daemon
+```
+
+The candidate Git SHA is the `binding.gitSha` written by the template run, not the later commit that adds the approved manifest to the repository. Validation writes `backend-source-promotion-manifest-validation.properties` before failing closed on any mismatch. The candidate-artifact SHA-256 prevents the later validation commit from changing source-promotion evidence while retaining the original reviewed SHA binding.
+
+An approved manifest remains device- and driver-specific and records `manual-review-only`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`. It is auditable approval evidence for a later activation design, not runtime authorization by itself.
+
 ## ABI Debug
 
 Enable ABI diagnostics with:

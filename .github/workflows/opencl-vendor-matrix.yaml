@@ -27,6 +27,25 @@ on:
           - all
           - nvidia
           - amd
+      production_promotion_manifest_mode:
+        description: 'Manual production-promotion manifest mode: skip, template, or validate.'
+        required: false
+        default: skip
+        type: choice
+        options:
+          - skip
+          - template
+          - validate
+      production_promotion_manifest_file:
+        description: 'Repository-relative manifest path used when manifest mode is validate.'
+        required: false
+        default: 'promotion/opencl/backend-source-promotion-manifest.properties'
+        type: string
+      production_promotion_candidate_git_sha:
+        description: 'Full Git SHA recorded by the candidate manifest template run.'
+        required: false
+        default: ''
+        type: string
   push:
     branches:
       - main
@@ -64,6 +83,9 @@ jobs:
       JTG_OPENCL_CI: 'true'
       JTG_SOURCE_PROMOTION_BASELINE_MODE: ${{ github.event.inputs.source_promotion_baseline_mode || 'advisory' }}
       JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE: ${{ github.event.inputs.launch_advisory_negative_fixture || 'false' }}
+      JTG_PRODUCTION_PROMOTION_MANIFEST_MODE: ${{ github.event.inputs.production_promotion_manifest_mode || 'skip' }}
+      JTG_PRODUCTION_PROMOTION_MANIFEST_FILE: ${{ github.event.inputs.production_promotion_manifest_file || 'promotion/opencl/backend-source-promotion-manifest.properties' }}
+      JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA: ${{ github.event.inputs.production_promotion_candidate_git_sha || '' }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
 
     steps:
@@ -118,6 +140,20 @@ jobs:
         continue-on-error: true
         shell: cmd
         run: .\gradlew.bat ${{ matrix.routine_task }} --console=plain --no-daemon
+
+      - name: Generate production-promotion manifest template
+        if: steps.opencl_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template'
+        id: production_promotion_manifest_template
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:writeOpenClBackendSourcePromotionManifestTemplate "-PopenClPromotionGitSha=%GITHUB_SHA%" --console=plain --no-daemon
+
+      - name: Validate production-promotion manifest
+        if: steps.opencl_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate'
+        id: production_promotion_manifest_validation
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionManifest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
 
       - name: Generate OpenCL validation report
         if: always()
@@ -267,6 +303,8 @@ jobs:
           PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
           SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
           SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
+          PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME: ${{ steps.production_promotion_manifest_template.outcome }}
+          PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME: ${{ steps.production_promotion_manifest_validation.outcome }}
           VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
           VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
         run: |
@@ -285,6 +323,8 @@ jobs:
           echo ^| Production explainability summary ^| %PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Source-promotion baseline ^| %SOURCE_PROMOTION_BASELINE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Source-promotion summary ^| %SOURCE_PROMOTION_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Promotion manifest template ^| %PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Promotion manifest validation ^| %PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history stage ^| %VALIDATION_HISTORY_STAGE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history save ^| %VALIDATION_HISTORY_SAVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           if exist processor\build\reports\opencl\runtime-launch-advisory-summary.md (
@@ -317,6 +357,14 @@ jobs:
             (
               env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true' &&
               steps.launch_advisory_negative_fixture_check.outcome != 'success'
+            ) ||
+            (
+              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template' &&
+              steps.production_promotion_manifest_template.outcome != 'success'
+            ) ||
+            (
+              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' &&
+              steps.production_promotion_manifest_validation.outcome != 'success'
             )
           )
         shell: cmd

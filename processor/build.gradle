@@ -59,6 +59,14 @@ def openClBackendSourcePromotionWorkloadGateFile = layout.buildDirectory.file('r
 def openClBackendSourcePromotionWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-summary.properties').get().asFile
 def openClProductionSourceSwitchingValidationFile = layout.buildDirectory.file('reports/opencl/production-source-switching-validation.properties').get().asFile
 def openClBackendSourcePromotionCandidateGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-candidate-gate.properties').get().asFile
+def openClBackendSourcePromotionManifestTemplateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest-template.properties').get().asFile
+def openClBackendSourcePromotionManifestValidationFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest-validation.properties').get().asFile
+def openClBackendSourcePromotionManifestFile = providers.gradleProperty('openClPromotionManifestFile')
+        .map { rootProject.file(it) }
+        .orElse(layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest.properties').map { it.asFile })
+def openClPromotionGitSha = providers.gradleProperty('openClPromotionGitSha')
+        .orElse(providers.environmentVariable('GITHUB_SHA'))
+        .orElse('unknown')
 def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-drift.properties').get().asFile
 def openClCompilerResourceDriftFile = layout.buildDirectory.file('reports/opencl/runtime-compiler-resource-drift.properties').get().asFile
 def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
@@ -451,6 +459,34 @@ tasks.register('openClBackendSourcePromotionCandidateGate', JavaExec) {
             openClProductionSourceSwitchingValidationFile.absolutePath,
             openClBackendSourcePromotionCandidateGateFile.absolutePath
     finalizedBy 'openClValidationReport'
+}
+
+tasks.register('writeOpenClBackendSourcePromotionManifestTemplate', JavaExec) {
+    group = 'verification'
+    description = 'Writes a pending manual approval manifest bound to the current OpenCL production candidate.'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionManifestTemplateCli'
+    args openClBackendSourcePromotionCandidateGateFile.absolutePath,
+            openClBackendSourcePromotionManifestTemplateFile.absolutePath,
+            openClPromotionGitSha.get()
+    inputs.file(openClBackendSourcePromotionCandidateGateFile)
+    outputs.file(openClBackendSourcePromotionManifestTemplateFile)
+}
+
+tasks.register('validateOpenClBackendSourcePromotionManifest', JavaExec) {
+    group = 'verification'
+    description = 'Validates a manual approval manifest against the exact candidate artifact, Git SHA, and device identity.'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionManifestValidatorCli'
+    args openClBackendSourcePromotionCandidateGateFile.absolutePath,
+            openClBackendSourcePromotionManifestFile.get().absolutePath,
+            openClBackendSourcePromotionManifestValidationFile.absolutePath,
+            openClPromotionGitSha.get()
+    inputs.file(openClBackendSourcePromotionCandidateGateFile)
+    inputs.file(openClBackendSourcePromotionManifestFile).optional()
+    outputs.file(openClBackendSourcePromotionManifestValidationFile)
 }
 
 tasks.register('openClLongRunningStabilityTest', Test) {
