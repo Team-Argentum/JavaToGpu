@@ -3081,30 +3081,56 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             java.nio.file.Files.createDirectories(artifactDirectory);
 
             GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(artifactSnapshot);
-            for (Map.Entry<String, String> artifact : dump.artifacts().entrySet()) {
-                java.nio.file.Files.writeString(
-                        artifactDirectory.resolve(artifact.getKey()),
-                        artifact.getValue(),
-                        java.nio.charset.StandardCharsets.UTF_8
-                );
-            }
-            for (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact artifact
-                    : dump.binaryArtifacts().values()) {
-                java.nio.file.Files.write(
-                        artifactDirectory.resolve(artifact.name()),
-                        artifact.content()
-                );
-            }
-            if (!dump.sourceLocations().isEmpty()) {
-                java.nio.file.Files.writeString(
-                        artifactDirectory.resolve("source-locations.txt"),
-                        String.join(System.lineSeparator(), dump.sourceLocations()) + System.lineSeparator(),
-                        java.nio.charset.StandardCharsets.UTF_8
-                );
-            }
+            writeRuntimeCompileArtifactDump(artifactDirectory, dump);
         } catch (RuntimeException | java.io.IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL runtime compile artifacts", exception);
         }
+    }
+
+    static void writeRuntimeCompileArtifactDump(
+            java.nio.file.Path artifactDirectory,
+            GpuRuntimeCompileArtifactDump dump
+    ) throws java.io.IOException {
+        for (Map.Entry<String, String> artifact : dump.artifacts().entrySet()) {
+            java.nio.file.Path artifactPath = runtimeCompileArtifactPath(artifactDirectory, artifact.getKey());
+            java.nio.file.Path artifactParent = artifactPath.getParent();
+            if (artifactParent != null) {
+                java.nio.file.Files.createDirectories(artifactParent);
+            }
+            java.nio.file.Files.writeString(
+                    artifactPath,
+                    artifact.getValue(),
+                    java.nio.charset.StandardCharsets.UTF_8
+            );
+        }
+        for (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact artifact
+                : dump.binaryArtifacts().values()) {
+            java.nio.file.Path artifactPath = runtimeCompileArtifactPath(artifactDirectory, artifact.name());
+            java.nio.file.Path artifactParent = artifactPath.getParent();
+            if (artifactParent != null) {
+                java.nio.file.Files.createDirectories(artifactParent);
+            }
+            java.nio.file.Files.write(artifactPath, artifact.content());
+        }
+        if (!dump.sourceLocations().isEmpty()) {
+            java.nio.file.Files.writeString(
+                    runtimeCompileArtifactPath(artifactDirectory, "source-locations.txt"),
+                    String.join(System.lineSeparator(), dump.sourceLocations()) + System.lineSeparator(),
+                    java.nio.charset.StandardCharsets.UTF_8
+            );
+        }
+    }
+
+    static java.nio.file.Path runtimeCompileArtifactPath(
+            java.nio.file.Path artifactDirectory,
+            String artifactName
+    ) {
+        java.nio.file.Path normalizedDirectory = artifactDirectory.toAbsolutePath().normalize();
+        java.nio.file.Path artifactPath = normalizedDirectory.resolve(artifactName).normalize();
+        if (!artifactPath.startsWith(normalizedDirectory)) {
+            throw new IllegalArgumentException("Runtime compile artifact path escapes output directory: " + artifactName);
+        }
+        return artifactPath;
     }
 
     private static java.nio.file.Path runtimeCompileArtifactDirectory(

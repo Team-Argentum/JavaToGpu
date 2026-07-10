@@ -1442,6 +1442,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(payload.contains("family.0.pass.0.tolerance.payload=mode=exact-int, diagnostics=0, diagnosticFamilies={}"));
         assertTrue(payload.contains("family.0.pass.0.failureFixture.payload=none"));
         assertTrue(payload.contains("family.0.pass.0.firstDiagnostic=CSE runtime-equivalence payload captured"));
+        assertTrue(payload.contains("family.0.pass.0.durable.directory=runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0"));
+        assertTrue(payload.contains("family.0.pass.0.durable.manifest.path=runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/manifest.properties"));
+        assertTrue(payload.contains("family.0.pass.0.durable.diagnostics.path=runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/diagnostics.properties"));
         assertTrue(payload.contains("family.1.name=vector"));
         assertTrue(payload.contains("family.1.runtimePayload.present=true"));
         assertTrue(payload.contains("family.1.tolerance.present=false"));
@@ -1457,6 +1460,39 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(payload.contains("family.1.pass.0.firstDiagnostic=vector payload still needs tolerance metadata"));
         assertTrue(payload.contains("family.complete.count=1"));
         assertTrue(payload.contains("family.complete.all=false"));
+
+        String cseDirectory = "runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0";
+        assertTrue(dump.hasArtifact(cseDirectory + "/manifest.properties"));
+        assertTrue(dump.artifact(cseDirectory + "/manifest.properties").contains("optimizerFamily=cse"));
+        assertTrue(dump.artifact(cseDirectory + "/manifest.properties").contains("proof.verdict=accepted"));
+        assertTrue(dump.artifact(cseDirectory + "/cpu-reference.properties").contains("status=recorded"));
+        assertTrue(dump.artifact(cseDirectory + "/cpu-reference.properties").contains(
+                "payload=inputCases=3, comparedOutputs=1, outputNames=outA"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/pre-optimization-output.properties").contains(
+                "payload=plans=1, insertions=1, skipped=0"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/post-optimization-output.properties").contains(
+                "payload=replacements=1, equivalent=true, successful=true"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/tolerance.properties").contains(
+                "payload=mode=exact-int, diagnostics=0, diagnosticFamilies={}"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/failure-fixture.properties").contains("payload=none"));
+        assertTrue(dump.artifact(cseDirectory + "/diagnostics.properties").contains(
+                "firstDiagnostic=CSE runtime-equivalence payload captured"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/diagnostics.properties").contains(
+                "cseRuntimeEquivalencePayload.CpuReference"
+        ));
+
+        String vectorDirectory = "runtime-optimizer-family-equivalence-payload/family-1-vector/pass-0";
+        assertTrue(dump.hasArtifact(vectorDirectory + "/manifest.properties"));
+        assertTrue(dump.artifact(vectorDirectory + "/tolerance.properties").contains("status=not-recorded"));
+        assertTrue(dump.artifact(vectorDirectory + "/failure-fixture.properties").contains("payload.present=false"));
+        assertTrue(dump.artifact(vectorDirectory + "/diagnostics.properties").contains(
+                "firstDiagnostic=vector payload still needs tolerance metadata"
+        ));
     }
 
     @Test

@@ -40,6 +40,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAccept
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationTokenTestFixtures;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
@@ -87,6 +88,65 @@ class OpenClGpuRuntimeBackendTest {
 
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE =
             "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+
+    @Test
+    void runtimeCompileArtifactPathKeepsNestedArtifactsInsideOutputDirectory() throws Exception {
+        Path artifactDirectory = Files.createTempDirectory("javatogpu-runtime-artifact-path");
+        Path nested = OpenClGpuRuntimeBackend.runtimeCompileArtifactPath(
+                artifactDirectory,
+                "runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/manifest.properties"
+        );
+
+        assertEquals(
+                artifactDirectory.toAbsolutePath().normalize()
+                        .resolve("runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/manifest.properties"),
+                nested
+        );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClGpuRuntimeBackend.runtimeCompileArtifactPath(artifactDirectory, "../escape.properties")
+        );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClGpuRuntimeBackend.runtimeCompileArtifactPath(
+                        artifactDirectory,
+                        artifactDirectory.resolveSibling("outside.properties").toString()
+                )
+        );
+    }
+
+    @Test
+    void runtimeCompileArtifactWriterCreatesNestedPayloadDirectories() throws Exception {
+        Path artifactDirectory = Files.createTempDirectory("javatogpu-runtime-artifact-writer");
+        String nestedArtifact =
+                "runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/manifest.properties";
+        GpuRuntimeCompileArtifactDump dump = new GpuRuntimeCompileArtifactDump(
+                java.util.Map.of(nestedArtifact, "status=recorded\n"),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp.from(
+                        null,
+                        GpuBackendModuleArtifact.unknown(),
+                        null
+                )
+        );
+
+        OpenClGpuRuntimeBackend.writeRuntimeCompileArtifactDump(artifactDirectory, dump);
+
+        assertEquals("status=recorded\n", Files.readString(artifactDirectory.resolve(nestedArtifact)));
+        GpuRuntimeCompileArtifactDump escapingDump = new GpuRuntimeCompileArtifactDump(
+                java.util.Map.of("../escape.properties", "unsafe\n"),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp.from(
+                        null,
+                        GpuBackendModuleArtifact.unknown(),
+                        null
+                )
+        );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClGpuRuntimeBackend.writeRuntimeCompileArtifactDump(artifactDirectory, escapingDump)
+        );
+    }
 
     @Test
     void finalCompileSnapshotCarriesAvailableRuntimeDeviceSelection() {

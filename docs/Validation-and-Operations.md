@@ -81,6 +81,7 @@ processor/build/reports/opencl/backend-source-promotion-activation-gate.properti
 processor/build/reports/opencl/backend-source-promotion-activation-gate.properties.sha256
 processor/build/reports/opencl/production-activation-token-smoke.properties
 processor/build/reports/opencl/production-activation-token-negative.properties
+processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-optimizer-family-equivalence-payload/
 processor/build/test-results/
 ```
 
