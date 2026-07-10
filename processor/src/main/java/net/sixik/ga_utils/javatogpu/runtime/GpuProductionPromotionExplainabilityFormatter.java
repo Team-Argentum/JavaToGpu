@@ -37,6 +37,22 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             Properties backendPromotionArtifactSupport,
             Properties controlledProductionSourceSwitchingValidation
     ) {
+        return format(
+                workloadGate,
+                i3Summary,
+                backendPromotionArtifactSupport,
+                controlledProductionSourceSwitchingValidation,
+                new Properties()
+        );
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation,
+            Properties controlledProductionActivationTokenSmoke
+    ) {
         Properties gate = workloadGate == null ? new Properties() : workloadGate;
         Properties readiness = i3Summary == null ? new Properties() : i3Summary;
         Properties promotionSupport = backendPromotionArtifactSupport == null
@@ -45,6 +61,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         Properties controlledSourceSwitching = controlledProductionSourceSwitchingValidation == null
                 ? new Properties()
                 : controlledProductionSourceSwitchingValidation;
+        Properties activationTokenSmoke = controlledProductionActivationTokenSmoke == null
+                ? new Properties()
+                : controlledProductionActivationTokenSmoke;
         boolean backendPromotionArtifactSupportComplete = propertyIsTrue(
                 promotionSupport,
                 "complete",
@@ -119,6 +138,26 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         );
         ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage =
                 controlledSourceSwitchingCoverage(gate, controlledSourceSwitching);
+        boolean activationTokenLoaded = propertyIsTrue(activationTokenSmoke, "token.loaded", false);
+        boolean activationTokenSafeDefaults = "false".equals(
+                activationTokenSmoke.getProperty("defaultRuntimeActivation", "unknown")
+        ) && "disabled".equals(
+                activationTokenSmoke.getProperty("defaultProductionSourceSwitching", "unknown")
+        ) && "disabled".equals(
+                activationTokenSmoke.getProperty("productionMutation", "unknown")
+        );
+        boolean activationTokenApprovedKernelExecuted = approvedKernelExecuted(gate, activationTokenSmoke);
+        boolean activationTokenSmokePassed = "passed".equals(activationTokenSmoke.getProperty("status", "not-recorded"))
+                && "controlled-production-activation-token-smoke".equals(
+                activationTokenSmoke.getProperty("scope", "unknown")
+        )
+                && activationTokenLoaded
+                && activationTokenSafeDefaults
+                && activationTokenApprovedKernelExecuted
+                && "OPENCL".equals(activationTokenSmoke.getProperty("token.backendTarget", "UNKNOWN"))
+                && GpuBackendSourcePromotionActivationGate.ACTIVATION_SCOPE.equals(
+                activationTokenSmoke.getProperty("token.activationScope", "unknown")
+        );
 
         List<ReadinessChecklistItem> readinessChecklist = List.of(
                 new ReadinessChecklistItem(
@@ -150,6 +189,12 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                         controlledSourceSwitchingCoverage.allCovered(),
                         "controlled production source-switching lane covers all real workload resources",
                         "controlled production source-switching lane does not cover every real workload resource"
+                ),
+                new ReadinessChecklistItem(
+                        "activation-token-hardware-smoke-passed",
+                        activationTokenSmokePassed,
+                        "controlled activation token loaded its exact artifact and executed an approved hardware workload",
+                        "controlled activation-token hardware smoke is missing or incomplete"
                 ),
                 new ReadinessChecklistItem(
                         "promotion-artifacts-complete",
@@ -289,6 +334,45 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 controlledSourceSwitchingCoverage.coveredResources());
         appendIndexedResources(builder, "controlledProductionSourceSwitching.realWorkload.uncovered",
                 controlledSourceSwitchingCoverage.uncoveredResources());
+        builder.append("controlledProductionActivationTokenSmoke.status=")
+                .append(activationTokenSmoke.getProperty("status", "not-recorded"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.scope=")
+                .append(activationTokenSmoke.getProperty("scope", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.tokenLoaded=")
+                .append(activationTokenLoaded)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.artifactSha256=")
+                .append(activationTokenSmoke.getProperty("token.artifactSha256", "missing"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.approvalId=")
+                .append(activationTokenSmoke.getProperty("token.approvalId", "approval:missing"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.candidateGitSha=")
+                .append(activationTokenSmoke.getProperty("token.candidateGitSha", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.deviceVendor=")
+                .append(activationTokenSmoke.getProperty("token.deviceVendor", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.deviceLabel=")
+                .append(activationTokenSmoke.getProperty("token.deviceLabel", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.driverVersion=")
+                .append(activationTokenSmoke.getProperty("token.driverVersion", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.kernel.count=")
+                .append(parsePositiveInt(activationTokenSmoke.getProperty("kernel.count", "0")))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.approvedKernelExecuted=")
+                .append(activationTokenApprovedKernelExecuted)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.safeDefaults=")
+                .append(activationTokenSafeDefaults)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.passed=")
+                .append(activationTokenSmokePassed)
+                .append('\n');
         appendReadinessChecklist(builder, readinessChecklist);
         builder.append("blocker.count=").append(blockers.size()).append('\n');
         for (int index = 0; index < blockers.size(); index++) {
@@ -296,6 +380,19 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         }
         builder.append("diagnostic.0=").append(diagnostic(blockers, i3ReviewReadyCount, i3BlockedCount)).append('\n');
         return appendContractFields(builder.toString());
+    }
+
+    private static boolean approvedKernelExecuted(Properties workloadGate, Properties activationTokenSmoke) {
+        Set<String> workloadResources = new LinkedHashSet<>(resources(workloadGate, "sourceKernelResource"));
+        int kernelCount = parsePositiveInt(activationTokenSmoke.getProperty("kernel.count", "0"));
+        for (int index = 0; index < kernelCount; index++) {
+            String prefix = "kernel." + index + ".";
+            if ("passed".equals(activationTokenSmoke.getProperty(prefix + "status"))
+                    && workloadResources.contains(activationTokenSmoke.getProperty(prefix + "resource"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage(

@@ -25,6 +25,8 @@ public final class OpenClValidationReporter {
     private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
     private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY =
             "javatogpu.opencl.productionSourceSwitchingValidationFile";
+    private static final String PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY =
+            "javatogpu.opencl.productionActivationTokenSmokeFile";
     private static final String BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionGateFile";
     private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
     private static final String BACKEND_SOURCE_PROMOTION_CANDIDATE_GATE_FILE_PROPERTY =
@@ -791,6 +793,18 @@ public final class OpenClValidationReporter {
             markdown.append("- Controlled real workload coverage all: `")
                     .append(sanitizeInline(summary.controlledProductionSourceSwitchingRealWorkloadCoveredAll()))
                     .append("`\n");
+            markdown.append("- Controlled activation-token smoke: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenSmokeStatus()))
+                    .append("`\n");
+            markdown.append("- Activation token loaded: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenLoaded()))
+                    .append("`\n");
+            markdown.append("- Approved activation-token kernel executed: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenApprovedKernelExecuted()))
+                    .append("`\n");
+            markdown.append("- Activation-token safe defaults: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenSafeDefaults()))
+                    .append("`\n");
             markdown.append("- Production readiness checklist: `")
                     .append(summary.readinessChecklistReadyCount())
                     .append(" ready / ")
@@ -1121,6 +1135,9 @@ public final class OpenClValidationReporter {
         String i3SummaryPath = System.getProperty(I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY);
         String supportPath = System.getProperty(BACKEND_PROMOTION_ARTIFACT_SUPPORT_FILE_PROPERTY);
         String controlledProductionSourceSwitchingPath = System.getProperty(PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY);
+        String controlledProductionActivationTokenSmokePath = System.getProperty(
+                PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY
+        );
         if (outputPath == null || outputPath.isBlank() || gatePath == null || gatePath.isBlank()) {
             return;
         }
@@ -1141,6 +1158,10 @@ public final class OpenClValidationReporter {
                     || controlledProductionSourceSwitchingPath.isBlank()
                     ? new java.util.Properties()
                     : loadPropertiesIfExists(Paths.get(controlledProductionSourceSwitchingPath));
+            java.util.Properties controlledProductionActivationTokenSmoke = controlledProductionActivationTokenSmokePath == null
+                    || controlledProductionActivationTokenSmokePath.isBlank()
+                    ? new java.util.Properties()
+                    : loadPropertiesIfExists(Paths.get(controlledProductionActivationTokenSmokePath));
             applyOptimizerFamilyRuntimeEquivalenceHistoryBaseline(gate);
             Files.writeString(
                     path,
@@ -1148,7 +1169,8 @@ public final class OpenClValidationReporter {
                             gate,
                             i3Summary,
                             backendPromotionArtifactSupport,
-                            controlledProductionSourceSwitchingValidation
+                            controlledProductionSourceSwitchingValidation,
+                            controlledProductionActivationTokenSmoke
                     ),
                     StandardCharsets.UTF_8
             );

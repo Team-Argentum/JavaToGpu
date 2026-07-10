@@ -433,6 +433,8 @@ Run the end-to-end hardware check with the same manifest and candidate SHA used 
 
 The task depends on the activation gate, loads its exact artifact and sidecar, and executes the approved `PackedBlobWorkload` kernel. It writes `production-activation-token-smoke.properties` and still records all default runtime and production mutation switches as disabled.
 
+The OpenCL validation reporter includes this artifact in `production-promotion-explainability.properties` and its compact CI summary. The controlled activation-token smoke contributes one operational readiness item only; it does not set `productionSourceSwitchingAllowed`, enable the default source path, or authorize production mutation.
+
 ## ABI Debug
 
 Enable ABI diagnostics with:

@@ -219,6 +219,8 @@ OpenCL production source switching applies the same fail-closed principle throug
 
 `GpuProductionActivationToken` is the explicit controlled runtime opt-in derived from one exact activation-gate artifact and its expected SHA-256. Loading rejects blocked artifacts, digest mismatches, incomplete coverage, missing identity fields, enabled defaults, or enabled production mutation. The OpenCL production lowerer requires both matching identity-bound operator acceptance and a matching activation token for the runtime backend, device vendor/label, driver, activation scope, and kernel resource. Neither object changes the default runtime path.
 
+The production-promotion explainability artifact records controlled activation-token hardware smoke as operational readiness evidence. It exposes whether the token loaded, an approved workload kernel executed, and safe defaults remained intact. This evidence improves auditability but is not itself a production decision and cannot change source-switching or mutation authorization.
+
 Extension execution is reported through `GpuExtensionExecutionReport` with a stable outcome and failure policy:
 
 - `SUCCEEDED` and `SKIPPED` describe normal execution decisions;

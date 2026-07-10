@@ -46,8 +46,10 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("i3SourceReady.count=2"));
         assertTrue(formatted.contains("i3SourceReady.all=true"));
         assertTrue(formatted.contains("readinessChecklist.ready.count=8"));
-        assertTrue(formatted.contains("readinessChecklist.blocked.count=1"));
+        assertTrue(formatted.contains("readinessChecklist.blocked.count=2"));
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=controlled-source-switching-covered"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=not-recorded"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=false"));
         assertTrue(formatted.contains("contract.status=valid"));
         assertTrue(formatted.contains("contract.violation.count=0"));
         assertTrue(formatted.contains("decision.mode=production-enabled"));
@@ -77,7 +79,8 @@ class GpuProductionPromotionExplainabilityFormatterTest {
                 blockedWorkloadGate(),
                 blockedReadiness(),
                 completePromotionArtifactSupport(),
-                controlledProductionSourceSwitchingValidation()
+                controlledProductionSourceSwitchingValidation(),
+                controlledProductionActivationTokenSmoke()
         );
 
         assertTrue(formatted.contains("status=blocked"));
@@ -92,8 +95,13 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.all=false"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.0.resource=kernel-a.cl"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.uncovered.0.resource=kernel-b.cl"));
-        assertTrue(formatted.contains("readinessChecklist.item.count=9"));
-        assertTrue(formatted.contains("readinessChecklist.ready.count=3"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=passed"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.tokenLoaded=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.approvedKernelExecuted=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.safeDefaults=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=true"));
+        assertTrue(formatted.contains("readinessChecklist.item.count=10"));
+        assertTrue(formatted.contains("readinessChecklist.ready.count=4"));
         assertTrue(formatted.contains("readinessChecklist.blocked.count=6"));
         assertTrue(formatted.contains("readinessChecklist.ready.all=false"));
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
@@ -187,6 +195,28 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("kernel.2.resource", "inline://integration/dual-buffer-int-kernel.cl");
         properties.setProperty("productionSourceSwitching", "enabled");
         properties.setProperty("productionPromotionDecisionMode", GpuProductionPromotionDecision.PRODUCTION_ENABLED);
+        return properties;
+    }
+
+    private static Properties controlledProductionActivationTokenSmoke() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "passed");
+        properties.setProperty("scope", "controlled-production-activation-token-smoke");
+        properties.setProperty("token.loaded", "true");
+        properties.setProperty("token.artifactSha256", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        properties.setProperty("token.approvalId", "approval:test");
+        properties.setProperty("token.candidateGitSha", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        properties.setProperty("token.backendTarget", "OPENCL");
+        properties.setProperty("token.deviceVendor", "NVIDIA Corporation");
+        properties.setProperty("token.deviceLabel", "NVIDIA CUDA / Mock GPU");
+        properties.setProperty("token.driverVersion", "1.0");
+        properties.setProperty("token.activationScope", GpuBackendSourcePromotionActivationGate.ACTIVATION_SCOPE);
+        properties.setProperty("defaultRuntimeActivation", "false");
+        properties.setProperty("defaultProductionSourceSwitching", "disabled");
+        properties.setProperty("productionMutation", "disabled");
+        properties.setProperty("kernel.count", "1");
+        properties.setProperty("kernel.0.resource", "kernel-a.cl");
+        properties.setProperty("kernel.0.status", "passed");
         return properties;
     }
 }

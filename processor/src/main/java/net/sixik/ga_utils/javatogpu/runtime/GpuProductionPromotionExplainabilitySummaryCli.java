@@ -101,6 +101,21 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("controlledProductionSourceSwitching.realWorkload.covered.all=")
                 .append(summary.controlledProductionSourceSwitchingRealWorkloadCoveredAll())
                 .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.status=")
+                .append(summary.controlledProductionActivationTokenSmokeStatus())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.tokenLoaded=")
+                .append(summary.controlledProductionActivationTokenLoaded())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.approvedKernelExecuted=")
+                .append(summary.controlledProductionActivationTokenApprovedKernelExecuted())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.safeDefaults=")
+                .append(summary.controlledProductionActivationTokenSafeDefaults())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.passed=")
+                .append(summary.controlledProductionActivationTokenSmokePassed())
+                .append('\n');
         builder.append("readinessChecklist.ready.count=").append(summary.readinessChecklistReadyCount()).append('\n');
         builder.append("readinessChecklist.blocked.count=").append(summary.readinessChecklistBlockedCount()).append('\n');
         builder.append("readinessChecklist.ready.all=").append(summary.readinessChecklistReadyAll()).append('\n');

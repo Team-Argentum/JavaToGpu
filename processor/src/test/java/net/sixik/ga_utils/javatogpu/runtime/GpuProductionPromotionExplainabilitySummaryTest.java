@@ -54,6 +54,8 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(summary.historyStatus().contains("backendPromotionArtifactSupportComplete=unknown"));
         assertTrue(summary.historyStatus().contains("controlledSourceSwitching=not-recorded"));
         assertTrue(summary.historyStatus().contains("controlledRealWorkloadCoverage=0/0"));
+        assertTrue(summary.historyStatus().contains("controlledActivationTokenSmoke=not-recorded"));
+        assertTrue(summary.historyStatus().contains("controlledActivationTokenSmokePassed=false"));
         assertTrue(summary.historyStatus().contains("readinessChecklistReady=0"));
         assertTrue(summary.historyStatus().contains("readinessChecklistBlocked=0"));
     }
@@ -109,6 +111,11 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         properties.setProperty("controlledProductionSourceSwitching.realWorkload.total.count", "2");
         properties.setProperty("controlledProductionSourceSwitching.realWorkload.uncovered.count", "1");
         properties.setProperty("controlledProductionSourceSwitching.realWorkload.covered.all", "false");
+        properties.setProperty("controlledProductionActivationTokenSmoke.status", "passed");
+        properties.setProperty("controlledProductionActivationTokenSmoke.tokenLoaded", "true");
+        properties.setProperty("controlledProductionActivationTokenSmoke.approvedKernelExecuted", "true");
+        properties.setProperty("controlledProductionActivationTokenSmoke.safeDefaults", "true");
+        properties.setProperty("controlledProductionActivationTokenSmoke.passed", "true");
         properties.setProperty("readinessChecklist.ready.count", "4");
         properties.setProperty("readinessChecklist.blocked.count", "4");
         properties.setProperty("readinessChecklist.ready.all", "false");
@@ -137,6 +144,11 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.total.count=2\n"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.uncovered.count=1\n"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.all=false\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=passed\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.tokenLoaded=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.approvedKernelExecuted=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.safeDefaults=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=true\n"));
         assertTrue(formatted.contains("readinessChecklist.ready.count=4\n"));
         assertTrue(formatted.contains("readinessChecklist.blocked.count=4\n"));
         assertTrue(formatted.contains("readinessChecklist.ready.all=false\n"));

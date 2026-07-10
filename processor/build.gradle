@@ -557,6 +557,7 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.bucketStatusFile', openClBucketStatusFile.absolutePath
     systemProperty 'javatogpu.opencl.irGpuSourceReviewFile', layout.buildDirectory.file('reports/opencl/irgpu-source-review.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationTokenSmokeFile', openClProductionActivationTokenSmokeFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', openClBackendSourcePromotionWorkloadGateFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionCandidateGateFile', openClBackendSourcePromotionCandidateGateFile.absolutePath

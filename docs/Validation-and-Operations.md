@@ -90,6 +90,8 @@ Manual `workflow_dispatch` runs expose `production_promotion_manifest_mode=skip|
 
 Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate plus its SHA-256 sidecar, loads the exact artifact into a `GpuProductionActivationToken`, and runs one approved real workload kernel on the selected device. The hardware result is written to `production-activation-token-smoke.properties`. This mode does not enable default runtime activation, default production source switching, or production mutation; any artifact, digest, device, driver, backend, scope, or kernel mismatch fails closed.
 
+`openClValidationReport` folds this smoke artifact into production-promotion explainability. A successful controlled activation records the smoke status, token-loaded state, approved-kernel execution, and safe-default state as ready checklist evidence. The overall production status remains blocked while default production source switching or production mutation is disabled.
+
 ## Optional IR Validation
 
 For stricter compiler diagnostics or CI evidence, add `javatogpu-ir-validation` and start with diagnostic mode:

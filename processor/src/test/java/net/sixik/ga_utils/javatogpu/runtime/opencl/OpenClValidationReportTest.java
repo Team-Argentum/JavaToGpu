@@ -497,6 +497,8 @@ class OpenClValidationReportTest {
                 "javatogpu-backend-source-promotion-workload", ".properties");
         java.nio.file.Path i3SummaryFile = java.nio.file.Files.createTempFile(
                 "javatogpu-i3-readiness-workload-summary", ".properties");
+        java.nio.file.Path activationTokenSmokeFile = java.nio.file.Files.createTempFile(
+                "javatogpu-production-activation-token-smoke", ".properties");
         java.nio.file.Path explainabilityFile = java.nio.file.Files.createTempFile(
                 "javatogpu-production-promotion-explainability", ".properties");
         java.nio.file.Path reportFile = java.nio.file.Files.createTempFile(
@@ -531,13 +533,40 @@ class OpenClValidationReportTest {
                 "productionMutationEnabled=false",
                 ""
         ));
+        java.nio.file.Files.writeString(activationTokenSmokeFile, String.join("\n",
+                "status=passed",
+                "scope=controlled-production-activation-token-smoke",
+                "token.loaded=true",
+                "token.artifactSha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "token.approvalId=approval:test",
+                "token.candidateGitSha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "token.backendTarget=OPENCL",
+                "token.deviceVendor=NVIDIA Corporation",
+                "token.deviceLabel=NVIDIA CUDA / Mock GPU",
+                "token.driverVersion=1.0",
+                "token.activationScope=controlled-opt-in-only",
+                "defaultRuntimeActivation=false",
+                "defaultProductionSourceSwitching=disabled",
+                "productionMutation=disabled",
+                "kernel.count=1",
+                "kernel.0.resource=inline://integration/image-kernel.cl",
+                "kernel.0.status=passed",
+                ""
+        ));
         String previousValidationFile = System.getProperty("javatogpu.opencl.productionSourceSwitchingValidationFile");
+        String previousActivationTokenSmokeFile = System.getProperty(
+                "javatogpu.opencl.productionActivationTokenSmokeFile"
+        );
         String previousWorkloadGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
         String previousI3SummaryFile = System.getProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile");
         String previousExplainabilityFile = System.getProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
         String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
         try {
             System.setProperty("javatogpu.opencl.productionSourceSwitchingValidationFile", validationFile.toString());
+            System.setProperty(
+                    "javatogpu.opencl.productionActivationTokenSmokeFile",
+                    activationTokenSmokeFile.toString()
+            );
             System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", workloadGateFile.toString());
             System.setProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", i3SummaryFile.toString());
             System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", explainabilityFile.toString());
@@ -554,23 +583,36 @@ class OpenClValidationReportTest {
             assertTrue(explainability.contains("controlledProductionSourceSwitching.realWorkload.total.count=1"));
             assertTrue(explainability.contains("controlledProductionSourceSwitching.realWorkload.uncovered.count=0"));
             assertTrue(explainability.contains("controlledProductionSourceSwitching.realWorkload.covered.all=true"));
-        assertTrue(explainability.contains("readinessChecklist.ready.count=5"));
-        assertTrue(explainability.contains("readinessChecklist.blocked.count=4"));
-        assertTrue(explainability.contains("readinessChecklist.ready.all=false"));
-        assertTrue(explainability.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.status=passed"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.tokenLoaded=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.approvedKernelExecuted=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.safeDefaults=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.passed=true"));
+            assertTrue(explainability.contains("readinessChecklist.ready.count=6"));
+            assertTrue(explainability.contains("readinessChecklist.blocked.count=4"));
+            assertTrue(explainability.contains("readinessChecklist.ready.all=false"));
+            assertTrue(explainability.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
             assertTrue(explainability.contains("productionSourceSwitchingAllowed=false"));
             assertTrue(reportMarkdown.contains("- Controlled source switching smoke: `passed`"));
             assertTrue(reportMarkdown.contains("- Controlled source switching kernels: `7`"));
             assertTrue(reportMarkdown.contains("- Controlled real workload coverage: `1/1`"));
             assertTrue(reportMarkdown.contains("- Controlled real workload coverage all: `true`"));
+            assertTrue(reportMarkdown.contains("- Controlled activation-token smoke: `passed`"));
+            assertTrue(reportMarkdown.contains("- Activation token loaded: `true`"));
+            assertTrue(reportMarkdown.contains("- Approved activation-token kernel executed: `true`"));
+            assertTrue(reportMarkdown.contains("- Activation-token safe defaults: `true`"));
             assertTrue(reportMarkdown.contains("- Production promotion operator accepted: `0/1`, all=`false`"));
-        assertTrue(reportMarkdown.contains("- Production readiness checklist: `5 ready / 4 blocked`"));
-        assertTrue(reportMarkdown.contains("- Production readiness checklist all: `false`"));
-        assertTrue(reportMarkdown.contains("- First readiness blocker: `workload-gate-review-ready`"));
+            assertTrue(reportMarkdown.contains("- Production readiness checklist: `6 ready / 4 blocked`"));
+            assertTrue(reportMarkdown.contains("- Production readiness checklist all: `false`"));
+            assertTrue(reportMarkdown.contains("- First readiness blocker: `workload-gate-review-ready`"));
             assertTrue(reportMarkdown.contains("- Optimizer families: `0`"));
             assertTrue(reportMarkdown.contains("- Optimizer promotion-ready families: `0`"));
         } finally {
             restoreProperty("javatogpu.opencl.productionSourceSwitchingValidationFile", previousValidationFile);
+            restoreProperty(
+                    "javatogpu.opencl.productionActivationTokenSmokeFile",
+                    previousActivationTokenSmokeFile
+            );
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
             restoreProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", previousI3SummaryFile);
             restoreProperty("javatogpu.opencl.productionPromotionExplainabilityFile", previousExplainabilityFile);
