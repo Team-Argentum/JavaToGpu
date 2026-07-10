@@ -105,6 +105,56 @@ class OpenClCompilerDiagnosticCaptureTest {
         assertTrue(result.mergeWithPrimaryLog("").contains("status=failed"));
     }
 
+    @Test
+    void binaryMetadataAndNormalizedInspectionFeedbackAreMergedIntoCompileLog() {
+        OpenClProgramBinaryReader.Result binary = new OpenClProgramBinaryReader.Result(
+                "captured",
+                1,
+                0,
+                4L,
+                "abcd",
+                "elf",
+                new byte[]{0x7F, 'E', 'L', 'F'},
+                "captured"
+        );
+        OpenClCompilerDiagnosticCapture.Result result = OpenClCompilerDiagnosticCapture.capture(
+                new OpenClCompilerDiagnosticCapture.Configuration(true, "-vendor-diagnostics", "test"),
+                "",
+                options -> new OpenClCompilerDiagnosticCapture.DiagnosticProgram() {
+                    @Override
+                    public String buildLog() {
+                        return "";
+                    }
+
+                    @Override
+                    public OpenClProgramBinaryReader.Result programBinary() {
+                        return binary;
+                    }
+
+                    @Override
+                    public void close() {
+                    }
+                }
+        );
+        OpenClCompilerDiagnosticCapture.BinarySelection selection = result.selectProgramBinary(
+                OpenClProgramBinaryReader.Result.unavailable("not-captured", "none")
+        );
+        OpenClNvidiaBinaryInspector.Result inspection = OpenClNvidiaBinaryInspector.parse(
+                "cuobjdump",
+                java.nio.file.Path.of("cuobjdump"),
+                "REG:32 STACK:8",
+                "completed"
+        );
+
+        String compileLog = result.mergeWithPrimaryLog("", selection, inspection);
+
+        assertTrue(compileLog.contains("binary.status=captured"));
+        assertTrue(compileLog.contains("binary.source=diagnostic-program"));
+        assertTrue(compileLog.contains("binary.format=elf"));
+        assertTrue(compileLog.contains("binaryInspection.registers=32"));
+        assertTrue(compileLog.contains("Used 32 registers"));
+    }
+
     private static OpenClCompilerDiagnosticCapture.DiagnosticProgram diagnosticProgram(String buildLog) {
         return new OpenClCompilerDiagnosticCapture.DiagnosticProgram() {
             @Override

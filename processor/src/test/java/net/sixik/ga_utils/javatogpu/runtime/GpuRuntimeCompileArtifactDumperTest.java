@@ -27,6 +27,22 @@ class GpuRuntimeCompileArtifactDumperTest {
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
 
     @Test
+    void preservesBinaryRuntimeCompileArtifacts() {
+        byte[] binary = new byte[]{1, 2, 3, 4};
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor())
+                .withBinaryArtifacts(List.of(new GpuRuntimeBinaryArtifact(
+                        "opencl-program.bin",
+                        "application/octet-stream",
+                        binary
+                )));
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.hasBinaryArtifact("opencl-program.bin"));
+        assertEquals(4, dump.binaryArtifacts().get("opencl-program.bin").size());
+    }
+
+    @Test
     void dumpsOriginalOptimizedAndBackendArtifacts() {
         IrGpuArtifact original = artifact("body\n  return original\n");
         IrGpuArtifact optimized = artifact("body\n  return optimized\n");

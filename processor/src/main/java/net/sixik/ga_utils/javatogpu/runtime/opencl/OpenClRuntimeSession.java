@@ -29,6 +29,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
@@ -245,8 +246,15 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         OpenClProgram program = context.buildProgram(descriptor.kernelSource());
         OpenClKernel kernel = program.createKernel(descriptor.kernelName());
         OpenClKernelResourceInfo resourceInfo = OpenClKernelResourceInfoReader.read(kernel, program);
+        CompilerDiagnostics compilerDiagnostics = compilerDiagnostics(
+                program,
+                resourceInfo,
+                descriptor.kernelSource(),
+                ""
+        );
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor)
-                .withCompileLog(compilerLog(program, resourceInfo, descriptor.kernelSource(), ""));
+                .withCompileLog(compilerDiagnostics.compileLog())
+                .withBinaryArtifacts(compilerDiagnostics.binaryArtifacts());
         return new OpenClCompiledKernel(descriptor, descriptor.kernelResource(), snapshot, program, kernel)
                 .withKernelResourceInfo(resourceInfo);
     }
@@ -287,14 +295,20 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         String cacheKey = buildOptions.isBlank()
                 ? moduleArtifact.resource()
                 : moduleArtifact.resource() + "|opencl-options=" + buildOptions;
-        GpuRuntimeCompileArtifactSnapshot compiledSnapshot = artifactSnapshot.withCompileLog(
-                compilerLog(program, resourceInfo, moduleArtifact.requireSource(), buildOptions)
+        CompilerDiagnostics compilerDiagnostics = compilerDiagnostics(
+                program,
+                resourceInfo,
+                moduleArtifact.requireSource(),
+                buildOptions
         );
+        GpuRuntimeCompileArtifactSnapshot compiledSnapshot = artifactSnapshot
+                .withCompileLog(compilerDiagnostics.compileLog())
+                .withBinaryArtifacts(compilerDiagnostics.binaryArtifacts());
         return new OpenClCompiledKernel(descriptor, cacheKey, compiledSnapshot, program, kernel)
                 .withKernelResourceInfo(resourceInfo);
     }
 
-    private String compilerLog(
+    private CompilerDiagnostics compilerDiagnostics(
             OpenClProgram program,
             OpenClKernelResourceInfo resourceInfo,
             String source,
@@ -307,8 +321,25 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 buildOptions,
                 deviceProfile
         );
-        String compilerLog = diagnosticCapture.mergeWithPrimaryLog(primaryLog);
-        return resourceInfo.appendToCompilerLog(compilerLog);
+        OpenClProgramBinaryReader.Result primaryBinary = "disabled".equals(diagnosticCapture.status())
+                ? OpenClProgramBinaryReader.Result.unavailable("disabled", "compiler diagnostics are disabled")
+                : OpenClProgramBinaryReader.read(program);
+        OpenClCompilerDiagnosticCapture.BinarySelection binarySelection = diagnosticCapture.selectProgramBinary(primaryBinary);
+        OpenClNvidiaBinaryInspector.Result binaryInspection = OpenClNvidiaBinaryInspector.inspect(
+                binarySelection.binary(),
+                deviceProfile
+        );
+        String compilerLog = diagnosticCapture.mergeWithPrimaryLog(primaryLog, binarySelection, binaryInspection);
+        List<GpuRuntimeBinaryArtifact> binaryArtifacts = binarySelection.binary().artifact().stream().toList();
+        return new CompilerDiagnostics(resourceInfo.appendToCompilerLog(compilerLog), binaryArtifacts);
+    }
+
+    private record CompilerDiagnostics(String compileLog, List<GpuRuntimeBinaryArtifact> binaryArtifacts) {
+
+        private CompilerDiagnostics {
+            compileLog = compileLog == null ? "" : compileLog;
+            binaryArtifacts = binaryArtifacts == null ? List.of() : List.copyOf(binaryArtifacts);
+        }
     }
 
     public OpenClRuntimeCapabilities capabilities() {

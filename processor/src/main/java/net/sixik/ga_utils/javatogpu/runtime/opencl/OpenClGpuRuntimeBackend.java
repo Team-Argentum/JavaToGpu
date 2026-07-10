@@ -2894,10 +2894,17 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuRuntimeCompileArtifactSnapshot requestedSnapshot,
             GpuRuntimeCompileArtifactSnapshot compiledSnapshot
     ) {
-        if (compiledSnapshot == null || compiledSnapshot.compileLog().isBlank()) {
+        if (compiledSnapshot == null) {
             return requestedSnapshot;
         }
-        return requestedSnapshot.withCompileLog(compiledSnapshot.compileLog());
+        GpuRuntimeCompileArtifactSnapshot merged = requestedSnapshot;
+        if (!compiledSnapshot.compileLog().isBlank()) {
+            merged = merged.withCompileLog(compiledSnapshot.compileLog());
+        }
+        if (!compiledSnapshot.binaryArtifacts().isEmpty()) {
+            merged = merged.withBinaryArtifacts(compiledSnapshot.binaryArtifacts());
+        }
+        return merged;
     }
 
     private boolean overridesLegacyCreateSessionHook() {
@@ -3077,6 +3084,13 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                         artifactDirectory.resolve(artifact.getKey()),
                         artifact.getValue(),
                         java.nio.charset.StandardCharsets.UTF_8
+                );
+            }
+            for (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact artifact
+                    : dump.binaryArtifacts().values()) {
+                java.nio.file.Files.write(
+                        artifactDirectory.resolve(artifact.name()),
+                        artifact.content()
                 );
             }
             if (!dump.sourceLocations().isEmpty()) {

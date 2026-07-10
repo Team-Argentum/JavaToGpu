@@ -41,6 +41,12 @@ public final class GpuRuntimeCompileArtifactDumper {
         java.util.Objects.requireNonNull(compilerFeedbackRegistry, "compilerFeedbackRegistry");
 
         LinkedHashMap<String, String> artifacts = new LinkedHashMap<>();
+        LinkedHashMap<String, GpuRuntimeBinaryArtifact> binaryArtifacts = new LinkedHashMap<>();
+        for (GpuRuntimeBinaryArtifact artifact : snapshot.binaryArtifacts()) {
+            if (artifact != null && artifact.size() > 0) {
+                binaryArtifacts.putIfAbsent(artifact.name(), artifact);
+            }
+        }
         GpuBackendCompilerFeedbackReport compilerFeedbackReport = compilerFeedbackRegistry.inspect(snapshot);
         snapshot.originalIrGpuArtifact().ifPresent(artifact -> artifacts.put(
                 "original.irgpu.properties",
@@ -98,7 +104,8 @@ public final class GpuRuntimeCompileArtifactDumper {
                 snapshot.sourceLocations().stream()
                         .map(GpuRuntimeCompileArtifactDumper::formatSourceLocation)
                         .toList(),
-                snapshot.invalidationStamp()
+                snapshot.invalidationStamp(),
+                binaryArtifacts
         );
     }
 
