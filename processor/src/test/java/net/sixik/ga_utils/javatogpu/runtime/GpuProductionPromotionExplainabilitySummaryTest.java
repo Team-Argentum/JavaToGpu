@@ -120,6 +120,12 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         properties.setProperty("controlledProductionActivationTokenSmoke.realWorkload.covered.all", "true");
         properties.setProperty("controlledProductionActivationTokenSmoke.safeDefaults", "true");
         properties.setProperty("controlledProductionActivationTokenSmoke.passed", "true");
+        properties.setProperty("controlledProductionActivationTokenNegative.status", "passed");
+        properties.setProperty("controlledProductionActivationTokenNegative.digestMismatchRejected", "true");
+        properties.setProperty("controlledProductionActivationTokenNegative.unapprovedKernelRejected", "true");
+        properties.setProperty("controlledProductionActivationTokenNegative.outputUnchanged", "true");
+        properties.setProperty("controlledProductionActivationTokenNegative.safeDefaults", "true");
+        properties.setProperty("controlledProductionActivationTokenNegative.passed", "true");
         properties.setProperty("readinessChecklist.ready.count", "4");
         properties.setProperty("readinessChecklist.blocked.count", "4");
         properties.setProperty("readinessChecklist.ready.all", "false");
@@ -157,6 +163,12 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.all=true\n"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.safeDefaults=true\n"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.status=passed\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.digestMismatchRejected=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.unapprovedKernelRejected=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.outputUnchanged=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.safeDefaults=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.passed=true\n"));
         assertTrue(formatted.contains("readinessChecklist.ready.count=4\n"));
         assertTrue(formatted.contains("readinessChecklist.blocked.count=4\n"));
         assertTrue(formatted.contains("readinessChecklist.ready.all=false\n"));

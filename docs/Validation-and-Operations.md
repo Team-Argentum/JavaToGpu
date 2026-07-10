@@ -56,6 +56,7 @@ Important buckets include:
 - `:processor:validateOpenClBackendSourcePromotionManifest`
 - `:processor:validateOpenClBackendSourcePromotionActivationGate`
 - `:processor:openClProductionActivationTokenSmokeTest`
+- `:processor:openClProductionActivationTokenNegativeTest`
 - `:processor:openClValidationReport`
 
 You usually do not need to run buckets one by one unless you are narrowing down a failure.
@@ -79,6 +80,7 @@ processor/build/reports/opencl/backend-source-promotion-manifest-validation.prop
 processor/build/reports/opencl/backend-source-promotion-activation-gate.properties
 processor/build/reports/opencl/backend-source-promotion-activation-gate.properties.sha256
 processor/build/reports/opencl/production-activation-token-smoke.properties
+processor/build/reports/opencl/production-activation-token-negative.properties
 processor/build/test-results/
 ```
 
@@ -88,9 +90,9 @@ The candidate gate combines the real-workload gate with controlled source-switch
 
 Manual `workflow_dispatch` runs expose `production_promotion_manifest_mode=skip|template|validate|activate`. Use `template` to archive a pending device-specific manifest bound to that run's `github.sha`. After approving and committing the manifest, use `validate` with `production_promotion_manifest_file`, the original SHA in `production_promotion_candidate_git_sha`, and a single matching `validation_lane`. Candidate SHA-256 and identity bindings prevent reuse for another GPU, driver, candidate artifact, or source state.
 
-Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate plus its SHA-256 sidecar, loads the exact artifact into a `GpuProductionActivationToken`, and runs every approved real workload kernel on the selected device. The hardware result is written to `production-activation-token-smoke.properties` with per-kernel status and workload coverage. This mode does not enable default runtime activation, default production source switching, or production mutation; any artifact, digest, device, driver, backend, scope, or kernel mismatch fails closed.
+Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate plus its SHA-256 sidecar, loads the exact artifact into a `GpuProductionActivationToken`, and runs every approved real workload kernel on the selected device. The positive hardware result is written to `production-activation-token-smoke.properties` with per-kernel status and workload coverage. A required negative lane then verifies that a mismatched SHA-256 is rejected and that an unapproved kernel is blocked before output mutation; its result is written to `production-activation-token-negative.properties`. The `activate` lane fails if either check fails. This mode does not enable default runtime activation, default production source switching, or production mutation.
 
-`openClValidationReport` folds this smoke artifact into production-promotion explainability. A successful controlled activation records the smoke status, token-loaded state, approved-kernel execution, full real-workload coverage, and safe-default state as ready checklist evidence. The overall production status remains blocked while default production source switching or production mutation is disabled.
+`openClValidationReport` folds both activation-token artifacts into production-promotion explainability. A successful controlled activation records token loading, approved-kernel execution, full real-workload coverage, digest-mismatch rejection, unapproved-kernel rejection, unchanged rejected output, and safe defaults as separate readiness evidence. The overall production status remains blocked while default production source switching or production mutation is disabled.
 
 ## Optional IR Validation
 

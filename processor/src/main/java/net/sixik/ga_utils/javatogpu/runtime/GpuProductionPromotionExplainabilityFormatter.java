@@ -53,6 +53,24 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             Properties controlledProductionSourceSwitchingValidation,
             Properties controlledProductionActivationTokenSmoke
     ) {
+        return format(
+                workloadGate,
+                i3Summary,
+                backendPromotionArtifactSupport,
+                controlledProductionSourceSwitchingValidation,
+                controlledProductionActivationTokenSmoke,
+                new Properties()
+        );
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation,
+            Properties controlledProductionActivationTokenSmoke,
+            Properties controlledProductionActivationTokenNegative
+    ) {
         Properties gate = workloadGate == null ? new Properties() : workloadGate;
         Properties readiness = i3Summary == null ? new Properties() : i3Summary;
         Properties promotionSupport = backendPromotionArtifactSupport == null
@@ -64,6 +82,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         Properties activationTokenSmoke = controlledProductionActivationTokenSmoke == null
                 ? new Properties()
                 : controlledProductionActivationTokenSmoke;
+        Properties activationTokenNegative = controlledProductionActivationTokenNegative == null
+                ? new Properties()
+                : controlledProductionActivationTokenNegative;
         boolean backendPromotionArtifactSupportComplete = propertyIsTrue(
                 promotionSupport,
                 "complete",
@@ -160,6 +181,38 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 && GpuBackendSourcePromotionActivationGate.ACTIVATION_SCOPE.equals(
                 activationTokenSmoke.getProperty("token.activationScope", "unknown")
         );
+        boolean activationTokenNegativeSafeDefaults = "false".equals(
+                activationTokenNegative.getProperty("defaultRuntimeActivation", "unknown")
+        ) && "disabled".equals(
+                activationTokenNegative.getProperty("defaultProductionSourceSwitching", "unknown")
+        ) && "disabled".equals(
+                activationTokenNegative.getProperty("productionMutation", "unknown")
+        );
+        boolean activationTokenDigestMismatchRejected = propertyIsTrue(
+                activationTokenNegative,
+                "digestMismatchRejected",
+                false
+        );
+        boolean activationTokenUnapprovedKernelRejected = propertyIsTrue(
+                activationTokenNegative,
+                "unapprovedKernelRejected",
+                false
+        );
+        boolean activationTokenNegativeOutputUnchanged = propertyIsTrue(
+                activationTokenNegative,
+                "outputUnchanged",
+                false
+        );
+        boolean activationTokenNegativePassed = "passed".equals(
+                activationTokenNegative.getProperty("status", "not-recorded")
+        ) && "controlled-production-activation-token-negative".equals(
+                activationTokenNegative.getProperty("scope", "unknown")
+        )
+                && activationTokenDigestMismatchRejected
+                && activationTokenUnapprovedKernelRejected
+                && activationTokenNegativeOutputUnchanged
+                && activationTokenNegativeSafeDefaults
+                && propertyIsTrue(activationTokenNegative, "passed", false);
 
         List<ReadinessChecklistItem> readinessChecklist = List.of(
                 new ReadinessChecklistItem(
@@ -197,6 +250,12 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                         activationTokenSmokePassed,
                         "controlled activation token loaded its exact artifact and executed an approved hardware workload",
                         "controlled activation-token hardware smoke is missing or incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "activation-token-negative-controls-passed",
+                        activationTokenNegativePassed,
+                        "controlled activation-token negative controls reject digest and kernel mismatches before execution",
+                        "controlled activation-token negative controls are missing or incomplete"
                 ),
                 new ReadinessChecklistItem(
                         "promotion-artifacts-complete",
@@ -390,6 +449,27 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 .append('\n');
         builder.append("controlledProductionActivationTokenSmoke.passed=")
                 .append(activationTokenSmokePassed)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.status=")
+                .append(activationTokenNegative.getProperty("status", "not-recorded"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.scope=")
+                .append(activationTokenNegative.getProperty("scope", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.digestMismatchRejected=")
+                .append(activationTokenDigestMismatchRejected)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.unapprovedKernelRejected=")
+                .append(activationTokenUnapprovedKernelRejected)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.outputUnchanged=")
+                .append(activationTokenNegativeOutputUnchanged)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.safeDefaults=")
+                .append(activationTokenNegativeSafeDefaults)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.passed=")
+                .append(activationTokenNegativePassed)
                 .append('\n');
         appendReadinessChecklist(builder, readinessChecklist);
         builder.append("blocker.count=").append(blockers.size()).append('\n');

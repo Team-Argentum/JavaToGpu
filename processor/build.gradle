@@ -67,6 +67,7 @@ def openClBackendSourcePromotionActivationGateDigestFile = new File(
         openClBackendSourcePromotionActivationGateFile.name + '.sha256'
 )
 def openClProductionActivationTokenSmokeFile = layout.buildDirectory.file('reports/opencl/production-activation-token-smoke.properties').get().asFile
+def openClProductionActivationTokenNegativeFile = layout.buildDirectory.file('reports/opencl/production-activation-token-negative.properties').get().asFile
 def openClBackendSourcePromotionManifestFile = providers.gradleProperty('openClPromotionManifestFile')
         .map { rootProject.file(it) }
         .orElse(layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest.properties').map { it.asFile })
@@ -532,6 +533,26 @@ tasks.register('openClProductionActivationTokenSmokeTest', Test) {
     attachBucketStatusRecording(it)
 }
 
+tasks.register('openClProductionActivationTokenNegativeTest', Test) {
+    group = 'verification'
+    description = 'Verifies activation-token digest and unapproved-kernel fail-closed controls on OpenCL hardware.'
+    dependsOn 'validateOpenClBackendSourcePromotionActivationGate'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.productionActivationTokenNegative', 'true'
+    systemProperty 'javatogpu.opencl.productionActivationArtifactFile', openClBackendSourcePromotionActivationGateFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationDigestFile', openClBackendSourcePromotionActivationGateDigestFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationTokenNegativeFile', openClProductionActivationTokenNegativeFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionActivationTokenRejectsDigestMismatchAndUnapprovedKernelOnAvailableOpenClDevice'
+    }
+    inputs.file(openClBackendSourcePromotionActivationGateFile)
+    inputs.file(openClBackendSourcePromotionActivationGateDigestFile)
+    outputs.file(openClProductionActivationTokenNegativeFile)
+    attachBucketStatusRecording(it)
+}
+
 tasks.register('openClLongRunningStabilityTest', Test) {
     group = 'verification'
     description = 'Runs long-running real-device OpenCL ABI/resource stability coverage.'
@@ -558,6 +579,7 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.irGpuSourceReviewFile', layout.buildDirectory.file('reports/opencl/irgpu-source-review.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
     systemProperty 'javatogpu.opencl.productionActivationTokenSmokeFile', openClProductionActivationTokenSmokeFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationTokenNegativeFile', openClProductionActivationTokenNegativeFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', openClBackendSourcePromotionWorkloadGateFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionCandidateGateFile', openClBackendSourcePromotionCandidateGateFile.absolutePath

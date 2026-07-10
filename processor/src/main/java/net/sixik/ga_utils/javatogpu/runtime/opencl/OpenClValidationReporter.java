@@ -27,6 +27,8 @@ public final class OpenClValidationReporter {
             "javatogpu.opencl.productionSourceSwitchingValidationFile";
     private static final String PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY =
             "javatogpu.opencl.productionActivationTokenSmokeFile";
+    private static final String PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_FILE_PROPERTY =
+            "javatogpu.opencl.productionActivationTokenNegativeFile";
     private static final String BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionGateFile";
     private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
     private static final String BACKEND_SOURCE_PROMOTION_CANDIDATE_GATE_FILE_PROPERTY =
@@ -813,6 +815,18 @@ public final class OpenClValidationReporter {
             markdown.append("- Activation-token safe defaults: `")
                     .append(sanitizeInline(summary.controlledProductionActivationTokenSafeDefaults()))
                     .append("`\n");
+            markdown.append("- Activation-token negative controls: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenNegativeStatus()))
+                    .append("`\n");
+            markdown.append("- Activation-token digest mismatch rejected: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenDigestMismatchRejected()))
+                    .append("`\n");
+            markdown.append("- Activation-token unapproved kernel rejected: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenUnapprovedKernelRejected()))
+                    .append("`\n");
+            markdown.append("- Activation-token rejected output unchanged: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenNegativeOutputUnchanged()))
+                    .append("`\n");
             markdown.append("- Production readiness checklist: `")
                     .append(summary.readinessChecklistReadyCount())
                     .append(" ready / ")
@@ -1146,6 +1160,9 @@ public final class OpenClValidationReporter {
         String controlledProductionActivationTokenSmokePath = System.getProperty(
                 PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY
         );
+        String controlledProductionActivationTokenNegativePath = System.getProperty(
+                PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_FILE_PROPERTY
+        );
         if (outputPath == null || outputPath.isBlank() || gatePath == null || gatePath.isBlank()) {
             return;
         }
@@ -1170,6 +1187,10 @@ public final class OpenClValidationReporter {
                     || controlledProductionActivationTokenSmokePath.isBlank()
                     ? new java.util.Properties()
                     : loadPropertiesIfExists(Paths.get(controlledProductionActivationTokenSmokePath));
+            java.util.Properties controlledProductionActivationTokenNegative = controlledProductionActivationTokenNegativePath == null
+                    || controlledProductionActivationTokenNegativePath.isBlank()
+                    ? new java.util.Properties()
+                    : loadPropertiesIfExists(Paths.get(controlledProductionActivationTokenNegativePath));
             applyOptimizerFamilyRuntimeEquivalenceHistoryBaseline(gate);
             Files.writeString(
                     path,
@@ -1178,7 +1199,8 @@ public final class OpenClValidationReporter {
                             i3Summary,
                             backendPromotionArtifactSupport,
                             controlledProductionSourceSwitchingValidation,
-                            controlledProductionActivationTokenSmoke
+                            controlledProductionActivationTokenSmoke,
+                            controlledProductionActivationTokenNegative
                     ),
                     StandardCharsets.UTF_8
             );

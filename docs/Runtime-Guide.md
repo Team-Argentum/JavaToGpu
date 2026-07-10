@@ -433,7 +433,18 @@ Run the end-to-end hardware check with the same manifest and candidate SHA used 
 
 The task depends on the activation gate, loads its exact artifact and sidecar, and executes every approved real workload kernel: Perlin, packed blob, packed numeric, synthetic 3D packed grid, and image. It writes per-kernel status to `production-activation-token-smoke.properties` and still records all default runtime and production mutation switches as disabled.
 
-The OpenCL validation reporter includes this artifact in `production-promotion-explainability.properties` and its compact CI summary. The readiness item requires full real-workload coverage, not a single successful kernel. It does not set `productionSourceSwitchingAllowed`, enable the default source path, or authorize production mutation.
+Run the hardware negative controls against the same activation artifact:
+
+```powershell
+.\gradlew.bat :processor:openClProductionActivationTokenNegativeTest `
+  -PopenClPromotionManifestFile=<manifest-path> `
+  -PopenClPromotionGitSha=<candidate-run-full-git-sha> `
+  --console=plain --no-daemon
+```
+
+This task verifies that `GpuProductionActivationToken.fromArtifact(...)` rejects a mismatched SHA-256 and that a valid token rejects an unapproved kernel resource before GPU output changes. It writes `production-activation-token-negative.properties` with the rejection and safe-default states.
+
+The OpenCL validation reporter includes both activation-token artifacts in `production-promotion-explainability.properties` and its compact CI summary. Separate readiness items require full real-workload coverage and successful negative controls. Neither item sets `productionSourceSwitchingAllowed`, enables the default source path, or authorizes production mutation.
 
 ## ABI Debug
 

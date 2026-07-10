@@ -499,6 +499,8 @@ class OpenClValidationReportTest {
                 "javatogpu-i3-readiness-workload-summary", ".properties");
         java.nio.file.Path activationTokenSmokeFile = java.nio.file.Files.createTempFile(
                 "javatogpu-production-activation-token-smoke", ".properties");
+        java.nio.file.Path activationTokenNegativeFile = java.nio.file.Files.createTempFile(
+                "javatogpu-production-activation-token-negative", ".properties");
         java.nio.file.Path explainabilityFile = java.nio.file.Files.createTempFile(
                 "javatogpu-production-promotion-explainability", ".properties");
         java.nio.file.Path reportFile = java.nio.file.Files.createTempFile(
@@ -553,9 +555,24 @@ class OpenClValidationReportTest {
                 "kernel.0.status=passed",
                 ""
         ));
+        java.nio.file.Files.writeString(activationTokenNegativeFile, String.join("\n",
+                "status=passed",
+                "scope=controlled-production-activation-token-negative",
+                "digestMismatchRejected=true",
+                "unapprovedKernelRejected=true",
+                "outputUnchanged=true",
+                "defaultRuntimeActivation=false",
+                "defaultProductionSourceSwitching=disabled",
+                "productionMutation=disabled",
+                "passed=true",
+                ""
+        ));
         String previousValidationFile = System.getProperty("javatogpu.opencl.productionSourceSwitchingValidationFile");
         String previousActivationTokenSmokeFile = System.getProperty(
                 "javatogpu.opencl.productionActivationTokenSmokeFile"
+        );
+        String previousActivationTokenNegativeFile = System.getProperty(
+                "javatogpu.opencl.productionActivationTokenNegativeFile"
         );
         String previousWorkloadGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
         String previousI3SummaryFile = System.getProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile");
@@ -566,6 +583,10 @@ class OpenClValidationReportTest {
             System.setProperty(
                     "javatogpu.opencl.productionActivationTokenSmokeFile",
                     activationTokenSmokeFile.toString()
+            );
+            System.setProperty(
+                    "javatogpu.opencl.productionActivationTokenNegativeFile",
+                    activationTokenNegativeFile.toString()
             );
             System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", workloadGateFile.toString());
             System.setProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", i3SummaryFile.toString());
@@ -592,7 +613,13 @@ class OpenClValidationReportTest {
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.all=true"));
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.safeDefaults=true"));
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.passed=true"));
-            assertTrue(explainability.contains("readinessChecklist.ready.count=6"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenNegative.status=passed"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenNegative.digestMismatchRejected=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenNegative.unapprovedKernelRejected=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenNegative.outputUnchanged=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenNegative.safeDefaults=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenNegative.passed=true"));
+            assertTrue(explainability.contains("readinessChecklist.ready.count=7"));
             assertTrue(explainability.contains("readinessChecklist.blocked.count=4"));
             assertTrue(explainability.contains("readinessChecklist.ready.all=false"));
             assertTrue(explainability.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
@@ -607,8 +634,12 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Activation-token real workload coverage: `1/1`"));
             assertTrue(reportMarkdown.contains("- Activation-token real workload coverage all: `true`"));
             assertTrue(reportMarkdown.contains("- Activation-token safe defaults: `true`"));
+            assertTrue(reportMarkdown.contains("- Activation-token negative controls: `passed`"));
+            assertTrue(reportMarkdown.contains("- Activation-token digest mismatch rejected: `true`"));
+            assertTrue(reportMarkdown.contains("- Activation-token unapproved kernel rejected: `true`"));
+            assertTrue(reportMarkdown.contains("- Activation-token rejected output unchanged: `true`"));
             assertTrue(reportMarkdown.contains("- Production promotion operator accepted: `0/1`, all=`false`"));
-            assertTrue(reportMarkdown.contains("- Production readiness checklist: `6 ready / 4 blocked`"));
+            assertTrue(reportMarkdown.contains("- Production readiness checklist: `7 ready / 4 blocked`"));
             assertTrue(reportMarkdown.contains("- Production readiness checklist all: `false`"));
             assertTrue(reportMarkdown.contains("- First readiness blocker: `workload-gate-review-ready`"));
             assertTrue(reportMarkdown.contains("- Optimizer families: `0`"));
@@ -618,6 +649,10 @@ class OpenClValidationReportTest {
             restoreProperty(
                     "javatogpu.opencl.productionActivationTokenSmokeFile",
                     previousActivationTokenSmokeFile
+            );
+            restoreProperty(
+                    "javatogpu.opencl.productionActivationTokenNegativeFile",
+                    previousActivationTokenNegativeFile
             );
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
             restoreProperty("javatogpu.opencl.i3ReadinessWorkloadSummaryFile", previousI3SummaryFile);

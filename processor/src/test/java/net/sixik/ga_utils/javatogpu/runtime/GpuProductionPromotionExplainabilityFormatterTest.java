@@ -46,10 +46,12 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("i3SourceReady.count=2"));
         assertTrue(formatted.contains("i3SourceReady.all=true"));
         assertTrue(formatted.contains("readinessChecklist.ready.count=8"));
-        assertTrue(formatted.contains("readinessChecklist.blocked.count=2"));
+        assertTrue(formatted.contains("readinessChecklist.blocked.count=3"));
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=controlled-source-switching-covered"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=not-recorded"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=false"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.status=not-recorded"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.passed=false"));
         assertTrue(formatted.contains("contract.status=valid"));
         assertTrue(formatted.contains("contract.violation.count=0"));
         assertTrue(formatted.contains("decision.mode=production-enabled"));
@@ -80,7 +82,8 @@ class GpuProductionPromotionExplainabilityFormatterTest {
                 blockedReadiness(),
                 completePromotionArtifactSupport(),
                 controlledProductionSourceSwitchingValidation(),
-                controlledProductionActivationTokenSmoke()
+                controlledProductionActivationTokenSmoke(),
+                controlledProductionActivationTokenNegative()
         );
 
         assertTrue(formatted.contains("status=blocked"));
@@ -104,8 +107,14 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.all=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.safeDefaults=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=true"));
-        assertTrue(formatted.contains("readinessChecklist.item.count=10"));
-        assertTrue(formatted.contains("readinessChecklist.ready.count=4"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.status=passed"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.digestMismatchRejected=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.unapprovedKernelRejected=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.outputUnchanged=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.safeDefaults=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenNegative.passed=true"));
+        assertTrue(formatted.contains("readinessChecklist.item.count=11"));
+        assertTrue(formatted.contains("readinessChecklist.ready.count=5"));
         assertTrue(formatted.contains("readinessChecklist.blocked.count=6"));
         assertTrue(formatted.contains("readinessChecklist.ready.all=false"));
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=workload-gate-review-ready"));
@@ -223,6 +232,20 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("kernel.0.status", "passed");
         properties.setProperty("kernel.1.resource", "kernel-b.cl");
         properties.setProperty("kernel.1.status", "passed");
+        return properties;
+    }
+
+    private static Properties controlledProductionActivationTokenNegative() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "passed");
+        properties.setProperty("scope", "controlled-production-activation-token-negative");
+        properties.setProperty("digestMismatchRejected", "true");
+        properties.setProperty("unapprovedKernelRejected", "true");
+        properties.setProperty("outputUnchanged", "true");
+        properties.setProperty("defaultRuntimeActivation", "false");
+        properties.setProperty("defaultProductionSourceSwitching", "disabled");
+        properties.setProperty("productionMutation", "disabled");
+        properties.setProperty("passed", "true");
         return properties;
     }
 }

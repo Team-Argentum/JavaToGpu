@@ -48,6 +48,12 @@ public record GpuProductionPromotionExplainabilitySummary(
         String controlledProductionActivationTokenRealWorkloadCoveredAll,
         String controlledProductionActivationTokenSafeDefaults,
         String controlledProductionActivationTokenSmokePassed,
+        String controlledProductionActivationTokenNegativeStatus,
+        String controlledProductionActivationTokenDigestMismatchRejected,
+        String controlledProductionActivationTokenUnapprovedKernelRejected,
+        String controlledProductionActivationTokenNegativeOutputUnchanged,
+        String controlledProductionActivationTokenNegativeSafeDefaults,
+        String controlledProductionActivationTokenNegativePassed,
         int readinessChecklistReadyCount,
         int readinessChecklistBlockedCount,
         String readinessChecklistReadyAll,
@@ -92,6 +98,12 @@ public record GpuProductionPromotionExplainabilitySummary(
                 0,
                 0,
                 0,
+                "false",
+                "false",
+                "false",
+                "not-recorded",
+                "false",
+                "false",
                 "false",
                 "false",
                 "false",
@@ -173,6 +185,18 @@ public record GpuProductionPromotionExplainabilitySummary(
                 ),
                 properties.getProperty("controlledProductionActivationTokenSmoke.safeDefaults", "false"),
                 properties.getProperty("controlledProductionActivationTokenSmoke.passed", "false"),
+                properties.getProperty("controlledProductionActivationTokenNegative.status", "not-recorded"),
+                properties.getProperty(
+                        "controlledProductionActivationTokenNegative.digestMismatchRejected",
+                        "false"
+                ),
+                properties.getProperty(
+                        "controlledProductionActivationTokenNegative.unapprovedKernelRejected",
+                        "false"
+                ),
+                properties.getProperty("controlledProductionActivationTokenNegative.outputUnchanged", "false"),
+                properties.getProperty("controlledProductionActivationTokenNegative.safeDefaults", "false"),
+                properties.getProperty("controlledProductionActivationTokenNegative.passed", "false"),
                 parsePositiveInt(properties.getProperty("readinessChecklist.ready.count", "0")),
                 parsePositiveInt(properties.getProperty("readinessChecklist.blocked.count", "0")),
                 properties.getProperty("readinessChecklist.ready.all", "false"),
@@ -240,6 +264,17 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + controlledProductionActivationTokenRealWorkloadCoveredAll
                 + ", controlledActivationTokenSafeDefaults=" + controlledProductionActivationTokenSafeDefaults
                 + ", controlledActivationTokenSmokePassed=" + controlledProductionActivationTokenSmokePassed
+                + ", controlledActivationTokenNegative=" + controlledProductionActivationTokenNegativeStatus
+                + ", controlledActivationTokenDigestMismatchRejected="
+                + controlledProductionActivationTokenDigestMismatchRejected
+                + ", controlledActivationTokenUnapprovedKernelRejected="
+                + controlledProductionActivationTokenUnapprovedKernelRejected
+                + ", controlledActivationTokenNegativeOutputUnchanged="
+                + controlledProductionActivationTokenNegativeOutputUnchanged
+                + ", controlledActivationTokenNegativeSafeDefaults="
+                + controlledProductionActivationTokenNegativeSafeDefaults
+                + ", controlledActivationTokenNegativePassed="
+                + controlledProductionActivationTokenNegativePassed
                 + ", readinessChecklistReady=" + readinessChecklistReadyCount
                 + ", readinessChecklistBlocked=" + readinessChecklistBlockedCount
                 + ", readinessChecklistReadyAll=" + readinessChecklistReadyAll

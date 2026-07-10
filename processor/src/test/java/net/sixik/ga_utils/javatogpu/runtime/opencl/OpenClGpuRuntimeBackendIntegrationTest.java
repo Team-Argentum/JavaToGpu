@@ -63,6 +63,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenClGpuRuntimeBackendIntegrationTest {
@@ -81,6 +82,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String PRODUCTION_ACTIVATION_ARTIFACT_FILE_PROPERTY = "javatogpu.opencl.productionActivationArtifactFile";
     private static final String PRODUCTION_ACTIVATION_DIGEST_FILE_PROPERTY = "javatogpu.opencl.productionActivationDigestFile";
     private static final String PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY = "javatogpu.opencl.productionActivationTokenSmokeFile";
+    private static final String PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_PROPERTY = "javatogpu.opencl.productionActivationTokenNegative";
+    private static final String PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_FILE_PROPERTY = "javatogpu.opencl.productionActivationTokenNegativeFile";
     private static final String IMAGE_KERNEL_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/image-kernel.irgpu.properties";
     private static final String IMAGE_KERNEL_RESOURCE = "inline://integration/image-kernel.cl";
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
@@ -915,6 +918,79 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             throw exception;
         } finally {
             writeProductionActivationTokenSmokeSummary(status, activationToken, kernelStatuses);
+        }
+    }
+
+    @Test
+    void productionActivationTokenRejectsDigestMismatchAndUnapprovedKernelOnAvailableOpenClDevice() throws Exception {
+        assumeProductionActivationTokenNegativeEnabled();
+        assumeOpenClAvailable();
+
+        String status = "not run";
+        boolean digestMismatchRejected = false;
+        boolean unapprovedKernelRejected = false;
+        boolean outputUnchanged = false;
+        try {
+            Path artifactPath = requiredConfiguredFile(PRODUCTION_ACTIVATION_ARTIFACT_FILE_PROPERTY);
+            Path digestPath = requiredConfiguredFile(PRODUCTION_ACTIVATION_DIGEST_FILE_PROPERTY);
+            String expectedSha256 = Files.readString(digestPath, StandardCharsets.UTF_8).trim();
+            String mismatchedSha256 = (expectedSha256.startsWith("0") ? "1" : "0")
+                    + expectedSha256.substring(1);
+
+            IllegalStateException digestFailure = assertThrows(
+                    IllegalStateException.class,
+                    () -> GpuProductionActivationToken.fromArtifact(artifactPath, mismatchedSha256)
+            );
+            assertTrue(digestFailure.getMessage().contains("SHA-256 mismatch"));
+            digestMismatchRejected = true;
+
+            GpuProductionActivationToken activationToken = GpuProductionActivationToken.fromArtifact(
+                    artifactPath,
+                    expectedSha256
+            );
+            GpuKernelDescriptor descriptor = simpleIrGpuSourceKernelDescriptor();
+            float[] input = new float[]{1.0f, 2.0f, 3.0f, 4.0f};
+            float[] output = new float[]{-11.0f, -12.0f, -13.0f, -14.0f};
+            float[] expectedOutput = output.clone();
+
+            try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+                IllegalStateException kernelFailure = assertThrows(
+                        IllegalStateException.class,
+                        () -> backend.invoke(new GpuKernelInvocation(
+                                descriptor,
+                                new Object[]{input, 2.5f, output},
+                                productionSourceSwitchingOptions(
+                                        backend,
+                                        descriptor.kernelResource(),
+                                        activationToken
+                                )
+                        ))
+                );
+                assertTrue(kernelFailure.getMessage().contains(
+                        "production-activation-kernel-resource-not-approved"
+                ));
+                unapprovedKernelRejected = true;
+            }
+
+            assertArrayEquals(expectedOutput, output);
+            outputUnchanged = true;
+            status = "passed";
+        } catch (org.opentest4j.TestAbortedException aborted) {
+            status = "skipped";
+            throw aborted;
+        } catch (AssertionError error) {
+            status = "failed";
+            throw error;
+        } catch (Exception exception) {
+            status = "failed";
+            throw exception;
+        } finally {
+            writeProductionActivationTokenNegativeSummary(
+                    status,
+                    digestMismatchRejected,
+                    unapprovedKernelRejected,
+                    outputUnchanged
+            );
         }
     }
 
@@ -3129,6 +3205,46 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         }
     }
 
+    private static void writeProductionActivationTokenNegativeSummary(
+            String status,
+            boolean digestMismatchRejected,
+            boolean unapprovedKernelRejected,
+            boolean outputUnchanged
+    ) {
+        String outputPath = System.getProperty(PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        String normalizedStatus = status == null || status.isBlank() ? "unknown" : status;
+        boolean passed = "passed".equals(normalizedStatus)
+                && digestMismatchRejected
+                && unapprovedKernelRejected
+                && outputUnchanged;
+        String properties = "status=" + normalizedStatus + "\n"
+                + "completedAtUtc=" + Instant.now() + "\n"
+                + "scope=controlled-production-activation-token-negative\n"
+                + "digestMismatchRejected=" + digestMismatchRejected + "\n"
+                + "unapprovedKernelRejected=" + unapprovedKernelRejected + "\n"
+                + "outputUnchanged=" + outputUnchanged + "\n"
+                + "defaultRuntimeActivation=false\n"
+                + "defaultProductionSourceSwitching=disabled\n"
+                + "productionMutation=disabled\n"
+                + "passed=" + passed + "\n"
+                + "diagnostic.count=2\n"
+                + "diagnostic.0=activation token loader rejected a mismatched SHA-256\n"
+                + "diagnostic.1=activation token rejected an unapproved kernel before GPU execution\n";
+        try {
+            Path path = Path.of(outputPath);
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(path, properties, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to write production activation-token negative summary", exception);
+        }
+    }
+
     private static void writeIrGpuSourceReviewSummary(String status) {
         String outputPath = System.getProperty(IRGPU_SOURCE_REVIEW_FILE_PROPERTY);
         if (outputPath == null || outputPath.isBlank()) {
@@ -3268,6 +3384,15 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 Boolean.getBoolean(PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY),
                 "Skipping production activation-token smoke test: set -D"
                         + PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY
+                        + "=true"
+        );
+    }
+
+    private static void assumeProductionActivationTokenNegativeEnabled() {
+        Assumptions.assumeTrue(
+                Boolean.getBoolean(PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_PROPERTY),
+                "Skipping production activation-token negative test: set -D"
+                        + PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_PROPERTY
                         + "=true"
         );
     }

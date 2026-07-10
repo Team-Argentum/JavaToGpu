@@ -128,6 +128,24 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("controlledProductionActivationTokenSmoke.passed=")
                 .append(summary.controlledProductionActivationTokenSmokePassed())
                 .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.status=")
+                .append(summary.controlledProductionActivationTokenNegativeStatus())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.digestMismatchRejected=")
+                .append(summary.controlledProductionActivationTokenDigestMismatchRejected())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.unapprovedKernelRejected=")
+                .append(summary.controlledProductionActivationTokenUnapprovedKernelRejected())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.outputUnchanged=")
+                .append(summary.controlledProductionActivationTokenNegativeOutputUnchanged())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.safeDefaults=")
+                .append(summary.controlledProductionActivationTokenNegativeSafeDefaults())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.passed=")
+                .append(summary.controlledProductionActivationTokenNegativePassed())
+                .append('\n');
         builder.append("readinessChecklist.ready.count=").append(summary.readinessChecklistReadyCount()).append('\n');
         builder.append("readinessChecklist.blocked.count=").append(summary.readinessChecklistBlockedCount()).append('\n');
         builder.append("readinessChecklist.ready.all=").append(summary.readinessChecklistReadyAll()).append('\n');
