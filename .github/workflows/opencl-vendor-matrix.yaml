@@ -28,9 +28,9 @@ on:
           - nvidia
           - amd
   push:
-#    branches:
-#      - main
-#      - master
+    branches:
+      - main
+      - master
   pull_request:
 
 permissions:
