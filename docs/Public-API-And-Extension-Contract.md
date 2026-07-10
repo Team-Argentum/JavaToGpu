@@ -215,6 +215,8 @@ OpenCL production source switching applies the same fail-closed principle throug
 
 `GpuBackendSourcePromotionManifest` adds a separate human approval boundary. The manifest is valid only when its Git SHA, candidate-artifact SHA-256, backend target, device vendor/label, driver, kernel count, and ordered kernel resources match the reviewed candidate exactly. Approval metadata must be explicit and timestamped. A valid manifest remains `manual-review-only`; runtime code must not interpret it as permission to enable default source switching or production mutation.
 
+`GpuBackendSourcePromotionActivationGate` is an operational readiness join, not a runtime permission object. It requires an approved manifest validation, a review-ready candidate, matching device identity, and passed identity-bound controlled source-switching evidence for every candidate kernel. Its only positive status is `controlled-activation-ready`; the artifact must continue to record `defaultRuntimeActivation=false`, disabled default source switching, and disabled production mutation.
+
 Extension execution is reported through `GpuExtensionExecutionReport` with a stable outcome and failure policy:
 
 - `SUCCEEDED` and `SKIPPED` describe normal execution decisions;

@@ -28,7 +28,7 @@ on:
           - nvidia
           - amd
       production_promotion_manifest_mode:
-        description: 'Manual production-promotion manifest mode: skip, template, or validate.'
+        description: 'Manual production-promotion mode: skip, template, validate, or activate.'
         required: false
         default: skip
         type: choice
@@ -36,6 +36,7 @@ on:
           - skip
           - template
           - validate
+          - activate
       production_promotion_manifest_file:
         description: 'Repository-relative manifest path used when manifest mode is validate.'
         required: false
@@ -149,11 +150,20 @@ jobs:
         run: .\gradlew.bat :processor:writeOpenClBackendSourcePromotionManifestTemplate "-PopenClPromotionGitSha=%GITHUB_SHA%" --console=plain --no-daemon
 
       - name: Validate production-promotion manifest
-        if: steps.opencl_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate'
+        if: >-
+          steps.opencl_validation.outcome == 'success' &&
+          (env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' || env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate')
         id: production_promotion_manifest_validation
         continue-on-error: true
         shell: cmd
         run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionManifest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
+
+      - name: Validate controlled production activation gate
+        if: steps.production_promotion_manifest_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        id: production_promotion_activation_gate
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionActivationGate "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
 
       - name: Generate OpenCL validation report
         if: always()
@@ -305,6 +315,7 @@ jobs:
           SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
           PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME: ${{ steps.production_promotion_manifest_template.outcome }}
           PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME: ${{ steps.production_promotion_manifest_validation.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME: ${{ steps.production_promotion_activation_gate.outcome }}
           VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
           VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
         run: |
@@ -325,6 +336,7 @@ jobs:
           echo ^| Source-promotion summary ^| %SOURCE_PROMOTION_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Promotion manifest template ^| %PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Promotion manifest validation ^| %PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Controlled activation gate ^| %PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history stage ^| %VALIDATION_HISTORY_STAGE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history save ^| %VALIDATION_HISTORY_SAVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           if exist processor\build\reports\opencl\runtime-launch-advisory-summary.md (
@@ -365,6 +377,13 @@ jobs:
             (
               env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' &&
               steps.production_promotion_manifest_validation.outcome != 'success'
+            ) ||
+            (
+              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate' &&
+              (
+                steps.production_promotion_manifest_validation.outcome != 'success' ||
+                steps.production_promotion_activation_gate.outcome != 'success'
+              )
             )
           )
         shell: cmd

@@ -389,6 +389,21 @@ The candidate Git SHA is the `binding.gitSha` written by the template run, not t
 
 An approved manifest remains device- and driver-specific and records `manual-review-only`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`. It is auditable approval evidence for a later activation design, not runtime authorization by itself.
 
+### Controlled Activation Gate
+
+The next operational boundary combines the approved manifest validation, the production candidate gate, and controlled identity-bound source-switching evidence:
+
+```powershell
+.\gradlew.bat :processor:validateOpenClBackendSourcePromotionActivationGate `
+  -PopenClPromotionManifestFile=<manifest-path> `
+  -PopenClPromotionGitSha=<candidate-run-full-git-sha> `
+  --console=plain --no-daemon
+```
+
+The task writes `backend-source-promotion-activation-gate.properties`. A successful result is `controlled-activation-ready` with full kernel coverage and accepted/bound operator evidence. It explicitly records `activationScope=controlled-opt-in-only`, `defaultRuntimeActivation=false`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`.
+
+This gate does not modify `GpuRuntimeCompileOptions`, does not enable the default source path, and is not consumed automatically by application runtime code. It only proves that a separately controlled activation path has complete reviewed evidence.
+
 ## ABI Debug
 
 Enable ABI diagnostics with:

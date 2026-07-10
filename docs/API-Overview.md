@@ -213,6 +213,7 @@ Common calls:
 - `GpuProductionPromotionOperatorAcceptance` for identity-bound operator approval of a reviewed production source-switching context. The binding includes backend, device vendor/label, driver, optimization profile, kernel resource, and production decision mode.
 - `GpuBackendSourcePromotionCandidateGate` for joining real-workload readiness with controlled identity-bound acceptance. A review-ready result remains non-mutating and does not enable default production source switching.
 - `GpuBackendSourcePromotionManifest` for generating and validating a manual approval artifact bound to the candidate SHA-256, Git SHA, device/driver identity, and exact kernel resource list. Manifest validation remains review-only and non-mutating.
+- `GpuBackendSourcePromotionActivationGate` for joining approved manifest validation with the candidate and controlled source-switching evidence. `controlled-activation-ready` never enables default runtime activation or production mutation.
 
 Runtime failures share the public `GpuRuntimeException` base type. Catch a specific subtype when recovery depends on the phase, or catch the base type for a general CPU/backend fallback:
 
