@@ -1286,12 +1286,21 @@ class OpenClValidationReportTest {
             assertTrue(workflow.contains("steps.launch_advisory_drift.outcome == 'success'"));
             assertTrue(workflow.contains("if: steps.validation_history_stage.outcome == 'success'"));
             assertTrue(workflow.contains("uses: actions/cache/save@v4"));
+            assertTrue(workflow.contains("launch_advisory_negative_fixture:"));
+            assertTrue(workflow.contains(":processor:prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
+            assertTrue(workflow.contains("env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true'"));
+            assertTrue(workflow.contains("LAUNCH_ADVISORY_DRIFT_OUTCOME%\"==\"failure"));
+            assertTrue(workflow.contains("VALIDATION_HISTORY_STAGE_OUTCOME%\"==\"skipped"));
+            assertTrue(workflow.contains("VALIDATION_HISTORY_SAVE_OUTCOME%\"==\"skipped"));
+            assertTrue(workflow.contains("steps.launch_advisory_negative_fixture_check.outcome != 'success'"));
             String buildScript = java.nio.file.Files.readString(findRepositoryFile("processor/build.gradle"));
             String sourceSwitchingDependency = "dependsOn 'openClProductionSourceSwitchingValidationTest'";
             assertEquals(
                     2,
                     buildScript.split(java.util.regex.Pattern.quote(sourceSwitchingDependency), -1).length - 1
             );
+            assertTrue(buildScript.contains("prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
+            assertTrue(buildScript.contains("OpenClKernelLaunchAdvisoryNegativeFixtureCli"));
         } finally {
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousGateFile);
             restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);

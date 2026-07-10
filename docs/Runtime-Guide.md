@@ -253,6 +253,8 @@ The reporter also writes `runtime-launch-advisory-drift.properties`. `validateOp
 
 GitHub Actions restores an immutable per-lane/per-branch validation-history cache before the workload runs. The reporter seeds the current history from that baseline but always computes drift from the separate baseline file, so repeated report generation inside one workflow cannot hide a cross-run regression. After a successful validation and drift gate, the updated history is staged and saved under a unique run key for the next run; regressed or failed runs do not replace the previous baseline.
 
+Manual `workflow_dispatch` runs can enable `launch_advisory_negative_fixture`. This mode requires a baseline containing per-kernel snapshots, increases one kernel maximum only in the restored baseline, and expects the normal drift validator to reject the resulting current-vs-baseline reduction. History staging and cache save are disabled unconditionally in this mode. The workflow succeeds only when fixture preparation succeeds, the drift step fails, and both cache steps remain skipped.
+
 ## Runtime Failures And Fallbacks
 
 All structured runtime failures extend `GpuRuntimeException`. Use the base type when every GPU failure should take the same fallback path:

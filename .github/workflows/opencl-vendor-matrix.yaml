@@ -13,6 +13,11 @@ on:
           - advisory
           - strict
           - update
+      launch_advisory_negative_fixture:
+        description: 'Force an expected per-kernel launch-advisory regression without saving the cache baseline.'
+        required: false
+        default: false
+        type: boolean
   push:
 #    branches:
 #      - main
@@ -55,6 +60,7 @@ jobs:
       JTG_VALIDATION_DEVICE: ${{ matrix.device_name }}
       JTG_OPENCL_CI: 'true'
       JTG_SOURCE_PROMOTION_BASELINE_MODE: ${{ github.event.inputs.source_promotion_baseline_mode || 'advisory' }}
+      JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE: ${{ github.event.inputs.launch_advisory_negative_fixture || 'false' }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
 
     steps:
@@ -95,6 +101,13 @@ jobs:
           echo Expected device: %JTG_VALIDATION_DEVICE%
           where git
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Get-CimInstance Win32_VideoController | Select-Object Name, AdapterCompatibility, DriverVersion | Format-Table -AutoSize } catch { Write-Warning ('Unable to query Win32_VideoController: ' + $_.Exception.Message) }"
+
+      - name: Prepare kernel launch-advisory negative fixture
+        if: env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true'
+        id: launch_advisory_negative_fixture_prepare
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:prepareOpenClKernelLaunchAdvisoryNegativeFixture --console=plain --no-daemon
 
       - name: OpenCL validation routine
         if: always()
@@ -168,6 +181,7 @@ jobs:
       - name: Stage OpenCL validation history cache
         if: >-
           always() &&
+          env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true' &&
           steps.opencl_validation.outcome == 'success' &&
           steps.validation_report.outcome == 'success' &&
           steps.launch_advisory_drift.outcome == 'success'
@@ -185,6 +199,35 @@ jobs:
           path: processor/build/opencl-validation-history-cache/
           key: opencl-validation-history-v1-${{ runner.os }}-${{ matrix.artifact_suffix }}-${{ github.ref_name }}-${{ github.run_id }}
 
+      - name: Validate kernel launch-advisory negative fixture outcome
+        if: always() && env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true'
+        id: launch_advisory_negative_fixture_check
+        continue-on-error: true
+        shell: cmd
+        env:
+          NEGATIVE_FIXTURE_PREPARE_OUTCOME: ${{ steps.launch_advisory_negative_fixture_prepare.outcome }}
+          OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
+          VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
+          LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
+          PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
+          PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
+          SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
+          SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
+          VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
+          VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
+        run: |
+          if /I not "%NEGATIVE_FIXTURE_PREPARE_OUTCOME%"=="success" exit /b 1
+          if /I not "%OPENCL_VALIDATION_OUTCOME%"=="success" exit /b 1
+          if /I not "%VALIDATION_REPORT_OUTCOME%"=="success" exit /b 1
+          if /I not "%LAUNCH_ADVISORY_DRIFT_OUTCOME%"=="failure" exit /b 1
+          if /I not "%PRODUCTION_EXPLAINABILITY_OUTCOME%"=="success" exit /b 1
+          if /I not "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"=="success" exit /b 1
+          if /I not "%SOURCE_PROMOTION_BASELINE_OUTCOME%"=="success" exit /b 1
+          if /I not "%SOURCE_PROMOTION_SUMMARY_OUTCOME%"=="success" exit /b 1
+          if /I not "%VALIDATION_HISTORY_STAGE_OUTCOME%"=="skipped" exit /b 1
+          if /I not "%VALIDATION_HISTORY_SAVE_OUTCOME%"=="skipped" exit /b 1
+          echo Negative launch-advisory fixture behaved as expected; cache baseline was not staged or saved.
+
       - name: Upload OpenCL report bundle
         if: always()
         uses: actions/upload-artifact@v4
@@ -201,6 +244,8 @@ jobs:
         if: always()
         shell: cmd
         env:
+          NEGATIVE_FIXTURE_PREPARE_OUTCOME: ${{ steps.launch_advisory_negative_fixture_prepare.outcome }}
+          NEGATIVE_FIXTURE_CHECK_OUTCOME: ${{ steps.launch_advisory_negative_fixture_check.outcome }}
           OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
           LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
@@ -216,6 +261,8 @@ jobs:
           echo.>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Negative fixture prepare ^| %NEGATIVE_FIXTURE_PREPARE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Negative fixture contract ^| %NEGATIVE_FIXTURE_CHECK_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Launch-advisory drift ^| %LAUNCH_ADVISORY_DRIFT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
@@ -234,17 +281,26 @@ jobs:
         if: >-
           always() &&
           (
-            steps.opencl_validation.outcome != 'success' ||
-            steps.validation_report.outcome != 'success' ||
-            steps.launch_advisory_drift.outcome != 'success' ||
-            steps.validation_history_stage.outcome == 'failure' ||
-            steps.validation_history_save.outcome == 'failure' ||
-            steps.production_explainability.outcome != 'success' ||
-            steps.production_explainability_summary.outcome != 'success' ||
-            steps.source_promotion_summary.outcome != 'success' ||
             (
-              (env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'strict' || env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'update') &&
-              steps.source_promotion_baseline.outcome != 'success'
+              env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true' &&
+              (
+                steps.opencl_validation.outcome != 'success' ||
+                steps.validation_report.outcome != 'success' ||
+                steps.launch_advisory_drift.outcome != 'success' ||
+                steps.validation_history_stage.outcome == 'failure' ||
+                steps.validation_history_save.outcome == 'failure' ||
+                steps.production_explainability.outcome != 'success' ||
+                steps.production_explainability_summary.outcome != 'success' ||
+                steps.source_promotion_summary.outcome != 'success' ||
+                (
+                  (env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'strict' || env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'update') &&
+                  steps.source_promotion_baseline.outcome != 'success'
+                )
+              )
+            ) ||
+            (
+              env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true' &&
+              steps.launch_advisory_negative_fixture_check.outcome != 'success'
             )
           )
         shell: cmd

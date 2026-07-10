@@ -62,7 +62,10 @@ def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/op
 def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
 def openClValidationHistoryMarkdownFile = layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile
 def openClValidationHistoryCacheDirectory = layout.buildDirectory.dir('opencl-validation-history-cache').get().asFile
-def openClValidationHistoryBaselineFile = new File(openClValidationHistoryCacheDirectory, 'validation-history.properties')
+def openClValidationHistoryBaselineFile = providers.gradleProperty('javatogpu.opencl.validationHistoryBaselineFile')
+        .map { file(it) }
+        .orElse(layout.buildDirectory.file('opencl-validation-history-cache/validation-history.properties').map { it.asFile })
+        .get()
 def openClI3ReadinessBaselineFile = providers.gradleProperty('javatogpu.opencl.i3ReadinessBaselineFile')
         .map { file(it) }
         .orElse(layout.buildDirectory.file('opencl-i3-readiness-baselines/i3-readiness-workload-baseline.properties').map { it.asFile })
@@ -480,6 +483,16 @@ tasks.register('validateOpenClKernelLaunchAdvisoryDrift', JavaExec) {
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClKernelLaunchAdvisoryDriftValidatorCli'
     args openClKernelLaunchAdvisoryDriftFile.absolutePath
     inputs.file(openClKernelLaunchAdvisoryDriftFile)
+}
+
+tasks.register('prepareOpenClKernelLaunchAdvisoryNegativeFixture', JavaExec) {
+    group = 'verification'
+    description = 'Mutates only the restored validation-history baseline to force a per-kernel drift regression.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClKernelLaunchAdvisoryNegativeFixtureCli'
+    args openClValidationHistoryBaselineFile.absolutePath
+    outputs.upToDateWhen { false }
 }
 
 tasks.register('stageOpenClValidationHistoryCache') {
