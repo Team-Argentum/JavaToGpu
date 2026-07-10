@@ -13,7 +13,11 @@ public record GpuRuntimeRegisterPressureMethodEstimate(
         int parameterRegisters,
         int localRegisters,
         int privateArrayRegisters,
+        int peakLiveRegisters,
         int expressionPeakRegisters,
+        int scopedVariableCount,
+        int shadowedVariableCount,
+        int unresolvedReferenceCount,
         int advisoryBudget,
         int utilizationPermille,
         GpuRuntimeRegisterPressureLevel level,
@@ -26,7 +30,11 @@ public record GpuRuntimeRegisterPressureMethodEstimate(
         parameterRegisters = Math.max(0, parameterRegisters);
         localRegisters = Math.max(0, localRegisters);
         privateArrayRegisters = Math.max(0, privateArrayRegisters);
+        peakLiveRegisters = Math.max(0, peakLiveRegisters);
         expressionPeakRegisters = Math.max(0, expressionPeakRegisters);
+        scopedVariableCount = Math.max(0, scopedVariableCount);
+        shadowedVariableCount = Math.max(0, shadowedVariableCount);
+        unresolvedReferenceCount = Math.max(0, unresolvedReferenceCount);
         advisoryBudget = Math.max(1, advisoryBudget);
         utilizationPermille = Math.max(0, utilizationPermille);
         level = level == null ? GpuRuntimeRegisterPressureLevel.UNAVAILABLE : level;
@@ -37,6 +45,10 @@ public record GpuRuntimeRegisterPressureMethodEstimate(
         return new GpuRuntimeRegisterPressureMethodEstimate(
                 methodName,
                 false,
+                0,
+                0,
+                0,
+                0,
                 0,
                 0,
                 0,
@@ -58,7 +70,11 @@ public record GpuRuntimeRegisterPressureMethodEstimate(
         fields.put(normalizedPrefix + ".parameterRegisters", Integer.toString(parameterRegisters));
         fields.put(normalizedPrefix + ".localRegisters", Integer.toString(localRegisters));
         fields.put(normalizedPrefix + ".privateArrayRegisters", Integer.toString(privateArrayRegisters));
+        fields.put(normalizedPrefix + ".peakLiveRegisters", Integer.toString(peakLiveRegisters));
         fields.put(normalizedPrefix + ".expressionPeakRegisters", Integer.toString(expressionPeakRegisters));
+        fields.put(normalizedPrefix + ".scopedVariableCount", Integer.toString(scopedVariableCount));
+        fields.put(normalizedPrefix + ".shadowedVariableCount", Integer.toString(shadowedVariableCount));
+        fields.put(normalizedPrefix + ".unresolvedReferenceCount", Integer.toString(unresolvedReferenceCount));
         fields.put(normalizedPrefix + ".advisoryBudget", Integer.toString(advisoryBudget));
         fields.put(normalizedPrefix + ".utilizationPermille", Integer.toString(utilizationPermille));
         fields.put(normalizedPrefix + ".level", level.name().toLowerCase(java.util.Locale.ROOT));

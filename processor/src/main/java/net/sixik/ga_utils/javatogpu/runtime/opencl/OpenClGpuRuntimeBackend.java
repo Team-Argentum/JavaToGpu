@@ -2795,7 +2795,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             } else {
                 compiledKernel = compileKernel(compileRequest, moduleArtifact);
             }
-            return compiledKernel.withArtifactSnapshot(artifactSnapshot);
+            return compiledKernel.withArtifactSnapshot(mergeCompilerLog(
+                    artifactSnapshot,
+                    compiledKernel.artifactSnapshot()
+            ));
         } catch (RuntimeException exception) {
             if (exception instanceof GpuRuntimeException runtimeException) {
                 throw runtimeException;
@@ -2884,6 +2887,16 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 runtimeCapabilities.supportsImages(),
                 runtimeCapabilities.supportsSubgroups()
         );
+    }
+
+    private static GpuRuntimeCompileArtifactSnapshot mergeCompilerLog(
+            GpuRuntimeCompileArtifactSnapshot requestedSnapshot,
+            GpuRuntimeCompileArtifactSnapshot compiledSnapshot
+    ) {
+        if (compiledSnapshot == null || compiledSnapshot.compileLog().isBlank()) {
+            return requestedSnapshot;
+        }
+        return requestedSnapshot.withCompileLog(compiledSnapshot.compileLog());
     }
 
     private boolean overridesLegacyCreateSessionHook() {

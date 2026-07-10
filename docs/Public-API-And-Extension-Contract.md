@@ -87,11 +87,19 @@ Compute rates are normalized only against stable evidence with the same workload
 
 ### Runtime IR analysis evidence
 
-`GpuRuntimeRegisterPressureAnalysisPass` is a built-in analysis-only runtime pass at `TARGET_PROFILE_ANALYSIS`. It estimates typed-`IrGpu` value pressure using conservative parameter, local, private-array, vector-width, and expression-peak accounting. `GpuRuntimeRegisterPressureBudget` selects the initial advisory budget from backend-neutral device class and vendor data. The current budget is not a promise about physical registers or occupancy.
+`GpuRuntimeRegisterPressureAnalysisPass` is a built-in analysis-only runtime pass at `TARGET_PROFILE_ANALYSIS`. `register-pressure-interprocedural:v4` resolves parameters, locals, and private arrays to stable lexical identities, performs backward last-use analysis over structured typed-`IrGpu`, and then resolves helper-call edges through source/emitted method aliases. Inline helpers add non-reusable callee pressure to caller-live values; non-inline helpers remain separate frames and contribute through a maximum-frame estimate. Recursive and unresolved edges are diagnostic-only. `GpuRuntimeRegisterPressureBudget` selects the initial advisory budget from backend-neutral device class and vendor data. The current budget is not a promise about physical registers or occupancy.
 
 Analysis-only passes store `analysisOnly=true` in their field maps. Core must exclude those reports from accepted/blocking optimizer proof counts, optimizer-family promotion readiness, runtime-equivalence family payload requirements, and production mutation authorization. They may still appear in `optimizer-report.txt` and must be persisted in `runtime-ir-analysis.properties` for diagnostics, CI comparison, and future adaptive planning.
 
-The register-pressure artifact contract includes model version, budget source, availability, aggregate level, hottest method, utilization, and per-method parameter/local/private-array/expression counts. Future backend compiler feedback may refine estimates but should preserve these stable backend-neutral field meanings.
+The register-pressure artifact contract includes analysis/model version, budget source, availability, aggregate level, hottest method/call, utilization, per-method parameter/local/private-array/peak-live/expression/scoped/shadowed/unresolved counts, and per-call resolution/inline/recursion/frame fields. General CFG recovery and actual backend compiler inlining/frame reconstruction remain separate extensions to this contract.
+
+`GpuBackendCompilerFeedbackProvider` is the read-only post-compilation SPI for resource diagnostics. Providers receive `GpuBackendCompilerFeedbackRequest` with backend target, format, resource, and compile log, and may return `GpuBackendCompilerFeedback` with general, vector, and scalar register counts, spill store/load bytes, stack-frame bytes, local-memory bytes, occupancy, raw fields, and diagnostics. Distinct register files must remain separate; a provider must not add AMD SGPR and VGPR counts into a synthetic total.
+
+`GpuBackendCompilerFeedbackRegistry` validates the `BACKEND_COMPILER_FEEDBACK` phase, `COMPILER_FEEDBACK` capability, and `READ_ONLY` permission, rejects duplicate extension ids, orders providers deterministically, and isolates parser failures with `FAILED_CONTINUED`. Backend-specific providers may use a lower extension order than the built-in generic parser. Providers are discovered through `META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbackProvider`.
+
+`OpenClRuntimeSession` queries `CL_PROGRAM_BUILD_LOG` after a successful native program build and attaches the result to `GpuRuntimeCompileArtifactSnapshot`. The lookup is fail-safe: an unavailable build-info query or empty driver log cannot invalidate an otherwise successful compilation. Failed builds preserve their driver diagnostics through the structured runtime compilation exception path.
+
+Artifact dumping always emits `backend-compiler-feedback.properties`. When metrics are available, the artifact records every provider execution and parsed result plus the selected result. `runtime-ir-analysis.properties` additionally records the heuristic/compiler register delta and comparison status. Compiler feedback remains advisory and cannot satisfy optimizer proof or production-promotion requirements by itself.
 
 ### Runtime failure hierarchy
 
@@ -174,7 +182,7 @@ Without accepted evidence, optimizer passes may run as diagnostics but must not 
 
 ## Extension hooks
 
-JavaToGpu should expose deliberate SPI hooks rather than requiring downstream forks. Extension points should be phase-specific and permission-aware: read-only validation, diagnostics, optimizer proposals, backend lowering, device policy, runtime-equivalence execution, promotion gates, and artifact writing should not share one unrestricted callback model.
+JavaToGpu should expose deliberate SPI hooks rather than requiring downstream forks. Extension points should be phase-specific and permission-aware: read-only validation, diagnostics, optimizer proposals, backend lowering, backend compiler feedback, device policy, runtime-equivalence execution, promotion gates, and artifact writing should not share one unrestricted callback model.
 
 Third-party extensions must be auditable. Runtime/build artifacts should record extension ids, versions, phases, decisions, diagnostics, and whether each extension was advisory or production-affecting.
 
@@ -187,7 +195,7 @@ The shared metadata foundation is available through:
 - `GpuExtensionDescriptor` for validated immutable metadata;
 - `GpuExtensionRegistry` for duplicate-id rejection, deterministic audit ordering, and properties-compatible field export.
 
-`GpuRuntimeIrOptimizationPass` declares the `RUNTIME_IR_OPTIMIZATION` phase, `IR_OPTIMIZATION_PROPOSAL` capability, and `MUTATION_PROPOSAL` permission. `GpuIrValidationProvider` declares the `IR_VALIDATION` phase and capability with `READ_ONLY` permission. Both remain functional interfaces. Explicitly supplied pass/provider lists retain caller order because execution order is semantic; `ServiceLoader` discovery is sorted by extension order, id, and version before execution.
+`GpuRuntimeIrOptimizationPass` declares the `RUNTIME_IR_OPTIMIZATION` phase, `IR_OPTIMIZATION_PROPOSAL` capability, and `MUTATION_PROPOSAL` permission. `GpuIrValidationProvider` declares the `IR_VALIDATION` phase and capability with `READ_ONLY` permission. `GpuBackendCompilerFeedbackProvider` declares the `BACKEND_COMPILER_FEEDBACK` phase and `COMPILER_FEEDBACK` capability with `READ_ONLY` permission. Explicitly supplied pass/provider lists retain caller order where execution order is semantic; ServiceLoader registries sort by extension order, id, and version before execution.
 
 Extension ids must be unique inside a pipeline. Blank metadata, whitespace/control characters in ids or versions, missing capabilities, null entries, duplicate ids, wrong phases, excessive permissions, and missing required capabilities are rejected before execution.
 

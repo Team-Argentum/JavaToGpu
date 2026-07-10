@@ -18,11 +18,19 @@ import java.util.Map;
 public final class GpuRuntimeCompileArtifactDumper {
 
     public static final String RUNTIME_DEVICE_SELECTION_ARTIFACT = "runtime-device-selection.properties";
+    public static final String BACKEND_COMPILER_FEEDBACK_ARTIFACT = "backend-compiler-feedback.properties";
 
     private GpuRuntimeCompileArtifactDumper() {
     }
 
     public static GpuRuntimeCompileArtifactDump dump(GpuRuntimeCompileArtifactSnapshot snapshot) {
+        return dump(snapshot, GpuBackendCompilerFeedbackRegistry.loadWithBuiltIns());
+    }
+
+    public static GpuRuntimeCompileArtifactDump dump(
+            GpuRuntimeCompileArtifactSnapshot snapshot,
+            GpuBackendCompilerFeedbackRegistry compilerFeedbackRegistry
+    ) {
         if (snapshot == null) {
             return new GpuRuntimeCompileArtifactDump(
                     java.util.Map.of(),
@@ -30,8 +38,10 @@ public final class GpuRuntimeCompileArtifactDumper {
                     GpuRuntimeCompileInvalidationStamp.from(null, GpuBackendModuleArtifact.unknown(), null)
             );
         }
+        java.util.Objects.requireNonNull(compilerFeedbackRegistry, "compilerFeedbackRegistry");
 
         LinkedHashMap<String, String> artifacts = new LinkedHashMap<>();
+        GpuBackendCompilerFeedbackReport compilerFeedbackReport = compilerFeedbackRegistry.inspect(snapshot);
         snapshot.originalIrGpuArtifact().ifPresent(artifact -> artifacts.put(
                 "original.irgpu.properties",
                 IrGpuArtifactSerializer.serialize(artifact)
@@ -58,6 +68,7 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.put("backend-source-selection.properties", formatBackendSourceSelection(snapshot));
         artifacts.put("backend-module.properties", formatBackendModule(snapshot.backendModuleArtifact()));
         artifacts.put("backend-diagnostics.properties", formatBackendDiagnostics(snapshot));
+        artifacts.put(BACKEND_COMPILER_FEEDBACK_ARTIFACT, compilerFeedbackReport.toPropertiesText());
         artifacts.put("opencl-irgpu-reconstruction-preview.properties", formatOpenClIrGpuReconstructionPreview(snapshot));
         artifacts.put("backend-source-reconstruction.properties", formatBackendSourceReconstruction(snapshot));
         artifacts.put(GpuPromotionArtifactRegistry.BACKEND_SOURCE_PROMOTION_GATE, formatBackendSourcePromotionGate(snapshot));
@@ -71,7 +82,7 @@ public final class GpuRuntimeCompileArtifactDumper {
         if (snapshot.optimizationReport().hasReports() || snapshot.productionOptimizerGate().productionProfileRequested()) {
             artifacts.put("optimizer-report.txt", snapshot.optimizationReport().toText());
         }
-        String runtimeIrAnalysis = formatRuntimeIrAnalysis(snapshot.optimizationReport());
+        String runtimeIrAnalysis = formatRuntimeIrAnalysis(snapshot.optimizationReport(), compilerFeedbackReport);
         if (!runtimeIrAnalysis.isBlank()) {
             artifacts.put("runtime-ir-analysis.properties", runtimeIrAnalysis);
         }
@@ -337,11 +348,14 @@ public final class GpuRuntimeCompileArtifactDumper {
         return builder.toString();
     }
 
-    private static String formatRuntimeIrAnalysis(GpuRuntimeIrOptimizationReport report) {
+    private static String formatRuntimeIrAnalysis(
+            GpuRuntimeIrOptimizationReport report,
+            GpuBackendCompilerFeedbackReport compilerFeedbackReport
+    ) {
         List<GpuRuntimeIrOptimizationPassReport> analysisReports = report.passReports().stream()
                 .filter(GpuRuntimeIrOptimizationPassReport::analysisOnly)
                 .toList();
-        if (analysisReports.isEmpty()) {
+        if (analysisReports.isEmpty() && !compilerFeedbackReport.available()) {
             return "";
         }
         StringBuilder builder = new StringBuilder();
@@ -367,7 +381,66 @@ public final class GpuRuntimeCompileArtifactDumper {
                             .append(safePropertyValue(entry.getKey())).append('=')
                             .append(safePropertyValue(entry.getValue())).append('\n'));
         }
+        appendCompilerFeedbackAnalysis(builder, analysisReports, compilerFeedbackReport);
         return builder.toString();
+    }
+
+    private static void appendCompilerFeedbackAnalysis(
+            StringBuilder builder,
+            List<GpuRuntimeIrOptimizationPassReport> analysisReports,
+            GpuBackendCompilerFeedbackReport compilerFeedbackReport
+    ) {
+        GpuBackendCompilerFeedback feedback = compilerFeedbackReport.selected().orElse(null);
+        if (feedback == null) {
+            return;
+        }
+
+        feedback.artifactFields("compilerFeedback.selected").forEach((key, value) -> builder
+                .append(key)
+                .append('=')
+                .append(safePropertyValue(value))
+                .append('\n'));
+        int heuristicRegisters = heuristicRegisterEstimate(analysisReports);
+        int compilerRegisters = feedback.effectiveRegisterCount();
+        builder.append("compilerFeedback.registerPressure.heuristicAvailable=")
+                .append(heuristicRegisters >= 0).append('\n');
+        builder.append("compilerFeedback.registerPressure.heuristicEstimatedValueRegisters=")
+                .append(heuristicRegisters >= 0 ? heuristicRegisters : "unknown").append('\n');
+        builder.append("compilerFeedback.registerPressure.compilerEffectiveRegisters=")
+                .append(compilerRegisters >= 0 ? compilerRegisters : "unknown").append('\n');
+        if (heuristicRegisters >= 0 && compilerRegisters >= 0) {
+            int delta = compilerRegisters - heuristicRegisters;
+            builder.append("compilerFeedback.registerPressure.delta=").append(delta).append('\n');
+            builder.append("compilerFeedback.registerPressure.comparisonStatus=")
+                    .append(registerPressureComparisonStatus(delta)).append('\n');
+        } else {
+            builder.append("compilerFeedback.registerPressure.delta=unknown\n");
+            builder.append("compilerFeedback.registerPressure.comparisonStatus=")
+                    .append(compilerRegisters >= 0 ? "compiler-only" : "register-count-unavailable")
+                    .append('\n');
+        }
+    }
+
+    private static int heuristicRegisterEstimate(List<GpuRuntimeIrOptimizationPassReport> analysisReports) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : analysisReports) {
+            String value = passReport.proofArtifact().fields().get("registerPressure.estimatedValueRegisters");
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException ignored) {
+                return GpuBackendCompilerFeedback.UNKNOWN;
+            }
+        }
+        return GpuBackendCompilerFeedback.UNKNOWN;
+    }
+
+    private static String registerPressureComparisonStatus(int delta) {
+        if (delta == 0) {
+            return "matched";
+        }
+        return delta > 0 ? "heuristic-underestimated" : "heuristic-overestimated";
     }
 
     private static String optimizerFamilyName(GpuRuntimeIrOptimizationPassReport passReport) {

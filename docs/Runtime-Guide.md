@@ -217,11 +217,21 @@ The default runtime IR pipeline performs an advisory register-pressure analysis 
 - nested expression evaluation pressure;
 - branches, loops, and switch bodies.
 
+The current `register-pressure-interprocedural:v4` model performs backward last-use analysis. Sequential locals are released after their final reference, unused parameters do not contribute to peak liveness, branch paths are merged at control-flow joins, and loops are iterated to a fixed point so loop-carried values remain live across the back-edge. Structured `break` and `continue` targets are modeled separately.
+
+Typed `IrGpu` references currently store source names, so the analyzer first assigns a stable lexical identity to each parameter, local declaration, and private array. Nested declarations with the same source name remain separate live values. Unresolved references receive isolated conservative identities and add an advisory diagnostic instead of being merged with an unrelated declaration.
+
+Helper calls are analyzed after all method-local estimates are available. A non-inline helper uses a separate frame, so caller and callee pressure are compared rather than blindly added. A helper marked inline may add its non-reusable frame pressure to values live at the call site. Source and emitted helper names are both resolved. Recursive call cycles are reported but are not expanded indefinitely, and unresolved helpers remain advisory edges.
+
 The result uses `LOW`, `MODERATE`, `HIGH`, `CRITICAL`, or `UNAVAILABLE`. Device-class and vendor profiles provide conservative budgets, for example 64 value slots for the initial NVIDIA/AMD dGPU profile and 24 for the initial iGPU profile. These values are planning heuristics, not the physical register count reported by the GPU compiler. Driver compilers may allocate, merge, spill, or eliminate values differently.
 
 High and critical estimates add optimizer diagnostics with the hottest method, estimated value-register count, advisory budget, and suggested reductions such as fewer simultaneously live temporaries, smaller private arrays, narrower vectors, or less unrolling. The analysis never changes the selected IR and never counts as accepted optimizer proof.
 
-Artifact dumps store the complete result in `runtime-ir-analysis.properties`. Per-method fields include parameter, local, private-array, expression-peak, budget, utilization, level, and typed-node counts. Future OpenCL/CUDA/Vulkan/Metal compiler reports can replace the heuristic while keeping this artifact contract stable.
+Artifact dumps store the complete result in `runtime-ir-analysis.properties`. Per-method fields include total parameter/local/private-array storage, `peakLiveRegisters`, expression-temporary peak, scoped-variable count, shadowed-variable count, unresolved-reference count, budget, utilization, level, and typed-node counts. Per-call fields include resolution state, inline/recursive flags, caller-live values, argument/result pressure, callee pressure, additional frame pressure, and combined estimate.
+
+After a successful OpenCL program build, the runtime queries `CL_PROGRAM_BUILD_LOG` through the native program and device handles and stores any returned diagnostics in the compile snapshot. JavaToGpu then writes `backend-compiler-feedback.properties`. The built-in parser recognizes common NVIDIA/ptxas register and spill lines, AMD VGPR/SGPR/scratch fields, Intel/general register and spill fields, stack-frame bytes, local/shared-memory bytes, and occupancy percentages. SGPR and VGPR values remain separate; `effectiveRegisterCount` prefers a general register count, then VGPR, then SGPR, and never adds distinct register files together.
+
+If both the heuristic estimate and a compiler register count exist, `runtime-ir-analysis.properties` adds the compiler provider, parsed metrics, compiler count, heuristic count, delta, and comparison status. This is calibration evidence only: it does not rewrite IR, change device selection, or enable production optimization. OpenCL permits an empty successful build log, and many drivers do not expose resource counts by default; a missing or unrecognized log leaves the heuristic analysis unchanged and marks compiler feedback unavailable. Failed build diagnostics remain available through `GpuRuntimeKernelCompilationException`.
 
 ## Runtime Failures And Fallbacks
 

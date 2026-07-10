@@ -14,9 +14,9 @@ on:
           - strict
           - update
   push:
-    branches:
-      - main
-      - master
+#    branches:
+#      - main
+#      - master
   pull_request:
 
 permissions:
@@ -47,12 +47,12 @@ jobs:
             runner_labels: [self-hosted, Windows, X64, nvidia, rtx5070]
             routine_task: :processor:openClNvidiaRoutine
 
-          - vendor: nvidia
-            vendor_name: NVIDIA
-            device_name: RTX 3060
-            artifact_suffix: nvidia-rtx3060
-            runner_labels: [self-hosted, Windows, X64, nvidia, rtx3060]
-            routine_task: :processor:openClNvidiaRoutine
+#          - vendor: nvidia
+#            vendor_name: NVIDIA
+#            device_name: RTX 3060
+#            artifact_suffix: nvidia-rtx3060
+#            runner_labels: [self-hosted, Windows, X64, nvidia, rtx3060]
+#            routine_task: :processor:openClNvidiaRoutine
 
     runs-on: ${{ matrix.runner_labels }}
     timeout-minutes: 90

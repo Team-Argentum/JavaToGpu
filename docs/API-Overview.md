@@ -94,9 +94,11 @@ The runtime chooses smaller workloads for iGPU and CPU OpenCL devices. Unified-m
 
 ## Runtime IR Analysis
 
-The built-in runtime pipeline analyzes typed `IrGpu` before optimization. The first analysis estimates register pressure from parameters, local values, vector widths, private arrays, and expression complexity. It is advisory and does not rewrite code or satisfy production optimizer proof requirements.
+The built-in runtime pipeline analyzes typed `IrGpu` before optimization. Register-pressure analysis uses scope-qualified variable identities, backward last-use dataflow, branch joins, loop fixed points, and helper call-frame summaries to estimate peak live values separately from total declared storage. Inline helpers may increase caller pressure; non-inline helpers retain separate frames. The analysis is advisory and does not rewrite code or satisfy production optimizer proof requirements.
 
-When an estimate is close to or above the current device-profile budget, `optimizer-report.txt` contains a diagnostic and `runtime-ir-analysis.properties` contains machine-readable per-method fields. Treat the values as conservative planning evidence until backend compiler register/occupancy reports and real vendor hardware baselines are available.
+When an estimate is close to or above the current device-profile budget, `optimizer-report.txt` contains a diagnostic and `runtime-ir-analysis.properties` contains machine-readable per-method fields. Treat the values as conservative planning evidence.
+
+Successful OpenCL program builds query `CL_PROGRAM_BUILD_LOG` and retain any returned diagnostics in the runtime compile snapshot. Artifact dumping produces `backend-compiler-feedback.properties`; common NVIDIA, AMD, and Intel/general resource lines are parsed into separate general/vector/scalar register counts, spill bytes, stack-frame bytes, local-memory bytes, and occupancy. When both values exist, `runtime-ir-analysis.properties` compares the selected compiler register count with the heuristic estimate. Empty driver logs remain valid and simply produce unavailable feedback. This comparison is diagnostic and does not enable an optimization automatically.
 
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
 

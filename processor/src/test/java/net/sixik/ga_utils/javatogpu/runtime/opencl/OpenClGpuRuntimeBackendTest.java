@@ -2648,6 +2648,43 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void compilerLogFromCompiledKernelSurvivesFinalSnapshotAttachment() {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        String compileLog = "Used 40 registers, 8 bytes spill stores, 4 bytes spill loads";
+
+        OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(
+                        compileRequest.descriptor(),
+                        "compiled:with-log",
+                        GpuRuntimeCompileArtifactSnapshot.legacy(compileRequest.descriptor())
+                                .withCompileLog(compileLog),
+                        null,
+                        null
+                );
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}));
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertEquals(compileLog, snapshot.compileLog());
+        net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump dump =
+                net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String feedback = dump.artifact(
+                net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper.BACKEND_COMPILER_FEEDBACK_ARTIFACT
+        );
+        assertTrue(feedback.contains("status=recorded"));
+        assertTrue(feedback.contains("selected.register.general=40"));
+        assertTrue(feedback.contains("selected.spill.knownBytes=12"));
+    }
+
+    @Test
     void formatsKernelExecutionFailuresWithKernelAndDeviceContext() throws java.io.IOException {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",

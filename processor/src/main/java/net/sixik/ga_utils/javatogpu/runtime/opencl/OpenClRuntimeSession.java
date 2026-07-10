@@ -244,7 +244,9 @@ public final class OpenClRuntimeSession implements AutoCloseable {
     public OpenClCompiledKernel compileKernel(GpuKernelDescriptor descriptor) {
         OpenClProgram program = context.buildProgram(descriptor.kernelSource());
         OpenClKernel kernel = program.createKernel(descriptor.kernelName());
-        return new OpenClCompiledKernel(descriptor, descriptor.kernelResource(), program, kernel);
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor)
+                .withCompileLog(OpenClProgramBuildLogReader.read(program));
+        return new OpenClCompiledKernel(descriptor, descriptor.kernelResource(), snapshot, program, kernel);
     }
 
     public OpenClCompiledKernel compileKernel(GpuKernelDescriptor descriptor, GpuRuntimeCompileOptions compileOptions) {
@@ -282,7 +284,10 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         String cacheKey = buildOptions.isBlank()
                 ? moduleArtifact.resource()
                 : moduleArtifact.resource() + "|opencl-options=" + buildOptions;
-        return new OpenClCompiledKernel(descriptor, cacheKey, artifactSnapshot, program, kernel);
+        GpuRuntimeCompileArtifactSnapshot compiledSnapshot = artifactSnapshot.withCompileLog(
+                OpenClProgramBuildLogReader.read(program)
+        );
+        return new OpenClCompiledKernel(descriptor, cacheKey, compiledSnapshot, program, kernel);
     }
 
     public OpenClRuntimeCapabilities capabilities() {

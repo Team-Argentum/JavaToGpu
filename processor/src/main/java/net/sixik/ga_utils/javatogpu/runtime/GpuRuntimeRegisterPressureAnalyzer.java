@@ -5,12 +5,12 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedBody;
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,14 +20,15 @@ import java.util.regex.Pattern;
 /**
  * Estimates value-register pressure from typed IrGpu without claiming backend compiler accuracy.
  *
- * <p>The model intentionally keeps declared locals live for their containing block and uses a
- * Sethi-Ullman-like expression estimate. Backend compiler reports can replace this advisory model
- * later without changing the runtime analysis artifact contract.</p>
+ * <p>The analyzer uses backward statement liveness, fixed-point loop analysis, control-flow joins,
+ * vector lane weights, private-array storage, and a Sethi-Ullman-like temporary estimate. Backend
+ * compiler reports can refine this advisory model without changing the runtime artifact contract.</p>
  */
 public final class GpuRuntimeRegisterPressureAnalyzer {
 
-    private static final int UNKNOWN_PRIVATE_ARRAY_SLOTS = 8;
-    private static final int MAX_PRIVATE_ARRAY_SLOTS = 64;
+    public static final String ANALYSIS_VERSION = "register-pressure-interprocedural:v4";
+    static final int UNKNOWN_PRIVATE_ARRAY_SLOTS = 8;
+    static final int MAX_PRIVATE_ARRAY_SLOTS = 64;
     private static final Pattern VECTOR_TYPE = Pattern.compile(
             "(?:char|uchar|short|ushort|int|uint|long|ulong|float|double)(2|3|4|8|16)$"
     );
@@ -43,45 +44,257 @@ public final class GpuRuntimeRegisterPressureAnalyzer {
         if (artifact == null || artifact.module() == null) {
             return new GpuRuntimeRegisterPressureReport(budget, List.of());
         }
-        ArrayList<GpuRuntimeRegisterPressureMethodEstimate> estimates = new ArrayList<>();
+        ArrayList<MethodAnalysis> analyses = new ArrayList<>();
         for (IrGpuMethodBody methodBody : artifact.module().methodBodies()) {
-            estimates.add(analyzeMethod(artifact, methodBody, budget));
+            analyses.add(analyzeMethod(artifact, methodBody, budget));
         }
-        return new GpuRuntimeRegisterPressureReport(budget, estimates);
+        List<GpuRuntimeRegisterPressureCallEstimate> callEstimates = analyzeCalls(
+                artifact,
+                analyses,
+                budget
+        );
+        return new GpuRuntimeRegisterPressureReport(
+                budget,
+                analyses.stream().map(MethodAnalysis::estimate).toList(),
+                callEstimates
+        );
     }
 
-    private static GpuRuntimeRegisterPressureMethodEstimate analyzeMethod(
+    private static MethodAnalysis analyzeMethod(
             IrGpuArtifact artifact,
             IrGpuMethodBody methodBody,
             GpuRuntimeRegisterPressureBudget budget
     ) {
         IrGpuTypedBody typedBody = methodBody.typedBody();
         if (typedBody == null || !typedBody.available()) {
-            return GpuRuntimeRegisterPressureMethodEstimate.unavailable(
-                    methodBody.name(),
-                    budget.valueRegisterBudget()
+            return new MethodAnalysis(
+                    methodBody,
+                    GpuRuntimeRegisterPressureMethodEstimate.unavailable(
+                            methodBody.name(),
+                            budget.valueRegisterBudget()
+                    ),
+                    List.of()
             );
         }
         LinkedHashMap<String, String> variableTypes = new LinkedHashMap<>();
         int parameterRegisters = parameterRegisters(artifact, methodBody, variableTypes);
-        MethodAnalyzer analyzer = new MethodAnalyzer(typedBody, variableTypes, parameterRegisters);
-        MethodMetrics metrics = analyzer.analyze();
+        GpuRuntimeRegisterPressureLivenessAnalyzer.Estimate metrics =
+                GpuRuntimeRegisterPressureLivenessAnalyzer.analyze(typedBody, variableTypes);
         int utilizationPermille = (int) Math.min(
                 Integer.MAX_VALUE,
                 Math.round((double) metrics.estimatedRegisters() * 1_000.0 / budget.valueRegisterBudget())
         );
-        return new GpuRuntimeRegisterPressureMethodEstimate(
-                methodBody.name(),
-                true,
-                metrics.estimatedRegisters(),
-                parameterRegisters,
-                metrics.localRegisters(),
-                metrics.privateArrayRegisters(),
-                metrics.expressionPeakRegisters(),
-                budget.valueRegisterBudget(),
-                utilizationPermille,
-                GpuRuntimeRegisterPressureLevel.fromUtilization(true, utilizationPermille),
-                typedBody.nodes().size()
+        return new MethodAnalysis(
+                methodBody,
+                new GpuRuntimeRegisterPressureMethodEstimate(
+                        methodBody.name(),
+                        true,
+                        metrics.estimatedRegisters(),
+                        parameterRegisters,
+                        metrics.localRegisters(),
+                        metrics.privateArrayRegisters(),
+                        metrics.peakLiveRegisters(),
+                        metrics.expressionPeakRegisters(),
+                        metrics.scopedVariableCount(),
+                        metrics.shadowedVariableCount(),
+                        metrics.unresolvedReferenceCount(),
+                        budget.valueRegisterBudget(),
+                        utilizationPermille,
+                        GpuRuntimeRegisterPressureLevel.fromUtilization(true, utilizationPermille),
+                        typedBody.nodes().size()
+                ),
+                metrics.callSites()
+        );
+    }
+
+    private static List<GpuRuntimeRegisterPressureCallEstimate> analyzeCalls(
+            IrGpuArtifact artifact,
+            List<MethodAnalysis> analyses,
+            GpuRuntimeRegisterPressureBudget budget
+    ) {
+        LinkedHashMap<String, MethodAnalysis> aliases = new LinkedHashMap<>();
+        for (MethodAnalysis analysis : analyses) {
+            aliases.put(analysis.methodBody().name(), analysis);
+            aliases.put(analysis.methodBody().emittedName(), analysis);
+        }
+        Map<String, Boolean> inlineByAlias = inlineByAlias(artifact);
+        Map<String, Set<String>> graph = callGraph(analyses, aliases);
+        Map<String, Integer> effectiveMemo = new HashMap<>();
+        ArrayList<GpuRuntimeRegisterPressureCallEstimate> calls = new ArrayList<>();
+        for (MethodAnalysis caller : analyses) {
+            for (GpuRuntimeRegisterPressureLivenessAnalyzer.CallSite callSite : caller.callSites()) {
+                MethodAnalysis callee = aliases.get(callSite.helperName());
+                boolean resolved = callee != null;
+                boolean inline = resolved && inlineByAlias.getOrDefault(callSite.helperName(), false);
+                boolean recursive = resolved && pathExists(
+                        graph,
+                        callee.canonicalName(),
+                        caller.canonicalName(),
+                        new HashSet<>()
+                );
+                int callerEstimate = caller.estimate().estimatedValueRegisters();
+                int calleeEstimate = resolved
+                        ? effectiveEstimate(callee, aliases, inlineByAlias, graph, effectiveMemo, new HashSet<>())
+                        : 0;
+                int reusableArgumentRegisters = resolved
+                        ? Math.min(callee.estimate().parameterRegisters(), callSite.argumentRegisters())
+                        : 0;
+                int additionalFrameRegisters;
+                int combinedEstimate;
+                if (!resolved) {
+                    additionalFrameRegisters = 0;
+                    combinedEstimate = callerEstimate;
+                } else if (recursive) {
+                    additionalFrameRegisters = 0;
+                    combinedEstimate = Math.max(callerEstimate, callee.estimate().estimatedValueRegisters());
+                } else if (inline) {
+                    additionalFrameRegisters = Math.max(0, calleeEstimate - reusableArgumentRegisters);
+                    combinedEstimate = Math.max(
+                            callerEstimate,
+                            callSite.callerLiveRegisters()
+                                    + additionalFrameRegisters
+                                    + callSite.resultRegisters()
+                    );
+                } else {
+                    additionalFrameRegisters = calleeEstimate;
+                    combinedEstimate = Math.max(callerEstimate, calleeEstimate);
+                }
+                int utilizationPermille = utilizationPermille(
+                        combinedEstimate,
+                        budget.valueRegisterBudget()
+                );
+                calls.add(new GpuRuntimeRegisterPressureCallEstimate(
+                        caller.methodBody().name(),
+                        callSite.helperName(),
+                        resolved ? callee.methodBody().name() : "unresolved",
+                        callSite.nodeId(),
+                        resolved,
+                        inline,
+                        recursive,
+                        callSite.callerLiveRegisters(),
+                        callSite.argumentRegisters(),
+                        callSite.resultRegisters(),
+                        calleeEstimate,
+                        resolved ? callee.estimate().parameterRegisters() : 0,
+                        additionalFrameRegisters,
+                        combinedEstimate,
+                        GpuRuntimeRegisterPressureLevel.fromUtilization(resolved, utilizationPermille)
+                ));
+            }
+        }
+        return List.copyOf(calls);
+    }
+
+    private static int effectiveEstimate(
+            MethodAnalysis method,
+            Map<String, MethodAnalysis> aliases,
+            Map<String, Boolean> inlineByAlias,
+            Map<String, Set<String>> graph,
+            Map<String, Integer> memo,
+            Set<String> visiting
+    ) {
+        String methodName = method.canonicalName();
+        Integer cached = memo.get(methodName);
+        if (cached != null) {
+            return cached;
+        }
+        if (!visiting.add(methodName)) {
+            return method.estimate().estimatedValueRegisters();
+        }
+        int effective = method.estimate().estimatedValueRegisters();
+        for (GpuRuntimeRegisterPressureLivenessAnalyzer.CallSite callSite : method.callSites()) {
+            MethodAnalysis callee = aliases.get(callSite.helperName());
+            if (callee == null) {
+                continue;
+            }
+            boolean recursive = pathExists(
+                    graph,
+                    callee.canonicalName(),
+                    methodName,
+                    new HashSet<>()
+            );
+            if (recursive) {
+                effective = Math.max(effective, callee.estimate().estimatedValueRegisters());
+                continue;
+            }
+            int calleeEffective = effectiveEstimate(
+                    callee,
+                    aliases,
+                    inlineByAlias,
+                    graph,
+                    memo,
+                    visiting
+            );
+            if (inlineByAlias.getOrDefault(callSite.helperName(), false)) {
+                int reusableArguments = Math.min(
+                        callee.estimate().parameterRegisters(),
+                        callSite.argumentRegisters()
+                );
+                int additional = Math.max(0, calleeEffective - reusableArguments);
+                effective = Math.max(
+                        effective,
+                        callSite.callerLiveRegisters() + additional + callSite.resultRegisters()
+                );
+            } else {
+                effective = Math.max(effective, calleeEffective);
+            }
+        }
+        visiting.remove(methodName);
+        memo.put(methodName, effective);
+        return effective;
+    }
+
+    private static Map<String, Boolean> inlineByAlias(IrGpuArtifact artifact) {
+        LinkedHashMap<String, Boolean> inlineByAlias = new LinkedHashMap<>();
+        for (IrGpuModuleMethod method : artifact.module().helperMethods()) {
+            inlineByAlias.put(method.name(), method.inline());
+            inlineByAlias.put(method.emittedName(), method.inline());
+        }
+        return Map.copyOf(inlineByAlias);
+    }
+
+    private static Map<String, Set<String>> callGraph(
+            List<MethodAnalysis> analyses,
+            Map<String, MethodAnalysis> aliases
+    ) {
+        LinkedHashMap<String, Set<String>> graph = new LinkedHashMap<>();
+        for (MethodAnalysis analysis : analyses) {
+            LinkedHashSet<String> callees = new LinkedHashSet<>();
+            for (GpuRuntimeRegisterPressureLivenessAnalyzer.CallSite callSite : analysis.callSites()) {
+                MethodAnalysis callee = aliases.get(callSite.helperName());
+                if (callee != null) {
+                    callees.add(callee.canonicalName());
+                }
+            }
+            graph.put(analysis.canonicalName(), Set.copyOf(callees));
+        }
+        return Map.copyOf(graph);
+    }
+
+    private static boolean pathExists(
+            Map<String, Set<String>> graph,
+            String from,
+            String target,
+            Set<String> visiting
+    ) {
+        if (from.equals(target)) {
+            return true;
+        }
+        if (!visiting.add(from)) {
+            return false;
+        }
+        for (String next : graph.getOrDefault(from, Set.of())) {
+            if (pathExists(graph, next, target, visiting)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int utilizationPermille(int registers, int budget) {
+        return (int) Math.min(
+                Integer.MAX_VALUE,
+                Math.round((double) Math.max(0, registers) * 1_000.0 / Math.max(1, budget))
         );
     }
 
@@ -109,241 +322,7 @@ public final class GpuRuntimeRegisterPressureAnalyzer {
         return registers;
     }
 
-    private static final class MethodAnalyzer {
-
-        private final Map<Integer, IrGpuTypedNode> nodes = new HashMap<>();
-        private final Map<String, String> variableTypes;
-        private final int parameterRegisters;
-        private int localRegisters;
-        private int privateArrayRegisters;
-        private int expressionPeakRegisters;
-
-        private MethodAnalyzer(
-                IrGpuTypedBody typedBody,
-                Map<String, String> variableTypes,
-                int parameterRegisters
-        ) {
-            for (IrGpuTypedNode node : typedBody.nodes()) {
-                nodes.put(node.id(), node);
-            }
-            this.variableTypes = new LinkedHashMap<>(variableTypes);
-            this.parameterRegisters = parameterRegisters;
-            this.rootNodeIds = typedBody.rootNodeIds();
-        }
-
-        private final List<Integer> rootNodeIds;
-
-        private MethodMetrics analyze() {
-            SequenceMetrics sequence = analyzeSequence(rootNodeIds, parameterRegisters);
-            return new MethodMetrics(
-                    Math.max(parameterRegisters, sequence.peakRegisters()),
-                    localRegisters,
-                    privateArrayRegisters,
-                    expressionPeakRegisters
-            );
-        }
-
-        private SequenceMetrics analyzeSequence(List<Integer> nodeIds, int incomingLiveRegisters) {
-            int liveRegisters = incomingLiveRegisters;
-            int peakRegisters = liveRegisters;
-            for (Integer nodeId : nodeIds == null ? List.<Integer>of() : nodeIds) {
-                IrGpuTypedNode node = nodes.get(nodeId);
-                if (node == null) {
-                    continue;
-                }
-                if ("GpuIrVariableDeclaration".equals(node.kind())) {
-                    int initializerPeak = expressionPressure(firstChild(node, "initializer"), new HashSet<>());
-                    expressionPeakRegisters = Math.max(expressionPeakRegisters, initializerPeak);
-                    peakRegisters = Math.max(peakRegisters, liveRegisters + initializerPeak);
-                    String typeName = node.attributes().getOrDefault("typeName", "unknown");
-                    String name = node.attributes().getOrDefault("name", "unknown");
-                    int weight = typeWeight(typeName);
-                    variableTypes.put(name, typeName);
-                    localRegisters += weight;
-                    liveRegisters += weight;
-                    peakRegisters = Math.max(peakRegisters, liveRegisters);
-                    continue;
-                }
-                if ("GpuIrPrivateArrayDeclaration".equals(node.kind())) {
-                    int sizePeak = expressionPressure(firstChild(node, "size"), new HashSet<>());
-                    expressionPeakRegisters = Math.max(expressionPeakRegisters, sizePeak);
-                    peakRegisters = Math.max(peakRegisters, liveRegisters + sizePeak);
-                    int slots = privateArraySlots(node);
-                    privateArrayRegisters += slots;
-                    liveRegisters += slots;
-                    peakRegisters = Math.max(peakRegisters, liveRegisters);
-                    continue;
-                }
-                peakRegisters = Math.max(peakRegisters, statementPeak(node, liveRegisters));
-            }
-            return new SequenceMetrics(peakRegisters, liveRegisters);
-        }
-
-        private int statementPeak(IrGpuTypedNode node, int liveRegisters) {
-            return switch (node.kind()) {
-                case "GpuIrIf" -> Math.max(
-                        liveRegisters + trackExpression(firstChild(node, "condition")),
-                        Math.max(
-                                analyzeSequence(node.children().getOrDefault("thenBranch", List.of()), liveRegisters)
-                                        .peakRegisters(),
-                                analyzeSequence(node.children().getOrDefault("elseBranch", List.of()), liveRegisters)
-                                        .peakRegisters()
-                        )
-                );
-                case "GpuIrForLoop" -> loopPeak(node, liveRegisters, true);
-                case "GpuIrWhileLoop", "GpuIrDoWhileLoop" -> loopPeak(node, liveRegisters, false);
-                case "GpuIrSwitch" -> switchPeak(node, liveRegisters);
-                case "GpuIrSwitchCase" -> analyzeSequence(
-                        node.children().getOrDefault("statements", List.of()),
-                        liveRegisters
-                ).peakRegisters();
-                default -> liveRegisters + trackExpressionChildren(node);
-            };
-        }
-
-        private int loopPeak(IrGpuTypedNode node, int liveRegisters, boolean hasInitializer) {
-            int peak = liveRegisters;
-            int loopLiveRegisters = liveRegisters;
-            if (hasInitializer) {
-                SequenceMetrics initializer = analyzeSequence(
-                        node.children().getOrDefault("initializer", List.of()),
-                        liveRegisters
-                );
-                peak = Math.max(peak, initializer.peakRegisters());
-                loopLiveRegisters = initializer.endingLiveRegisters();
-            }
-            peak = Math.max(peak, loopLiveRegisters + trackExpression(firstChild(node, "condition")));
-            peak = Math.max(peak, analyzeSequence(
-                    node.children().getOrDefault("body", List.of()),
-                    loopLiveRegisters
-            ).peakRegisters());
-            if (hasInitializer) {
-                peak = Math.max(peak, analyzeSequence(
-                        node.children().getOrDefault("update", List.of()),
-                        loopLiveRegisters
-                ).peakRegisters());
-            }
-            return peak;
-        }
-
-        private int switchPeak(IrGpuTypedNode node, int liveRegisters) {
-            int peak = liveRegisters + trackExpression(firstChild(node, "selector"));
-            for (Integer caseId : node.children().getOrDefault("cases", List.of())) {
-                IrGpuTypedNode switchCase = nodes.get(caseId);
-                if (switchCase == null) {
-                    continue;
-                }
-                peak = Math.max(peak, liveRegisters + trackExpressions(
-                        switchCase.children().getOrDefault("labels", List.of())
-                ));
-                peak = Math.max(peak, analyzeSequence(
-                        switchCase.children().getOrDefault("statements", List.of()),
-                        liveRegisters
-                ).peakRegisters());
-            }
-            return peak;
-        }
-
-        private int trackExpressionChildren(IrGpuTypedNode node) {
-            return trackExpressions(orderedChildIds(node));
-        }
-
-        private int trackExpressions(List<Integer> childIds) {
-            int peak = 0;
-            int held = 0;
-            for (Integer childId : childIds == null ? List.<Integer>of() : childIds) {
-                int childPeak = expressionPressure(childId, new HashSet<>());
-                peak = Math.max(peak, held + childPeak);
-                held += resultWeight(childId);
-            }
-            expressionPeakRegisters = Math.max(expressionPeakRegisters, peak);
-            return peak;
-        }
-
-        private int trackExpression(Integer nodeId) {
-            int peak = expressionPressure(nodeId, new HashSet<>());
-            expressionPeakRegisters = Math.max(expressionPeakRegisters, peak);
-            return peak;
-        }
-
-        private int expressionPressure(Integer nodeId, Set<Integer> visiting) {
-            if (nodeId == null) {
-                return 0;
-            }
-            IrGpuTypedNode node = nodes.get(nodeId);
-            if (node == null || !visiting.add(nodeId)) {
-                return 1;
-            }
-            try {
-                if ("GpuIrTernary".equals(node.kind())) {
-                    return Math.max(
-                            resultWeight(nodeId),
-                            Math.max(
-                                    expressionPressure(firstChild(node, "condition"), visiting),
-                                    Math.max(
-                                            expressionPressure(firstChild(node, "whenTrue"), visiting),
-                                            expressionPressure(firstChild(node, "whenFalse"), visiting)
-                                    )
-                            )
-                    );
-                }
-                int peak = resultWeight(nodeId);
-                int held = 0;
-                for (Integer childId : orderedChildIds(node)) {
-                    int childPeak = expressionPressure(childId, visiting);
-                    peak = Math.max(peak, held + childPeak);
-                    held += resultWeight(childId);
-                }
-                return peak;
-            } finally {
-                visiting.remove(nodeId);
-            }
-        }
-
-        private int resultWeight(Integer nodeId) {
-            IrGpuTypedNode node = nodeId == null ? null : nodes.get(nodeId);
-            if (node == null) {
-                return 0;
-            }
-            return switch (node.kind()) {
-                case "GpuIrVariableRef" -> typeWeight(variableTypes.get(node.attributes().get("name")));
-                case "GpuIrCast" -> typeWeight(node.attributes().get("targetType"));
-                case "GpuIrHelperCall", "GpuIrIntrinsicCall" -> typeWeight(node.attributes().get("resultType"));
-                case "GpuIrStructInit" -> typeWeight(node.attributes().get("structType"));
-                case "GpuIrLiteral" -> literalWeight(node.attributes().get("sourceText"));
-                case "GpuIrReturn", "GpuIrAssignment", "GpuIrExpressionStatement",
-                     "GpuIrIf", "GpuIrForLoop", "GpuIrWhileLoop", "GpuIrDoWhileLoop",
-                     "GpuIrSwitch", "GpuIrSwitchCase", "GpuIrBreak", "GpuIrContinue",
-                     "GpuIrLoopBreak", "GpuIrVariableDeclaration", "GpuIrPrivateArrayDeclaration" -> 0;
-                default -> 1;
-            };
-        }
-
-        private int privateArraySlots(IrGpuTypedNode node) {
-            int elementWeight = typeWeight(node.attributes().get("elementType"));
-            Integer sizeNodeId = firstChild(node, "size");
-            IrGpuTypedNode sizeNode = sizeNodeId == null ? null : nodes.get(sizeNodeId);
-            int length = sizeNode == null || !"GpuIrLiteral".equals(sizeNode.kind())
-                    ? UNKNOWN_PRIVATE_ARRAY_SLOTS
-                    : parsePositiveLiteral(sizeNode.attributes().get("sourceText"), UNKNOWN_PRIVATE_ARRAY_SLOTS);
-            return Math.min(MAX_PRIVATE_ARRAY_SLOTS, Math.max(1, length) * Math.max(1, elementWeight));
-        }
-
-        private static Integer firstChild(IrGpuTypedNode node, String name) {
-            List<Integer> childIds = node.children().getOrDefault(name, List.of());
-            return childIds.isEmpty() ? null : childIds.get(0);
-        }
-
-        private static List<Integer> orderedChildIds(IrGpuTypedNode node) {
-            ArrayList<Integer> childIds = new ArrayList<>();
-            node.children().entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .forEach(entry -> childIds.addAll(entry.getValue()));
-            return childIds;
-        }
-    }
-
-    private static int typeWeight(String typeName) {
+    static int typeWeight(String typeName) {
         if (typeName == null || typeName.isBlank() || "unknown".equalsIgnoreCase(typeName)) {
             return 1;
         }
@@ -353,6 +332,9 @@ public final class GpuRuntimeRegisterPressureAnalyzer {
                 .replace("_", "")
                 .trim()
                 .toLowerCase(java.util.Locale.ROOT);
+        if ("void".equals(normalized)) {
+            return 0;
+        }
         if (normalized.endsWith("[]") || normalized.contains("ptr") || normalized.contains("pointer")) {
             return 1;
         }
@@ -371,7 +353,7 @@ public final class GpuRuntimeRegisterPressureAnalyzer {
         return 1;
     }
 
-    private static int literalWeight(String sourceText) {
+    static int literalWeight(String sourceText) {
         if (sourceText == null) {
             return 1;
         }
@@ -379,7 +361,7 @@ public final class GpuRuntimeRegisterPressureAnalyzer {
         return value.endsWith("d") || value.endsWith("l") ? 2 : 1;
     }
 
-    private static int parsePositiveLiteral(String sourceText, int fallback) {
+    static int parsePositiveLiteral(String sourceText, int fallback) {
         if (sourceText == null || sourceText.isBlank()) {
             return fallback;
         }
@@ -394,14 +376,17 @@ public final class GpuRuntimeRegisterPressureAnalyzer {
         }
     }
 
-    private record SequenceMetrics(int peakRegisters, int endingLiveRegisters) {
-    }
-
-    private record MethodMetrics(
-            int estimatedRegisters,
-            int localRegisters,
-            int privateArrayRegisters,
-            int expressionPeakRegisters
+    private record MethodAnalysis(
+            IrGpuMethodBody methodBody,
+            GpuRuntimeRegisterPressureMethodEstimate estimate,
+            List<GpuRuntimeRegisterPressureLivenessAnalyzer.CallSite> callSites
     ) {
+        private MethodAnalysis {
+            callSites = callSites == null ? List.of() : List.copyOf(callSites);
+        }
+
+        private String canonicalName() {
+            return methodBody.name().isBlank() ? methodBody.emittedName() : methodBody.name();
+        }
     }
 }
