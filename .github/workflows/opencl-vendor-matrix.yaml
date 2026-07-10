@@ -77,6 +77,15 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Restore OpenCL validation history baseline
+        id: validation_history_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: processor/build/opencl-validation-history-cache/
+          key: opencl-validation-history-v1-${{ runner.os }}-${{ matrix.artifact_suffix }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            opencl-validation-history-v1-${{ runner.os }}-${{ matrix.artifact_suffix }}-${{ github.ref_name }}-
+
       - name: Print runner and GPU context
         continue-on-error: true
         shell: cmd
@@ -100,6 +109,13 @@ jobs:
         continue-on-error: true
         shell: cmd
         run: .\gradlew.bat :processor:openClValidationReport --console=plain --no-daemon
+
+      - name: Validate kernel launch-advisory drift
+        if: always()
+        id: launch_advisory_drift
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClKernelLaunchAdvisoryDrift --console=plain --no-daemon
 
       - name: Validate production promotion explainability
         if: steps.opencl_validation.outcome == 'success'
@@ -149,6 +165,26 @@ jobs:
         shell: cmd
         run: .\gradlew.bat :processor:summarizeOpenClBackendSourcePromotionWorkload --console=plain --no-daemon
 
+      - name: Stage OpenCL validation history cache
+        if: >-
+          always() &&
+          steps.opencl_validation.outcome == 'success' &&
+          steps.validation_report.outcome == 'success' &&
+          steps.launch_advisory_drift.outcome == 'success'
+        id: validation_history_stage
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:stageOpenClValidationHistoryCache --console=plain --no-daemon
+
+      - name: Save OpenCL validation history baseline
+        if: steps.validation_history_stage.outcome == 'success'
+        id: validation_history_save
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: processor/build/opencl-validation-history-cache/
+          key: opencl-validation-history-v1-${{ runner.os }}-${{ matrix.artifact_suffix }}-${{ github.ref_name }}-${{ github.run_id }}
+
       - name: Upload OpenCL report bundle
         if: always()
         uses: actions/upload-artifact@v4
@@ -167,10 +203,13 @@ jobs:
         env:
           OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
+          LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
           PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
           PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
           SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
           SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
+          VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
+          VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
         run: |
           if not defined GITHUB_STEP_SUMMARY exit /b 0
           echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
@@ -179,10 +218,17 @@ jobs:
           echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Launch-advisory drift ^| %LAUNCH_ADVISORY_DRIFT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Production explainability ^| %PRODUCTION_EXPLAINABILITY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Production explainability summary ^| %PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Source-promotion baseline ^| %SOURCE_PROMOTION_BASELINE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Source-promotion summary ^| %SOURCE_PROMOTION_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Validation history stage ^| %VALIDATION_HISTORY_STAGE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Validation history save ^| %VALIDATION_HISTORY_SAVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          if exist processor\build\reports\opencl\runtime-launch-advisory-summary.md (
+            echo.>>"%GITHUB_STEP_SUMMARY%"
+            type processor\build\reports\opencl\runtime-launch-advisory-summary.md>>"%GITHUB_STEP_SUMMARY%"
+          )
 
       - name: Fail after artifact capture
         if: >-
@@ -190,6 +236,9 @@ jobs:
           (
             steps.opencl_validation.outcome != 'success' ||
             steps.validation_report.outcome != 'success' ||
+            steps.launch_advisory_drift.outcome != 'success' ||
+            steps.validation_history_stage.outcome == 'failure' ||
+            steps.validation_history_save.outcome == 'failure' ||
             steps.production_explainability.outcome != 'success' ||
             steps.production_explainability_summary.outcome != 'success' ||
             steps.source_promotion_summary.outcome != 'success' ||

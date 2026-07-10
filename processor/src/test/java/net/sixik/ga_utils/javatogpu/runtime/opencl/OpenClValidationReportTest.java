@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenClValidationReportTest {
@@ -102,7 +103,8 @@ class OpenClValidationReportTest {
                         "passed (reviewReady=true, sourceSelection=irgpu, productionSourceSwitching=enabled, productionDecision=production-enabled, kernelCount=2)",
                         "blocked (reviewReady=false, sourceParityMatched=false, runtimeEquivalencePassed=false)",
                         "not-promoted (productionSourceSwitching=disabled, realWorkloadEvidence=not-wired)",
-                        "blocked (sourceSwitchingAllowed=false, mutationAllowed=false, blockers=3)"
+                        "blocked (sourceSwitchingAllowed=false, mutationAllowed=false, blockers=3)",
+                        "recorded (kernels=5, aligned=1, nonPreferred=1, driverSelected=3, unavailable=0, missing=0, blocking=0)"
                 ),
                 new OpenClValidationHistoryEntry(
                         Instant.parse("2026-07-01T12:00:00Z"),
@@ -127,6 +129,7 @@ class OpenClValidationReportTest {
         java.util.List<OpenClValidationHistoryEntry> loaded = OpenClValidationHistoryIO.readAll(historyFile);
 
         assertEquals(entries, loaded);
+        assertTrue(loaded.get(0).kernelLaunchAdvisoryStatus().contains("nonPreferred=1"));
     }
 
     @Test
@@ -1059,6 +1062,18 @@ class OpenClValidationReportTest {
         }
     }
 
+    private static java.nio.file.Path findRepositoryFile(String relativePath) {
+        java.nio.file.Path directory = java.nio.file.Path.of("").toAbsolutePath();
+        while (directory != null) {
+            java.nio.file.Path candidate = directory.resolve(relativePath);
+            if (java.nio.file.Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            directory = directory.getParent();
+        }
+        throw new IllegalStateException("Repository file not found: " + relativePath);
+    }
+
     @Test
     void workloadSummaryPropertiesExposeSyntheticPackedGridArtifact() throws Exception {
         java.nio.file.Path summaryFile = java.nio.file.Files.createTempFile("javatogpu-opencl-workloads-packed-grid", ".properties");
@@ -1140,6 +1155,128 @@ class OpenClValidationReportTest {
         } finally {
             restoreProperty("javatogpu.opencl.backendPromotionArtifactSupportFile", previousSupportFile);
             restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
+        }
+    }
+
+    @Test
+    void validationReporterWritesKernelLaunchAdvisoryReportAndWorkflowFragment() throws Exception {
+        java.nio.file.Path reportDirectory = java.nio.file.Files.createTempDirectory(
+                "javatogpu-opencl-launch-advisory-reporter");
+        java.nio.file.Path workloadGateFile = reportDirectory.resolve(
+                "backend-source-promotion-workload-gate.properties");
+        java.nio.file.Path reportFile = reportDirectory.resolve("validation-report.md");
+        java.nio.file.Path summaryFile = reportDirectory.resolve("runtime-launch-advisory-summary.md");
+        java.nio.file.Path historyFile = reportDirectory.resolve("validation-history.properties");
+        java.nio.file.Path driftFile = reportDirectory.resolve("runtime-launch-advisory-drift.properties");
+        java.nio.file.Path baselineFile = reportDirectory.resolve("validation-history-baseline.properties");
+        java.nio.file.Files.writeString(workloadGateFile, String.join("\n",
+                "kernel.count=1",
+                "kernel.0.sourceKernelResource=workload/perlin.cl",
+                ""
+        ));
+        java.nio.file.Path artifactDirectory = reportDirectory
+                .resolve("runtime-compile-artifacts")
+                .resolve("perlin");
+        java.nio.file.Files.createDirectories(artifactDirectory);
+        java.nio.file.Files.writeString(
+                artifactDirectory.resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME),
+                String.join("\n",
+                        "status=aligned",
+                        "blocking=false",
+                        "kernelResource=workload/perlin.cl",
+                        "requestedLocalWorkGroupShape=32",
+                        "requestedLocalWorkGroupSize=32",
+                        "kernelMaxWorkGroupSize=256",
+                        "preferredWorkGroupSizeMultiple=32",
+                        "preferredMultipleMatched=true",
+                        ""
+                )
+        );
+        String previousGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+        String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
+        String previousSummaryFile = System.getProperty("javatogpu.opencl.kernelLaunchAdvisorySummaryFile");
+        String previousHistoryFile = System.getProperty("javatogpu.opencl.validationHistoryFile");
+        String previousDriftFile = System.getProperty("javatogpu.opencl.kernelLaunchAdvisoryDriftFile");
+        String previousBaselineFile = System.getProperty("javatogpu.opencl.validationHistoryBaselineFile");
+        try {
+            System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", workloadGateFile.toString());
+            System.setProperty("javatogpu.opencl.validationReportFile", reportFile.toString());
+            System.setProperty("javatogpu.opencl.kernelLaunchAdvisorySummaryFile", summaryFile.toString());
+            System.setProperty("javatogpu.opencl.validationHistoryFile", historyFile.toString());
+            System.setProperty("javatogpu.opencl.kernelLaunchAdvisoryDriftFile", driftFile.toString());
+
+            OpenClValidationReporter.main(new String[0]);
+
+            String baselineReport = java.nio.file.Files.readString(reportFile);
+            assertTrue(baselineReport.contains("## Kernel Launch Advisory Drift"));
+            assertTrue(baselineReport.contains("- Status: `no-baseline`"));
+            java.nio.file.Files.copy(historyFile, baselineFile);
+            java.nio.file.Files.delete(historyFile);
+            System.setProperty("javatogpu.opencl.validationHistoryBaselineFile", baselineFile.toString());
+
+            java.nio.file.Files.writeString(
+                    artifactDirectory.resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME),
+                    String.join("\n",
+                            "status=non-preferred-multiple",
+                            "blocking=false",
+                            "kernelResource=workload/perlin.cl",
+                            "requestedLocalWorkGroupShape=48",
+                            "requestedLocalWorkGroupSize=48",
+                            "kernelMaxWorkGroupSize=256",
+                            "preferredWorkGroupSizeMultiple=32",
+                            "preferredMultipleMatched=false",
+                            ""
+                    )
+            );
+            OpenClValidationReporter.main(new String[0]);
+            OpenClValidationReporter.main(new String[0]);
+
+            String reportMarkdown = java.nio.file.Files.readString(reportFile);
+            String summaryMarkdown = java.nio.file.Files.readString(summaryFile);
+            assertTrue(reportMarkdown.contains("## Kernel Launch Advisories"));
+            assertTrue(reportMarkdown.contains("- Non-preferred multiple: `1`"));
+            assertTrue(reportMarkdown.contains("`workload/perlin.cl` | `non-preferred-multiple`"));
+            assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));
+            assertTrue(summaryMarkdown.contains("- Blocking: `0`"));
+            assertTrue(summaryMarkdown.contains("## Kernel Launch Advisory Drift"));
+            assertTrue(summaryMarkdown.contains("- Status: `regressed`"));
+            assertTrue(summaryMarkdown.contains("nonPreferred=+1"));
+            String driftProperties = java.nio.file.Files.readString(driftFile);
+            assertTrue(driftProperties.contains("status=regressed"));
+            assertTrue(driftProperties.contains("regression=true"));
+            assertTrue(driftProperties.contains("delta.nonPreferred=1"));
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> OpenClKernelLaunchAdvisoryDriftValidatorCli.main(
+                            new String[]{driftFile.toString()}
+                    )
+            );
+            java.util.List<OpenClValidationHistoryEntry> baseline =
+                    OpenClValidationHistoryIO.readAll(baselineFile);
+            assertEquals(1, baseline.size());
+            assertEquals(
+                    "recorded (kernels=1, aligned=1, nonPreferred=0, driverSelected=0, unavailable=0, missing=0, blocking=0)",
+                    baseline.get(0).kernelLaunchAdvisoryStatus()
+            );
+            java.util.List<OpenClValidationHistoryEntry> history = OpenClValidationHistoryIO.readAll(historyFile);
+            assertEquals(3, history.size());
+            assertEquals(
+                    "recorded (kernels=1, aligned=0, nonPreferred=1, driverSelected=0, unavailable=0, missing=0, blocking=0)",
+                    history.get(0).kernelLaunchAdvisoryStatus()
+            );
+            String workflow = java.nio.file.Files.readString(findRepositoryFile(
+                    ".github/workflows/opencl-vendor-matrix.yaml"
+            ));
+            assertTrue(workflow.contains("steps.launch_advisory_drift.outcome == 'success'"));
+            assertTrue(workflow.contains("if: steps.validation_history_stage.outcome == 'success'"));
+            assertTrue(workflow.contains("uses: actions/cache/save@v4"));
+        } finally {
+            restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousGateFile);
+            restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
+            restoreProperty("javatogpu.opencl.kernelLaunchAdvisorySummaryFile", previousSummaryFile);
+            restoreProperty("javatogpu.opencl.validationHistoryFile", previousHistoryFile);
+            restoreProperty("javatogpu.opencl.kernelLaunchAdvisoryDriftFile", previousDriftFile);
+            restoreProperty("javatogpu.opencl.validationHistoryBaselineFile", previousBaselineFile);
         }
     }
 }

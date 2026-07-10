@@ -18,8 +18,46 @@ record OpenClValidationHistoryEntry(
         String productionSourceSwitchingValidationStatus,
         String backendSourcePromotionContractStatus,
         String backendSourcePromotionWorkloadStatus,
-        String productionPromotionExplainabilityStatus
+        String productionPromotionExplainabilityStatus,
+        String kernelLaunchAdvisoryStatus
 ) {
+
+    OpenClValidationHistoryEntry(
+            Instant generatedAtUtc,
+            String requestedVendorLane,
+            String backendName,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String deviceVersion,
+            String bucketSummary,
+            String longRunningStatus,
+            String workloadStatus,
+            String irGpuSourceReviewStatus,
+            String productionSourceSwitchingValidationStatus,
+            String backendSourcePromotionContractStatus,
+            String backendSourcePromotionWorkloadStatus,
+            String productionPromotionExplainabilityStatus
+    ) {
+        this(
+                generatedAtUtc,
+                requestedVendorLane,
+                backendName,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                deviceVersion,
+                bucketSummary,
+                longRunningStatus,
+                workloadStatus,
+                irGpuSourceReviewStatus,
+                productionSourceSwitchingValidationStatus,
+                backendSourcePromotionContractStatus,
+                backendSourcePromotionWorkloadStatus,
+                productionPromotionExplainabilityStatus,
+                "not recorded"
+        );
+    }
 
     OpenClValidationHistoryEntry {
         generatedAtUtc = Objects.requireNonNull(generatedAtUtc, "generatedAtUtc");
@@ -37,6 +75,7 @@ record OpenClValidationHistoryEntry(
         backendSourcePromotionContractStatus = normalize(backendSourcePromotionContractStatus);
         backendSourcePromotionWorkloadStatus = normalize(backendSourcePromotionWorkloadStatus);
         productionPromotionExplainabilityStatus = normalize(productionPromotionExplainabilityStatus);
+        kernelLaunchAdvisoryStatus = normalize(kernelLaunchAdvisoryStatus);
     }
 
     private static String normalize(String value) {

@@ -66,6 +66,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String LONG_RUNNING_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.longRunningSummaryFile";
     private static final String WORKLOAD_VALIDATION_PROPERTY = "javatogpu.opencl.workloadValidation";
     private static final String WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.workloadSummaryFile";
+    private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY =
+            "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
     private static final String IRGPU_SOURCE_REVIEW_PROPERTY = "javatogpu.opencl.irGpuSourceReview";
     private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
     private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_PROPERTY = "javatogpu.opencl.productionSourceSwitchingValidation";
@@ -73,6 +75,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String IMAGE_KERNEL_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/image-kernel.irgpu.properties";
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
     private static final String DUAL_BUFFER_INT_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/dual-buffer-int-kernel.irgpu.properties";
+    private static final String PERLIN_KERNEL_RESOURCE = "javatogpu/sample/PerlinWorkload/kernel.cl";
 
     @Test
     void runsRequiredStartupDeviceSelfTestOnAvailableOpenClDevice() {
@@ -261,17 +264,28 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             byte[] permutation1 = (byte[]) fixtureClass.getField("permutation1").get(fixture);
             byte[] permutation2 = (byte[]) fixtureClass.getField("permutation2").get(fixture);
 
-            double[] cpuOutput = new double[256];
-            double[] gpuOutput = new double[256];
+            double[] cpuOutput = new double[288];
+            double[] gpuOutput = new double[288];
 
             ownerClass.getMethod("cpuKernel", noise.getClass(), byte[].class, byte[].class, byte[].class, double[].class)
                     .invoke(null, noise, permutation0, permutation1, permutation2, cpuOutput);
 
-            GpuGeneratedLauncherInvoker.invoke(ownerClass, "kernel", noise, permutation0, permutation1, permutation2, gpuOutput);
+            clearLaunchAdvisoryIfConfigured(PERLIN_KERNEL_RESOURCE);
+            GpuGeneratedLauncherInvoker.invokeWithConfig(
+                    ownerClass,
+                    "kernel",
+                    net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(288L, 48L),
+                    noise,
+                    permutation0,
+                    permutation1,
+                    permutation2,
+                    gpuOutput
+            );
 
             for (int i = 0; i < cpuOutput.length; i++) {
                 org.junit.jupiter.api.Assertions.assertEquals(cpuOutput[i], gpuOutput[i], 1.0e-9, "Mismatch at index " + i);
             }
+            assertNonBlockingLaunchAdvisoryIfConfigured(PERLIN_KERNEL_RESOURCE, 48L);
         }
     }
 
@@ -2839,6 +2853,86 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL workload validation summary", exception);
         }
+    }
+
+    private static void clearLaunchAdvisoryIfConfigured(String kernelResource) throws IOException {
+        Path artifactRoot = configuredRuntimeCompileArtifactRoot();
+        if (artifactRoot == null || !Files.isDirectory(artifactRoot)) {
+            return;
+        }
+        try (java.util.stream.Stream<Path> paths = Files.walk(artifactRoot)) {
+            for (Path path : paths
+                    .filter(Files::isRegularFile)
+                    .filter(candidate -> OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME.equals(
+                            candidate.getFileName().toString()
+                    ))
+                    .filter(candidate -> propertyEquals(candidate, "kernelResource", kernelResource))
+                    .toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
+    }
+
+    private static void assertNonBlockingLaunchAdvisoryIfConfigured(
+            String kernelResource,
+            long requestedLocalSize
+    ) throws IOException {
+        Path artifactRoot = configuredRuntimeCompileArtifactRoot();
+        if (artifactRoot == null) {
+            return;
+        }
+        assertTrue(Files.isDirectory(artifactRoot), "Runtime compile artifact directory is missing");
+
+        Path advisoryFile;
+        try (java.util.stream.Stream<Path> paths = Files.walk(artifactRoot)) {
+            advisoryFile = paths
+                    .filter(Files::isRegularFile)
+                    .filter(candidate -> OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME.equals(
+                            candidate.getFileName().toString()
+                    ))
+                    .filter(candidate -> propertyEquals(candidate, "kernelResource", kernelResource))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "Launch advisory is missing for kernel resource " + kernelResource
+                    ));
+        }
+
+        java.util.Properties properties = loadProperties(advisoryFile);
+        assertEquals("false", properties.getProperty("blocking"));
+        assertEquals("true", properties.getProperty("explicitLocalSize"));
+        assertEquals(Long.toString(requestedLocalSize), properties.getProperty("requestedLocalWorkGroupSize"));
+        assertEquals("true", properties.getProperty("comparisonPerformed"));
+
+        long preferredMultiple = Long.parseLong(properties.getProperty("preferredWorkGroupSizeMultiple"));
+        assertTrue(preferredMultiple > 0L, "Preferred work-group size multiple is unavailable");
+        boolean matched = requestedLocalSize % preferredMultiple == 0L;
+        assertEquals(matched ? "aligned" : "non-preferred-multiple", properties.getProperty("status"));
+        assertEquals(Boolean.toString(matched), properties.getProperty("preferredMultipleMatched"));
+    }
+
+    private static Path configuredRuntimeCompileArtifactRoot() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return null;
+        }
+        Path reportDirectory = Path.of(gatePath).getParent();
+        return reportDirectory == null ? null : reportDirectory.resolve("runtime-compile-artifacts");
+    }
+
+    private static boolean propertyEquals(Path path, String key, String expectedValue) {
+        try {
+            return expectedValue.equals(loadProperties(path).getProperty(key));
+        } catch (IOException exception) {
+            return false;
+        }
+    }
+
+    private static java.util.Properties loadProperties(Path path) throws IOException {
+        java.util.Properties properties = new java.util.Properties();
+        try (java.io.Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            properties.load(reader);
+        }
+        return properties;
     }
 
     private static void writeIrGpuSourceReviewSummary(String status) {

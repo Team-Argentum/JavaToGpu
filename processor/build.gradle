@@ -58,6 +58,11 @@ def openClBackendPromotionArtifactSupportFile = layout.buildDirectory.file('repo
 def openClBackendSourcePromotionWorkloadGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile
 def openClBackendSourcePromotionWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-summary.properties').get().asFile
 def openClProductionSourceSwitchingValidationFile = layout.buildDirectory.file('reports/opencl/production-source-switching-validation.properties').get().asFile
+def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-drift.properties').get().asFile
+def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
+def openClValidationHistoryMarkdownFile = layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile
+def openClValidationHistoryCacheDirectory = layout.buildDirectory.dir('opencl-validation-history-cache').get().asFile
+def openClValidationHistoryBaselineFile = new File(openClValidationHistoryCacheDirectory, 'validation-history.properties')
 def openClI3ReadinessBaselineFile = providers.gradleProperty('javatogpu.opencl.i3ReadinessBaselineFile')
         .map { file(it) }
         .orElse(layout.buildDirectory.file('opencl-i3-readiness-baselines/i3-readiness-workload-baseline.properties').map { it.asFile })
@@ -460,8 +465,52 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.i3ReadinessWorkloadSummaryFile', openClI3ReadinessWorkloadSummaryFile.absolutePath
     systemProperty 'javatogpu.opencl.productionPromotionExplainabilityFile', openClProductionPromotionExplainabilityFile.absolutePath
     systemProperty 'javatogpu.opencl.backendPromotionArtifactSupportFile', openClBackendPromotionArtifactSupportFile.absolutePath
-    systemProperty 'javatogpu.opencl.validationHistoryFile', layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile.absolutePath
-    systemProperty 'javatogpu.opencl.validationHistoryMarkdownFile', layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.kernelLaunchAdvisorySummaryFile', layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-summary.md').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.kernelLaunchAdvisoryDriftFile', openClKernelLaunchAdvisoryDriftFile.absolutePath
+    systemProperty 'javatogpu.opencl.validationHistoryFile', openClValidationHistoryFile.absolutePath
+    systemProperty 'javatogpu.opencl.validationHistoryMarkdownFile', openClValidationHistoryMarkdownFile.absolutePath
+    systemProperty 'javatogpu.opencl.validationHistoryBaselineFile', openClValidationHistoryBaselineFile.absolutePath
+}
+
+tasks.register('validateOpenClKernelLaunchAdvisoryDrift', JavaExec) {
+    group = 'verification'
+    description = 'Fails OpenCL CI when the kernel launch-advisory drift artifact reports a regression.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClKernelLaunchAdvisoryDriftValidatorCli'
+    args openClKernelLaunchAdvisoryDriftFile.absolutePath
+    inputs.file(openClKernelLaunchAdvisoryDriftFile)
+}
+
+tasks.register('stageOpenClValidationHistoryCache') {
+    group = 'verification'
+    description = 'Stages the current OpenCL validation history for the next CI run baseline.'
+    dependsOn 'openClValidationReport'
+    inputs.file(openClValidationHistoryFile)
+    inputs.file(openClValidationHistoryMarkdownFile)
+    outputs.file(new File(openClValidationHistoryCacheDirectory, 'validation-history.properties'))
+    outputs.file(new File(openClValidationHistoryCacheDirectory, 'validation-history.md'))
+
+    doLast {
+        if (!openClValidationHistoryFile.isFile()) {
+            throw new GradleException('Missing OpenCL validation history properties: ' + openClValidationHistoryFile)
+        }
+        if (!openClValidationHistoryMarkdownFile.isFile()) {
+            throw new GradleException('Missing OpenCL validation history Markdown: ' + openClValidationHistoryMarkdownFile)
+        }
+        openClValidationHistoryCacheDirectory.mkdirs()
+        java.nio.file.Files.copy(
+                openClValidationHistoryFile.toPath(),
+                new File(openClValidationHistoryCacheDirectory, 'validation-history.properties').toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+        java.nio.file.Files.copy(
+                openClValidationHistoryMarkdownFile.toPath(),
+                new File(openClValidationHistoryCacheDirectory, 'validation-history.md').toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+        logger.lifecycle('Staged OpenCL validation history cache at {}', openClValidationHistoryCacheDirectory)
+    }
 }
 
 tasks.register('writeOpenClI3ReadinessWorkloadBaseline') {

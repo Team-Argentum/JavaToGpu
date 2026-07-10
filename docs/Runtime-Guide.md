@@ -243,6 +243,16 @@ The standard values appear in `backend-compiler-feedback.properties` as `selecte
 
 When runtime artifact dumping is enabled, each kernel directory also receives `runtime-launch-advisory.properties` for the latest accepted launch. Its status is `aligned`, `non-preferred-multiple`, `driver-selected`, or `unavailable`. The artifact records the requested local shape and total size, kernel maximum, preferred multiple, whether a comparison was performed, and whether it matched. `blocking=false` is invariant: a non-preferred multiple remains a performance diagnostic and never rejects the launch. A launch rejected by the hard kernel maximum clears any older advisory so stale accepted-launch evidence is not retained.
 
+`openClValidationReport` aggregates only the kernels listed by the real-workload promotion gate into the `Kernel Launch Advisories` section. It reports status counts and a per-kernel table, and writes the same compact fragment to `runtime-launch-advisory-summary.md` for CI step summaries.
+
+Validation history stores the same aggregate counts as `kernelLaunchAdvisoryStatus`, so driver or workload launch-shape changes remain visible across archived runs without expanding the history table with every per-kernel field.
+
+When a compatible previous entry exists for the same backend, device, vendor, and lane, the reporter adds `Kernel Launch Advisory Drift`. It compares counts even across driver versions and classifies the result as `stable`, `changed`, `improved`, or `regressed`. Increased blocking, missing, unavailable, or non-preferred counts are regressions; the generated CI Markdown includes the previous driver and signed deltas.
+
+The reporter also writes `runtime-launch-advisory-drift.properties`. `validateOpenClKernelLaunchAdvisoryDrift` accepts `stable`, `changed`, `improved`, `no-baseline`, and `unavailable`, but fails on `regressed`, a missing artifact, or an unsupported status. The vendor workflow captures artifacts and then fails the lane when this validator fails.
+
+GitHub Actions restores an immutable per-lane/per-branch validation-history cache before the workload runs. The reporter seeds the current history from that baseline but always computes drift from the separate baseline file, so repeated report generation inside one workflow cannot hide a cross-run regression. After a successful validation and drift gate, the updated history is staged and saved under a unique run key for the next run; regressed or failed runs do not replace the previous baseline.
+
 ## Runtime Failures And Fallbacks
 
 All structured runtime failures extend `GpuRuntimeException`. Use the base type when every GPU failure should take the same fallback path:

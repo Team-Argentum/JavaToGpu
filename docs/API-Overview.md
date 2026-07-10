@@ -104,6 +104,16 @@ Hardware workload validation performs an additional fail-safe diagnostic build. 
 
 The runtime additionally uses standard `clGetKernelWorkGroupInfo` queries to capture maximum work-group size, preferred multiple, local memory, and private memory for both NVIDIA and AMD. These values remain available even when the compiler build log is empty. An explicit local launch size is checked against the compiled kernel's maximum before enqueue; multidimensional local sizes are validated by their total product. Unspecified local sizes remain driver-selected. Runtime artifact dumps write `runtime-launch-advisory.properties` with `aligned`, `non-preferred-multiple`, `driver-selected`, or `unavailable` status. Preferred-multiple mismatches are diagnostic only and never reject execution.
 
+Vendor validation aggregates workload-kernel advisory files into `runtime-launch-advisory-summary.md` and the main validation report. GitHub Actions appends that generated Markdown directly instead of reparsing properties in shell code.
+
+The validation history properties and Markdown table retain a compact launch-advisory count summary for cross-run drift review.
+
+The reporter compares the current counts with the latest compatible history entry and exposes signed deltas plus a regression classification in both the validation report and GitHub Actions summary.
+
+`validateOpenClKernelLaunchAdvisoryDrift` is the CI gate: only `regressed` blocks a valid drift artifact, while changed/no-baseline states remain advisory.
+
+The vendor workflow persists validation history through a per-lane cache and keeps the restored baseline immutable for the duration of the run, preventing same-run report regeneration from masking cross-run drift.
+
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
 
 ```java
