@@ -1423,13 +1423,29 @@ class OpenClGpuRuntimeBackendTest {
     void writesWorkloadSourcePromotionGateFromRuntimeSnapshotWhenConfigured() throws Exception {
         GpuKernelDescriptor descriptor = intOutputDescriptor();
         AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
-        Path gateFile = Files.createTempFile("javatogpu-opencl-workload-source-promotion", ".properties");
-        Files.deleteIfExists(gateFile);
+        Path reportDirectory = Files.createTempDirectory("javatogpu-opencl-workload-source-promotion");
+        Path gateFile = reportDirectory.resolve("backend-source-promotion-workload-gate.properties");
         String previousGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
         try {
             System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", gateFile.toString());
+            String compileLog = "Used 36 registers, 0 bytes spill stores, 0 bytes spill loads";
 
-            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot);
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected OpenClCompiledKernel compileKernel(
+                        GpuRuntimeCompileRequest compileRequest,
+                        GpuBackendModuleArtifact moduleArtifact
+                ) {
+                    return new OpenClCompiledKernel(
+                            compileRequest.descriptor(),
+                            "compiled:artifact-export",
+                            GpuRuntimeCompileArtifactSnapshot.legacy(compileRequest.descriptor())
+                                    .withCompileLog(compileLog),
+                            null,
+                            null
+                    );
+                }
+            };
 
             backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[]{0}}));
 
@@ -1454,6 +1470,19 @@ class OpenClGpuRuntimeBackendTest {
             assertTrue(gateProperties.contains("blockerFamily.1.name=source-parity"));
             assertTrue(gateProperties.contains("blockerFamily.2.name=runtime-equivalence"));
             assertTrue(gateProperties.contains("kernel.0.blockerFamily.0.name=reconstruction"));
+
+            Path compileArtifactRoot = reportDirectory.resolve("runtime-compile-artifacts");
+            Path compileArtifactDirectory;
+            try (java.util.stream.Stream<Path> directories = Files.list(compileArtifactRoot)) {
+                compileArtifactDirectory = directories.filter(Files::isDirectory).findFirst().orElseThrow();
+            }
+            assertEquals(compileLog, Files.readString(compileArtifactDirectory.resolve("compile.log")));
+            String compilerFeedback = Files.readString(
+                    compileArtifactDirectory.resolve("backend-compiler-feedback.properties")
+            );
+            assertTrue(compilerFeedback.contains("status=recorded"));
+            assertTrue(compilerFeedback.contains("selected.register.general=36"));
+            assertTrue(Files.exists(compileArtifactDirectory.resolve("compile-provenance.properties")));
         } finally {
             if (previousGateFile == null) {
                 System.clearProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");

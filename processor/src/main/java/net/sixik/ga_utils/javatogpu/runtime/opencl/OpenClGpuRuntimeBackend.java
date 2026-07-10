@@ -471,6 +471,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     )
             );
         }
+        dumpRuntimeCompileArtifacts(compiledKernel.artifactSnapshot());
         OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
         if (selectedInvocation.executionConfig() != null) {
             execution = new OpenClPreparedExecution(
@@ -2971,6 +2972,52 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         } catch (RuntimeException | java.io.IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL backend source workload promotion gate", exception);
         }
+    }
+
+    private void dumpRuntimeCompileArtifacts(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path reportDirectory = gatePath.getParent();
+            if (reportDirectory == null) {
+                return;
+            }
+            java.nio.file.Path artifactDirectory = reportDirectory
+                    .resolve("runtime-compile-artifacts")
+                    .resolve(runtimeCompileArtifactDirectoryName(artifactSnapshot));
+            java.nio.file.Files.createDirectories(artifactDirectory);
+
+            GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(artifactSnapshot);
+            for (Map.Entry<String, String> artifact : dump.artifacts().entrySet()) {
+                java.nio.file.Files.writeString(
+                        artifactDirectory.resolve(artifact.getKey()),
+                        artifact.getValue(),
+                        java.nio.charset.StandardCharsets.UTF_8
+                );
+            }
+            if (!dump.sourceLocations().isEmpty()) {
+                java.nio.file.Files.writeString(
+                        artifactDirectory.resolve("source-locations.txt"),
+                        String.join(System.lineSeparator(), dump.sourceLocations()) + System.lineSeparator(),
+                        java.nio.charset.StandardCharsets.UTF_8
+                );
+            }
+        } catch (RuntimeException | java.io.IOException exception) {
+            throw new IllegalStateException("Failed to write OpenCL runtime compile artifacts", exception);
+        }
+    }
+
+    private static String runtimeCompileArtifactDirectoryName(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        String resource = artifactSnapshot.backendModuleArtifact().resource();
+        String identity = resource == null || resource.isBlank() ? "kernel" : resource;
+        String sanitized = identity.replaceAll("[^a-zA-Z0-9._-]+", "_");
+        if (sanitized.length() > 96) {
+            sanitized = sanitized.substring(sanitized.length() - 96);
+        }
+        return sanitized + "-" + Integer.toUnsignedString(identity.hashCode(), 16);
     }
 
     private long requestedLocalMemoryBytes(OpenClExecutionPlan plan) {
