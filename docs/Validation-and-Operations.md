@@ -57,6 +57,7 @@ Important buckets include:
 - `:processor:validateOpenClBackendSourcePromotionActivationGate`
 - `:processor:openClProductionActivationTokenSmokeTest`
 - `:processor:openClProductionActivationTokenNegativeTest`
+- `:processor:openClOptimizerFamilyPayloadFixtureTest`
 - `:processor:openClValidationReport`
 
 You usually do not need to run buckets one by one unless you are narrowing down a failure.
@@ -82,6 +83,7 @@ processor/build/reports/opencl/backend-source-promotion-activation-gate.properti
 processor/build/reports/opencl/production-activation-token-smoke.properties
 processor/build/reports/opencl/production-activation-token-negative.properties
 processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-optimizer-family-equivalence-payload/
+processor/build/reports/opencl/optimizer-family-payload-fixture/
 processor/build/test-results/
 ```
 
@@ -94,6 +96,8 @@ Manual `workflow_dispatch` runs expose `production_promotion_manifest_mode=skip|
 Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate plus its SHA-256 sidecar, loads the exact artifact into a `GpuProductionActivationToken`, and runs every approved real workload kernel on the selected device. The positive hardware result is written to `production-activation-token-smoke.properties` with per-kernel status and workload coverage. A required negative lane then verifies that a mismatched SHA-256 is rejected and that an unapproved kernel is blocked before output mutation; its result is written to `production-activation-token-negative.properties`. The `activate` lane fails if either check fails. This mode does not enable default runtime activation, default production source switching, or production mutation.
 
 `openClValidationReport` folds both activation-token artifacts into production-promotion explainability. A successful controlled activation records token loading, approved-kernel execution, full real-workload coverage, digest-mismatch rejection, unapproved-kernel rejection, unchanged rejected output, and safe defaults as separate readiness evidence. The overall production status remains blocked while default production source switching or production mutation is disabled.
+
+The vendor workflow also runs `openClOptimizerFamilyPayloadFixtureTest` after the main validation bucket. It must produce `fixture-summary.properties` with two complete families and fourteen durable files. This fixture proves the nested artifact contract is uploadable and path-safe; it does not alter real-workload optimizer-family counts or production readiness.
 
 ## Optional IR Validation
 

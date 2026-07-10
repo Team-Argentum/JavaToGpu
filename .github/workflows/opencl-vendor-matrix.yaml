@@ -179,6 +179,13 @@ jobs:
         shell: cmd
         run: .\gradlew.bat :processor:openClProductionActivationTokenNegativeTest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
 
+      - name: Materialize optimizer-family payload fixture
+        if: steps.opencl_validation.outcome == 'success'
+        id: optimizer_family_payload_fixture
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:openClOptimizerFamilyPayloadFixtureTest --console=plain --no-daemon
+
       - name: Generate OpenCL validation report
         if: always()
         id: validation_report
@@ -332,6 +339,7 @@ jobs:
           PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME: ${{ steps.production_promotion_activation_gate.outcome }}
           PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME: ${{ steps.production_promotion_activation_token_smoke.outcome }}
           PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME: ${{ steps.production_promotion_activation_token_negative.outcome }}
+          OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME: ${{ steps.optimizer_family_payload_fixture.outcome }}
           VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
           VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
         run: |
@@ -355,6 +363,7 @@ jobs:
           echo ^| Controlled activation gate ^| %PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Activation-token hardware smoke ^| %PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Activation-token negative controls ^| %PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Optimizer-family payload fixture ^| %OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history stage ^| %VALIDATION_HISTORY_STAGE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history save ^| %VALIDATION_HISTORY_SAVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           if exist processor\build\reports\opencl\runtime-launch-advisory-summary.md (
@@ -370,6 +379,7 @@ jobs:
               env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true' &&
               (
                 steps.opencl_validation.outcome != 'success' ||
+                steps.optimizer_family_payload_fixture.outcome != 'success' ||
                 steps.validation_report.outcome != 'success' ||
                 steps.launch_advisory_drift.outcome != 'success' ||
                 steps.compiler_resource_drift.outcome != 'success' ||

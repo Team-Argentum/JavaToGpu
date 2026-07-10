@@ -38,9 +38,11 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationTokenTestFixtures;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
@@ -88,6 +90,8 @@ class OpenClGpuRuntimeBackendTest {
 
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE =
             "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+    private static final String OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_DIRECTORY_PROPERTY =
+            "javatogpu.opencl.optimizerFamilyPayloadFixtureDirectory";
 
     @Test
     void runtimeCompileArtifactPathKeepsNestedArtifactsInsideOutputDirectory() throws Exception {
@@ -145,6 +149,91 @@ class OpenClGpuRuntimeBackendTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> OpenClGpuRuntimeBackend.writeRuntimeCompileArtifactDump(artifactDirectory, escapingDump)
+        );
+    }
+
+    @Test
+    void writesOptimizerFamilyPayloadFixtureArtifacts() throws Exception {
+        String outputDirectory = System.getProperty(OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_DIRECTORY_PROPERTY);
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                outputDirectory != null && !outputDirectory.isBlank(),
+                "Skipping optimizer-family payload fixture without configured output directory"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptorWithIrGpuResource(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "vendor-tuned"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                java.util.Optional.of(testIrGpuArtifact("body\n  return original\n"))
+        );
+        GpuRuntimeIrOptimizationPassReport csePayload = optimizerFamilyPayloadPass(
+                "optimizer:cse-v1",
+                "cse",
+                "inputCases=3, comparedOutputs=1, outputNames=outA",
+                "plans=1, insertions=1, skipped=0",
+                "replacements=1, equivalent=true, successful=true",
+                "mode=exact-int, diagnostics=0, diagnosticFamilies={}",
+                "none"
+        );
+        GpuRuntimeIrOptimizationPassReport vectorPayload = optimizerFamilyPayloadPass(
+                "optimizer:auto-vectorization-v1",
+                "auto-vectorization",
+                "inputCases=3, comparedOutputs=2, outputNames=out,mask",
+                "method=kernel, appliedRewrites=1, families={laneCopy=1}",
+                "equivalent=true, successful=true, comparedOutputs=2",
+                "mode=exact-int-lane, diagnostics=0, diagnosticFamilies={}",
+                "none"
+        );
+        IrGpuArtifact optimized = testIrGpuArtifact("body\n  return optimized\n");
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                java.util.Optional.of(optimized),
+                List.of(csePayload, vectorPayload),
+                productionBackedStrategyDecision()
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot
+                .legacy(request.descriptor())
+                .withOptimizationReport(optimizationReport)
+                .withRuntimeEquivalenceEvidence(GpuRuntimeEquivalenceEvidence.passed(
+                        request,
+                        3,
+                        3,
+                        List.of("optimizer-family fixture outputs matched")
+                ));
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        Path fixtureDirectory = Path.of(outputDirectory);
+
+        OpenClGpuRuntimeBackend.writeRuntimeCompileArtifactDump(fixtureDirectory, dump);
+
+        java.util.Properties index = new java.util.Properties();
+        try (java.io.Reader reader = Files.newBufferedReader(
+                fixtureDirectory.resolve(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD)
+        )) {
+            index.load(reader);
+        }
+        assertEquals("2", index.getProperty("family.count"));
+        assertEquals("2", index.getProperty("family.complete.count"));
+        assertEquals("true", index.getProperty("family.complete.all"));
+        long durableFileCount = dump.artifacts().keySet().stream()
+                .filter(name -> name.startsWith(
+                        GpuRuntimeCompileArtifactDumper.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD_DIRECTORY + "/"
+                ))
+                .count();
+        assertEquals(14L, durableFileCount);
+        assertTrue(Files.isRegularFile(fixtureDirectory.resolve(
+                "runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/manifest.properties"
+        )));
+        assertTrue(Files.isRegularFile(fixtureDirectory.resolve(
+                "runtime-optimizer-family-equivalence-payload/family-1-auto-vectorization/pass-0/diagnostics.properties"
+        )));
+        Files.writeString(
+                fixtureDirectory.resolve("fixture-summary.properties"),
+                "status=passed\n"
+                        + "scope=optimizer-family-payload-fixture\n"
+                        + "family.count=2\n"
+                        + "family.complete.count=2\n"
+                        + "family.complete.all=true\n"
+                        + "durable.file.count=" + durableFileCount + "\n"
+                        + "productionSourceSwitching=disabled\n"
+                        + "productionMutation=disabled\n"
         );
     }
 
@@ -4292,6 +4381,62 @@ class OpenClGpuRuntimeBackendTest {
                         strategyDecision
                 )
         );
+    }
+
+    private static GpuRuntimeIrOptimizationPassReport optimizerFamilyPayloadPass(
+            String optimizerVersion,
+            String family,
+            String cpuReference,
+            String preOptimizationOutput,
+            String postOptimizationOutput,
+            String tolerance,
+            String failureFixture
+    ) {
+        return GpuRuntimeIrOptimizationPassReport.applied(
+                optimizerVersion,
+                "irgpu:sha256:original",
+                "irgpu:sha256:" + family,
+                "proof:accepted",
+                List.of(family + " runtime-equivalence payload captured")
+        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                "ir-validation",
+                "accepted",
+                java.util.Map.ofEntries(
+                        java.util.Map.entry("optimizerFamily", family),
+                        java.util.Map.entry("runtimeEquivalencePayload.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.failureFixture.present", "true"),
+                        java.util.Map.entry("runtimeEquivalencePayload.resource", "fixture://payload/" + family),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.cpuReference.resource",
+                                "fixture://payload/" + family + "/cpu-reference"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.preOptimizationOutput.resource",
+                                "fixture://payload/" + family + "/pre-output"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.postOptimizationOutput.resource",
+                                "fixture://payload/" + family + "/post-output"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.tolerance.resource",
+                                "fixture://payload/" + family + "/tolerance"
+                        ),
+                        java.util.Map.entry(
+                                "runtimeEquivalencePayload.failureFixture.resource",
+                                "fixture://payload/" + family + "/failure-fixture"
+                        ),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.CpuReference", cpuReference),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.PreOptimizationOutput", preOptimizationOutput),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.PostOptimizationOutput", postOptimizationOutput),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.Tolerance", tolerance),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.FailureFixture", failureFixture)
+                )
+        ));
     }
 
     private static GpuOptimizationStrategyDecision productionBackedStrategyDecision() {

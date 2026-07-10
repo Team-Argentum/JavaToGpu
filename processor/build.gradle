@@ -68,6 +68,7 @@ def openClBackendSourcePromotionActivationGateDigestFile = new File(
 )
 def openClProductionActivationTokenSmokeFile = layout.buildDirectory.file('reports/opencl/production-activation-token-smoke.properties').get().asFile
 def openClProductionActivationTokenNegativeFile = layout.buildDirectory.file('reports/opencl/production-activation-token-negative.properties').get().asFile
+def openClOptimizerFamilyPayloadFixtureDirectory = layout.buildDirectory.dir('reports/opencl/optimizer-family-payload-fixture').get().asFile
 def openClBackendSourcePromotionManifestFile = providers.gradleProperty('openClPromotionManifestFile')
         .map { rootProject.file(it) }
         .orElse(layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest.properties').map { it.asFile })
@@ -550,6 +551,20 @@ tasks.register('openClProductionActivationTokenNegativeTest', Test) {
     inputs.file(openClBackendSourcePromotionActivationGateFile)
     inputs.file(openClBackendSourcePromotionActivationGateDigestFile)
     outputs.file(openClProductionActivationTokenNegativeFile)
+    attachBucketStatusRecording(it)
+}
+
+tasks.register('openClOptimizerFamilyPayloadFixtureTest', Test) {
+    group = 'verification'
+    description = 'Materializes complete diagnostic optimizer-family payload trees for CI artifact validation.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.optimizerFamilyPayloadFixtureDirectory', openClOptimizerFamilyPayloadFixtureDirectory.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendTest.writesOptimizerFamilyPayloadFixtureArtifacts'
+    }
+    outputs.dir(openClOptimizerFamilyPayloadFixtureDirectory)
     attachBucketStatusRecording(it)
 }
 
