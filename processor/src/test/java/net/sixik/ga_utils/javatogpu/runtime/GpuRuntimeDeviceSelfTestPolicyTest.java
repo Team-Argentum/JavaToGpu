@@ -172,7 +172,8 @@ class GpuRuntimeDeviceSelfTestPolicyTest {
                 }
         );
 
-        try (ExecutorService executor = Executors.newFixedThreadPool(8)) {
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        try {
             List<Future<GpuRuntimeDeviceSelfTestCacheEntry>> futures = executor.invokeAll(
                     java.util.Collections.nCopies(8, request)
             );
@@ -189,6 +190,9 @@ class GpuRuntimeDeviceSelfTestPolicyTest {
             assertEquals(1, runs.get());
             assertEquals(1L, entries.stream().filter(entry -> !entry.cacheHit()).count());
             assertEquals(7L, entries.stream().filter(GpuRuntimeDeviceSelfTestCacheEntry::cacheHit).count());
+        } finally {
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(5L, java.util.concurrent.TimeUnit.SECONDS));
         }
     }
 

@@ -47,13 +47,6 @@ jobs:
             runner_labels: [self-hosted, Windows, X64, nvidia, rtx5070]
             routine_task: :processor:openClNvidiaRoutine
 
-#          - vendor: nvidia
-#            vendor_name: NVIDIA
-#            device_name: RTX 3060
-#            artifact_suffix: nvidia-rtx3060
-#            runner_labels: [self-hosted, Windows, X64, nvidia, rtx3060]
-#            routine_task: :processor:openClNvidiaRoutine
-
     runs-on: ${{ matrix.runner_labels }}
     timeout-minutes: 90
 
@@ -86,19 +79,13 @@ jobs:
 
       - name: Print runner and GPU context
         continue-on-error: true
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Runner: $env:RUNNER_NAME"
-          Write-Host "Expected vendor: $env:JTG_VALIDATION_VENDOR"
-          Write-Host "Expected device: $env:JTG_VALIDATION_DEVICE"
-          Get-Command git -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.Source }
-          try {
-            Get-CimInstance Win32_VideoController |
-              Select-Object Name, AdapterCompatibility, DriverVersion |
-              Format-Table -AutoSize
-          } catch {
-            Write-Warning "Unable to query Win32_VideoController: $($_.Exception.Message)"
-          }
+          echo Runner: %RUNNER_NAME%
+          echo Expected vendor: %JTG_VALIDATION_VENDOR%
+          echo Expected device: %JTG_VALIDATION_DEVICE%
+          where git
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Get-CimInstance Win32_VideoController | Select-Object Name, AdapterCompatibility, DriverVersion | Format-Table -AutoSize } catch { Write-Warning ('Unable to query Win32_VideoController: ' + $_.Exception.Message) }"
 
       - name: OpenCL validation routine
         if: always()
@@ -115,7 +102,7 @@ jobs:
         run: .\gradlew.bat :processor:openClValidationReport --console=plain --no-daemon
 
       - name: Validate production promotion explainability
-        if: always()
+        if: steps.opencl_validation.outcome == 'success'
         id: production_explainability
         continue-on-error: true
         shell: cmd
@@ -134,25 +121,26 @@ jobs:
         continue-on-error: true
         shell: cmd
         run: |
-          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="skip" (
-            echo Source-promotion workload baseline check skipped.
-            exit /b 0
-          )
-
-          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="update" (
-            .\gradlew.bat :processor:writeOpenClBackendSourcePromotionWorkloadBaseline --console=plain --no-daemon
-            exit /b %ERRORLEVEL%
-          )
-
+          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="skip" goto baseline_skip
+          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="update" goto baseline_update
           set "BASELINE_FILE=processor\build\opencl-source-promotion-baselines\backend-source-promotion-workload-baseline.properties"
-          if not exist "%BASELINE_FILE%" (
-            echo Source-promotion workload baseline is missing at %BASELINE_FILE%.
-            if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="strict" exit /b 1
-            echo Advisory mode allows missing baseline; run workflow_dispatch with source_promotion_baseline_mode=update after reviewing artifacts.
-            exit /b 0
-          )
-
+          if not exist "%BASELINE_FILE%" goto baseline_missing
           .\gradlew.bat :processor:validateOpenClBackendSourcePromotionWorkloadBaseline --console=plain --no-daemon
+          exit /b %ERRORLEVEL%
+
+          :baseline_skip
+          echo Source-promotion workload baseline check skipped.
+          exit /b 0
+
+          :baseline_update
+          call .\gradlew.bat :processor:writeOpenClBackendSourcePromotionWorkloadBaseline --console=plain --no-daemon
+          exit /b %ERRORLEVEL%
+
+          :baseline_missing
+          echo Source-promotion workload baseline is missing at %BASELINE_FILE%.
+          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="strict" exit /b 1
+          echo Advisory mode allows missing baseline; run workflow_dispatch with source_promotion_baseline_mode=update after reviewing artifacts.
+          exit /b 0
 
       - name: Summarize source-promotion workload
         if: always()
@@ -173,7 +161,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Fail after artifact capture
+      - name: Write OpenCL lane summary
         if: always()
         shell: cmd
         env:
@@ -184,111 +172,33 @@ jobs:
           SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
           SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
         run: |
-          set "PRODUCTION_PROMOTION_STATUS=not-recorded"
-          set "PRODUCTION_CONTRACT_STATUS=not-recorded"
-          set "PRODUCTION_DECISION_MODE=not-recorded"
-          set "PRODUCTION_FIRST_BLOCKER=none"
-          set "PRODUCTION_FIRST_VIOLATION=none"
-          set "PRODUCTION_EXPLAINABILITY_SUMMARY_FILE=processor\build\reports\opencl\production-promotion-explainability-summary.properties"
-          set "SOURCE_PROMOTION_STATUS=not-recorded"
-          set "SOURCE_PROMOTION_KERNEL_COUNT=0"
-          set "SOURCE_PROMOTION_REVIEW_READY=not-recorded"
-          set "SOURCE_PROMOTION_PARITY=not-recorded"
-          set "SOURCE_PROMOTION_RUNTIME_EQUIVALENCE=not-recorded"
-          set "SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY=none"
-          set "SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY_COUNT=0"
-          set "SOURCE_PROMOTION_OPTIMIZER_PROOF_COUNT=0"
-          set "SOURCE_PROMOTION_OPTIMIZER_ACCEPTED_PROOF_COUNT=0"
-          set "SOURCE_PROMOTION_OPTIMIZER_BLOCKING_PROOF_COUNT=0"
-          set "SOURCE_PROMOTION_SUMMARY_FILE=processor\build\reports\opencl\backend-source-promotion-workload-summary.properties"
-          set "BACKEND_PROMOTION_SUPPORT_COMPLETE=not-recorded"
-          set "BACKEND_PROMOTION_SUPPORT_SUPPORTED_COUNT=0"
-          set "BACKEND_PROMOTION_SUPPORT_MISSING_COUNT=0"
-          set "BACKEND_PROMOTION_SUPPORT_FILE=processor\build\reports\opencl\backend-promotion-artifact-support.properties"
+          if not defined GITHUB_STEP_SUMMARY exit /b 0
+          echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
+          echo.>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Production explainability ^| %PRODUCTION_EXPLAINABILITY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Production explainability summary ^| %PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Source-promotion baseline ^| %SOURCE_PROMOTION_BASELINE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Source-promotion summary ^| %SOURCE_PROMOTION_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
 
-          if exist "%PRODUCTION_EXPLAINABILITY_SUMMARY_FILE%" (
-            for /f "usebackq tokens=1,* delims==" %%A in ("%PRODUCTION_EXPLAINABILITY_SUMMARY_FILE%") do (
-              if "%%A"=="status" set "PRODUCTION_PROMOTION_STATUS=%%B"
-              if "%%A"=="contract.status" set "PRODUCTION_CONTRACT_STATUS=%%B"
-              if "%%A"=="decision.mode" set "PRODUCTION_DECISION_MODE=%%B"
-              if "%%A"=="blocker.0" set "PRODUCTION_FIRST_BLOCKER=%%B"
-              if "%%A"=="contract.violation.0" set "PRODUCTION_FIRST_VIOLATION=%%B"
+      - name: Fail after artifact capture
+        if: >-
+          always() &&
+          (
+            steps.opencl_validation.outcome != 'success' ||
+            steps.validation_report.outcome != 'success' ||
+            steps.production_explainability.outcome != 'success' ||
+            steps.production_explainability_summary.outcome != 'success' ||
+            steps.source_promotion_summary.outcome != 'success' ||
+            (
+              (env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'strict' || env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'update') &&
+              steps.source_promotion_baseline.outcome != 'success'
             )
           )
-
-          if exist "%SOURCE_PROMOTION_SUMMARY_FILE%" (
-            for /f "usebackq tokens=1,* delims==" %%A in ("%SOURCE_PROMOTION_SUMMARY_FILE%") do (
-              if "%%A"=="status" set "SOURCE_PROMOTION_STATUS=%%B"
-              if "%%A"=="kernel.count" set "SOURCE_PROMOTION_KERNEL_COUNT=%%B"
-              if "%%A"=="reviewReady" set "SOURCE_PROMOTION_REVIEW_READY=%%B"
-              if "%%A"=="sourceParityMatched" set "SOURCE_PROMOTION_PARITY=%%B"
-              if "%%A"=="runtimeEquivalencePassed" set "SOURCE_PROMOTION_RUNTIME_EQUIVALENCE=%%B"
-              if "%%A"=="sourcePromotionFirstBlockerFamily.0.name" set "SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY=%%B"
-              if "%%A"=="sourcePromotionFirstBlockerFamily.0.count" set "SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY_COUNT=%%B"
-              if "%%A"=="optimizerProofArtifact.count" set "SOURCE_PROMOTION_OPTIMIZER_PROOF_COUNT=%%B"
-              if "%%A"=="optimizerProofArtifact.accepted.count" set "SOURCE_PROMOTION_OPTIMIZER_ACCEPTED_PROOF_COUNT=%%B"
-              if "%%A"=="optimizerProofArtifact.blocking.count" set "SOURCE_PROMOTION_OPTIMIZER_BLOCKING_PROOF_COUNT=%%B"
-            )
-          )
-
-          if exist "%BACKEND_PROMOTION_SUPPORT_FILE%" (
-            for /f "usebackq tokens=1,* delims==" %%A in ("%BACKEND_PROMOTION_SUPPORT_FILE%") do (
-              if "%%A"=="complete" set "BACKEND_PROMOTION_SUPPORT_COMPLETE=%%B"
-              if "%%A"=="supported.count" set "BACKEND_PROMOTION_SUPPORT_SUPPORTED_COUNT=%%B"
-              if "%%A"=="missing.count" set "BACKEND_PROMOTION_SUPPORT_MISSING_COUNT=%%B"
-            )
-          )
-
-          if defined GITHUB_STEP_SUMMARY (
-            echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
-            echo.>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Production explainability ^| %PRODUCTION_EXPLAINABILITY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Production explainability summary ^| %PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Source-promotion baseline (%JTG_SOURCE_PROMOTION_BASELINE_MODE%) ^| %SOURCE_PROMOTION_BASELINE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Source-promotion summary ^| %SOURCE_PROMOTION_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo.>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Production promotion field ^| Value ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| status ^| %PRODUCTION_PROMOTION_STATUS% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| contract ^| %PRODUCTION_CONTRACT_STATUS% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| decision mode ^| %PRODUCTION_DECISION_MODE% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| first blocker ^| %PRODUCTION_FIRST_BLOCKER% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| first violation ^| %PRODUCTION_FIRST_VIOLATION% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo.>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Source-promotion workload field ^| Value ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| status ^| %SOURCE_PROMOTION_STATUS% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| kernel count ^| %SOURCE_PROMOTION_KERNEL_COUNT% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| review ready ^| %SOURCE_PROMOTION_REVIEW_READY% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| source parity matched ^| %SOURCE_PROMOTION_PARITY% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| runtime equivalence passed ^| %SOURCE_PROMOTION_RUNTIME_EQUIVALENCE% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| first blocker family ^| %SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY% (%SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY_COUNT%) ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| optimizer proof artifacts ^| total=%SOURCE_PROMOTION_OPTIMIZER_PROOF_COUNT%, accepted=%SOURCE_PROMOTION_OPTIMIZER_ACCEPTED_PROOF_COUNT%, blocking=%SOURCE_PROMOTION_OPTIMIZER_BLOCKING_PROOF_COUNT% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo.>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Backend promotion artifact support field ^| Value ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| complete ^| %BACKEND_PROMOTION_SUPPORT_COMPLETE% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| supported artifacts ^| %BACKEND_PROMOTION_SUPPORT_SUPPORTED_COUNT% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| missing artifacts ^| %BACKEND_PROMOTION_SUPPORT_MISSING_COUNT% ^|>>"%GITHUB_STEP_SUMMARY%"
-          )
-
-          if not "%OPENCL_VALIDATION_OUTCOME%"=="success" goto failed
-          if not "%VALIDATION_REPORT_OUTCOME%"=="success" goto failed
-          if not "%PRODUCTION_EXPLAINABILITY_OUTCOME%"=="success" goto failed
-          if not "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"=="success" goto failed
-          if not "%SOURCE_PROMOTION_SUMMARY_OUTCOME%"=="success" goto failed
-          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="strict" if not "%SOURCE_PROMOTION_BASELINE_OUTCOME%"=="success" goto failed
-          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="update" if not "%SOURCE_PROMOTION_BASELINE_OUTCOME%"=="success" goto failed
-          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane passed.
-          exit /b 0
-
-          :failed
-          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture: openclValidation=%OPENCL_VALIDATION_OUTCOME%, validationReport=%VALIDATION_REPORT_OUTCOME%, productionExplainability=%PRODUCTION_EXPLAINABILITY_OUTCOME%, productionExplainabilitySummary=%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%, sourcePromotionBaseline=%SOURCE_PROMOTION_BASELINE_OUTCOME%, sourcePromotionSummary=%SOURCE_PROMOTION_SUMMARY_OUTCOME%
-          echo Production promotion summary: status=%PRODUCTION_PROMOTION_STATUS%, contract=%PRODUCTION_CONTRACT_STATUS%, decisionMode=%PRODUCTION_DECISION_MODE%, firstBlocker=%PRODUCTION_FIRST_BLOCKER%, firstViolation=%PRODUCTION_FIRST_VIOLATION%
-          echo Source-promotion workload summary: status=%SOURCE_PROMOTION_STATUS%, kernels=%SOURCE_PROMOTION_KERNEL_COUNT%, reviewReady=%SOURCE_PROMOTION_REVIEW_READY%, parity=%SOURCE_PROMOTION_PARITY%, runtimeEquivalence=%SOURCE_PROMOTION_RUNTIME_EQUIVALENCE%, firstBlockerFamily=%SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY%(%SOURCE_PROMOTION_FIRST_BLOCKER_FAMILY_COUNT%), optimizerProofs=%SOURCE_PROMOTION_OPTIMIZER_PROOF_COUNT% accepted=%SOURCE_PROMOTION_OPTIMIZER_ACCEPTED_PROOF_COUNT% blocking=%SOURCE_PROMOTION_OPTIMIZER_BLOCKING_PROOF_COUNT%
-          echo Backend promotion artifact support: complete=%BACKEND_PROMOTION_SUPPORT_COMPLETE%, supported=%BACKEND_PROMOTION_SUPPORT_SUPPORTED_COUNT%, missing=%BACKEND_PROMOTION_SUPPORT_MISSING_COUNT%
+        shell: cmd
+        run: |
+          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture.
           exit /b 1
