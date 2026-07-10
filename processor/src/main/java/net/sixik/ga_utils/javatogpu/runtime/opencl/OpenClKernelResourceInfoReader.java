@@ -68,12 +68,7 @@ final class OpenClKernelResourceInfoReader {
     }
 
     private static OpenClKernelResourceInfo unavailable() {
-        return new OpenClKernelResourceInfo(
-                OpenClKernelResourceInfo.UNKNOWN,
-                OpenClKernelResourceInfo.UNKNOWN,
-                OpenClKernelResourceInfo.UNKNOWN,
-                OpenClKernelResourceInfo.UNKNOWN
-        );
+        return OpenClKernelResourceInfo.unavailable();
     }
 
     @FunctionalInterface

@@ -2928,6 +2928,12 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuRuntimeDiagnosticContext diagnosticContext
     ) {
         try {
+            OpenClKernelLaunchAdvisory launchAdvisory = OpenClKernelLaunchAdvisory.evaluate(
+                    execution.compiledKernel(),
+                    resolveExecutionConfig(execution)
+            );
+            validateKernelWorkGroupSize(execution, diagnosticContext, launchAdvisory);
+            dumpRuntimeLaunchAdvisory(execution.compiledKernel().artifactSnapshot(), launchAdvisory);
             executeKernel(execution);
         } catch (RuntimeException exception) {
             if (exception instanceof GpuRuntimeException runtimeException) {
@@ -2974,6 +2980,83 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         }
     }
 
+    private void validateKernelWorkGroupSize(
+            OpenClPreparedExecution execution,
+            GpuRuntimeDiagnosticContext diagnosticContext,
+            OpenClKernelLaunchAdvisory launchAdvisory
+    ) {
+        long requestedSize = launchAdvisory.requestedLocalWorkGroupSize();
+        long kernelLimit = launchAdvisory.kernelMaxWorkGroupSize();
+        if (requestedSize <= 0L || kernelLimit < 0L || requestedSize <= kernelLimit) {
+            return;
+        }
+
+        clearRuntimeLaunchAdvisory(execution.compiledKernel().artifactSnapshot());
+        GpuRuntimeDiagnosticContext failureContext = GpuRuntimeDiagnosticContext.fromSnapshot(
+                execution.compiledKernel().descriptor(),
+                execution.compiledKernel().artifactSnapshot()
+        ).withCallSite(diagnosticContext.callSite());
+        throw new GpuRuntimeCapabilityException(
+                "OpenCL kernel work-group validation failed for kernel "
+                        + execution.compiledKernel().descriptor().kernelName()
+                        + ": requested local work-group size "
+                        + requestedSize
+                        + " ("
+                        + launchAdvisory.requestedLocalWorkGroupShape()
+                        + "), but the compiled kernel limit is "
+                        + kernelLimit
+                        + "; reduce the explicit local size or leave it unspecified so the OpenCL driver can choose",
+                failureContext,
+                null
+        );
+    }
+
+    private void dumpRuntimeLaunchAdvisory(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            OpenClKernelLaunchAdvisory launchAdvisory
+    ) {
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path reportDirectory = gatePath.getParent();
+            if (reportDirectory == null) {
+                return;
+            }
+            java.nio.file.Path artifactDirectory = runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot);
+            java.nio.file.Files.createDirectories(artifactDirectory);
+            java.nio.file.Files.writeString(
+                    artifactDirectory.resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME),
+                    launchAdvisory.toProperties(),
+                    java.nio.charset.StandardCharsets.UTF_8
+            );
+        } catch (RuntimeException | java.io.IOException ignored) {
+            // Launch advisories must never change the execution result.
+        }
+    }
+
+    private void clearRuntimeLaunchAdvisory(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path reportDirectory = gatePath.getParent();
+            if (reportDirectory == null) {
+                return;
+            }
+            java.nio.file.Files.deleteIfExists(
+                    runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot)
+                            .resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME)
+            );
+        } catch (RuntimeException | java.io.IOException ignored) {
+            // Stale-advisory cleanup must never replace the structured validation failure.
+        }
+    }
+
     private void dumpRuntimeCompileArtifacts(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
         String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
         if (outputPath == null || outputPath.isBlank()) {
@@ -2985,9 +3068,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             if (reportDirectory == null) {
                 return;
             }
-            java.nio.file.Path artifactDirectory = reportDirectory
-                    .resolve("runtime-compile-artifacts")
-                    .resolve(runtimeCompileArtifactDirectoryName(artifactSnapshot));
+            java.nio.file.Path artifactDirectory = runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot);
             java.nio.file.Files.createDirectories(artifactDirectory);
 
             GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(artifactSnapshot);
@@ -3008,6 +3089,15 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         } catch (RuntimeException | java.io.IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL runtime compile artifacts", exception);
         }
+    }
+
+    private static java.nio.file.Path runtimeCompileArtifactDirectory(
+            java.nio.file.Path reportDirectory,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
+        return reportDirectory
+                .resolve("runtime-compile-artifacts")
+                .resolve(runtimeCompileArtifactDirectoryName(artifactSnapshot));
     }
 
     private static String runtimeCompileArtifactDirectoryName(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {

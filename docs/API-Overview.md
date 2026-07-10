@@ -102,7 +102,7 @@ Successful OpenCL program builds query `CL_PROGRAM_BUILD_LOG` and retain any ret
 
 Hardware workload validation performs an additional fail-safe diagnostic build. NVIDIA uses `-cl-nv-verbose`; custom or AMD options can be provided with `JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS`. The diagnostic program is discarded after its log is captured and never replaces the production program.
 
-The runtime additionally uses standard `clGetKernelWorkGroupInfo` queries to capture maximum work-group size, preferred multiple, local memory, and private memory for both NVIDIA and AMD. These values remain available even when the compiler build log is empty.
+The runtime additionally uses standard `clGetKernelWorkGroupInfo` queries to capture maximum work-group size, preferred multiple, local memory, and private memory for both NVIDIA and AMD. These values remain available even when the compiler build log is empty. An explicit local launch size is checked against the compiled kernel's maximum before enqueue; multidimensional local sizes are validated by their total product. Unspecified local sizes remain driver-selected. Runtime artifact dumps write `runtime-launch-advisory.properties` with `aligned`, `non-preferred-multiple`, `driver-selected`, or `unavailable` status. Preferred-multiple mismatches are diagnostic only and never reject execution.
 
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
 

@@ -12,6 +12,10 @@ record OpenClKernelResourceInfo(
 
     static final long UNKNOWN = -1L;
 
+    static OpenClKernelResourceInfo unavailable() {
+        return new OpenClKernelResourceInfo(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN);
+    }
+
     OpenClKernelResourceInfo {
         maxWorkGroupSize = metric(maxWorkGroupSize);
         preferredWorkGroupSizeMultiple = metric(preferredWorkGroupSizeMultiple);

@@ -12,6 +12,7 @@ public final class OpenClCompiledKernel implements AutoCloseable {
     private final OpenClProgram program;
     private final OpenClKernel kernel;
     private GpuRuntimeCompileArtifactSnapshot artifactSnapshot;
+    private OpenClKernelResourceInfo kernelResourceInfo;
 
     public OpenClCompiledKernel(GpuKernelDescriptor descriptor, String cacheKey) {
         this(descriptor, cacheKey, GpuRuntimeCompileArtifactSnapshot.legacy(descriptor), null, null);
@@ -40,6 +41,7 @@ public final class OpenClCompiledKernel implements AutoCloseable {
         this.artifactSnapshot = artifactSnapshot == null
                 ? GpuRuntimeCompileArtifactSnapshot.legacy(descriptor)
                 : artifactSnapshot;
+        this.kernelResourceInfo = OpenClKernelResourceInfo.unavailable();
     }
 
     public GpuKernelDescriptor descriptor() {
@@ -67,6 +69,29 @@ public final class OpenClCompiledKernel implements AutoCloseable {
                 ? GpuRuntimeCompileArtifactSnapshot.legacy(descriptor)
                 : artifactSnapshot;
         return this;
+    }
+
+    OpenClCompiledKernel withKernelResourceInfo(OpenClKernelResourceInfo kernelResourceInfo) {
+        this.kernelResourceInfo = kernelResourceInfo == null
+                ? OpenClKernelResourceInfo.unavailable()
+                : kernelResourceInfo;
+        return this;
+    }
+
+    public long kernelMaxWorkGroupSize() {
+        return kernelResourceInfo.maxWorkGroupSize();
+    }
+
+    public long kernelPreferredWorkGroupSizeMultiple() {
+        return kernelResourceInfo.preferredWorkGroupSizeMultiple();
+    }
+
+    public long kernelLocalMemoryBytes() {
+        return kernelResourceInfo.localMemoryBytes();
+    }
+
+    public long kernelPrivateMemoryBytes() {
+        return kernelResourceInfo.privateMemoryBytes();
     }
 
     @Override

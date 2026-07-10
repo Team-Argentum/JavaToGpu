@@ -2597,6 +2597,185 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void rejectsExplicitLocalWorkGroupThatExceedsCompiledKernelLimit() {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        java.util.concurrent.atomic.AtomicBoolean executed = new java.util.concurrent.atomic.AtomicBoolean();
+        OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(new AtomicReference<>()) {
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:max-work-group")
+                        .withKernelResourceInfo(new OpenClKernelResourceInfo(64L, 32L, 0L, 0L));
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                executed.set(true);
+            }
+        };
+
+        GpuRuntimeCapabilityException exception = assertThrows(
+                GpuRuntimeCapabilityException.class,
+                () -> backend.invoke(new GpuKernelInvocation(
+                        descriptor,
+                        new Object[]{new int[128]},
+                        net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(128L, 128L)
+                ))
+        );
+
+        assertFalse(executed.get());
+        assertEquals("JTG-RUNTIME-CAPABILITY-001", exception.code());
+        assertEquals("kernel", exception.context().kernelName());
+        assertTrue(exception.getMessage().contains("requested local work-group size 128 (128)"));
+        assertTrue(exception.getMessage().contains("compiled kernel limit is 64"));
+        assertTrue(exception.getMessage().contains("leave it unspecified"));
+    }
+
+    @Test
+    void rejectsThreeDimensionalLocalWorkGroupByTotalSize() {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        java.util.concurrent.atomic.AtomicBoolean executed = new java.util.concurrent.atomic.AtomicBoolean();
+        OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(new AtomicReference<>()) {
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:max-work-group-3d")
+                        .withKernelResourceInfo(new OpenClKernelResourceInfo(64L, 32L, 0L, 0L));
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                executed.set(true);
+            }
+        };
+
+        GpuRuntimeCapabilityException exception = assertThrows(
+                GpuRuntimeCapabilityException.class,
+                () -> backend.invoke(new GpuKernelInvocation(
+                        descriptor,
+                        new Object[]{new int[512]},
+                        net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(
+                                8L,
+                                8L,
+                                8L,
+                                4L,
+                                4L,
+                                8L
+                        )
+                ))
+        );
+
+        assertFalse(executed.get());
+        assertTrue(exception.getMessage().contains("requested local work-group size 128 (4x4x8)"));
+        assertTrue(exception.getMessage().contains("compiled kernel limit is 64"));
+    }
+
+    @Test
+    void acceptsSupportedOrDriverSelectedLocalWorkGroupSize() {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        java.util.concurrent.atomic.AtomicInteger executions = new java.util.concurrent.atomic.AtomicInteger();
+        OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(new AtomicReference<>()) {
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:max-work-group-allowed")
+                        .withKernelResourceInfo(new OpenClKernelResourceInfo(64L, 32L, 0L, 0L));
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                executions.incrementAndGet();
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(
+                descriptor,
+                new Object[]{new int[64]},
+                net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(64L, 64L)
+        ));
+        backend.invoke(new GpuKernelInvocation(
+                descriptor,
+                new Object[]{new int[64]},
+                net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(64L)
+        ));
+
+        assertEquals(2, executions.get());
+    }
+
+    @Test
+    void recordsNonPreferredWorkGroupMultipleWithoutBlockingExecution() throws Exception {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        java.util.concurrent.atomic.AtomicBoolean executed = new java.util.concurrent.atomic.AtomicBoolean();
+        Path reportDirectory = Files.createTempDirectory("javatogpu-opencl-launch-advisory");
+        Path gateFile = reportDirectory.resolve("backend-source-promotion-workload-gate.properties");
+        String property = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
+        String previousGateFile = System.getProperty(property);
+        try {
+            System.setProperty(property, gateFile.toString());
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(new AtomicReference<>()) {
+                @Override
+                protected OpenClCompiledKernel compileKernel(
+                        GpuRuntimeCompileRequest compileRequest,
+                        GpuBackendModuleArtifact moduleArtifact
+                ) {
+                    return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:preferred-multiple")
+                            .withKernelResourceInfo(new OpenClKernelResourceInfo(256L, 32L, 0L, 0L));
+                }
+
+                @Override
+                protected void executeKernel(OpenClPreparedExecution execution) {
+                    executed.set(true);
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(
+                    descriptor,
+                    new Object[]{new int[64]},
+                    net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(64L, 48L)
+            ));
+
+            assertTrue(executed.get());
+            Path compileArtifactRoot = reportDirectory.resolve("runtime-compile-artifacts");
+            Path compileArtifactDirectory;
+            try (java.util.stream.Stream<Path> directories = Files.list(compileArtifactRoot)) {
+                compileArtifactDirectory = directories.filter(Files::isDirectory).findFirst().orElseThrow();
+            }
+            String advisory = Files.readString(
+                    compileArtifactDirectory.resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME)
+            );
+            assertTrue(advisory.contains("status=non-preferred-multiple"));
+            assertTrue(advisory.contains("blocking=false"));
+            assertTrue(advisory.contains("requestedLocalWorkGroupShape=48"));
+            assertTrue(advisory.contains("preferredWorkGroupSizeMultiple=32"));
+            assertTrue(advisory.contains("preferredMultipleMatched=false"));
+
+            assertThrows(
+                    GpuRuntimeCapabilityException.class,
+                    () -> backend.invoke(new GpuKernelInvocation(
+                            descriptor,
+                            new Object[]{new int[512]},
+                            net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(512L, 512L)
+                    ))
+            );
+            assertFalse(Files.exists(
+                    compileArtifactDirectory.resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME)
+            ));
+        } finally {
+            if (previousGateFile == null) {
+                System.clearProperty(property);
+            } else {
+                System.setProperty(property, previousGateFile);
+            }
+        }
+    }
+
+    @Test
     void reportsUnavailableOpenClRuntimeClearly() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",

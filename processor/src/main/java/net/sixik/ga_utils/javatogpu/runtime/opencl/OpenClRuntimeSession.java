@@ -244,9 +244,11 @@ public final class OpenClRuntimeSession implements AutoCloseable {
     public OpenClCompiledKernel compileKernel(GpuKernelDescriptor descriptor) {
         OpenClProgram program = context.buildProgram(descriptor.kernelSource());
         OpenClKernel kernel = program.createKernel(descriptor.kernelName());
+        OpenClKernelResourceInfo resourceInfo = OpenClKernelResourceInfoReader.read(kernel, program);
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor)
-                .withCompileLog(compilerLog(program, kernel, descriptor.kernelSource(), ""));
-        return new OpenClCompiledKernel(descriptor, descriptor.kernelResource(), snapshot, program, kernel);
+                .withCompileLog(compilerLog(program, resourceInfo, descriptor.kernelSource(), ""));
+        return new OpenClCompiledKernel(descriptor, descriptor.kernelResource(), snapshot, program, kernel)
+                .withKernelResourceInfo(resourceInfo);
     }
 
     public OpenClCompiledKernel compileKernel(GpuKernelDescriptor descriptor, GpuRuntimeCompileOptions compileOptions) {
@@ -281,18 +283,20 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 ? context.buildProgram(moduleArtifact.requireSource())
                 : context.buildProgram(moduleArtifact.requireSource(), buildOptions);
         OpenClKernel kernel = program.createKernel(descriptor.kernelName());
+        OpenClKernelResourceInfo resourceInfo = OpenClKernelResourceInfoReader.read(kernel, program);
         String cacheKey = buildOptions.isBlank()
                 ? moduleArtifact.resource()
                 : moduleArtifact.resource() + "|opencl-options=" + buildOptions;
         GpuRuntimeCompileArtifactSnapshot compiledSnapshot = artifactSnapshot.withCompileLog(
-                compilerLog(program, kernel, moduleArtifact.requireSource(), buildOptions)
+                compilerLog(program, resourceInfo, moduleArtifact.requireSource(), buildOptions)
         );
-        return new OpenClCompiledKernel(descriptor, cacheKey, compiledSnapshot, program, kernel);
+        return new OpenClCompiledKernel(descriptor, cacheKey, compiledSnapshot, program, kernel)
+                .withKernelResourceInfo(resourceInfo);
     }
 
     private String compilerLog(
             OpenClProgram program,
-            OpenClKernel kernel,
+            OpenClKernelResourceInfo resourceInfo,
             String source,
             String buildOptions
     ) {
@@ -304,7 +308,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 deviceProfile
         );
         String compilerLog = diagnosticCapture.mergeWithPrimaryLog(primaryLog);
-        return OpenClKernelResourceInfoReader.read(kernel, program).appendToCompilerLog(compilerLog);
+        return resourceInfo.appendToCompilerLog(compilerLog);
     }
 
     public OpenClRuntimeCapabilities capabilities() {

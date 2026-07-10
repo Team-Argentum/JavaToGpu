@@ -110,7 +110,7 @@ GpuRuntime.invoke(
 );
 ```
 
-Explicit local sizes are also supported by the matching config factory overloads.
+Explicit local sizes are also supported by the matching config factory overloads. After OpenCL compiles the selected kernel, JavaToGpu validates the total explicit local work-group size against that kernel's `CL_KERNEL_WORK_GROUP_SIZE` limit. For multidimensional launches, the validated size is the product of the local dimensions. An oversized explicit group fails before enqueue with `GpuRuntimeCapabilityException`. If no local size is specified, JavaToGpu leaves work-group selection to the OpenCL driver.
 
 ## Generated Launcher Helpers
 
@@ -237,9 +237,11 @@ The real-device `openClWorkloadValidationTest` also enables an isolated diagnost
 
 `backend-compiler-feedback.properties` exposes `diagnosticCompilation.present`, `status`, `source`, `options`, and `diagnostic`. Expected states are `recorded`, `completed-empty`, `failed`, and `skipped-no-options`. The last three states are evidence about diagnostic availability, not kernel execution failures.
 
-JavaToGpu also queries standard kernel resource information after every successful OpenCL kernel creation. This path does not depend on vendor build-log behavior and records maximum work-group size, preferred work-group multiple, compiler-reported local memory, and compiler-reported private memory. Drivers may still report zero or reject individual queries; each metric remains independent and advisory.
+JavaToGpu also queries standard kernel resource information after every successful OpenCL kernel creation. This path does not depend on vendor build-log behavior and records maximum work-group size, preferred work-group multiple, compiler-reported local memory, and compiler-reported private memory. Drivers may still report zero or reject individual queries; each metric remains independent. When the kernel maximum is available, it is enforced for explicit local launch sizes. Preferred multiples and memory values remain advisory.
 
 The standard values appear in `backend-compiler-feedback.properties` as `selected.localMemoryBytes` plus raw fields `privateMemoryBytes`, `maxWorkGroupSize`, and `preferredWorkGroupSizeMultiple`. They provide useful spill/private-memory and launch-shape evidence but are not a replacement for exact SGPR/VGPR or NVIDIA register counts.
+
+When runtime artifact dumping is enabled, each kernel directory also receives `runtime-launch-advisory.properties` for the latest accepted launch. Its status is `aligned`, `non-preferred-multiple`, `driver-selected`, or `unavailable`. The artifact records the requested local shape and total size, kernel maximum, preferred multiple, whether a comparison was performed, and whether it matched. `blocking=false` is invariant: a non-preferred multiple remains a performance diagnostic and never rejects the launch. A launch rejected by the hard kernel maximum clears any older advisory so stale accepted-launch evidence is not retained.
 
 ## Runtime Failures And Fallbacks
 
