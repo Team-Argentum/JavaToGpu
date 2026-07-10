@@ -29,6 +29,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationToken;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationTokenTestFixtures;
@@ -75,10 +76,15 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
     private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_PROPERTY = "javatogpu.opencl.productionSourceSwitchingValidation";
     private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY = "javatogpu.opencl.productionSourceSwitchingValidationFile";
+    private static final String PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY = "javatogpu.opencl.productionActivationTokenSmoke";
+    private static final String PRODUCTION_ACTIVATION_ARTIFACT_FILE_PROPERTY = "javatogpu.opencl.productionActivationArtifactFile";
+    private static final String PRODUCTION_ACTIVATION_DIGEST_FILE_PROPERTY = "javatogpu.opencl.productionActivationDigestFile";
+    private static final String PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY = "javatogpu.opencl.productionActivationTokenSmokeFile";
     private static final String IMAGE_KERNEL_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/image-kernel.irgpu.properties";
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
     private static final String DUAL_BUFFER_INT_IRGPU_RESOURCE = "javatogpu/runtime/opencl/integration/dual-buffer-int-kernel.irgpu.properties";
     private static final String PERLIN_KERNEL_RESOURCE = "javatogpu/sample/PerlinWorkload/kernel.cl";
+    private static final String PACKED_BLOB_KERNEL_RESOURCE = "javatogpu/sample/PackedBlobWorkload/kernel.cl";
 
     @Test
     void runsRequiredStartupDeviceSelfTestOnAvailableOpenClDevice() {
@@ -841,6 +847,34 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         }
     }
 
+    @Test
+    void productionActivationTokenArtifactRunsApprovedWorkloadOnAvailableOpenClDevice() throws Exception {
+        assumeProductionActivationTokenSmokeEnabled();
+        assumeOpenClAvailable();
+
+        String status = "not run";
+        GpuProductionActivationToken activationToken = null;
+        try {
+            activationToken = loadProductionActivationToken();
+            assertTrue(activationToken.kernelResources().contains(PACKED_BLOB_KERNEL_RESOURCE));
+            runGeneratedPackedBlobWorkloadProductionSwitchingCase(
+                    productionSourceSwitchingOptions(PACKED_BLOB_KERNEL_RESOURCE, activationToken)
+            );
+            status = "passed";
+        } catch (org.opentest4j.TestAbortedException aborted) {
+            status = "skipped";
+            throw aborted;
+        } catch (AssertionError error) {
+            status = "failed";
+            throw error;
+        } catch (Exception exception) {
+            status = "failed";
+            throw exception;
+        } finally {
+            writeProductionActivationTokenSmokeSummary(status, activationToken);
+        }
+    }
+
     private void runSimpleIrGpuSourceKernelReviewCase() {
         GpuKernelDescriptor descriptor = simpleIrGpuSourceKernelDescriptor();
         float[] input = new float[]{1.0f, 2.0f, 3.0f, 4.0f};
@@ -997,6 +1031,14 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     }
 
     private void runGeneratedPackedBlobWorkloadProductionSwitchingCase() throws Exception {
+        runGeneratedPackedBlobWorkloadProductionSwitchingCase(
+                productionSourceSwitchingOptions(PACKED_BLOB_KERNEL_RESOURCE)
+        );
+    }
+
+    private void runGeneratedPackedBlobWorkloadProductionSwitchingCase(
+            GpuRuntimeCompileOptions compileOptions
+    ) throws Exception {
         CompiledGpuSource compiled = compileGpuSource("sample.PackedBlobWorkload", packedBlobWorkloadSource());
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[]{compiled.classOutputDir().toUri().toURL()}, getClass().getClassLoader());
@@ -1018,7 +1060,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                     ownerClass,
                     "kernel",
                     8L,
-                    productionSourceSwitchingOptions("javatogpu/sample/PackedBlobWorkload/kernel.cl"),
+                    compileOptions,
                     blob,
                     view,
                     gpuOutput
@@ -2924,6 +2966,68 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         return properties;
     }
 
+    private static GpuProductionActivationToken loadProductionActivationToken() throws IOException {
+        Path artifactPath = requiredConfiguredFile(PRODUCTION_ACTIVATION_ARTIFACT_FILE_PROPERTY);
+        Path digestPath = requiredConfiguredFile(PRODUCTION_ACTIVATION_DIGEST_FILE_PROPERTY);
+        String expectedSha256 = Files.readString(digestPath, StandardCharsets.UTF_8).trim();
+        return GpuProductionActivationToken.fromArtifact(artifactPath, expectedSha256);
+    }
+
+    private static Path requiredConfiguredFile(String propertyName) {
+        String configuredPath = System.getProperty(propertyName);
+        if (configuredPath == null || configuredPath.isBlank()) {
+            throw new IllegalStateException("Missing required system property: " + propertyName);
+        }
+        Path path = Path.of(configuredPath);
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalStateException("Configured file does not exist for " + propertyName + ": " + path);
+        }
+        return path;
+    }
+
+    private static void writeProductionActivationTokenSmokeSummary(
+            String status,
+            GpuProductionActivationToken activationToken
+    ) {
+        String outputPath = System.getProperty(PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        String normalizedStatus = status == null || status.isBlank() ? "unknown" : status;
+        boolean tokenLoaded = activationToken != null;
+        String properties = "status=" + normalizedStatus + "\n"
+                + "completedAtUtc=" + Instant.now() + "\n"
+                + "scope=controlled-production-activation-token-smoke\n"
+                + "token.loaded=" + tokenLoaded + "\n"
+                + "token.id=" + (tokenLoaded ? activationToken.tokenId() : "activation:missing") + "\n"
+                + "token.artifactSha256=" + (tokenLoaded ? activationToken.artifactSha256() : "missing") + "\n"
+                + "token.approvalId=" + (tokenLoaded ? activationToken.approvalId() : "approval:missing") + "\n"
+                + "token.candidateGitSha=" + (tokenLoaded ? activationToken.candidateGitSha() : "unknown") + "\n"
+                + "token.backendTarget=" + (tokenLoaded ? activationToken.backendTarget() : "UNKNOWN") + "\n"
+                + "token.deviceVendor=" + (tokenLoaded ? activationToken.deviceVendor() : "unknown") + "\n"
+                + "token.deviceLabel=" + (tokenLoaded ? activationToken.deviceLabel() : "unknown") + "\n"
+                + "token.driverVersion=" + (tokenLoaded ? activationToken.driverVersion() : "unknown") + "\n"
+                + "token.activationScope=" + (tokenLoaded ? activationToken.activationScope() : "unknown") + "\n"
+                + "defaultRuntimeActivation=false\n"
+                + "defaultProductionSourceSwitching=disabled\n"
+                + "productionMutation=disabled\n"
+                + "kernel.count=1\n"
+                + "kernel.0.resource=" + PACKED_BLOB_KERNEL_RESOURCE + "\n"
+                + "kernel.0.status=" + normalizedStatus + "\n"
+                + "diagnostic.count=1\n"
+                + "diagnostic.0=runtime loaded the exact activation artifact and executed one approved workload kernel\n";
+        try {
+            Path path = Path.of(outputPath);
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(path, properties, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to write production activation-token smoke summary", exception);
+        }
+    }
+
     private static void writeIrGpuSourceReviewSummary(String status) {
         String outputPath = System.getProperty(IRGPU_SOURCE_REVIEW_FILE_PROPERTY);
         if (outputPath == null || outputPath.isBlank()) {
@@ -3058,6 +3162,15 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         );
     }
 
+    private static void assumeProductionActivationTokenSmokeEnabled() {
+        Assumptions.assumeTrue(
+                Boolean.getBoolean(PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY),
+                "Skipping production activation-token smoke test: set -D"
+                        + PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY
+                        + "=true"
+        );
+    }
+
     private static GpuRuntimeCompileOptions productionSourceSwitchingOptions(String kernelResource) {
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
             return productionSourceSwitchingOptions(backend, kernelResource);
@@ -3065,8 +3178,30 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     }
 
     private static GpuRuntimeCompileOptions productionSourceSwitchingOptions(
+            String kernelResource,
+            GpuProductionActivationToken activationToken
+    ) {
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+            return productionSourceSwitchingOptions(backend, kernelResource, activationToken);
+        }
+    }
+
+    private static GpuRuntimeCompileOptions productionSourceSwitchingOptions(
             OpenClGpuRuntimeBackend backend,
             String kernelResource
+    ) {
+        GpuRuntimeDeviceProfile deviceProfile = backend.compileDeviceProfile();
+        return productionSourceSwitchingOptions(
+                backend,
+                kernelResource,
+                GpuProductionActivationTokenTestFixtures.token(deviceProfile, kernelResource)
+        );
+    }
+
+    private static GpuRuntimeCompileOptions productionSourceSwitchingOptions(
+            OpenClGpuRuntimeBackend backend,
+            String kernelResource,
+            GpuProductionActivationToken activationToken
     ) {
         GpuRuntimeDeviceProfile deviceProfile = backend.compileDeviceProfile();
         GpuProductionPromotionDecision decision = productionEnabledDecision();
@@ -3089,9 +3224,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         decision.mode()
                 )
         );
-        return options.withProductionActivationToken(
-                GpuProductionActivationTokenTestFixtures.token(deviceProfile, kernelResource)
-        );
+        return options.withProductionActivationToken(activationToken);
     }
 
     private static GpuRuntimeDeviceProfile productionSourceSwitchingDeviceProfile() {

@@ -165,6 +165,13 @@ jobs:
         shell: cmd
         run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionActivationGate "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
 
+      - name: Run controlled production activation-token smoke
+        if: steps.production_promotion_activation_gate.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        id: production_promotion_activation_token_smoke
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:openClProductionActivationTokenSmokeTest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
+
       - name: Generate OpenCL validation report
         if: always()
         id: validation_report
@@ -316,6 +323,7 @@ jobs:
           PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME: ${{ steps.production_promotion_manifest_template.outcome }}
           PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME: ${{ steps.production_promotion_manifest_validation.outcome }}
           PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME: ${{ steps.production_promotion_activation_gate.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME: ${{ steps.production_promotion_activation_token_smoke.outcome }}
           VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
           VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
         run: |
@@ -337,6 +345,7 @@ jobs:
           echo ^| Promotion manifest template ^| %PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Promotion manifest validation ^| %PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Controlled activation gate ^| %PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Activation-token hardware smoke ^| %PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history stage ^| %VALIDATION_HISTORY_STAGE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation history save ^| %VALIDATION_HISTORY_SAVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           if exist processor\build\reports\opencl\runtime-launch-advisory-summary.md (
@@ -382,7 +391,8 @@ jobs:
               env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate' &&
               (
                 steps.production_promotion_manifest_validation.outcome != 'success' ||
-                steps.production_promotion_activation_gate.outcome != 'success'
+                steps.production_promotion_activation_gate.outcome != 'success' ||
+                steps.production_promotion_activation_token_smoke.outcome != 'success'
               )
             )
           )

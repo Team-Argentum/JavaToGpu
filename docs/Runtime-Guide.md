@@ -422,6 +422,17 @@ compileOptions = compileOptions
 
 The OpenCL production lowerer validates the token against the runtime backend, device vendor/label, driver, activation scope, and kernel resource. Any mismatch rejects the production source path while normal application execution remains on the default generated OpenCL source.
 
+Run the end-to-end hardware check with the same manifest and candidate SHA used for activation:
+
+```powershell
+.\gradlew.bat :processor:openClProductionActivationTokenSmokeTest `
+  -PopenClPromotionManifestFile=<manifest-path> `
+  -PopenClPromotionGitSha=<candidate-run-full-git-sha> `
+  --console=plain --no-daemon
+```
+
+The task depends on the activation gate, loads its exact artifact and sidecar, and executes the approved `PackedBlobWorkload` kernel. It writes `production-activation-token-smoke.properties` and still records all default runtime and production mutation switches as disabled.
+
 ## ABI Debug
 
 Enable ABI diagnostics with:
