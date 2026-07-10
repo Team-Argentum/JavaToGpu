@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -36,6 +37,7 @@ final class OpenClNvidiaBinaryInspector {
     private static final Pattern STACK_FRAME = Pattern.compile("\\bstack frame(?: size)?\\s*[:=]?\\s*(\\d+)\\s*bytes?\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern SPILL_STORES = Pattern.compile("(\\d+)\\s+bytes?\\s+spill stores?\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern SPILL_LOADS = Pattern.compile("(\\d+)\\s+bytes?\\s+spill loads?\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PTX_TARGET = Pattern.compile("^\\s*\\.target\\s+([^,\\s]+)", Pattern.MULTILINE);
 
     private OpenClNvidiaBinaryInspector() {
     }
@@ -67,12 +69,22 @@ final class OpenClNvidiaBinaryInspector {
         Path assembledBinaryFile = null;
         try {
             binaryFile = Files.createTempFile("javatogpu-opencl-program-", ptx ? ".ptx" : ".bin");
-            Files.write(binaryFile, binary.binary());
+            byte[] inspectionBinary = ptx ? normalizePtx(binary.binary()) : binary.binary();
+            Files.write(binaryFile, inspectionBinary);
             if (ptx) {
                 assembledBinaryFile = Files.createTempFile("javatogpu-opencl-program-", ".cubin");
+                ArrayList<String> arguments = new ArrayList<>();
+                arguments.add("--verbose");
+                ptxTarget(inspectionBinary).ifPresent(target -> {
+                    arguments.add("--gpu-name");
+                    arguments.add(target);
+                });
+                arguments.add(binaryFile.toString());
+                arguments.add("-o");
+                arguments.add(assembledBinaryFile.toString());
                 ToolResult ptxasResult = runTool(
                         ptxas.orElseThrow(),
-                        List.of("--verbose", binaryFile.toString(), "-o", assembledBinaryFile.toString())
+                        arguments
                 );
                 if (!ptxasResult.successful()) {
                     return toolResult("ptxas", ptxas.orElseThrow(), ptxasResult);
@@ -180,6 +192,25 @@ final class OpenClNvidiaBinaryInspector {
         );
     }
 
+    static byte[] normalizePtx(byte[] binary) {
+        if (binary == null || binary.length == 0) {
+            return new byte[0];
+        }
+        int length = binary.length;
+        while (length > 0 && binary[length - 1] == 0) {
+            length--;
+        }
+        return java.util.Arrays.copyOf(binary, length);
+    }
+
+    static Optional<String> ptxTarget(byte[] ptx) {
+        if (ptx == null || ptx.length == 0) {
+            return Optional.empty();
+        }
+        Matcher matcher = PTX_TARGET.matcher(new String(ptx, StandardCharsets.US_ASCII));
+        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+    }
+
     private static Optional<Path> findTool(String property, String environment, String baseName) {
         ArrayList<String> candidates = new ArrayList<>();
         addCandidate(candidates, System.getProperty(property));
@@ -187,6 +218,11 @@ final class OpenClNvidiaBinaryInspector {
         String executableName = isWindows() ? baseName + ".exe" : baseName;
         addCudaCandidate(candidates, System.getenv("CUDA_PATH"), executableName);
         addCudaCandidate(candidates, System.getenv("CUDA_HOME"), executableName);
+        if (isWindows()) {
+            addDefaultCudaCandidates(candidates, System.getenv("ProgramW6432"), executableName);
+            addDefaultCudaCandidates(candidates, System.getenv("ProgramFiles"), executableName);
+            addDefaultCudaCandidates(candidates, "C:\\Program Files", executableName);
+        }
         String path = System.getenv("PATH");
         if (path != null && !path.isBlank()) {
             for (String directory : path.split(Pattern.quote(java.io.File.pathSeparator))) {
@@ -217,6 +253,44 @@ final class OpenClNvidiaBinaryInspector {
     private static void addCudaCandidate(List<String> candidates, String cudaRoot, String executableName) {
         if (cudaRoot != null && !cudaRoot.isBlank()) {
             candidates.add(Paths.get(cudaRoot, "bin", executableName).toString());
+        }
+    }
+
+    private static void addDefaultCudaCandidates(
+            List<String> candidates,
+            String programFiles,
+            String executableName
+    ) {
+        for (Path candidate : defaultCudaInstallationCandidates(programFiles, executableName)) {
+            candidates.add(candidate.toString());
+        }
+    }
+
+    static List<Path> defaultCudaInstallationCandidates(String programFiles, String executableName) {
+        if (programFiles == null || programFiles.isBlank() || executableName == null || executableName.isBlank()) {
+            return List.of();
+        }
+        Path cudaRoot;
+        try {
+            cudaRoot = Paths.get(programFiles, "NVIDIA GPU Computing Toolkit", "CUDA");
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+        if (!Files.isDirectory(cudaRoot)) {
+            return List.of();
+        }
+        try (java.util.stream.Stream<Path> versions = Files.list(cudaRoot)) {
+            return versions
+                    .filter(Files::isDirectory)
+                    .sorted(Comparator.comparing(
+                            path -> path.getFileName().toString(),
+                            String.CASE_INSENSITIVE_ORDER.reversed()
+                    ))
+                    .map(path -> path.resolve("bin").resolve(executableName))
+                    .filter(Files::isRegularFile)
+                    .toList();
+        } catch (IOException | RuntimeException ignored) {
+            return List.of();
         }
     }
 
