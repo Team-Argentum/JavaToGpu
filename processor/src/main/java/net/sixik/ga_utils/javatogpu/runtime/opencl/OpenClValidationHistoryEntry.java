@@ -19,8 +19,48 @@ record OpenClValidationHistoryEntry(
         String backendSourcePromotionContractStatus,
         String backendSourcePromotionWorkloadStatus,
         String productionPromotionExplainabilityStatus,
-        String kernelLaunchAdvisoryStatus
+        String kernelLaunchAdvisoryStatus,
+        String compilerResourceStatus
 ) {
+
+    OpenClValidationHistoryEntry(
+            Instant generatedAtUtc,
+            String requestedVendorLane,
+            String backendName,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String deviceVersion,
+            String bucketSummary,
+            String longRunningStatus,
+            String workloadStatus,
+            String irGpuSourceReviewStatus,
+            String productionSourceSwitchingValidationStatus,
+            String backendSourcePromotionContractStatus,
+            String backendSourcePromotionWorkloadStatus,
+            String productionPromotionExplainabilityStatus,
+            String kernelLaunchAdvisoryStatus
+    ) {
+        this(
+                generatedAtUtc,
+                requestedVendorLane,
+                backendName,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                deviceVersion,
+                bucketSummary,
+                longRunningStatus,
+                workloadStatus,
+                irGpuSourceReviewStatus,
+                productionSourceSwitchingValidationStatus,
+                backendSourcePromotionContractStatus,
+                backendSourcePromotionWorkloadStatus,
+                productionPromotionExplainabilityStatus,
+                kernelLaunchAdvisoryStatus,
+                "not recorded"
+        );
+    }
 
     OpenClValidationHistoryEntry(
             Instant generatedAtUtc,
@@ -55,6 +95,7 @@ record OpenClValidationHistoryEntry(
                 backendSourcePromotionContractStatus,
                 backendSourcePromotionWorkloadStatus,
                 productionPromotionExplainabilityStatus,
+                "not recorded",
                 "not recorded"
         );
     }
@@ -76,6 +117,7 @@ record OpenClValidationHistoryEntry(
         backendSourcePromotionWorkloadStatus = normalize(backendSourcePromotionWorkloadStatus);
         productionPromotionExplainabilityStatus = normalize(productionPromotionExplainabilityStatus);
         kernelLaunchAdvisoryStatus = normalize(kernelLaunchAdvisoryStatus);
+        compilerResourceStatus = normalize(compilerResourceStatus);
     }
 
     private static String normalize(String value) {

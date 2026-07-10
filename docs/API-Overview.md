@@ -106,7 +106,9 @@ The runtime additionally uses standard `clGetKernelWorkGroupInfo` queries to cap
 
 Vendor validation aggregates workload-kernel advisory files into `runtime-launch-advisory-summary.md` and the main validation report. GitHub Actions appends that generated Markdown directly instead of reparsing properties in shell code.
 
-The validation history properties retain a compact launch-advisory count summary and a versioned per-kernel snapshot; the Markdown table keeps the short aggregate view.
+The validation history properties retain compact launch-advisory and compiler-resource summaries plus versioned per-kernel snapshots; the Markdown table keeps the short aggregate views. Compiler-resource history tracks effective registers, spill stores/loads, stack frames, provider, and inspection tool by kernel resource.
+
+`runtime-compiler-resource-drift.properties` blocks CI when a kernel disappears, resource metrics become unavailable, spill/stack usage increases, or register allocation grows beyond `max(2, 10% of baseline)`. Smaller register changes remain advisory, and old history caches without compiler snapshots transition through `no-baseline` without failing the lane.
 
 The reporter compares current counts and kernel snapshots with the latest compatible history entry. Per-kernel matching uses the kernel resource and detects status degradation, reduced kernel maximum, preferred-match loss, blocking activation, and missing resources even when aggregate counts remain equal. Older histories without snapshots use aggregate fallback.
 

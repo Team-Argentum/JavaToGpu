@@ -105,6 +105,8 @@ CI hardware workloads may enable `OpenClCompilerDiagnosticCapture`, which perfor
 
 Artifact dumping always emits `backend-compiler-feedback.properties`. When metrics are available, the artifact records every provider execution and parsed result plus the selected result. Binary capture and inspection metadata is exported under `diagnosticCompilation.binary.*` and `diagnosticCompilation.binaryInspection.*`; a captured payload is written as `opencl-program.bin`. `runtime-ir-analysis.properties` additionally records the heuristic/compiler register delta and comparison status. Compiler feedback remains advisory and cannot satisfy optimizer proof or production-promotion requirements by itself.
 
+Vendor validation may aggregate those artifacts into `OpenClCompilerResourceSummary` and retain a versioned per-kernel snapshot in `OpenClValidationHistoryEntry.compilerResourceStatus`. `OpenClCompilerResourceDrift` compares only compatible backend/device/vendor/lane history entries. Spill or stack growth, metric loss, and missing kernels are regressions; register growth uses an absolute/relative tolerance of `max(2, 10%)`. `OpenClCompilerResourceDriftValidatorCli` is the dedicated CI gate and does not participate in runtime compilation or execution decisions.
+
 ### Runtime failure hierarchy
 
 Public runtime failures extend `GpuRuntimeException`. The base contract exposes a stable error code, `GpuRuntimeFailurePhase`, concise summary, immutable `GpuRuntimeDiagnosticContext`, Rust-like `diagnosticText()`, help messages, and the original cause. Backend implementations should translate low-level driver/runtime failures once and must not double-wrap an existing `GpuRuntimeException`.

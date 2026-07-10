@@ -59,6 +59,7 @@ def openClBackendSourcePromotionWorkloadGateFile = layout.buildDirectory.file('r
 def openClBackendSourcePromotionWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-summary.properties').get().asFile
 def openClProductionSourceSwitchingValidationFile = layout.buildDirectory.file('reports/opencl/production-source-switching-validation.properties').get().asFile
 def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-drift.properties').get().asFile
+def openClCompilerResourceDriftFile = layout.buildDirectory.file('reports/opencl/runtime-compiler-resource-drift.properties').get().asFile
 def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
 def openClValidationHistoryMarkdownFile = layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile
 def openClValidationHistoryCacheDirectory = layout.buildDirectory.dir('opencl-validation-history-cache').get().asFile
@@ -470,6 +471,7 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.backendPromotionArtifactSupportFile', openClBackendPromotionArtifactSupportFile.absolutePath
     systemProperty 'javatogpu.opencl.kernelLaunchAdvisorySummaryFile', layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-summary.md').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.kernelLaunchAdvisoryDriftFile', openClKernelLaunchAdvisoryDriftFile.absolutePath
+    systemProperty 'javatogpu.opencl.compilerResourceDriftFile', openClCompilerResourceDriftFile.absolutePath
     systemProperty 'javatogpu.opencl.validationHistoryFile', openClValidationHistoryFile.absolutePath
     systemProperty 'javatogpu.opencl.validationHistoryMarkdownFile', openClValidationHistoryMarkdownFile.absolutePath
     systemProperty 'javatogpu.opencl.validationHistoryBaselineFile', openClValidationHistoryBaselineFile.absolutePath
@@ -483,6 +485,16 @@ tasks.register('validateOpenClKernelLaunchAdvisoryDrift', JavaExec) {
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClKernelLaunchAdvisoryDriftValidatorCli'
     args openClKernelLaunchAdvisoryDriftFile.absolutePath
     inputs.file(openClKernelLaunchAdvisoryDriftFile)
+}
+
+tasks.register('validateOpenClCompilerResourceDrift', JavaExec) {
+    group = 'verification'
+    description = 'Fails OpenCL CI when the per-kernel compiler-resource drift artifact reports a regression.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClCompilerResourceDriftValidatorCli'
+    args openClCompilerResourceDriftFile.absolutePath
+    inputs.file(openClCompilerResourceDriftFile)
 }
 
 tasks.register('prepareOpenClKernelLaunchAdvisoryNegativeFixture', JavaExec) {

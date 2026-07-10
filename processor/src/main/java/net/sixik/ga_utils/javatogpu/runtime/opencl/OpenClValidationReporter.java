@@ -34,6 +34,8 @@ public final class OpenClValidationReporter {
             "javatogpu.opencl.kernelLaunchAdvisorySummaryFile";
     private static final String KERNEL_LAUNCH_ADVISORY_DRIFT_FILE_PROPERTY =
             "javatogpu.opencl.kernelLaunchAdvisoryDriftFile";
+    private static final String COMPILER_RESOURCE_DRIFT_FILE_PROPERTY =
+            "javatogpu.opencl.compilerResourceDriftFile";
     private static final String HISTORY_PROPERTIES_FILE_PROPERTY = "javatogpu.opencl.validationHistoryFile";
     private static final String HISTORY_MARKDOWN_FILE_PROPERTY = "javatogpu.opencl.validationHistoryMarkdownFile";
     private static final String HISTORY_BASELINE_FILE_PROPERTY = "javatogpu.opencl.validationHistoryBaselineFile";
@@ -50,9 +52,19 @@ public final class OpenClValidationReporter {
         ensureProductionPromotionExplainabilityArtifact();
         seedValidationHistoryFromBaseline();
         OpenClKernelLaunchAdvisorySummary launchAdvisorySummary = loadKernelLaunchAdvisorySummary();
-        OpenClValidationHistoryEntry currentHistoryEntry = buildHistoryEntry(launchAdvisorySummary);
+        OpenClCompilerResourceSummary compilerResourceSummary = loadCompilerResourceSummary();
+        OpenClValidationHistoryEntry currentHistoryEntry = buildHistoryEntry(
+                launchAdvisorySummary,
+                compilerResourceSummary
+        );
         OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift = loadKernelLaunchAdvisoryDrift(currentHistoryEntry);
-        String markdown = buildReport(launchAdvisorySummary, launchAdvisoryDrift);
+        OpenClCompilerResourceDrift compilerResourceDrift = loadCompilerResourceDrift(currentHistoryEntry);
+        String markdown = buildReport(
+                launchAdvisorySummary,
+                launchAdvisoryDrift,
+                compilerResourceSummary,
+                compilerResourceDrift
+        );
         String outputPath = System.getProperty(REPORT_FILE_PROPERTY);
         if (outputPath != null && !outputPath.isBlank()) {
             Path path = Paths.get(outputPath);
@@ -65,13 +77,16 @@ public final class OpenClValidationReporter {
         }
         writeKernelLaunchAdvisorySummary(launchAdvisorySummary, launchAdvisoryDrift);
         writeKernelLaunchAdvisoryDrift(launchAdvisoryDrift);
+        writeCompilerResourceDrift(compilerResourceDrift);
         updateHistoryArtifacts(markdown, currentHistoryEntry);
         System.out.println(markdown);
     }
 
     private static String buildReport(
             OpenClKernelLaunchAdvisorySummary launchAdvisorySummary,
-            OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift
+            OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift,
+            OpenClCompilerResourceSummary compilerResourceSummary,
+            OpenClCompilerResourceDrift compilerResourceDrift
     ) {
         StringBuilder markdown = new StringBuilder();
         String requestedVendor = env("JTG_VALIDATION_VENDOR");
@@ -107,6 +122,8 @@ public final class OpenClValidationReporter {
         appendWorkloadSummary(markdown);
         markdown.append(launchAdvisorySummary.toMarkdown());
         markdown.append(launchAdvisoryDrift.toMarkdown());
+        markdown.append(compilerResourceSummary.toMarkdown());
+        markdown.append(compilerResourceDrift.toMarkdown());
         appendIrGpuSourceReviewSummary(markdown);
         appendProductionSourceSwitchingValidationSummary(markdown);
         appendLongRunningSummary(markdown);
@@ -134,6 +151,18 @@ public final class OpenClValidationReporter {
             return OpenClKernelLaunchAdvisorySummary.read(Paths.get(gatePath));
         } catch (Throwable failure) {
             return OpenClKernelLaunchAdvisorySummary.failed(failure);
+        }
+    }
+
+    private static OpenClCompilerResourceSummary loadCompilerResourceSummary() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return OpenClCompilerResourceSummary.notRecorded();
+        }
+        try {
+            return OpenClCompilerResourceSummary.read(Paths.get(gatePath));
+        } catch (Throwable failure) {
+            return OpenClCompilerResourceSummary.failed(failure);
         }
     }
 
@@ -176,6 +205,48 @@ public final class OpenClValidationReporter {
             return currentCounts
                     .map(OpenClKernelLaunchAdvisoryDrift::noBaseline)
                     .orElseGet(() -> OpenClKernelLaunchAdvisoryDrift.compare(currentEntry, java.util.List.of()));
+        }
+    }
+
+    private static OpenClCompilerResourceDrift loadCompilerResourceDrift(
+            OpenClValidationHistoryEntry currentEntry
+    ) {
+        String baselinePath = System.getProperty(HISTORY_BASELINE_FILE_PROPERTY);
+        String historyPath = System.getProperty(HISTORY_PROPERTIES_FILE_PROPERTY);
+        Optional<OpenClCompilerResourceDrift.Counts> currentCounts =
+                OpenClCompilerResourceDrift.Counts.parse(currentEntry.compilerResourceStatus());
+        if (baselinePath != null && !baselinePath.isBlank()) {
+            Path path = Paths.get(baselinePath);
+            if (!Files.isRegularFile(path)) {
+                return currentCounts
+                        .map(OpenClCompilerResourceDrift::noBaseline)
+                        .orElseGet(() -> OpenClCompilerResourceDrift.compare(currentEntry, java.util.List.of()));
+            }
+            try {
+                return OpenClCompilerResourceDrift.compare(
+                        currentEntry,
+                        OpenClValidationHistoryIO.readAll(path)
+                );
+            } catch (Throwable failure) {
+                return currentCounts
+                        .map(OpenClCompilerResourceDrift::noBaseline)
+                        .orElseGet(() -> OpenClCompilerResourceDrift.compare(currentEntry, java.util.List.of()));
+            }
+        }
+        if (historyPath == null || historyPath.isBlank()) {
+            return currentCounts
+                    .map(OpenClCompilerResourceDrift::noBaseline)
+                    .orElseGet(() -> OpenClCompilerResourceDrift.compare(currentEntry, java.util.List.of()));
+        }
+        try {
+            return OpenClCompilerResourceDrift.compare(
+                    currentEntry,
+                    OpenClValidationHistoryIO.readAll(Paths.get(historyPath))
+            );
+        } catch (Throwable failure) {
+            return currentCounts
+                    .map(OpenClCompilerResourceDrift::noBaseline)
+                    .orElseGet(() -> OpenClCompilerResourceDrift.compare(currentEntry, java.util.List.of()));
         }
     }
 
@@ -223,6 +294,23 @@ public final class OpenClValidationReporter {
 
     private static void writeKernelLaunchAdvisoryDrift(OpenClKernelLaunchAdvisoryDrift drift) {
         String outputPath = System.getProperty(KERNEL_LAUNCH_ADVISORY_DRIFT_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            Path path = Paths.get(outputPath);
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(path, drift.toPropertiesText(), StandardCharsets.UTF_8);
+        } catch (Throwable failure) {
+            // The primary validation report must remain available; the dedicated validator fails on a missing artifact.
+        }
+    }
+
+    private static void writeCompilerResourceDrift(OpenClCompilerResourceDrift drift) {
+        String outputPath = System.getProperty(COMPILER_RESOURCE_DRIFT_FILE_PROPERTY);
         if (outputPath == null || outputPath.isBlank()) {
             return;
         }
@@ -1177,7 +1265,8 @@ public final class OpenClValidationReporter {
     }
 
     private static OpenClValidationHistoryEntry buildHistoryEntry(
-            OpenClKernelLaunchAdvisorySummary launchAdvisorySummary
+            OpenClKernelLaunchAdvisorySummary launchAdvisorySummary,
+            OpenClCompilerResourceSummary compilerResourceSummary
     ) {
         String requestedVendor = env("JTG_VALIDATION_VENDOR");
         String bucketSummary = summarizeBuckets();
@@ -1189,6 +1278,7 @@ public final class OpenClValidationReporter {
         String backendSourcePromotionWorkloadStatus = summarizeBackendSourcePromotionWorkloadStatus();
         String productionPromotionExplainabilityStatus = summarizeProductionPromotionExplainabilityStatus();
         String kernelLaunchAdvisoryStatus = launchAdvisorySummary.toHistorySummary();
+        String compilerResourceStatus = compilerResourceSummary.toHistorySummary();
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
             OpenClValidationReport report = backend.validationReport();
@@ -1208,7 +1298,8 @@ public final class OpenClValidationReporter {
                     backendSourcePromotionContractStatus,
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus,
-                    kernelLaunchAdvisoryStatus
+                    kernelLaunchAdvisoryStatus,
+                    compilerResourceStatus
             );
         } catch (Throwable failure) {
             return new OpenClValidationHistoryEntry(
@@ -1227,7 +1318,8 @@ public final class OpenClValidationReporter {
                     backendSourcePromotionContractStatus,
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus,
-                    kernelLaunchAdvisoryStatus
+                    kernelLaunchAdvisoryStatus,
+                    compilerResourceStatus
             );
         }
     }

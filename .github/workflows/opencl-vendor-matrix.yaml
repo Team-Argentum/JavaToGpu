@@ -133,6 +133,13 @@ jobs:
         shell: cmd
         run: .\gradlew.bat :processor:validateOpenClKernelLaunchAdvisoryDrift --console=plain --no-daemon
 
+      - name: Validate compiler-resource drift
+        if: always()
+        id: compiler_resource_drift
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClCompilerResourceDrift --console=plain --no-daemon
+
       - name: Validate production promotion explainability
         if: steps.opencl_validation.outcome == 'success'
         id: production_explainability
@@ -187,7 +194,8 @@ jobs:
           env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true' &&
           steps.opencl_validation.outcome == 'success' &&
           steps.validation_report.outcome == 'success' &&
-          steps.launch_advisory_drift.outcome == 'success'
+          steps.launch_advisory_drift.outcome == 'success' &&
+          steps.compiler_resource_drift.outcome == 'success'
         id: validation_history_stage
         continue-on-error: true
         shell: cmd
@@ -212,6 +220,7 @@ jobs:
           OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
           LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
+          COMPILER_RESOURCE_DRIFT_OUTCOME: ${{ steps.compiler_resource_drift.outcome }}
           PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
           PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
           SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
@@ -223,6 +232,7 @@ jobs:
           if /I not "%OPENCL_VALIDATION_OUTCOME%"=="success" exit /b 1
           if /I not "%VALIDATION_REPORT_OUTCOME%"=="success" exit /b 1
           if /I not "%LAUNCH_ADVISORY_DRIFT_OUTCOME%"=="failure" exit /b 1
+          if /I not "%COMPILER_RESOURCE_DRIFT_OUTCOME%"=="success" exit /b 1
           if /I not "%PRODUCTION_EXPLAINABILITY_OUTCOME%"=="success" exit /b 1
           if /I not "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"=="success" exit /b 1
           if /I not "%SOURCE_PROMOTION_BASELINE_OUTCOME%"=="success" exit /b 1
@@ -252,6 +262,7 @@ jobs:
           OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
           LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
+          COMPILER_RESOURCE_DRIFT_OUTCOME: ${{ steps.compiler_resource_drift.outcome }}
           PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
           PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
           SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
@@ -269,6 +280,7 @@ jobs:
           echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Launch-advisory drift ^| %LAUNCH_ADVISORY_DRIFT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Compiler-resource drift ^| %COMPILER_RESOURCE_DRIFT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Production explainability ^| %PRODUCTION_EXPLAINABILITY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Production explainability summary ^| %PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Source-promotion baseline ^| %SOURCE_PROMOTION_BASELINE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
@@ -290,6 +302,7 @@ jobs:
                 steps.opencl_validation.outcome != 'success' ||
                 steps.validation_report.outcome != 'success' ||
                 steps.launch_advisory_drift.outcome != 'success' ||
+                steps.compiler_resource_drift.outcome != 'success' ||
                 steps.validation_history_stage.outcome == 'failure' ||
                 steps.validation_history_save.outcome == 'failure' ||
                 steps.production_explainability.outcome != 'success' ||
