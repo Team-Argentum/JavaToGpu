@@ -2961,6 +2961,11 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             return;
         }
         String normalizedStatus = status == null || status.isBlank() ? "unknown" : status;
+        boolean acceptanceBound = "passed".equals(normalizedStatus);
+        GpuRuntimeDeviceProfile acceptanceDevice = acceptanceBound
+                ? productionSourceSwitchingDeviceProfile()
+                : GpuRuntimeDeviceProfile.generic(net.sixik.ga_utils.javatogpu.api.GpuBackendTarget.OPENCL, "OpenCL");
+        String acceptanceStatus = acceptanceBound ? "accepted" : "not-recorded";
         String properties = "status=" + normalizedStatus + "\n"
                 + "reviewReady=" + "passed".equals(normalizedStatus) + "\n"
                 + "completedAtUtc=" + Instant.now() + "\n"
@@ -2969,37 +2974,64 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 + "sourceSelection=irgpu\n"
                 + "optimizationProfile=vendor-tuned\n"
                 + "productionPromotionDecisionMode=" + GpuProductionPromotionDecision.PRODUCTION_ENABLED + "\n"
+                + "operatorAcceptance.mode=identity-bound\n"
+                + "operatorAcceptance.bound=" + acceptanceBound + "\n"
+                + "operatorAcceptance.backendTarget=" + acceptanceDevice.backendTarget() + "\n"
+                + "operatorAcceptance.deviceVendor=" + acceptanceDevice.vendor() + "\n"
+                + "operatorAcceptance.deviceLabel=" + acceptanceDevice.deviceLabel() + "\n"
+                + "operatorAcceptance.driverVersion=" + acceptanceDevice.driverVersion() + "\n"
                 + "kernel.count=7\n"
                 + "kernel.0.name=gpu_irgpu_entry\n"
                 + "kernel.0.resource=inline://integration/simple-irgpu-source-kernel.cl\n"
                 + "kernel.0.irGpuResource=" + SIMPLE_IRGPU_SOURCE_RESOURCE + "\n"
                 + "kernel.0.status=" + normalizedStatus + "\n"
+                + "kernel.0.operatorAcceptance.id=" + productionSourceSwitchingAcceptanceId("inline://integration/simple-irgpu-source-kernel.cl") + "\n"
+                + "kernel.0.operatorAcceptance.status=" + acceptanceStatus + "\n"
+                + "kernel.0.operatorAcceptance.bound=" + acceptanceBound + "\n"
                 + "kernel.1.name=gpu_image_entry\n"
                 + "kernel.1.resource=inline://integration/image-kernel.cl\n"
                 + "kernel.1.irGpuResource=" + IMAGE_KERNEL_IRGPU_RESOURCE + "\n"
                 + "kernel.1.status=" + normalizedStatus + "\n"
+                + "kernel.1.operatorAcceptance.id=" + productionSourceSwitchingAcceptanceId("inline://integration/image-kernel.cl") + "\n"
+                + "kernel.1.operatorAcceptance.status=" + acceptanceStatus + "\n"
+                + "kernel.1.operatorAcceptance.bound=" + acceptanceBound + "\n"
                 + "kernel.2.name=gpu_dual_buffer_int_entry\n"
                 + "kernel.2.resource=inline://integration/dual-buffer-int-kernel.cl\n"
                 + "kernel.2.irGpuResource=" + DUAL_BUFFER_INT_IRGPU_RESOURCE + "\n"
                 + "kernel.2.status=" + normalizedStatus + "\n"
+                + "kernel.2.operatorAcceptance.id=" + productionSourceSwitchingAcceptanceId("inline://integration/dual-buffer-int-kernel.cl") + "\n"
+                + "kernel.2.operatorAcceptance.status=" + acceptanceStatus + "\n"
+                + "kernel.2.operatorAcceptance.bound=" + acceptanceBound + "\n"
                 + "kernel.3.name=gpu_kernel\n"
                 + "kernel.3.resource=javatogpu/sample/PerlinWorkload/kernel.cl\n"
                 + "kernel.3.irGpuResource=javatogpu/sample/PerlinWorkload/kernel.irgpu.properties\n"
                 + "kernel.3.status=" + normalizedStatus + "\n"
+                + "kernel.3.operatorAcceptance.id=" + productionSourceSwitchingAcceptanceId("javatogpu/sample/PerlinWorkload/kernel.cl") + "\n"
+                + "kernel.3.operatorAcceptance.status=" + acceptanceStatus + "\n"
+                + "kernel.3.operatorAcceptance.bound=" + acceptanceBound + "\n"
                 + "kernel.4.name=gpu_kernel\n"
                 + "kernel.4.resource=javatogpu/sample/PackedBlobWorkload/kernel.cl\n"
                 + "kernel.4.irGpuResource=javatogpu/sample/PackedBlobWorkload/kernel.irgpu.properties\n"
                 + "kernel.4.status=" + normalizedStatus + "\n"
+                + "kernel.4.operatorAcceptance.id=" + productionSourceSwitchingAcceptanceId("javatogpu/sample/PackedBlobWorkload/kernel.cl") + "\n"
+                + "kernel.4.operatorAcceptance.status=" + acceptanceStatus + "\n"
+                + "kernel.4.operatorAcceptance.bound=" + acceptanceBound + "\n"
                 + "kernel.5.name=gpu_kernel\n"
                 + "kernel.5.resource=javatogpu/sample/PackedNumericWorkload/kernel.cl\n"
                 + "kernel.5.irGpuResource=javatogpu/sample/PackedNumericWorkload/kernel.irgpu.properties\n"
                 + "kernel.5.status=" + normalizedStatus + "\n"
+                + "kernel.5.operatorAcceptance.id=" + productionSourceSwitchingAcceptanceId("javatogpu/sample/PackedNumericWorkload/kernel.cl") + "\n"
+                + "kernel.5.operatorAcceptance.status=" + acceptanceStatus + "\n"
+                + "kernel.5.operatorAcceptance.bound=" + acceptanceBound + "\n"
                 + "kernel.6.name=gpu_kernel\n"
                 + "kernel.6.resource=javatogpu/sample/Synthetic3DPackedGridWorkload/kernel.cl\n"
                 + "kernel.6.irGpuResource=javatogpu/sample/Synthetic3DPackedGridWorkload/kernel.irgpu.properties\n"
                 + "kernel.6.status=" + normalizedStatus + "\n"
+                + "kernel.6.operatorAcceptance.id=" + productionSourceSwitchingAcceptanceId("javatogpu/sample/Synthetic3DPackedGridWorkload/kernel.cl") + "\n"
+                + "kernel.6.operatorAcceptance.status=" + acceptanceStatus + "\n"
+                + "kernel.6.operatorAcceptance.bound=" + acceptanceBound + "\n"
                 + "diagnostic.count=1\n"
-                + "diagnostic.0=controlled production source-switching lane uses explicit production-enabled evidence only\n";
+                + "diagnostic.0=controlled production source-switching lane uses identity-bound operator acceptance and explicit production-enabled evidence\n";
         try {
             Path path = Path.of(outputPath);
             Path parent = path.getParent();
@@ -3048,7 +3080,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         );
         return options.withProductionPromotionOperatorAcceptance(
                 GpuProductionPromotionOperatorAcceptance.forContext(
-                        "acceptance:controlled-production-source-switching:" + kernelResource,
+                        productionSourceSwitchingAcceptanceId(kernelResource),
                         deviceProfile.backendTarget(),
                         deviceProfile,
                         options.optimizationProfile(),
@@ -3056,6 +3088,16 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         decision.mode()
                 )
         );
+    }
+
+    private static GpuRuntimeDeviceProfile productionSourceSwitchingDeviceProfile() {
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+            return backend.compileDeviceProfile();
+        }
+    }
+
+    private static String productionSourceSwitchingAcceptanceId(String kernelResource) {
+        return "acceptance:controlled-production-source-switching:" + kernelResource;
     }
 
     private static String perlinWorkloadSource() {
