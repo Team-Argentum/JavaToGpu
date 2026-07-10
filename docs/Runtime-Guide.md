@@ -431,9 +431,9 @@ Run the end-to-end hardware check with the same manifest and candidate SHA used 
   --console=plain --no-daemon
 ```
 
-The task depends on the activation gate, loads its exact artifact and sidecar, and executes the approved `PackedBlobWorkload` kernel. It writes `production-activation-token-smoke.properties` and still records all default runtime and production mutation switches as disabled.
+The task depends on the activation gate, loads its exact artifact and sidecar, and executes every approved real workload kernel: Perlin, packed blob, packed numeric, synthetic 3D packed grid, and image. It writes per-kernel status to `production-activation-token-smoke.properties` and still records all default runtime and production mutation switches as disabled.
 
-The OpenCL validation reporter includes this artifact in `production-promotion-explainability.properties` and its compact CI summary. The controlled activation-token smoke contributes one operational readiness item only; it does not set `productionSourceSwitchingAllowed`, enable the default source path, or authorize production mutation.
+The OpenCL validation reporter includes this artifact in `production-promotion-explainability.properties` and its compact CI summary. The readiness item requires full real-workload coverage, not a single successful kernel. It does not set `productionSourceSwitchingAllowed`, enable the default source path, or authorize production mutation.
 
 ## ABI Debug
 

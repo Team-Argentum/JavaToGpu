@@ -802,6 +802,14 @@ public final class OpenClValidationReporter {
             markdown.append("- Approved activation-token kernel executed: `")
                     .append(sanitizeInline(summary.controlledProductionActivationTokenApprovedKernelExecuted()))
                     .append("`\n");
+            markdown.append("- Activation-token real workload coverage: `")
+                    .append(summary.controlledProductionActivationTokenRealWorkloadCoveredCount())
+                    .append("/")
+                    .append(summary.controlledProductionActivationTokenRealWorkloadTotalCount())
+                    .append("`\n");
+            markdown.append("- Activation-token real workload coverage all: `")
+                    .append(sanitizeInline(summary.controlledProductionActivationTokenRealWorkloadCoveredAll()))
+                    .append("`\n");
             markdown.append("- Activation-token safe defaults: `")
                     .append(sanitizeInline(summary.controlledProductionActivationTokenSafeDefaults()))
                     .append("`\n");

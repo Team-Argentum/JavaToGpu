@@ -114,6 +114,10 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         properties.setProperty("controlledProductionActivationTokenSmoke.status", "passed");
         properties.setProperty("controlledProductionActivationTokenSmoke.tokenLoaded", "true");
         properties.setProperty("controlledProductionActivationTokenSmoke.approvedKernelExecuted", "true");
+        properties.setProperty("controlledProductionActivationTokenSmoke.realWorkload.covered.count", "2");
+        properties.setProperty("controlledProductionActivationTokenSmoke.realWorkload.total.count", "2");
+        properties.setProperty("controlledProductionActivationTokenSmoke.realWorkload.uncovered.count", "0");
+        properties.setProperty("controlledProductionActivationTokenSmoke.realWorkload.covered.all", "true");
         properties.setProperty("controlledProductionActivationTokenSmoke.safeDefaults", "true");
         properties.setProperty("controlledProductionActivationTokenSmoke.passed", "true");
         properties.setProperty("readinessChecklist.ready.count", "4");
@@ -147,6 +151,10 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=passed\n"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.tokenLoaded=true\n"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.approvedKernelExecuted=true\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.count=2\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.total.count=2\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.uncovered.count=0\n"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.all=true\n"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.safeDefaults=true\n"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=true\n"));
         assertTrue(formatted.contains("readinessChecklist.ready.count=4\n"));

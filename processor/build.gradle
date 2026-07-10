@@ -514,7 +514,7 @@ tasks.register('validateOpenClBackendSourcePromotionActivationGate', JavaExec) {
 
 tasks.register('openClProductionActivationTokenSmokeTest', Test) {
     group = 'verification'
-    description = 'Loads the exact controlled activation artifact and runs one approved OpenCL workload.'
+    description = 'Loads the exact controlled activation artifact and runs all approved OpenCL workloads.'
     dependsOn 'validateOpenClBackendSourcePromotionActivationGate'
     useJUnitPlatform()
     testClassesDirs = sourceSets.test.output.classesDirs
@@ -524,7 +524,7 @@ tasks.register('openClProductionActivationTokenSmokeTest', Test) {
     systemProperty 'javatogpu.opencl.productionActivationDigestFile', openClBackendSourcePromotionActivationGateDigestFile.absolutePath
     systemProperty 'javatogpu.opencl.productionActivationTokenSmokeFile', openClProductionActivationTokenSmokeFile.absolutePath
     filter {
-        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionActivationTokenArtifactRunsApprovedWorkloadOnAvailableOpenClDevice'
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionActivationTokenArtifactRunsAllApprovedWorkloadsOnAvailableOpenClDevice'
     }
     inputs.file(openClBackendSourcePromotionActivationGateFile)
     inputs.file(openClBackendSourcePromotionActivationGateDigestFile)

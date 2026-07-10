@@ -586,6 +586,10 @@ class OpenClValidationReportTest {
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.status=passed"));
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.tokenLoaded=true"));
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.approvedKernelExecuted=true"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.count=1"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.realWorkload.total.count=1"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.realWorkload.uncovered.count=0"));
+            assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.all=true"));
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.safeDefaults=true"));
             assertTrue(explainability.contains("controlledProductionActivationTokenSmoke.passed=true"));
             assertTrue(explainability.contains("readinessChecklist.ready.count=6"));
@@ -600,6 +604,8 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Controlled activation-token smoke: `passed`"));
             assertTrue(reportMarkdown.contains("- Activation token loaded: `true`"));
             assertTrue(reportMarkdown.contains("- Approved activation-token kernel executed: `true`"));
+            assertTrue(reportMarkdown.contains("- Activation-token real workload coverage: `1/1`"));
+            assertTrue(reportMarkdown.contains("- Activation-token real workload coverage all: `true`"));
             assertTrue(reportMarkdown.contains("- Activation-token safe defaults: `true`"));
             assertTrue(reportMarkdown.contains("- Production promotion operator accepted: `0/1`, all=`false`"));
             assertTrue(reportMarkdown.contains("- Production readiness checklist: `6 ready / 4 blocked`"));

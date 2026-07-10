@@ -110,6 +110,18 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("controlledProductionActivationTokenSmoke.approvedKernelExecuted=")
                 .append(summary.controlledProductionActivationTokenApprovedKernelExecuted())
                 .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.covered.count=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadCoveredCount())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.total.count=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadTotalCount())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.uncovered.count=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadUncoveredCount())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.covered.all=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadCoveredAll())
+                .append('\n');
         builder.append("controlledProductionActivationTokenSmoke.safeDefaults=")
                 .append(summary.controlledProductionActivationTokenSafeDefaults())
                 .append('\n');

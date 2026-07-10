@@ -98,6 +98,10 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=passed"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.tokenLoaded=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.approvedKernelExecuted=true"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.count=2"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.total.count=2"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.uncovered.count=0"));
+        assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.all=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.safeDefaults=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=true"));
         assertTrue(formatted.contains("readinessChecklist.item.count=10"));
@@ -214,9 +218,11 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("defaultRuntimeActivation", "false");
         properties.setProperty("defaultProductionSourceSwitching", "disabled");
         properties.setProperty("productionMutation", "disabled");
-        properties.setProperty("kernel.count", "1");
+        properties.setProperty("kernel.count", "2");
         properties.setProperty("kernel.0.resource", "kernel-a.cl");
         properties.setProperty("kernel.0.status", "passed");
+        properties.setProperty("kernel.1.resource", "kernel-b.cl");
+        properties.setProperty("kernel.1.status", "passed");
         return properties;
     }
 }

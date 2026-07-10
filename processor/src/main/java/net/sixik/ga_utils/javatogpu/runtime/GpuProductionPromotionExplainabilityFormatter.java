@@ -146,14 +146,16 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         ) && "disabled".equals(
                 activationTokenSmoke.getProperty("productionMutation", "unknown")
         );
-        boolean activationTokenApprovedKernelExecuted = approvedKernelExecuted(gate, activationTokenSmoke);
+        ControlledSourceSwitchingCoverage activationTokenSmokeCoverage =
+                controlledActivationTokenSmokeCoverage(gate, activationTokenSmoke);
+        boolean activationTokenApprovedKernelExecuted = !activationTokenSmokeCoverage.coveredResources().isEmpty();
         boolean activationTokenSmokePassed = "passed".equals(activationTokenSmoke.getProperty("status", "not-recorded"))
                 && "controlled-production-activation-token-smoke".equals(
                 activationTokenSmoke.getProperty("scope", "unknown")
         )
                 && activationTokenLoaded
                 && activationTokenSafeDefaults
-                && activationTokenApprovedKernelExecuted
+                && activationTokenSmokeCoverage.allCovered()
                 && "OPENCL".equals(activationTokenSmoke.getProperty("token.backendTarget", "UNKNOWN"))
                 && GpuBackendSourcePromotionActivationGate.ACTIVATION_SCOPE.equals(
                 activationTokenSmoke.getProperty("token.activationScope", "unknown")
@@ -367,6 +369,22 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("controlledProductionActivationTokenSmoke.approvedKernelExecuted=")
                 .append(activationTokenApprovedKernelExecuted)
                 .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.covered.count=")
+                .append(activationTokenSmokeCoverage.coveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.total.count=")
+                .append(activationTokenSmokeCoverage.realWorkloadResources().size())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.uncovered.count=")
+                .append(activationTokenSmokeCoverage.uncoveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.covered.all=")
+                .append(activationTokenSmokeCoverage.allCovered())
+                .append('\n');
+        appendIndexedResources(builder, "controlledProductionActivationTokenSmoke.realWorkload.covered",
+                activationTokenSmokeCoverage.coveredResources());
+        appendIndexedResources(builder, "controlledProductionActivationTokenSmoke.realWorkload.uncovered",
+                activationTokenSmokeCoverage.uncoveredResources());
         builder.append("controlledProductionActivationTokenSmoke.safeDefaults=")
                 .append(activationTokenSafeDefaults)
                 .append('\n');
@@ -382,17 +400,29 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         return appendContractFields(builder.toString());
     }
 
-    private static boolean approvedKernelExecuted(Properties workloadGate, Properties activationTokenSmoke) {
-        Set<String> workloadResources = new LinkedHashSet<>(resources(workloadGate, "sourceKernelResource"));
+    private static ControlledSourceSwitchingCoverage controlledActivationTokenSmokeCoverage(
+            Properties workloadGate,
+            Properties activationTokenSmoke
+    ) {
+        List<String> realWorkloadResources = resources(workloadGate, "sourceKernelResource");
+        Set<String> passedResources = new LinkedHashSet<>();
         int kernelCount = parsePositiveInt(activationTokenSmoke.getProperty("kernel.count", "0"));
         for (int index = 0; index < kernelCount; index++) {
             String prefix = "kernel." + index + ".";
-            if ("passed".equals(activationTokenSmoke.getProperty(prefix + "status"))
-                    && workloadResources.contains(activationTokenSmoke.getProperty(prefix + "resource"))) {
-                return true;
+            if ("passed".equals(activationTokenSmoke.getProperty(prefix + "status"))) {
+                passedResources.add(activationTokenSmoke.getProperty(prefix + "resource", "unknown"));
             }
         }
-        return false;
+        List<String> coveredResources = new ArrayList<>();
+        List<String> uncoveredResources = new ArrayList<>();
+        for (String resource : realWorkloadResources) {
+            if (passedResources.contains(resource)) {
+                coveredResources.add(resource);
+            } else {
+                uncoveredResources.add(resource);
+            }
+        }
+        return new ControlledSourceSwitchingCoverage(realWorkloadResources, coveredResources, uncoveredResources);
     }
 
     private static ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage(

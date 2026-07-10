@@ -42,6 +42,10 @@ public record GpuProductionPromotionExplainabilitySummary(
         String controlledProductionActivationTokenSmokeStatus,
         String controlledProductionActivationTokenLoaded,
         String controlledProductionActivationTokenApprovedKernelExecuted,
+        int controlledProductionActivationTokenRealWorkloadCoveredCount,
+        int controlledProductionActivationTokenRealWorkloadTotalCount,
+        int controlledProductionActivationTokenRealWorkloadUncoveredCount,
+        String controlledProductionActivationTokenRealWorkloadCoveredAll,
         String controlledProductionActivationTokenSafeDefaults,
         String controlledProductionActivationTokenSmokePassed,
         int readinessChecklistReadyCount,
@@ -84,6 +88,10 @@ public record GpuProductionPromotionExplainabilitySummary(
                 "false",
                 "not-recorded",
                 "false",
+                "false",
+                0,
+                0,
+                0,
                 "false",
                 "false",
                 "false",
@@ -147,6 +155,22 @@ public record GpuProductionPromotionExplainabilitySummary(
                         "controlledProductionActivationTokenSmoke.approvedKernelExecuted",
                         "false"
                 ),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionActivationTokenSmoke.realWorkload.covered.count",
+                        "0"
+                )),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionActivationTokenSmoke.realWorkload.total.count",
+                        "0"
+                )),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionActivationTokenSmoke.realWorkload.uncovered.count",
+                        "0"
+                )),
+                properties.getProperty(
+                        "controlledProductionActivationTokenSmoke.realWorkload.covered.all",
+                        "false"
+                ),
                 properties.getProperty("controlledProductionActivationTokenSmoke.safeDefaults", "false"),
                 properties.getProperty("controlledProductionActivationTokenSmoke.passed", "false"),
                 parsePositiveInt(properties.getProperty("readinessChecklist.ready.count", "0")),
@@ -207,6 +231,13 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + ", controlledActivationTokenLoaded=" + controlledProductionActivationTokenLoaded
                 + ", controlledActivationTokenApprovedKernelExecuted="
                 + controlledProductionActivationTokenApprovedKernelExecuted
+                + ", controlledActivationTokenRealWorkloadCoverage="
+                + controlledProductionActivationTokenRealWorkloadCoveredCount
+                + "/" + controlledProductionActivationTokenRealWorkloadTotalCount
+                + ", controlledActivationTokenRealWorkloadUncovered="
+                + controlledProductionActivationTokenRealWorkloadUncoveredCount
+                + ", controlledActivationTokenRealWorkloadCoverageAll="
+                + controlledProductionActivationTokenRealWorkloadCoveredAll
                 + ", controlledActivationTokenSafeDefaults=" + controlledProductionActivationTokenSafeDefaults
                 + ", controlledActivationTokenSmokePassed=" + controlledProductionActivationTokenSmokePassed
                 + ", readinessChecklistReady=" + readinessChecklistReadyCount
