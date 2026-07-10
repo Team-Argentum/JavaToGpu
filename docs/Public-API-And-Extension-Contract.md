@@ -209,6 +209,8 @@ Runtime optimizer extensions may declare `PRODUCTION_AFFECTING`, but production 
 
 Authorization is bound to extension id/version, backend target, device vendor and label, optimization profile, and original `IrGpu` identity. A decision produced for one kernel, device, version, or profile cannot authorize another runtime context. Review/non-production profiles may still run the pass to collect candidate IR and evidence. Extension failure isolation and persistence of authorization fields into production artifacts remain separate roadmap work.
 
+OpenCL production source switching applies the same fail-closed principle through `GpuProductionPromotionOperatorAcceptance`. The acceptance is bound to backend target, device vendor and label, driver version, optimization profile, kernel resource, and promotion decision mode. The legacy boolean operator-accepted flag remains readable for compatibility, but the production OpenCL lowerer and runtime source-switching decision require a matching identity-bound acceptance manifest.
+
 Extension execution is reported through `GpuExtensionExecutionReport` with a stable outcome and failure policy:
 
 - `SUCCEEDED` and `SKIPPED` describe normal execution decisions;

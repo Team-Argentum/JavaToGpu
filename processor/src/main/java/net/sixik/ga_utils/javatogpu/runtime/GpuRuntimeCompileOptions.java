@@ -115,6 +115,18 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    public GpuRuntimeCompileOptions withProductionPromotionOperatorAcceptance(
+            GpuProductionPromotionOperatorAcceptance acceptance
+    ) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withProductionPromotionOperatorAcceptance(acceptance),
+                deviceOverride
+        );
+    }
+
     public GpuRuntimeCompileOptions withDeviceOverride(GpuRuntimeDeviceOverride override) {
         return new GpuRuntimeCompileOptions(
                 backendTarget,

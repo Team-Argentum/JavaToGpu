@@ -384,7 +384,7 @@ class GpuBackendLowerersTest {
     }
 
     @Test
-    void openClLowererAllowsProductionIrGpuSourceOnlyWhenProductionSwitchingAndDecisionAreEnabled() {
+    void openClLowererRejectsLegacyOperatorBooleanWithoutIdentityBinding() {
         GpuKernelDescriptor descriptor = roundTripDescriptor();
         GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
                 .openClProductionIrGpuSource(List.of(), "vendor-tuned")
@@ -393,16 +393,60 @@ class GpuBackendLowerersTest {
                         "production-ready",
                         true,
                         true,
-                true,
-                "none",
-                "none",
-                "production promotion is explicitly enabled by accepted evidence"
+                        true,
+                        "none",
+                        "none",
+                        "test production decision"
                 ))
                 .withProductionPromotionOperatorAccepted(true);
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor,
                 options,
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(roundTripIrGpuArtifact(descriptor.kernelResource()))
+        );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest)
+        );
+
+        assertTrue(exception.getMessage().contains("operator-acceptance-binding-missing"));
+    }
+
+    @Test
+    void openClLowererAllowsProductionIrGpuSourceOnlyWhenProductionSwitchingAndDecisionAreEnabled() {
+        GpuKernelDescriptor descriptor = roundTripDescriptor();
+        GpuRuntimeDeviceProfile deviceProfile = GpuRuntimeDeviceProfile.generic(
+                GpuBackendTarget.OPENCL,
+                "OpenCL"
+        );
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                .openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                .withProductionPromotionDecision(new GpuProductionPromotionDecision(
+                        GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                        "production-ready",
+                        true,
+                        true,
+                        true,
+                        "none",
+                        "none",
+                        "production promotion is explicitly enabled by accepted evidence"
+                ));
+        options = options.withProductionPromotionOperatorAcceptance(
+                GpuProductionPromotionOperatorAcceptance.forContext(
+                        "acceptance:test-lowerer",
+                        GpuBackendTarget.OPENCL,
+                        deviceProfile,
+                        options.optimizationProfile(),
+                        descriptor,
+                        options.backendOptions().productionPromotionDecisionMode()
+                )
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                options,
+                deviceProfile,
                 Optional.of(roundTripIrGpuArtifact(descriptor.kernelResource()))
         );
 

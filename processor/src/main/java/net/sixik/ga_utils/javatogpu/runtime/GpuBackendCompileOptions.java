@@ -5,6 +5,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Backend-specific compile options kept separate from legacy OpenCL-style command-line args.
@@ -101,6 +102,10 @@ public record GpuBackendCompileOptions(
         return "true".equals(properties.getOrDefault(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, "false"));
     }
 
+    public Optional<GpuProductionPromotionOperatorAcceptance> productionPromotionOperatorAcceptance() {
+        return GpuProductionPromotionOperatorAcceptance.from(this);
+    }
+
     public GpuRuntimeDeviceSelfTestMode deviceSelfTestMode() {
         return GpuRuntimeDeviceSelfTestMode.parse(properties.get(RUNTIME_DEVICE_SELF_TEST_PROPERTY));
     }
@@ -117,6 +122,22 @@ public record GpuBackendCompileOptions(
     public GpuBackendCompileOptions withProductionPromotionOperatorAccepted(boolean accepted) {
         Map<String, String> updated = new LinkedHashMap<>(properties);
         updated.put(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, Boolean.toString(accepted));
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withProductionPromotionOperatorAcceptance(
+            GpuProductionPromotionOperatorAcceptance acceptance
+    ) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        for (String propertyName : GpuProductionPromotionOperatorAcceptance.propertyNames()) {
+            updated.remove(propertyName);
+        }
+        if (acceptance == null) {
+            updated.put(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, "false");
+        } else {
+            updated.put(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, "true");
+            updated.putAll(acceptance.properties());
+        }
         return new GpuBackendCompileOptions(backendTarget, flags, updated);
     }
 

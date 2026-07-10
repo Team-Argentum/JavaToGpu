@@ -66,6 +66,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadGat
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrArtifactLoader;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
@@ -2740,7 +2741,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 moduleArtifact,
                 reconstructionFromPromotionGate(moduleArtifact, promotionGate),
                 promotionGate,
-                GpuBackendSourceSwitchingPolicy.from(compileRequest.options().backendOptions())
+                GpuBackendSourceSwitchingPolicy.from(compileRequest.options().backendOptions()),
+                GpuProductionPromotionOperatorAcceptance.evaluate(compileRequest)
         );
     }
 

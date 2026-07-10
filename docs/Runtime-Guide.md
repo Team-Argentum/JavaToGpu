@@ -336,6 +336,30 @@ GpuRuntime.invokeWithCompileOptions(
 
 The preset enables the reconstructed-source review mode. Production runs keep using the normal generated OpenCL source unless you explicitly opt into future source-switching features.
 
+### Production Source Acceptance
+
+Production `IrGpu -> OpenCL` source switching requires more than `opencl.productionSourceSwitching=enabled` and a `production-enabled` promotion decision. The operator acceptance must be identity-bound to the exact backend, device vendor and label, driver version, optimization profile, kernel resource, and decision mode.
+
+```java
+GpuRuntimeCompileOptions compileOptions =
+        GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                .withProductionPromotionDecision(promotionDecision);
+
+GpuProductionPromotionOperatorAcceptance acceptance =
+        GpuProductionPromotionOperatorAcceptance.forContext(
+                "acceptance:rtx5070-reviewed-2026-07-10",
+                GpuBackendTarget.OPENCL,
+                reviewedDeviceProfile,
+                compileOptions.optimizationProfile(),
+                descriptor,
+                promotionDecision.mode()
+        );
+
+compileOptions = compileOptions.withProductionPromotionOperatorAcceptance(acceptance);
+```
+
+The legacy `withProductionPromotionOperatorAccepted(true)` flag is retained for compatibility and diagnostics, but it does not authorize the OpenCL production source path without the matching acceptance fields. A device, driver, profile, kernel, backend, or decision-mode mismatch fails closed and requires a newly reviewed acceptance.
+
 ## ABI Debug
 
 Enable ABI diagnostics with:

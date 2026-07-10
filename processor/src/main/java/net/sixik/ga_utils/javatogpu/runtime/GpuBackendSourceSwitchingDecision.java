@@ -81,6 +81,17 @@ public record GpuBackendSourceSwitchingDecision(
             GpuBackendSourcePromotionGate sourcePromotionGate,
             GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy
     ) {
+        return evaluate(provenance, module, reconstruction, sourcePromotionGate, sourceSwitchingPolicy, null);
+    }
+
+    public static GpuBackendSourceSwitchingDecision evaluate(
+            GpuRuntimeCompileProvenance provenance,
+            GpuBackendModuleArtifact module,
+            GpuBackendSourceReconstructionResult reconstruction,
+            GpuBackendSourcePromotionGate sourcePromotionGate,
+            GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy,
+            GpuProductionPromotionOperatorAcceptance.Result operatorAcceptance
+    ) {
         GpuRuntimeCompileProvenance resolvedProvenance = provenance == null
                 ? GpuRuntimeCompileProvenance.unknown()
                 : provenance;
@@ -109,7 +120,10 @@ public record GpuBackendSourceSwitchingDecision(
         String sourceSelection = policy.sourceSelection();
         String productionSourceSwitching = policy.productionSourceSwitching();
         String productionPromotionDecisionMode = policy.productionPromotionDecisionMode();
-        boolean productionPromotionOperatorAccepted = policy.productionPromotionOperatorAccepted();
+        GpuProductionPromotionOperatorAcceptance.Result resolvedOperatorAcceptance = operatorAcceptance == null
+                ? GpuProductionPromotionOperatorAcceptance.legacy(policy.productionPromotionOperatorAccepted())
+                : operatorAcceptance;
+        boolean productionPromotionOperatorAccepted = resolvedOperatorAcceptance.accepted();
         boolean irGpuSourceRequested = policy.irGpuSourceRequested();
         boolean productionProfileRequested = GpuRuntimeProductionProfiles.isProductionProfile(
                 resolvedProvenance.optimizationProfile()
@@ -152,7 +166,8 @@ public record GpuBackendSourceSwitchingDecision(
         } else if (!productionPromotionOperatorAccepted) {
             status = "blocked";
             decision = "reject-production-irgpu-source";
-            diagnostic = "production-like profile requested IrGpu source but production promotion was not explicitly accepted by the operator";
+            diagnostic = "production-like profile requested IrGpu source but production promotion was not explicitly accepted by the operator: "
+                    + resolvedOperatorAcceptance.diagnostic();
         } else {
             status = "production-switch-enabled";
             decision = "compile-irgpu-source-production";

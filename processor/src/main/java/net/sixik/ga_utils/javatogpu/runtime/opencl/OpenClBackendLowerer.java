@@ -9,6 +9,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingPolicy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionIrAcceptanceGate;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeProductionProfiles;
 
@@ -73,6 +74,8 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
             GpuRuntimeCompileRequest compileRequest,
             GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy
     ) {
+        GpuProductionPromotionOperatorAcceptance.Result operatorAcceptance =
+                GpuProductionPromotionOperatorAcceptance.evaluate(compileRequest);
         GpuProductionIrAcceptanceGate.evaluate(
                 "OpenCL",
                 "IrGpu source",
@@ -80,12 +83,13 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
                 GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile()),
                 sourceSwitchingPolicy.productionSourceSwitchingEnabled(),
                 sourceSwitchingPolicy.productionPromotionDecisionMode(),
-                sourceSwitchingPolicy.productionPromotionOperatorAccepted()
+                operatorAcceptance.accepted()
         ).throwIfRejected("pass backend option "
                 + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
                 + "="
                 + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
-                + " only after accepted production-promotion evidence is loaded");
+                + " only after accepted production-promotion evidence is loaded; "
+                + operatorAcceptance.diagnostic());
     }
 
     private GpuBackendModuleArtifact lowerIrGpuSource(

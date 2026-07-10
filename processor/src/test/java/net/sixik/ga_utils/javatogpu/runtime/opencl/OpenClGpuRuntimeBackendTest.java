@@ -36,6 +36,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
@@ -1970,6 +1971,33 @@ class OpenClGpuRuntimeBackendTest {
         Path explainabilityFile = Files.createTempFile("javatogpu-production-source-switching-explainability", ".properties");
         writeProductionReadyExplainability(explainabilityFile);
         GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
+        GpuRuntimeDeviceProfile deviceProfile = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "Mock GPU",
+                "unknown",
+                "unknown",
+                "OpenCL 3.0 Mock",
+                -1L,
+                32_768L,
+                256L,
+                -1L,
+                true,
+                true,
+                true
+        );
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClProductionIrGpuSource(
+                List.of(),
+                "vendor-tuned"
+        ).withProductionPromotionOperatorAcceptance(
+                GpuProductionPromotionOperatorAcceptance.forContext(
+                        "acceptance:test-packaged-irgpu",
+                        GpuBackendTarget.OPENCL,
+                        deviceProfile,
+                        "vendor-tuned",
+                        descriptor,
+                        GpuProductionPromotionDecision.PRODUCTION_ENABLED
+                )
+        );
         AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
         String previousExplainabilityFile = System.getProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
         try {
@@ -1990,8 +2018,7 @@ class OpenClGpuRuntimeBackendTest {
             backend.invoke(new GpuKernelInvocation(
                     descriptor,
                     new Object[]{new float[]{1.0f}, 2.0f, new float[]{0.0f}},
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionOperatorAccepted(true)
+                    options
             ));
         } finally {
             if (previousExplainabilityFile == null) {

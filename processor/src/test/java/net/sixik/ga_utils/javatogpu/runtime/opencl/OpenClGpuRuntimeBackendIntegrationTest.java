@@ -30,7 +30,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestCache;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestMode;
@@ -863,9 +865,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             backend.invoke(new GpuKernelInvocation(
                     descriptor,
                     new Object[]{input, 2.5f, output},
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionDecision(productionEnabledDecision())
-                            .withProductionPromotionOperatorAccepted(true)
+                    productionSourceSwitchingOptions(backend, descriptor.kernelResource())
             ));
         }
 
@@ -893,9 +893,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             backend.invoke(new GpuKernelInvocation(
                     descriptor,
                     new Object[]{inputImage, outputImage, sampler, gpuOutput},
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionDecision(productionEnabledDecision())
-                            .withProductionPromotionOperatorAccepted(true)
+                    productionSourceSwitchingOptions(backend, descriptor.kernelResource())
             ));
             float[] gpuWritten = backend.readRgbaFloatImage(outputImage);
 
@@ -914,9 +912,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             backend.invoke(new GpuKernelInvocation(
                     descriptor,
                     new Object[]{left, right, output},
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionDecision(productionEnabledDecision())
-                            .withProductionPromotionOperatorAccepted(true)
+                    productionSourceSwitchingOptions(backend, descriptor.kernelResource())
             ));
         }
 
@@ -949,9 +945,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                     ownerClass,
                     "kernel",
                     256L,
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionDecision(productionEnabledDecision())
-                            .withProductionPromotionOperatorAccepted(true),
+                    productionSourceSwitchingOptions("javatogpu/sample/PerlinWorkload/kernel.cl"),
                     noise,
                     permutation0,
                     permutation1,
@@ -989,9 +983,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                     ownerClass,
                     "kernel",
                     6L,
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionDecision(productionEnabledDecision())
-                            .withProductionPromotionOperatorAccepted(true),
+                    productionSourceSwitchingOptions("javatogpu/sample/PackedNumericWorkload/kernel.cl"),
                     blob,
                     view,
                     gpuOutput
@@ -1025,9 +1017,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                     ownerClass,
                     "kernel",
                     8L,
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionDecision(productionEnabledDecision())
-                            .withProductionPromotionOperatorAccepted(true),
+                    productionSourceSwitchingOptions("javatogpu/sample/PackedBlobWorkload/kernel.cl"),
                     blob,
                     view,
                     gpuOutput
@@ -1062,9 +1052,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                     ownerClass,
                     "kernel",
                     net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(8L, 8L, 2L, 8L, 8L, 1L),
-                    GpuRuntimeCompileOptions.openClProductionIrGpuSource(List.of(), "vendor-tuned")
-                            .withProductionPromotionDecision(productionEnabledDecision())
-                            .withProductionPromotionOperatorAccepted(true),
+                    productionSourceSwitchingOptions("javatogpu/sample/Synthetic3DPackedGridWorkload/kernel.cl"),
                     blob,
                     layout,
                     gpuOutput
@@ -3034,6 +3022,39 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 "none",
                 "none",
                 "controlled OpenCL source-switching smoke enables production IrGpu source compilation"
+        );
+    }
+
+    private static GpuRuntimeCompileOptions productionSourceSwitchingOptions(String kernelResource) {
+        try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
+            return productionSourceSwitchingOptions(backend, kernelResource);
+        }
+    }
+
+    private static GpuRuntimeCompileOptions productionSourceSwitchingOptions(
+            OpenClGpuRuntimeBackend backend,
+            String kernelResource
+    ) {
+        GpuRuntimeDeviceProfile deviceProfile = backend.compileDeviceProfile();
+        GpuProductionPromotionDecision decision = productionEnabledDecision();
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                .openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                .withProductionPromotionDecision(decision);
+        GpuKernelDescriptor bindingDescriptor = new GpuKernelDescriptor(
+                "gpu_kernel",
+                kernelResource,
+                "",
+                List.of()
+        );
+        return options.withProductionPromotionOperatorAcceptance(
+                GpuProductionPromotionOperatorAcceptance.forContext(
+                        "acceptance:controlled-production-source-switching:" + kernelResource,
+                        deviceProfile.backendTarget(),
+                        deviceProfile,
+                        options.optimizationProfile(),
+                        bindingDescriptor,
+                        decision.mode()
+                )
         );
     }
 
