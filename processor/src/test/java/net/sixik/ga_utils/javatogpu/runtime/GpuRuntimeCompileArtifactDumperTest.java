@@ -27,6 +27,48 @@ class GpuRuntimeCompileArtifactDumperTest {
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
 
     @Test
+    void dumpsStructuredRuntimeEquivalenceComparisonCases() {
+        GpuRuntimeEquivalenceCaseEvidence caseEvidence = new GpuRuntimeEquivalenceCaseEvidence(
+                "runtime-invocation-0",
+                "descriptor-source-vs-irgpu-reconstructed-source",
+                java.util.Map.of("output", "[0]"),
+                java.util.Map.of("output", "[7]"),
+                java.util.Map.of("output", "[7]"),
+                java.util.Map.of("output", "exact-int-array"),
+                java.util.Map.of("output", true),
+                List.of()
+        );
+        GpuRuntimeEquivalenceEvidence evidence = new GpuRuntimeEquivalenceEvidence(
+                "passed",
+                "OPENCL",
+                "Mock Vendor",
+                "Mock GPU",
+                "review",
+                true,
+                true,
+                1,
+                1,
+                List.of("outputs matched"),
+                List.of(caseEvidence)
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                GpuRuntimeCompileArtifactSnapshot.legacy(descriptor()).withRuntimeEquivalenceEvidence(evidence)
+        );
+        String properties = dump.artifact("runtime-equivalence.properties");
+
+        assertTrue(properties.contains("comparison.case.count=1"));
+        assertTrue(properties.contains(
+                "comparison.case.0.comparisonMode=descriptor-source-vs-irgpu-reconstructed-source"
+        ));
+        assertTrue(properties.contains("comparison.case.0.input.0.value=[0]"));
+        assertTrue(properties.contains("comparison.case.0.output.0.reference=[7]"));
+        assertTrue(properties.contains("comparison.case.0.output.0.candidate=[7]"));
+        assertTrue(properties.contains("comparison.case.0.output.0.tolerance=exact-int-array"));
+        assertTrue(properties.contains("comparison.case.0.output.0.equivalent=true"));
+    }
+
+    @Test
     void preservesBinaryRuntimeCompileArtifacts() {
         byte[] binary = new byte[]{1, 2, 3, 4};
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor())

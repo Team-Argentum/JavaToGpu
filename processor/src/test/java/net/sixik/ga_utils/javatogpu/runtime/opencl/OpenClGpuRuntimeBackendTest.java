@@ -54,6 +54,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendUnavailableExceptio
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCapabilityException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSiteResolver;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptionsException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceCaseEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
@@ -1420,8 +1421,19 @@ class OpenClGpuRuntimeBackendTest {
         assertTrue(snapshot.runtimeEquivalenceEvidence().equivalent());
         assertEquals(1, snapshot.runtimeEquivalenceEvidence().inputCaseCount());
         assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparedOutputCount());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparisonCases().size());
+        GpuRuntimeEquivalenceCaseEvidence caseEvidence = snapshot.runtimeEquivalenceEvidence().comparisonCases().get(0);
+        assertEquals("descriptor-source-vs-irgpu-reconstructed-source", caseEvidence.comparisonMode());
+        assertEquals("[0]", caseEvidence.inputs().get("output"));
+        assertEquals("[7]", caseEvidence.referenceOutputs().get("output"));
+        assertEquals("[7]", caseEvidence.candidateOutputs().get("output"));
+        assertEquals("exact-int-array", caseEvidence.tolerances().get("output"));
+        assertTrue(caseEvidence.outputEquivalence().get("output"));
         assertTrue(snapshot.runtimeEquivalenceEvidence().diagnostics().contains(
                 "descriptor and reconstructed OpenCL outputs matched for isolated array runtime-equivalence"
+        ));
+        assertTrue(snapshot.runtimeEquivalenceEvidence().toPropertiesText().contains(
+                "comparison.case.0.output.0.reference=[7]"
         ));
         assertEquals(3, compiledResources.size());
         assertEquals("javatogpu/sample/Demo/kernel.cl", compiledResources.get(0));
@@ -1464,6 +1476,13 @@ class OpenClGpuRuntimeBackendTest {
         assertFalse(snapshot.runtimeEquivalenceEvidence().equivalent());
         assertEquals(1, snapshot.runtimeEquivalenceEvidence().inputCaseCount());
         assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparedOutputCount());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparisonCases().size());
+        GpuRuntimeEquivalenceCaseEvidence caseEvidence = snapshot.runtimeEquivalenceEvidence().comparisonCases().get(0);
+        assertEquals("[7]", caseEvidence.referenceOutputs().get("output"));
+        assertEquals("[9]", caseEvidence.candidateOutputs().get("output"));
+        assertEquals("exact-int-array", caseEvidence.tolerances().get("output"));
+        assertFalse(caseEvidence.outputEquivalence().get("output"));
+        assertEquals(1, caseEvidence.diagnostics().size());
         assertTrue(snapshot.runtimeEquivalenceEvidence().diagnostics().contains(
                 "runtime-equivalence output mismatch for parameter 'output' at argument 0"
         ));
