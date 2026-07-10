@@ -360,6 +360,10 @@ compileOptions = compileOptions.withProductionPromotionOperatorAcceptance(accept
 
 The legacy `withProductionPromotionOperatorAccepted(true)` flag is retained for compatibility and diagnostics, but it does not authorize the OpenCL production source path without the matching acceptance fields. A device, driver, profile, kernel, backend, or decision-mode mismatch fails closed and requires a newly reviewed acceptance.
 
+Hardware validation joins the real-workload promotion evidence with controlled identity-bound acceptance in `backend-source-promotion-candidate-gate.properties`. The candidate gate is `review-ready` only when every workload kernel is review-ready, source-parity matched, runtime-equivalent, present in the controlled source-switching run, operator-accepted, and bound to the recorded device identity.
+
+This artifact is a review boundary, not a runtime enablement switch. A review-ready candidate still records `defaultProductionSourceSwitching=disabled` and `productionMutation=disabled`; normal application execution continues to use the default generated OpenCL source.
+
 ## ABI Debug
 
 Enable ABI diagnostics with:

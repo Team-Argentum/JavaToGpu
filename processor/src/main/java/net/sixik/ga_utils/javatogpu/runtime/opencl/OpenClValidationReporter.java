@@ -27,6 +27,8 @@ public final class OpenClValidationReporter {
             "javatogpu.opencl.productionSourceSwitchingValidationFile";
     private static final String BACKEND_SOURCE_PROMOTION_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionGateFile";
     private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
+    private static final String BACKEND_SOURCE_PROMOTION_CANDIDATE_GATE_FILE_PROPERTY =
+            "javatogpu.opencl.backendSourcePromotionCandidateGateFile";
     private static final String I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY = "javatogpu.opencl.i3ReadinessWorkloadSummaryFile";
     private static final String PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY = "javatogpu.opencl.productionPromotionExplainabilityFile";
     private static final String BACKEND_PROMOTION_ARTIFACT_SUPPORT_FILE_PROPERTY = "javatogpu.opencl.backendPromotionArtifactSupportFile";
@@ -129,6 +131,7 @@ public final class OpenClValidationReporter {
         appendLongRunningSummary(markdown);
         appendBackendSourcePromotionContractSummary(markdown);
         appendBackendSourcePromotionWorkloadSummary(markdown);
+        appendBackendSourcePromotionCandidateSummary(markdown);
         appendProductionPromotionExplainabilitySummary(markdown);
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
@@ -636,6 +639,100 @@ public final class OpenClValidationReporter {
             ))).append("`\n");
             markdown.append("- Production source switching: `disabled`\n");
             markdown.append("- Scope: `real workload promotion gate; fail-closed until workload evidence is wired`\n");
+            markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
+        } catch (Throwable failure) {
+            markdown.append("- Status: `failed to read`\n");
+            markdown.append("- Gate file: `").append(gatePath).append("`\n");
+            markdown.append("- Error: `").append(sanitizeInline(failure.toString())).append("`\n\n");
+        }
+    }
+
+    private static void appendBackendSourcePromotionCandidateSummary(StringBuilder markdown) {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_CANDIDATE_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return;
+        }
+
+        markdown.append("## Backend Source Promotion Candidate Gate\n\n");
+        try {
+            java.util.Properties properties = loadPropertiesIfExists(Paths.get(gatePath));
+            if (properties.isEmpty()) {
+                markdown.append("- Status: `not recorded`\n");
+                markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
+                return;
+            }
+            int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+            int candidateReadyCount = parsePositiveInt(properties.getProperty("candidateReady.count", "0"));
+            int acceptedCount = parsePositiveInt(properties.getProperty("operatorAcceptance.accepted.count", "0"));
+            int boundCount = parsePositiveInt(properties.getProperty("operatorAcceptance.bound.count", "0"));
+            int blockerCount = parsePositiveInt(properties.getProperty("blocker.count", "0"));
+            markdown.append("- Status: `")
+                    .append(sanitizeInline(properties.getProperty("status", "unknown")))
+                    .append("`\n");
+            markdown.append("- Review ready: `")
+                    .append(sanitizeInline(properties.getProperty("reviewReady", "unknown")))
+                    .append("`\n");
+            markdown.append("- Candidate ready: `")
+                    .append(candidateReadyCount)
+                    .append("/")
+                    .append(kernelCount)
+                    .append("`, all=`")
+                    .append(sanitizeInline(properties.getProperty("candidateReady.all", "false")))
+                    .append("`\n");
+            markdown.append("- Source parity matched: `")
+                    .append(sanitizeInline(properties.getProperty("sourceParityMatched", "unknown")))
+                    .append("`\n");
+            markdown.append("- Runtime equivalence passed: `")
+                    .append(sanitizeInline(properties.getProperty("runtimeEquivalencePassed", "unknown")))
+                    .append("`\n");
+            markdown.append("- Controlled source switching: `")
+                    .append(sanitizeInline(properties.getProperty("controlledSourceSwitching.status", "not-recorded")))
+                    .append("`\n");
+            markdown.append("- Operator acceptance mode: `")
+                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.mode", "not-recorded")))
+                    .append("`\n");
+            markdown.append("- Operator accepted: `")
+                    .append(acceptedCount)
+                    .append("/")
+                    .append(kernelCount)
+                    .append("`, all=`")
+                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.accepted.all", "false")))
+                    .append("`\n");
+            markdown.append("- Operator bound: `")
+                    .append(boundCount)
+                    .append("/")
+                    .append(kernelCount)
+                    .append("`, all=`")
+                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.bound.all", "false")))
+                    .append("`\n");
+            markdown.append("- Device vendor: `")
+                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.deviceVendor", "unknown")))
+                    .append("`\n");
+            markdown.append("- Device label: `")
+                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.deviceLabel", "unknown")))
+                    .append("`\n");
+            markdown.append("- Driver version: `")
+                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.driverVersion", "unknown")))
+                    .append("`\n");
+            markdown.append("- Default production source switching: `")
+                    .append(sanitizeInline(properties.getProperty("defaultProductionSourceSwitching", "disabled")))
+                    .append("`\n");
+            markdown.append("- Candidate production source switching: `")
+                    .append(sanitizeInline(properties.getProperty("candidateProductionSourceSwitching", "blocked")))
+                    .append("`\n");
+            markdown.append("- Production mutation: `")
+                    .append(sanitizeInline(properties.getProperty("productionMutation", "disabled")))
+                    .append("`\n");
+            markdown.append("- Blocker count: `").append(blockerCount).append("`\n");
+            if (blockerCount > 0) {
+                markdown.append("- First blocker: `")
+                        .append(sanitizeInline(properties.getProperty("blocker.0", "unknown")))
+                        .append("`\n");
+            }
+            String diagnostic = properties.getProperty("diagnostic", "");
+            if (!diagnostic.isBlank()) {
+                markdown.append("- Diagnostic: `").append(sanitizeInline(diagnostic)).append("`\n");
+            }
             markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
         } catch (Throwable failure) {
             markdown.append("- Status: `failed to read`\n");

@@ -211,6 +211,7 @@ Common calls:
 - `GpuRuntimeCompileOptions.withDeviceSelfTestMode(...)` for `AUTO`, `DISABLED`, or strict `REQUIRED` startup correctness evidence.
 - `GpuRuntimeCompileOptions.openClIrGpuSourceReview(...)` for opt-in reconstructed-`IrGpu` source smoke/review runs without changing the production default source path.
 - `GpuProductionPromotionOperatorAcceptance` for identity-bound operator approval of a reviewed production source-switching context. The binding includes backend, device vendor/label, driver, optimization profile, kernel resource, and production decision mode.
+- `GpuBackendSourcePromotionCandidateGate` for joining real-workload readiness with controlled identity-bound acceptance. A review-ready result remains non-mutating and does not enable default production source switching.
 
 Runtime failures share the public `GpuRuntimeException` base type. Catch a specific subtype when recovery depends on the phase, or catch the base type for a general CPU/backend fallback:
 

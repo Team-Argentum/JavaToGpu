@@ -613,6 +613,68 @@ class OpenClValidationReportTest {
     }
 
     @Test
+    void validationReportIncludesReviewReadyProductionCandidateGate() throws Exception {
+        java.nio.file.Path candidateGateFile = java.nio.file.Files.createTempFile(
+                "javatogpu-backend-source-promotion-candidate", ".properties");
+        java.nio.file.Path reportFile = java.nio.file.Files.createTempFile(
+                "javatogpu-opencl-report-production-candidate", ".md");
+        java.nio.file.Files.writeString(candidateGateFile, String.join("\n",
+                "status=review-ready",
+                "reviewReady=true",
+                "defaultProductionSourceSwitching=disabled",
+                "candidateProductionSourceSwitching=review-ready",
+                "productionMutation=disabled",
+                "kernel.count=5",
+                "candidateReady.count=5",
+                "candidateReady.all=true",
+                "sourceParityMatched=true",
+                "runtimeEquivalencePassed=true",
+                "controlledSourceSwitching.status=passed",
+                "operatorAcceptance.mode=identity-bound",
+                "operatorAcceptance.accepted.count=5",
+                "operatorAcceptance.accepted.all=true",
+                "operatorAcceptance.bound.count=5",
+                "operatorAcceptance.bound.all=true",
+                "operatorAcceptance.deviceVendor=NVIDIA Corporation",
+                "operatorAcceptance.deviceLabel=NVIDIA CUDA / NVIDIA GeForce RTX 5070",
+                "operatorAcceptance.driverVersion=595.97",
+                "blocker.count=0",
+                "diagnostic=real workload production candidate is review-ready; default production source switching remains disabled",
+                ""
+        ));
+        String previousCandidateGateFile = System.getProperty(
+                "javatogpu.opencl.backendSourcePromotionCandidateGateFile");
+        String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
+        try {
+            System.setProperty(
+                    "javatogpu.opencl.backendSourcePromotionCandidateGateFile",
+                    candidateGateFile.toString()
+            );
+            System.setProperty("javatogpu.opencl.validationReportFile", reportFile.toString());
+
+            OpenClValidationReporter.main(new String[0]);
+
+            String reportMarkdown = java.nio.file.Files.readString(reportFile);
+            assertTrue(reportMarkdown.contains("## Backend Source Promotion Candidate Gate"));
+            assertTrue(reportMarkdown.contains("- Status: `review-ready`"));
+            assertTrue(reportMarkdown.contains("- Candidate ready: `5/5`, all=`true`"));
+            assertTrue(reportMarkdown.contains("- Operator accepted: `5/5`, all=`true`"));
+            assertTrue(reportMarkdown.contains("- Operator bound: `5/5`, all=`true`"));
+            assertTrue(reportMarkdown.contains("- Device vendor: `NVIDIA Corporation`"));
+            assertTrue(reportMarkdown.contains("- Device label: `NVIDIA CUDA / NVIDIA GeForce RTX 5070`"));
+            assertTrue(reportMarkdown.contains("- Driver version: `595.97`"));
+            assertTrue(reportMarkdown.contains("- Default production source switching: `disabled`"));
+            assertTrue(reportMarkdown.contains("- Production mutation: `disabled`"));
+        } finally {
+            restoreProperty(
+                    "javatogpu.opencl.backendSourcePromotionCandidateGateFile",
+                    previousCandidateGateFile
+            );
+            restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
+        }
+    }
+
+    @Test
     void validationReportAndHistoryExposeRuntimeSnapshotWorkloadGateEvidence() throws Exception {
         java.nio.file.Path workloadGateFile = java.nio.file.Files.createTempFile(
                 "javatogpu-backend-source-promotion-workload-runtime-snapshot", ".properties");
@@ -1299,9 +1361,10 @@ class OpenClValidationReportTest {
             String buildScript = java.nio.file.Files.readString(findRepositoryFile("processor/build.gradle"));
             String sourceSwitchingDependency = "dependsOn 'openClProductionSourceSwitchingValidationTest'";
             assertEquals(
-                    2,
+                    3,
                     buildScript.split(java.util.regex.Pattern.quote(sourceSwitchingDependency), -1).length - 1
             );
+            assertTrue(buildScript.contains("openClBackendSourcePromotionCandidateGate"));
             assertTrue(buildScript.contains("prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
             assertTrue(buildScript.contains("OpenClKernelLaunchAdvisoryNegativeFixtureCli"));
         } finally {

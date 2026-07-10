@@ -211,6 +211,8 @@ Authorization is bound to extension id/version, backend target, device vendor an
 
 OpenCL production source switching applies the same fail-closed principle through `GpuProductionPromotionOperatorAcceptance`. The acceptance is bound to backend target, device vendor and label, driver version, optimization profile, kernel resource, and promotion decision mode. The legacy boolean operator-accepted flag remains readable for compatibility, but the production OpenCL lowerer and runtime source-switching decision require a matching identity-bound acceptance manifest.
 
+`GpuBackendSourcePromotionCandidateGate` is the operational join between real-workload source-parity/runtime-equivalence evidence and controlled identity-bound acceptance. It requires complete per-resource evidence and fails closed when a workload, acceptance, or identity binding is absent. Its `review-ready` status authorizes review of a production candidate only; it does not authorize default source switching or production mutation.
+
 Extension execution is reported through `GpuExtensionExecutionReport` with a stable outcome and failure policy:
 
 - `SUCCEEDED` and `SKIPPED` describe normal execution decisions;

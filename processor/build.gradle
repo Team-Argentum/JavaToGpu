@@ -58,6 +58,7 @@ def openClBackendPromotionArtifactSupportFile = layout.buildDirectory.file('repo
 def openClBackendSourcePromotionWorkloadGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile
 def openClBackendSourcePromotionWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-summary.properties').get().asFile
 def openClProductionSourceSwitchingValidationFile = layout.buildDirectory.file('reports/opencl/production-source-switching-validation.properties').get().asFile
+def openClBackendSourcePromotionCandidateGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-candidate-gate.properties').get().asFile
 def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-drift.properties').get().asFile
 def openClCompilerResourceDriftFile = layout.buildDirectory.file('reports/opencl/runtime-compiler-resource-drift.properties').get().asFile
 def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
@@ -439,6 +440,19 @@ tasks.register('openClProductionSourceSwitchingValidationTest', Test) {
     attachBucketStatusRecording(it)
 }
 
+tasks.register('openClBackendSourcePromotionCandidateGate', JavaExec) {
+    group = 'verification'
+    description = 'Builds and validates the identity-bound production candidate gate for real OpenCL workloads.'
+    dependsOn 'openClWorkloadValidationTest'
+    dependsOn 'openClProductionSourceSwitchingValidationTest'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionCandidateGateCli'
+    args openClBackendSourcePromotionWorkloadGateFile.absolutePath,
+            openClProductionSourceSwitchingValidationFile.absolutePath,
+            openClBackendSourcePromotionCandidateGateFile.absolutePath
+    finalizedBy 'openClValidationReport'
+}
+
 tasks.register('openClLongRunningStabilityTest', Test) {
     group = 'verification'
     description = 'Runs long-running real-device OpenCL ABI/resource stability coverage.'
@@ -466,6 +480,7 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', openClBackendSourcePromotionWorkloadGateFile.absolutePath
+    systemProperty 'javatogpu.opencl.backendSourcePromotionCandidateGateFile', openClBackendSourcePromotionCandidateGateFile.absolutePath
     systemProperty 'javatogpu.opencl.i3ReadinessWorkloadSummaryFile', openClI3ReadinessWorkloadSummaryFile.absolutePath
     systemProperty 'javatogpu.opencl.productionPromotionExplainabilityFile', openClProductionPromotionExplainabilityFile.absolutePath
     systemProperty 'javatogpu.opencl.backendPromotionArtifactSupportFile', openClBackendPromotionArtifactSupportFile.absolutePath
@@ -840,6 +855,7 @@ tasks.register('openClNvidiaRoutine') {
     dependsOn 'openClWorkloadValidationTest'
     dependsOn 'openClIrGpuSourceReviewTest'
     dependsOn 'openClProductionSourceSwitchingValidationTest'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'
@@ -853,6 +869,7 @@ tasks.register('openClOperationalRoutine') {
     dependsOn 'openClWorkloadValidationTest'
     dependsOn 'openClIrGpuSourceReviewTest'
     dependsOn 'openClProductionSourceSwitchingValidationTest'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'

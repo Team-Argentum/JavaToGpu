@@ -51,6 +51,7 @@ Important buckets include:
 - `:processor:structAbiTest`
 - `:processor:openClVendorValidation`
 - `:processor:openClWorkloadValidationTest`
+- `:processor:openClBackendSourcePromotionCandidateGate`
 - `:processor:openClValidationReport`
 
 You usually do not need to run buckets one by one unless you are narrowing down a failure.
@@ -66,10 +67,15 @@ processor/build/reports/opencl/bucket-status.properties
 processor/build/reports/opencl/workload-summary.properties
 processor/build/reports/opencl/long-running-summary.properties
 processor/build/reports/opencl/backend-source-promotion-gate.properties
+processor/build/reports/opencl/backend-source-promotion-workload-gate.properties
+processor/build/reports/opencl/production-source-switching-validation.properties
+processor/build/reports/opencl/backend-source-promotion-candidate-gate.properties
 processor/build/test-results/
 ```
 
 These files are more useful than a screenshot because they preserve bucket status, device details, and machine-readable failure state.
+
+The candidate gate combines the real-workload gate with controlled source-switching acceptance for the same kernel resources and device identity. `review-ready` means the candidate evidence is complete; default production source switching and production mutation remain disabled.
 
 ## Optional IR Validation
 
