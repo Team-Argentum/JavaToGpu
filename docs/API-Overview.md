@@ -100,6 +100,8 @@ When an estimate is close to or above the current device-profile budget, `optimi
 
 Successful OpenCL program builds query `CL_PROGRAM_BUILD_LOG` and retain any returned diagnostics in the runtime compile snapshot. Artifact dumping produces `backend-compiler-feedback.properties`; common NVIDIA, AMD, and Intel/general resource lines are parsed into separate general/vector/scalar register counts, spill bytes, stack-frame bytes, local-memory bytes, and occupancy. When both values exist, `runtime-ir-analysis.properties` compares the selected compiler register count with the heuristic estimate. Empty driver logs remain valid and simply produce unavailable feedback. This comparison is diagnostic and does not enable an optimization automatically.
 
+Hardware workload validation performs an additional fail-safe diagnostic build. NVIDIA uses `-cl-nv-verbose`; custom or AMD options can be provided with `JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS`. The diagnostic program is discarded after its log is captured and never replaces the production program.
+
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
 
 ```java

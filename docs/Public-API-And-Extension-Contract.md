@@ -99,6 +99,8 @@ The register-pressure artifact contract includes analysis/model version, budget 
 
 `OpenClRuntimeSession` queries `CL_PROGRAM_BUILD_LOG` after a successful native program build and attaches the result to `GpuRuntimeCompileArtifactSnapshot`. The lookup is fail-safe: an unavailable build-info query or empty driver log cannot invalidate an otherwise successful compilation. Failed builds preserve their driver diagnostics through the structured runtime compilation exception path.
 
+CI hardware workloads may enable `OpenClCompilerDiagnosticCapture`, which performs a second isolated build after production compilation. Configuration is supplied by `javatogpu.opencl.compilerDiagnostics`, `javatogpu.opencl.compilerDiagnosticArgs`, `JTG_OPENCL_COMPILER_DIAGNOSTICS`, or `JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS`. NVIDIA has a built-in verbose option; vendors without a reviewed safe default are recorded as `skipped-no-options`. Diagnostic failures are captured as evidence and must not affect the production program.
+
 Artifact dumping always emits `backend-compiler-feedback.properties`. When metrics are available, the artifact records every provider execution and parsed result plus the selected result. `runtime-ir-analysis.properties` additionally records the heuristic/compiler register delta and comparison status. Compiler feedback remains advisory and cannot satisfy optimizer proof or production-promotion requirements by itself.
 
 ### Runtime failure hierarchy

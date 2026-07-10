@@ -40,6 +40,9 @@ public record GpuBackendCompilerFeedbackReport(
         fields.put("backendFormat", request.backendFormat());
         fields.put("backendResource", request.backendResource());
         fields.put("compileLogAvailable", Boolean.toString(!request.compileLog().isBlank()));
+        Map<String, String> diagnosticCompilation = diagnosticCompilationFields(request.compileLog());
+        fields.put("diagnosticCompilation.present", Boolean.toString(!diagnosticCompilation.isEmpty()));
+        diagnosticCompilation.forEach((key, value) -> fields.put("diagnosticCompilation." + key, value));
         fields.put("feedback.count", Integer.toString(feedback.size()));
         fields.put("selected.present", Boolean.toString(available()));
         selected().ifPresent(value -> fields.putAll(value.artifactFields("selected")));
@@ -65,5 +68,32 @@ public record GpuBackendCompilerFeedbackReport(
 
     private static String safeValue(String value) {
         return value == null ? "" : value.replace("\r", " ").replace("\n", " ");
+    }
+
+    private static Map<String, String> diagnosticCompilationFields(String compileLog) {
+        if (compileLog == null || compileLog.isBlank()) {
+            return Map.of();
+        }
+        String[] lines = compileLog.split("\\R");
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        boolean insideSection = false;
+        for (String line : lines) {
+            if ("[javatogpu-opencl-compiler-diagnostics]".equals(line.trim())) {
+                insideSection = true;
+                continue;
+            }
+            if (insideSection && line.startsWith("[")) {
+                break;
+            }
+            if (!insideSection) {
+                continue;
+            }
+            int separator = line.indexOf('=');
+            if (separator <= 0) {
+                continue;
+            }
+            fields.put(line.substring(0, separator).trim(), line.substring(separator + 1).trim());
+        }
+        return fields.isEmpty() ? Map.of() : Collections.unmodifiableMap(fields);
     }
 }

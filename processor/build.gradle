@@ -388,6 +388,11 @@ tasks.register('openClWorkloadValidationTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     systemProperty 'javatogpu.opencl.workloadValidation', 'true'
+    systemProperty 'javatogpu.opencl.compilerDiagnostics', 'true'
+    String diagnosticCompileArgs = System.getenv('JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS') ?: ''
+    if (!diagnosticCompileArgs.isBlank()) {
+        systemProperty 'javatogpu.opencl.compilerDiagnosticArgs', diagnosticCompileArgs
+    }
     systemProperty 'javatogpu.opencl.workloadSummaryFile', layout.buildDirectory.file('reports/opencl/workload-summary.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', openClBackendSourcePromotionWorkloadGateFile.absolutePath
     systemProperty 'javatogpu.opencl.productionPromotionExplainabilityFile', openClProductionPromotionExplainabilityFile.absolutePath

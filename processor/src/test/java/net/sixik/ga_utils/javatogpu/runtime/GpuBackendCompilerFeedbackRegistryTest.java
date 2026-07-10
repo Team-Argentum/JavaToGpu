@@ -76,6 +76,23 @@ class GpuBackendCompilerFeedbackRegistryTest {
     }
 
     @Test
+    void persistsDiagnosticCompilationStatusWithoutResourceMetrics() {
+        GpuBackendCompilerFeedbackReport report = genericRegistry().inspect(request("""
+                [javatogpu-opencl-compiler-diagnostics]
+                status=completed-empty
+                source=nvidia-default
+                options=-cl-nv-verbose
+                diagnostic=diagnostic compilation completed but the driver returned an empty build log
+                """));
+
+        assertFalse(report.available());
+        assertEquals("true", report.artifactFields().get("diagnosticCompilation.present"));
+        assertEquals("completed-empty", report.artifactFields().get("diagnosticCompilation.status"));
+        assertEquals("nvidia-default", report.artifactFields().get("diagnosticCompilation.source"));
+        assertEquals("-cl-nv-verbose", report.artifactFields().get("diagnosticCompilation.options"));
+    }
+
+    @Test
     void isolatesFailingProviderAndContinuesWithGenericParser() {
         GpuBackendCompilerFeedbackRegistry registry = GpuBackendCompilerFeedbackRegistry.of(List.of(
                 new FailingProvider("compiler-feedback:failing"),

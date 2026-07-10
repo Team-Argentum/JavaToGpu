@@ -233,6 +233,10 @@ After a successful OpenCL program build, the runtime queries `CL_PROGRAM_BUILD_L
 
 If both the heuristic estimate and a compiler register count exist, `runtime-ir-analysis.properties` adds the compiler provider, parsed metrics, compiler count, heuristic count, delta, and comparison status. This is calibration evidence only: it does not rewrite IR, change device selection, or enable production optimization. OpenCL permits an empty successful build log, and many drivers do not expose resource counts by default; a missing or unrecognized log leaves the heuristic analysis unchanged and marks compiler feedback unavailable. Failed build diagnostics remain available through `GpuRuntimeKernelCompilationException`.
 
+The real-device `openClWorkloadValidationTest` also enables an isolated diagnostic rebuild after the production program has compiled. This second build cannot replace or invalidate the production program. NVIDIA devices use `-cl-nv-verbose` by default. AMD and other vendors remain fail-safe until a reviewed diagnostic option is supplied through `JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS` or the `javatogpu.opencl.compilerDiagnosticArgs` system property.
+
+`backend-compiler-feedback.properties` exposes `diagnosticCompilation.present`, `status`, `source`, `options`, and `diagnostic`. Expected states are `recorded`, `completed-empty`, `failed`, and `skipped-no-options`. The last three states are evidence about diagnostic availability, not kernel execution failures.
+
 ## Runtime Failures And Fallbacks
 
 All structured runtime failures extend `GpuRuntimeException`. Use the base type when every GPU failure should take the same fallback path:
