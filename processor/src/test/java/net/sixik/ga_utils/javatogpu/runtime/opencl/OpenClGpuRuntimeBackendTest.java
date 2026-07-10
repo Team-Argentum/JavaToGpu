@@ -224,6 +224,20 @@ class OpenClGpuRuntimeBackendTest {
         assertTrue(Files.isRegularFile(fixtureDirectory.resolve(
                 "runtime-optimizer-family-equivalence-payload/family-1-auto-vectorization/pass-0/diagnostics.properties"
         )));
+        String cseCpuReference = Files.readString(fixtureDirectory.resolve(
+                "runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/cpu-reference.properties"
+        ));
+        String csePostOptimization = Files.readString(fixtureDirectory.resolve(
+                "runtime-optimizer-family-equivalence-payload/family-0-cse/pass-0/post-optimization-output.properties"
+        ));
+        String vectorPostOptimization = Files.readString(fixtureDirectory.resolve(
+                "runtime-optimizer-family-equivalence-payload/family-1-auto-vectorization/pass-0/post-optimization-output.properties"
+        ));
+        assertTrue(cseCpuReference.contains("cseRuntimeEquivalencePayload.Case.0.Output.0.CpuReference"));
+        assertTrue(csePostOptimization.contains("cseRuntimeEquivalencePayload.Case.0.Output.0.PostOptimization"));
+        assertTrue(vectorPostOptimization.contains(
+                "auto-vectorizationRuntimeEquivalencePayload.Case.0.Output.0.PostOptimization"
+        ));
         Files.writeString(
                 fixtureDirectory.resolve("fixture-summary.properties"),
                 "status=passed\n"
@@ -232,6 +246,7 @@ class OpenClGpuRuntimeBackendTest {
                         + "family.complete.count=2\n"
                         + "family.complete.all=true\n"
                         + "durable.file.count=" + durableFileCount + "\n"
+                        + "structured.case.count=2\n"
                         + "productionSourceSwitching=disabled\n"
                         + "productionMutation=disabled\n"
         );
@@ -4434,7 +4449,54 @@ class OpenClGpuRuntimeBackendTest {
                         java.util.Map.entry(family + "RuntimeEquivalencePayload.PreOptimizationOutput", preOptimizationOutput),
                         java.util.Map.entry(family + "RuntimeEquivalencePayload.PostOptimizationOutput", postOptimizationOutput),
                         java.util.Map.entry(family + "RuntimeEquivalencePayload.Tolerance", tolerance),
-                        java.util.Map.entry(family + "RuntimeEquivalencePayload.FailureFixture", failureFixture)
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.FailureFixture", failureFixture),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.ReferenceMode",
+                                "cse".equals(family)
+                                        ? "original-ir-interpreter"
+                                        : "original-ir-array-interpreter"
+                        ),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.Case.Count", "1"),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.Case.0.Name", "fixture-case"),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.Case.0.Successful", "true"),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.Case.0.Input.Count", "1"),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Input.0.Name",
+                                "cse".equals(family) ? "x" : "left"
+                        ),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Input.0.Value",
+                                "cse".equals(family) ? "7" : "[7, -2, 13, 99]"
+                        ),
+                        java.util.Map.entry(family + "RuntimeEquivalencePayload.Case.0.Output.Count", "1"),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Output.0.Name",
+                                "cse".equals(family) ? "outA" : "out"
+                        ),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Output.0.CpuReference",
+                                "cse".equals(family) ? "36" : "[8, 2, 10, 110]"
+                        ),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Output.0.PreOptimization",
+                                "cse".equals(family) ? "36" : "[8, 2, 10, 110]"
+                        ),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Output.0.PostOptimization",
+                                "cse".equals(family) ? "36" : "[8, 2, 10, 110]"
+                        ),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Output.0.Tolerance",
+                                "cse".equals(family) ? "exact-int" : "exact-int-lane"
+                        ),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.Output.0.Equivalent",
+                                "true"
+                        ),
+                        java.util.Map.entry(
+                                family + "RuntimeEquivalencePayload.Case.0.FailureFixture.Diagnostic.Count",
+                                "0"
+                        )
                 )
         ));
     }

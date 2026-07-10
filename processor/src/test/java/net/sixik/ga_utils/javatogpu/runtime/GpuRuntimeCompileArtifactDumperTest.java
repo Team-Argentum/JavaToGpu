@@ -1371,6 +1371,27 @@ class GpuRuntimeCompileArtifactDumperTest {
                         java.util.Map.entry(
                                 "cseRuntimeEquivalencePayload.FailureFixture",
                                 "none"
+                        ),
+                        java.util.Map.entry(
+                                "cseRuntimeEquivalencePayload.ReferenceMode",
+                                "original-ir-interpreter"
+                        ),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.Count", "1"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Name", "case-a"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Successful", "true"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Input.Count", "1"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Input.0.Name", "x"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Input.0.Value", "7"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Output.Count", "1"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Output.0.Name", "outA"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Output.0.CpuReference", "36"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Output.0.PreOptimization", "36"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Output.0.PostOptimization", "36"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Output.0.Tolerance", "exact-int"),
+                        java.util.Map.entry("cseRuntimeEquivalencePayload.Case.0.Output.0.Equivalent", "true"),
+                        java.util.Map.entry(
+                                "cseRuntimeEquivalencePayload.Case.0.FailureFixture.Diagnostic.Count",
+                                "0"
                         )
                 )
         ));
@@ -1469,16 +1490,40 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact(cseDirectory + "/cpu-reference.properties").contains(
                 "payload=inputCases=3, comparedOutputs=1, outputNames=outA"
         ));
+        assertTrue(dump.artifact(cseDirectory + "/cpu-reference.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.Output.0.CpuReference"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/cpu-reference.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.Input.0.Value"
+        ));
+        assertFalse(dump.artifact(cseDirectory + "/cpu-reference.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.Output.0.PostOptimization"
+        ));
         assertTrue(dump.artifact(cseDirectory + "/pre-optimization-output.properties").contains(
                 "payload=plans=1, insertions=1, skipped=0"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/pre-optimization-output.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.Output.0.PreOptimization"
         ));
         assertTrue(dump.artifact(cseDirectory + "/post-optimization-output.properties").contains(
                 "payload=replacements=1, equivalent=true, successful=true"
         ));
+        assertTrue(dump.artifact(cseDirectory + "/post-optimization-output.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.Output.0.PostOptimization"
+        ));
+        assertTrue(dump.artifact(cseDirectory + "/post-optimization-output.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.Output.0.Equivalent"
+        ));
         assertTrue(dump.artifact(cseDirectory + "/tolerance.properties").contains(
                 "payload=mode=exact-int, diagnostics=0, diagnosticFamilies={}"
         ));
+        assertTrue(dump.artifact(cseDirectory + "/tolerance.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.Output.0.Tolerance"
+        ));
         assertTrue(dump.artifact(cseDirectory + "/failure-fixture.properties").contains("payload=none"));
+        assertTrue(dump.artifact(cseDirectory + "/failure-fixture.properties").contains(
+                "cseRuntimeEquivalencePayload.Case.0.FailureFixture.Diagnostic.Count"
+        ));
         assertTrue(dump.artifact(cseDirectory + "/diagnostics.properties").contains(
                 "firstDiagnostic=CSE runtime-equivalence payload captured"
         ));

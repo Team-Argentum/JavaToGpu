@@ -57,8 +57,24 @@ class GpuIrCommonSubexpressionArtifactRunnerTest {
         assertEquals("true", fields.get("cseArtifactSuccessful"));
         assertEquals("2", fields.get("cseArtifactRuntimeEquivalence.InputCases"));
         assertEquals("outA,outB,return", fields.get("cseArtifactRuntimeEquivalence.ComparedOutputNames"));
+        assertEquals("2", fields.get("cseArtifactRuntimeEquivalence.Payload.Case.Count"));
+        assertEquals("original-ir-interpreter", fields.get("cseArtifactRuntimeEquivalence.Payload.ReferenceMode"));
         assertEquals("1", fields.get("cseArtifactSnapshot.Insertions"));
         assertTrue(fields.get("cseArtifactSummary").contains("runtimeEquivalenceSuccessful=true"));
+
+        GpuIrRuntimeEquivalenceCaseEvidence caseEvidence = report.runtimeEquivalenceReport().caseEvidence().get(0);
+        assertEquals("case-a", caseEvidence.caseName());
+        assertEquals("7", caseEvidence.inputs().get("x"));
+        assertEquals("36", caseEvidence.cpuReferenceOutputs().get("outA"));
+        assertEquals("36", caseEvidence.preOptimizationOutputs().get("outA"));
+        assertEquals("36", caseEvidence.postOptimizationOutputs().get("outA"));
+        assertEquals("51", caseEvidence.postOptimizationOutputs().get("return"));
+        assertEquals("exact-int", caseEvidence.tolerances().get("outA"));
+        assertTrue(caseEvidence.outputEquivalence().get("outA"));
+        assertEquals(
+                "36",
+                fields.get("cseArtifactRuntimeEquivalence.Payload.Case.0.Output.0.CpuReference")
+        );
     }
 
     @Test

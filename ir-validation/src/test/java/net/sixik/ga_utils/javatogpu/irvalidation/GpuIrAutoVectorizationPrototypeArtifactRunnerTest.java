@@ -67,8 +67,24 @@ class GpuIrAutoVectorizationPrototypeArtifactRunnerTest {
         assertArtifactField(fields, "Successful", "true");
         assertArtifactField(fields, "RuntimeEquivalence.InputCases", "2");
         assertArtifactField(fields, "RuntimeEquivalence.ComparedOutputNames", "out");
+        assertArtifactField(fields, "RuntimeEquivalence.Payload.ReferenceMode", "original-ir-array-interpreter");
+        assertArtifactField(fields, "RuntimeEquivalence.Payload.Case.Count", "2");
         assertArtifactField(fields, "Rewrite.FirstAppliedRewriteExpressionKind", "binaryLaneOp");
         assertArtifactField(fields, "Rewrite.FirstAppliedRewriteBinaryOperator", "+");
+
+        GpuIrRuntimeEquivalenceCaseEvidence caseEvidence = report.runtimeEquivalenceReport().caseEvidence().get(0);
+        assertEquals("case-a", caseEvidence.caseName());
+        assertEquals("[7, -2, 13, 99]", caseEvidence.inputs().get("left"));
+        assertEquals("[8, 2, 10, 110]", caseEvidence.cpuReferenceOutputs().get("out"));
+        assertEquals("[8, 2, 10, 110]", caseEvidence.preOptimizationOutputs().get("out"));
+        assertEquals("[8, 2, 10, 110]", caseEvidence.postOptimizationOutputs().get("out"));
+        assertEquals("exact-int-lane", caseEvidence.tolerances().get("out"));
+        assertTrue(caseEvidence.outputEquivalence().get("out"));
+        assertArtifactField(
+                fields,
+                "RuntimeEquivalence.Payload.Case.0.Output.0.PostOptimization",
+                "[8, 2, 10, 110]"
+        );
     }
 
     @Test

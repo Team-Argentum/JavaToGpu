@@ -414,35 +414,40 @@ public final class GpuRuntimeCompileArtifactDumper {
                 passIndex,
                 "cpu-reference",
                 passTrace.cpuReferenceResource(),
-                passTrace.cpuReferencePayload()
+                passTrace.cpuReferencePayload(),
+                payloadComponentEvidenceFields(passTrace.evidenceFields(), "cpu-reference")
         ));
         files.put(paths.preOptimizationOutput(), formatOptimizerFamilyPayloadComponent(
                 familyName,
                 passIndex,
                 "pre-optimization-output",
                 passTrace.preOptimizationOutputResource(),
-                passTrace.preOptimizationOutputPayload()
+                passTrace.preOptimizationOutputPayload(),
+                payloadComponentEvidenceFields(passTrace.evidenceFields(), "pre-optimization-output")
         ));
         files.put(paths.postOptimizationOutput(), formatOptimizerFamilyPayloadComponent(
                 familyName,
                 passIndex,
                 "post-optimization-output",
                 passTrace.postOptimizationOutputResource(),
-                passTrace.postOptimizationOutputPayload()
+                passTrace.postOptimizationOutputPayload(),
+                payloadComponentEvidenceFields(passTrace.evidenceFields(), "post-optimization-output")
         ));
         files.put(paths.tolerance(), formatOptimizerFamilyPayloadComponent(
                 familyName,
                 passIndex,
                 "tolerance",
                 passTrace.toleranceResource(),
-                passTrace.tolerancePayload()
+                passTrace.tolerancePayload(),
+                payloadComponentEvidenceFields(passTrace.evidenceFields(), "tolerance")
         ));
         files.put(paths.failureFixture(), formatOptimizerFamilyPayloadComponent(
                 familyName,
                 passIndex,
                 "failure-fixture",
                 passTrace.failureFixtureResource(),
-                passTrace.failureFixturePayload()
+                passTrace.failureFixturePayload(),
+                payloadComponentEvidenceFields(passTrace.evidenceFields(), "failure-fixture")
         ));
         files.put(paths.diagnostics(), formatOptimizerFamilyPayloadDiagnostics(familyName, passIndex, passTrace));
         return paths;
@@ -478,20 +483,32 @@ public final class GpuRuntimeCompileArtifactDumper {
             int passIndex,
             String component,
             String sourceResource,
-            String payload
+            String payload,
+            Map<String, String> structuredFields
     ) {
         boolean payloadPresent = payload != null
                 && !payload.isBlank()
                 && !"not-recorded".equals(payload);
-        return "formatVersion=1\n"
-                + "status=" + (payloadPresent ? "recorded" : "not-recorded") + "\n"
-                + "scope=runtime-optimizer-family-equivalence-payload-component\n"
-                + "optimizerFamily=" + safePropertyValue(familyName) + "\n"
-                + "pass.index=" + passIndex + "\n"
-                + "component=" + component + "\n"
-                + "source.resource=" + safePropertyValue(sourceResource) + "\n"
-                + "payload.present=" + payloadPresent + "\n"
-                + "payload=" + safePropertyValue(payload) + "\n";
+        StringBuilder builder = new StringBuilder()
+                .append("formatVersion=1\n")
+                .append("status=").append(payloadPresent ? "recorded" : "not-recorded").append('\n')
+                .append("scope=runtime-optimizer-family-equivalence-payload-component\n")
+                .append("optimizerFamily=").append(safePropertyValue(familyName)).append('\n')
+                .append("pass.index=").append(passIndex).append('\n')
+                .append("component=").append(component).append('\n')
+                .append("source.resource=").append(safePropertyValue(sourceResource)).append('\n')
+                .append("payload.present=").append(payloadPresent).append('\n')
+                .append("payload=").append(safePropertyValue(payload)).append('\n')
+                .append("structured.field.count=").append(structuredFields.size()).append('\n');
+        int fieldIndex = 0;
+        for (Map.Entry<String, String> entry : structuredFields.entrySet()) {
+            builder.append("structured.field.").append(fieldIndex).append(".name=")
+                    .append(safePropertyValue(entry.getKey())).append('\n');
+            builder.append("structured.field.").append(fieldIndex).append(".value=")
+                    .append(safePropertyValue(entry.getValue())).append('\n');
+            fieldIndex++;
+        }
+        return builder.toString();
     }
 
     private static String formatOptimizerFamilyPayloadDiagnostics(
@@ -516,6 +533,66 @@ public final class GpuRuntimeCompileArtifactDumper {
             fieldIndex++;
         }
         return builder.toString();
+    }
+
+    private static Map<String, String> payloadComponentEvidenceFields(
+            Map<String, String> fields,
+            String component
+    ) {
+        LinkedHashMap<String, String> evidence = new LinkedHashMap<>();
+        fields.entrySet().stream()
+                .filter(entry -> isPayloadComponentEvidenceField(entry.getKey(), component))
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> evidence.put(entry.getKey(), entry.getValue()));
+        return java.util.Collections.unmodifiableMap(evidence);
+    }
+
+    private static boolean isPayloadComponentEvidenceField(String key, String component) {
+        String normalizedKey = key == null ? "" : key.toLowerCase(java.util.Locale.ROOT);
+        if ("cpu-reference".equals(component) && normalizedKey.endsWith("payload.referencemode")) {
+            return true;
+        }
+        String relativeKey = payloadCaseRelativeKey(key);
+        if (relativeKey == null) {
+            return false;
+        }
+        String normalizedRelativeKey = relativeKey.toLowerCase(java.util.Locale.ROOT);
+        boolean caseIdentity = normalizedRelativeKey.equals("count")
+                || normalizedRelativeKey.matches("\\d+\\.(name|successful)");
+        boolean outputIdentity = normalizedRelativeKey.matches("\\d+\\.output\\.count")
+                || normalizedRelativeKey.matches("\\d+\\.output\\.\\d+\\.name");
+        return switch (component) {
+            case "cpu-reference" -> caseIdentity
+                    || outputIdentity
+                    || normalizedRelativeKey.contains(".input.")
+                    || normalizedRelativeKey.endsWith(".cpureference");
+            case "pre-optimization-output" -> caseIdentity
+                    || outputIdentity
+                    || normalizedRelativeKey.endsWith(".preoptimization");
+            case "post-optimization-output" -> caseIdentity
+                    || outputIdentity
+                    || normalizedRelativeKey.endsWith(".postoptimization")
+                    || normalizedRelativeKey.endsWith(".equivalent");
+            case "tolerance" -> caseIdentity
+                    || outputIdentity
+                    || normalizedRelativeKey.endsWith(".tolerance");
+            case "failure-fixture" -> caseIdentity
+                    || normalizedRelativeKey.contains(".failurefixture.");
+            default -> false;
+        };
+    }
+
+    private static String payloadCaseRelativeKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        String normalized = key.toLowerCase(java.util.Locale.ROOT);
+        String marker = "payload.case.";
+        int markerIndex = normalized.indexOf(marker);
+        if (markerIndex < 0) {
+            return null;
+        }
+        return key.substring(markerIndex + marker.length());
     }
 
     private static String artifactPathSegment(String value) {
