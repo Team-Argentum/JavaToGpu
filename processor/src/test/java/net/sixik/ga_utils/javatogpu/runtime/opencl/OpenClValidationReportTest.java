@@ -1287,6 +1287,9 @@ class OpenClValidationReportTest {
             assertTrue(workflow.contains("if: steps.validation_history_stage.outcome == 'success'"));
             assertTrue(workflow.contains("uses: actions/cache/save@v4"));
             assertTrue(workflow.contains("launch_advisory_negative_fixture:"));
+            assertTrue(workflow.contains("validation_lane:"));
+            assertTrue(workflow.contains("github.event.inputs.validation_lane == 'nvidia'"));
+            assertTrue(workflow.contains("github.event.inputs.validation_lane == 'amd'"));
             assertTrue(workflow.contains(":processor:prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
             assertTrue(workflow.contains("env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true'"));
             assertTrue(workflow.contains("LAUNCH_ADVISORY_DRIFT_OUTCOME%\"==\"failure"));

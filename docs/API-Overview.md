@@ -114,6 +114,8 @@ The reporter compares current counts and kernel snapshots with the latest compat
 
 The vendor workflow exposes an opt-in `launch_advisory_negative_fixture` dispatch input. It mutates only the restored validation-history baseline, verifies the real per-kernel validator rejects the synthetic kernel-maximum regression, and prevents cache staging or save for the fixture run.
 
+Manual dispatch also accepts `validation_lane=all|nvidia|amd` to construct only the requested self-hosted vendor matrix entries.
+
 The vendor workflow persists validation history through a per-lane cache and keeps the restored baseline immutable for the duration of the run, preventing same-run report regeneration from masking cross-run drift.
 
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:

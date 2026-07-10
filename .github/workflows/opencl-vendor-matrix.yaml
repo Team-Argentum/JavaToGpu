@@ -18,6 +18,15 @@ on:
         required: false
         default: false
         type: boolean
+      validation_lane:
+        description: 'OpenCL vendor lane to run.'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - nvidia
+          - amd
   push:
 #    branches:
 #      - main
@@ -36,21 +45,15 @@ jobs:
     name: OpenCL ${{ matrix.vendor_name }} / ${{ matrix.device_name }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - vendor: amd
-            vendor_name: AMD
-            device_name: RX 7800 XT
-            artifact_suffix: amd-rx7800xt
-            runner_labels: [self-hosted, Windows, X64, amd, rx7800xt]
-            routine_task: :processor:openClOperationalRoutine
-
-          - vendor: nvidia
-            vendor_name: NVIDIA
-            device_name: RTX 5070
-            artifact_suffix: nvidia-rtx5070
-            runner_labels: [self-hosted, Windows, X64, nvidia, rtx5070]
-            routine_task: :processor:openClNvidiaRoutine
+      matrix: >-
+        ${{ fromJSON(
+          github.event.inputs.validation_lane == 'nvidia' &&
+          '{"include":[{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"}]}'
+          || github.event.inputs.validation_lane == 'amd' &&
+          '{"include":[{"vendor":"amd","vendor_name":"AMD","device_name":"RX 7800 XT","artifact_suffix":"amd-rx7800xt","runner_labels":["self-hosted","Windows","X64","amd","rx7800xt"],"routine_task":":processor:openClOperationalRoutine"}]}'
+          ||
+          '{"include":[{"vendor":"amd","vendor_name":"AMD","device_name":"RX 7800 XT","artifact_suffix":"amd-rx7800xt","runner_labels":["self-hosted","Windows","X64","amd","rx7800xt"],"routine_task":":processor:openClOperationalRoutine"},{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"}]}'
+        ) }}
 
     runs-on: ${{ matrix.runner_labels }}
     timeout-minutes: 90

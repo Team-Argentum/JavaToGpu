@@ -255,6 +255,8 @@ GitHub Actions restores an immutable per-lane/per-branch validation-history cach
 
 Manual `workflow_dispatch` runs can enable `launch_advisory_negative_fixture`. This mode requires a baseline containing per-kernel snapshots, increases one kernel maximum only in the restored baseline, and expects the normal drift validator to reject the resulting current-vs-baseline reduction. History staging and cache save are disabled unconditionally in this mode. The workflow succeeds only when fixture preparation succeeds, the drift step fails, and both cache steps remain skipped.
 
+The same dispatch form exposes `validation_lane=all|nvidia|amd`. Selecting one vendor builds the matrix with only that self-hosted runner, so an offline AMD or NVIDIA machine does not leave the unrelated validation run queued.
+
 ## Runtime Failures And Fallbacks
 
 All structured runtime failures extend `GpuRuntimeException`. Use the base type when every GPU failure should take the same fallback path:
