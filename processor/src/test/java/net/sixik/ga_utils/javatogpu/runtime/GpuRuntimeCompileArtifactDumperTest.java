@@ -66,6 +66,16 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(properties.contains("comparison.case.0.output.0.candidate=[7]"));
         assertTrue(properties.contains("comparison.case.0.output.0.tolerance=exact-int-array"));
         assertTrue(properties.contains("comparison.case.0.output.0.equivalent=true"));
+        String familyPayload = dump.artifact(
+                GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD
+        );
+        assertTrue(familyPayload.contains("runtimeEquivalence.comparisonCase.count=1"));
+        assertTrue(familyPayload.contains(
+                "runtimeEquivalence.comparisonMode.summary={descriptor-source-vs-irgpu-reconstructed-source=1}"
+        ));
+        assertTrue(familyPayload.contains("familyBinding.status=not-bound"));
+        assertTrue(familyPayload.contains("familyBinding.eligible=false"));
+        assertTrue(familyPayload.contains("familyBinding.firstBlocker=optimizer-family-missing"));
     }
 
     @Test
@@ -1475,6 +1485,11 @@ class GpuRuntimeCompileArtifactDumperTest {
 
         assertTrue(payload.contains("status=recorded"));
         assertTrue(payload.contains("runtimeEquivalence.passed=true"));
+        assertTrue(payload.contains("runtimeEquivalence.comparisonCase.count=0"));
+        assertTrue(payload.contains("runtimeEquivalence.comparisonMode.summary=none"));
+        assertTrue(payload.contains("familyBinding.status=not-bound"));
+        assertTrue(payload.contains("familyBinding.eligible=false"));
+        assertTrue(payload.contains("familyBinding.firstBlocker=runtime-comparison-cases-missing"));
         assertTrue(payload.contains("family.count=2"));
         assertTrue(payload.contains("family.0.name=cse"));
         assertTrue(payload.contains("family.0.runtimePayload.present=true"));

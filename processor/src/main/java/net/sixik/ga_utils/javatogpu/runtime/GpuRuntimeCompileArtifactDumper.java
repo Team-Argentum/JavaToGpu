@@ -306,6 +306,11 @@ public final class GpuRuntimeCompileArtifactDumper {
 
         boolean runtimeEquivalencePassed = snapshot.runtimeEquivalenceEvidence().executed()
                 && snapshot.runtimeEquivalenceEvidence().equivalent();
+        OptimizerFamilyBindingDecision bindingDecision = optimizerFamilyBindingDecision(
+                families,
+                snapshot.runtimeEquivalenceEvidence(),
+                runtimeEquivalencePassed
+        );
         int completeFamilyCount = 0;
         LinkedHashMap<String, String> files = new LinkedHashMap<>();
         StringBuilder builder = new StringBuilder();
@@ -314,6 +319,14 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("runtimeEquivalence.executed=").append(snapshot.runtimeEquivalenceEvidence().executed()).append('\n');
         builder.append("runtimeEquivalence.equivalent=").append(snapshot.runtimeEquivalenceEvidence().equivalent()).append('\n');
         builder.append("runtimeEquivalence.passed=").append(runtimeEquivalencePassed).append('\n');
+        builder.append("runtimeEquivalence.comparisonCase.count=")
+                .append(snapshot.runtimeEquivalenceEvidence().comparisonCases().size()).append('\n');
+        builder.append("runtimeEquivalence.comparisonMode.summary=")
+                .append(runtimeEquivalenceComparisonModeSummary(snapshot.runtimeEquivalenceEvidence())).append('\n');
+        builder.append("familyBinding.status=").append(bindingDecision.status()).append('\n');
+        builder.append("familyBinding.eligible=").append(bindingDecision.eligible()).append('\n');
+        builder.append("familyBinding.family=").append(bindingDecision.family()).append('\n');
+        builder.append("familyBinding.firstBlocker=").append(bindingDecision.firstBlocker()).append('\n');
         builder.append("family.count=").append(families.size()).append('\n');
         int index = 0;
         for (OptimizerFamilyPayload family : families.values()) {
@@ -382,6 +395,48 @@ public final class GpuRuntimeCompileArtifactDumper {
                 builder.toString(),
                 java.util.Collections.unmodifiableMap(files)
         );
+    }
+
+    private static OptimizerFamilyBindingDecision optimizerFamilyBindingDecision(
+            Map<String, OptimizerFamilyPayload> families,
+            GpuRuntimeEquivalenceEvidence evidence,
+            boolean runtimeEquivalencePassed
+    ) {
+        if (evidence.comparisonCases().isEmpty()) {
+            return OptimizerFamilyBindingDecision.blocked("runtime-comparison-cases-missing");
+        }
+        if (families.isEmpty()) {
+            return OptimizerFamilyBindingDecision.blocked("optimizer-family-missing");
+        }
+        if (families.size() != 1) {
+            return OptimizerFamilyBindingDecision.blocked("optimizer-family-count-not-one");
+        }
+        String family = families.keySet().iterator().next();
+        if (!runtimeEquivalencePassed) {
+            return OptimizerFamilyBindingDecision.blocked(family, "runtime-equivalence-not-passed");
+        }
+        String requiredModePrefix = "optimizer-family:" + family + ":";
+        boolean familySpecific = evidence.comparisonCases().stream()
+                .allMatch(caseEvidence -> caseEvidence.comparisonMode().startsWith(requiredModePrefix));
+        if (!familySpecific) {
+            return OptimizerFamilyBindingDecision.blocked(family, "comparison-mode-not-family-specific");
+        }
+        return new OptimizerFamilyBindingDecision("bound", true, family, "none");
+    }
+
+    private static String runtimeEquivalenceComparisonModeSummary(GpuRuntimeEquivalenceEvidence evidence) {
+        if (evidence.comparisonCases().isEmpty()) {
+            return "none";
+        }
+        return evidence.comparisonCases().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        GpuRuntimeEquivalenceCaseEvidence::comparisonMode,
+                        java.util.TreeMap::new,
+                        java.util.stream.Collectors.counting()
+                ))
+                .entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(",", "{", "}"));
     }
 
     private static OptimizerFamilyPayloadPaths materializeOptimizerFamilyPassPayload(
@@ -878,6 +933,21 @@ public final class GpuRuntimeCompileArtifactDumper {
                             : safePropertyValue(passReport.diagnostics().get(0)),
                     payloadEvidenceFields(fields)
             );
+        }
+    }
+
+    private record OptimizerFamilyBindingDecision(
+            String status,
+            boolean eligible,
+            String family,
+            String firstBlocker
+    ) {
+        private static OptimizerFamilyBindingDecision blocked(String firstBlocker) {
+            return blocked("none", firstBlocker);
+        }
+
+        private static OptimizerFamilyBindingDecision blocked(String family, String firstBlocker) {
+            return new OptimizerFamilyBindingDecision("not-bound", false, family, firstBlocker);
         }
     }
 
