@@ -102,6 +102,8 @@ Successful OpenCL program builds query `CL_PROGRAM_BUILD_LOG` and retain any ret
 
 Hardware workload validation performs an additional fail-safe diagnostic build. NVIDIA uses `-cl-nv-verbose`; custom or AMD options can be provided with `JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS`. The diagnostic program is discarded after its log is captured and never replaces the production program.
 
+The runtime additionally uses standard `clGetKernelWorkGroupInfo` queries to capture maximum work-group size, preferred multiple, local memory, and private memory for both NVIDIA and AMD. These values remain available even when the compiler build log is empty.
+
 If you need a backend-specific hint that JavaToGpu does not expose yet, use `@GPUAttribute` and declare the target explicitly:
 
 ```java

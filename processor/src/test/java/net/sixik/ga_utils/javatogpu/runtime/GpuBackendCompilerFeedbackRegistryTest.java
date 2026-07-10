@@ -93,6 +93,24 @@ class GpuBackendCompilerFeedbackRegistryTest {
     }
 
     @Test
+    void parsesStandardOpenClKernelResourceMetrics() {
+        GpuBackendCompilerFeedback feedback = genericRegistry().inspect(request("""
+                [javatogpu-opencl-kernel-resource-info]
+                status=recorded
+                max work-group size: 1024
+                preferred work-group size multiple: 32
+                local memory: 2048 bytes
+                private memory: 96 bytes
+                """)).selected().orElseThrow();
+
+        assertEquals(2_048, feedback.localMemoryBytes());
+        assertEquals("96", feedback.rawFields().get("privateMemoryBytes"));
+        assertEquals("1024", feedback.rawFields().get("maxWorkGroupSize"));
+        assertEquals("32", feedback.rawFields().get("preferredWorkGroupSizeMultiple"));
+        assertEquals(GpuBackendCompilerFeedback.UNKNOWN, feedback.effectiveRegisterCount());
+    }
+
+    @Test
     void isolatesFailingProviderAndContinuesWithGenericParser() {
         GpuBackendCompilerFeedbackRegistry registry = GpuBackendCompilerFeedbackRegistry.of(List.of(
                 new FailingProvider("compiler-feedback:failing"),

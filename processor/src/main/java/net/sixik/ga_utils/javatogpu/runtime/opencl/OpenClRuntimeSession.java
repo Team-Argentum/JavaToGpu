@@ -245,7 +245,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         OpenClProgram program = context.buildProgram(descriptor.kernelSource());
         OpenClKernel kernel = program.createKernel(descriptor.kernelName());
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor)
-                .withCompileLog(compilerLog(program, descriptor.kernelSource(), ""));
+                .withCompileLog(compilerLog(program, kernel, descriptor.kernelSource(), ""));
         return new OpenClCompiledKernel(descriptor, descriptor.kernelResource(), snapshot, program, kernel);
     }
 
@@ -285,12 +285,17 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 ? moduleArtifact.resource()
                 : moduleArtifact.resource() + "|opencl-options=" + buildOptions;
         GpuRuntimeCompileArtifactSnapshot compiledSnapshot = artifactSnapshot.withCompileLog(
-                compilerLog(program, moduleArtifact.requireSource(), buildOptions)
+                compilerLog(program, kernel, moduleArtifact.requireSource(), buildOptions)
         );
         return new OpenClCompiledKernel(descriptor, cacheKey, compiledSnapshot, program, kernel);
     }
 
-    private String compilerLog(OpenClProgram program, String source, String buildOptions) {
+    private String compilerLog(
+            OpenClProgram program,
+            OpenClKernel kernel,
+            String source,
+            String buildOptions
+    ) {
         String primaryLog = OpenClProgramBuildLogReader.read(program);
         OpenClCompilerDiagnosticCapture.Result diagnosticCapture = OpenClCompilerDiagnosticCapture.capture(
                 context,
@@ -298,7 +303,8 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 buildOptions,
                 deviceProfile
         );
-        return diagnosticCapture.mergeWithPrimaryLog(primaryLog);
+        String compilerLog = diagnosticCapture.mergeWithPrimaryLog(primaryLog);
+        return OpenClKernelResourceInfoReader.read(kernel, program).appendToCompilerLog(compilerLog);
     }
 
     public OpenClRuntimeCapabilities capabilities() {

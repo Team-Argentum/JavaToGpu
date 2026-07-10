@@ -26,6 +26,11 @@ public final class GpuGenericCompilerFeedbackProvider implements GpuBackendCompi
     private static final Pattern SCRATCH = pattern("\\bscratch(?: size)?\\s*[:=]\\s*(\\d+)\\s*bytes?\\b");
     private static final Pattern LOCAL_MEMORY = pattern("\\b(?:local|shared) memory(?: size)?\\s*[:=]?\\s*(\\d+)\\s*bytes?\\b");
     private static final Pattern LOCAL_MEMORY_BYTES_FIRST = pattern("(\\d+)\\s*bytes?\\s+(?:local|shared) memory\\b");
+    private static final Pattern PRIVATE_MEMORY = pattern("\\bprivate memory(?: size)?\\s*[:=]?\\s*(\\d+)\\s*bytes?\\b");
+    private static final Pattern MAX_WORK_GROUP_SIZE = pattern("\\bmax work-group size\\s*[:=]\\s*(\\d+)\\b");
+    private static final Pattern PREFERRED_WORK_GROUP_SIZE_MULTIPLE = pattern(
+            "\\bpreferred work-group size multiple\\s*[:=]\\s*(\\d+)\\b"
+    );
     private static final Pattern OCCUPANCY = pattern("\\boccupancy\\s*[:=]\\s*(\\d+(?:\\.\\d+)?)\\s*%");
     private static final Pattern KERNEL_NAME = pattern("\\bFunction properties for\\s+([^\\r\\n]+)");
 
@@ -46,6 +51,9 @@ public final class GpuGenericCompilerFeedbackProvider implements GpuBackendCompi
         int stackFrame = firstInt(log, STACK_FRAME, STACK_FRAME_BYTES_FIRST);
         int scratch = firstInt(log, SCRATCH);
         int localMemory = firstInt(log, LOCAL_MEMORY, LOCAL_MEMORY_BYTES_FIRST);
+        int privateMemory = firstInt(log, PRIVATE_MEMORY);
+        int maxWorkGroupSize = firstInt(log, MAX_WORK_GROUP_SIZE);
+        int preferredWorkGroupSizeMultiple = firstInt(log, PREFERRED_WORK_GROUP_SIZE_MULTIPLE);
         int occupancyPermille = occupancyPermille(log);
 
         if (spillStores < 0 && spillSize >= 0) {
@@ -58,6 +66,9 @@ public final class GpuGenericCompilerFeedbackProvider implements GpuBackendCompi
         LinkedHashMap<String, String> rawFields = new LinkedHashMap<>();
         putKnown(rawFields, "spillSizeBytes", spillSize);
         putKnown(rawFields, "scratchBytes", scratch);
+        putKnown(rawFields, "privateMemoryBytes", privateMemory);
+        putKnown(rawFields, "maxWorkGroupSize", maxWorkGroupSize);
+        putKnown(rawFields, "preferredWorkGroupSizeMultiple", preferredWorkGroupSizeMultiple);
         GpuBackendCompilerFeedback feedback = new GpuBackendCompilerFeedback(
                 extensionId(),
                 extensionVersion(),

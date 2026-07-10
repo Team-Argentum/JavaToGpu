@@ -48,7 +48,7 @@ public record GpuBackendCompilerFeedback(
     }
 
     public boolean available() {
-        return metricCount() > 0;
+        return metricCount() > 0 || !rawFields.isEmpty();
     }
 
     public int metricCount() {

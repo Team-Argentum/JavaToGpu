@@ -237,6 +237,10 @@ The real-device `openClWorkloadValidationTest` also enables an isolated diagnost
 
 `backend-compiler-feedback.properties` exposes `diagnosticCompilation.present`, `status`, `source`, `options`, and `diagnostic`. Expected states are `recorded`, `completed-empty`, `failed`, and `skipped-no-options`. The last three states are evidence about diagnostic availability, not kernel execution failures.
 
+JavaToGpu also queries standard kernel resource information after every successful OpenCL kernel creation. This path does not depend on vendor build-log behavior and records maximum work-group size, preferred work-group multiple, compiler-reported local memory, and compiler-reported private memory. Drivers may still report zero or reject individual queries; each metric remains independent and advisory.
+
+The standard values appear in `backend-compiler-feedback.properties` as `selected.localMemoryBytes` plus raw fields `privateMemoryBytes`, `maxWorkGroupSize`, and `preferredWorkGroupSizeMultiple`. They provide useful spill/private-memory and launch-shape evidence but are not a replacement for exact SGPR/VGPR or NVIDIA register counts.
+
 ## Runtime Failures And Fallbacks
 
 All structured runtime failures extend `GpuRuntimeException`. Use the base type when every GPU failure should take the same fallback path:
