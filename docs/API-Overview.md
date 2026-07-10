@@ -106,9 +106,9 @@ The runtime additionally uses standard `clGetKernelWorkGroupInfo` queries to cap
 
 Vendor validation aggregates workload-kernel advisory files into `runtime-launch-advisory-summary.md` and the main validation report. GitHub Actions appends that generated Markdown directly instead of reparsing properties in shell code.
 
-The validation history properties and Markdown table retain a compact launch-advisory count summary for cross-run drift review.
+The validation history properties retain a compact launch-advisory count summary and a versioned per-kernel snapshot; the Markdown table keeps the short aggregate view.
 
-The reporter compares the current counts with the latest compatible history entry and exposes signed deltas plus a regression classification in both the validation report and GitHub Actions summary.
+The reporter compares current counts and kernel snapshots with the latest compatible history entry. Per-kernel matching uses the kernel resource and detects status degradation, reduced kernel maximum, preferred-match loss, blocking activation, and missing resources even when aggregate counts remain equal. Older histories without snapshots use aggregate fallback.
 
 `validateOpenClKernelLaunchAdvisoryDrift` is the CI gate: only `regressed` blocks a valid drift artifact, while changed/no-baseline states remain advisory.
 

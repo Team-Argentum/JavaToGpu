@@ -69,6 +69,98 @@ class OpenClKernelLaunchAdvisoryDriftTest {
         assertEquals("stable", drift.status());
         assertFalse(drift.regression());
         assertEquals("Driver 1", drift.previousDriverVersion());
+        assertFalse(drift.kernelComparisonAvailable());
+    }
+
+    @Test
+    void detectsPerKernelStatusSwapWithStableAggregateCounts() {
+        OpenClValidationHistoryEntry previous = entry(
+                "GPU A",
+                "Driver 1",
+                historySummary(
+                        advisory("workload/a.cl", "aligned", "64", "256", "32", "true", "false"),
+                        advisory("workload/b.cl", "non-preferred-multiple", "48", "256", "32", "false", "false")
+                ),
+                Instant.parse("2026-07-10T10:00:00Z")
+        );
+        OpenClValidationHistoryEntry current = entry(
+                "GPU A",
+                "Driver 2",
+                historySummary(
+                        advisory("workload/a.cl", "non-preferred-multiple", "48", "256", "32", "false", "false"),
+                        advisory("workload/b.cl", "aligned", "64", "256", "32", "true", "false")
+                ),
+                Instant.parse("2026-07-10T11:00:00Z")
+        );
+
+        OpenClKernelLaunchAdvisoryDrift drift = OpenClKernelLaunchAdvisoryDrift.compare(
+                current,
+                List.of(previous)
+        );
+
+        assertEquals("regressed", drift.status());
+        assertTrue(drift.regression());
+        assertTrue(drift.kernelComparisonAvailable());
+        assertEquals(2, drift.kernelChanges().size());
+        assertTrue(drift.toPropertiesText().contains("kernelChange.regressed.count=1"));
+        assertTrue(drift.toPropertiesText().contains("kernelChange.improved.count=1"));
+        assertTrue(drift.toMarkdown().contains("`workload/a.cl` | `regressed`"));
+    }
+
+    @Test
+    void detectsKernelMaxDecreaseWithoutAggregateCountChange() {
+        OpenClValidationHistoryEntry previous = entry(
+                "GPU A",
+                "Driver 1",
+                historySummary(advisory(
+                        "workload/grid.cl", "aligned", "64", "256", "32", "true", "false"
+                )),
+                Instant.parse("2026-07-10T10:00:00Z")
+        );
+        OpenClValidationHistoryEntry current = entry(
+                "GPU A",
+                "Driver 2",
+                historySummary(advisory(
+                        "workload/grid.cl", "aligned", "64", "64", "32", "true", "false"
+                )),
+                Instant.parse("2026-07-10T11:00:00Z")
+        );
+
+        OpenClKernelLaunchAdvisoryDrift drift = OpenClKernelLaunchAdvisoryDrift.compare(
+                current,
+                List.of(previous)
+        );
+
+        assertEquals("regressed", drift.status());
+        assertTrue(drift.regression());
+        assertEquals(1, drift.kernelChanges().size());
+        assertTrue(drift.kernelChanges().get(0).diagnostic().contains("kernel max 256 -> 64"));
+    }
+
+    private static String historySummary(OpenClKernelLaunchAdvisorySummary.Entry... entries) {
+        return new OpenClKernelLaunchAdvisorySummary("recorded", List.of(entries), "").toHistorySummary();
+    }
+
+    private static OpenClKernelLaunchAdvisorySummary.Entry advisory(
+            String resource,
+            String status,
+            String size,
+            String kernelMax,
+            String preferred,
+            String matched,
+            String blocking
+    ) {
+        String shape = "driver-selected".equals(status) ? "driver-selected" : size;
+        return new OpenClKernelLaunchAdvisorySummary.Entry(
+                resource,
+                status,
+                shape,
+                size,
+                kernelMax,
+                preferred,
+                matched,
+                blocking
+        );
     }
 
     private static OpenClValidationHistoryEntry entry(

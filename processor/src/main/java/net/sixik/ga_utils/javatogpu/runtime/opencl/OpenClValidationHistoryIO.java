@@ -127,7 +127,9 @@ final class OpenClValidationHistoryIO {
                     .append(" | ")
                     .append(escapeTable(entry.productionPromotionExplainabilityStatus()))
                     .append(" | ")
-                    .append(escapeTable(entry.kernelLaunchAdvisoryStatus()))
+                    .append(escapeTable(OpenClKernelLaunchAdvisorySummary.aggregateHistorySummary(
+                            entry.kernelLaunchAdvisoryStatus()
+                    )))
                     .append(" |\n");
         }
         Path parent = path.getParent();

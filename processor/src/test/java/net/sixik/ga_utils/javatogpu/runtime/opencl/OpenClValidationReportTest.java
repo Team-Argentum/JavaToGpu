@@ -1254,15 +1254,31 @@ class OpenClValidationReportTest {
             java.util.List<OpenClValidationHistoryEntry> baseline =
                     OpenClValidationHistoryIO.readAll(baselineFile);
             assertEquals(1, baseline.size());
+            String baselineAdvisoryStatus = baseline.get(0).kernelLaunchAdvisoryStatus();
             assertEquals(
                     "recorded (kernels=1, aligned=1, nonPreferred=0, driverSelected=0, unavailable=0, missing=0, blocking=0)",
-                    baseline.get(0).kernelLaunchAdvisoryStatus()
+                    OpenClKernelLaunchAdvisorySummary.aggregateHistorySummary(baselineAdvisoryStatus)
+            );
+            assertEquals(
+                    "aligned",
+                    OpenClKernelLaunchAdvisorySummary.parseHistoryEntries(baselineAdvisoryStatus)
+                            .orElseThrow()
+                            .get(0)
+                            .status()
             );
             java.util.List<OpenClValidationHistoryEntry> history = OpenClValidationHistoryIO.readAll(historyFile);
             assertEquals(3, history.size());
+            String currentAdvisoryStatus = history.get(0).kernelLaunchAdvisoryStatus();
             assertEquals(
                     "recorded (kernels=1, aligned=0, nonPreferred=1, driverSelected=0, unavailable=0, missing=0, blocking=0)",
-                    history.get(0).kernelLaunchAdvisoryStatus()
+                    OpenClKernelLaunchAdvisorySummary.aggregateHistorySummary(currentAdvisoryStatus)
+            );
+            assertEquals(
+                    "non-preferred-multiple",
+                    OpenClKernelLaunchAdvisorySummary.parseHistoryEntries(currentAdvisoryStatus)
+                            .orElseThrow()
+                            .get(0)
+                            .status()
             );
             String workflow = java.nio.file.Files.readString(findRepositoryFile(
                     ".github/workflows/opencl-vendor-matrix.yaml"

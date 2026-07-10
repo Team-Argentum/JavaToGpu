@@ -68,9 +68,17 @@ class OpenClKernelLaunchAdvisorySummaryTest {
         assertEquals(1, summary.count("missing"));
         assertEquals(0, summary.count("driver-selected"));
         assertEquals(0, summary.blockingCount());
+        String historySummary = summary.toHistorySummary();
+        String aggregateSummary =
+                "recorded (kernels=3, aligned=1, nonPreferred=1, driverSelected=0, unavailable=0, missing=1, blocking=0)";
         assertEquals(
-                "recorded (kernels=3, aligned=1, nonPreferred=1, driverSelected=0, unavailable=0, missing=1, blocking=0)",
-                summary.toHistorySummary()
+                aggregateSummary,
+                OpenClKernelLaunchAdvisorySummary.aggregateHistorySummary(historySummary)
+        );
+        assertTrue(historySummary.startsWith(aggregateSummary + "; snapshot=v1:"));
+        assertEquals(
+                summary.entries(),
+                OpenClKernelLaunchAdvisorySummary.parseHistoryEntries(historySummary).orElseThrow()
         );
         assertTrue(markdown.contains("## Kernel Launch Advisories"));
         assertTrue(markdown.contains("- Non-preferred multiple: `1`"));
