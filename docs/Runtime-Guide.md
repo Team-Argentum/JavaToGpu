@@ -358,7 +358,7 @@ GpuProductionPromotionOperatorAcceptance acceptance =
 compileOptions = compileOptions.withProductionPromotionOperatorAcceptance(acceptance);
 ```
 
-The legacy `withProductionPromotionOperatorAccepted(true)` flag is retained for compatibility and diagnostics, but it does not authorize the OpenCL production source path without the matching acceptance fields. A device, driver, profile, kernel, backend, or decision-mode mismatch fails closed and requires a newly reviewed acceptance.
+The legacy `withProductionPromotionOperatorAccepted(true)` flag is retained for compatibility and diagnostics, but it does not authorize the OpenCL production source path without the matching acceptance fields. Acceptance alone is also insufficient: the controlled runtime path requires a matching `GpuProductionActivationToken`. A device, driver, profile, kernel, backend, decision-mode, activation-scope, or token mismatch fails closed.
 
 Hardware validation joins the real-workload promotion evidence with controlled identity-bound acceptance in `backend-source-promotion-candidate-gate.properties`. The candidate gate is `review-ready` only when every workload kernel is review-ready, source-parity matched, runtime-equivalent, present in the controlled source-switching run, operator-accepted, and bound to the recorded device identity.
 
@@ -400,9 +400,27 @@ The next operational boundary combines the approved manifest validation, the pro
   --console=plain --no-daemon
 ```
 
-The task writes `backend-source-promotion-activation-gate.properties`. A successful result is `controlled-activation-ready` with full kernel coverage and accepted/bound operator evidence. It explicitly records `activationScope=controlled-opt-in-only`, `defaultRuntimeActivation=false`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`.
+The task writes `backend-source-promotion-activation-gate.properties` and `backend-source-promotion-activation-gate.properties.sha256`. A successful result is `controlled-activation-ready` with full kernel coverage and accepted/bound operator evidence. It explicitly records `activationScope=controlled-opt-in-only`, `defaultRuntimeActivation=false`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`.
 
-This gate does not modify `GpuRuntimeCompileOptions`, does not enable the default source path, and is not consumed automatically by application runtime code. It only proves that a separately controlled activation path has complete reviewed evidence.
+This gate does not modify `GpuRuntimeCompileOptions`, does not enable the default source path, and is not consumed automatically by application runtime code. A controlled caller must load the exact artifact and expected digest, then attach the resulting token alongside the identity-bound operator acceptance:
+
+```java
+Path activationArtifact = Path.of(
+        "processor/build/reports/opencl/backend-source-promotion-activation-gate.properties"
+);
+String expectedSha256 = Files.readString(
+        activationArtifact.resolveSibling(activationArtifact.getFileName() + ".sha256")
+).trim();
+
+GpuProductionActivationToken activationToken =
+        GpuProductionActivationToken.fromArtifact(activationArtifact, expectedSha256);
+
+compileOptions = compileOptions
+        .withProductionPromotionOperatorAcceptance(acceptance)
+        .withProductionActivationToken(activationToken);
+```
+
+The OpenCL production lowerer validates the token against the runtime backend, device vendor/label, driver, activation scope, and kernel resource. Any mismatch rejects the production source path while normal application execution remains on the default generated OpenCL source.
 
 ## ABI Debug
 

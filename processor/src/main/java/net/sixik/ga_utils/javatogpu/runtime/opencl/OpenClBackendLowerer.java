@@ -9,6 +9,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingPolicy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionIrAcceptanceGate;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationToken;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeProductionProfiles;
@@ -76,6 +77,7 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
     ) {
         GpuProductionPromotionOperatorAcceptance.Result operatorAcceptance =
                 GpuProductionPromotionOperatorAcceptance.evaluate(compileRequest);
+        GpuProductionActivationToken.Result activationToken = GpuProductionActivationToken.evaluate(compileRequest);
         GpuProductionIrAcceptanceGate.evaluate(
                 "OpenCL",
                 "IrGpu source",
@@ -83,13 +85,16 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
                 GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile()),
                 sourceSwitchingPolicy.productionSourceSwitchingEnabled(),
                 sourceSwitchingPolicy.productionPromotionDecisionMode(),
-                operatorAcceptance.accepted()
+                operatorAcceptance.accepted(),
+                activationToken.accepted()
         ).throwIfRejected("pass backend option "
                 + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
                 + "="
                 + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
                 + " only after accepted production-promotion evidence is loaded; "
-                + operatorAcceptance.diagnostic());
+                + operatorAcceptance.diagnostic()
+                + "; "
+                + activationToken.diagnostic());
     }
 
     private GpuBackendModuleArtifact lowerIrGpuSource(

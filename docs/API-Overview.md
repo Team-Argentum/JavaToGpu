@@ -214,6 +214,7 @@ Common calls:
 - `GpuBackendSourcePromotionCandidateGate` for joining real-workload readiness with controlled identity-bound acceptance. A review-ready result remains non-mutating and does not enable default production source switching.
 - `GpuBackendSourcePromotionManifest` for generating and validating a manual approval artifact bound to the candidate SHA-256, Git SHA, device/driver identity, and exact kernel resource list. Manifest validation remains review-only and non-mutating.
 - `GpuBackendSourcePromotionActivationGate` for joining approved manifest validation with the candidate and controlled source-switching evidence. `controlled-activation-ready` never enables default runtime activation or production mutation.
+- `GpuProductionActivationToken.fromArtifact(...)` for an explicit runtime opt-in loaded from one exact controlled-activation artifact after its SHA-256 is verified. The token remains bound to the artifact backend, device/driver identity, activation scope, and approved kernel resources.
 
 Runtime failures share the public `GpuRuntimeException` base type. Catch a specific subtype when recovery depends on the phase, or catch the base type for a general CPU/backend fallback:
 

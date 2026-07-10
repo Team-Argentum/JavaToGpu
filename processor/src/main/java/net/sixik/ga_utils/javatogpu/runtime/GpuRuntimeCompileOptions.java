@@ -127,6 +127,16 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    public GpuRuntimeCompileOptions withProductionActivationToken(GpuProductionActivationToken token) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withProductionActivationToken(token),
+                deviceOverride
+        );
+    }
+
     public GpuRuntimeCompileOptions withDeviceOverride(GpuRuntimeDeviceOverride override) {
         return new GpuRuntimeCompileOptions(
                 backendTarget,

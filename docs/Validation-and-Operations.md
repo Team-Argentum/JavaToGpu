@@ -76,6 +76,7 @@ processor/build/reports/opencl/backend-source-promotion-candidate-gate.propertie
 processor/build/reports/opencl/backend-source-promotion-manifest-template.properties
 processor/build/reports/opencl/backend-source-promotion-manifest-validation.properties
 processor/build/reports/opencl/backend-source-promotion-activation-gate.properties
+processor/build/reports/opencl/backend-source-promotion-activation-gate.properties.sha256
 processor/build/test-results/
 ```
 
@@ -85,7 +86,7 @@ The candidate gate combines the real-workload gate with controlled source-switch
 
 Manual `workflow_dispatch` runs expose `production_promotion_manifest_mode=skip|template|validate|activate`. Use `template` to archive a pending device-specific manifest bound to that run's `github.sha`. After approving and committing the manifest, use `validate` with `production_promotion_manifest_file`, the original SHA in `production_promotion_candidate_git_sha`, and a single matching `validation_lane`. Candidate SHA-256 and identity bindings prevent reuse for another GPU, driver, candidate artifact, or source state.
 
-Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate. This mode remains evidence-only: it does not enable default runtime activation, default production source switching, or production mutation.
+Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate plus its SHA-256 sidecar. This mode does not enable default runtime activation, default production source switching, or production mutation. A controlled caller must explicitly load the exact artifact with the sidecar digest into a `GpuProductionActivationToken`; any artifact, digest, device, driver, backend, scope, or kernel mismatch fails closed.
 
 ## Optional IR Validation
 

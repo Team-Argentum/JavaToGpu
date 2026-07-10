@@ -31,6 +31,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationTokenTestFixtures;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
@@ -3078,7 +3079,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 "",
                 List.of()
         );
-        return options.withProductionPromotionOperatorAcceptance(
+        options = options.withProductionPromotionOperatorAcceptance(
                 GpuProductionPromotionOperatorAcceptance.forContext(
                         productionSourceSwitchingAcceptanceId(kernelResource),
                         deviceProfile.backendTarget(),
@@ -3087,6 +3088,9 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         bindingDescriptor,
                         decision.mode()
                 )
+        );
+        return options.withProductionActivationToken(
+                GpuProductionActivationTokenTestFixtures.token(deviceProfile, kernelResource)
         );
     }
 

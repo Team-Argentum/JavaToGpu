@@ -32,7 +32,13 @@ public final class GpuBackendSourcePromotionActivationGateCli {
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        Files.writeString(outputPath, gate.toPropertiesText(), StandardCharsets.UTF_8);
+        byte[] artifactBytes = gate.toPropertiesText().getBytes(StandardCharsets.UTF_8);
+        Files.write(outputPath, artifactBytes);
+        Files.writeString(
+                outputPath.resolveSibling(outputPath.getFileName() + ".sha256"),
+                GpuProductionActivationToken.sha256(artifactBytes) + "\n",
+                StandardCharsets.UTF_8
+        );
         if (!gate.activationReady()) {
             throw new IllegalStateException(
                     "Controlled activation gate is blocked for " + outputPath + ": " + gate.firstBlocker()

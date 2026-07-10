@@ -37,6 +37,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationTokenTestFixtures;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
@@ -1971,20 +1972,31 @@ class OpenClGpuRuntimeBackendTest {
         Path explainabilityFile = Files.createTempFile("javatogpu-production-source-switching-explainability", ".properties");
         writeProductionReadyExplainability(explainabilityFile);
         GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
-        GpuRuntimeDeviceProfile deviceProfile = GpuRuntimeDeviceProfile.openCl(
-                "OpenCL",
-                "Mock GPU",
-                "unknown",
-                "unknown",
-                "OpenCL 3.0 Mock",
-                -1L,
-                32_768L,
-                256L,
-                -1L,
-                true,
-                true,
-                true
-        );
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        SnapshotCapturingBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+            @Override
+            protected GpuRuntimeDeviceProfile compileDeviceProfile() {
+                return new GpuRuntimeDeviceProfile(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Mock GPU",
+                        "Mock Vendor",
+                        "Mock Driver",
+                        "OpenCL 3.0 Mock"
+                );
+            }
+
+            @Override
+            protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
+                return GpuRuntimeEquivalenceEvidence.passed(
+                        request.optimizedCompileRequest(),
+                        1,
+                        1,
+                        List.of("packaged IrGpu source remained equivalent before production source switching")
+                );
+            }
+        };
+        GpuRuntimeDeviceProfile deviceProfile = backend.compileDeviceProfile();
         GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClProductionIrGpuSource(
                 List.of(),
                 "vendor-tuned"
@@ -1998,22 +2010,12 @@ class OpenClGpuRuntimeBackendTest {
                         GpuProductionPromotionDecision.PRODUCTION_ENABLED
                 )
         );
-        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        options = options.withProductionActivationToken(
+                GpuProductionActivationTokenTestFixtures.token(deviceProfile, descriptor.kernelResource())
+        );
         String previousExplainabilityFile = System.getProperty("javatogpu.opencl.productionPromotionExplainabilityFile");
         try {
             System.setProperty("javatogpu.opencl.productionPromotionExplainabilityFile", explainabilityFile.toString());
-
-            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
-                @Override
-                protected GpuRuntimeEquivalenceEvidence executeRuntimeEquivalence(GpuRuntimeEquivalenceRequest request) {
-                    return GpuRuntimeEquivalenceEvidence.passed(
-                            request.optimizedCompileRequest(),
-                            1,
-                            1,
-                            List.of("packaged IrGpu source remained equivalent before production source switching")
-                    );
-                }
-            };
 
             backend.invoke(new GpuKernelInvocation(
                     descriptor,

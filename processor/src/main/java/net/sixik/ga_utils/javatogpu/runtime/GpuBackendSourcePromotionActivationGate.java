@@ -234,6 +234,7 @@ public record GpuBackendSourcePromotionActivationGate(
         builder.append("status=").append(status).append('\n');
         builder.append("activationReady=").append(activationReady).append('\n');
         builder.append("activationScope=").append(activationScope).append('\n');
+        builder.append("backendTarget=OPENCL\n");
         builder.append("defaultRuntimeActivation=false\n");
         builder.append("defaultProductionSourceSwitching=disabled\n");
         builder.append("productionMutation=disabled\n");

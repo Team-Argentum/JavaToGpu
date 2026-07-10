@@ -415,11 +415,76 @@ class GpuBackendLowerersTest {
     }
 
     @Test
+    void openClLowererRejectsProductionIrGpuSourceWithoutActivationToken() {
+        GpuKernelDescriptor descriptor = roundTripDescriptor();
+        GpuRuntimeDeviceProfile deviceProfile = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "Mock GPU",
+                "Mock Vendor",
+                "1.0",
+                "OpenCL 3.0 Mock",
+                -1L,
+                32_768L,
+                256L,
+                -1L,
+                true,
+                true,
+                true
+        );
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                .openClProductionIrGpuSource(List.of(), "vendor-tuned")
+                .withProductionPromotionDecision(new GpuProductionPromotionDecision(
+                        GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                        "production-ready",
+                        true,
+                        true,
+                        true,
+                        "none",
+                        "none",
+                        "production promotion is explicitly enabled by accepted evidence"
+                ));
+        options = options.withProductionPromotionOperatorAcceptance(
+                GpuProductionPromotionOperatorAcceptance.forContext(
+                        "acceptance:test-lowerer-no-activation",
+                        GpuBackendTarget.OPENCL,
+                        deviceProfile,
+                        options.optimizationProfile(),
+                        descriptor,
+                        options.backendOptions().productionPromotionDecisionMode()
+                )
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                options,
+                deviceProfile,
+                Optional.of(roundTripIrGpuArtifact(descriptor.kernelResource()))
+        );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL).lower(compileRequest)
+        );
+
+        assertTrue(exception.getMessage().contains("production activation token was not accepted"));
+        assertTrue(exception.getMessage().contains("production-activation-token-missing"));
+    }
+
+    @Test
     void openClLowererAllowsProductionIrGpuSourceOnlyWhenProductionSwitchingAndDecisionAreEnabled() {
         GpuKernelDescriptor descriptor = roundTripDescriptor();
-        GpuRuntimeDeviceProfile deviceProfile = GpuRuntimeDeviceProfile.generic(
-                GpuBackendTarget.OPENCL,
-                "OpenCL"
+        GpuRuntimeDeviceProfile deviceProfile = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "Mock GPU",
+                "Mock Vendor",
+                "1.0",
+                "OpenCL 3.0 Mock",
+                -1L,
+                32_768L,
+                256L,
+                -1L,
+                true,
+                true,
+                true
         );
         GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
                 .openClProductionIrGpuSource(List.of(), "vendor-tuned")
@@ -442,6 +507,9 @@ class GpuBackendLowerersTest {
                         descriptor,
                         options.backendOptions().productionPromotionDecisionMode()
                 )
+        );
+        options = options.withProductionActivationToken(
+                GpuProductionActivationTokenTestFixtures.token(deviceProfile, descriptor.kernelResource())
         );
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor,
