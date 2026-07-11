@@ -34,6 +34,7 @@ This means:
 - AMD RX 7800 XT validation is green.
 - Intel should still be validated on real hardware before making broad cross-vendor claims.
 - A green local validation run proves the tested commit, machine, driver, and backend, not universal OpenCL behavior.
+- The RTX 5070 lane has a production-ready OpenCL promotion checkpoint for approval `approval:rtx5070-75081921-20260711`, bound to candidate SHA `75081921bd9f3a85337172e93ce7b4629437e89f`, with manifest validation, activation gate, activation-token smoke, activation-token negative controls, source parity, runtime equivalence, and the production readiness checklist all passing.
 
 ## Main Validation Buckets
 
@@ -95,7 +96,7 @@ Manual `workflow_dispatch` runs expose `production_promotion_manifest_mode=skip|
 
 Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate plus its SHA-256 sidecar, loads the exact artifact into a `GpuProductionActivationToken`, and runs every approved real workload kernel on the selected device. The positive hardware result is written to `production-activation-token-smoke.properties` with per-kernel status and workload coverage. A required negative lane then verifies that a mismatched SHA-256 is rejected and that an unapproved kernel is blocked before output mutation; its result is written to `production-activation-token-negative.properties`. The `activate` lane fails if either check fails. This mode does not enable default runtime activation, default production source switching, or production mutation.
 
-`openClValidationReport` folds both activation-token artifacts into production-promotion explainability. A successful controlled activation records token loading, approved-kernel execution, full real-workload coverage, digest-mismatch rejection, unapproved-kernel rejection, unchanged rejected output, and safe defaults as separate readiness evidence. The overall production status remains blocked while default production source switching or production mutation is disabled.
+`openClValidationReport` folds both activation-token artifacts into production-promotion explainability. A successful controlled activation records token loading, approved-kernel execution, full real-workload coverage, digest-mismatch rejection, unapproved-kernel rejection, unchanged rejected output, and safe defaults as separate readiness evidence. The RTX 5070 promotion checkpoint now demonstrates the complete production-ready path: `production-promotion-explainability.properties` records `status=production-ready`, `contract.status=valid`, `decision.mode=production-enabled`, `readinessChecklist.ready.count=11`, and `blocker.count=0` while still requiring explicit manifest-bound activation evidence.
 
 The vendor workflow also runs `openClOptimizerFamilyPayloadFixtureTest` after the main validation bucket. It must produce `fixture-summary.properties` with two complete families and fourteen durable files. This fixture proves the nested artifact contract is uploadable and path-safe; it does not alter real-workload optimizer-family counts or production readiness.
 

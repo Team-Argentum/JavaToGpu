@@ -16,8 +16,10 @@ static void kernel(@GPUGlobal float[] output) {
 ```
 
 Common backend metadata should also prefer portable annotations before raw strings: `@GPUWorkGroupSizeHint`,
-`@GPUVectorTypeHint`, `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` lower to the current OpenCL metadata path
-today while preserving source intent for future CUDA, Vulkan/SPIR-V, and Metal lowerers.
+`@GPUVectorTypeHint`, `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` lower through backend-neutral
+`attributeMetadata` in `kernel.irgpu.properties`. OpenCL currently projects that metadata back to OpenCL attributes
+for validation and source emission, while future CUDA, Vulkan/SPIR-V, and Metal lowerers should consume the same
+metadata directly instead of parsing OpenCL-specific strings.
 
 Use `@GPUAttribute` only when no portable annotation exists yet. It supports repeated usage on the same method, field, type, or parameter:
 
@@ -41,7 +43,7 @@ For vendor or device-specific metadata, narrow the selector explicitly:
 )
 ```
 
-`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only code, but new backend-specific metadata should prefer `@GPUAttribute`. Generic OpenCL emission should not apply vendor/device-specific raw attributes until device-aware lowering is available.
+`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only code, but new backend-specific metadata should prefer `@GPUAttribute`. Generic OpenCL emission should not apply vendor/device-specific raw attributes until device-aware lowering is available. Portable `attributeMetadata` is the source-of-truth for modeled concepts; backend-specific string attributes are compatibility projections or explicit escape hatches.
 
 ## Runtime selection
 
