@@ -26,12 +26,13 @@ Start with `validation-report.md`. Keep the `.properties` files when debugging C
 
 ## Current Alpha Position
 
-The current strongest validation path is NVIDIA OpenCL because that is the main real hardware stack used for repo-local validation.
+The current validated OpenCL baseline covers NVIDIA and AMD hardware.
 
 This means:
 
-- NVIDIA OpenCL is the current confidence baseline.
-- Intel and AMD should be validated on real hardware before making cross-vendor claims.
+- NVIDIA RTX 3060 and RTX 5070 validation lanes are green.
+- AMD RX 7800 XT validation is green.
+- Intel should still be validated on real hardware before making broad cross-vendor claims.
 - A green local validation run proves the tested commit, machine, driver, and backend, not universal OpenCL behavior.
 
 ## Main Validation Buckets
@@ -50,6 +51,13 @@ Important buckets include:
 - `:processor:structAbiTest`
 - `:processor:openClVendorValidation`
 - `:processor:openClWorkloadValidationTest`
+- `:processor:openClBackendSourcePromotionCandidateGate`
+- `:processor:writeOpenClBackendSourcePromotionManifestTemplate`
+- `:processor:validateOpenClBackendSourcePromotionManifest`
+- `:processor:validateOpenClBackendSourcePromotionActivationGate`
+- `:processor:openClProductionActivationTokenSmokeTest`
+- `:processor:openClProductionActivationTokenNegativeTest`
+- `:processor:openClOptimizerFamilyPayloadFixtureTest`
 - `:processor:openClValidationReport`
 
 You usually do not need to run buckets one by one unless you are narrowing down a failure.
@@ -65,10 +73,31 @@ processor/build/reports/opencl/bucket-status.properties
 processor/build/reports/opencl/workload-summary.properties
 processor/build/reports/opencl/long-running-summary.properties
 processor/build/reports/opencl/backend-source-promotion-gate.properties
+processor/build/reports/opencl/backend-source-promotion-workload-gate.properties
+processor/build/reports/opencl/production-source-switching-validation.properties
+processor/build/reports/opencl/backend-source-promotion-candidate-gate.properties
+processor/build/reports/opencl/backend-source-promotion-manifest-template.properties
+processor/build/reports/opencl/backend-source-promotion-manifest-validation.properties
+processor/build/reports/opencl/backend-source-promotion-activation-gate.properties
+processor/build/reports/opencl/backend-source-promotion-activation-gate.properties.sha256
+processor/build/reports/opencl/production-activation-token-smoke.properties
+processor/build/reports/opencl/production-activation-token-negative.properties
+processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-optimizer-family-equivalence-payload/
+processor/build/reports/opencl/optimizer-family-payload-fixture/
 processor/build/test-results/
 ```
 
 These files are more useful than a screenshot because they preserve bucket status, device details, and machine-readable failure state.
+
+The candidate gate combines the real-workload gate with controlled source-switching acceptance for the same kernel resources and device identity. `review-ready` means the candidate evidence is complete; default production source switching and production mutation remain disabled.
+
+Manual `workflow_dispatch` runs expose `production_promotion_manifest_mode=skip|template|validate|activate`. Use `template` to archive a pending device-specific manifest bound to that run's `github.sha`. After approving and committing the manifest, use `validate` with `production_promotion_manifest_file`, the original SHA in `production_promotion_candidate_git_sha`, and a single matching `validation_lane`. Candidate SHA-256 and identity bindings prevent reuse for another GPU, driver, candidate artifact, or source state.
+
+Use `activate` only after manifest validation succeeds. The workflow then writes and validates the controlled activation gate plus its SHA-256 sidecar, loads the exact artifact into a `GpuProductionActivationToken`, and runs every approved real workload kernel on the selected device. The positive hardware result is written to `production-activation-token-smoke.properties` with per-kernel status and workload coverage. A required negative lane then verifies that a mismatched SHA-256 is rejected and that an unapproved kernel is blocked before output mutation; its result is written to `production-activation-token-negative.properties`. The `activate` lane fails if either check fails. This mode does not enable default runtime activation, default production source switching, or production mutation.
+
+`openClValidationReport` folds both activation-token artifacts into production-promotion explainability. A successful controlled activation records token loading, approved-kernel execution, full real-workload coverage, digest-mismatch rejection, unapproved-kernel rejection, unchanged rejected output, and safe defaults as separate readiness evidence. The overall production status remains blocked while default production source switching or production mutation is disabled.
+
+The vendor workflow also runs `openClOptimizerFamilyPayloadFixtureTest` after the main validation bucket. It must produce `fixture-summary.properties` with two complete families and fourteen durable files. This fixture proves the nested artifact contract is uploadable and path-safe; it does not alter real-workload optimizer-family counts or production readiness.
 
 ## Optional IR Validation
 
@@ -98,7 +127,7 @@ Record:
 - Whether all buckets passed.
 - Any confirmed device-specific failures.
 
-If a failure reproduces only on one vendor stack, document it in [Device Quirks](Device-Quirks.md).
+If a failure reproduces only on one vendor stack, document it in [Device Quirks](Device-Quirks.md). Current green lanes include NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT.
 
 ## What Green Validation Means
 

@@ -16,7 +16,7 @@ Recommended positioning:
 Public alpha / developer preview for experimental Java-to-OpenCL kernels.
 ```
 
-Avoid calling the project stable, production-ready, or cross-vendor proven until Intel and AMD OpenCL validation are also green on real hardware.
+Avoid calling the project stable or production-ready. NVIDIA and AMD OpenCL validation are green on real hardware, but Intel validation is still pending.
 
 ## Must Be True
 
@@ -61,9 +61,10 @@ This is the first public alpha of JavaToGpu, an experimental Java-to-OpenCL comp
 ## Validated Environment
 
 - Backend: OpenCL
-- Current proven local device: NVIDIA GeForce RTX 5070
-- NVIDIA status: operationally proven for repo-local alpha validation through five full operational routine passes
-- Cross-vendor status: Intel and AMD validation pending
+- Current proven devices: NVIDIA GeForce RTX 3060, NVIDIA GeForce RTX 5070, and AMD RX 7800 XT / `gfx1101`
+- NVIDIA status: operationally validated on RTX 3060 and RTX 5070 lanes
+- AMD status: operationally validated on RX 7800 XT lane
+- Cross-vendor status: Intel validation pending
 
 ## Highlights
 
@@ -85,6 +86,6 @@ This is the first public alpha of JavaToGpu, an experimental Java-to-OpenCL comp
 
 The right promise for this stage is: useful for experiments, compiler integrations, GPU-kernel prototyping, and feedback from early adopters.
 
-The current NVIDIA OpenCL path is operationally proven for repo-local alpha validation, but this is not a cross-vendor production-ready claim.
+The current NVIDIA and AMD OpenCL paths are operationally validated for repo-local alpha confidence, but this is not a production-ready claim and Intel validation remains pending.
 
 The wrong promise is: automatic acceleration for arbitrary Java applications.

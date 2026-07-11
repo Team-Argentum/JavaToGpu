@@ -53,9 +53,44 @@ def lwjglNatives = osName.contains("win")
 def openClBucketStatusFile = layout.buildDirectory.file('reports/opencl/bucket-status.properties').get().asFile
 def openClI3ReadinessWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/i3-readiness-workload-summary.properties').get().asFile
 def openClProductionPromotionExplainabilityFile = layout.buildDirectory.file('reports/opencl/production-promotion-explainability.properties').get().asFile
+def openClProductionPromotionExplainabilitySummaryFile = layout.buildDirectory.file('reports/opencl/production-promotion-explainability-summary.properties').get().asFile
+def openClBackendPromotionArtifactSupportFile = layout.buildDirectory.file('reports/opencl/backend-promotion-artifact-support.properties').get().asFile
+def openClBackendSourcePromotionWorkloadGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile
+def openClBackendSourcePromotionWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-summary.properties').get().asFile
+def openClProductionSourceSwitchingValidationFile = layout.buildDirectory.file('reports/opencl/production-source-switching-validation.properties').get().asFile
+def openClProductionMutationValidationFile = layout.buildDirectory.file('reports/opencl/production-mutation-validation.properties').get().asFile
+def openClBackendSourcePromotionCandidateGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-candidate-gate.properties').get().asFile
+def openClBackendSourcePromotionManifestTemplateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest-template.properties').get().asFile
+def openClBackendSourcePromotionManifestValidationFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest-validation.properties').get().asFile
+def openClBackendSourcePromotionActivationGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-activation-gate.properties').get().asFile
+def openClBackendSourcePromotionActivationGateDigestFile = new File(
+        openClBackendSourcePromotionActivationGateFile.parentFile,
+        openClBackendSourcePromotionActivationGateFile.name + '.sha256'
+)
+def openClProductionActivationTokenSmokeFile = layout.buildDirectory.file('reports/opencl/production-activation-token-smoke.properties').get().asFile
+def openClProductionActivationTokenNegativeFile = layout.buildDirectory.file('reports/opencl/production-activation-token-negative.properties').get().asFile
+def openClOptimizerFamilyPayloadFixtureDirectory = layout.buildDirectory.dir('reports/opencl/optimizer-family-payload-fixture').get().asFile
+def openClBackendSourcePromotionManifestFile = providers.gradleProperty('openClPromotionManifestFile')
+        .map { rootProject.file(it) }
+        .orElse(layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest.properties').map { it.asFile })
+def openClPromotionGitSha = providers.gradleProperty('openClPromotionGitSha')
+        .orElse(providers.environmentVariable('GITHUB_SHA'))
+        .orElse('unknown')
+def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-drift.properties').get().asFile
+def openClCompilerResourceDriftFile = layout.buildDirectory.file('reports/opencl/runtime-compiler-resource-drift.properties').get().asFile
+def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
+def openClValidationHistoryMarkdownFile = layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile
+def openClValidationHistoryCacheDirectory = layout.buildDirectory.dir('opencl-validation-history-cache').get().asFile
+def openClValidationHistoryBaselineFile = providers.gradleProperty('javatogpu.opencl.validationHistoryBaselineFile')
+        .map { file(it) }
+        .orElse(layout.buildDirectory.file('opencl-validation-history-cache/validation-history.properties').map { it.asFile })
+        .get()
 def openClI3ReadinessBaselineFile = providers.gradleProperty('javatogpu.opencl.i3ReadinessBaselineFile')
         .map { file(it) }
         .orElse(layout.buildDirectory.file('opencl-i3-readiness-baselines/i3-readiness-workload-baseline.properties').map { it.asFile })
+def openClBackendSourcePromotionWorkloadBaselineFile = providers.gradleProperty('javatogpu.opencl.backendSourcePromotionWorkloadBaselineFile')
+        .map { file(it) }
+        .orElse(layout.buildDirectory.file('opencl-source-promotion-baselines/backend-source-promotion-workload-baseline.properties').map { it.asFile })
 
 def recordBucketStatus = { String taskName, String status ->
     Properties properties = new Properties()
@@ -380,8 +415,14 @@ tasks.register('openClWorkloadValidationTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     systemProperty 'javatogpu.opencl.workloadValidation', 'true'
+    systemProperty 'javatogpu.opencl.compilerDiagnostics', 'true'
+    systemProperty 'javatogpu.runtime.cseReviewLane', 'true'
+    String diagnosticCompileArgs = System.getenv('JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS') ?: ''
+    if (!diagnosticCompileArgs.isBlank()) {
+        systemProperty 'javatogpu.opencl.compilerDiagnosticArgs', diagnosticCompileArgs
+    }
     systemProperty 'javatogpu.opencl.workloadSummaryFile', layout.buildDirectory.file('reports/opencl/workload-summary.properties').get().asFile.absolutePath
-    systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', openClBackendSourcePromotionWorkloadGateFile.absolutePath
     systemProperty 'javatogpu.opencl.productionPromotionExplainabilityFile', openClProductionPromotionExplainabilityFile.absolutePath
     filter {
         includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.seriousWorkloadBucketRemainsEquivalentOnAvailableOpenClDevice'
@@ -400,6 +441,150 @@ tasks.register('openClIrGpuSourceReviewTest', Test) {
     filter {
         includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.irGpuSourceReviewLaneRunsOptInSourceOnAvailableOpenClDevice'
     }
+    attachBucketStatusRecording(it)
+}
+
+tasks.register('openClProductionSourceSwitchingValidationTest', Test) {
+    group = 'verification'
+    description = 'Runs controlled opt-in OpenCL IrGpu production source-switching smoke coverage.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidation', 'true'
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionSourceSwitchingLaneRunsPackagedIrGpuSourceOnAvailableOpenClDevice'
+    }
+    attachBucketStatusRecording(it)
+}
+
+tasks.register('openClProductionMutationValidationTest', Test) {
+    group = 'verification'
+    description = 'Records controlled OpenCL production mutation readiness without enabling the default runtime path.'
+    dependsOn 'openClProductionSourceSwitchingValidationTest'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.productionMutationValidation', 'true'
+    systemProperty 'javatogpu.opencl.productionMutationValidationFile', openClProductionMutationValidationFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionMutationValidationRecordsControlledEvidenceOnAvailableOpenClDevice'
+    }
+    outputs.file(openClProductionMutationValidationFile)
+    attachBucketStatusRecording(it)
+}
+
+tasks.register('openClBackendSourcePromotionCandidateGate', JavaExec) {
+    group = 'verification'
+    description = 'Builds and validates the identity-bound production candidate gate for real OpenCL workloads.'
+    dependsOn 'openClWorkloadValidationTest'
+    dependsOn 'openClProductionSourceSwitchingValidationTest'
+    dependsOn 'openClProductionMutationValidationTest'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionCandidateGateCli'
+    args openClBackendSourcePromotionWorkloadGateFile.absolutePath,
+            openClProductionSourceSwitchingValidationFile.absolutePath,
+            openClBackendSourcePromotionCandidateGateFile.absolutePath
+    finalizedBy 'openClValidationReport'
+}
+
+tasks.register('writeOpenClBackendSourcePromotionManifestTemplate', JavaExec) {
+    group = 'verification'
+    description = 'Writes a pending manual approval manifest bound to the current OpenCL production candidate.'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionManifestTemplateCli'
+    args openClBackendSourcePromotionCandidateGateFile.absolutePath,
+            openClBackendSourcePromotionManifestTemplateFile.absolutePath,
+            openClPromotionGitSha.get()
+    inputs.file(openClBackendSourcePromotionCandidateGateFile)
+    outputs.file(openClBackendSourcePromotionManifestTemplateFile)
+}
+
+tasks.register('validateOpenClBackendSourcePromotionManifest', JavaExec) {
+    group = 'verification'
+    description = 'Validates a manual approval manifest against the exact candidate artifact, Git SHA, and device identity.'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionManifestValidatorCli'
+    args openClBackendSourcePromotionCandidateGateFile.absolutePath,
+            openClBackendSourcePromotionManifestFile.get().absolutePath,
+            openClBackendSourcePromotionManifestValidationFile.absolutePath,
+            openClPromotionGitSha.get()
+    inputs.file(openClBackendSourcePromotionCandidateGateFile)
+    inputs.file(openClBackendSourcePromotionManifestFile).optional()
+    outputs.file(openClBackendSourcePromotionManifestValidationFile)
+}
+
+tasks.register('validateOpenClBackendSourcePromotionActivationGate', JavaExec) {
+    group = 'verification'
+    description = 'Validates controlled opt-in activation readiness without enabling the default runtime path.'
+    dependsOn 'validateOpenClBackendSourcePromotionManifest'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionActivationGateCli'
+    args openClBackendSourcePromotionCandidateGateFile.absolutePath,
+            openClBackendSourcePromotionManifestValidationFile.absolutePath,
+            openClProductionSourceSwitchingValidationFile.absolutePath,
+            openClBackendSourcePromotionActivationGateFile.absolutePath
+    inputs.file(openClBackendSourcePromotionCandidateGateFile)
+    inputs.file(openClBackendSourcePromotionManifestValidationFile)
+    inputs.file(openClProductionSourceSwitchingValidationFile)
+    outputs.file(openClBackendSourcePromotionActivationGateFile)
+    outputs.file(openClBackendSourcePromotionActivationGateDigestFile)
+}
+
+tasks.register('openClProductionActivationTokenSmokeTest', Test) {
+    group = 'verification'
+    description = 'Loads the exact controlled activation artifact and runs all approved OpenCL workloads.'
+    dependsOn 'validateOpenClBackendSourcePromotionActivationGate'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.productionActivationTokenSmoke', 'true'
+    systemProperty 'javatogpu.opencl.productionActivationArtifactFile', openClBackendSourcePromotionActivationGateFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationDigestFile', openClBackendSourcePromotionActivationGateDigestFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationTokenSmokeFile', openClProductionActivationTokenSmokeFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionActivationTokenArtifactRunsAllApprovedWorkloadsOnAvailableOpenClDevice'
+    }
+    inputs.file(openClBackendSourcePromotionActivationGateFile)
+    inputs.file(openClBackendSourcePromotionActivationGateDigestFile)
+    outputs.file(openClProductionActivationTokenSmokeFile)
+    attachBucketStatusRecording(it)
+}
+
+tasks.register('openClProductionActivationTokenNegativeTest', Test) {
+    group = 'verification'
+    description = 'Verifies activation-token digest and unapproved-kernel fail-closed controls on OpenCL hardware.'
+    dependsOn 'validateOpenClBackendSourcePromotionActivationGate'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.productionActivationTokenNegative', 'true'
+    systemProperty 'javatogpu.opencl.productionActivationArtifactFile', openClBackendSourcePromotionActivationGateFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationDigestFile', openClBackendSourcePromotionActivationGateDigestFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationTokenNegativeFile', openClProductionActivationTokenNegativeFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionActivationTokenRejectsDigestMismatchAndUnapprovedKernelOnAvailableOpenClDevice'
+    }
+    inputs.file(openClBackendSourcePromotionActivationGateFile)
+    inputs.file(openClBackendSourcePromotionActivationGateDigestFile)
+    outputs.file(openClProductionActivationTokenNegativeFile)
+    attachBucketStatusRecording(it)
+}
+
+tasks.register('openClOptimizerFamilyPayloadFixtureTest', Test) {
+    group = 'verification'
+    description = 'Materializes complete diagnostic optimizer-family payload trees for CI artifact validation.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.optimizerFamilyPayloadFixtureDirectory', openClOptimizerFamilyPayloadFixtureDirectory.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendTest.writesOptimizerFamilyPayloadFixtureArtifacts'
+    }
+    outputs.dir(openClOptimizerFamilyPayloadFixtureDirectory)
     attachBucketStatusRecording(it)
 }
 
@@ -427,12 +612,83 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.workloadSummaryFile', layout.buildDirectory.file('reports/opencl/workload-summary.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.bucketStatusFile', openClBucketStatusFile.absolutePath
     systemProperty 'javatogpu.opencl.irGpuSourceReviewFile', layout.buildDirectory.file('reports/opencl/irgpu-source-review.properties').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionMutationValidationFile', openClProductionMutationValidationFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationTokenSmokeFile', openClProductionActivationTokenSmokeFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionActivationTokenNegativeFile', openClProductionActivationTokenNegativeFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath
-    systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.backendSourcePromotionWorkloadGateFile', openClBackendSourcePromotionWorkloadGateFile.absolutePath
+    systemProperty 'javatogpu.opencl.backendSourcePromotionCandidateGateFile', openClBackendSourcePromotionCandidateGateFile.absolutePath
     systemProperty 'javatogpu.opencl.i3ReadinessWorkloadSummaryFile', openClI3ReadinessWorkloadSummaryFile.absolutePath
     systemProperty 'javatogpu.opencl.productionPromotionExplainabilityFile', openClProductionPromotionExplainabilityFile.absolutePath
-    systemProperty 'javatogpu.opencl.validationHistoryFile', layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile.absolutePath
-    systemProperty 'javatogpu.opencl.validationHistoryMarkdownFile', layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.backendPromotionArtifactSupportFile', openClBackendPromotionArtifactSupportFile.absolutePath
+    systemProperty 'javatogpu.opencl.kernelLaunchAdvisorySummaryFile', layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-summary.md').get().asFile.absolutePath
+    systemProperty 'javatogpu.opencl.kernelLaunchAdvisoryDriftFile', openClKernelLaunchAdvisoryDriftFile.absolutePath
+    systemProperty 'javatogpu.opencl.compilerResourceDriftFile', openClCompilerResourceDriftFile.absolutePath
+    systemProperty 'javatogpu.opencl.validationHistoryFile', openClValidationHistoryFile.absolutePath
+    systemProperty 'javatogpu.opencl.validationHistoryMarkdownFile', openClValidationHistoryMarkdownFile.absolutePath
+    systemProperty 'javatogpu.opencl.validationHistoryBaselineFile', openClValidationHistoryBaselineFile.absolutePath
+}
+
+tasks.register('validateOpenClKernelLaunchAdvisoryDrift', JavaExec) {
+    group = 'verification'
+    description = 'Fails OpenCL CI when the kernel launch-advisory drift artifact reports a regression.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClKernelLaunchAdvisoryDriftValidatorCli'
+    args openClKernelLaunchAdvisoryDriftFile.absolutePath
+    inputs.file(openClKernelLaunchAdvisoryDriftFile)
+}
+
+tasks.register('validateOpenClCompilerResourceDrift', JavaExec) {
+    group = 'verification'
+    description = 'Fails OpenCL CI when the per-kernel compiler-resource drift artifact reports a regression.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClCompilerResourceDriftValidatorCli'
+    args openClCompilerResourceDriftFile.absolutePath
+    inputs.file(openClCompilerResourceDriftFile)
+}
+
+tasks.register('prepareOpenClKernelLaunchAdvisoryNegativeFixture', JavaExec) {
+    group = 'verification'
+    description = 'Mutates only the restored validation-history baseline to force a per-kernel drift regression.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClKernelLaunchAdvisoryNegativeFixtureCli'
+    args openClValidationHistoryBaselineFile.absolutePath
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('stageOpenClValidationHistoryCache') {
+    group = 'verification'
+    description = 'Stages the current OpenCL validation history for the next CI run baseline.'
+    dependsOn 'openClValidationReport'
+    inputs.file(openClValidationHistoryFile)
+    inputs.file(openClValidationHistoryMarkdownFile)
+    outputs.file(new File(openClValidationHistoryCacheDirectory, 'validation-history.properties'))
+    outputs.file(new File(openClValidationHistoryCacheDirectory, 'validation-history.md'))
+
+    doLast {
+        if (!openClValidationHistoryFile.isFile()) {
+            throw new GradleException('Missing OpenCL validation history properties: ' + openClValidationHistoryFile)
+        }
+        if (!openClValidationHistoryMarkdownFile.isFile()) {
+            throw new GradleException('Missing OpenCL validation history Markdown: ' + openClValidationHistoryMarkdownFile)
+        }
+        openClValidationHistoryCacheDirectory.mkdirs()
+        java.nio.file.Files.copy(
+                openClValidationHistoryFile.toPath(),
+                new File(openClValidationHistoryCacheDirectory, 'validation-history.properties').toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+        java.nio.file.Files.copy(
+                openClValidationHistoryMarkdownFile.toPath(),
+                new File(openClValidationHistoryCacheDirectory, 'validation-history.md').toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+        logger.lifecycle('Staged OpenCL validation history cache at {}', openClValidationHistoryCacheDirectory)
+    }
 }
 
 tasks.register('writeOpenClI3ReadinessWorkloadBaseline') {
@@ -538,6 +794,131 @@ tasks.register('validateOpenClI3ReadinessBaselineContract') {
     }
 }
 
+tasks.register('writeOpenClBackendSourcePromotionWorkloadBaseline') {
+    group = 'verification'
+    description = 'Persists the current OpenCL backend source-promotion workload gate as a comparison baseline.'
+    dependsOn 'openClValidationReport'
+    inputs.file(openClBackendSourcePromotionWorkloadGateFile)
+    outputs.file(openClBackendSourcePromotionWorkloadBaselineFile)
+
+    doLast {
+        if (!openClBackendSourcePromotionWorkloadGateFile.isFile()) {
+            throw new GradleException('Missing OpenCL backend source-promotion workload gate: ' + openClBackendSourcePromotionWorkloadGateFile)
+        }
+        File baselineFile = openClBackendSourcePromotionWorkloadBaselineFile.get()
+        baselineFile.parentFile.mkdirs()
+        Properties current = loadPropertiesFile(openClBackendSourcePromotionWorkloadGateFile)
+        Properties baseline = openClBackendSourcePromotionWorkloadBaseline(current)
+        baselineFile.withOutputStream { stream ->
+            baseline.store(stream, 'JavaToGpu OpenCL backend source-promotion workload baseline')
+        }
+        logger.lifecycle('OpenCL backend source-promotion workload baseline written: {} kernels, status={}, reviewReady={} -> {}',
+                baseline.getProperty('kernel.count'),
+                baseline.getProperty('status'),
+                baseline.getProperty('reviewReady'),
+                baselineFile)
+    }
+}
+
+tasks.register('validateOpenClBackendSourcePromotionWorkloadBaseline') {
+    group = 'verification'
+    description = 'Compares current OpenCL backend source-promotion workload gate against a persisted baseline.'
+    dependsOn 'openClValidationReport'
+    mustRunAfter 'writeOpenClBackendSourcePromotionWorkloadBaseline'
+    inputs.file(openClBackendSourcePromotionWorkloadGateFile)
+    inputs.file(openClBackendSourcePromotionWorkloadBaselineFile)
+
+    doLast {
+        File baselineFile = openClBackendSourcePromotionWorkloadBaselineFile.get()
+        if (!baselineFile.isFile()) {
+            throw new GradleException('Missing OpenCL backend source-promotion workload baseline: ' + baselineFile
+                    + '. Run writeOpenClBackendSourcePromotionWorkloadBaseline first or pass -Pjavatogpu.opencl.backendSourcePromotionWorkloadBaselineFile=<file>.')
+        }
+        if (!openClBackendSourcePromotionWorkloadGateFile.isFile()) {
+            throw new GradleException('Missing OpenCL backend source-promotion workload gate: ' + openClBackendSourcePromotionWorkloadGateFile)
+        }
+        Properties baseline = loadPropertiesFile(baselineFile)
+        Properties current = loadPropertiesFile(openClBackendSourcePromotionWorkloadGateFile)
+        validateOpenClBackendSourcePromotionWorkloadBaseline(baseline, current, baselineFile)
+        logger.lifecycle('OpenCL backend source-promotion workload baseline OK: status={}, kernels={}, reviewReady={}, parity={}, runtimeEquivalence={}',
+                current.getProperty('status'),
+                current.getProperty('kernel.count'),
+                current.getProperty('reviewReady'),
+                current.getProperty('sourceParityMatched'),
+                current.getProperty('runtimeEquivalencePassed'))
+    }
+}
+
+tasks.register('validateOpenClBackendSourcePromotionWorkloadBaselineContract') {
+    group = 'verification'
+    description = 'Self-tests OpenCL backend source-promotion workload baseline regression and progress comparisons.'
+
+    doLast {
+        Properties baseline = new Properties()
+        baseline.setProperty('format', 'javatogpu.opencl.backend-source-promotion-workload-baseline.v1')
+        baseline.setProperty('status', 'blocked')
+        baseline.setProperty('kernel.count', '2')
+        baseline.setProperty('reviewReady', 'false')
+        baseline.setProperty('sourceParityMatched', 'true')
+        baseline.setProperty('runtimeEquivalencePassed', 'true')
+        baseline.setProperty('productionSourceSwitching', 'false')
+        baseline.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.count', '2')
+        baseline.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.0.name', 'runtime-equivalence')
+        baseline.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.0.count', '1')
+        baseline.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.1.name', 'source-parity')
+        baseline.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.1.count', '1')
+        baseline.setProperty('kernel.0.sourceKernelResource', 'kernel-a.cl')
+        baseline.setProperty('kernel.0.status', 'review-ready')
+        baseline.setProperty('kernel.0.reviewReady', 'true')
+        baseline.setProperty('kernel.0.sourceParityMatched', 'true')
+        baseline.setProperty('kernel.0.runtimeEquivalencePassed', 'true')
+        baseline.setProperty('kernel.0.sourceSwitching.sourcePromotionFirstBlocker', 'none')
+        baseline.setProperty('kernel.1.sourceKernelResource', 'kernel-b.cl')
+        baseline.setProperty('kernel.1.status', 'blocked')
+        baseline.setProperty('kernel.1.reviewReady', 'false')
+        baseline.setProperty('kernel.1.sourceParityMatched', 'true')
+        baseline.setProperty('kernel.1.runtimeEquivalencePassed', 'true')
+        baseline.setProperty('kernel.1.sourceSwitching.sourcePromotionFirstBlocker', 'runtime equivalence must execute and pass before backend source promotion')
+
+        Properties equalCurrent = new Properties()
+        equalCurrent.putAll(baseline)
+        validateOpenClBackendSourcePromotionWorkloadBaseline(baseline, equalCurrent, new File('synthetic-source-promotion-workload-baseline.properties'))
+
+        Properties progressCurrent = new Properties()
+        progressCurrent.putAll(baseline)
+        progressCurrent.setProperty('status', 'review-ready')
+        progressCurrent.setProperty('reviewReady', 'true')
+        progressCurrent.setProperty('kernel.1.status', 'review-ready')
+        progressCurrent.setProperty('kernel.1.reviewReady', 'true')
+        progressCurrent.setProperty('kernel.1.sourceSwitching.sourcePromotionFirstBlocker', 'none')
+        progressCurrent.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.0.count', '0')
+        progressCurrent.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.1.count', '0')
+        validateOpenClBackendSourcePromotionWorkloadBaseline(baseline, progressCurrent, new File('synthetic-source-promotion-workload-baseline.properties'))
+
+        Properties statusRegression = new Properties()
+        statusRegression.putAll(baseline)
+        statusRegression.setProperty('kernel.0.status', 'blocked')
+        expectOpenClBackendSourcePromotionWorkloadBaselineFailure(baseline, statusRegression, 'kernel status regression')
+
+        Properties booleanRegression = new Properties()
+        booleanRegression.putAll(baseline)
+        booleanRegression.setProperty('sourceParityMatched', 'false')
+        expectOpenClBackendSourcePromotionWorkloadBaselineFailure(baseline, booleanRegression, 'source parity boolean regression')
+
+        Properties blockerRegression = new Properties()
+        blockerRegression.putAll(baseline)
+        blockerRegression.setProperty('sourceSwitching.sourcePromotionFirstBlockerFamily.0.count', '2')
+        expectOpenClBackendSourcePromotionWorkloadBaselineFailure(baseline, blockerRegression, 'blocker family regression')
+
+        Properties productionSwitching = new Properties()
+        productionSwitching.putAll(baseline)
+        productionSwitching.setProperty('productionSourceSwitching', 'enabled')
+        expectOpenClBackendSourcePromotionWorkloadBaselineFailure(baseline, productionSwitching, 'unexpected production source switching')
+
+        logger.lifecycle('OpenCL backend source-promotion workload baseline contract self-test OK')
+    }
+}
+
 tasks.register('validateOpenClProductionPromotionExplainability', JavaExec) {
     group = 'verification'
     description = 'Validates the OpenCL production-promotion explainability artifact remains fail-closed until explicit production gates are accepted.'
@@ -555,6 +936,28 @@ tasks.register('validateOpenClProductionPromotionExplainabilityContract', Test) 
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     filter.includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainability*Test'
+}
+
+tasks.register('summarizeOpenClProductionPromotionExplainability', JavaExec) {
+    group = 'verification'
+    description = 'Writes a compact CI summary for the OpenCL production-promotion explainability artifact.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilitySummaryCli'
+    args openClProductionPromotionExplainabilityFile.absolutePath, openClProductionPromotionExplainabilitySummaryFile.absolutePath
+    inputs.file(openClProductionPromotionExplainabilityFile)
+    outputs.file(openClProductionPromotionExplainabilitySummaryFile)
+}
+
+tasks.register('summarizeOpenClBackendSourcePromotionWorkload', JavaExec) {
+    group = 'verification'
+    description = 'Writes a compact CI summary for the OpenCL backend source-promotion workload gate.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadSummaryCli'
+    args openClBackendSourcePromotionWorkloadGateFile.absolutePath, openClBackendSourcePromotionWorkloadSummaryFile.absolutePath
+    inputs.file(openClBackendSourcePromotionWorkloadGateFile)
+    outputs.file(openClBackendSourcePromotionWorkloadSummaryFile)
 }
 
 tasks.register('openClBackendSourcePromotionGateReport', JavaExec) {
@@ -589,6 +992,8 @@ tasks.register('openClNvidiaRoutine') {
     dependsOn 'integrationOpenClSmokeTest'
     dependsOn 'openClWorkloadValidationTest'
     dependsOn 'openClIrGpuSourceReviewTest'
+    dependsOn 'openClProductionSourceSwitchingValidationTest'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'
@@ -601,6 +1006,8 @@ tasks.register('openClOperationalRoutine') {
     dependsOn 'integrationOpenClSmokeTest'
     dependsOn 'openClWorkloadValidationTest'
     dependsOn 'openClIrGpuSourceReviewTest'
+    dependsOn 'openClProductionSourceSwitchingValidationTest'
+    dependsOn 'openClBackendSourcePromotionCandidateGate'
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'
@@ -739,4 +1146,149 @@ private static int openClI3RuntimeIrScore(String stage) {
         case 'original' -> 1
         default -> 0
     }
+}
+
+private static Properties openClBackendSourcePromotionWorkloadBaseline(Properties current) {
+    Properties baseline = new Properties()
+    baseline.setProperty('format', 'javatogpu.opencl.backend-source-promotion-workload-baseline.v1')
+    copyOpenClSourcePromotionBaselineField(current, baseline, 'status')
+    copyOpenClSourcePromotionBaselineField(current, baseline, 'kernel.count')
+    copyOpenClSourcePromotionBaselineField(current, baseline, 'reviewReady')
+    copyOpenClSourcePromotionBaselineField(current, baseline, 'sourceParityMatched')
+    copyOpenClSourcePromotionBaselineField(current, baseline, 'runtimeEquivalencePassed')
+    copyOpenClSourcePromotionBaselineField(current, baseline, 'productionSourceSwitching')
+    copyOpenClIndexedSourcePromotionBaselineFields(current, baseline, 'sourceSwitching.sourcePromotionFirstBlockerFamily')
+
+    int kernelCount = parseOpenClI3Int(current.getProperty('kernel.count'))
+    for (int index = 0; index < kernelCount; index++) {
+        String prefix = 'kernel.' + index + '.'
+        copyOpenClSourcePromotionBaselineField(current, baseline, prefix + 'sourceKernelResource')
+        copyOpenClSourcePromotionBaselineField(current, baseline, prefix + 'status')
+        copyOpenClSourcePromotionBaselineField(current, baseline, prefix + 'reviewReady')
+        copyOpenClSourcePromotionBaselineField(current, baseline, prefix + 'sourceParityMatched')
+        copyOpenClSourcePromotionBaselineField(current, baseline, prefix + 'runtimeEquivalencePassed')
+        copyOpenClSourcePromotionBaselineField(current, baseline, prefix + 'sourceSwitching.sourcePromotionFirstBlocker')
+    }
+    return baseline
+}
+
+private static void copyOpenClSourcePromotionBaselineField(Properties source, Properties target, String key) {
+    target.setProperty(key, source.getProperty(key, 'unknown'))
+}
+
+private static void copyOpenClIndexedSourcePromotionBaselineFields(Properties source, Properties target, String keyPrefix) {
+    int count = parseOpenClI3Int(source.getProperty(keyPrefix + '.count'))
+    target.setProperty(keyPrefix + '.count', Integer.toString(count))
+    for (int index = 0; index < count; index++) {
+        copyOpenClSourcePromotionBaselineField(source, target, keyPrefix + '.' + index + '.name')
+        copyOpenClSourcePromotionBaselineField(source, target, keyPrefix + '.' + index + '.count')
+    }
+}
+
+private static void validateOpenClBackendSourcePromotionWorkloadBaseline(
+        Properties baseline,
+        Properties current,
+        File baselineFile
+) {
+    if (baseline.getProperty('format') != 'javatogpu.opencl.backend-source-promotion-workload-baseline.v1') {
+        throw new GradleException('OpenCL backend source-promotion workload baseline has an unsupported format in ' + baselineFile)
+    }
+    if (current.getProperty('productionSourceSwitching', 'false') == 'enabled') {
+        throw new GradleException('OpenCL backend source-promotion workload unexpectedly enabled production source switching; review gates explicitly before changing the baseline')
+    }
+
+    int baselineKernelCount = parseOpenClI3Int(baseline.getProperty('kernel.count'))
+    int currentKernelCount = parseOpenClI3Int(current.getProperty('kernel.count'))
+    if (baselineKernelCount != currentKernelCount) {
+        throw new GradleException('OpenCL backend source-promotion workload kernel count changed from ' + baselineKernelCount
+                + ' to ' + currentKernelCount + '; refresh the baseline after reviewing workload coverage')
+    }
+
+    String baselineStatus = baseline.getProperty('status', 'blocked')
+    String currentStatus = current.getProperty('status', 'blocked')
+    if (openClI3StatusScore(currentStatus) < openClI3StatusScore(baselineStatus)) {
+        throw new GradleException('OpenCL backend source-promotion workload status regressed: '
+                + baselineStatus + ' -> ' + currentStatus)
+    }
+
+    validateOpenClSourcePromotionBooleanProgress(baseline, current, 'reviewReady')
+    validateOpenClSourcePromotionBooleanProgress(baseline, current, 'sourceParityMatched')
+    validateOpenClSourcePromotionBooleanProgress(baseline, current, 'runtimeEquivalencePassed')
+    validateOpenClSourcePromotionFirstBlockerFamilies(baseline, current)
+
+    for (int index = 0; index < baselineKernelCount; index++) {
+        String prefix = 'kernel.' + index + '.'
+        String baselineResource = baseline.getProperty(prefix + 'sourceKernelResource', 'unknown')
+        String currentResource = current.getProperty(prefix + 'sourceKernelResource', 'unknown')
+        if (baselineResource != currentResource) {
+            throw new GradleException('OpenCL backend source-promotion workload kernel resource drifted at index ' + index
+                    + ': baseline=' + baselineResource + ', current=' + currentResource)
+        }
+
+        String baselineKernelStatus = baseline.getProperty(prefix + 'status', 'blocked')
+        String currentKernelStatus = current.getProperty(prefix + 'status', 'blocked')
+        if (openClI3StatusScore(currentKernelStatus) < openClI3StatusScore(baselineKernelStatus)) {
+            throw new GradleException('OpenCL backend source-promotion workload regressed for ' + baselineResource
+                    + ': ' + baselineKernelStatus + ' -> ' + currentKernelStatus)
+        }
+
+        validateOpenClSourcePromotionBooleanProgress(baseline, current, prefix + 'reviewReady')
+        validateOpenClSourcePromotionBooleanProgress(baseline, current, prefix + 'sourceParityMatched')
+        validateOpenClSourcePromotionBooleanProgress(baseline, current, prefix + 'runtimeEquivalencePassed')
+    }
+}
+
+private static void validateOpenClSourcePromotionBooleanProgress(Properties baseline, Properties current, String key) {
+    boolean baselineReady = Boolean.parseBoolean(baseline.getProperty(key, 'false'))
+    boolean currentReady = Boolean.parseBoolean(current.getProperty(key, 'false'))
+    if (baselineReady && !currentReady) {
+        throw new GradleException('OpenCL backend source-promotion workload boolean regressed for ' + key
+                + ': true -> false')
+    }
+}
+
+private static void validateOpenClSourcePromotionFirstBlockerFamilies(Properties baseline, Properties current) {
+    Map<String, Integer> baselineFamilies = openClIndexedCountMap(baseline, 'sourceSwitching.sourcePromotionFirstBlockerFamily')
+    Map<String, Integer> currentFamilies = openClIndexedCountMap(current, 'sourceSwitching.sourcePromotionFirstBlockerFamily')
+    for (Map.Entry<String, Integer> family : baselineFamilies.entrySet()) {
+        int currentCount = currentFamilies.getOrDefault(family.getKey(), 0)
+        if (currentCount > family.getValue()) {
+            throw new GradleException('OpenCL backend source-promotion workload blocker family increased for '
+                    + family.getKey() + ': ' + family.getValue() + ' -> ' + currentCount)
+        }
+    }
+    for (Map.Entry<String, Integer> family : currentFamilies.entrySet()) {
+        if (!baselineFamilies.containsKey(family.getKey()) && family.getValue() > 0) {
+            throw new GradleException('OpenCL backend source-promotion workload introduced blocker family '
+                    + family.getKey() + ' count=' + family.getValue())
+        }
+    }
+}
+
+private static Map<String, Integer> openClIndexedCountMap(Properties properties, String keyPrefix) {
+    Map<String, Integer> counts = new LinkedHashMap<>()
+    int count = parseOpenClI3Int(properties.getProperty(keyPrefix + '.count'))
+    for (int index = 0; index < count; index++) {
+        String name = properties.getProperty(keyPrefix + '.' + index + '.name', 'unknown')
+        int value = parseOpenClI3Int(properties.getProperty(keyPrefix + '.' + index + '.count'))
+        counts.put(name, value)
+    }
+    return counts
+}
+
+private static void expectOpenClBackendSourcePromotionWorkloadBaselineFailure(
+        Properties baseline,
+        Properties current,
+        String scenario
+) {
+    try {
+        validateOpenClBackendSourcePromotionWorkloadBaseline(
+                baseline,
+                current,
+                new File('synthetic-source-promotion-workload-baseline.properties')
+        )
+    } catch (GradleException expected) {
+        return
+    }
+    throw new GradleException('Synthetic OpenCL backend source-promotion workload baseline scenario unexpectedly passed: ' + scenario)
 }

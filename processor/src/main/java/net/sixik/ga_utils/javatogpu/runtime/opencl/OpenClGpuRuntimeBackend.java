@@ -36,16 +36,29 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactSupport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileCacheKey;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendUnavailableException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCapabilityException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptionsException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSiteResolver;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDiagnosticContext;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInvocationException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequestFactory;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelectionException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceCaseEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceExecutor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
@@ -54,17 +67,21 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadGat
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrArtifactLoader;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrSelection;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantSelection;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantSelector;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackend;
 import java.util.Objects;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.lang.reflect.Method;
 import java.util.Optional;
@@ -129,6 +146,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     private final OpenClExecutionPreparer executionPreparer = new OpenClExecutionPreparer(bufferRegistry);
     private final GpuRuntimeIrOptimizerRegistry irOptimizerRegistry;
     private final GpuOptimizationStrategy optimizationStrategy;
+    private final GpuRuntimeDevicePolicyRegistry devicePolicyRegistry;
+    private final ThreadLocal<OpenClSessionSelectionRequest> sessionSelectionRequest = new ThreadLocal<>();
     private final Map<String, Object> nativeBuffers = new ConcurrentHashMap<>();
     private final AtomicLong invocationCount = new AtomicLong();
     private final AtomicLong compileCount = new AtomicLong();
@@ -167,9 +186,24 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuRuntimeIrOptimizerRegistry irOptimizerRegistry,
             GpuOptimizationStrategy optimizationStrategy
     ) {
+        this(
+                cacheMode,
+                irOptimizerRegistry,
+                optimizationStrategy,
+                GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns()
+        );
+    }
+
+    protected OpenClGpuRuntimeBackend(
+            CacheMode cacheMode,
+            GpuRuntimeIrOptimizerRegistry irOptimizerRegistry,
+            GpuOptimizationStrategy optimizationStrategy,
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry
+    ) {
         this.cacheMode = Objects.requireNonNull(cacheMode, "cacheMode");
         this.irOptimizerRegistry = Objects.requireNonNull(irOptimizerRegistry, "irOptimizerRegistry");
         this.optimizationStrategy = Objects.requireNonNull(optimizationStrategy, "optimizationStrategy");
+        this.devicePolicyRegistry = Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
     }
 
     /**
@@ -241,21 +275,121 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     @Override
+    public GpuPromotionArtifactSupport promotionArtifactSupport() {
+        return GpuPromotionArtifactSupport.complete(backendTarget());
+    }
+
+    @Override
     public final void invoke(GpuKernelInvocation invocation) {
         invocationCount.incrementAndGet();
-        if (OpenClAbiDebug.enabled()) {
-            System.err.println(OpenClAbiDebug.describeInvocation(invocation.descriptor(), invocation.arguments()));
+        GpuRuntimeCompileOptions requestCompileOptions = invocation.compileOptions() == null
+                ? GpuRuntimeCompileOptions.defaults(backendTarget())
+                : invocation.compileOptions();
+        Optional<IrGpuArtifact> primaryIrGpuArtifact = GpuRuntimeIrArtifactLoader.load(
+                invocation.descriptor(),
+                invocation.artifactClassLoader()
+        );
+        GpuRuntimeDiagnosticContext primaryContext = diagnosticContext(
+                invocation.descriptor(),
+                primaryIrGpuArtifact,
+                requestCompileOptions
+        );
+        primaryContext = primaryContext.withCallSite(GpuRuntimeCallSiteResolver.resolve(
+                invocation.artifactClassLoader(),
+                primaryContext.sourceLocation()
+        ));
+        try {
+            validateCompileOptions(requestCompileOptions);
+        } catch (RuntimeException exception) {
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new GpuRuntimeCompileOptionsException(
+                    "OpenCL compile options are invalid: " + OpenClFailureFormatter.rootMessage(exception),
+                    primaryContext,
+                    exception
+            );
         }
-        OpenClKernelArguments arguments = OpenClArgumentMarshaller.marshall(invocation.descriptor(), invocation.arguments());
-        OpenClExecutionPlan plan = OpenClExecutionPlanner.plan(arguments);
-        validateInvocationPreconditions(invocation, plan);
-        validateCompileOptions(invocation.compileOptions());
-        validateCapabilitySupport(invocation.descriptor(), plan);
-        GpuRuntimeCompileRequest compileRequest = buildCompileRequest(invocation)
-                .withIrGpuArtifact(GpuRuntimeIrArtifactLoader.load(
-                        invocation.descriptor(),
-                        invocation.artifactClassLoader()
+        Optional<GpuRuntimeMethodVariantSelection> methodVariantSelection = selectMethodVariant(
+                invocation,
+                requestCompileOptions
+        );
+        GpuKernelInvocation selectedInvocation = methodVariantSelection
+                .map(selection -> invocation.withSelectedDescriptor(selection.selectedDescriptor()))
+                .orElse(invocation);
+        Optional<IrGpuArtifact> loadedIrGpuArtifact = methodVariantSelection
+                .flatMap(GpuRuntimeMethodVariantSelection::selectedArtifact)
+                .or(() -> sameDescriptor(invocation.descriptor(), selectedInvocation.descriptor())
+                        ? primaryIrGpuArtifact
+                        : GpuRuntimeIrArtifactLoader.load(
+                        selectedInvocation.descriptor(),
+                        selectedInvocation.artifactClassLoader()
                 ));
+        GpuRuntimeDiagnosticContext selectedContextBase = diagnosticContext(
+                selectedInvocation.descriptor(),
+                loadedIrGpuArtifact,
+                requestCompileOptions
+        );
+        GpuRuntimeDiagnosticContext selectedContext = selectedContextBase.withCallSite(GpuRuntimeCallSiteResolver.resolve(
+                selectedInvocation.artifactClassLoader(),
+                selectedContextBase.sourceLocation()
+        ));
+        if (OpenClAbiDebug.enabled()) {
+            System.err.println(OpenClAbiDebug.describeInvocation(
+                    selectedInvocation.descriptor(),
+                    selectedInvocation.arguments()
+            ));
+        }
+        OpenClKernelArguments arguments;
+        OpenClExecutionPlan plan;
+        try {
+            arguments = OpenClArgumentMarshaller.marshall(
+                    selectedInvocation.descriptor(),
+                    selectedInvocation.arguments()
+            );
+            plan = OpenClExecutionPlanner.plan(arguments);
+            validateInvocationPreconditions(selectedInvocation, plan);
+        } catch (RuntimeException exception) {
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new GpuRuntimeInvocationException(
+                    "OpenCL invocation preparation failed: " + OpenClFailureFormatter.contextualMessage(exception),
+                    selectedContext,
+                    exception
+            );
+        }
+        GpuRuntimeCompileRequest compileRequest;
+        OpenClSessionSelectionRequest previousSessionRequest = sessionSelectionRequest.get();
+        sessionSelectionRequest.set(new OpenClSessionSelectionRequest(
+                selectedInvocation.descriptor(),
+                requestCompileOptions,
+                loadedIrGpuArtifact,
+                selectedContext
+        ));
+        try {
+            validateActiveSessionSelection(selectedInvocation.descriptor(), requestCompileOptions, loadedIrGpuArtifact);
+            try {
+                validateCapabilitySupport(selectedInvocation.descriptor(), plan);
+            } catch (RuntimeException exception) {
+                if (exception instanceof GpuRuntimeException runtimeException) {
+                    throw runtimeException;
+                }
+                throw new GpuRuntimeCapabilityException(
+                        OpenClFailureFormatter.rootMessage(exception),
+                        selectedContext,
+                        exception
+                );
+            }
+            compileRequest = buildCompileRequest(selectedInvocation)
+                    .withIrGpuArtifact(loadedIrGpuArtifact);
+        } finally {
+            if (previousSessionRequest == null) {
+                sessionSelectionRequest.remove();
+            } else {
+                sessionSelectionRequest.set(previousSessionRequest);
+            }
+        }
         compileRequest = applyProductionPromotionDecision(compileRequest);
         GpuRuntimeIrOptimizationResult optimizationResult = optimizeRuntimeIrWithReport(compileRequest);
         GpuRuntimeCompileRequest optimizedCompileRequest = optimizationResult.compileRequest();
@@ -265,8 +399,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 optimizedCompileRequest,
                 optimizedModuleArtifact,
                 optimizationResult.report(),
-                invocation.arguments(),
-                invocation.executionConfig()
+                selectedInvocation.arguments(),
+                selectedInvocation.executionConfig()
         ));
         GpuRuntimeCompileArtifactSnapshot selectionSnapshot = GpuRuntimeCompileArtifactSnapshot.from(
                 compileRequest,
@@ -308,13 +442,16 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 runtimeEquivalenceEvidence,
                 artifactSnapshotBase.fallbackEvidence()
         );
-        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = artifactSnapshotBase.withBackendSourceState(
-                sourcePromotionGate,
-                backendSourceSwitchingDecision(
-                        selectedCompileRequest,
-                        moduleArtifact,
-                        sourcePromotionGate
-                )
+        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = withRuntimeDeviceSelection(
+                artifactSnapshotBase.withBackendSourceState(
+                        sourcePromotionGate,
+                        backendSourceSwitchingDecision(
+                                selectedCompileRequest,
+                                moduleArtifact,
+                                sourcePromotionGate
+                        )
+                ),
+                methodVariantSelection
         );
         dumpBackendSourcePromotionWorkloadGate(artifactSnapshot);
         GpuRuntimeCompileCacheKey compileCacheKey = GpuRuntimeCompileCacheKey.from(
@@ -329,21 +466,67 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         } else {
             compiledKernel = kernelCache.computeIfAbsent(
                     compileCacheKey,
-                    ignored -> compileKernelChecked(selectedCompileRequest, moduleArtifact, artifactSnapshot)
+                    ignored -> compileKernelChecked(
+                            selectedCompileRequest,
+                            moduleArtifact,
+                            artifactSnapshot,
+                            selectedContext
+                    )
             );
         }
+        dumpRuntimeCompileArtifacts(compiledKernel.artifactSnapshot());
         OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
-        if (invocation.executionConfig() != null) {
+        if (selectedInvocation.executionConfig() != null) {
             execution = new OpenClPreparedExecution(
                     execution.compiledKernel(),
                     execution.bufferBindings(),
                     execution.localBindings(),
                     execution.scalarBindings(),
                     execution.argumentBindings(),
-                    invocation.executionConfig()
+                    selectedInvocation.executionConfig()
             );
         }
-        executeKernelChecked(execution);
+        executeKernelChecked(execution, selectedContext);
+    }
+
+    private GpuRuntimeDiagnosticContext diagnosticContext(
+            GpuKernelDescriptor descriptor,
+            Optional<IrGpuArtifact> artifact,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        Optional<GpuRuntimeDeviceProfile> activeDevice = runtimeDeviceSelection()
+                .flatMap(GpuRuntimeDeviceSelection::selectedDevice);
+        return GpuRuntimeDiagnosticContext.from(descriptor, artifact, activeDevice, compileOptions);
+    }
+
+    private static boolean sameDescriptor(GpuKernelDescriptor left, GpuKernelDescriptor right) {
+        return left.kernelName().equals(right.kernelName())
+                && left.kernelResource().equals(right.kernelResource())
+                && left.irGpuResource().equals(right.irGpuResource());
+    }
+
+    private Optional<GpuRuntimeMethodVariantSelection> selectMethodVariant(
+            GpuKernelInvocation invocation,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        if (invocation.fallbackDescriptors().isEmpty()) {
+            return Optional.empty();
+        }
+        List<GpuRuntimeDeviceProfile> profiles = runtimeDeviceSelection()
+                .flatMap(GpuRuntimeDeviceSelection::selectedDevice)
+                .map(List::of)
+                .orElseGet(() -> OpenClRuntimeSession.discoverDeviceProfiles(
+                        devicePolicyRegistry,
+                        compileOptions
+                ));
+        return Optional.of(GpuRuntimeMethodVariantSelector.select(
+                invocation.descriptor(),
+                invocation.fallbackDescriptors(),
+                invocation.artifactClassLoader(),
+                compileOptions,
+                profiles,
+                devicePolicyRegistry
+        ));
     }
 
     private static boolean sameSelectedIr(
@@ -385,6 +568,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 deviceInfo.supportsDoublePrecision(),
                 deviceInfo.supportsImages(),
                 deviceInfo.supportsImage3dWrites(),
+                promotionArtifactSupport(),
                 deviceInfo.localMemoryBytes(),
                 deviceInfo.maxWorkGroupSize(),
                 statistics()
@@ -977,6 +1161,23 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             ).execute(request);
         }
 
+        String optimizerFamily = singleRuntimeOptimizerFamily(request.optimizationReport());
+        if (!optimizerFamily.isBlank()) {
+            try {
+                return executeOptimizerFamilyRuntimeEquivalence(request, optimizerFamily);
+            } catch (RuntimeException exception) {
+                return GpuRuntimeEquivalenceEvidence.failed(
+                        request.optimizedCompileRequest(),
+                        0,
+                        0,
+                        java.util.List.of(
+                                "optimizer-family OpenCL runtime equivalence failed",
+                                exception.getMessage() == null ? exception.getClass().getName() : exception.getMessage()
+                        )
+                );
+            }
+        }
+
         GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
                 request.optimizedCompileRequest().irGpuArtifact().orElseThrow(),
                 request.optimizedBackendModuleArtifact().resource(),
@@ -1003,7 +1204,15 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 "opencl-source-equivalence-preflight"
         );
         try {
-            return executeArrayRuntimeEquivalence(request, reconstructedArtifact);
+            return executeArrayRuntimeEquivalence(
+                    request,
+                    request.optimizedCompileRequest(),
+                    request.optimizedBackendModuleArtifact(),
+                    request.optimizedCompileRequest(),
+                    reconstructedArtifact,
+                    "descriptor-source-vs-irgpu-reconstructed-source",
+                    "descriptor and reconstructed OpenCL outputs matched for isolated array runtime-equivalence"
+            );
         } catch (RuntimeException exception) {
             return GpuRuntimeEquivalenceEvidence.failed(
                     request.optimizedCompileRequest(),
@@ -1017,9 +1226,30 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         }
     }
 
+    private GpuRuntimeEquivalenceEvidence executeOptimizerFamilyRuntimeEquivalence(
+            GpuRuntimeEquivalenceRequest request,
+            String optimizerFamily
+    ) {
+        GpuBackendModuleArtifact originalArtifact = lowerBackendModule(request.originalCompileRequest());
+        return executeArrayRuntimeEquivalence(
+                request,
+                request.originalCompileRequest(),
+                originalArtifact,
+                request.optimizedCompileRequest(),
+                request.optimizedBackendModuleArtifact(),
+                "optimizer-family:" + optimizerFamily + ":original-vs-optimized",
+                "optimizer family " + optimizerFamily + " original and optimized OpenCL outputs matched"
+        );
+    }
+
     private GpuRuntimeEquivalenceEvidence executeArrayRuntimeEquivalence(
             GpuRuntimeEquivalenceRequest request,
-            GpuBackendModuleArtifact reconstructedArtifact
+            GpuRuntimeCompileRequest referenceCompileRequest,
+            GpuBackendModuleArtifact referenceArtifact,
+            GpuRuntimeCompileRequest candidateCompileRequest,
+            GpuBackendModuleArtifact candidateArtifact,
+            String comparisonMode,
+            String successDiagnostic
     ) {
         Object[] invocationArguments = request.invocationArguments();
         if (invocationArguments == null) {
@@ -1029,7 +1259,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             );
         }
         ArrayEquivalencePlan equivalencePlan = arrayEquivalencePlan(
-                request.optimizedCompileRequest().descriptor(),
+                candidateCompileRequest.descriptor(),
                 invocationArguments
         );
         if (!equivalencePlan.supported()) {
@@ -1039,48 +1269,74 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             );
         }
 
-        Object[] descriptorArguments = cloneEquivalenceArguments(invocationArguments);
-        Object[] reconstructedArguments = cloneEquivalenceArguments(invocationArguments);
-        try (OpenClCompiledKernel descriptorKernel = compileKernel(
-                request.optimizedCompileRequest(),
-                request.optimizedBackendModuleArtifact());
-             OpenClCompiledKernel reconstructedKernel = compileKernel(
-                     request.optimizedCompileRequest(),
-                     reconstructedArtifact)) {
+        Object[] referenceArguments = cloneEquivalenceArguments(invocationArguments);
+        Object[] candidateArguments = cloneEquivalenceArguments(invocationArguments);
+        try (OpenClCompiledKernel referenceKernel = compileKernel(
+                referenceCompileRequest,
+                referenceArtifact);
+             OpenClCompiledKernel candidateKernel = compileKernel(
+                     candidateCompileRequest,
+                     candidateArtifact)) {
             executeIsolatedRuntimeEquivalenceKernel(
-                    descriptorKernel,
-                    request.optimizedCompileRequest().descriptor(),
-                    descriptorArguments,
+                    referenceKernel,
+                    referenceCompileRequest.descriptor(),
+                    referenceArguments,
                     request.executionConfig()
             );
             executeIsolatedRuntimeEquivalenceKernel(
-                    reconstructedKernel,
-                    request.optimizedCompileRequest().descriptor(),
-                    reconstructedArguments,
+                    candidateKernel,
+                    candidateCompileRequest.descriptor(),
+                    candidateArguments,
                     request.executionConfig()
             );
         }
 
-        List<String> mismatches = compareEquivalenceArrayOutputs(
-                request.optimizedCompileRequest().descriptor(),
-                descriptorArguments,
-                reconstructedArguments,
+        GpuRuntimeEquivalenceCaseEvidence caseEvidence = captureArrayRuntimeEquivalenceCase(
+                candidateCompileRequest.descriptor(),
+                comparisonMode,
+                invocationArguments,
+                referenceArguments,
+                candidateArguments,
                 equivalencePlan.outputIndexes()
         );
+        List<String> mismatches = caseEvidence.diagnostics();
         if (!mismatches.isEmpty()) {
             return GpuRuntimeEquivalenceEvidence.failed(
                     request.optimizedCompileRequest(),
                     1,
                     equivalencePlan.outputIndexes().size(),
-                    mismatches
+                    mismatches,
+                    List.of(caseEvidence)
             );
         }
         return GpuRuntimeEquivalenceEvidence.passed(
-                request.optimizedCompileRequest(),
+                candidateCompileRequest,
                 1,
                 equivalencePlan.outputIndexes().size(),
-                List.of("descriptor and reconstructed OpenCL outputs matched for isolated array runtime-equivalence")
+                List.of(successDiagnostic),
+                List.of(caseEvidence)
         );
+    }
+
+    private static String singleRuntimeOptimizerFamily(GpuRuntimeIrOptimizationReport report) {
+        if (report == null || report.requiresRollback()) {
+            return "";
+        }
+        java.util.LinkedHashSet<String> families = new java.util.LinkedHashSet<>();
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (passReport.analysisOnly()) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (!"none".equals(fields.getOrDefault("firstBlocker", "none"))) {
+                continue;
+            }
+            String family = fields.getOrDefault("optimizerFamily", "");
+            if (!family.isBlank()) {
+                families.add(family);
+            }
+        }
+        return families.size() == 1 ? families.iterator().next() : "";
     }
 
     private void executeIsolatedRuntimeEquivalenceKernel(
@@ -1201,28 +1457,125 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return clonedArray;
     }
 
-    private List<String> compareEquivalenceArrayOutputs(
+    private GpuRuntimeEquivalenceCaseEvidence captureArrayRuntimeEquivalenceCase(
             GpuKernelDescriptor descriptor,
+            String comparisonMode,
+            Object[] invocationArguments,
             Object[] descriptorArguments,
             Object[] reconstructedArguments,
             List<Integer> outputIndexes
     ) {
+        Map<String, String> inputs = new LinkedHashMap<>();
+        for (int argumentIndex = 0; argumentIndex < invocationArguments.length; argumentIndex++) {
+            GpuKernelParameterDescriptor parameter = descriptor.parameterDescriptors().get(argumentIndex);
+            inputs.put(parameter.name(), formatEquivalenceValue(invocationArguments[argumentIndex]));
+        }
+        Map<String, String> referenceOutputs = new LinkedHashMap<>();
+        Map<String, String> candidateOutputs = new LinkedHashMap<>();
+        Map<String, String> tolerances = new LinkedHashMap<>();
+        Map<String, Boolean> outputEquivalence = new LinkedHashMap<>();
         List<String> diagnostics = new ArrayList<>();
         for (int outputIndex : outputIndexes) {
             Object descriptorOutput = descriptorArguments[outputIndex];
             Object reconstructedOutput = reconstructedArguments[outputIndex];
-            if (equivalenceArraysEqual(descriptorOutput, reconstructedOutput)) {
-                continue;
-            }
             GpuKernelParameterDescriptor parameter = descriptor.parameterDescriptors().get(outputIndex);
-            diagnostics.add(
-                    "runtime-equivalence output mismatch for parameter '"
-                            + parameter.name()
-                            + "' at argument "
-                            + outputIndex
-            );
+            boolean equivalent = equivalenceArraysEqual(descriptorOutput, reconstructedOutput);
+            referenceOutputs.put(parameter.name(), formatEquivalenceValue(descriptorOutput));
+            candidateOutputs.put(parameter.name(), formatEquivalenceValue(reconstructedOutput));
+            tolerances.put(parameter.name(), equivalenceTolerance(descriptorOutput));
+            outputEquivalence.put(parameter.name(), equivalent);
+            if (!equivalent) {
+                diagnostics.add(
+                        "runtime-equivalence output mismatch for parameter '"
+                                + parameter.name()
+                                + "' at argument "
+                                + outputIndex
+                );
+            }
         }
-        return diagnostics;
+        return new GpuRuntimeEquivalenceCaseEvidence(
+                "runtime-invocation-0",
+                comparisonMode,
+                inputs,
+                referenceOutputs,
+                candidateOutputs,
+                tolerances,
+                outputEquivalence,
+                diagnostics
+        );
+    }
+
+    private String formatEquivalenceValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof byte[] values) {
+            return Arrays.toString(values);
+        }
+        if (value instanceof short[] values) {
+            return Arrays.toString(values);
+        }
+        if (value instanceof int[] values) {
+            return Arrays.toString(values);
+        }
+        if (value instanceof long[] values) {
+            return Arrays.toString(values);
+        }
+        if (value instanceof float[] values) {
+            return Arrays.toString(values);
+        }
+        if (value instanceof double[] values) {
+            return Arrays.toString(values);
+        }
+        if (OpenClValuePacker.isStructArrayInstance(value)) {
+            return packedEquivalenceValue("struct-array", OpenClValuePacker.packStructArray(value));
+        }
+        if (OpenClValuePacker.isVectorArrayInstance(value)) {
+            return packedEquivalenceValue("vector-array", OpenClValuePacker.packVectorArray(value));
+        }
+        if (value instanceof Number
+                || value instanceof Boolean
+                || value instanceof Character
+                || value instanceof CharSequence
+                || value instanceof Enum<?>) {
+            return String.valueOf(value);
+        }
+        return "opaque-type:" + value.getClass().getName();
+    }
+
+    private String equivalenceTolerance(Object value) {
+        if (value instanceof byte[]) {
+            return "exact-byte-array";
+        }
+        if (value instanceof short[]) {
+            return "exact-short-array";
+        }
+        if (value instanceof int[]) {
+            return "exact-int-array";
+        }
+        if (value instanceof long[]) {
+            return "exact-long-array";
+        }
+        if (value instanceof float[]) {
+            return "exact-float-array";
+        }
+        if (value instanceof double[]) {
+            return "exact-double-array";
+        }
+        if (value != null
+                && (OpenClValuePacker.isStructArrayInstance(value)
+                || OpenClValuePacker.isVectorArrayInstance(value))) {
+            return "exact-packed-bytes";
+        }
+        return "exact-value";
+    }
+
+    private String packedEquivalenceValue(String kind, ByteBuffer packedValue) {
+        ByteBuffer bytes = packedValue.duplicate();
+        bytes.position(0);
+        byte[] value = new byte[bytes.remaining()];
+        bytes.get(value);
+        return kind + ":base64:" + java.util.Base64.getEncoder().encodeToString(value);
     }
 
     private boolean equivalenceArraysEqual(Object first, Object second) {
@@ -1388,7 +1741,30 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected OpenClRuntimeSession createSession() {
-        return OpenClRuntimeSession.createDefault();
+        return OpenClRuntimeSession.createDefault(devicePolicyRegistry);
+    }
+
+    protected OpenClRuntimeSession createSession(
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        return createSession(descriptor, compileOptions, Optional.empty());
+    }
+
+    protected OpenClRuntimeSession createSession(
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            Optional<IrGpuArtifact> irGpuArtifact
+    ) {
+        if (overridesLegacyCreateSessionHook()) {
+            return createSession();
+        }
+        return OpenClRuntimeSession.createDefault(devicePolicyRegistry, descriptor, compileOptions, irGpuArtifact);
+    }
+
+    protected Optional<GpuRuntimeDeviceSelection> runtimeDeviceSelection() {
+        OpenClRuntimeSession currentSession = cacheMode == CacheMode.SHARED ? sharedSession : session;
+        return Optional.ofNullable(currentSession).map(OpenClRuntimeSession::deviceSelection);
     }
 
     protected OpenClValidationDeviceInfo runtimeValidationDeviceInfo() {
@@ -2238,14 +2614,25 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     private OpenClRuntimeSession createSessionChecked() {
         try {
-            OpenClRuntimeSession runtimeSession = createSession();
+            OpenClSessionSelectionRequest selectionRequest = sessionSelectionRequest.get();
+            OpenClRuntimeSession runtimeSession = selectionRequest == null
+                    ? createSession()
+                    : createSession(
+                            selectionRequest.descriptor(),
+                            selectionRequest.compileOptions(),
+                            selectionRequest.irGpuArtifact()
+                    );
             sessionCreationCount.incrementAndGet();
             return runtimeSession;
         } catch (UnsatisfiedLinkError | IllegalStateException exception) {
-            throw new UnsupportedOperationException(
+            OpenClSessionSelectionRequest selectionRequest = sessionSelectionRequest.get();
+            throw new GpuRuntimeBackendUnavailableException(
                     "OpenCL runtime is unavailable: "
                             + exception.getMessage()
                             + "; configure a fallback backend or use GpuRuntime.trySelect(...) when GPU execution is optional",
+                    selectionRequest == null
+                            ? GpuRuntimeDiagnosticContext.unknown()
+                            : selectionRequest.diagnosticContext(),
                     exception
             );
         }
@@ -2414,14 +2801,87 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 runtimeEquivalenceEvidence,
                 fallbackEvidence
         );
-        return GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact).withBackendSourceState(
-                promotionGate,
-                backendSourceSwitchingDecision(
-                        compileRequest,
-                        moduleArtifact,
-                        promotionGate
+        return withRuntimeDeviceSelection(
+                GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact).withBackendSourceState(
+                        promotionGate,
+                        backendSourceSwitchingDecision(
+                                compileRequest,
+                                moduleArtifact,
+                                promotionGate
+                        )
                 )
         );
+    }
+
+    private void validateActiveSessionSelection(
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            Optional<IrGpuArtifact> irGpuArtifact
+    ) {
+        Optional<GpuRuntimeDeviceSelection> activeSelection = runtimeDeviceSelection();
+        if (activeSelection.isEmpty()) {
+            return;
+        }
+        GpuRuntimeDeviceSelection current = activeSelection.orElseThrow();
+        List<GpuRuntimeDeviceProfile> candidates = current.rankedCandidates().stream()
+                .map(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceCandidateRanking::profile)
+                .toList();
+        GpuRuntimeDeviceSelection requested = devicePolicyRegistry.select(new net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext(
+                descriptor,
+                compileOptions,
+                candidates,
+                irGpuArtifact
+        ));
+        GpuRuntimeDeviceProfile requestedProfile = requested.selectedDevice().orElseThrow(() ->
+                new GpuRuntimeDeviceSelectionException(
+                        "OpenCL device policy rejected the active runtime session for kernel "
+                                + descriptor.kernelName()
+                                + ": "
+                                + requested.firstBlocker()
+                                + (requested.diagnostics().isEmpty()
+                                ? ""
+                                : "; " + String.join("; ", requested.diagnostics())),
+                        requested
+                )
+        );
+        GpuRuntimeDeviceProfile activeProfile = current.selectedDevice().orElseThrow(() ->
+                new GpuRuntimeDeviceSelectionException(
+                        "Active OpenCL session has no selected device profile",
+                        current
+                )
+        );
+        String requestedKey = net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext.deviceKey(requestedProfile);
+        String activeKey = net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext.deviceKey(activeProfile);
+        if (!activeKey.equals(requestedKey)) {
+            throw new GpuRuntimeDeviceSelectionException(
+                    "OpenCL device policy selected "
+                            + requestedKey
+                            + " for kernel "
+                            + descriptor.kernelName()
+                            + ", but the active runtime session uses "
+                            + activeKey
+                            + "; create a new runtime scope/backend instance to switch devices",
+                    requested
+            );
+        }
+    }
+
+    private GpuRuntimeCompileArtifactSnapshot withRuntimeDeviceSelection(
+            GpuRuntimeCompileArtifactSnapshot snapshot
+    ) {
+        return runtimeDeviceSelection()
+                .map(snapshot::withDeviceSelection)
+                .orElse(snapshot);
+    }
+
+    private GpuRuntimeCompileArtifactSnapshot withRuntimeDeviceSelection(
+            GpuRuntimeCompileArtifactSnapshot snapshot,
+            Optional<GpuRuntimeMethodVariantSelection> methodVariantSelection
+    ) {
+        return methodVariantSelection
+                .map(GpuRuntimeMethodVariantSelection::deviceSelection)
+                .map(snapshot::withDeviceSelection)
+                .orElseGet(() -> withRuntimeDeviceSelection(snapshot));
     }
 
     private GpuBackendSourcePromotionGate backendSourcePromotionGate(
@@ -2432,7 +2892,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     ) {
         GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
                 compileRequest.irGpuArtifact().orElse(null),
-                moduleArtifact.resource(),
+                compileRequest.descriptor().kernelResource(),
                 moduleArtifact.source()
         );
         return GpuBackendSourcePromotionGate.evaluate(
@@ -2452,7 +2912,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 moduleArtifact,
                 reconstructionFromPromotionGate(moduleArtifact, promotionGate),
                 promotionGate,
-                GpuBackendSourceSwitchingPolicy.from(compileRequest.options().backendOptions())
+                GpuBackendSourceSwitchingPolicy.from(compileRequest.options().backendOptions()),
+                GpuProductionPromotionOperatorAcceptance.evaluate(compileRequest)
         );
     }
 
@@ -2485,6 +2946,20 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuBackendModuleArtifact moduleArtifact,
             GpuRuntimeCompileArtifactSnapshot artifactSnapshot
     ) {
+        return compileKernelChecked(
+                compileRequest,
+                moduleArtifact,
+                artifactSnapshot,
+                GpuRuntimeDiagnosticContext.fromSnapshot(compileRequest.descriptor(), artifactSnapshot)
+        );
+    }
+
+    private OpenClCompiledKernel compileKernelChecked(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
         GpuKernelDescriptor descriptor = compileRequest.descriptor();
         try {
             compileCount.incrementAndGet();
@@ -2494,9 +2969,19 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             } else {
                 compiledKernel = compileKernel(compileRequest, moduleArtifact);
             }
-            return compiledKernel.withArtifactSnapshot(artifactSnapshot);
+            return compiledKernel.withArtifactSnapshot(mergeCompilerLog(
+                    artifactSnapshot,
+                    compiledKernel.artifactSnapshot()
+            ));
         } catch (RuntimeException exception) {
-            throw OpenClFailureFormatter.buildFailure(descriptor, runtimeCapabilities().deviceLabel(), exception);
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            GpuRuntimeDiagnosticContext failureContext = GpuRuntimeDiagnosticContext.fromSnapshot(
+                    descriptor,
+                    artifactSnapshot
+            ).withCallSite(diagnosticContext.callSite());
+            throw OpenClFailureFormatter.buildFailure(compileRequest, failureContext, exception);
         }
     }
 
@@ -2515,7 +3000,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             compileCount.incrementAndGet();
             return compileKernel(compileRequest);
         } catch (RuntimeException exception) {
-            throw OpenClFailureFormatter.buildFailure(descriptor, runtimeCapabilities().deviceLabel(), exception);
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw OpenClFailureFormatter.buildFailure(compileRequest, exception);
         }
     }
 
@@ -2553,30 +3041,91 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected GpuRuntimeDeviceProfile compileDeviceProfile() {
-        OpenClRuntimeCapabilities capabilities = runtimeCapabilities();
+        OpenClRuntimeCapabilities runtimeCapabilities = runtimeCapabilities();
+        String backendName = cacheMode == CacheMode.SHARED ? "OpenCL (shared cache)" : "OpenCL";
+        OpenClRuntimeSession currentSession = cacheMode == CacheMode.SHARED ? sharedSession : session;
+        if (currentSession != null) {
+            return currentSession.deviceProfile().withBackendName(backendName);
+        }
         return GpuRuntimeDeviceProfile.openCl(
-                cacheMode == CacheMode.SHARED ? "OpenCL (shared cache)" : "OpenCL",
-                capabilities.deviceLabel(),
-                capabilities.vendor(),
-                capabilities.driverVersion(),
-                capabilities.deviceVersion(),
-                capabilities.computeUnits(),
-                capabilities.localMemoryBytes(),
-                capabilities.maxWorkGroupSize(),
-                capabilities.preferredVectorWidthFloat(),
-                capabilities.supportsDoublePrecision(),
-                capabilities.supportsImages(),
-                capabilities.supportsSubgroups()
+                backendName,
+                runtimeCapabilities.deviceLabel(),
+                runtimeCapabilities.vendor(),
+                runtimeCapabilities.driverVersion(),
+                runtimeCapabilities.deviceVersion(),
+                runtimeCapabilities.computeUnits(),
+                runtimeCapabilities.localMemoryBytes(),
+                runtimeCapabilities.maxWorkGroupSize(),
+                runtimeCapabilities.preferredVectorWidthFloat(),
+                runtimeCapabilities.supportsDoublePrecision(),
+                runtimeCapabilities.supportsImages(),
+                runtimeCapabilities.supportsSubgroups()
         );
     }
 
+    private static GpuRuntimeCompileArtifactSnapshot mergeCompilerLog(
+            GpuRuntimeCompileArtifactSnapshot requestedSnapshot,
+            GpuRuntimeCompileArtifactSnapshot compiledSnapshot
+    ) {
+        if (compiledSnapshot == null) {
+            return requestedSnapshot;
+        }
+        GpuRuntimeCompileArtifactSnapshot merged = requestedSnapshot;
+        if (!compiledSnapshot.compileLog().isBlank()) {
+            merged = merged.withCompileLog(compiledSnapshot.compileLog());
+        }
+        if (!compiledSnapshot.binaryArtifacts().isEmpty()) {
+            merged = merged.withBinaryArtifacts(compiledSnapshot.binaryArtifacts());
+        }
+        return merged;
+    }
+
+    private boolean overridesLegacyCreateSessionHook() {
+        Class<?> type = getClass();
+        while (type != null && type != OpenClGpuRuntimeBackend.class) {
+            try {
+                type.getDeclaredMethod("createSession");
+                return true;
+            } catch (NoSuchMethodException ignored) {
+                type = type.getSuperclass();
+            }
+        }
+        return false;
+    }
+
     private void executeKernelChecked(OpenClPreparedExecution execution) {
+        executeKernelChecked(
+                execution,
+                GpuRuntimeDiagnosticContext.fromSnapshot(
+                        execution.compiledKernel().descriptor(),
+                        execution.compiledKernel().artifactSnapshot()
+                )
+        );
+    }
+
+    private void executeKernelChecked(
+            OpenClPreparedExecution execution,
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
         try {
+            OpenClKernelLaunchAdvisory launchAdvisory = OpenClKernelLaunchAdvisory.evaluate(
+                    execution.compiledKernel(),
+                    resolveExecutionConfig(execution)
+            );
+            validateKernelWorkGroupSize(execution, diagnosticContext, launchAdvisory);
+            dumpRuntimeLaunchAdvisory(execution.compiledKernel().artifactSnapshot(), launchAdvisory);
             executeKernel(execution);
         } catch (RuntimeException exception) {
-            throw OpenClFailureFormatter.executionFailure(
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            GpuRuntimeDiagnosticContext failureContext = GpuRuntimeDiagnosticContext.fromSnapshot(
                     execution.compiledKernel().descriptor(),
-                    runtimeCapabilities().deviceLabel(),
+                    execution.compiledKernel().artifactSnapshot()
+            ).withCallSite(diagnosticContext.callSite());
+            throw OpenClFailureFormatter.executionFailure(
+                    execution.compiledKernel(),
+                    failureContext,
                     exception
             );
         }
@@ -2597,17 +3146,181 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             String gateProperties = GpuBackendSourcePromotionWorkloadGateFormatter.merge(
                     path,
                     artifactSnapshot.backendModuleArtifact().resource(),
-                    dump.artifact("backend-source-promotion-gate.properties"),
-                    dump.artifact("backend-source-switching-decision.properties"),
-                    dump.artifact("runtime-ir-handoff.properties"),
-                    dump.artifact("runtime-production-mutation-safety.properties"),
-                    dump.artifact("i3-readiness-summary.properties"),
-                    dump.artifact("runtime-optimizer-drift.properties")
+                    dump.artifact(GpuPromotionArtifactRegistry.BACKEND_SOURCE_PROMOTION_GATE),
+                    dump.artifact(GpuPromotionArtifactRegistry.BACKEND_SOURCE_SWITCHING_DECISION),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_IR_HANDOFF),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_PRODUCTION_MUTATION_SAFETY),
+                    dump.artifact(GpuPromotionArtifactRegistry.I3_READINESS_SUMMARY),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_DRIFT),
+                    dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD)
             );
             java.nio.file.Files.writeString(path, gateProperties, java.nio.charset.StandardCharsets.UTF_8);
         } catch (RuntimeException | java.io.IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL backend source workload promotion gate", exception);
         }
+    }
+
+    private void validateKernelWorkGroupSize(
+            OpenClPreparedExecution execution,
+            GpuRuntimeDiagnosticContext diagnosticContext,
+            OpenClKernelLaunchAdvisory launchAdvisory
+    ) {
+        long requestedSize = launchAdvisory.requestedLocalWorkGroupSize();
+        long kernelLimit = launchAdvisory.kernelMaxWorkGroupSize();
+        if (requestedSize <= 0L || kernelLimit < 0L || requestedSize <= kernelLimit) {
+            return;
+        }
+
+        clearRuntimeLaunchAdvisory(execution.compiledKernel().artifactSnapshot());
+        GpuRuntimeDiagnosticContext failureContext = GpuRuntimeDiagnosticContext.fromSnapshot(
+                execution.compiledKernel().descriptor(),
+                execution.compiledKernel().artifactSnapshot()
+        ).withCallSite(diagnosticContext.callSite());
+        throw new GpuRuntimeCapabilityException(
+                "OpenCL kernel work-group validation failed for kernel "
+                        + execution.compiledKernel().descriptor().kernelName()
+                        + ": requested local work-group size "
+                        + requestedSize
+                        + " ("
+                        + launchAdvisory.requestedLocalWorkGroupShape()
+                        + "), but the compiled kernel limit is "
+                        + kernelLimit
+                        + "; reduce the explicit local size or leave it unspecified so the OpenCL driver can choose",
+                failureContext,
+                null
+        );
+    }
+
+    private void dumpRuntimeLaunchAdvisory(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            OpenClKernelLaunchAdvisory launchAdvisory
+    ) {
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path reportDirectory = gatePath.getParent();
+            if (reportDirectory == null) {
+                return;
+            }
+            java.nio.file.Path artifactDirectory = runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot);
+            java.nio.file.Files.createDirectories(artifactDirectory);
+            java.nio.file.Files.writeString(
+                    artifactDirectory.resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME),
+                    launchAdvisory.toProperties(),
+                    java.nio.charset.StandardCharsets.UTF_8
+            );
+        } catch (RuntimeException | java.io.IOException ignored) {
+            // Launch advisories must never change the execution result.
+        }
+    }
+
+    private void clearRuntimeLaunchAdvisory(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path reportDirectory = gatePath.getParent();
+            if (reportDirectory == null) {
+                return;
+            }
+            java.nio.file.Files.deleteIfExists(
+                    runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot)
+                            .resolve(OpenClKernelLaunchAdvisory.ARTIFACT_FILE_NAME)
+            );
+        } catch (RuntimeException | java.io.IOException ignored) {
+            // Stale-advisory cleanup must never replace the structured validation failure.
+        }
+    }
+
+    private void dumpRuntimeCompileArtifacts(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path reportDirectory = gatePath.getParent();
+            if (reportDirectory == null) {
+                return;
+            }
+            java.nio.file.Path artifactDirectory = runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot);
+            java.nio.file.Files.createDirectories(artifactDirectory);
+
+            GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(artifactSnapshot);
+            writeRuntimeCompileArtifactDump(artifactDirectory, dump);
+        } catch (RuntimeException | java.io.IOException exception) {
+            throw new IllegalStateException("Failed to write OpenCL runtime compile artifacts", exception);
+        }
+    }
+
+    static void writeRuntimeCompileArtifactDump(
+            java.nio.file.Path artifactDirectory,
+            GpuRuntimeCompileArtifactDump dump
+    ) throws java.io.IOException {
+        for (Map.Entry<String, String> artifact : dump.artifacts().entrySet()) {
+            java.nio.file.Path artifactPath = runtimeCompileArtifactPath(artifactDirectory, artifact.getKey());
+            java.nio.file.Path artifactParent = artifactPath.getParent();
+            if (artifactParent != null) {
+                java.nio.file.Files.createDirectories(artifactParent);
+            }
+            java.nio.file.Files.writeString(
+                    artifactPath,
+                    artifact.getValue(),
+                    java.nio.charset.StandardCharsets.UTF_8
+            );
+        }
+        for (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact artifact
+                : dump.binaryArtifacts().values()) {
+            java.nio.file.Path artifactPath = runtimeCompileArtifactPath(artifactDirectory, artifact.name());
+            java.nio.file.Path artifactParent = artifactPath.getParent();
+            if (artifactParent != null) {
+                java.nio.file.Files.createDirectories(artifactParent);
+            }
+            java.nio.file.Files.write(artifactPath, artifact.content());
+        }
+        if (!dump.sourceLocations().isEmpty()) {
+            java.nio.file.Files.writeString(
+                    runtimeCompileArtifactPath(artifactDirectory, "source-locations.txt"),
+                    String.join(System.lineSeparator(), dump.sourceLocations()) + System.lineSeparator(),
+                    java.nio.charset.StandardCharsets.UTF_8
+            );
+        }
+    }
+
+    static java.nio.file.Path runtimeCompileArtifactPath(
+            java.nio.file.Path artifactDirectory,
+            String artifactName
+    ) {
+        java.nio.file.Path normalizedDirectory = artifactDirectory.toAbsolutePath().normalize();
+        java.nio.file.Path artifactPath = normalizedDirectory.resolve(artifactName).normalize();
+        if (!artifactPath.startsWith(normalizedDirectory)) {
+            throw new IllegalArgumentException("Runtime compile artifact path escapes output directory: " + artifactName);
+        }
+        return artifactPath;
+    }
+
+    private static java.nio.file.Path runtimeCompileArtifactDirectory(
+            java.nio.file.Path reportDirectory,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
+        return reportDirectory
+                .resolve("runtime-compile-artifacts")
+                .resolve(runtimeCompileArtifactDirectoryName(artifactSnapshot));
+    }
+
+    private static String runtimeCompileArtifactDirectoryName(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        String resource = artifactSnapshot.backendModuleArtifact().resource();
+        String identity = resource == null || resource.isBlank() ? "kernel" : resource;
+        String sanitized = identity.replaceAll("[^a-zA-Z0-9._-]+", "_");
+        if (sanitized.length() > 96) {
+            sanitized = sanitized.substring(sanitized.length() - 96);
+        }
+        return sanitized + "-" + Integer.toUnsignedString(identity.hashCode(), 16);
     }
 
     private long requestedLocalMemoryBytes(OpenClExecutionPlan plan) {
@@ -2779,5 +3492,13 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     private DoubleBuffer allocateDoubleBuffer(int length) {
         return allocateByteBuffer(length * Double.BYTES).asDoubleBuffer();
+    }
+
+    private record OpenClSessionSelectionRequest(
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            Optional<IrGpuArtifact> irGpuArtifact,
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
     }
 }

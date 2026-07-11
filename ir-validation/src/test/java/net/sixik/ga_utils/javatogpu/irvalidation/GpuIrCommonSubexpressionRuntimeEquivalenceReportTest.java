@@ -34,6 +34,24 @@ class GpuIrCommonSubexpressionRuntimeEquivalenceReportTest {
         assertEquals("outA", fields.get("cseRuntimeEquivalenceComparedOutputNames"));
         assertEquals("0", fields.get("cseRuntimeEquivalenceDiagnostics"));
         assertEquals("false", fields.get("cseRuntimeEquivalenceHasDiagnostics"));
+        assertEquals("3", fields.get("cseRuntimeEquivalencePayload.InputCases"));
+        assertEquals(
+                "inputCases=3, comparedOutputs=1, outputNames=outA",
+                fields.get("cseRuntimeEquivalencePayload.CpuReference")
+        );
+        assertEquals(
+                "plans=1, insertions=1, skipped=0",
+                fields.get("cseRuntimeEquivalencePayload.PreOptimizationOutput")
+        );
+        assertEquals(
+                "replacements=1, equivalent=true, successful=true",
+                fields.get("cseRuntimeEquivalencePayload.PostOptimizationOutput")
+        );
+        assertEquals(
+                "mode=exact-int, diagnostics=0, diagnosticFamilies={}",
+                fields.get("cseRuntimeEquivalencePayload.Tolerance")
+        );
+        assertEquals("none", fields.get("cseRuntimeEquivalencePayload.FailureFixture"));
         assertEquals("{}", fields.get("cseRuntimeEquivalenceDiagnosticFamilyCounts"));
         assertEquals("1", fields.get("cseRuntimeEquivalencePlans"));
         assertEquals("1", fields.get("cseRuntimeEquivalenceInsertions"));
@@ -76,6 +94,14 @@ class GpuIrCommonSubexpressionRuntimeEquivalenceReportTest {
         assertEquals("case 1 output outA differs", fields.get("cseEquivalence.FirstDiagnostic"));
         assertEquals("case 1 output outA differs", fields.get("cseEquivalence.AllDiagnostics"));
         assertEquals("case 1 output outA differs", fields.get("cseEquivalence.Diagnostic.0"));
+        assertEquals(
+                "case 1 output outA differs",
+                fields.get("cseEquivalence.Payload.FailureFixture")
+        );
+        assertEquals(
+                "mode=exact-int, diagnostics=1, diagnosticFamilies={outputDiffers=1}",
+                fields.get("cseEquivalence.Payload.Tolerance")
+        );
         assertEquals("0", fields.get("cseEquivalence.Plans"));
         assertEquals("1", fields.get("cseEquivalence.Skipped"));
         assertEquals("{requiresLocalExpressionDominance=1}", fields.get("cseEquivalence.SkippedDominanceStatusCounts"));

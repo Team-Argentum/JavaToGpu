@@ -1,6 +1,12 @@
 package net.sixik.ga_utils.javatogpu.frontend;
 
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.type.Type;
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex;
@@ -11,13 +17,17 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodDeviceConstraint;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodFallbackVariant;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTextBodyRenderer;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedBodyBuilder;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrCompiledMethod;
@@ -277,14 +287,183 @@ public final class GpuFrontendService {
                 buildLaunchMetadata(compiledKernel),
                 IrGpuValidationMetadata.frontendSubset(),
                 buildFeatureMetadata(compiledKernel),
+                buildOptimizerPolicyMetadata(compiledKernel),
                 IrGpuRegenerationMetadata.transitionalIrText(),
                 buildStructMetadata(structs),
                 buildConstantMetadata(compiledKernel, helperMethods, structs),
                 buildConstantDataMetadata(compiledKernel, helperMethods, structs),
                 List.of(IrGpuBackendOutput.openClSource(derivedOpenClResource)),
                 "opencl",
-                "off"
+                "off",
+                buildMethodDeviceConstraints(compiledKernel, helperMethods),
+                buildMethodFallbackVariants(compiledKernel, helperMethods)
         );
+    }
+
+    private static List<IrGpuMethodFallbackVariant> buildMethodFallbackVariants(
+            GpuIrCompiledMethod compiledKernel,
+            List<GpuIrCompiledMethod> helperMethods
+    ) {
+        ArrayList<IrGpuMethodFallbackVariant> variants = new ArrayList<>();
+        for (GpuIrCompiledMethod helper : helperMethods) {
+            buildMethodFallbackVariant(helper).ifPresent(variants::add);
+        }
+        buildMethodFallbackVariant(compiledKernel).ifPresent(variants::add);
+        return List.copyOf(variants);
+    }
+
+    private static java.util.Optional<IrGpuMethodFallbackVariant> buildMethodFallbackVariant(
+            GpuIrCompiledMethod compiledMethod
+    ) {
+        MethodDeclaration declaration = compiledMethod.parsedMethod().declaration();
+        if (declaration == null) {
+            return java.util.Optional.empty();
+        }
+        return declaration.getAnnotationByName("GPUFallbackVariant")
+                .map(annotation -> new IrGpuMethodFallbackVariant(
+                        compiledMethod.parsedMethod().name(),
+                        compiledMethod.emittedName(),
+                        parseRequiredStringAnnotationValue(annotation, "group", "GPUFallbackVariant"),
+                        parseOptionalStringAnnotationValue(annotation, "id", "GPUFallbackVariant"),
+                        parseIntAnnotationValue(annotation, "priority", 0, "GPUFallbackVariant"),
+                        parseOptionalStringAnnotationValue(annotation, "compatibilityNote", "GPUFallbackVariant"),
+                        "GPUFallbackVariant"
+                ));
+    }
+
+    private static List<IrGpuMethodDeviceConstraint> buildMethodDeviceConstraints(
+            GpuIrCompiledMethod compiledKernel,
+            List<GpuIrCompiledMethod> helperMethods
+    ) {
+        ArrayList<IrGpuMethodDeviceConstraint> constraints = new ArrayList<>();
+        for (GpuIrCompiledMethod helper : helperMethods) {
+            buildMethodDeviceConstraint(helper).ifPresent(constraints::add);
+        }
+        buildMethodDeviceConstraint(compiledKernel).ifPresent(constraints::add);
+        return List.copyOf(constraints);
+    }
+
+    private static java.util.Optional<IrGpuMethodDeviceConstraint> buildMethodDeviceConstraint(
+            GpuIrCompiledMethod compiledMethod
+    ) {
+        MethodDeclaration declaration = compiledMethod.parsedMethod().declaration();
+        if (declaration == null) {
+            return java.util.Optional.empty();
+        }
+        return declaration.getAnnotationByName("GPUDeviceConstraint")
+                .map(annotation -> new IrGpuMethodDeviceConstraint(
+                        compiledMethod.parsedMethod().name(),
+                        compiledMethod.emittedName(),
+                        parseEnumAnnotationValues(annotation, "backends", GpuBackendTarget.class),
+                        parseEnumAnnotationValues(annotation, "vendors", GpuVendorTarget.class),
+                        parseEnumAnnotationValues(annotation, "deviceClasses", GpuDeviceClassTarget.class),
+                        parseStringAnnotationValues(annotation, "requiredFeatures"),
+                        "GPUDeviceConstraint"
+                ))
+                .filter(IrGpuMethodDeviceConstraint::active);
+    }
+
+    private static <E extends Enum<E>> List<E> parseEnumAnnotationValues(
+            AnnotationExpr annotation,
+            String propertyName,
+            Class<E> enumType
+    ) {
+        return annotationValue(annotation, propertyName).stream()
+                .flatMap(GpuFrontendService::annotationValues)
+                .map(GpuFrontendService::enumConstantName)
+                .map(name -> Enum.valueOf(enumType, name))
+                .toList();
+    }
+
+    private static List<String> parseStringAnnotationValues(
+            AnnotationExpr annotation,
+            String propertyName
+    ) {
+        return annotationValue(annotation, propertyName).stream()
+                .flatMap(GpuFrontendService::annotationValues)
+                .map(expression -> {
+                    if (!expression.isStringLiteralExpr()) {
+                        throw new IllegalArgumentException(
+                                "GPUDeviceConstraint." + propertyName + " must contain string literals: " + expression
+                        );
+                    }
+                    return expression.asStringLiteralExpr().asString();
+                })
+                .toList();
+    }
+
+    private static String parseRequiredStringAnnotationValue(
+            AnnotationExpr annotation,
+            String propertyName,
+            String annotationName
+    ) {
+        String value = parseOptionalStringAnnotationValue(annotation, propertyName, annotationName);
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(annotationName + "." + propertyName + " must not be blank");
+        }
+        return value;
+    }
+
+    private static String parseOptionalStringAnnotationValue(
+            AnnotationExpr annotation,
+            String propertyName,
+            String annotationName
+    ) {
+        return annotationValue(annotation, propertyName)
+                .map(expression -> {
+                    if (!expression.isStringLiteralExpr()) {
+                        throw new IllegalArgumentException(
+                                annotationName + "." + propertyName + " must be a string literal: " + expression
+                        );
+                    }
+                    return expression.asStringLiteralExpr().asString().trim();
+                })
+                .orElse("");
+    }
+
+    private static int parseIntAnnotationValue(
+            AnnotationExpr annotation,
+            String propertyName,
+            int defaultValue,
+            String annotationName
+    ) {
+        return annotationValue(annotation, propertyName)
+                .map(expression -> {
+                    try {
+                        return Integer.parseInt(expression.toString());
+                    } catch (NumberFormatException exception) {
+                        throw new IllegalArgumentException(
+                                annotationName + "." + propertyName + " must be an integer literal: " + expression,
+                                exception
+                        );
+                    }
+                })
+                .orElse(defaultValue);
+    }
+
+    private static java.util.Optional<Expression> annotationValue(
+            AnnotationExpr annotation,
+            String propertyName
+    ) {
+        if (!annotation.isNormalAnnotationExpr()) {
+            return java.util.Optional.empty();
+        }
+        return annotation.asNormalAnnotationExpr().getPairs().stream()
+                .filter(pair -> pair.getNameAsString().equals(propertyName))
+                .map(pair -> pair.getValue())
+                .findFirst();
+    }
+
+    private static java.util.stream.Stream<Expression> annotationValues(Expression expression) {
+        return expression.isArrayInitializerExpr()
+                ? expression.asArrayInitializerExpr().getValues().stream()
+                : java.util.stream.Stream.of(expression);
+    }
+
+    private static String enumConstantName(Expression expression) {
+        String value = expression.toString();
+        int separator = value.lastIndexOf('.');
+        return separator < 0 ? value : value.substring(separator + 1);
     }
 
     private static List<IrGpuEntryParameter> buildEntryParameters(GpuIrCompiledMethod compiledKernel) {
@@ -336,6 +515,25 @@ public final class GpuFrontendService {
             }
         }
         return new IrGpuFeatureMetadata(requiredFeatures, List.of("opencl-source-compat"));
+    }
+
+    private static IrGpuOptimizerPolicyMetadata buildOptimizerPolicyMetadata(GpuIrCompiledMethod compiledKernel) {
+        MethodDeclaration declaration = compiledKernel.parsedMethod().declaration();
+        if (declaration == null) {
+            return IrGpuOptimizerPolicyMetadata.defaultStrict();
+        }
+
+        return declaration.getAnnotationByName("GPUOptimize")
+                .map(annotation -> {
+                    boolean fastMath = annotation.isNormalAnnotationExpr()
+                            && annotation.asNormalAnnotationExpr().getPairs().stream()
+                            .filter(pair -> pair.getNameAsString().equals("fastMath"))
+                            .findFirst()
+                            .map(pair -> Boolean.parseBoolean(pair.getValue().toString()))
+                            .orElse(false);
+                    return IrGpuOptimizerPolicyMetadata.fromGpuOptimize(fastMath);
+                })
+                .orElseGet(IrGpuOptimizerPolicyMetadata::defaultStrict);
     }
 
     private static List<IrGpuStructMetadata> buildStructMetadata(List<ParsedGpuStruct> structs) {
@@ -422,21 +620,40 @@ public final class GpuFrontendService {
                 compiledKernel.parsedMethod().name(),
                 compiledKernel.emittedName(),
                 IrGpuTextBodyRenderer.render(compiledKernel),
+                IrGpuTypedBodyBuilder.fromStatements(compiledKernel.irMethod().statements()),
                 buildBodyIndex(compiledKernel),
                 compiledKernel.helperDependencies(),
                 sourceLocation(compiledKernel, sourceFrontend)
         ));
         helperMethods.stream()
-                .map(helper -> IrGpuMethodBody.helper(
-                        helper.parsedMethod().name(),
-                        helper.emittedName(),
-                        IrGpuTextBodyRenderer.render(helper),
-                        buildBodyIndex(helper),
-                        helper.helperDependencies(),
-                        sourceLocation(helper, sourceFrontend)
-                ))
+                .map(helper -> buildIrGpuHelperMethodBody(helper, sourceFrontend))
                 .forEach(methodBodies::add);
         return List.copyOf(methodBodies);
+    }
+
+    private static IrGpuMethodBody buildIrGpuHelperMethodBody(
+            GpuIrCompiledMethod helper,
+            String sourceFrontend
+    ) {
+        IrGpuSourceLocation sourceLocation = sourceLocation(helper, sourceFrontend);
+        if (!helper.parsedMethod().nativeCode().isBlank()) {
+            return IrGpuMethodBody.nativeOpenClHelper(
+                    helper.parsedMethod().name(),
+                    helper.emittedName(),
+                    helper.parsedMethod().nativeCode(),
+                    helper.helperDependencies(),
+                    sourceLocation
+            );
+        }
+        return IrGpuMethodBody.helper(
+                helper.parsedMethod().name(),
+                helper.emittedName(),
+                IrGpuTextBodyRenderer.render(helper),
+                IrGpuTypedBodyBuilder.fromStatements(helper.irMethod().statements()),
+                buildBodyIndex(helper),
+                helper.helperDependencies(),
+                sourceLocation
+        );
     }
 
     private static IrGpuBodyIndex buildBodyIndex(GpuIrCompiledMethod compiledMethod) {

@@ -1121,6 +1121,32 @@ class GpuRuntimeTest {
         assertTrue(report.supports(GpuRuntimeFeature.SHARED_CACHE));
     }
 
+    @Test
+    void runtimeBackendDefaultsPromotionArtifactSupportToFailClosed() {
+        GpuRuntimeBackend backend = invocation -> {
+        };
+
+        GpuPromotionArtifactSupport support = backend.promotionArtifactSupport();
+
+        assertEquals(GpuBackendTarget.UNKNOWN, support.backendTarget());
+        assertTrue(support.supportedArtifacts().isEmpty());
+        assertEquals(GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS, support.missingArtifacts());
+        assertTrue(!support.complete());
+    }
+
+    @Test
+    void openClBackendAdvertisesCompletePromotionArtifactSupport() {
+        net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend backend =
+                new net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend();
+
+        GpuPromotionArtifactSupport support = backend.promotionArtifactSupport();
+
+        assertEquals(GpuBackendTarget.OPENCL, support.backendTarget());
+        assertEquals(GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS, support.supportedArtifacts());
+        assertTrue(support.missingArtifacts().isEmpty());
+        assertTrue(support.complete());
+    }
+
     private record ReportingBackend(GpuRuntimeBackendReport report) implements GpuRuntimeBackend {
 
         @Override

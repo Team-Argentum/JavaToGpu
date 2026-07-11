@@ -3,8 +3,10 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 /**
  * Formats backend-neutral production-promotion explainability artifacts.
@@ -18,12 +20,105 @@ public final class GpuProductionPromotionExplainabilityFormatter {
     }
 
     public static String format(Properties workloadGate, Properties i3Summary) {
+        return format(workloadGate, i3Summary, completePromotionArtifactSupport());
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport
+    ) {
+        return format(workloadGate, i3Summary, backendPromotionArtifactSupport, new Properties());
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation
+    ) {
+        return format(
+                workloadGate,
+                i3Summary,
+                backendPromotionArtifactSupport,
+                controlledProductionSourceSwitchingValidation,
+                new Properties()
+        );
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation,
+            Properties controlledProductionActivationTokenSmoke
+    ) {
+        return format(
+                workloadGate,
+                i3Summary,
+                backendPromotionArtifactSupport,
+                controlledProductionSourceSwitchingValidation,
+                new Properties(),
+                controlledProductionActivationTokenSmoke,
+                new Properties()
+        );
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation,
+            Properties controlledProductionActivationTokenSmoke,
+            Properties controlledProductionActivationTokenNegative
+    ) {
+        return format(
+                workloadGate,
+                i3Summary,
+                backendPromotionArtifactSupport,
+                controlledProductionSourceSwitchingValidation,
+                new Properties(),
+                controlledProductionActivationTokenSmoke,
+                controlledProductionActivationTokenNegative
+        );
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation,
+            Properties controlledProductionMutationValidation,
+            Properties controlledProductionActivationTokenSmoke,
+            Properties controlledProductionActivationTokenNegative
+    ) {
         Properties gate = workloadGate == null ? new Properties() : workloadGate;
         Properties readiness = i3Summary == null ? new Properties() : i3Summary;
+        Properties promotionSupport = backendPromotionArtifactSupport == null
+                ? new Properties()
+                : backendPromotionArtifactSupport;
+        Properties controlledSourceSwitching = controlledProductionSourceSwitchingValidation == null
+                ? new Properties()
+                : controlledProductionSourceSwitchingValidation;
+        Properties controlledMutation = controlledProductionMutationValidation == null
+                ? new Properties()
+                : controlledProductionMutationValidation;
+        Properties activationTokenSmoke = controlledProductionActivationTokenSmoke == null
+                ? new Properties()
+                : controlledProductionActivationTokenSmoke;
+        Properties activationTokenNegative = controlledProductionActivationTokenNegative == null
+                ? new Properties()
+                : controlledProductionActivationTokenNegative;
+        boolean backendPromotionArtifactSupportComplete = propertyIsTrue(
+                promotionSupport,
+                "complete",
+                false
+        );
         if (gate.isEmpty()) {
             return appendContractFields("status=blocked\n"
                     + "productionSourceSwitchingAllowed=false\n"
                     + "productionMutationAllowed=false\n"
+                    + "backendPromotionArtifactSupport.complete=" + backendPromotionArtifactSupportComplete + "\n"
                     + "kernel.count=0\n"
                     + "blocker.count=1\n"
                     + "blocker.0=workload-promotion-gate-not-recorded\n"
@@ -37,32 +132,292 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         boolean productionSourceSwitchingEnabled = "true".equals(gate.getProperty("productionSourceSwitching", "false"))
                 || "enabled".equals(gate.getProperty("productionSourceSwitching", "false"));
         boolean productionMutationEnabled = "true".equals(readiness.getProperty("productionMutationEnabled", "false"));
+        int productionSourceSwitchingEnabledCount = parsePositiveInt(
+                gate.getProperty("productionSourceSwitchingEnabled.count", productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0")
+        );
+        boolean allProductionSourceSwitchingEnabled = propertyIsTrue(
+                gate,
+                "productionSourceSwitchingEnabled.all",
+                productionSourceSwitchingEnabled && productionSourceSwitchingEnabledCount == kernelCount
+        );
+        int productionPromotionDecisionEnabledCount = parsePositiveInt(
+                gate.getProperty("productionPromotionDecisionMode.productionEnabled.count", productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0")
+        );
+        boolean allProductionPromotionDecisionsEnabled = propertyIsTrue(
+                gate,
+                "productionPromotionDecisionMode.productionEnabled.all",
+                productionPromotionDecisionEnabledCount == kernelCount && productionPromotionDecisionEnabledCount > 0
+        );
+        int productionSourceDecisionCount = parsePositiveInt(
+                gate.getProperty("sourceSwitching.productionDecision.count", productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0")
+        );
+        boolean allProductionSourceDecisions = propertyIsTrue(
+                gate,
+                "sourceSwitching.productionDecision.all",
+                productionSourceDecisionCount == kernelCount && productionSourceDecisionCount > 0
+        );
         int i3ReviewReadyCount = parsePositiveInt(readiness.getProperty("reviewReady.count", "0"));
         int i3BlockedCount = parsePositiveInt(readiness.getProperty("blocked.count", Integer.toString(kernelCount)));
         int i3SourceReadyCount = parsePositiveInt(readiness.getProperty("sourceReady.count", "0"));
         boolean allKernelsI3ReviewReady = kernelCount > 0 && i3ReviewReadyCount == kernelCount && i3BlockedCount == 0;
         boolean allKernelsSourceReady = kernelCount > 0 && i3SourceReadyCount == kernelCount;
+        int optimizerFamilyCount = parsePositiveInt(gate.getProperty(
+                "optimizerFamily.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerFamily.count"))
+        ));
+        int optimizerFamilyPromotionReadyCount = parsePositiveInt(
+                gate.getProperty(
+                        "optimizerFamily.promotionReady.count",
+                        Integer.toString(sumKernelProperty(
+                                gate,
+                                kernelCount,
+                                "runtimeOptimizerDrift.optimizerFamily.promotionReady.count"
+                        ))
+                )
+        );
+        String optimizerFamilySummary = gate.getProperty(
+                "optimizerFamily.summary",
+                summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerFamily.summary")
+        );
+        int optimizerFamilyPayloadCompleteCount = parsePositiveInt(
+                gate.getProperty(
+                        "optimizerFamilyPayload.complete.count",
+                        Integer.toString(sumKernelProperty(
+                                gate,
+                                kernelCount,
+                                "optimizerFamilyPayload.family.complete.count"
+                        ))
+                )
+        );
+        String optimizerFamilyPayloadCompleteAll = gate.getProperty(
+                "optimizerFamilyPayload.complete.all",
+                allKernelBooleanPropertyWhenCountPresent(
+                        gate,
+                        kernelCount,
+                        "optimizerFamilyPayload.family.count",
+                        "optimizerFamilyPayload.family.complete.count",
+                        "optimizerFamilyPayload.family.complete.all"
+                )
+        );
+        boolean optimizerFamilyRuntimeEquivalenceHistoryBaselineReady = propertyIsTrue(
+                gate,
+                "optimizerFamily.runtimeEquivalenceHistoryBaselineReady",
+                false
+        );
+        boolean optimizerFamilyPromotionPreflightReady = optimizerFamilyPromotionReadyCount == 0
+                || optimizerFamilyRuntimeEquivalenceHistoryBaselineReady;
+        String controlledSourceSwitchingStatus = controlledSourceSwitching.getProperty("status", "not-recorded");
+        int controlledSourceSwitchingKernelCount = parsePositiveInt(
+                controlledSourceSwitching.getProperty("kernel.count", "0")
+        );
+        ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage =
+                controlledSourceSwitchingCoverage(gate, controlledSourceSwitching);
+        ControlledMutationEvidence controlledMutationEvidence = controlledMutationEvidence(
+                gate,
+                controlledMutation,
+                controlledSourceSwitchingCoverage
+        );
+        boolean activationTokenLoaded = propertyIsTrue(activationTokenSmoke, "token.loaded", false);
+        boolean activationTokenSafeDefaults = "false".equals(
+                activationTokenSmoke.getProperty("defaultRuntimeActivation", "unknown")
+        ) && "disabled".equals(
+                activationTokenSmoke.getProperty("defaultProductionSourceSwitching", "unknown")
+        ) && "disabled".equals(
+                activationTokenSmoke.getProperty("productionMutation", "unknown")
+        );
+        ControlledSourceSwitchingCoverage activationTokenSmokeCoverage =
+                controlledActivationTokenSmokeCoverage(gate, activationTokenSmoke);
+        boolean activationTokenApprovedKernelExecuted = !activationTokenSmokeCoverage.coveredResources().isEmpty();
+        boolean activationTokenSmokePassed = "passed".equals(activationTokenSmoke.getProperty("status", "not-recorded"))
+                && "controlled-production-activation-token-smoke".equals(
+                activationTokenSmoke.getProperty("scope", "unknown")
+        )
+                && activationTokenLoaded
+                && activationTokenSafeDefaults
+                && activationTokenSmokeCoverage.allCovered()
+                && "OPENCL".equals(activationTokenSmoke.getProperty("token.backendTarget", "UNKNOWN"))
+                && GpuBackendSourcePromotionActivationGate.ACTIVATION_SCOPE.equals(
+                activationTokenSmoke.getProperty("token.activationScope", "unknown")
+        );
+        boolean activationTokenNegativeSafeDefaults = "false".equals(
+                activationTokenNegative.getProperty("defaultRuntimeActivation", "unknown")
+        ) && "disabled".equals(
+                activationTokenNegative.getProperty("defaultProductionSourceSwitching", "unknown")
+        ) && "disabled".equals(
+                activationTokenNegative.getProperty("productionMutation", "unknown")
+        );
+        boolean activationTokenDigestMismatchRejected = propertyIsTrue(
+                activationTokenNegative,
+                "digestMismatchRejected",
+                false
+        );
+        boolean activationTokenUnapprovedKernelRejected = propertyIsTrue(
+                activationTokenNegative,
+                "unapprovedKernelRejected",
+                false
+        );
+        boolean activationTokenNegativeOutputUnchanged = propertyIsTrue(
+                activationTokenNegative,
+                "outputUnchanged",
+                false
+        );
+        boolean activationTokenNegativePassed = "passed".equals(
+                activationTokenNegative.getProperty("status", "not-recorded")
+        ) && "controlled-production-activation-token-negative".equals(
+                activationTokenNegative.getProperty("scope", "unknown")
+        )
+                && activationTokenDigestMismatchRejected
+                && activationTokenUnapprovedKernelRejected
+                && activationTokenNegativeOutputUnchanged
+                && activationTokenNegativeSafeDefaults
+                && propertyIsTrue(activationTokenNegative, "passed", false);
 
-        List<String> blockers = new ArrayList<>();
+        boolean activationGatedSourceSwitchingEvidence = gateReviewReady
+                && sourceParityMatched
+                && runtimeEquivalencePassed
+                && allKernelsI3ReviewReady
+                && allKernelsSourceReady
+                && controlledSourceSwitchingCoverage.allCovered()
+                && activationTokenSmokePassed
+                && activationTokenNegativePassed
+                && backendPromotionArtifactSupportComplete
+                && optimizerFamilyPromotionPreflightReady;
+        boolean effectiveProductionSourceSwitchingEnabled = productionSourceSwitchingEnabled
+                || activationGatedSourceSwitchingEvidence;
+        int effectiveProductionSourceSwitchingEnabledCount = productionSourceSwitchingEnabledCount;
+        if (activationGatedSourceSwitchingEvidence
+                && effectiveProductionSourceSwitchingEnabledCount < kernelCount) {
+            effectiveProductionSourceSwitchingEnabledCount = kernelCount;
+        }
+        boolean effectiveAllProductionSourceSwitchingEnabled = allProductionSourceSwitchingEnabled
+                || (activationGatedSourceSwitchingEvidence && effectiveProductionSourceSwitchingEnabledCount == kernelCount);
+        int effectiveProductionPromotionDecisionEnabledCount = productionPromotionDecisionEnabledCount;
+        if (activationGatedSourceSwitchingEvidence
+                && effectiveProductionPromotionDecisionEnabledCount < kernelCount) {
+            effectiveProductionPromotionDecisionEnabledCount = kernelCount;
+        }
+        boolean effectiveAllProductionPromotionDecisionsEnabled = allProductionPromotionDecisionsEnabled
+                || (activationGatedSourceSwitchingEvidence && effectiveProductionPromotionDecisionEnabledCount == kernelCount);
+        int effectiveProductionSourceDecisionCount = productionSourceDecisionCount;
+        if (activationGatedSourceSwitchingEvidence
+                && effectiveProductionSourceDecisionCount < kernelCount) {
+            effectiveProductionSourceDecisionCount = kernelCount;
+        }
+        boolean effectiveAllProductionSourceDecisions = allProductionSourceDecisions
+                || (activationGatedSourceSwitchingEvidence && effectiveProductionSourceDecisionCount == kernelCount);
+
+        List<ReadinessChecklistItem> readinessChecklist = List.of(
+                new ReadinessChecklistItem(
+                        "workload-gate-review-ready",
+                        gateReviewReady,
+                        "real workload source-promotion gate is review-ready",
+                        "real workload source-promotion gate is not review-ready"
+                ),
+                new ReadinessChecklistItem(
+                        "source-parity-matched",
+                        sourceParityMatched,
+                        "generated source and packaged IrGpu source match",
+                        "generated source and packaged IrGpu source do not match"
+                ),
+                new ReadinessChecklistItem(
+                        "runtime-equivalence-passed",
+                        runtimeEquivalencePassed,
+                        "runtime equivalence evidence passed",
+                        "runtime equivalence evidence has not passed"
+                ),
+                new ReadinessChecklistItem(
+                        "i3-source-ready",
+                        allKernelsSourceReady,
+                        "all workload kernels are I3 source-ready",
+                        "one or more workload kernels are not I3 source-ready"
+                ),
+                new ReadinessChecklistItem(
+                        "controlled-source-switching-covered",
+                        controlledSourceSwitchingCoverage.allCovered(),
+                        "controlled production source-switching lane covers all real workload resources",
+                        "controlled production source-switching lane does not cover every real workload resource"
+                ),
+                new ReadinessChecklistItem(
+                        "activation-token-hardware-smoke-passed",
+                        activationTokenSmokePassed,
+                        "controlled activation token loaded its exact artifact and executed an approved hardware workload",
+                        "controlled activation-token hardware smoke is missing or incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "activation-token-negative-controls-passed",
+                        activationTokenNegativePassed,
+                        "controlled activation-token negative controls reject digest and kernel mismatches before execution",
+                        "controlled activation-token negative controls are missing or incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "promotion-artifacts-complete",
+                        backendPromotionArtifactSupportComplete,
+                        "backend promotion artifact support is complete",
+                        "backend promotion artifact support is incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "optimizer-family-runtime-equivalence-history-baseline",
+                        optimizerFamilyPromotionPreflightReady,
+                        "optimizer family promotion candidates have A1/A2 runtime-equivalence history baseline evidence",
+                        "optimizer family promotion candidates require A1/A2 runtime-equivalence history baseline evidence"
+                ),
+                new ReadinessChecklistItem(
+                        "production-source-switching-enabled",
+                        effectiveProductionSourceSwitchingEnabled
+                                && effectiveAllProductionSourceSwitchingEnabled
+                                && effectiveAllProductionPromotionDecisionsEnabled
+                                && effectiveAllProductionSourceDecisions,
+                        "production source switching is enabled for all workload kernels",
+                        "production source switching remains disabled or incomplete"
+                ),
+                new ReadinessChecklistItem(
+                        "production-mutation-enabled",
+                        productionMutationEnabled || controlledMutationEvidence.passed(),
+                        "production mutation is enabled or covered by controlled mutation readiness evidence",
+                        "production mutation remains disabled and controlled mutation readiness evidence is incomplete"
+                )
+        );
+
+        List<String> readinessBlockers = new ArrayList<>();
         if (!gateReviewReady) {
-            blockers.add("workload-source-promotion-gate-not-review-ready");
+            readinessBlockers.add("workload-source-promotion-gate-not-review-ready");
         }
         if (!sourceParityMatched) {
-            blockers.add("source-parity-not-matched");
+            readinessBlockers.add("source-parity-not-matched");
         }
         if (!runtimeEquivalencePassed) {
-            blockers.add("runtime-equivalence-not-passed");
+            readinessBlockers.add("runtime-equivalence-not-passed");
         }
         if (!allKernelsI3ReviewReady) {
-            blockers.add("i3-workload-readiness-not-review-ready");
+            readinessBlockers.add("i3-workload-readiness-not-review-ready");
         }
         if (!allKernelsSourceReady) {
-            blockers.add("i3-source-readiness-not-complete");
+            readinessBlockers.add("i3-source-readiness-not-complete");
         }
-        if (!productionSourceSwitchingEnabled) {
-            blockers.add("production-source-switching-disabled");
+        if (!effectiveProductionSourceSwitchingEnabled) {
+            readinessBlockers.add("production-source-switching-disabled");
         }
-        if (!productionMutationEnabled) {
+        if (!effectiveAllProductionSourceSwitchingEnabled) {
+            readinessBlockers.add("production-source-switching-not-enabled-for-all-kernels");
+        }
+        if (!effectiveAllProductionPromotionDecisionsEnabled) {
+            readinessBlockers.add("production-promotion-decision-not-enabled-for-all-kernels");
+        }
+        if (!effectiveAllProductionSourceDecisions) {
+            readinessBlockers.add("production-source-decision-not-compiled-for-all-kernels");
+        }
+        if (!backendPromotionArtifactSupportComplete) {
+            readinessBlockers.add("backend-promotion-artifact-support-incomplete");
+        }
+        if (!optimizerFamilyPromotionPreflightReady) {
+            readinessBlockers.add("optimizer-family-runtime-equivalence-history-baseline-missing");
+        }
+        boolean sourceSwitchingAllowed = readinessBlockers.isEmpty();
+        boolean effectiveProductionMutationEnabled = (productionMutationEnabled || controlledMutationEvidence.passed())
+                && sourceSwitchingAllowed;
+
+        List<String> blockers = new ArrayList<>(readinessBlockers);
+        if (!effectiveProductionMutationEnabled) {
             blockers.add("production-mutation-disabled");
         }
 
@@ -78,16 +433,380 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("i3Blocked.count=").append(i3BlockedCount).append('\n');
         builder.append("i3SourceReady.count=").append(i3SourceReadyCount).append('\n');
         builder.append("i3SourceReady.all=").append(allKernelsSourceReady).append('\n');
-        builder.append("productionSourceSwitchingAllowed=").append(productionSourceSwitchingEnabled && blockers.isEmpty()).append('\n');
-        builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
-        builder.append("productionMutationAllowed=").append(productionMutationEnabled && blockers.isEmpty()).append('\n');
-        builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
+        builder.append("optimizerFamily.count=").append(optimizerFamilyCount).append('\n');
+        builder.append("optimizerFamily.promotionReady.count=").append(optimizerFamilyPromotionReadyCount).append('\n');
+        builder.append("optimizerFamily.summary=").append(optimizerFamilySummary).append('\n');
+        builder.append("optimizerFamilyPayload.complete.count=").append(optimizerFamilyPayloadCompleteCount).append('\n');
+        builder.append("optimizerFamilyPayload.complete.all=").append(optimizerFamilyPayloadCompleteAll).append('\n');
+        builder.append("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=")
+                .append(optimizerFamilyRuntimeEquivalenceHistoryBaselineReady)
+                .append('\n');
+        builder.append("optimizerFamily.promotionPreflightReady=")
+                .append(optimizerFamilyPromotionPreflightReady)
+                .append('\n');
+        builder.append("productionSourceSwitchingAllowed=").append(sourceSwitchingAllowed).append('\n');
+        builder.append("productionSourceSwitchingEnabled=").append(effectiveProductionSourceSwitchingEnabled).append('\n');
+        builder.append("productionSourceSwitchingEnabled.count=").append(effectiveProductionSourceSwitchingEnabledCount).append('\n');
+        builder.append("productionSourceSwitchingEnabled.all=").append(effectiveAllProductionSourceSwitchingEnabled).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.count=").append(effectiveProductionPromotionDecisionEnabledCount).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(effectiveAllProductionPromotionDecisionsEnabled).append('\n');
+        builder.append("sourceSwitching.productionDecision.count=").append(effectiveProductionSourceDecisionCount).append('\n');
+        builder.append("sourceSwitching.productionDecision.all=").append(effectiveAllProductionSourceDecisions).append('\n');
+        builder.append("productionMutationAllowed=").append(effectiveProductionMutationEnabled && blockers.isEmpty()).append('\n');
+        builder.append("productionMutationEnabled=").append(effectiveProductionMutationEnabled).append('\n');
+        builder.append("backendPromotionArtifactSupport.complete=").append(backendPromotionArtifactSupportComplete).append('\n');
+        builder.append("backendPromotionArtifactSupport.supported.count=").append(parsePositiveInt(
+                promotionSupport.getProperty("supported.count", "0")
+        )).append('\n');
+        builder.append("backendPromotionArtifactSupport.missing.count=").append(parsePositiveInt(
+                promotionSupport.getProperty("missing.count", "0")
+        )).append('\n');
+        builder.append("controlledProductionSourceSwitching.status=")
+                .append(controlledSourceSwitchingStatus)
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.kernel.count=")
+                .append(controlledSourceSwitchingKernelCount)
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.reviewReady=")
+                .append(controlledSourceSwitching.getProperty("reviewReady", "false"))
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.productionSourceSwitching=")
+                .append(controlledSourceSwitching.getProperty("productionSourceSwitching", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.productionPromotionDecisionMode=")
+                .append(controlledSourceSwitching.getProperty("productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY))
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.covered.count=")
+                .append(controlledSourceSwitchingCoverage.coveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.total.count=")
+                .append(controlledSourceSwitchingCoverage.realWorkloadResources().size())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.uncovered.count=")
+                .append(controlledSourceSwitchingCoverage.uncoveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionSourceSwitching.realWorkload.covered.all=")
+                .append(controlledSourceSwitchingCoverage.allCovered())
+                .append('\n');
+        appendIndexedResources(builder, "controlledProductionSourceSwitching.realWorkload.covered",
+                controlledSourceSwitchingCoverage.coveredResources());
+        appendIndexedResources(builder, "controlledProductionSourceSwitching.realWorkload.uncovered",
+                controlledSourceSwitchingCoverage.uncoveredResources());
+        builder.append("controlledProductionMutation.status=")
+                .append(controlledMutation.getProperty("status", "not-recorded"))
+                .append('\n');
+        builder.append("controlledProductionMutation.scope=")
+                .append(controlledMutation.getProperty("scope", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionMutation.reviewReady=")
+                .append(controlledMutationEvidence.reviewReady())
+                .append('\n');
+        builder.append("controlledProductionMutation.productionMutation=")
+                .append(controlledMutation.getProperty("productionMutation", "disabled"))
+                .append('\n');
+        builder.append("controlledProductionMutation.defaultProductionMutation=")
+                .append(controlledMutation.getProperty("defaultProductionMutation", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.covered.count=")
+                .append(controlledMutationEvidence.coverage().coveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.total.count=")
+                .append(controlledMutationEvidence.coverage().realWorkloadResources().size())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.uncovered.count=")
+                .append(controlledMutationEvidence.coverage().uncoveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.covered.all=")
+                .append(controlledMutationEvidence.coverage().allCovered())
+                .append('\n');
+        builder.append("controlledProductionMutation.passed=")
+                .append(controlledMutationEvidence.passed())
+                .append('\n');
+        appendIndexedResources(builder, "controlledProductionMutation.realWorkload.covered",
+                controlledMutationEvidence.coverage().coveredResources());
+        appendIndexedResources(builder, "controlledProductionMutation.realWorkload.uncovered",
+                controlledMutationEvidence.coverage().uncoveredResources());
+        builder.append("controlledProductionActivationTokenSmoke.status=")
+                .append(activationTokenSmoke.getProperty("status", "not-recorded"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.scope=")
+                .append(activationTokenSmoke.getProperty("scope", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.tokenLoaded=")
+                .append(activationTokenLoaded)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.artifactSha256=")
+                .append(activationTokenSmoke.getProperty("token.artifactSha256", "missing"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.approvalId=")
+                .append(activationTokenSmoke.getProperty("token.approvalId", "approval:missing"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.candidateGitSha=")
+                .append(activationTokenSmoke.getProperty("token.candidateGitSha", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.deviceVendor=")
+                .append(activationTokenSmoke.getProperty("token.deviceVendor", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.deviceLabel=")
+                .append(activationTokenSmoke.getProperty("token.deviceLabel", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.driverVersion=")
+                .append(activationTokenSmoke.getProperty("token.driverVersion", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.kernel.count=")
+                .append(parsePositiveInt(activationTokenSmoke.getProperty("kernel.count", "0")))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.approvedKernelExecuted=")
+                .append(activationTokenApprovedKernelExecuted)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.covered.count=")
+                .append(activationTokenSmokeCoverage.coveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.total.count=")
+                .append(activationTokenSmokeCoverage.realWorkloadResources().size())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.uncovered.count=")
+                .append(activationTokenSmokeCoverage.uncoveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.realWorkload.covered.all=")
+                .append(activationTokenSmokeCoverage.allCovered())
+                .append('\n');
+        appendIndexedResources(builder, "controlledProductionActivationTokenSmoke.realWorkload.covered",
+                activationTokenSmokeCoverage.coveredResources());
+        appendIndexedResources(builder, "controlledProductionActivationTokenSmoke.realWorkload.uncovered",
+                activationTokenSmokeCoverage.uncoveredResources());
+        builder.append("controlledProductionActivationTokenSmoke.safeDefaults=")
+                .append(activationTokenSafeDefaults)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenSmoke.passed=")
+                .append(activationTokenSmokePassed)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.status=")
+                .append(activationTokenNegative.getProperty("status", "not-recorded"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.scope=")
+                .append(activationTokenNegative.getProperty("scope", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.digestMismatchRejected=")
+                .append(activationTokenDigestMismatchRejected)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.unapprovedKernelRejected=")
+                .append(activationTokenUnapprovedKernelRejected)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.outputUnchanged=")
+                .append(activationTokenNegativeOutputUnchanged)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.safeDefaults=")
+                .append(activationTokenNegativeSafeDefaults)
+                .append('\n');
+        builder.append("controlledProductionActivationTokenNegative.passed=")
+                .append(activationTokenNegativePassed)
+                .append('\n');
+        appendReadinessChecklist(builder, readinessChecklist);
         builder.append("blocker.count=").append(blockers.size()).append('\n');
         for (int index = 0; index < blockers.size(); index++) {
             builder.append("blocker.").append(index).append('=').append(blockers.get(index)).append('\n');
         }
         builder.append("diagnostic.0=").append(diagnostic(blockers, i3ReviewReadyCount, i3BlockedCount)).append('\n');
         return appendContractFields(builder.toString());
+    }
+
+    private static ControlledSourceSwitchingCoverage controlledActivationTokenSmokeCoverage(
+            Properties workloadGate,
+            Properties activationTokenSmoke
+    ) {
+        List<String> realWorkloadResources = resources(workloadGate, "sourceKernelResource");
+        Set<String> passedResources = new LinkedHashSet<>();
+        int kernelCount = parsePositiveInt(activationTokenSmoke.getProperty("kernel.count", "0"));
+        for (int index = 0; index < kernelCount; index++) {
+            String prefix = "kernel." + index + ".";
+            if ("passed".equals(activationTokenSmoke.getProperty(prefix + "status"))) {
+                passedResources.add(activationTokenSmoke.getProperty(prefix + "resource", "unknown"));
+            }
+        }
+        List<String> coveredResources = new ArrayList<>();
+        List<String> uncoveredResources = new ArrayList<>();
+        for (String resource : realWorkloadResources) {
+            if (passedResources.contains(resource)) {
+                coveredResources.add(resource);
+            } else {
+                uncoveredResources.add(resource);
+            }
+        }
+        return new ControlledSourceSwitchingCoverage(realWorkloadResources, coveredResources, uncoveredResources);
+    }
+
+    private static ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage(
+            Properties workloadGate,
+            Properties controlledSourceSwitching
+    ) {
+        List<String> realWorkloadResources = resources(workloadGate, "sourceKernelResource");
+        Set<String> controlledResources = new LinkedHashSet<>(resources(controlledSourceSwitching, "resource"));
+        List<String> coveredResources = new ArrayList<>();
+        List<String> uncoveredResources = new ArrayList<>();
+        for (String resource : realWorkloadResources) {
+            if (controlledResources.contains(resource)) {
+                coveredResources.add(resource);
+            } else {
+                uncoveredResources.add(resource);
+            }
+        }
+        return new ControlledSourceSwitchingCoverage(realWorkloadResources, coveredResources, uncoveredResources);
+    }
+
+    private static ControlledMutationEvidence controlledMutationEvidence(
+            Properties workloadGate,
+            Properties controlledMutation,
+            ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage
+    ) {
+        ControlledSourceSwitchingCoverage coverage = controlledMutationCoverage(workloadGate, controlledMutation);
+        boolean reviewReady = propertyIsTrue(controlledMutation, "reviewReady", false);
+        boolean passed = "passed".equals(controlledMutation.getProperty("status", "not-recorded"))
+                && "controlled-production-mutation-readiness".equals(controlledMutation.getProperty("scope", "unknown"))
+                && reviewReady
+                && "enabled".equals(controlledMutation.getProperty("productionMutation", "disabled"))
+                && "disabled".equals(controlledMutation.getProperty("defaultProductionMutation", "unknown"))
+                && "enabled".equals(controlledMutation.getProperty("productionSourceSwitching", "disabled"))
+                && propertyIsTrue(controlledMutation, "controlledSourceSwitchingPassed", false)
+                && controlledSourceSwitchingCoverage.allCovered()
+                && coverage.allCovered();
+        return new ControlledMutationEvidence(reviewReady, coverage, passed);
+    }
+
+    private static ControlledSourceSwitchingCoverage controlledMutationCoverage(
+            Properties workloadGate,
+            Properties controlledMutation
+    ) {
+        List<String> realWorkloadResources = resources(workloadGate, "sourceKernelResource");
+        int coveredCount = parsePositiveInt(controlledMutation.getProperty("realWorkload.covered.count", "0"));
+        int totalCount = parsePositiveInt(controlledMutation.getProperty("realWorkload.total.count", "0"));
+        int uncoveredCount = parsePositiveInt(controlledMutation.getProperty("realWorkload.uncovered.count", "0"));
+        boolean reportedAllCovered = propertyIsTrue(controlledMutation, "realWorkload.covered.all", false);
+        if (realWorkloadResources.isEmpty()) {
+            return new ControlledSourceSwitchingCoverage(List.of(), List.of(), List.of());
+        }
+        if (reportedAllCovered
+                && coveredCount == realWorkloadResources.size()
+                && totalCount == realWorkloadResources.size()
+                && uncoveredCount == 0) {
+            return new ControlledSourceSwitchingCoverage(realWorkloadResources, realWorkloadResources, List.of());
+        }
+        return new ControlledSourceSwitchingCoverage(realWorkloadResources, List.of(), realWorkloadResources);
+    }
+
+    private static List<String> resources(Properties properties, String suffix) {
+        int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
+        List<String> resources = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String resource = properties.getProperty("kernel." + index + "." + suffix, "").trim();
+            if (!resource.isBlank() && seen.add(resource)) {
+                resources.add(resource);
+            }
+        }
+        return resources;
+    }
+
+    private static void appendIndexedResources(StringBuilder builder, String prefix, List<String> resources) {
+        for (int index = 0; index < resources.size(); index++) {
+            builder.append(prefix).append('.').append(index).append(".resource=")
+                    .append(resources.get(index))
+                    .append('\n');
+        }
+    }
+
+    private static int sumKernelProperty(Properties properties, int kernelCount, String suffix) {
+        int sum = 0;
+        for (int index = 0; index < kernelCount; index++) {
+            sum += parsePositiveInt(properties.getProperty("kernel." + index + "." + suffix, "0"));
+        }
+        return sum;
+    }
+
+    private static String allKernelBooleanPropertyWhenCountPresent(
+            Properties properties,
+            int kernelCount,
+            String countSuffix,
+            String fallbackCountSuffix,
+            String booleanSuffix
+    ) {
+        if (kernelCount <= 0) {
+            return "false";
+        }
+        boolean present = false;
+        for (int index = 0; index < kernelCount; index++) {
+            String prefix = "kernel." + index + ".";
+            int count = parsePositiveInt(properties.getProperty(prefix + countSuffix, "0"));
+            int fallbackCount = parsePositiveInt(properties.getProperty(prefix + fallbackCountSuffix, "0"));
+            if (count == 0 && fallbackCount == 0) {
+                continue;
+            }
+            String value = properties.getProperty(prefix + booleanSuffix, "");
+            if (value.isBlank()) {
+                return "false";
+            }
+            present = true;
+            if (!"true".equals(value)) {
+                return "false";
+            }
+        }
+        return Boolean.toString(present);
+    }
+
+    private static String summarizeKernelProperty(Properties properties, int kernelCount, String suffix) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty("kernel." + index + "." + suffix, "none");
+            if (!value.isBlank() && !"none".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        if (counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (java.util.Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(entry.getKey()).append(" x").append(entry.getValue());
+        }
+        return builder.toString();
+    }
+
+    private static void appendReadinessChecklist(StringBuilder builder, List<ReadinessChecklistItem> checklist) {
+        int readyCount = 0;
+        List<ReadinessChecklistItem> blocked = new ArrayList<>();
+        for (ReadinessChecklistItem item : checklist) {
+            if (item.ready()) {
+                readyCount++;
+            } else {
+                blocked.add(item);
+            }
+        }
+
+        builder.append("readinessChecklist.item.count=").append(checklist.size()).append('\n');
+        builder.append("readinessChecklist.ready.count=").append(readyCount).append('\n');
+        builder.append("readinessChecklist.blocked.count=").append(blocked.size()).append('\n');
+        builder.append("readinessChecklist.ready.all=").append(blocked.isEmpty()).append('\n');
+        builder.append("readinessChecklist.firstBlocked=")
+                .append(blocked.isEmpty() ? "none" : blocked.get(0).name())
+                .append('\n');
+        for (int index = 0; index < checklist.size(); index++) {
+            ReadinessChecklistItem item = checklist.get(index);
+            builder.append("readinessChecklist.item.").append(index).append(".name=")
+                    .append(item.name())
+                    .append('\n');
+            builder.append("readinessChecklist.item.").append(index).append(".ready=")
+                    .append(item.ready())
+                    .append('\n');
+            builder.append("readinessChecklist.item.").append(index).append(".diagnostic=")
+                    .append(item.diagnostic())
+                    .append('\n');
+        }
     }
 
     private static String appendContractFields(String propertiesText) {
@@ -131,11 +850,55 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 + ", i3Blocked=" + i3BlockedCount;
     }
 
+    private static boolean propertyIsTrue(Properties properties, String key, boolean fallback) {
+        String value = properties.getProperty(key);
+        return value == null || value.isBlank() ? fallback : "true".equals(value);
+    }
+
+    private static Properties completePromotionArtifactSupport() {
+        Properties properties = new Properties();
+        properties.setProperty("complete", "true");
+        properties.setProperty(
+                "supported.count",
+                Integer.toString(GpuPromotionArtifactRegistry.PROMOTION_ARTIFACTS.size())
+        );
+        properties.setProperty("missing.count", "0");
+        return properties;
+    }
+
     private static int parsePositiveInt(String value) {
         try {
             return Math.max(0, Integer.parseInt(value == null ? "0" : value.trim()));
         } catch (NumberFormatException ignored) {
             return 0;
+        }
+    }
+
+    private record ControlledSourceSwitchingCoverage(
+            List<String> realWorkloadResources,
+            List<String> coveredResources,
+            List<String> uncoveredResources
+    ) {
+        boolean allCovered() {
+            return !realWorkloadResources.isEmpty() && uncoveredResources.isEmpty();
+        }
+    }
+
+    private record ControlledMutationEvidence(
+            boolean reviewReady,
+            ControlledSourceSwitchingCoverage coverage,
+            boolean passed
+    ) {
+    }
+
+    private record ReadinessChecklistItem(
+            String name,
+            boolean ready,
+            String readyDiagnostic,
+            String blockedDiagnostic
+    ) {
+        String diagnostic() {
+            return ready ? readyDiagnostic : blockedDiagnostic;
         }
     }
 }

@@ -16,6 +16,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclarati
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -86,18 +87,20 @@ public final class GpuIrCommonSubexpressionArtifactRunner {
         GpuIrCommonSubexpressionReport cseReport = scanner.scan(method.irMethod());
         GpuIrCommonSubexpressionRewritePlanReport planReport = planner.planReport(method, cseReport);
         GpuIrMethod rewritten = prototypeRewriter.apply(method, planReport);
-        List<String> diagnostics = equivalenceDiagnostics(method.irMethod(), rewritten, inputCases, comparedOutputs);
-        GpuIrCommonSubexpressionRuntimeEquivalenceReport equivalenceReport = diagnostics.isEmpty()
+        EquivalenceEvaluation evaluation = evaluateEquivalence(method.irMethod(), rewritten, inputCases, comparedOutputs);
+        GpuIrCommonSubexpressionRuntimeEquivalenceReport equivalenceReport = evaluation.diagnostics().isEmpty()
                 ? GpuIrCommonSubexpressionRuntimeEquivalenceReport.equivalent(
                         planReport,
                         inputCases.size(),
-                        comparedOutputs
+                        comparedOutputs,
+                        evaluation.caseEvidence()
                 )
                 : GpuIrCommonSubexpressionRuntimeEquivalenceReport.failed(
                         planReport,
                         inputCases.size(),
                         comparedOutputs,
-                        diagnostics
+                        evaluation.diagnostics(),
+                        evaluation.caseEvidence()
                 );
         return new GpuIrCommonSubexpressionArtifactReport(equivalenceReport);
     }
@@ -126,36 +129,90 @@ public final class GpuIrCommonSubexpressionArtifactRunner {
         }
     }
 
-    private List<String> equivalenceDiagnostics(
+    private EquivalenceEvaluation evaluateEquivalence(
             GpuIrMethod original,
             GpuIrMethod rewritten,
             List<GpuIrCommonSubexpressionInputCase> inputCases,
             List<String> comparedOutputs
     ) {
         List<String> diagnostics = new ArrayList<>();
+        List<GpuIrRuntimeEquivalenceCaseEvidence> caseEvidence = new ArrayList<>();
         for (GpuIrCommonSubexpressionInputCase inputCase : inputCases) {
+            Map<String, String> inputs = new LinkedHashMap<>();
+            inputCase.values().forEach((name, value) -> inputs.put(name, Integer.toString(value)));
+            Map<String, String> cpuReferenceOutputs = new LinkedHashMap<>();
+            Map<String, String> preOptimizationOutputs = new LinkedHashMap<>();
+            Map<String, String> postOptimizationOutputs = new LinkedHashMap<>();
+            Map<String, String> tolerances = new LinkedHashMap<>();
+            Map<String, Boolean> outputEquivalence = new LinkedHashMap<>();
+            List<String> caseDiagnostics = new ArrayList<>();
             ExecutionResult originalResult;
             ExecutionResult rewrittenResult;
             try {
                 originalResult = execute(original, inputCase);
                 rewrittenResult = execute(rewritten, inputCase);
             } catch (IllegalArgumentException exception) {
-                diagnostics.add("case " + inputCase.name() + " execution failed: " + exception.getMessage());
+                String diagnostic = "case " + inputCase.name() + " execution failed: " + exception.getMessage();
+                diagnostics.add(diagnostic);
+                caseDiagnostics.add(diagnostic);
+                for (String output : comparedOutputs) {
+                    cpuReferenceOutputs.put(output, GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED);
+                    preOptimizationOutputs.put(output, GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED);
+                    postOptimizationOutputs.put(output, GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED);
+                    tolerances.put(output, "exact-int");
+                    outputEquivalence.put(output, false);
+                }
+                caseEvidence.add(new GpuIrRuntimeEquivalenceCaseEvidence(
+                        inputCase.name(),
+                        inputs,
+                        cpuReferenceOutputs,
+                        preOptimizationOutputs,
+                        postOptimizationOutputs,
+                        tolerances,
+                        outputEquivalence,
+                        caseDiagnostics
+                ));
                 continue;
             }
             for (String output : comparedOutputs) {
                 Integer originalValue = originalResult.valueOf(output);
                 Integer rewrittenValue = rewrittenResult.valueOf(output);
+                String referenceValue = originalValue == null
+                        ? GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED
+                        : Integer.toString(originalValue);
+                String optimizedValue = rewrittenValue == null
+                        ? GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED
+                        : Integer.toString(rewrittenValue);
+                boolean matches = originalValue != null && originalValue.equals(rewrittenValue);
+                cpuReferenceOutputs.put(output, referenceValue);
+                preOptimizationOutputs.put(output, referenceValue);
+                postOptimizationOutputs.put(output, optimizedValue);
+                tolerances.put(output, "exact-int");
+                outputEquivalence.put(output, matches);
                 if (originalValue == null || rewrittenValue == null) {
-                    diagnostics.add("case " + inputCase.name() + " output " + output + " is missing");
+                    String diagnostic = "case " + inputCase.name() + " output " + output + " is missing";
+                    diagnostics.add(diagnostic);
+                    caseDiagnostics.add(diagnostic);
                 } else if (!originalValue.equals(rewrittenValue)) {
-                    diagnostics.add("case " + inputCase.name() + " output " + output
+                    String diagnostic = "case " + inputCase.name() + " output " + output
                             + " differs expected=" + originalValue
-                            + " actual=" + rewrittenValue);
+                            + " actual=" + rewrittenValue;
+                    diagnostics.add(diagnostic);
+                    caseDiagnostics.add(diagnostic);
                 }
             }
+            caseEvidence.add(new GpuIrRuntimeEquivalenceCaseEvidence(
+                    inputCase.name(),
+                    inputs,
+                    cpuReferenceOutputs,
+                    preOptimizationOutputs,
+                    postOptimizationOutputs,
+                    tolerances,
+                    outputEquivalence,
+                    caseDiagnostics
+            ));
         }
-        return diagnostics;
+        return new EquivalenceEvaluation(diagnostics, caseEvidence);
     }
 
     private ExecutionResult execute(GpuIrMethod method, GpuIrCommonSubexpressionInputCase inputCase) {
@@ -233,5 +290,11 @@ public final class GpuIrCommonSubexpressionArtifactRunner {
         Integer valueOf(String name) {
             return "return".equals(name) ? returnValue : values.get(name);
         }
+    }
+
+    private record EquivalenceEvaluation(
+            List<String> diagnostics,
+            List<GpuIrRuntimeEquivalenceCaseEvidence> caseEvidence
+    ) {
     }
 }

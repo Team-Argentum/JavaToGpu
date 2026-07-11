@@ -5,6 +5,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Backend-specific compile options kept separate from legacy OpenCL-style command-line args.
@@ -22,6 +23,8 @@ public record GpuBackendCompileOptions(
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED = "disabled";
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED = "enabled";
     public static final String PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY = "productionPromotion.decisionMode";
+    public static final String PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY = "productionPromotion.operatorAccepted";
+    public static final String RUNTIME_DEVICE_SELF_TEST_PROPERTY = "runtime.deviceSelfTest";
 
     public GpuBackendCompileOptions {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -95,12 +98,66 @@ public record GpuBackendCompileOptions(
         );
     }
 
+    public boolean productionPromotionOperatorAccepted() {
+        return "true".equals(properties.getOrDefault(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, "false"));
+    }
+
+    public Optional<GpuProductionPromotionOperatorAcceptance> productionPromotionOperatorAcceptance() {
+        return GpuProductionPromotionOperatorAcceptance.from(this);
+    }
+
+    public Optional<GpuProductionActivationToken> productionActivationToken() {
+        return GpuProductionActivationToken.from(this);
+    }
+
+    public GpuRuntimeDeviceSelfTestMode deviceSelfTestMode() {
+        return GpuRuntimeDeviceSelfTestMode.parse(properties.get(RUNTIME_DEVICE_SELF_TEST_PROPERTY));
+    }
+
     public GpuBackendCompileOptions withProductionPromotionDecision(GpuProductionPromotionDecision decision) {
         GpuProductionPromotionDecision normalized = decision == null
                 ? GpuProductionPromotionDecision.diagnosticOnly()
                 : decision;
         Map<String, String> updated = new LinkedHashMap<>(properties);
         updated.put(PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY, normalized.mode());
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withProductionPromotionOperatorAccepted(boolean accepted) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, Boolean.toString(accepted));
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withProductionPromotionOperatorAcceptance(
+            GpuProductionPromotionOperatorAcceptance acceptance
+    ) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        for (String propertyName : GpuProductionPromotionOperatorAcceptance.propertyNames()) {
+            updated.remove(propertyName);
+        }
+        if (acceptance == null) {
+            updated.put(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, "false");
+        } else {
+            updated.put(PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY, "true");
+            updated.putAll(acceptance.properties());
+        }
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withProductionActivationToken(GpuProductionActivationToken token) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.keySet().removeIf(key -> key.startsWith(GpuProductionActivationToken.PROPERTY_PREFIX));
+        if (token != null) {
+            updated.putAll(token.properties());
+        }
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode mode) {
+        GpuRuntimeDeviceSelfTestMode normalized = mode == null ? GpuRuntimeDeviceSelfTestMode.AUTO : mode;
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(RUNTIME_DEVICE_SELF_TEST_PROPERTY, normalized.optionValue());
         return new GpuBackendCompileOptions(backendTarget, flags, updated);
     }
 

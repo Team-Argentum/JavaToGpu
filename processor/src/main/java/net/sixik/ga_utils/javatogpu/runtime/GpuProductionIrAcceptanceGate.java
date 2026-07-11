@@ -18,7 +18,30 @@ public final class GpuProductionIrAcceptanceGate {
             String optimizationProfile,
             boolean productionProfileRequested,
             boolean backendSourceSwitchingEnabled,
-            String decisionMode
+            String decisionMode,
+            boolean operatorAccepted
+    ) {
+        return evaluate(
+                backendName,
+                sourceName,
+                optimizationProfile,
+                productionProfileRequested,
+                backendSourceSwitchingEnabled,
+                decisionMode,
+                operatorAccepted,
+                true
+        );
+    }
+
+    public static Result evaluate(
+            String backendName,
+            String sourceName,
+            String optimizationProfile,
+            boolean productionProfileRequested,
+            boolean backendSourceSwitchingEnabled,
+            String decisionMode,
+            boolean operatorAccepted,
+            boolean activationTokenAccepted
     ) {
         String normalizedBackendName = normalize(backendName, "GPU backend");
         String normalizedSourceName = normalize(sourceName, "IrGpu source");
@@ -49,11 +72,29 @@ public final class GpuProductionIrAcceptanceGate {
                     "production promotion decision mode is not production-enabled"
             );
         }
+        if (!operatorAccepted) {
+            return rejected(
+                    normalizedBackendName,
+                    normalizedSourceName,
+                    normalizedOptimizationProfile,
+                    normalizedDecisionMode,
+                    "production promotion was not explicitly accepted by the operator"
+            );
+        }
+        if (!activationTokenAccepted) {
+            return rejected(
+                    normalizedBackendName,
+                    normalizedSourceName,
+                    normalizedOptimizationProfile,
+                    normalizedDecisionMode,
+                    "production activation token was not accepted"
+            );
+        }
         return new Result(true, "production-enabled", normalizedDecisionMode, normalizedBackendName
                 + " " + normalizedSourceName
                 + " may be selected for production-like optimization profile '"
                 + normalizedOptimizationProfile
-                + "' because backend source switching and production decision are both enabled");
+                + "' because backend source switching, production decision, operator acceptance, and activation token are enabled");
     }
 
     private static Result rejected(

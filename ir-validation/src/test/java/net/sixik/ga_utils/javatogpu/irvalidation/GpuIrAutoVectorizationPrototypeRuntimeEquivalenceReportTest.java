@@ -35,6 +35,24 @@ class GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReportTest {
         assertEquals("out,mask", fields.get("autoVectorizationPrototypeRuntimeEquivalenceComparedOutputNames"));
         assertEquals("0", fields.get("autoVectorizationPrototypeRuntimeEquivalenceDiagnostics"));
         assertEquals("false", fields.get("autoVectorizationPrototypeRuntimeEquivalenceHasDiagnostics"));
+        assertEquals("3", fields.get("autoVectorizationPrototypeRuntimeEquivalencePayload.InputCases"));
+        assertEquals(
+                "inputCases=3, comparedOutputs=2, outputNames=out,mask",
+                fields.get("autoVectorizationPrototypeRuntimeEquivalencePayload.CpuReference")
+        );
+        assertEquals(
+                "method=kernel, appliedRewrites=1, families={laneCopy=1,unaryLaneOp=0,binaryLaneOp=0,laneLiteralBinaryOp=0}",
+                fields.get("autoVectorizationPrototypeRuntimeEquivalencePayload.PreOptimizationOutput")
+        );
+        assertEquals(
+                "equivalent=true, successful=true, comparedOutputs=2",
+                fields.get("autoVectorizationPrototypeRuntimeEquivalencePayload.PostOptimizationOutput")
+        );
+        assertEquals(
+                "mode=exact-int-lane, diagnostics=0, diagnosticFamilies={}",
+                fields.get("autoVectorizationPrototypeRuntimeEquivalencePayload.Tolerance")
+        );
+        assertEquals("none", fields.get("autoVectorizationPrototypeRuntimeEquivalencePayload.FailureFixture"));
         assertEquals("{}", fields.get("autoVectorizationPrototypeRuntimeEquivalenceDiagnosticFamilyCounts"));
         assertEquals("1", fields.get("autoVectorizationPrototypeRuntimeEquivalenceAppliedRewrites"));
         assertEquals(
@@ -78,6 +96,14 @@ class GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReportTest {
         assertEquals("case 1 output out differs at lane 2", fields.get("prototypeEquivalence.FirstDiagnostic"));
         assertEquals("case 1 output out differs at lane 2", fields.get("prototypeEquivalence.AllDiagnostics"));
         assertEquals("case 1 output out differs at lane 2", fields.get("prototypeEquivalence.Diagnostic.0"));
+        assertEquals(
+                "case 1 output out differs at lane 2",
+                fields.get("prototypeEquivalence.Payload.FailureFixture")
+        );
+        assertEquals(
+                "mode=exact-int-lane, diagnostics=1, diagnosticFamilies={outputDiffers=1}",
+                fields.get("prototypeEquivalence.Payload.Tolerance")
+        );
         assertTrue(report.summary().contains("successful=false"));
         assertTrue(report.summary().contains("firstDiagnostic=case 1 output out differs at lane 2"));
     }

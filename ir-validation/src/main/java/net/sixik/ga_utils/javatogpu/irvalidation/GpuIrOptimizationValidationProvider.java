@@ -6,6 +6,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
 import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRequest;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationSeverity;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -14,6 +15,16 @@ import java.util.Map;
  * ServiceLoader bridge that exposes the unified validation pipeline to the compiler frontend.
  */
 public final class GpuIrOptimizationValidationProvider implements GpuIrValidationProvider {
+    @Override
+    public String extensionId() {
+        return "javatogpu.ir-validation";
+    }
+
+    @Override
+    public String extensionVersion() {
+        return "1";
+    }
+
     @Override
     public void validate(GpuIrValidationRequest request) {
         if (request.mode() == GpuIrValidationMode.OFF) {
@@ -90,7 +101,20 @@ public final class GpuIrOptimizationValidationProvider implements GpuIrValidatio
         values.putAll(report.commonSubexpressionLiteralConsistencyCheckReport().artifactFields("cseSimpleArithmeticLiteralConsistencyCheck"));
         values.putAll(report.autoVectorizationArtifactSnapshot().artifactFields("autoVectorization"));
         report.safetyError().ifPresent(error -> values.put("safetyError", error));
-        return new GpuIrValidationReportEntry("optimization-validation", report.methodName(), request.entryPoint(), values);
+        GpuIrValidationSeverity severity = report.hasSafetyError()
+                ? GpuIrValidationSeverity.ERROR
+                : report.hasOptimizerDiagnostics() ? GpuIrValidationSeverity.WARNING : GpuIrValidationSeverity.INFO;
+        return new GpuIrValidationReportEntry(
+                "optimization-validation",
+                extensionId(),
+                extensionVersion(),
+                "optimization-validation.aggregate",
+                severity,
+                report.methodName(),
+                report.methodName(),
+                request.entryPoint(),
+                values
+        );
     }
 
     private GpuIrOptimizationValidationMode mode(GpuIrValidationMode mode) {

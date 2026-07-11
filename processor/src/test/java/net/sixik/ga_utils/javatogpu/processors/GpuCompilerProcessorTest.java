@@ -7,8 +7,17 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherInvoker;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSite;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSiteResolver;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDiagnosticContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackend;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceOverride;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantSelector;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInvocationException;
 import org.junit.jupiter.api.Test;
 
 import javax.tools.JavaCompiler;
@@ -117,6 +126,8 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("feature.required.count=0"));
         assertTrue(irGpuManifest.contains("feature.optional.count=1"));
         assertTrue(irGpuManifest.contains("feature.optional.0=opencl-source-compat"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.fastMath=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.source=default-strict"));
         assertTrue(irGpuManifest.contains("regeneration.backendNeutralSourceReady=false"));
         assertTrue(irGpuManifest.contains("regeneration.payloadFormat=ir-text-v1"));
         assertTrue(irGpuManifest.contains("regeneration.fallbackSource=derived-opencl-source"));
@@ -134,6 +145,9 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("methodBody.0.name=kernel"));
         assertTrue(irGpuManifest.contains("methodBody.0.emittedName=jtg_kernel"));
         assertTrue(irGpuManifest.contains("methodBody.0.format=ir-text-v1"));
+        assertTrue(irGpuManifest.contains("methodBody.0.typed.format=ir-tree-v1"));
+        assertTrue(irGpuManifest.contains("methodBody.0.typed.root.count=3"));
+        assertTrue(irGpuManifest.contains("methodBody.0.typed.node.count="));
         assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statement.count=3"));
         assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statementKind.0=GpuIrVariableDeclaration"));
         assertTrue(irGpuManifest.contains("methodBody.0.bodyIndex.statementKind.1=GpuIrAssignment"));
@@ -160,6 +174,8 @@ class GpuCompilerProcessorTest {
         assertFalse(irGpuArtifact.validationMetadata().optimizerEvidenceRequired());
         assertTrue(irGpuArtifact.featureMetadata().requiredFeatures().isEmpty());
         assertEquals(List.of("opencl-source-compat"), irGpuArtifact.featureMetadata().optionalFeatures());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().fastMath());
+        assertEquals("default-strict", irGpuArtifact.optimizerPolicyMetadata().source());
         assertFalse(irGpuArtifact.regenerationMetadata().backendNeutralSourceReady());
         assertEquals("ir-text-v1", irGpuArtifact.regenerationMetadata().payloadFormat());
         assertEquals("derived-opencl-source", irGpuArtifact.regenerationMetadata().fallbackSource());
@@ -172,6 +188,10 @@ class GpuCompilerProcessorTest {
         assertEquals("kernel", irGpuArtifact.module().methodBodies().get(0).name());
         assertEquals("jtg_kernel", irGpuArtifact.module().methodBodies().get(0).emittedName());
         assertEquals(3, irGpuArtifact.module().methodBodies().get(0).bodyIndex().statementCount());
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).typedBody().available());
+        assertEquals(3, irGpuArtifact.module().methodBodies().get(0).typedBody().rootNodeIds().size());
+        assertTrue(irGpuArtifact.module().methodBodies().get(0).typedBody().nodes().stream()
+                .anyMatch(node -> "GpuIrBinary".equals(node.kind())));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().statementKinds().contains("GpuIrAssignment"));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().intrinsicCalls().contains("sin"));
         assertTrue(irGpuArtifact.module().methodBodies().get(0).bodyIndex().writesMemory());
@@ -303,6 +323,326 @@ class GpuCompilerProcessorTest {
         } finally {
             GpuRuntime.setBackend(previousBackend);
         }
+    }
+
+    @Test
+    void generatedLaunchersCarryDeterministicFallbackDescriptors() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-fallback-variant-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-fallback-variant-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUDeviceConstraint;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUFallbackVariant;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class FallbackDemo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    @GPUFallbackVariant(group = "noise", id = "dgpu", priority = 100)
+                    @GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.DGPU})
+                    public static void discrete(@GPUGlobal float[] output) {
+                        output[0] = 1.0f;
+                    }
+
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    @GPUFallbackVariant(group = "noise", id = "igpu", priority = 10)
+                    @GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.IGPU})
+                    public static void integrated(@GPUGlobal float[] output) {
+                        output[0] = 2.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject("sample.FallbackDemo", source))
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+            assertTrue(task.call());
+        }
+
+        Path discreteManifestPath = generatedOutputDir.resolve(
+                "javatogpu/sample/FallbackDemo/discrete.irgpu.properties"
+        );
+        Path integratedManifestPath = generatedOutputDir.resolve(
+                "javatogpu/sample/FallbackDemo/integrated.irgpu.properties"
+        );
+        assertTrue(Files.readString(discreteManifestPath).contains("methodFallbackVariant.0.variantId=dgpu"));
+        assertTrue(Files.readString(integratedManifestPath).contains("methodFallbackVariant.0.variantId=igpu"));
+
+        Path launcherSourcePath = generatedOutputDir.resolve(
+                "sample/generated/FallbackDemo_discrete_GpuLauncher.java"
+        );
+        String launcherSource = Files.readString(launcherSourcePath);
+        assertTrue(launcherSource.contains("KERNEL_FALLBACK_DESCRIPTORS"));
+        assertTrue(launcherSource.contains("\"integrated\""));
+        assertTrue(launcherSource.contains("javatogpu/sample/FallbackDemo/integrated.cl"));
+        assertTrue(launcherSource.contains("invokeVariantsFromGeneratedLauncher"));
+
+        AtomicReference<GpuKernelInvocation> capturedInvocation = new AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.setBackend(capturedInvocation::set);
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new URL[]{classOutputDir.toUri().toURL()},
+                getClass().getClassLoader()
+        )) {
+            Class<?> launcherClass = Class.forName(
+                    "sample.generated.FallbackDemo_discrete_GpuLauncher",
+                    true,
+                    classLoader
+            );
+            float[] output = new float[1];
+            launcherClass.getMethod("invoke", float[].class).invoke(null, output);
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals("discrete", invocation.descriptor().kernelName());
+            assertEquals(1, invocation.fallbackDescriptors().size());
+            assertEquals("integrated", invocation.fallbackDescriptors().get(0).kernelName());
+            assertEquals("", invocation.fallbackDescriptors().get(0).kernelSource());
+            assertTrue(Arrays.equals(new Object[]{output}, invocation.arguments()));
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Failed to invoke generated fallback launcher", exception);
+        } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void rejectsFallbackVariantsWithIncompatibleLaunchAbi() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-fallback-abi-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-fallback-abi-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUFallbackVariant;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class InvalidFallbackDemo {
+                    @GPU
+                    @GPUFallbackVariant(group = "noise", id = "float")
+                    public static void floatVariant(@GPUGlobal float[] output) {
+                        output[0] = 1.0f;
+                    }
+
+                    @GPU
+                    @GPUFallbackVariant(group = "noise", id = "int")
+                    public static void intVariant(@GPUGlobal int[] output) {
+                        output[0] = 1;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject("sample.InvalidFallbackDemo", source))
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+            assertFalse(task.call());
+        }
+
+        assertTrue(diagnostics.getDiagnostics().stream()
+                .map(diagnostic -> diagnostic.getMessage(null))
+                .anyMatch(message -> message.contains("incompatible launch ABI")));
+    }
+
+    @Test
+    void discoversAndSelectsFallbackVariantsAcrossCompiledModules() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path libraryClassOutput = Files.createTempDirectory("javatogpu-fallback-library-classes");
+        Path libraryGeneratedOutput = Files.createTempDirectory("javatogpu-fallback-library-generated");
+        String librarySource = """
+                package library;
+
+                import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUDeviceConstraint;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUFallbackVariant;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class IntegratedNoise {
+                    @GPU
+                    @GPUFallbackVariant(group = "cross-module-noise", id = "igpu-library", priority = 10)
+                    @GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.IGPU})
+                    public static void integrated(@GPUGlobal float[] output) {
+                        output[0] = 2.0f;
+                    }
+                }
+                """;
+        compileWithProcessor(
+                compiler,
+                "library.IntegratedNoise",
+                librarySource,
+                libraryClassOutput,
+                libraryGeneratedOutput,
+                System.getProperty("java.class.path")
+        );
+
+        Path servicePath = libraryClassOutput.resolve(
+                "META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantProvider"
+        );
+        assertTrue(Files.exists(servicePath));
+        assertTrue(Files.readString(servicePath).contains(
+                "library.generated.IntegratedNoise_GpuFallbackVariantProvider"
+        ));
+
+        Path appClassOutput = Files.createTempDirectory("javatogpu-fallback-app-classes");
+        Path appGeneratedOutput = Files.createTempDirectory("javatogpu-fallback-app-generated");
+        String appSource = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUDeviceConstraint;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUFallbackVariant;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class DiscreteNoise {
+                    @GPU
+                    @GPUFallbackVariant(group = "cross-module-noise", id = "dgpu-app", priority = 100)
+                    @GPUDeviceConstraint(deviceClasses = {GpuDeviceClassTarget.DGPU})
+                    public static void discrete(@GPUGlobal float[] output) {
+                        output[0] = 1.0f;
+                    }
+                }
+                """;
+        compileWithProcessor(
+                compiler,
+                "sample.DiscreteNoise",
+                appSource,
+                appClassOutput,
+                appGeneratedOutput,
+                System.getProperty("java.class.path") + java.io.File.pathSeparator + libraryClassOutput
+        );
+
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new URL[]{appClassOutput.toUri().toURL(), libraryClassOutput.toUri().toURL()},
+                getClass().getClassLoader()
+        )) {
+            GpuRuntimeMethodVariantRegistry registry = GpuRuntimeMethodVariantRegistry.load(classLoader);
+            assertEquals(List.of("dgpu-app", "igpu-library"), registry.variants("cross-module-noise").stream()
+                    .map(registration -> registration.variantId())
+                    .sorted()
+                    .toList());
+
+            Class<?> launcherClass = Class.forName(
+                    "sample.generated.DiscreteNoise_discrete_GpuLauncher",
+                    true,
+                    classLoader
+            );
+            GpuKernelDescriptor primary = (GpuKernelDescriptor) launcherClass
+                    .getField("KERNEL_DESCRIPTOR")
+                    .get(null);
+            @SuppressWarnings("unchecked")
+            List<GpuKernelDescriptor> localFallbacks = (List<GpuKernelDescriptor>) launcherClass
+                    .getField("KERNEL_FALLBACK_DESCRIPTORS")
+                    .get(null);
+            assertTrue(localFallbacks.isEmpty());
+
+            GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+                    .defaults(net.sixik.ga_utils.javatogpu.api.GpuBackendTarget.OPENCL)
+                    .withDeviceOverride(GpuRuntimeDeviceOverride.byDeviceClass(
+                            net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget.IGPU
+                    ));
+            var selection = GpuRuntimeMethodVariantSelector.select(
+                    primary,
+                    localFallbacks,
+                    classLoader,
+                    options,
+                    List.of(
+                            fallbackDevice("opencl-0", net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget.DGPU, 80),
+                            fallbackDevice("opencl-1", net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget.IGPU, 24)
+                    ),
+                    GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns()
+            );
+
+            assertEquals("igpu-library", selection.selectedVariantId());
+            assertEquals("integrated", selection.selectedDescriptor().kernelName());
+            assertTrue(selection.selectedDescriptor().kernelSource().contains("output[0] = 2.0F"));
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Failed to inspect cross-module fallback launcher", exception);
+        }
+    }
+
+    @Test
+    void generatedIrGpuManifestPreservesFastMathOptimizerPolicy() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-fast-math-policy-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-fast-math-policy-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUOptimize;
+
+                public class Demo {
+                    @GPUOptimize(fastMath = true)
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = input[id] * 2.0f + 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("optimizerPolicy.fastMath=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.source=GPUOptimize"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        assertTrue(irGpuArtifact.optimizerPolicyMetadata().fastMath());
+        assertEquals("GPUOptimize", irGpuArtifact.optimizerPolicyMetadata().source());
     }
 
     @Test
@@ -7552,6 +7892,58 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithPortableGpuWorkGroupSize() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-portable-workgroup-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-portable-workgroup-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSize;
+
+                public class Demo {
+                    @GPUWorkGroupSize(x = 8, y = 4, z = 2)
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(@GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __attribute__((reqd_work_group_size(8, 4, 2))) __kernel void jtg_kernel(__global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = 1.0F;
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
     void generatesKernelWithNestedGpuStructsAndStructConstants() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-nested-struct-classes");
@@ -11053,6 +11445,160 @@ class GpuCompilerProcessorTest {
         assertEquals("int", irGpuArtifact.structMetadata().get(0).fields().get(0).javaType());
         assertEquals("densityOffset", irGpuArtifact.structMetadata().get(0).fields().get(1).name());
         assertEquals("int", irGpuArtifact.structMetadata().get(0).fields().get(1).javaType());
+    }
+
+    @Test
+    void indexesGpuCallSitesFromClasspathDependencies() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path dependencyOutputDir = Files.createTempDirectory("javatogpu-call-site-dependency");
+        Path classOutputDir = Files.createTempDirectory("javatogpu-call-site-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-call-site-generated");
+        String dependencySource = """
+                package library;
+
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPU;
+
+                public class LibraryKernel {
+                    @GPU
+                    public static void kernel(float[] input, float[] output) {
+                        output[0] = input[0];
+                    }
+                }
+                """;
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-proc:none",
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", dependencyOutputDir.toString()
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject("library.LibraryKernel", dependencySource))
+            );
+            assertTrue(task.call());
+        }
+
+        String callerSource = """
+                package sample;
+
+                import library.LibraryKernel;
+
+                public class CallSiteDemo {
+                    public static void run(float[] input, float[] output) {
+                        LibraryKernel.kernel(input, output);
+                    }
+                }
+                """;
+        Path dependencyJar = createClasspathJar(
+                dependencyOutputDir,
+                "javatogpu-call-site-dependency"
+        );
+        compileWithProcessor(
+                compiler,
+                "sample.CallSiteDemo",
+                callerSource,
+                classOutputDir,
+                generatedOutputDir,
+                buildCompilationClasspath(dependencyJar)
+        );
+
+        Path generatedMetadata = generatedOutputDir.resolve(
+                "META-INF/javatogpu/call-sites/sample/CallSiteDemo.properties"
+        );
+        Path runtimeMetadata = classOutputDir.resolve(
+                "META-INF/javatogpu/call-sites/sample/CallSiteDemo.properties"
+        );
+        assertTrue(Files.exists(generatedMetadata));
+        assertTrue(Files.exists(runtimeMetadata));
+        assertEquals(Files.readString(generatedMetadata), Files.readString(runtimeMetadata));
+
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new URL[]{classOutputDir.toUri().toURL(), dependencyOutputDir.toUri().toURL()},
+                getClass().getClassLoader()
+        )) {
+            List<GpuRuntimeCallSite> callSites = GpuRuntimeCallSiteResolver.load(
+                    classLoader,
+                    "sample.CallSiteDemo"
+            );
+            assertEquals(1, callSites.size());
+            GpuRuntimeCallSite callSite = callSites.get(0);
+            assertEquals("compiler-index", callSite.source());
+            assertEquals("sample.CallSiteDemo", callSite.callerClassName());
+            assertEquals("run", callSite.callerMethodName());
+            assertEquals("CallSiteDemo.java", callSite.sourceName());
+            assertEquals("LibraryKernel.kernel(input, output)", callSite.expression());
+            assertEquals("library.LibraryKernel", callSite.targetOwnerName());
+            assertEquals("kernel", callSite.targetMethodName());
+            assertTrue(callSite.line() > 0);
+            assertTrue(callSite.column() > 0);
+
+            GpuRuntimeInvocationException exception = new GpuRuntimeInvocationException(
+                    "forced call-site diagnostic",
+                    GpuRuntimeDiagnosticContext.unknown().withCallSite(callSite),
+                    null
+            );
+            assertTrue(exception.diagnosticText().contains("CallSiteDemo.java:"));
+            assertTrue(exception.diagnosticText().contains("LibraryKernel.kernel(input, output)"));
+        }
+    }
+
+    private static void compileWithProcessor(
+            JavaCompiler compiler,
+            String className,
+            String source,
+            Path classOutputDir,
+            Path generatedOutputDir,
+            String classpath
+    ) throws IOException {
+        StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
+        try {
+            List<String> options = List.of(
+                    "-classpath", classpath,
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject(className, source))
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+            assertTrue(task.call());
+        } finally {
+            closeFileManager(fileManager);
+        }
+    }
+
+    private static GpuRuntimeDeviceProfile fallbackDevice(
+            String deviceId,
+            net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget deviceClass,
+            long computeUnits
+    ) {
+        return GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                deviceId,
+                deviceClass + " test device",
+                deviceClass == net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget.DGPU ? "NVIDIA" : "Intel",
+                "test-driver",
+                "OpenCL 3.0 Test",
+                deviceClass,
+                computeUnits,
+                8L * 1024L * 1024L * 1024L,
+                64L * 1024L,
+                1024L,
+                1L,
+                deviceClass == net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget.IGPU,
+                true,
+                true,
+                false
+        );
     }
 
     private static final class StringJavaFileObject extends SimpleJavaFileObject {

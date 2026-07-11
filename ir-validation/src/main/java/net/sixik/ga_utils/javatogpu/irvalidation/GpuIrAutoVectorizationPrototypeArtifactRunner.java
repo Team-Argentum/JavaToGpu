@@ -17,6 +17,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrVariableDeclarati
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -73,18 +74,25 @@ public final class GpuIrAutoVectorizationPrototypeArtifactRunner {
         validateComparedOutputs(comparedOutputs);
 
         GpuIrAutoVectorizationPrototypeRewriteReport rewriteReport = prototypeRewriter.apply(method, preview);
-        List<String> diagnostics = equivalenceDiagnostics(method, rewriteReport.method(), inputCases, comparedOutputs);
-        GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport equivalenceReport = diagnostics.isEmpty()
+        EquivalenceEvaluation evaluation = evaluateEquivalence(
+                method,
+                rewriteReport.method(),
+                inputCases,
+                comparedOutputs
+        );
+        GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport equivalenceReport = evaluation.diagnostics().isEmpty()
                 ? GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport.equivalent(
                         rewriteReport,
                         inputCases.size(),
-                        comparedOutputs
+                        comparedOutputs,
+                        evaluation.caseEvidence()
                 )
                 : GpuIrAutoVectorizationPrototypeRuntimeEquivalenceReport.failed(
                         rewriteReport,
                         inputCases.size(),
                         comparedOutputs,
-                        diagnostics
+                        evaluation.diagnostics(),
+                        evaluation.caseEvidence()
                 );
         return new GpuIrAutoVectorizationPrototypeArtifactReport(equivalenceReport);
     }
@@ -104,36 +112,92 @@ public final class GpuIrAutoVectorizationPrototypeArtifactRunner {
         }
     }
 
-    private List<String> equivalenceDiagnostics(
+    private EquivalenceEvaluation evaluateEquivalence(
             GpuIrMethod original,
             GpuIrMethod rewritten,
             List<GpuIrAutoVectorizationPrototypeInputCase> inputCases,
             List<String> comparedOutputs
     ) {
         List<String> diagnostics = new ArrayList<>();
+        List<GpuIrRuntimeEquivalenceCaseEvidence> caseEvidence = new ArrayList<>();
         for (GpuIrAutoVectorizationPrototypeInputCase inputCase : inputCases) {
+            Map<String, String> inputs = new LinkedHashMap<>();
+            inputCase.arrays().forEach((name, values) -> inputs.put(name, Arrays.toString(values)));
+            Map<String, String> cpuReferenceOutputs = new LinkedHashMap<>();
+            Map<String, String> preOptimizationOutputs = new LinkedHashMap<>();
+            Map<String, String> postOptimizationOutputs = new LinkedHashMap<>();
+            Map<String, String> tolerances = new LinkedHashMap<>();
+            Map<String, Boolean> outputEquivalence = new LinkedHashMap<>();
+            List<String> caseDiagnostics = new ArrayList<>();
             ExecutionResult originalResult;
             ExecutionResult rewrittenResult;
             try {
                 originalResult = execute(original, inputCase);
                 rewrittenResult = execute(rewritten, inputCase);
             } catch (IllegalArgumentException exception) {
-                diagnostics.add("case " + inputCase.name() + " execution failed: " + exception.getMessage());
+                String diagnostic = "case " + inputCase.name() + " execution failed: " + exception.getMessage();
+                diagnostics.add(diagnostic);
+                caseDiagnostics.add(diagnostic);
+                for (String output : comparedOutputs) {
+                    cpuReferenceOutputs.put(output, GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED);
+                    preOptimizationOutputs.put(output, GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED);
+                    postOptimizationOutputs.put(output, GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED);
+                    tolerances.put(output, "exact-int-lane");
+                    outputEquivalence.put(output, false);
+                }
+                caseEvidence.add(new GpuIrRuntimeEquivalenceCaseEvidence(
+                        inputCase.name(),
+                        inputs,
+                        cpuReferenceOutputs,
+                        preOptimizationOutputs,
+                        postOptimizationOutputs,
+                        tolerances,
+                        outputEquivalence,
+                        caseDiagnostics
+                ));
                 continue;
             }
             for (String output : comparedOutputs) {
                 int[] originalValues = originalResult.array(output);
                 int[] rewrittenValues = rewrittenResult.array(output);
+                String referenceValues = originalValues == null
+                        ? GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED
+                        : Arrays.toString(originalValues);
+                String optimizedValues = rewrittenValues == null
+                        ? GpuIrRuntimeEquivalenceCaseEvidence.NOT_RECORDED
+                        : Arrays.toString(rewrittenValues);
+                boolean matches = originalValues != null
+                        && rewrittenValues != null
+                        && Arrays.equals(originalValues, rewrittenValues);
+                cpuReferenceOutputs.put(output, referenceValues);
+                preOptimizationOutputs.put(output, referenceValues);
+                postOptimizationOutputs.put(output, optimizedValues);
+                tolerances.put(output, "exact-int-lane");
+                outputEquivalence.put(output, matches);
                 if (originalValues == null || rewrittenValues == null) {
-                    diagnostics.add("case " + inputCase.name() + " output " + output + " is missing");
+                    String diagnostic = "case " + inputCase.name() + " output " + output + " is missing";
+                    diagnostics.add(diagnostic);
+                    caseDiagnostics.add(diagnostic);
                 } else if (!Arrays.equals(originalValues, rewrittenValues)) {
-                    diagnostics.add("case " + inputCase.name() + " output " + output
+                    String diagnostic = "case " + inputCase.name() + " output " + output
                             + " differs expected=" + Arrays.toString(originalValues)
-                            + " actual=" + Arrays.toString(rewrittenValues));
+                            + " actual=" + Arrays.toString(rewrittenValues);
+                    diagnostics.add(diagnostic);
+                    caseDiagnostics.add(diagnostic);
                 }
             }
+            caseEvidence.add(new GpuIrRuntimeEquivalenceCaseEvidence(
+                    inputCase.name(),
+                    inputs,
+                    cpuReferenceOutputs,
+                    preOptimizationOutputs,
+                    postOptimizationOutputs,
+                    tolerances,
+                    outputEquivalence,
+                    caseDiagnostics
+            ));
         }
-        return diagnostics;
+        return new EquivalenceEvaluation(diagnostics, caseEvidence);
     }
 
     private ExecutionResult execute(GpuIrMethod method, GpuIrAutoVectorizationPrototypeInputCase inputCase) {
@@ -274,5 +338,11 @@ public final class GpuIrAutoVectorizationPrototypeArtifactRunner {
             Object value = values.get(name);
             return value instanceof int[] array ? array.clone() : null;
         }
+    }
+
+    private record EquivalenceEvaluation(
+            List<String> diagnostics,
+            List<GpuIrRuntimeEquivalenceCaseEvidence> caseEvidence
+    ) {
     }
 }

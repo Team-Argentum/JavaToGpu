@@ -16,7 +16,7 @@ OpenCL is the active backend today. CUDA, Vulkan, and Metal are future direction
 
 ## Which GPUs are validated?
 
-The current confidence path is NVIDIA OpenCL. AMD and Intel OpenCL validation are planned, but you should test on your own hardware before making performance or compatibility claims.
+The current confidence path includes NVIDIA OpenCL and AMD OpenCL real-hardware validation. Intel OpenCL still needs a real-hardware validation lane, and you should test on your own target hardware before making performance or compatibility claims.
 
 ## Can JavaToGpu run any Java method?
 

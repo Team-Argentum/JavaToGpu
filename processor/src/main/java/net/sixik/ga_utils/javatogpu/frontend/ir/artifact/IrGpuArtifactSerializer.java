@@ -16,6 +16,9 @@ public final class IrGpuArtifactSerializer {
         writeLaunchMetadata(properties, artifact.launchMetadata());
         writeValidationMetadata(properties, artifact.validationMetadata());
         writeFeatureMetadata(properties, artifact.featureMetadata());
+        writeOptimizerPolicyMetadata(properties, artifact.optimizerPolicyMetadata());
+        writeMethodDeviceConstraints(properties, artifact.methodDeviceConstraints());
+        writeMethodFallbackVariants(properties, artifact.methodFallbackVariants());
         writeRegenerationMetadata(properties, artifact.regenerationMetadata());
         writeStructMetadata(properties, artifact.structMetadata());
         writeConstants(properties, artifact.constants());
@@ -70,6 +73,7 @@ public final class IrGpuArtifactSerializer {
             properties.put(prefix + "emittedName", methodBody.emittedName());
             properties.put(prefix + "format", methodBody.format());
             properties.put(prefix + "body", methodBody.body());
+            writeTypedBody(properties, prefix + "typed.", methodBody.typedBody());
             writeBodyIndex(properties, prefix, methodBody.bodyIndex());
             writeSourceLocation(properties, prefix, methodBody.sourceLocation());
             properties.put(prefix + "helperDependency.count", Integer.toString(methodBody.helperDependencies().size()));
@@ -79,6 +83,112 @@ public final class IrGpuArtifactSerializer {
                         methodBody.helperDependencies().get(dependencyIndex)
                 );
             }
+        }
+    }
+
+    private static void writeMethodDeviceConstraints(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuMethodDeviceConstraint> constraints
+    ) {
+        java.util.List<IrGpuMethodDeviceConstraint> values = constraints == null ? java.util.List.of() : constraints;
+        properties.put("methodDeviceConstraint.count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuMethodDeviceConstraint constraint = values.get(index);
+            String prefix = "methodDeviceConstraint." + index + ".";
+            properties.put(prefix + "methodName", constraint.methodName());
+            properties.put(prefix + "emittedName", constraint.emittedName());
+            properties.put(prefix + "source", constraint.source());
+            writeStringList(
+                    properties,
+                    prefix + "backend",
+                    constraint.supportedBackends().stream().map(Enum::name).toList()
+            );
+            writeStringList(
+                    properties,
+                    prefix + "vendor",
+                    constraint.supportedVendors().stream().map(Enum::name).toList()
+            );
+            writeStringList(
+                    properties,
+                    prefix + "deviceClass",
+                    constraint.supportedDeviceClasses().stream().map(Enum::name).toList()
+            );
+            writeStringList(properties, prefix + "requiredFeature", constraint.requiredFeatures());
+        }
+    }
+
+    private static void writeMethodFallbackVariants(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuMethodFallbackVariant> variants
+    ) {
+        java.util.List<IrGpuMethodFallbackVariant> values = variants == null ? java.util.List.of() : variants;
+        properties.put("methodFallbackVariant.count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuMethodFallbackVariant variant = values.get(index);
+            String prefix = "methodFallbackVariant." + index + ".";
+            properties.put(prefix + "methodName", variant.methodName());
+            properties.put(prefix + "emittedName", variant.emittedName());
+            properties.put(prefix + "groupId", variant.groupId());
+            properties.put(prefix + "variantId", variant.variantId());
+            properties.put(prefix + "priority", Integer.toString(variant.priority()));
+            properties.put(prefix + "compatibilityNote", variant.compatibilityNote());
+            properties.put(prefix + "source", variant.source());
+        }
+    }
+
+    private static void writeTypedBody(
+            TreeMap<String, String> properties,
+            String prefix,
+            IrGpuTypedBody typedBody
+    ) {
+        IrGpuTypedBody body = typedBody == null ? IrGpuTypedBody.none() : typedBody;
+        properties.put(prefix + "format", body.format());
+        properties.put(prefix + "root.count", Integer.toString(body.rootNodeIds().size()));
+        for (int index = 0; index < body.rootNodeIds().size(); index++) {
+            properties.put(prefix + "root." + index, Integer.toString(body.rootNodeIds().get(index)));
+        }
+        properties.put(prefix + "node.count", Integer.toString(body.nodes().size()));
+        for (int nodeIndex = 0; nodeIndex < body.nodes().size(); nodeIndex++) {
+            IrGpuTypedNode node = body.nodes().get(nodeIndex);
+            String nodePrefix = prefix + "node." + nodeIndex + ".";
+            properties.put(nodePrefix + "id", Integer.toString(node.id()));
+            properties.put(nodePrefix + "kind", node.kind());
+            writeNamedValues(properties, nodePrefix + "attribute", node.attributes());
+            writeNamedChildLists(properties, nodePrefix + "child", node.children());
+        }
+    }
+
+    private static void writeNamedValues(
+            TreeMap<String, String> properties,
+            String prefix,
+            Map<String, String> values
+    ) {
+        java.util.TreeMap<String, String> sorted = new java.util.TreeMap<>(values == null ? Map.of() : values);
+        properties.put(prefix + ".count", Integer.toString(sorted.size()));
+        int index = 0;
+        for (Map.Entry<String, String> entry : sorted.entrySet()) {
+            properties.put(prefix + "." + index + ".name", entry.getKey());
+            properties.put(prefix + "." + index + ".value", entry.getValue());
+            index++;
+        }
+    }
+
+    private static void writeNamedChildLists(
+            TreeMap<String, String> properties,
+            String prefix,
+            Map<String, java.util.List<Integer>> children
+    ) {
+        java.util.TreeMap<String, java.util.List<Integer>> sorted = new java.util.TreeMap<>(children == null ? Map.of() : children);
+        properties.put(prefix + ".count", Integer.toString(sorted.size()));
+        int index = 0;
+        for (Map.Entry<String, java.util.List<Integer>> entry : sorted.entrySet()) {
+            String childPrefix = prefix + "." + index + ".";
+            properties.put(childPrefix + "name", entry.getKey());
+            properties.put(childPrefix + "node.count", Integer.toString(entry.getValue().size()));
+            for (int childIndex = 0; childIndex < entry.getValue().size(); childIndex++) {
+                properties.put(childPrefix + "node." + childIndex, Integer.toString(entry.getValue().get(childIndex)));
+            }
+            index++;
         }
     }
 
@@ -194,6 +304,17 @@ public final class IrGpuArtifactSerializer {
         for (int index = 0; index < metadata.optionalFeatures().size(); index++) {
             properties.put("feature.optional." + index, metadata.optionalFeatures().get(index));
         }
+    }
+
+    private static void writeOptimizerPolicyMetadata(
+            TreeMap<String, String> properties,
+            IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata
+    ) {
+        IrGpuOptimizerPolicyMetadata metadata = optimizerPolicyMetadata == null
+                ? IrGpuOptimizerPolicyMetadata.defaultStrict()
+                : optimizerPolicyMetadata;
+        properties.put("optimizerPolicy.fastMath", Boolean.toString(metadata.fastMath()));
+        properties.put("optimizerPolicy.source", metadata.source());
     }
 
     private static void writeRegenerationMetadata(

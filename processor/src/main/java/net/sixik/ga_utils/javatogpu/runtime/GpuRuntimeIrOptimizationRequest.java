@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -28,5 +29,15 @@ public record GpuRuntimeIrOptimizationRequest(
 
     public static GpuRuntimeIrOptimizationRequest withoutArtifact(GpuRuntimeCompileRequest compileRequest) {
         return new GpuRuntimeIrOptimizationRequest(compileRequest, compileRequest.irGpuArtifact());
+    }
+
+    public IrGpuOptimizerPolicyMetadata optimizerPolicy() {
+        return artifact
+                .map(IrGpuArtifact::optimizerPolicyMetadata)
+                .orElseGet(IrGpuOptimizerPolicyMetadata::defaultStrict);
+    }
+
+    public boolean fastMathEnabled() {
+        return optimizerPolicy().fastMath();
     }
 }

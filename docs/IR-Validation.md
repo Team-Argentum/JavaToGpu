@@ -92,6 +92,152 @@ Use this file in CI when you want a machine-readable artifact with method-level 
 
 You usually do not need to parse every key. Start with the top-level verdict/summary fields and only drill into detailed fields when a gate fails.
 
+## Developer Workflow Example
+
+Use this flow when you are developing kernels and want actionable feedback without changing generated OpenCL or runtime behavior.
+
+### 1. Add IR validation to the annotation processor path
+
+```groovy
+dependencies {
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+
+    // Optional: adds read-only IR validation providers.
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+}
+```
+
+The module is optional. If this dependency is absent, JavaToGpu works normally and no extra validators run.
+
+### 2. Enable diagnostic mode first
+
+```groovy
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=diagnostic'
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
+}
+```
+
+`diagnostic` is the safest development mode: it records findings and prints a compact javac summary, but normal optimizer-readiness warnings do not become production rewrites.
+
+### 3. Run a normal build
+
+```powershell
+.\gradlew.bat clean build
+```
+
+For a smaller local loop, run the module that contains your `@GPU` kernels:
+
+```powershell
+.\gradlew.bat :your-module:compileJava
+```
+
+### 4. Read the report from generated sources
+
+The `javatogpu.irValidationReport` path is written as a generated-source resource path. With the example above, look under the JavaCompile generated-source output for:
+
+```text
+reports/javatogpu-ir-validation.properties
+```
+
+Start with these fields:
+
+```properties
+format=javatogpu.ir.validation.v1
+entry.count=...
+entry.0.severity=...
+entry.0.ruleId=...
+entry.0.methodName=...
+entry.0.entryPoint=...
+entry.0.sourceAnchor=...
+```
+
+Recommended triage order:
+
+1. Fix `ERROR` entries first. These usually indicate unsupported or unsafe IR shape.
+2. Review `WARNING` entries next. These are useful for CI hardening and future optimizer readiness.
+3. Treat `INFO` entries as hints or optimizer-readiness notes.
+4. Use `sourceAnchor` / method fields to map the finding back to the Java kernel or helper.
+
+### 5. Move CI to strict safety only after diagnostics are stable
+
+```groovy
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += '-Ajavatogpu.irValidation=strictSafety'
+    options.compilerArgs += '-Ajavatogpu.irValidationDiagnostics=summary'
+    options.compilerArgs += '-Ajavatogpu.irValidationReport=reports/javatogpu-ir-validation.properties'
+}
+```
+
+Use `strictSafety` when safety findings should fail the build. Keep `strictOptimizer` for compiler-development or hardening branches, because it also fails on conservative optimizer-readiness blockers.
+
+## Custom Validator Example
+
+A custom validator is a separate optional JAR. It participates through Java `ServiceLoader`, reads compiler IR, and reports diagnostics. It must not rewrite IR.
+
+Minimal provider:
+
+```java
+package com.example.gpu.validation;
+
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationReportEntry;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRequest;
+
+import java.util.Map;
+
+public final class CompanyGpuIrValidationProvider implements GpuIrValidationProvider {
+    @Override
+    public String extensionId() {
+        return "com.example.company-ir-validation";
+    }
+
+    @Override
+    public String extensionVersion() {
+        return "1";
+    }
+
+    @Override
+    public void validate(GpuIrValidationRequest request) {
+        String methodName = request.method().emittedName();
+
+        if (methodName.contains("Experimental")) {
+            request.reportEntry(new GpuIrValidationReportEntry(
+                    "company-policy",
+                    methodName,
+                    request.entryPoint(),
+                    Map.of("policy", "experimental-method-name")
+            ));
+            request.reportDiagnostic("Company IR policy matched experimental GPU method: " + methodName);
+        }
+    }
+}
+```
+
+ServiceLoader registration:
+
+```text
+src/main/resources/META-INF/services/net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider
+```
+
+File contents:
+
+```text
+com.example.gpu.validation.CompanyGpuIrValidationProvider
+```
+
+Add the custom validator JAR to the annotation-processor path of the project being compiled:
+
+```groovy
+dependencies {
+    annotationProcessor 'com.example:company-javatogpu-ir-validation:1.0.0'
+}
+```
+
+The runner validates extension metadata before execution. A validator is expected to use the `IR_VALIDATION` phase, `IR_VALIDATION` capability, and `READ_ONLY` permission. If you need to propose IR rewrites, implement a future optimizer/proposal module instead of extending the validator contract.
+
 ## What It Checks
 
 The validation module checks for safety issues that should be caught before backend compilation, including:

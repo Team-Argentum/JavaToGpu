@@ -91,6 +91,19 @@ public record OpenClIrGpuSourceEmission(
         String role = methodBody.role().isBlank() ? "unknown" : methodBody.role();
         String emittedName = methodBody.emittedName().isBlank() ? methodBody.name() : methodBody.emittedName();
         String prefix = "irgpu-" + role + "-" + emittedName + "-";
+        if ("opencl-native-body-v1".equals(methodBody.format())) {
+            if (!"helper".equals(role)) {
+                add(blockers, prefix + "native-body-entry-unsupported");
+                return MethodBodyInspection.empty();
+            }
+            if (methodBody.body().isBlank()) {
+                add(blockers, prefix + "body-empty");
+                return MethodBodyInspection.empty();
+            }
+            String emittedBody = emitNativeOpenClBody(methodBody.body());
+            diagnostics.add(prefix + "native-opencl.body.length=" + emittedBody.length());
+            return new MethodBodyInspection(Optional.of(emittedBody));
+        }
         if (!"ir-text-v1".equals(methodBody.format())) {
             add(blockers, prefix + "format-unsupported-" + methodBody.format());
         }
@@ -117,6 +130,18 @@ public record OpenClIrGpuSourceEmission(
         }
         diagnostics.addAll(parseResult.diagnostics());
         return new MethodBodyInspection(Optional.ofNullable(emittedBody).filter(value -> !value.isBlank()));
+    }
+
+    private static String emitNativeOpenClBody(String nativeBody) {
+        String normalized = nativeBody.strip();
+        if (normalized.isBlank()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String line : normalized.split("\\R", -1)) {
+            builder.append("    ").append(line).append('\n');
+        }
+        return builder.toString();
     }
 
     private static OpenClIrGpuSourceEmission blocked(List<String> blockers, List<String> diagnostics) {

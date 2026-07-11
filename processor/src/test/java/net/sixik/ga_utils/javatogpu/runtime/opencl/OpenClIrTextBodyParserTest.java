@@ -141,6 +141,26 @@ class OpenClIrTextBodyParserTest {
     }
 
     @Test
+    void reportsUnsupportedStatementSummaryDiagnostics() {
+        OpenClIrTextBodyParseResult result = OpenClIrTextBodyParser.INSTANCE.parse("""
+                body
+                  invoke helper(args)
+                  native-call value
+                  invoke another(args)
+                """);
+
+        assertTrue(!result.parsed());
+        assertEquals(3, result.blockers().size());
+        assertTrue(result.blockers().contains("ir-text-line-2-unsupported-invoke"));
+        assertTrue(result.blockers().contains("ir-text-line-3-unsupported-native-call"));
+        assertTrue(result.blockers().contains("ir-text-line-4-unsupported-invoke"));
+        assertTrue(result.diagnostics().contains("ir-text-v1 parser blocker.count=3"));
+        assertTrue(result.diagnostics().contains("ir-text-v1 parser unsupported.token.count=2"));
+        assertTrue(result.diagnostics().contains("ir-text-v1 parser unsupported.token.0=invoke:2"));
+        assertTrue(result.diagnostics().contains("ir-text-v1 parser unsupported.token.1=native-call:1"));
+    }
+
+    @Test
     void parsesSimpleIfElseBlocks() {
         OpenClIrTextBodyParseResult result = OpenClIrTextBodyParser.INSTANCE.parse("""
                 body

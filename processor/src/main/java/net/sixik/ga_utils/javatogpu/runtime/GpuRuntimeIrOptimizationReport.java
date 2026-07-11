@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,14 +12,23 @@ import java.util.Optional;
 public record GpuRuntimeIrOptimizationReport(
         Optional<IrGpuArtifact> artifact,
         List<GpuRuntimeIrOptimizationPassReport> passReports,
-        GpuOptimizationStrategyDecision strategyDecision
+        GpuOptimizationStrategyDecision strategyDecision,
+        List<GpuExtensionExecutionReport> extensionExecutionReports
 ) {
 
     public GpuRuntimeIrOptimizationReport(
             Optional<IrGpuArtifact> artifact,
             List<GpuRuntimeIrOptimizationPassReport> passReports
     ) {
-        this(artifact, passReports, null);
+        this(artifact, passReports, null, List.of());
+    }
+
+    public GpuRuntimeIrOptimizationReport(
+            Optional<IrGpuArtifact> artifact,
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            GpuOptimizationStrategyDecision strategyDecision
+    ) {
+        this(artifact, passReports, strategyDecision, List.of());
     }
 
     public GpuRuntimeIrOptimizationReport {
@@ -27,6 +37,7 @@ public record GpuRuntimeIrOptimizationReport(
         strategyDecision = strategyDecision == null
                 ? GpuOptimizationStrategyDecision.none(null)
                 : strategyDecision;
+        extensionExecutionReports = extensionExecutionReports == null ? List.of() : List.copyOf(extensionExecutionReports);
     }
 
     public static GpuRuntimeIrOptimizationReport empty(Optional<IrGpuArtifact> artifact) {
@@ -39,7 +50,7 @@ public record GpuRuntimeIrOptimizationReport(
         }
         java.util.ArrayList<GpuRuntimeIrOptimizationPassReport> reports = new java.util.ArrayList<>(passReports);
         reports.add(passReport);
-        return new GpuRuntimeIrOptimizationReport(artifact, reports, strategyDecision);
+        return new GpuRuntimeIrOptimizationReport(artifact, reports, strategyDecision, extensionExecutionReports);
     }
 
     public boolean hasReports() {
@@ -71,6 +82,14 @@ public record GpuRuntimeIrOptimizationReport(
                     .append(':')
                     .append(' ')
                     .append(passReports.get(index).toLine());
+        }
+        for (int index = 0; index < extensionExecutionReports.size(); index++) {
+            builder.append(System.lineSeparator())
+                    .append("extensionExecution.")
+                    .append(index)
+                    .append(':')
+                    .append(' ')
+                    .append(extensionExecutionReports.get(index).toLine());
         }
         return builder.toString();
     }

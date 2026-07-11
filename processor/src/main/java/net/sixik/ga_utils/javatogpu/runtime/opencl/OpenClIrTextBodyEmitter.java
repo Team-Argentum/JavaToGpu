@@ -18,6 +18,9 @@ public final class OpenClIrTextBodyEmitter {
     private static final String HELPER_PREFIX = "helper(";
     private static final String CAST_PREFIX = "cast<";
     private static final String INIT_PREFIX = "init<";
+    private static final java.util.regex.Pattern OPENCL_VECTOR_TYPE = java.util.regex.Pattern.compile(
+            "^(?:char|uchar|short|ushort|int|uint|long|ulong|float|double)(?:2|3|4|8|16)$"
+    );
     private static final java.util.regex.Pattern VARIABLE = java.util.regex.Pattern.compile("^var\\s+(\\S+)\\s+(\\S+)\\s+=\\s+(.+)$");
     private static final java.util.regex.Pattern PRIVATE_ARRAY = java.util.regex.Pattern.compile("^private-array\\s+(\\S+)\\s+(\\S+)\\[(.+)]$");
     private static final java.util.regex.Pattern ASSIGNMENT = java.util.regex.Pattern.compile("^set\\s+(.+?)\\s+=\\s+(.+)$");
@@ -46,7 +49,7 @@ public final class OpenClIrTextBodyEmitter {
             String prefix = "    ".repeat(indent);
             switch (statement.kind()) {
                 case VARIABLE -> builder.append(prefix)
-                        .append(emitType(statement.typeName()))
+                        .append(emitLocalVariableType(statement.typeName()))
                         .append(' ')
                         .append(statement.target())
                         .append(" = ")
@@ -144,7 +147,11 @@ public final class OpenClIrTextBodyEmitter {
         String trimmed = statement == null ? "" : statement.trim();
         java.util.regex.Matcher variable = VARIABLE.matcher(trimmed);
         if (variable.matches()) {
-            return emitType(variable.group(1)) + " " + variable.group(2) + " = " + emitExpression(variable.group(3));
+            return emitLocalVariableType(variable.group(1))
+                    + " "
+                    + variable.group(2)
+                    + " = "
+                    + emitExpression(variable.group(3));
         }
         java.util.regex.Matcher privateArray = PRIVATE_ARRAY.matcher(trimmed);
         if (privateArray.matches()) {
@@ -183,6 +190,14 @@ public final class OpenClIrTextBodyEmitter {
             case "boolean" -> "bool";
             default -> GpuTypeSupport.simpleTypeName(javaType);
         };
+    }
+
+    private static String emitLocalVariableType(String javaType) {
+        if (GpuTypeSupport.isSupportedPointerType(javaType)
+                && "PRIVATE".equals(GpuTypeSupport.pointerAddressSpace(javaType))) {
+            return emitType(GpuTypeSupport.pointerValueType(javaType));
+        }
+        return emitType(javaType);
     }
 
     private static String addressSpacePrefix(String addressSpace) {
@@ -228,14 +243,27 @@ public final class OpenClIrTextBodyEmitter {
             for (String arg : splitTopLevel(argsText)) {
                 emittedArgs.add(emitExpression(arg.trim()));
             }
-            builder.append('(')
-                    .append(emitType(typeName))
-                    .append(")(")
-                    .append(String.join(", ", emittedArgs))
-                    .append(')');
+            String emittedType = emitType(typeName);
+            if (isVectorInitializerType(typeName, emittedType)) {
+                builder.append('(')
+                        .append(emittedType)
+                        .append(")(")
+                        .append(String.join(", ", emittedArgs))
+                        .append(')');
+            } else {
+                builder.append('(')
+                        .append(emittedType)
+                        .append("){")
+                        .append(emittedArgs.isEmpty() ? "0" : String.join(", ", emittedArgs))
+                        .append('}');
+            }
             index = initEnd + 1;
         }
         return builder.toString();
+    }
+
+    private static boolean isVectorInitializerType(String typeName, String emittedType) {
+        return GpuTypeSupport.isSupportedVectorType(typeName) || OPENCL_VECTOR_TYPE.matcher(emittedType).matches();
     }
 
     private static String emitCastExpressions(String expression) {

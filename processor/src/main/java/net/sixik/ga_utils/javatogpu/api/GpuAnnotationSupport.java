@@ -21,6 +21,10 @@ public final class GpuAnnotationSupport {
     public static final List<String> GPU_GLOBAL_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUGlobal");
     public static final List<String> GPU_LOCAL_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPULocal");
     public static final List<String> GPU_STRUCT_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUStruct");
+    public static final List<String> GPU_ATTRIBUTE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUAttribute");
+    public static final List<String> GPU_ATTRIBUTES_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUAttributes");
+    public static final List<String> GPU_WORK_GROUP_SIZE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUWorkGroupSize");
+    public static final List<String> GPU_OPTIMIZE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUOptimize");
     public static final List<String> OPENCL_ATTRIBUTES_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "OpenCLAttributes");
     public static final List<String> OPENCL_QUALIFIERS_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "OpenCLQualifiers");
     public static final List<String> GPU_POINTER_TYPE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUPointerType");

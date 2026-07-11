@@ -94,6 +94,96 @@ class GpuMethodParserTest {
     }
 
     @Test
+    void parsesOpenClGpuAttributeEscapeHatch() {
+        String methodSource = """
+                @GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "vec_type_hint(float4)")
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(1, method.openClAttributes().size());
+        assertEquals("vec_type_hint(float4)", method.openClAttributes().get(0));
+    }
+
+    @Test
+    void parsesRepeatableOpenClGpuAttributeEscapeHatches() {
+        String methodSource = """
+                @GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "reqd_work_group_size(8, 1, 1)")
+                @GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "vec_type_hint(float4)")
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(java.util.List.of(
+                "reqd_work_group_size(8, 1, 1)",
+                "vec_type_hint(float4)"
+        ), method.openClAttributes());
+    }
+
+    @Test
+    void skipsNonOpenClGpuAttributeEscapeHatchForOpenClEmission() {
+        String methodSource = """
+                @GPUAttribute(backend = GpuBackendTarget.CUDA, value = "cuda_hint")
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertTrue(method.openClAttributes().isEmpty());
+    }
+
+    @Test
+    void skipsVendorSpecificGpuAttributeEscapeHatchForGenericOpenClEmission() {
+        String methodSource = """
+                @GPUAttribute(
+                    backend = GpuBackendTarget.OPENCL,
+                    vendor = GpuVendorTarget.NVIDIA,
+                    value = "nvidia_hint"
+                )
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertTrue(method.openClAttributes().isEmpty());
+    }
+
+    @Test
+    void parsesPortableWorkGroupSizeAsOpenClAttribute() {
+        String methodSource = """
+                @GPUWorkGroupSize(x = 8, y = 4, z = 2)
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(1, method.openClAttributes().size());
+        assertEquals("reqd_work_group_size(8, 4, 2)", method.openClAttributes().get(0));
+    }
+
+    @Test
     void parsesConstantAndLocalAddressSpaces() {
         String methodSource = """
                 @GPU
@@ -123,6 +213,43 @@ class GpuMethodParserTest {
         ParsedGpuMethod method = parser.parseMethod(methodSource);
 
         assertEquals(java.util.List.of("const", "restrict", "volatile"), method.parameters().get(0).openClQualifiers());
+    }
+
+    @Test
+    void parsesOpenClGpuAttributeEscapeHatchOnParametersAsQualifiers() {
+        String methodSource = """
+                @GPU
+                void kernel(
+                    @GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "restrict")
+                    @GPUGlobal float[] output
+                ) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(java.util.List.of("restrict"), method.parameters().get(0).openClQualifiers());
+    }
+
+    @Test
+    void parsesRepeatableOpenClGpuAttributeEscapeHatchesOnParametersAsQualifiers() {
+        String methodSource = """
+                @GPU
+                void kernel(
+                    @GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "const")
+                    @GPUAttribute(backend = GpuBackendTarget.OPENCL, value = "restrict")
+                    @GPUGlobal float[] output
+                ) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(java.util.List.of("const", "restrict"), method.parameters().get(0).openClQualifiers());
     }
 
     @Test

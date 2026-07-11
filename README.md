@@ -81,7 +81,7 @@ Use `GpuRuntime.useOpenCl()` for one-off calls. Use `GpuRuntime.useOpenClSharedC
 - General object allocation, virtual dispatch, exceptions, recursion, monitors, and heap object graphs are not supported inside kernels.
 - Arrays inside `@GPUStruct` fields are not supported in the current alpha.
 - OpenCL is the active backend today. CUDA, Vulkan, and Metal are future directions.
-- NVIDIA OpenCL is the current strongest validation baseline; AMD and Intel should be validated on real hardware before cross-vendor claims.
+- NVIDIA OpenCL and AMD OpenCL are the current validated baselines; Intel should still be validated on real hardware before broad cross-vendor claims.
 
 See [Known Limitations](docs/Known-Limitations.md) before using JavaToGpu in a larger project.
 

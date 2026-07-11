@@ -2,6 +2,51 @@ name: OpenCL Vendor Matrix
 
 on:
   workflow_dispatch:
+    inputs:
+      source_promotion_baseline_mode:
+        description: 'Source-promotion workload baseline mode: skip, advisory, strict, or update.'
+        required: false
+        default: advisory
+        type: choice
+        options:
+          - skip
+          - advisory
+          - strict
+          - update
+      launch_advisory_negative_fixture:
+        description: 'Force an expected per-kernel launch-advisory regression without saving the cache baseline.'
+        required: false
+        default: false
+        type: boolean
+      validation_lane:
+        description: 'OpenCL vendor lane to run.'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - nvidia
+          - amd
+      production_promotion_manifest_mode:
+        description: 'Manual production-promotion mode: skip, template, validate, or activate.'
+        required: false
+        default: skip
+        type: choice
+        options:
+          - skip
+          - template
+          - validate
+          - activate
+      production_promotion_manifest_file:
+        description: 'Repository-relative manifest path used when manifest mode is validate.'
+        required: false
+        default: 'promotion/opencl/backend-source-promotion-manifest.properties'
+        type: string
+      production_promotion_candidate_git_sha:
+        description: 'Full Git SHA recorded by the candidate manifest template run.'
+        required: false
+        default: ''
+        type: string
   push:
     branches:
       - main
@@ -20,28 +65,15 @@ jobs:
     name: OpenCL ${{ matrix.vendor_name }} / ${{ matrix.device_name }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - vendor: amd
-            vendor_name: AMD
-            device_name: RX 7800 XT
-            artifact_suffix: amd-rx7800xt
-            runner_labels: [self-hosted, Windows, X64, amd, rx7800xt]
-            routine_task: :processor:openClOperationalRoutine
-
-          - vendor: nvidia
-            vendor_name: NVIDIA
-            device_name: RTX 5070
-            artifact_suffix: nvidia-rtx5070
-            runner_labels: [self-hosted, Windows, X64, nvidia, rtx5070]
-            routine_task: :processor:openClNvidiaRoutine
-
-          - vendor: nvidia
-            vendor_name: NVIDIA
-            device_name: RTX 3060
-            artifact_suffix: nvidia-rtx3060
-            runner_labels: [self-hosted, Windows, X64, nvidia, rtx3060]
-            routine_task: :processor:openClNvidiaRoutine
+      matrix: >-
+        ${{ fromJSON(
+          github.event.inputs.validation_lane == 'nvidia' &&
+          '{"include":[{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"}]}'
+          || github.event.inputs.validation_lane == 'amd' &&
+          '{"include":[{"vendor":"amd","vendor_name":"AMD","device_name":"RX 7800 XT","artifact_suffix":"amd-rx7800xt","runner_labels":["self-hosted","Windows","X64","amd","rx7800xt"],"routine_task":":processor:openClOperationalRoutine"}]}'
+          ||
+          '{"include":[{"vendor":"amd","vendor_name":"AMD","device_name":"RX 7800 XT","artifact_suffix":"amd-rx7800xt","runner_labels":["self-hosted","Windows","X64","amd","rx7800xt"],"routine_task":":processor:openClOperationalRoutine"},{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"}]}'
+        ) }}
 
     runs-on: ${{ matrix.runner_labels }}
     timeout-minutes: 90
@@ -50,6 +82,11 @@ jobs:
       JTG_VALIDATION_VENDOR: ${{ matrix.vendor }}
       JTG_VALIDATION_DEVICE: ${{ matrix.device_name }}
       JTG_OPENCL_CI: 'true'
+      JTG_SOURCE_PROMOTION_BASELINE_MODE: ${{ github.event.inputs.source_promotion_baseline_mode || 'advisory' }}
+      JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE: ${{ github.event.inputs.launch_advisory_negative_fixture || 'false' }}
+      JTG_PRODUCTION_PROMOTION_MANIFEST_MODE: ${{ github.event.inputs.production_promotion_manifest_mode || 'skip' }}
+      JTG_PRODUCTION_PROMOTION_MANIFEST_FILE: ${{ github.event.inputs.production_promotion_manifest_file || 'promotion/opencl/backend-source-promotion-manifest.properties' }}
+      JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA: ${{ github.event.inputs.production_promotion_candidate_git_sha || '' }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
 
     steps:
@@ -72,21 +109,31 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Restore OpenCL validation history baseline
+        id: validation_history_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: processor/build/opencl-validation-history-cache/
+          key: opencl-validation-history-v1-${{ runner.os }}-${{ matrix.artifact_suffix }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            opencl-validation-history-v1-${{ runner.os }}-${{ matrix.artifact_suffix }}-${{ github.ref_name }}-
+
       - name: Print runner and GPU context
         continue-on-error: true
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Runner: $env:RUNNER_NAME"
-          Write-Host "Expected vendor: $env:JTG_VALIDATION_VENDOR"
-          Write-Host "Expected device: $env:JTG_VALIDATION_DEVICE"
-          Get-Command git -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.Source }
-          try {
-            Get-CimInstance Win32_VideoController |
-              Select-Object Name, AdapterCompatibility, DriverVersion |
-              Format-Table -AutoSize
-          } catch {
-            Write-Warning "Unable to query Win32_VideoController: $($_.Exception.Message)"
-          }
+          echo Runner: %RUNNER_NAME%
+          echo Expected vendor: %JTG_VALIDATION_VENDOR%
+          echo Expected device: %JTG_VALIDATION_DEVICE%
+          where git
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Get-CimInstance Win32_VideoController | Select-Object Name, AdapterCompatibility, DriverVersion | Format-Table -AutoSize } catch { Write-Warning ('Unable to query Win32_VideoController: ' + $_.Exception.Message) }"
+
+      - name: Prepare kernel launch-advisory negative fixture
+        if: env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true'
+        id: launch_advisory_negative_fixture_prepare
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:prepareOpenClKernelLaunchAdvisoryNegativeFixture --console=plain --no-daemon
 
       - name: OpenCL validation routine
         if: always()
@@ -95,6 +142,50 @@ jobs:
         shell: cmd
         run: .\gradlew.bat ${{ matrix.routine_task }} --console=plain --no-daemon
 
+      - name: Generate production-promotion manifest template
+        if: steps.opencl_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template'
+        id: production_promotion_manifest_template
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:writeOpenClBackendSourcePromotionManifestTemplate "-PopenClPromotionGitSha=%GITHUB_SHA%" --console=plain --no-daemon
+
+      - name: Validate production-promotion manifest
+        if: >-
+          steps.opencl_validation.outcome == 'success' &&
+          (env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' || env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate')
+        id: production_promotion_manifest_validation
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionManifest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
+
+      - name: Validate controlled production activation gate
+        if: steps.production_promotion_manifest_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        id: production_promotion_activation_gate
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionActivationGate "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
+
+      - name: Run controlled production activation-token smoke
+        if: steps.production_promotion_activation_gate.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        id: production_promotion_activation_token_smoke
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:openClProductionActivationTokenSmokeTest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
+
+      - name: Run production activation-token negative controls
+        if: steps.production_promotion_activation_token_smoke.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        id: production_promotion_activation_token_negative
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:openClProductionActivationTokenNegativeTest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
+
+      - name: Materialize optimizer-family payload fixture
+        if: steps.opencl_validation.outcome == 'success'
+        id: optimizer_family_payload_fixture
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:openClOptimizerFamilyPayloadFixtureTest --console=plain --no-daemon
+
       - name: Generate OpenCL validation report
         if: always()
         id: validation_report
@@ -102,12 +193,120 @@ jobs:
         shell: cmd
         run: .\gradlew.bat :processor:openClValidationReport --console=plain --no-daemon
 
-      - name: Validate production promotion explainability
+      - name: Validate kernel launch-advisory drift
         if: always()
+        id: launch_advisory_drift
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClKernelLaunchAdvisoryDrift --console=plain --no-daemon
+
+      - name: Validate compiler-resource drift
+        if: always()
+        id: compiler_resource_drift
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateOpenClCompilerResourceDrift --console=plain --no-daemon
+
+      - name: Validate production promotion explainability
+        if: steps.opencl_validation.outcome == 'success'
         id: production_explainability
         continue-on-error: true
         shell: cmd
         run: .\gradlew.bat :processor:validateOpenClProductionPromotionExplainability --console=plain --no-daemon
+
+      - name: Summarize production promotion explainability
+        if: always()
+        id: production_explainability_summary
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:summarizeOpenClProductionPromotionExplainability --console=plain --no-daemon
+
+      - name: Check source-promotion workload baseline
+        if: always()
+        id: source_promotion_baseline
+        continue-on-error: true
+        shell: cmd
+        run: |
+          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="skip" goto baseline_skip
+          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="update" goto baseline_update
+          set "BASELINE_FILE=processor\build\opencl-source-promotion-baselines\backend-source-promotion-workload-baseline.properties"
+          if not exist "%BASELINE_FILE%" goto baseline_missing
+          .\gradlew.bat :processor:validateOpenClBackendSourcePromotionWorkloadBaseline --console=plain --no-daemon
+          exit /b %ERRORLEVEL%
+
+          :baseline_skip
+          echo Source-promotion workload baseline check skipped.
+          exit /b 0
+
+          :baseline_update
+          call .\gradlew.bat :processor:writeOpenClBackendSourcePromotionWorkloadBaseline --console=plain --no-daemon
+          exit /b %ERRORLEVEL%
+
+          :baseline_missing
+          echo Source-promotion workload baseline is missing at %BASELINE_FILE%.
+          if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="strict" exit /b 1
+          echo Advisory mode allows missing baseline; run workflow_dispatch with source_promotion_baseline_mode=update after reviewing artifacts.
+          exit /b 0
+
+      - name: Summarize source-promotion workload
+        if: always()
+        id: source_promotion_summary
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:summarizeOpenClBackendSourcePromotionWorkload --console=plain --no-daemon
+
+      - name: Stage OpenCL validation history cache
+        if: >-
+          always() &&
+          env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true' &&
+          steps.opencl_validation.outcome == 'success' &&
+          steps.validation_report.outcome == 'success' &&
+          steps.launch_advisory_drift.outcome == 'success' &&
+          steps.compiler_resource_drift.outcome == 'success'
+        id: validation_history_stage
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:stageOpenClValidationHistoryCache --console=plain --no-daemon
+
+      - name: Save OpenCL validation history baseline
+        if: steps.validation_history_stage.outcome == 'success'
+        id: validation_history_save
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: processor/build/opencl-validation-history-cache/
+          key: opencl-validation-history-v1-${{ runner.os }}-${{ matrix.artifact_suffix }}-${{ github.ref_name }}-${{ github.run_id }}
+
+      - name: Validate kernel launch-advisory negative fixture outcome
+        if: always() && env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true'
+        id: launch_advisory_negative_fixture_check
+        continue-on-error: true
+        shell: cmd
+        env:
+          NEGATIVE_FIXTURE_PREPARE_OUTCOME: ${{ steps.launch_advisory_negative_fixture_prepare.outcome }}
+          OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
+          VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
+          LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
+          COMPILER_RESOURCE_DRIFT_OUTCOME: ${{ steps.compiler_resource_drift.outcome }}
+          PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
+          PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
+          SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
+          SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
+          VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
+          VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
+        run: |
+          if /I not "%NEGATIVE_FIXTURE_PREPARE_OUTCOME%"=="success" exit /b 1
+          if /I not "%OPENCL_VALIDATION_OUTCOME%"=="success" exit /b 1
+          if /I not "%VALIDATION_REPORT_OUTCOME%"=="success" exit /b 1
+          if /I not "%LAUNCH_ADVISORY_DRIFT_OUTCOME%"=="failure" exit /b 1
+          if /I not "%COMPILER_RESOURCE_DRIFT_OUTCOME%"=="success" exit /b 1
+          if /I not "%PRODUCTION_EXPLAINABILITY_OUTCOME%"=="success" exit /b 1
+          if /I not "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"=="success" exit /b 1
+          if /I not "%SOURCE_PROMOTION_BASELINE_OUTCOME%"=="success" exit /b 1
+          if /I not "%SOURCE_PROMOTION_SUMMARY_OUTCOME%"=="success" exit /b 1
+          if /I not "%VALIDATION_HISTORY_STAGE_OUTCOME%"=="skipped" exit /b 1
+          if /I not "%VALIDATION_HISTORY_SAVE_OUTCOME%"=="skipped" exit /b 1
+          echo Negative launch-advisory fixture behaved as expected; cache baseline was not staged or saved.
 
       - name: Upload OpenCL report bundle
         if: always()
@@ -121,56 +320,103 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Fail after artifact capture
+      - name: Write OpenCL lane summary
         if: always()
         shell: cmd
         env:
+          NEGATIVE_FIXTURE_PREPARE_OUTCOME: ${{ steps.launch_advisory_negative_fixture_prepare.outcome }}
+          NEGATIVE_FIXTURE_CHECK_OUTCOME: ${{ steps.launch_advisory_negative_fixture_check.outcome }}
           OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
+          LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
+          COMPILER_RESOURCE_DRIFT_OUTCOME: ${{ steps.compiler_resource_drift.outcome }}
           PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
+          PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
+          SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
+          SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
+          PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME: ${{ steps.production_promotion_manifest_template.outcome }}
+          PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME: ${{ steps.production_promotion_manifest_validation.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME: ${{ steps.production_promotion_activation_gate.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME: ${{ steps.production_promotion_activation_token_smoke.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME: ${{ steps.production_promotion_activation_token_negative.outcome }}
+          OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME: ${{ steps.optimizer_family_payload_fixture.outcome }}
+          VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
+          VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
         run: |
-          set "PRODUCTION_PROMOTION_STATUS=not-recorded"
-          set "PRODUCTION_CONTRACT_STATUS=not-recorded"
-          set "PRODUCTION_DECISION_MODE=not-recorded"
-          set "PRODUCTION_FIRST_BLOCKER=none"
-          set "PRODUCTION_FIRST_VIOLATION=none"
-          set "PRODUCTION_EXPLAINABILITY_FILE=processor\build\reports\opencl\production-promotion-explainability.properties"
+          if not defined GITHUB_STEP_SUMMARY exit /b 0
+          echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
+          echo.>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Negative fixture prepare ^| %NEGATIVE_FIXTURE_PREPARE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Negative fixture contract ^| %NEGATIVE_FIXTURE_CHECK_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Launch-advisory drift ^| %LAUNCH_ADVISORY_DRIFT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Compiler-resource drift ^| %COMPILER_RESOURCE_DRIFT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Production explainability ^| %PRODUCTION_EXPLAINABILITY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Production explainability summary ^| %PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Source-promotion baseline ^| %SOURCE_PROMOTION_BASELINE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Source-promotion summary ^| %SOURCE_PROMOTION_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Promotion manifest template ^| %PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Promotion manifest validation ^| %PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Controlled activation gate ^| %PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Activation-token hardware smoke ^| %PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Activation-token negative controls ^| %PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Optimizer-family payload fixture ^| %OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Validation history stage ^| %VALIDATION_HISTORY_STAGE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Validation history save ^| %VALIDATION_HISTORY_SAVE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          if exist processor\build\reports\opencl\runtime-launch-advisory-summary.md (
+            echo.>>"%GITHUB_STEP_SUMMARY%"
+            type processor\build\reports\opencl\runtime-launch-advisory-summary.md>>"%GITHUB_STEP_SUMMARY%"
+          )
 
-          if exist "%PRODUCTION_EXPLAINABILITY_FILE%" (
-            for /f "usebackq tokens=1,* delims==" %%A in ("%PRODUCTION_EXPLAINABILITY_FILE%") do (
-              if "%%A"=="status" set "PRODUCTION_PROMOTION_STATUS=%%B"
-              if "%%A"=="contract.status" set "PRODUCTION_CONTRACT_STATUS=%%B"
-              if "%%A"=="decision.mode" set "PRODUCTION_DECISION_MODE=%%B"
-              if "%%A"=="blocker.0" set "PRODUCTION_FIRST_BLOCKER=%%B"
-              if "%%A"=="contract.violation.0" set "PRODUCTION_FIRST_VIOLATION=%%B"
+      - name: Fail after artifact capture
+        if: >-
+          always() &&
+          (
+            (
+              env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true' &&
+              (
+                steps.opencl_validation.outcome != 'success' ||
+                steps.optimizer_family_payload_fixture.outcome != 'success' ||
+                steps.validation_report.outcome != 'success' ||
+                steps.launch_advisory_drift.outcome != 'success' ||
+                steps.compiler_resource_drift.outcome != 'success' ||
+                steps.validation_history_stage.outcome == 'failure' ||
+                steps.validation_history_save.outcome == 'failure' ||
+                steps.production_explainability.outcome != 'success' ||
+                steps.production_explainability_summary.outcome != 'success' ||
+                steps.source_promotion_summary.outcome != 'success' ||
+                (
+                  (env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'strict' || env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'update') &&
+                  steps.source_promotion_baseline.outcome != 'success'
+                )
+              )
+            ) ||
+            (
+              env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true' &&
+              steps.launch_advisory_negative_fixture_check.outcome != 'success'
+            ) ||
+            (
+              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template' &&
+              steps.production_promotion_manifest_template.outcome != 'success'
+            ) ||
+            (
+              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' &&
+              steps.production_promotion_manifest_validation.outcome != 'success'
+            ) ||
+            (
+              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate' &&
+              (
+                steps.production_promotion_manifest_validation.outcome != 'success' ||
+                steps.production_promotion_activation_gate.outcome != 'success' ||
+                steps.production_promotion_activation_token_smoke.outcome != 'success' ||
+                steps.production_promotion_activation_token_negative.outcome != 'success'
+              )
             )
           )
-
-          if defined GITHUB_STEP_SUMMARY (
-            echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
-            echo.>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Production explainability ^| %PRODUCTION_EXPLAINABILITY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo.>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| Production promotion field ^| Value ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| status ^| %PRODUCTION_PROMOTION_STATUS% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| contract ^| %PRODUCTION_CONTRACT_STATUS% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| decision mode ^| %PRODUCTION_DECISION_MODE% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| first blocker ^| %PRODUCTION_FIRST_BLOCKER% ^|>>"%GITHUB_STEP_SUMMARY%"
-            echo ^| first violation ^| %PRODUCTION_FIRST_VIOLATION% ^|>>"%GITHUB_STEP_SUMMARY%"
-          )
-
-          if not "%OPENCL_VALIDATION_OUTCOME%"=="success" goto failed
-          if not "%VALIDATION_REPORT_OUTCOME%"=="success" goto failed
-          if not "%PRODUCTION_EXPLAINABILITY_OUTCOME%"=="success" goto failed
-          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane passed.
-          exit /b 0
-
-          :failed
-          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture: openclValidation=%OPENCL_VALIDATION_OUTCOME%, validationReport=%VALIDATION_REPORT_OUTCOME%, productionExplainability=%PRODUCTION_EXPLAINABILITY_OUTCOME%
-          echo Production promotion summary: status=%PRODUCTION_PROMOTION_STATUS%, contract=%PRODUCTION_CONTRACT_STATUS%, decisionMode=%PRODUCTION_DECISION_MODE%, firstBlocker=%PRODUCTION_FIRST_BLOCKER%, firstViolation=%PRODUCTION_FIRST_VIOLATION%
+        shell: cmd
+        run: |
+          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture.
           exit /b 1

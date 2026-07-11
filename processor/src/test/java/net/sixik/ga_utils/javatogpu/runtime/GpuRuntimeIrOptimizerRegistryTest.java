@@ -1,20 +1,28 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuRuntimeIrOptimizerRegistryTest {
@@ -197,10 +205,57 @@ class GpuRuntimeIrOptimizerRegistryTest {
         GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
         assertEquals(GpuRuntimeIrOptimizationStage.TRANSFORM, passReport.stage());
         assertEquals("optimizer:failing-test", passReport.optimizerVersion());
-        assertEquals(GpuRuntimeIrOptimizationOutcome.FAILED, passReport.outcome());
-        assertEquals("failed-before-proof", passReport.proofStatus());
-        assertEquals("IllegalStateException", passReport.rollbackReason());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("extension-failure-isolated", passReport.proofStatus());
+        assertEquals("", passReport.rollbackReason());
         assertTrue(passReport.toLine().contains("optimizer exploded"));
+        assertEquals(1, report.extensionExecutionReports().size());
+        assertEquals(GpuExtensionExecutionOutcome.FAILED_CONTINUED, report.extensionExecutionReports().get(0).outcome());
+        assertTrue(report.extensionExecutionReports().get(0).pipelineContinued());
+        assertFalse(report.requiresRollback());
+    }
+
+    @Test
+    void advisoryOptimizerFailureDoesNotPreventFollowingPass() {
+        AtomicBoolean followingInvoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizationPass failing = request -> {
+            throw new IllegalStateException("advisory failure");
+        };
+        GpuRuntimeIrOptimizationPass following = request -> {
+            followingInvoked.set(true);
+            return GpuRuntimeIrOptimizationReport.empty(request.artifact());
+        };
+
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(failing, following))
+                .optimizeWithReport(request(artifact("body\n  return original\n")));
+
+        assertTrue(followingInvoked.get());
+        assertEquals(2, report.extensionExecutionReports().size());
+        assertEquals(GpuExtensionExecutionOutcome.FAILED_CONTINUED, report.extensionExecutionReports().get(0).outcome());
+        assertEquals(GpuExtensionExecutionOutcome.SUCCEEDED, report.extensionExecutionReports().get(1).outcome());
+        assertFalse(report.requiresRollback());
+    }
+
+    @Test
+    void productionProfileOptimizerFailureStopsFollowingPasses() {
+        AtomicBoolean followingInvoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizationPass failing = request -> {
+            throw new IllegalStateException("production failure");
+        };
+        GpuRuntimeIrOptimizationPass following = request -> {
+            followingInvoked.set(true);
+            return GpuRuntimeIrOptimizationReport.empty(request.artifact());
+        };
+        IrGpuArtifact artifact = artifact("body\n  return original\n");
+
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(failing, following))
+                .optimizeWithReport(productionRequest(artifact, GpuProductionPromotionDecision.diagnosticOnly()));
+
+        assertFalse(followingInvoked.get());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.FAILED, report.passReports().get(0).outcome());
+        assertEquals(1, report.extensionExecutionReports().size());
+        assertEquals(GpuExtensionExecutionOutcome.FAILED_CLOSED, report.extensionExecutionReports().get(0).outcome());
+        assertTrue(report.requiresRollback());
     }
 
     @Test
@@ -226,6 +281,367 @@ class GpuRuntimeIrOptimizerRegistryTest {
     }
 
     @Test
+    void registryAcceptsExplicitOptimizationPassesWithoutLegacyAdapter() {
+        AtomicBoolean invoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizationPass pass = new GpuRuntimeIrOptimizationPass() {
+            @Override
+            public GpuRuntimeIrOptimizationReport run(GpuRuntimeIrOptimizationRequest request) {
+                invoked.set(true);
+                return GpuRuntimeIrOptimizationReport.empty(request.artifact());
+            }
+
+            @Override
+            public String passVersion() {
+                return "pass:explicit-test";
+            }
+        };
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass));
+
+        registry.optimizeWithReport(request(artifact("body\n  return original\n")));
+
+        assertTrue(invoked.get());
+        assertEquals(1, registry.optimizerCount());
+        assertEquals("pass:explicit-test", registry.optimizerPasses().get(0).passVersion());
+        assertTrue(registry.optimizerPipelineVersion().contains("TRANSFORM:pass:explicit-test"));
+    }
+
+    @Test
+    void commonSubexpressionReviewPassRecordsSingleCseFamilyEvidenceWithoutMutation() {
+        IrGpuArtifact artifact = repeatedCseTypedArtifact();
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeCommonSubexpressionReviewPass())
+        ).optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        assertFalse(report.requiresRollback());
+        assertEquals(1, report.passReports().size());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        assertEquals(GpuRuntimeIrOptimizationOutcome.APPLIED, passReport.outcome());
+        assertEquals("optimizer-family:cse:review-v1", passReport.optimizerVersion());
+        assertEquals("cse-review-evidence-ready", passReport.proofStatus());
+        assertEquals("runtime.cse.review", passReport.proofArtifact().source());
+        assertEquals("review-ready", passReport.proofArtifact().verdict());
+        assertEquals("cse", passReport.proofArtifact().fields().get("optimizerFamily"));
+        assertEquals("none", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("mutationEnabled"));
+        assertEquals(
+                "optimizer-family:cse:original-vs-optimized",
+                passReport.proofArtifact().fields().get("runtimeEquivalenceMode")
+        );
+        assertEquals("true", passReport.proofArtifact().fields().get("runtimeEquivalencePayload.present"));
+    }
+
+    @Test
+    void commonSubexpressionReviewPassKeepsNoCandidateKernelsDiagnosticOnly() {
+        IrGpuArtifact artifact = fastMathTypedArtifact();
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeCommonSubexpressionReviewPass())
+        ).optimizeWithReport(request(artifact));
+
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertTrue(passReport.analysisOnly());
+        assertEquals("diagnostic-only", passReport.proofArtifact().verdict());
+        assertFalse(passReport.proofArtifact().fields().containsKey("optimizerFamily"));
+        assertEquals("no-cse-candidates", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertEquals("0", passReport.proofArtifact().fields().get("candidate.count"));
+        assertEquals("true", passReport.proofArtifact().fields().get("analysisOnly"));
+        assertEquals("false", passReport.proofArtifact().fields().get("runtimeEquivalencePayload.present"));
+        assertFalse(report.requiresRollback());
+    }
+
+    @Test
+    void registryExportsDeterministicExtensionMetadataWithoutReorderingExplicitPasses() {
+        GpuRuntimeIrOptimizationPass later = extensionPass("pass:zeta", "2", 20);
+        GpuRuntimeIrOptimizationPass earlier = extensionPass("pass:alpha", "1", 10);
+
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(later, earlier));
+
+        assertSame(later, registry.optimizerPasses().get(0));
+        assertSame(earlier, registry.optimizerPasses().get(1));
+        assertEquals("pass:alpha", registry.extensionRegistry().descriptors().get(0).id());
+        assertEquals("pass:zeta", registry.extensionRegistry().descriptors().get(1).id());
+        assertEquals(
+                List.of(GpuExtensionCapability.IR_OPTIMIZATION_PROPOSAL),
+                registry.extensionRegistry().descriptors().get(0).capabilities()
+        );
+        assertEquals(GpuExtensionPhase.RUNTIME_IR_OPTIMIZATION, registry.extensionRegistry().descriptors().get(0).phase());
+        assertEquals(GpuExtensionPermission.MUTATION_PROPOSAL, registry.extensionRegistry().descriptors().get(0).permission());
+        assertEquals("2", registry.extensionArtifactFields().get("runtimeOptimizerExtension.count"));
+        assertEquals("pass:alpha", registry.extensionArtifactFields().get("runtimeOptimizerExtension.0.id"));
+        assertEquals("RUNTIME_IR_OPTIMIZATION", registry.extensionArtifactFields().get(
+                "runtimeOptimizerExtension.0.phase"
+        ));
+        assertEquals("MUTATION_PROPOSAL", registry.extensionArtifactFields().get(
+                "runtimeOptimizerExtension.0.permission"
+        ));
+        assertEquals("IR_OPTIMIZATION_PROPOSAL", registry.extensionArtifactFields().get(
+                "runtimeOptimizerExtension.0.capability.0"
+        ));
+    }
+
+    @Test
+    void registryRejectsDuplicateExtensionIdsFailClosed() {
+        GpuRuntimeIrOptimizationPass first = extensionPass("pass:duplicate", "1", 0);
+        GpuRuntimeIrOptimizationPass second = extensionPass("pass:duplicate", "2", 1);
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(first, second))
+        );
+
+        assertTrue(exception.getMessage().contains("Duplicate GPU extension id 'pass:duplicate'"));
+    }
+
+    @Test
+    void productionAffectingOptimizerExtensionIsSkippedWithoutBoundAuthorization() {
+        AtomicBoolean invoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizationPass pass = extensionPass(
+                "pass:production-affecting",
+                "1",
+                0,
+                GpuExtensionPermission.PRODUCTION_AFFECTING,
+                invoked
+        );
+        IrGpuArtifact artifact = artifact("body\n  return original\n");
+        GpuRuntimeIrOptimizationRequest request = productionRequest(artifact, GpuProductionPromotionDecision.diagnosticOnly());
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass));
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request);
+
+        assertFalse(invoked.get());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, report.passReports().get(0).outcome());
+        assertTrue(report.passReports().get(0).toLine().contains("has no authorization"));
+    }
+
+    @Test
+    void productionAffectingOptimizerExtensionRunsWithMatchingAcceptedAuthorization() {
+        AtomicBoolean invoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizationPass pass = extensionPass(
+                "pass:production-authorized",
+                "1",
+                0,
+                GpuExtensionPermission.PRODUCTION_AFFECTING,
+                invoked
+        );
+        IrGpuArtifact artifact = artifact("body\n  return original\n");
+        GpuProductionPromotionDecision promotionDecision = productionEnabledDecision();
+        GpuRuntimeIrOptimizationRequest request = productionRequest(artifact, promotionDecision);
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass));
+        GpuRuntimeIrOptimizationReport evidenceReport = acceptedEvidenceReport(artifact, request.strategyDecision());
+        GpuProductionExtensionAuthorizationDecision authorization = registry.authorizeProductionExtension(
+                pass.extensionId(),
+                request.compileRequest(),
+                evidenceReport,
+                GpuRuntimeEquivalenceEvidence.passed(request.compileRequest(), 8, 8, List.of("outputs matched")),
+                GpuRuntimeFallbackEvidence.none(),
+                promotionDecision,
+                true
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry
+                .withProductionAuthorizations(List.of(authorization))
+                .optimizeWithReport(request);
+
+        assertTrue(authorization.authorized());
+        assertEquals("true", authorization.artifactFields("authorization").get("authorization.authorized"));
+        assertTrue(invoked.get());
+        assertTrue(report.passReports().isEmpty());
+    }
+
+    @Test
+    void productionAuthorizationCannotBeReusedForDifferentIrArtifact() {
+        AtomicBoolean invoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizationPass pass = extensionPass(
+                "pass:production-bound",
+                "1",
+                0,
+                GpuExtensionPermission.PRODUCTION_AFFECTING,
+                invoked
+        );
+        IrGpuArtifact authorizedArtifact = artifact("body\n  return authorized\n");
+        IrGpuArtifact differentArtifact = artifact("body\n  return different\n");
+        GpuProductionPromotionDecision promotionDecision = productionEnabledDecision();
+        GpuRuntimeIrOptimizationRequest authorizationRequest = productionRequest(authorizedArtifact, promotionDecision);
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass));
+        GpuProductionExtensionAuthorizationDecision authorization = registry.authorizeProductionExtension(
+                pass.extensionId(),
+                authorizationRequest.compileRequest(),
+                acceptedEvidenceReport(authorizedArtifact, authorizationRequest.strategyDecision()),
+                GpuRuntimeEquivalenceEvidence.passed(
+                        authorizationRequest.compileRequest(),
+                        8,
+                        8,
+                        List.of("outputs matched")
+                ),
+                GpuRuntimeFallbackEvidence.none(),
+                promotionDecision,
+                true
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry
+                .withProductionAuthorizations(List.of(authorization))
+                .optimizeWithReport(productionRequest(differentArtifact, promotionDecision));
+
+        assertTrue(authorization.authorized());
+        assertFalse(invoked.get());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, report.passReports().get(0).outcome());
+        assertTrue(report.passReports().get(0).toLine().contains("does not match this runtime compile context"));
+    }
+
+    @Test
+    void diagnosticPeepholePassRefusesTextBasedRewrites() {
+        IrGpuArtifact artifact = fastMathArtifact("body\n  return ((a * b) + c)\n");
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        assertEquals(1, report.passReports().size());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("runtime.peephole.preflight", passReport.proofArtifact().source());
+        assertEquals("blocked", passReport.proofArtifact().verdict());
+        assertEquals("peephole", passReport.proofArtifact().fields().get("optimizerFamily"));
+        assertEquals("typed-ir-unavailable", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertEquals("1", passReport.proofArtifact().fields().get("irTextBody.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rule.madFma.candidate.count"));
+        assertTrue(passReport.toLine().contains("text-based peephole rewriting is disabled"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedMadFmaCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("true", passReport.proofArtifact().fields().get("typedIrAvailable"));
+        assertEquals("1", passReport.proofArtifact().fields().get("candidate.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.madFma.candidate.count"));
+        assertEquals("rewrite-engine-not-implemented", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassRunsThirdPartyTypedRuleAndExportsRuleMetadata() {
+        GpuRuntimeIrPeepholeRule customRule = new GpuRuntimeIrPeepholeRule() {
+            @Override
+            public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
+                return GpuRuntimeIrPeepholeRuleReport.diagnosticCandidates(
+                        this,
+                        context.methodBody().name(),
+                        2,
+                        Map.of("family", "custom")
+                );
+            }
+
+            @Override
+            public String ruleId() {
+                return "customRule";
+            }
+
+            @Override
+            public String ruleVersion() {
+                return "custom-rule-v3";
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.peephole.custom";
+            }
+        };
+        GpuRuntimeIrPeepholePass pass = new GpuRuntimeIrPeepholePass(
+                GpuRuntimeIrPeepholeRuleRegistry.of(List.of(customRule))
+        );
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass))
+                .optimizeWithReport(request(fastMathTypedArtifact()));
+
+        Map<String, String> fields = report.passReports().get(0).proofArtifact().fields();
+        assertEquals("2", fields.get("candidate.count"));
+        assertEquals("customRule", fields.get("rule.0.id"));
+        assertEquals("custom-rule-v3", fields.get("rule.0.version"));
+        assertEquals("test.peephole.custom", fields.get("rule.0.extensionId"));
+        assertEquals("custom-rule-v3", fields.get("rule.0.extensionVersion"));
+        assertEquals("2", fields.get("rule.0.candidate.count"));
+        assertEquals("1", fields.get("rule.execution.count"));
+    }
+
+    @Test
+    void advisoryPeepholeRuleFailureIsIsolatedAndFollowingRuleStillRuns() {
+        GpuRuntimeIrPeepholeRule failing = new GpuRuntimeIrPeepholeRule() {
+            @Override
+            public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
+                throw new IllegalStateException("custom rule exploded");
+            }
+
+            @Override
+            public String ruleId() {
+                return "failingRule";
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.peephole.failing";
+            }
+        };
+        GpuRuntimeIrPeepholeRule following = new GpuRuntimeIrPeepholeRule() {
+            @Override
+            public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
+                return GpuRuntimeIrPeepholeRuleReport.diagnosticCandidates(
+                        this,
+                        context.methodBody().name(),
+                        1,
+                        Map.of()
+                );
+            }
+
+            @Override
+            public String ruleId() {
+                return "followingRule";
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.peephole.following";
+            }
+        };
+        GpuRuntimeIrPeepholePass pass = new GpuRuntimeIrPeepholePass(
+                GpuRuntimeIrPeepholeRuleRegistry.of(List.of(failing, following))
+        );
+
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass))
+                .optimizeWithReport(request(fastMathTypedArtifact()));
+
+        Map<String, String> fields = report.passReports().get(0).proofArtifact().fields();
+        assertEquals("1", fields.get("candidate.count"));
+        assertEquals("1", fields.get("rule.execution.failedContinued.count"));
+        assertEquals("rule-execution-failed-continued", fields.get("rule.0.proofStatus"));
+        assertEquals("1", fields.get("rule.1.candidate.count"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
+    }
+
+    @Test
+    void peepholeRuleRegistryRejectsDuplicateRuleIds() {
+        GpuRuntimeIrPeepholeRule first = peepholeRule("duplicate", "test.peephole.first");
+        GpuRuntimeIrPeepholeRule second = peepholeRule("duplicate", "test.peephole.second");
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuRuntimeIrPeepholeRuleRegistry.of(List.of(first, second))
+        );
+
+        assertTrue(exception.getMessage().contains("Duplicate peephole rule id 'duplicate'"));
+    }
+
+    @Test
     void optimizationReportCarriesAdvisoryStrategyDecision() {
         IrGpuArtifact original = artifact("body\n  return original\n");
         GpuOptimizationStrategyDecision decision = GpuOptimizationStrategyDecision.advisory(
@@ -246,6 +662,105 @@ class GpuRuntimeIrOptimizerRegistryTest {
         assertEquals(decision, report.strategyDecision());
         assertTrue(report.toText().contains("strategy:opencl-nvidia-advisory"));
         assertTrue(report.toText().contains("advisoryOnly=true"));
+    }
+
+    @Test
+    void optimizationRequestExposesFastMathPolicyFromIrGpuArtifact() {
+        IrGpuArtifact fastMathArtifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry("kernel", "jtg_kernel", "body\n  return original\n", List.of()))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+
+        GpuRuntimeIrOptimizationRequest request = request(fastMathArtifact);
+        GpuRuntimeIrOptimizationRequest missingArtifactRequest = new GpuRuntimeIrOptimizationRequest(
+                request.compileRequest().withIrGpuArtifact(Optional.empty()),
+                Optional.empty()
+        );
+
+        assertTrue(request.fastMathEnabled());
+        assertEquals("GPUOptimize", request.optimizerPolicy().source());
+        assertFalse(missingArtifactRequest.fastMathEnabled());
+        assertEquals("default-strict", missingArtifactRequest.optimizerPolicy().source());
+    }
+
+    @Test
+    void fastMathOptimizerIsSkippedUntilMethodPolicyOptsIn() {
+        IrGpuArtifact strictArtifact = artifact("body\n  return strict\n");
+        IrGpuArtifact optimizedArtifact = artifact("body\n  return optimized\n");
+        AtomicBoolean invoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizer optimizer = new GpuRuntimeIrOptimizer() {
+            @Override
+            public Optional<IrGpuArtifact> optimize(GpuRuntimeIrOptimizationRequest request) {
+                invoked.set(true);
+                return Optional.of(optimizedArtifact);
+            }
+
+            @Override
+            public String optimizerVersion() {
+                return "optimizer:fast-math-required";
+            }
+
+            @Override
+            public boolean requiresFastMath() {
+                return true;
+            }
+        };
+
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.of(List.of(optimizer))
+                .optimizeWithReport(request(strictArtifact));
+
+        assertFalse(invoked.get());
+        assertSame(strictArtifact, report.artifact().orElseThrow());
+        assertEquals(1, report.passReports().size());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, report.passReports().get(0).outcome());
+        assertTrue(report.passReports().get(0).toLine().contains("fast-math policy disabled"));
+        assertTrue(report.passReports().get(0).toLine().contains("policySource=default-strict"));
+    }
+
+    @Test
+    void fastMathOptimizerRunsWhenMethodPolicyOptsIn() {
+        IrGpuArtifact fastMathArtifact = fastMathArtifact("body\n  return original\n");
+        IrGpuArtifact optimizedArtifact = fastMathArtifact("body\n  return optimized\n");
+        AtomicBoolean invoked = new AtomicBoolean();
+        GpuRuntimeIrOptimizer optimizer = new GpuRuntimeIrOptimizer() {
+            @Override
+            public Optional<IrGpuArtifact> optimize(GpuRuntimeIrOptimizationRequest request) {
+                invoked.set(true);
+                return Optional.of(optimizedArtifact);
+            }
+
+            @Override
+            public String optimizerVersion() {
+                return "optimizer:fast-math-enabled";
+            }
+
+            @Override
+            public boolean requiresFastMath() {
+                return true;
+            }
+        };
+
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.of(List.of(optimizer))
+                .optimizeWithReport(request(fastMathArtifact));
+
+        assertTrue(invoked.get());
+        assertSame(optimizedArtifact, report.artifact().orElseThrow());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.APPLIED, report.passReports().get(0).outcome());
     }
 
     @Test
@@ -372,6 +887,291 @@ class GpuRuntimeIrOptimizerRegistryTest {
                         List.of(),
                         List.of(IrGpuMethodBody.entry("kernel", "jtg_kernel", body, List.of()))
                 ),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static GpuRuntimeIrOptimizationPass extensionPass(String id, String version, int order) {
+        return extensionPass(id, version, order, GpuExtensionPermission.MUTATION_PROPOSAL);
+    }
+
+    private static GpuRuntimeIrPeepholeRule peepholeRule(String ruleId, String extensionId) {
+        return new GpuRuntimeIrPeepholeRule() {
+            @Override
+            public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
+                return GpuRuntimeIrPeepholeRuleReport.diagnosticCandidates(
+                        this,
+                        context.methodBody().name(),
+                        0,
+                        Map.of()
+                );
+            }
+
+            @Override
+            public String ruleId() {
+                return ruleId;
+            }
+
+            @Override
+            public String extensionId() {
+                return extensionId;
+            }
+        };
+    }
+
+    private static GpuRuntimeIrOptimizationPass extensionPass(
+            String id,
+            String version,
+            int order,
+            GpuExtensionPermission permission
+    ) {
+        return extensionPass(id, version, order, permission, new AtomicBoolean());
+    }
+
+    private static GpuRuntimeIrOptimizationPass extensionPass(
+            String id,
+            String version,
+            int order,
+            GpuExtensionPermission permission,
+            AtomicBoolean invoked
+    ) {
+        return new GpuRuntimeIrOptimizationPass() {
+            @Override
+            public GpuRuntimeIrOptimizationReport run(GpuRuntimeIrOptimizationRequest request) {
+                invoked.set(true);
+                return GpuRuntimeIrOptimizationReport.empty(request.artifact());
+            }
+
+            @Override
+            public String passName() {
+                return id;
+            }
+
+            @Override
+            public String passVersion() {
+                return version;
+            }
+
+            @Override
+            public int extensionOrder() {
+                return order;
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return permission;
+            }
+        };
+    }
+
+    private static GpuRuntimeIrOptimizationRequest productionRequest(
+            IrGpuArtifact artifact,
+            GpuProductionPromotionDecision promotionDecision
+    ) {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.openClProductionIrGpuSource(
+                        List.of(),
+                        "production"
+                )
+                .withProductionPromotionDecision(promotionDecision)
+                .withProductionPromotionOperatorAccepted(true);
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor(),
+                options,
+                GpuRuntimeDeviceProfile.openCl(
+                        "OpenCL",
+                        "Authorization GPU",
+                        "nvidia",
+                        "test-driver",
+                        "OpenCL 3.0 Test",
+                        64L,
+                        65_536L,
+                        512L,
+                        1L,
+                        true,
+                        true,
+                        false
+                ),
+                Optional.of(artifact)
+        );
+        GpuOptimizationStrategyDecision strategyDecision = new GpuOptimizationStrategyDecision(
+                "strategy:production-authorization-test",
+                "nvidia",
+                "production",
+                false,
+                true,
+                "test strategy has accepted evidence",
+                new GpuOptimizationVendorBaseline(
+                        "nvidia",
+                        "promotion-eligible-test",
+                        true,
+                        true,
+                        "test",
+                        List.of()
+                ),
+                List.of()
+        );
+        return new GpuRuntimeIrOptimizationRequest(compileRequest, Optional.of(artifact), strategyDecision);
+    }
+
+    private static GpuRuntimeIrOptimizationReport acceptedEvidenceReport(
+            IrGpuArtifact artifact,
+            GpuOptimizationStrategyDecision strategyDecision
+    ) {
+        String identity = GpuRuntimeIrOptimizerRegistry.identityOf(Optional.of(artifact));
+        GpuRuntimeIrOptimizationPassReport passReport = GpuRuntimeIrOptimizationPassReport.applied(
+                "pass:production-authorized",
+                identity,
+                identity,
+                "accepted-runtime-proof",
+                List.of("rollback path verified")
+        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                "runtime-equivalence-test",
+                "accepted",
+                Map.of("runtimeEquivalencePassed", "true")
+        ));
+        return new GpuRuntimeIrOptimizationReport(Optional.of(artifact), List.of(passReport), strategyDecision);
+    }
+
+    private static GpuProductionPromotionDecision productionEnabledDecision() {
+        return new GpuProductionPromotionDecision(
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                "production-ready",
+                true,
+                true,
+                true,
+                "none",
+                "none",
+                "production extension promotion accepted for test"
+        );
+    }
+
+    private static IrGpuArtifact fastMathArtifact(String body) {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry("kernel", "jtg_kernel", body, List.of()))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(2),
+                                "right", List.of(5)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(3),
+                                "right", List.of(4)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "b"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableRef", Map.of("name", "c"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return ((a * b) + c)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact repeatedCseTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0, 5, 10),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrVariableDeclaration", Map.of("typeName", "int", "name", "first"), Map.of("initializer", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(2),
+                                "right", List.of(3)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "b"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "first"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableDeclaration", Map.of("typeName", "int", "name", "second"), Map.of("initializer", List.of(6))),
+                        new IrGpuTypedNode(6, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(7),
+                                "right", List.of(8)
+                        )),
+                        new IrGpuTypedNode(7, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(8, "GpuIrVariableRef", Map.of("name", "b"), Map.of()),
+                        new IrGpuTypedNode(9, "GpuIrVariableRef", Map.of("name", "second"), Map.of()),
+                        new IrGpuTypedNode(10, "GpuIrReturn", Map.of(), Map.of("value", List.of(11))),
+                        new IrGpuTypedNode(11, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(4),
+                                "right", List.of(9)
+                        ))
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  var int first = (a + b)\n  var int second = (a + b)\n  return (first + second)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
                 List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
                 "opencl",
                 "off"

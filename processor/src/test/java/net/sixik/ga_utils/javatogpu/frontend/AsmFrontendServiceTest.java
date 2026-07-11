@@ -202,6 +202,8 @@ class AsmFrontendServiceTest {
         assertTrue(result.irGpuArtifact().module().methodBodies().get(0).body().contains("method jtg_kernel source=kernel"));
         assertTrue(result.irGpuArtifact().module().methodBodies().get(0).bodyIndex().helperCalls().contains("jtg_fn_Helpers_square_float"));
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().derivedOpenClResource());
+        assertEquals(false, result.irGpuArtifact().optimizerPolicyMetadata().fastMath());
+        assertEquals("default-strict", result.irGpuArtifact().optimizerPolicyMetadata().source());
 
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.openClResource());
         assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", result.irGpuResource());
@@ -216,6 +218,51 @@ class AsmFrontendServiceTest {
         assertEquals("input", descriptor.parameterDescriptors().get(0).name());
         assertEquals("float[]", descriptor.parameterDescriptors().get(0).javaType());
         assertEquals(GpuKernelParameterAccess.READ_WRITE, descriptor.parameterDescriptors().get(0).access());
+    }
+
+    @Test
+    void preservesGpuDeviceConstraintFromAsmParsedMethodMetadata() {
+        ParsedGpuMethod parsedKernel = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser().parseMethod(
+                """
+                        @GPU
+                        @GPUDeviceConstraint(
+                            backends = {GpuBackendTarget.OPENCL},
+                            vendors = {GpuVendorTarget.AMD},
+                            deviceClasses = {GpuDeviceClassTarget.DGPU},
+                            requiredFeatures = {"images"}
+                        )
+                        void kernel(@GPUGlobal float[] output) {
+                            output[0] = 1.0f;
+                        }
+                        """,
+                "Demo",
+                "sample.Demo"
+        );
+        MethodNode methodNode = methodNode(
+                DEMO_OWNER,
+                "kernel",
+                "([F)V",
+                Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+                mv -> {
+                    mv.visitCode();
+                    mv.visitInsn(Opcodes.RETURN);
+                    mv.visitMaxs(0, 0);
+                    mv.visitEnd();
+                }
+        );
+
+        GpuFrontendCompilationResult result = AsmFrontendService.createDefault().compileStructured(
+                new AsmGpuMethod(DEMO_OWNER, parsedKernel, methodNode),
+                List.of(),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertEquals("asm", result.irGpuArtifact().header().sourceFrontend());
+        var constraint = result.irGpuArtifact().entryDeviceConstraint().orElseThrow();
+        assertEquals(List.of(net.sixik.ga_utils.javatogpu.api.GpuVendorTarget.AMD), constraint.supportedVendors());
+        assertEquals(List.of(net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget.DGPU), constraint.supportedDeviceClasses());
+        assertEquals(List.of("images"), constraint.requiredFeatures());
     }
 
     @Test

@@ -32,6 +32,13 @@ public interface GpuRuntimeIrOptimizer {
         return getClass().getName();
     }
 
+    /**
+     * Returns whether this optimizer may change strict floating-point behavior.
+     */
+    default boolean requiresFastMath() {
+        return false;
+    }
+
     static GpuRuntimeIrOptimizer noOp() {
         return new GpuRuntimeIrOptimizer() {
             @Override

@@ -36,7 +36,15 @@ public record GpuRuntimeIrSelection(
         selectedIdentity = normalize(selectedIdentity, IrGpuArtifactIdentity.stableIdentity(selectedArtifact));
         fallbackDecision = normalize(fallbackDecision, GpuRuntimeCompileProvenance.NO_FALLBACK);
         productionIrGate = productionIrGate == null
-                ? GpuProductionIrAcceptanceGate.evaluate("GPU backend", "runtime optimized IrGpu", "off", false, false, null)
+                ? GpuProductionIrAcceptanceGate.evaluate(
+                        "GPU backend",
+                        "runtime optimized IrGpu",
+                        "off",
+                        false,
+                        false,
+                        null,
+                        false
+                )
                 : productionIrGate;
         diagnostic = normalize(diagnostic, "runtime IR selection did not provide diagnostics");
     }
@@ -174,7 +182,8 @@ public record GpuRuntimeIrSelection(
                 compileProvenance.optimizationProfile(),
                 productionOptimizerGate.productionProfileRequested(),
                 productionOptimizerGate.accepted(),
-                compileProvenance.backendOptions().productionPromotionDecisionMode()
+                compileProvenance.backendOptions().productionPromotionDecisionMode(),
+                compileProvenance.backendOptions().productionPromotionOperatorAccepted()
         );
     }
 

@@ -1,5 +1,9 @@
 package net.sixik.ga_utils.javatogpu.frontend.ir.artifact;
 
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -45,14 +49,59 @@ public final class IrGpuArtifactParser {
                 parseLaunchMetadata(properties),
                 parseValidationMetadata(properties),
                 parseFeatureMetadata(properties),
+                parseOptimizerPolicyMetadata(properties),
                 parseRegenerationMetadata(properties),
                 parseStructMetadata(properties),
                 parseConstants(properties),
                 parseConstantData(properties),
                 backendOutputs,
                 properties.getProperty("runtime.defaultBackend", "opencl"),
-                properties.getProperty("runtime.optimizationProfile", "off")
+                properties.getProperty("runtime.optimizationProfile", "off"),
+                parseMethodDeviceConstraints(properties),
+                parseMethodFallbackVariants(properties)
         );
+    }
+
+    private static List<IrGpuMethodFallbackVariant> parseMethodFallbackVariants(Properties properties) {
+        int count = parseInt(properties, "methodFallbackVariant.count", 0);
+        ArrayList<IrGpuMethodFallbackVariant> variants = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "methodFallbackVariant." + index + ".";
+            variants.add(new IrGpuMethodFallbackVariant(
+                    require(properties, prefix + "methodName"),
+                    require(properties, prefix + "emittedName"),
+                    require(properties, prefix + "groupId"),
+                    properties.getProperty(prefix + "variantId", ""),
+                    parseInt(properties, prefix + "priority", 0),
+                    properties.getProperty(prefix + "compatibilityNote", ""),
+                    properties.getProperty(prefix + "source", "GPUFallbackVariant")
+            ));
+        }
+        return List.copyOf(variants);
+    }
+
+    private static List<IrGpuMethodDeviceConstraint> parseMethodDeviceConstraints(Properties properties) {
+        int count = parseInt(properties, "methodDeviceConstraint.count", 0);
+        ArrayList<IrGpuMethodDeviceConstraint> constraints = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "methodDeviceConstraint." + index + ".";
+            constraints.add(new IrGpuMethodDeviceConstraint(
+                    require(properties, prefix + "methodName"),
+                    require(properties, prefix + "emittedName"),
+                    parseIndexedValues(properties, prefix + "backend").stream()
+                            .map(GpuBackendTarget::valueOf)
+                            .toList(),
+                    parseIndexedValues(properties, prefix + "vendor").stream()
+                            .map(GpuVendorTarget::valueOf)
+                            .toList(),
+                    parseIndexedValues(properties, prefix + "deviceClass").stream()
+                            .map(GpuDeviceClassTarget::valueOf)
+                            .toList(),
+                    parseIndexedValues(properties, prefix + "requiredFeature"),
+                    properties.getProperty(prefix + "source", "default-unconstrained")
+            ));
+        }
+        return List.copyOf(constraints);
     }
 
     private static List<IrGpuModuleMethod> parseHelpers(Properties properties) {
@@ -91,12 +140,65 @@ public final class IrGpuArtifactParser {
                     require(properties, prefix + "emittedName"),
                     require(properties, prefix + "format"),
                     require(properties, prefix + "body"),
+                    parseTypedBody(properties, prefix + "typed."),
                     parseBodyIndex(properties, prefix),
                     parseMethodBodyDependencies(properties, prefix),
                     parseSourceLocation(properties, prefix)
             ));
         }
         return List.copyOf(methodBodies);
+    }
+
+    private static IrGpuTypedBody parseTypedBody(Properties properties, String prefix) {
+        String format = properties.getProperty(prefix + "format", "none");
+        int rootCount = parseInt(properties, prefix + "root.count", 0);
+        ArrayList<Integer> roots = new ArrayList<>();
+        for (int index = 0; index < rootCount; index++) {
+            roots.add(parseInt(properties, prefix + "root." + index));
+        }
+        int nodeCount = parseInt(properties, prefix + "node.count", 0);
+        ArrayList<IrGpuTypedNode> nodes = new ArrayList<>();
+        for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+            String nodePrefix = prefix + "node." + nodeIndex + ".";
+            nodes.add(new IrGpuTypedNode(
+                    parseInt(properties, nodePrefix + "id"),
+                    require(properties, nodePrefix + "kind"),
+                    parseNamedValues(properties, nodePrefix + "attribute"),
+                    parseNamedChildLists(properties, nodePrefix + "child")
+            ));
+        }
+        return new IrGpuTypedBody(format, roots, nodes);
+    }
+
+    private static java.util.Map<String, String> parseNamedValues(Properties properties, String prefix) {
+        int count = parseInt(properties, prefix + ".count", 0);
+        java.util.LinkedHashMap<String, String> values = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < count; index++) {
+            values.put(
+                    require(properties, prefix + "." + index + ".name"),
+                    properties.getProperty(prefix + "." + index + ".value", "")
+            );
+        }
+        return java.util.Map.copyOf(values);
+    }
+
+    private static java.util.Map<String, java.util.List<Integer>> parseNamedChildLists(
+            Properties properties,
+            String prefix
+    ) {
+        int count = parseInt(properties, prefix + ".count", 0);
+        java.util.LinkedHashMap<String, java.util.List<Integer>> children = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < count; index++) {
+            String childPrefix = prefix + "." + index + ".";
+            String name = require(properties, childPrefix + "name");
+            int nodeCount = parseInt(properties, childPrefix + "node.count", 0);
+            ArrayList<Integer> nodeIds = new ArrayList<>();
+            for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+                nodeIds.add(parseInt(properties, childPrefix + "node." + nodeIndex));
+            }
+            children.put(name, List.copyOf(nodeIds));
+        }
+        return java.util.Map.copyOf(children);
     }
 
     private static IrGpuBodyIndex parseBodyIndex(Properties properties, String prefix) {
@@ -194,6 +296,13 @@ public final class IrGpuArtifactParser {
         return new IrGpuFeatureMetadata(
                 parseIndexedValues(properties, "feature.required"),
                 parseIndexedValues(properties, "feature.optional")
+        );
+    }
+
+    private static IrGpuOptimizerPolicyMetadata parseOptimizerPolicyMetadata(Properties properties) {
+        return new IrGpuOptimizerPolicyMetadata(
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.fastMath", "false")),
+                properties.getProperty("optimizerPolicy.source", "default-strict")
         );
     }
 

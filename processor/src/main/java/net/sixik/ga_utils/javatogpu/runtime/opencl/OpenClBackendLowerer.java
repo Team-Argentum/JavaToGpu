@@ -6,14 +6,12 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionGate;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingPolicy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionIrAcceptanceGate;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionActivationToken;
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionOperatorAcceptance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFallbackEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeProductionProfiles;
 
 import java.util.Objects;
@@ -61,13 +59,8 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
                 compileRequest.options().backendOptions()
         );
         if (sourceSwitchingPolicy.irGpuSourceRequested()) {
-            GpuBackendSourceSwitchingDecision sourceSwitchingDecision = sourceSwitchingDecision(
-                    compileRequest,
-                    sourceReconstructionResult,
-                    sourceSwitchingPolicy
-            );
             validateProductionSourceSwitching(compileRequest, sourceSwitchingPolicy);
-            return lowerIrGpuSource(compileRequest, sourceReconstructionResult, sourceSwitchingDecision);
+            return lowerIrGpuSource(compileRequest, sourceReconstructionResult);
         }
         return GpuBackendModuleArtifact.openClSource(
                 compileRequest.descriptor().kernelSource(),
@@ -82,26 +75,33 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
             GpuRuntimeCompileRequest compileRequest,
             GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy
     ) {
+        GpuProductionPromotionOperatorAcceptance.Result operatorAcceptance =
+                GpuProductionPromotionOperatorAcceptance.evaluate(compileRequest);
+        GpuProductionActivationToken.Result activationToken = GpuProductionActivationToken.evaluate(compileRequest);
         GpuProductionIrAcceptanceGate.evaluate(
                 "OpenCL",
                 "IrGpu source",
                 compileRequest.options().optimizationProfile(),
                 GpuRuntimeProductionProfiles.isProductionProfile(compileRequest.options().optimizationProfile()),
                 sourceSwitchingPolicy.productionSourceSwitchingEnabled(),
-                sourceSwitchingPolicy.productionPromotionDecisionMode()
+                sourceSwitchingPolicy.productionPromotionDecisionMode(),
+                operatorAcceptance.accepted(),
+                activationToken.accepted()
         ).throwIfRejected("pass backend option "
                 + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY
                 + "="
                 + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
-                + " only after accepted production-promotion evidence is loaded");
+                + " only after accepted production-promotion evidence is loaded; "
+                + operatorAcceptance.diagnostic()
+                + "; "
+                + activationToken.diagnostic());
     }
 
     private GpuBackendModuleArtifact lowerIrGpuSource(
             GpuRuntimeCompileRequest compileRequest,
-            GpuBackendSourceReconstructionResult sourceReconstructionResult,
-            GpuBackendSourceSwitchingDecision sourceSwitchingDecision
+            GpuBackendSourceReconstructionResult sourceReconstructionResult
     ) {
-        if ("reject-irgpu-source-unavailable".equals(sourceSwitchingDecision.decision())) {
+        if (!sourceReconstructionResult.reconstructed() || !sourceReconstructionResult.sourceAvailable()) {
             throw new IllegalStateException(
                     "OpenCL IrGpu source compilation was requested with backend option "
                             + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY
@@ -111,7 +111,8 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
                             + sourceReconstructionResult.toLine()
             );
         }
-        if ("reject-irgpu-source-parity".equals(sourceSwitchingDecision.decision())) {
+        if (!sourceReconstructionResult.diagnostics().contains("sourceParity.checked=true")
+                || !sourceReconstructionResult.diagnostics().contains("sourceParity.matched=true")) {
             throw new IllegalStateException(
                     "OpenCL IrGpu source compilation was requested with backend option "
                             + GpuBackendCompileOptions.OPENCL_SOURCE_SELECTION_PROPERTY
@@ -121,51 +122,12 @@ public final class OpenClBackendLowerer implements GpuBackendLowerer {
                             + sourceReconstructionResult.toLine()
             );
         }
-        if (!sourceSwitchingDecision.decision().startsWith("compile-irgpu-source-")) {
-            throw new IllegalStateException(
-                    "OpenCL IrGpu source compilation was rejected by backend source switching decision: "
-                            + sourceSwitchingDecision.toPropertiesText().replace('\n', ' ')
-            );
-        }
         return GpuBackendModuleArtifact.openClSource(
                 sourceReconstructionResult.source(),
                 compileRequest.descriptor().kernelResource() + "#irgpu-reconstructed",
                 VERSION,
                 sourceReconstructionResult.sourceOrigin(),
                 sourceReconstructionResult.runtimeLoadMode()
-        );
-    }
-
-    private GpuBackendSourceSwitchingDecision sourceSwitchingDecision(
-            GpuRuntimeCompileRequest compileRequest,
-            GpuBackendSourceReconstructionResult sourceReconstructionResult,
-            GpuBackendSourceSwitchingPolicy sourceSwitchingPolicy
-    ) {
-        GpuBackendModuleArtifact candidateArtifact = GpuBackendModuleArtifact.openClSource(
-                sourceReconstructionResult.sourceAvailable()
-                        ? sourceReconstructionResult.source()
-                        : compileRequest.descriptor().kernelSource(),
-                sourceReconstructionResult.sourceAvailable()
-                        ? compileRequest.descriptor().kernelResource() + "#irgpu-reconstructed"
-                        : compileRequest.descriptor().kernelResource(),
-                VERSION,
-                sourceReconstructionResult.sourceOrigin(),
-                sourceReconstructionResult.runtimeLoadMode()
-        );
-        GpuBackendSourcePromotionGate sourcePromotionGate = GpuBackendSourcePromotionGate.evaluate(
-                sourceReconstructionResult,
-                GpuRuntimeEquivalenceEvidence.notRun(
-                        compileRequest,
-                        "runtime equivalence is evaluated by validation/promotion gates, not by OpenCL lowering"
-                ),
-                GpuRuntimeFallbackEvidence.none()
-        );
-        return GpuBackendSourceSwitchingDecision.evaluate(
-                GpuRuntimeCompileProvenance.from(compileRequest),
-                candidateArtifact,
-                sourceReconstructionResult,
-                sourcePromotionGate,
-                sourceSwitchingPolicy
         );
     }
 

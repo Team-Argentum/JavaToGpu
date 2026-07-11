@@ -111,6 +111,26 @@ public record GpuRuntimeIrOptimizationPassReport(
         );
     }
 
+    public static GpuRuntimeIrOptimizationPassReport isolatedFailure(
+            String optimizerVersion,
+            String originalIrIdentity,
+            RuntimeException exception
+    ) {
+        return new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.TRANSFORM,
+                optimizerVersion,
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                originalIrIdentity,
+                originalIrIdentity,
+                "extension-failure-isolated",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields("none", "none", java.util.Map.of()),
+                exception == null || exception.getMessage() == null || exception.getMessage().isBlank()
+                        ? List.of("optimizer extension failed and the advisory pipeline continued")
+                        : List.of(exception.getMessage())
+        );
+    }
+
     public String toLine() {
         StringBuilder builder = new StringBuilder();
         builder.append("stage=")
@@ -163,6 +183,10 @@ public record GpuRuntimeIrOptimizationPassReport(
                 proofArtifact,
                 diagnostics
         );
+    }
+
+    public boolean analysisOnly() {
+        return "true".equalsIgnoreCase(proofArtifact.fields().getOrDefault("analysisOnly", "false"));
     }
 
     private static String normalize(String value, String fallback) {

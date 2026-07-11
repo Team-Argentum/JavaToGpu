@@ -21,6 +21,7 @@ class GpuBackendSourceSwitchingPolicyTest {
         assertEquals("disabled", policy.productionSourceSwitching());
         assertFalse(policy.productionSourceSwitchingEnabled());
         assertEquals(GpuProductionPromotionDecision.DIAGNOSTIC_ONLY, policy.productionPromotionDecisionMode());
+        assertFalse(policy.productionPromotionOperatorAccepted());
     }
 
     @Test
@@ -45,6 +46,28 @@ class GpuBackendSourceSwitchingPolicyTest {
         assertTrue(policy.irGpuSourceRequested());
         assertEquals("enabled", policy.productionSourceSwitching());
         assertTrue(policy.productionSourceSwitchingEnabled());
+        assertFalse(policy.productionPromotionOperatorAccepted());
+    }
+
+    @Test
+    void translatesExplicitOperatorAcceptanceSeparatelyFromProductionDecision() {
+        GpuBackendSourceSwitchingPolicy policy = GpuBackendSourceSwitchingPolicy.from(
+                GpuBackendCompileOptions.openClProductionIrGpuSource(List.of())
+                        .withProductionPromotionDecision(new GpuProductionPromotionDecision(
+                                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                                "production-ready",
+                                true,
+                                true,
+                                true,
+                                "none",
+                                "none",
+                                "test production decision"
+                        ))
+                        .withProductionPromotionOperatorAccepted(true)
+        );
+
+        assertEquals("production-enabled", policy.productionPromotionDecisionMode());
+        assertTrue(policy.productionPromotionOperatorAccepted());
     }
 
     @Test
@@ -61,6 +84,7 @@ class GpuBackendSourceSwitchingPolicyTest {
         assertEquals("disabled", policy.productionSourceSwitching());
         assertFalse(policy.productionSourceSwitchingEnabled());
         assertEquals("review-ready", policy.productionPromotionDecisionMode());
+        assertFalse(policy.productionPromotionOperatorAccepted());
     }
 
     @Test

@@ -17,7 +17,8 @@ class GpuProductionIrAcceptanceGateTest {
                 GpuRuntimeCompileOptions.OPENCL_IRGPU_SOURCE_REVIEW_PROFILE,
                 false,
                 false,
-                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY
+                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY,
+                false
         );
 
         assertTrue(result.accepted());
@@ -34,7 +35,8 @@ class GpuProductionIrAcceptanceGateTest {
                 "vendor-tuned",
                 true,
                 false,
-                GpuProductionPromotionDecision.PRODUCTION_ENABLED
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                true
         );
 
         assertFalse(result.accepted());
@@ -51,7 +53,8 @@ class GpuProductionIrAcceptanceGateTest {
                 "vendor-tuned",
                 true,
                 true,
-                GpuProductionPromotionDecision.REVIEW_READY
+                GpuProductionPromotionDecision.REVIEW_READY,
+                true
         );
 
         assertFalse(result.accepted());
@@ -62,14 +65,33 @@ class GpuProductionIrAcceptanceGateTest {
     }
 
     @Test
-    void productionProfileAcceptsOnlyWhenSwitchingAndDecisionAreEnabled() {
+    void productionProfileRejectsWhenOperatorHasNotAcceptedPromotion() {
         GpuProductionIrAcceptanceGate.Result result = GpuProductionIrAcceptanceGate.evaluate(
                 "OpenCL",
                 "IrGpu source",
                 "vendor-tuned",
                 true,
                 true,
-                GpuProductionPromotionDecision.PRODUCTION_ENABLED
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                false
+        );
+
+        assertFalse(result.accepted());
+        assertEquals("blocked", result.status());
+        assertEquals(GpuProductionPromotionDecision.PRODUCTION_ENABLED, result.decisionMode());
+        assertTrue(result.diagnostic().contains("not explicitly accepted by the operator"));
+    }
+
+    @Test
+    void productionProfileAcceptsOnlyWhenSwitchingDecisionAndOperatorAcceptanceAreEnabled() {
+        GpuProductionIrAcceptanceGate.Result result = GpuProductionIrAcceptanceGate.evaluate(
+                "OpenCL",
+                "IrGpu source",
+                "vendor-tuned",
+                true,
+                true,
+                GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                true
         );
 
         assertTrue(result.accepted());
@@ -85,7 +107,8 @@ class GpuProductionIrAcceptanceGateTest {
                 "vendor-tuned",
                 true,
                 true,
-                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY
+                GpuProductionPromotionDecision.DIAGNOSTIC_ONLY,
+                true
         );
 
         IllegalStateException exception = assertThrows(

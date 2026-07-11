@@ -11,6 +11,8 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrArtifactLoader;
@@ -175,6 +177,588 @@ class OpenClIrGpuSourceReconstructorTest {
         assertEquals(descriptorSource, result.source());
         assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
         assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+    }
+
+    @Test
+    void reconstructsElseIfIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    int value = input[0];
+                    if ((value > 0)) {
+                        output[0] = value;
+                    } else {
+                        if ((value < 0)) {
+                            output[0] = (0 - value);
+                        } else {
+                            output[0] = 0;
+                        }
+                    }
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = artifact(
+                """
+                        body
+                          var int value = input[0]
+                          if (value > 0)
+                            set output[0] = value
+                          else if (value < 0)
+                            set output[0] = (0 - value)
+                          else
+                            set output[0] = 0
+                          return
+                        """,
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(
+                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                )
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+    }
+
+    @Test
+    void reconstructsStructInitializerIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                typedef struct{
+                    float x;
+                    float y;
+                } Vec2;
+
+                __kernel void jtg_kernel(__global float* input, __global float* output) {
+                    Vec2 value = (Vec2){input[0], (input[0] + 1.0f)};
+                    output[0] = value.x;
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of("Vec2"),
+                        List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "jtg_kernel",
+                                """
+                                        body
+                                          var Vec2 value = init<Vec2>(input[0], (input[0] + 1.0f))
+                                          set output[0] = value.x
+                                          return
+                                        """,
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "float[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())
+                ),
+                IrGpuLaunchMetadata.defaultOneDimensional(),
+                IrGpuValidationMetadata.frontendSubset(),
+                IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(new IrGpuStructMetadata(
+                        "sample.Vec2",
+                        "Vec2",
+                        List.of(
+                                new IrGpuStructFieldMetadata("x", "float", List.of()),
+                                new IrGpuStructFieldMetadata("y", "float", List.of())
+                        ),
+                        List.of()
+                )),
+                List.of(),
+                List.of(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+        assertTrue(result.diagnostics().contains("OpenCL source assembler emitted 1 struct typedef(s)"));
+    }
+
+    @Test
+    void reconstructsPrivatePointerLikeLocalIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                void jtg_fn_clamp_FloatPtr(float* ptr);
+
+                void jtg_fn_clamp_FloatPtr(float* ptr) {
+                    if (((*ptr) > 32.0F)) {
+                        (*ptr) = 32.0F;
+                    }
+                }
+                __kernel void basicMath(__global float* input, __global float* output) {
+                    int id = get_global_id(0);
+                    float ptr = input[id];
+                    jtg_fn_clamp_FloatPtr((&ptr));
+                    output[id] = ptr;
+                }
+                """;
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "basicMath",
+                        List.of(new IrGpuModuleMethod(
+                                "clamp",
+                                "jtg_fn_clamp_FloatPtr",
+                                "void",
+                                List.of(new IrGpuEntryParameter("ptr", "FloatPtr", "PRIVATE", false, List.of()))
+                        )),
+                        List.of(),
+                        List.of(
+                                IrGpuMethodBody.entry(
+                                        "kernel",
+                                        "basicMath",
+                                        """
+                                                body
+                                                  var int id = intrinsic(get_global_id template="" args=[0])
+                                                  var FloatPtr ptr = input[id]
+                                                  expr helper(jtg_fn_clamp_FloatPtr args=[(&ptr)])
+                                                  set output[id] = ptr
+                                                """,
+                                        List.of("jtg_fn_clamp_FloatPtr")
+                                ),
+                                IrGpuMethodBody.helper(
+                                        "clamp",
+                                        "jtg_fn_clamp_FloatPtr",
+                                        """
+                                                body
+                                                  if ((*ptr) > 32.0F)
+                                                    set (*ptr) = 32.0F
+                                                """,
+                                        List.of()
+                                )
+                        )
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "float[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())
+                ),
+                IrGpuLaunchMetadata.defaultOneDimensional(),
+                IrGpuValidationMetadata.frontendSubset(),
+                IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/basicMath.cl")),
+                "opencl",
+                "off"
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/basicMath.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+        assertTrue(result.diagnostics().contains("OpenCL source assembler emitted 1 helper function(s)"));
+    }
+
+    @Test
+    void reconstructsElseIfChainIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    int value = input[0];
+                    if ((value > 1)) {
+                        output[0] = 3;
+                    } else {
+                        if ((value == 1)) {
+                            output[0] = 2;
+                        } else {
+                            if ((value == 0)) {
+                                output[0] = 1;
+                            } else {
+                                output[0] = 0;
+                            }
+                        }
+                    }
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = artifact(
+                """
+                        body
+                          var int value = input[0]
+                          if (value > 1)
+                            set output[0] = 3
+                          else if (value == 1)
+                            set output[0] = 2
+                          else if (value == 0)
+                            set output[0] = 1
+                          else
+                            set output[0] = 0
+                          return
+                        """,
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(
+                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                )
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+    }
+
+    @Test
+    void reconstructsLoopBreakContinueIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    int sum = 0;
+                    for (int i = 0; (i < 8); i = (i + 1)) {
+                        if ((input[i] < 0)) {
+                            continue;
+                        }
+                        if ((input[i] == 0)) {
+                            break;
+                        }
+                        sum = (sum + input[i]);
+                    }
+                    output[0] = sum;
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = artifact(
+                """
+                        body
+                          var int sum = 0
+                          for init=(var int i = 0) cond=(i < 8) update=(set i = (i + 1))
+                            if (input[i] < 0)
+                              continue
+                            if (input[i] == 0)
+                              break
+                            set sum = (sum + input[i])
+                          set output[0] = sum
+                          return
+                        """,
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(
+                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                )
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+    }
+
+    @Test
+    void reconstructsWhileBreakContinueIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    int i = 0;
+                    int sum = 0;
+                    while ((i < 8)) {
+                        if ((input[i] < 0)) {
+                            i = (i + 1);
+                            continue;
+                        }
+                        if ((input[i] == 0)) {
+                            break;
+                        }
+                        sum = (sum + input[i]);
+                        i = (i + 1);
+                    }
+                    output[0] = sum;
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = artifact(
+                """
+                        body
+                          var int i = 0
+                          var int sum = 0
+                          while (i < 8)
+                            if (input[i] < 0)
+                              set i = (i + 1)
+                              continue
+                            if (input[i] == 0)
+                              break
+                            set sum = (sum + input[i])
+                            set i = (i + 1)
+                          set output[0] = sum
+                          return
+                        """,
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(
+                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                )
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+    }
+
+    @Test
+    void reconstructsDoWhileBreakContinueIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    int i = 0;
+                    int sum = 0;
+                    do {
+                        if ((input[i] < 0)) {
+                            i = (i + 1);
+                            continue;
+                        }
+                        if ((input[i] == 0)) {
+                            break;
+                        }
+                        sum = (sum + input[i]);
+                        i = (i + 1);
+                    } while ((i < 8));
+                    output[0] = sum;
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = artifact(
+                """
+                        body
+                          var int i = 0
+                          var int sum = 0
+                          do
+                            if (input[i] < 0)
+                              set i = (i + 1)
+                              continue
+                            if (input[i] == 0)
+                              break
+                            set sum = (sum + input[i])
+                            set i = (i + 1)
+                          while (i < 8)
+                          set output[0] = sum
+                          return
+                        """,
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(
+                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                )
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+    }
+
+    @Test
+    void reconstructsSwitchMultiLabelIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    int selector = input[0];
+                    switch (selector) {
+                        case 0:
+                        case 1:
+                            output[0] = 10;
+                            break;
+                        case 2:
+                            output[0] = 20;
+                            break;
+                        default:
+                            output[0] = 30;
+                    }
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = artifact(
+                """
+                        body
+                          var int selector = input[0]
+                          switch selector
+                            case 0,1
+                              set output[0] = 10
+                              break
+                            case 2
+                              set output[0] = 20
+                              break
+                            default
+                              set output[0] = 30
+                          return
+                        """,
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(
+                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                )
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+    }
+
+    @Test
+    void reconstructsHelperControlFlowIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                int jtg_fn_clamp_accumulate(__global int* input, int limit);
+
+                int jtg_fn_clamp_accumulate(__global int* input, int limit) {
+                    int sum = 0;
+                    for (int i = 0; (i < limit); i = (i + 1)) {
+                        if ((input[i] < 0)) {
+                            continue;
+                        } else {
+                            if ((input[i] == 0)) {
+                                break;
+                            } else {
+                                sum = (sum + input[i]);
+                            }
+                        }
+                    }
+                    return sum;
+                }
+                __kernel void jtg_kernel(__global int* input, __global int* output) {
+                    output[0] = jtg_fn_clamp_accumulate(input, 8);
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(new IrGpuModuleMethod(
+                                "clampAccumulate",
+                                "jtg_fn_clamp_accumulate",
+                                "int",
+                                List.of(
+                                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                                        new IrGpuEntryParameter("limit", "int", "PRIVATE", false, List.of())
+                                )
+                        )),
+                        List.of(),
+                        List.of(
+                                IrGpuMethodBody.helper(
+                                        "clampAccumulate",
+                                        "jtg_fn_clamp_accumulate",
+                                        """
+                                                body
+                                                  var int sum = 0
+                                                  for init=(var int i = 0) cond=(i < limit) update=(set i = (i + 1))
+                                                    if (input[i] < 0)
+                                                      continue
+                                                    else if (input[i] == 0)
+                                                      break
+                                                    else
+                                                      set sum = (sum + input[i])
+                                                  return sum
+                                                """,
+                                        List.of()
+                                ),
+                                IrGpuMethodBody.entry(
+                                        "kernel",
+                                        "jtg_kernel",
+                                        """
+                                                body
+                                                  set output[0] = helper(jtg_fn_clamp_accumulate args=[input, 8])
+                                                  return
+                                                """,
+                                        List.of("jtg_fn_clamp_accumulate")
+                                )
+                        )
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "int[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                ),
+                IrGpuLaunchMetadata.defaultOneDimensional(),
+                IrGpuValidationMetadata.frontendSubset(),
+                IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
+        assertTrue(result.diagnostics().contains("OpenCL source assembler emitted 1 helper function(s)"));
     }
 
     @Test
