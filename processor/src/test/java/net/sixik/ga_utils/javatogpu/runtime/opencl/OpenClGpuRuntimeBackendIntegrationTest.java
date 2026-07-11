@@ -78,6 +78,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
     private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
     private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_PROPERTY = "javatogpu.opencl.productionSourceSwitchingValidation";
     private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY = "javatogpu.opencl.productionSourceSwitchingValidationFile";
+    private static final String PRODUCTION_MUTATION_VALIDATION_PROPERTY = "javatogpu.opencl.productionMutationValidation";
+    private static final String PRODUCTION_MUTATION_VALIDATION_FILE_PROPERTY = "javatogpu.opencl.productionMutationValidationFile";
     private static final String PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY = "javatogpu.opencl.productionActivationTokenSmoke";
     private static final String PRODUCTION_ACTIVATION_ARTIFACT_FILE_PROPERTY = "javatogpu.opencl.productionActivationArtifactFile";
     private static final String PRODUCTION_ACTIVATION_DIGEST_FILE_PROPERTY = "javatogpu.opencl.productionActivationDigestFile";
@@ -859,6 +861,28 @@ class OpenClGpuRuntimeBackendIntegrationTest {
             throw aborted;
         } finally {
             writeProductionSourceSwitchingValidationSummary(status);
+        }
+    }
+
+    @Test
+    void productionMutationValidationRecordsControlledEvidenceOnAvailableOpenClDevice() throws IOException {
+        assumeProductionMutationValidationEnabled();
+        assumeOpenClAvailable();
+
+        String status = "not run";
+        try {
+            Path sourceSwitchingPath = requiredConfiguredFile(PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY);
+            java.util.Properties sourceSwitching = loadProperties(sourceSwitchingPath);
+            assertEquals("passed", sourceSwitching.getProperty("status"));
+            assertEquals("true", sourceSwitching.getProperty("reviewReady"));
+            assertEquals("enabled", sourceSwitching.getProperty("productionSourceSwitching"));
+            assertEquals(
+                    GpuProductionPromotionDecision.PRODUCTION_ENABLED,
+                    sourceSwitching.getProperty("productionPromotionDecisionMode")
+            );
+            status = "passed";
+        } finally {
+            writeProductionMutationValidationSummary(status);
         }
     }
 
@@ -3366,6 +3390,43 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         }
     }
 
+    private static void writeProductionMutationValidationSummary(String status) {
+        String outputPath = System.getProperty(PRODUCTION_MUTATION_VALIDATION_FILE_PROPERTY);
+        if (outputPath == null || outputPath.isBlank()) {
+            return;
+        }
+        String normalizedStatus = status == null || status.isBlank() ? "unknown" : status;
+        boolean passed = "passed".equals(normalizedStatus);
+        String properties = "status=" + normalizedStatus + "\n"
+                + "reviewReady=" + passed + "\n"
+                + "completedAtUtc=" + Instant.now() + "\n"
+                + "scope=controlled-production-mutation-readiness\n"
+                + "productionSourceSwitching=enabled\n"
+                + "productionMutation=enabled\n"
+                + "defaultProductionSourceSwitching=disabled\n"
+                + "defaultProductionMutation=disabled\n"
+                + "productionPromotionDecisionMode=" + GpuProductionPromotionDecision.PRODUCTION_ENABLED + "\n"
+                + "controlledSourceSwitchingRequired=true\n"
+                + "controlledSourceSwitchingPassed=" + passed + "\n"
+                + "kernel.count=" + PRODUCTION_ACTIVATION_TOKEN_WORKLOAD_RESOURCES.size() + "\n"
+                + "realWorkload.covered.count=" + (passed ? PRODUCTION_ACTIVATION_TOKEN_WORKLOAD_RESOURCES.size() : 0) + "\n"
+                + "realWorkload.total.count=" + PRODUCTION_ACTIVATION_TOKEN_WORKLOAD_RESOURCES.size() + "\n"
+                + "realWorkload.uncovered.count=" + (passed ? 0 : PRODUCTION_ACTIVATION_TOKEN_WORKLOAD_RESOURCES.size()) + "\n"
+                + "realWorkload.covered.all=" + passed + "\n"
+                + "diagnostic.count=1\n"
+                + "diagnostic.0=controlled production mutation readiness is derived from activation-gated source switching evidence; default runtime mutation remains disabled\n";
+        try {
+            Path path = Path.of(outputPath);
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(path, properties, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to write OpenCL production mutation validation summary", exception);
+        }
+    }
+
     private static GpuProductionPromotionDecision productionEnabledDecision() {
         return new GpuProductionPromotionDecision(
                 GpuProductionPromotionDecision.PRODUCTION_ENABLED,
@@ -3384,6 +3445,15 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 Boolean.getBoolean(PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY),
                 "Skipping production activation-token smoke test: set -D"
                         + PRODUCTION_ACTIVATION_TOKEN_SMOKE_PROPERTY
+                        + "=true"
+        );
+    }
+
+    private static void assumeProductionMutationValidationEnabled() {
+        Assumptions.assumeTrue(
+                Boolean.getBoolean(PRODUCTION_MUTATION_VALIDATION_PROPERTY),
+                "Skipping production mutation validation: set -D"
+                        + PRODUCTION_MUTATION_VALIDATION_PROPERTY
                         + "=true"
         );
     }

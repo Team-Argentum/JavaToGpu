@@ -101,6 +101,33 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("controlledProductionSourceSwitching.realWorkload.covered.all=")
                 .append(summary.controlledProductionSourceSwitchingRealWorkloadCoveredAll())
                 .append('\n');
+        builder.append("controlledProductionMutation.status=")
+                .append(summary.controlledProductionMutationStatus())
+                .append('\n');
+        builder.append("controlledProductionMutation.reviewReady=")
+                .append(summary.controlledProductionMutationReviewReady())
+                .append('\n');
+        builder.append("controlledProductionMutation.productionMutation=")
+                .append(summary.controlledProductionMutationProductionMutation())
+                .append('\n');
+        builder.append("controlledProductionMutation.defaultProductionMutation=")
+                .append(summary.controlledProductionMutationDefaultProductionMutation())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.covered.count=")
+                .append(summary.controlledProductionMutationRealWorkloadCoveredCount())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.total.count=")
+                .append(summary.controlledProductionMutationRealWorkloadTotalCount())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.uncovered.count=")
+                .append(summary.controlledProductionMutationRealWorkloadUncoveredCount())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.covered.all=")
+                .append(summary.controlledProductionMutationRealWorkloadCoveredAll())
+                .append('\n');
+        builder.append("controlledProductionMutation.passed=")
+                .append(summary.controlledProductionMutationPassed())
+                .append('\n');
         builder.append("controlledProductionActivationTokenSmoke.status=")
                 .append(summary.controlledProductionActivationTokenSmokeStatus())
                 .append('\n');

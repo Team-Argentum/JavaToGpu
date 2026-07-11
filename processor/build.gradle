@@ -58,6 +58,7 @@ def openClBackendPromotionArtifactSupportFile = layout.buildDirectory.file('repo
 def openClBackendSourcePromotionWorkloadGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-gate.properties').get().asFile
 def openClBackendSourcePromotionWorkloadSummaryFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-workload-summary.properties').get().asFile
 def openClProductionSourceSwitchingValidationFile = layout.buildDirectory.file('reports/opencl/production-source-switching-validation.properties').get().asFile
+def openClProductionMutationValidationFile = layout.buildDirectory.file('reports/opencl/production-mutation-validation.properties').get().asFile
 def openClBackendSourcePromotionCandidateGateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-candidate-gate.properties').get().asFile
 def openClBackendSourcePromotionManifestTemplateFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest-template.properties').get().asFile
 def openClBackendSourcePromotionManifestValidationFile = layout.buildDirectory.file('reports/opencl/backend-source-promotion-manifest-validation.properties').get().asFile
@@ -457,11 +458,29 @@ tasks.register('openClProductionSourceSwitchingValidationTest', Test) {
     attachBucketStatusRecording(it)
 }
 
+tasks.register('openClProductionMutationValidationTest', Test) {
+    group = 'verification'
+    description = 'Records controlled OpenCL production mutation readiness without enabling the default runtime path.'
+    dependsOn 'openClProductionSourceSwitchingValidationTest'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.opencl.productionMutationValidation', 'true'
+    systemProperty 'javatogpu.opencl.productionMutationValidationFile', openClProductionMutationValidationFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest.productionMutationValidationRecordsControlledEvidenceOnAvailableOpenClDevice'
+    }
+    outputs.file(openClProductionMutationValidationFile)
+    attachBucketStatusRecording(it)
+}
+
 tasks.register('openClBackendSourcePromotionCandidateGate', JavaExec) {
     group = 'verification'
     description = 'Builds and validates the identity-bound production candidate gate for real OpenCL workloads.'
     dependsOn 'openClWorkloadValidationTest'
     dependsOn 'openClProductionSourceSwitchingValidationTest'
+    dependsOn 'openClProductionMutationValidationTest'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionCandidateGateCli'
     args openClBackendSourcePromotionWorkloadGateFile.absolutePath,
@@ -594,6 +613,7 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.bucketStatusFile', openClBucketStatusFile.absolutePath
     systemProperty 'javatogpu.opencl.irGpuSourceReviewFile', layout.buildDirectory.file('reports/opencl/irgpu-source-review.properties').get().asFile.absolutePath
     systemProperty 'javatogpu.opencl.productionSourceSwitchingValidationFile', openClProductionSourceSwitchingValidationFile.absolutePath
+    systemProperty 'javatogpu.opencl.productionMutationValidationFile', openClProductionMutationValidationFile.absolutePath
     systemProperty 'javatogpu.opencl.productionActivationTokenSmokeFile', openClProductionActivationTokenSmokeFile.absolutePath
     systemProperty 'javatogpu.opencl.productionActivationTokenNegativeFile', openClProductionActivationTokenNegativeFile.absolutePath
     systemProperty 'javatogpu.opencl.backendSourcePromotionGateFile', layout.buildDirectory.file('reports/opencl/backend-source-promotion-gate.properties').get().asFile.absolutePath

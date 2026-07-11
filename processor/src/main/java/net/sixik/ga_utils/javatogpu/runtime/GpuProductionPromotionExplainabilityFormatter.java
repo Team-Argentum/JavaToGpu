@@ -58,6 +58,7 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 i3Summary,
                 backendPromotionArtifactSupport,
                 controlledProductionSourceSwitchingValidation,
+                new Properties(),
                 controlledProductionActivationTokenSmoke,
                 new Properties()
         );
@@ -71,6 +72,26 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             Properties controlledProductionActivationTokenSmoke,
             Properties controlledProductionActivationTokenNegative
     ) {
+        return format(
+                workloadGate,
+                i3Summary,
+                backendPromotionArtifactSupport,
+                controlledProductionSourceSwitchingValidation,
+                new Properties(),
+                controlledProductionActivationTokenSmoke,
+                controlledProductionActivationTokenNegative
+        );
+    }
+
+    public static String format(
+            Properties workloadGate,
+            Properties i3Summary,
+            Properties backendPromotionArtifactSupport,
+            Properties controlledProductionSourceSwitchingValidation,
+            Properties controlledProductionMutationValidation,
+            Properties controlledProductionActivationTokenSmoke,
+            Properties controlledProductionActivationTokenNegative
+    ) {
         Properties gate = workloadGate == null ? new Properties() : workloadGate;
         Properties readiness = i3Summary == null ? new Properties() : i3Summary;
         Properties promotionSupport = backendPromotionArtifactSupport == null
@@ -79,6 +100,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         Properties controlledSourceSwitching = controlledProductionSourceSwitchingValidation == null
                 ? new Properties()
                 : controlledProductionSourceSwitchingValidation;
+        Properties controlledMutation = controlledProductionMutationValidation == null
+                ? new Properties()
+                : controlledProductionMutationValidation;
         Properties activationTokenSmoke = controlledProductionActivationTokenSmoke == null
                 ? new Properties()
                 : controlledProductionActivationTokenSmoke;
@@ -188,6 +212,11 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         );
         ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage =
                 controlledSourceSwitchingCoverage(gate, controlledSourceSwitching);
+        ControlledMutationEvidence controlledMutationEvidence = controlledMutationEvidence(
+                gate,
+                controlledMutation,
+                controlledSourceSwitchingCoverage
+        );
         boolean activationTokenLoaded = propertyIsTrue(activationTokenSmoke, "token.loaded", false);
         boolean activationTokenSafeDefaults = "false".equals(
                 activationTokenSmoke.getProperty("defaultRuntimeActivation", "unknown")
@@ -343,9 +372,9 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 ),
                 new ReadinessChecklistItem(
                         "production-mutation-enabled",
-                        productionMutationEnabled,
-                        "production mutation is enabled",
-                        "production mutation remains disabled"
+                        productionMutationEnabled || controlledMutationEvidence.passed(),
+                        "production mutation is enabled or covered by controlled mutation readiness evidence",
+                        "production mutation remains disabled and controlled mutation readiness evidence is incomplete"
                 )
         );
 
@@ -384,7 +413,8 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             readinessBlockers.add("optimizer-family-runtime-equivalence-history-baseline-missing");
         }
         boolean sourceSwitchingAllowed = readinessBlockers.isEmpty();
-        boolean effectiveProductionMutationEnabled = productionMutationEnabled && sourceSwitchingAllowed;
+        boolean effectiveProductionMutationEnabled = (productionMutationEnabled || controlledMutationEvidence.passed())
+                && sourceSwitchingAllowed;
 
         List<String> blockers = new ArrayList<>(readinessBlockers);
         if (!effectiveProductionMutationEnabled) {
@@ -462,6 +492,40 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 controlledSourceSwitchingCoverage.coveredResources());
         appendIndexedResources(builder, "controlledProductionSourceSwitching.realWorkload.uncovered",
                 controlledSourceSwitchingCoverage.uncoveredResources());
+        builder.append("controlledProductionMutation.status=")
+                .append(controlledMutation.getProperty("status", "not-recorded"))
+                .append('\n');
+        builder.append("controlledProductionMutation.scope=")
+                .append(controlledMutation.getProperty("scope", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionMutation.reviewReady=")
+                .append(controlledMutationEvidence.reviewReady())
+                .append('\n');
+        builder.append("controlledProductionMutation.productionMutation=")
+                .append(controlledMutation.getProperty("productionMutation", "disabled"))
+                .append('\n');
+        builder.append("controlledProductionMutation.defaultProductionMutation=")
+                .append(controlledMutation.getProperty("defaultProductionMutation", "unknown"))
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.covered.count=")
+                .append(controlledMutationEvidence.coverage().coveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.total.count=")
+                .append(controlledMutationEvidence.coverage().realWorkloadResources().size())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.uncovered.count=")
+                .append(controlledMutationEvidence.coverage().uncoveredResources().size())
+                .append('\n');
+        builder.append("controlledProductionMutation.realWorkload.covered.all=")
+                .append(controlledMutationEvidence.coverage().allCovered())
+                .append('\n');
+        builder.append("controlledProductionMutation.passed=")
+                .append(controlledMutationEvidence.passed())
+                .append('\n');
+        appendIndexedResources(builder, "controlledProductionMutation.realWorkload.covered",
+                controlledMutationEvidence.coverage().coveredResources());
+        appendIndexedResources(builder, "controlledProductionMutation.realWorkload.uncovered",
+                controlledMutationEvidence.coverage().uncoveredResources());
         builder.append("controlledProductionActivationTokenSmoke.status=")
                 .append(activationTokenSmoke.getProperty("status", "not-recorded"))
                 .append('\n');
@@ -588,6 +652,46 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             }
         }
         return new ControlledSourceSwitchingCoverage(realWorkloadResources, coveredResources, uncoveredResources);
+    }
+
+    private static ControlledMutationEvidence controlledMutationEvidence(
+            Properties workloadGate,
+            Properties controlledMutation,
+            ControlledSourceSwitchingCoverage controlledSourceSwitchingCoverage
+    ) {
+        ControlledSourceSwitchingCoverage coverage = controlledMutationCoverage(workloadGate, controlledMutation);
+        boolean reviewReady = propertyIsTrue(controlledMutation, "reviewReady", false);
+        boolean passed = "passed".equals(controlledMutation.getProperty("status", "not-recorded"))
+                && "controlled-production-mutation-readiness".equals(controlledMutation.getProperty("scope", "unknown"))
+                && reviewReady
+                && "enabled".equals(controlledMutation.getProperty("productionMutation", "disabled"))
+                && "disabled".equals(controlledMutation.getProperty("defaultProductionMutation", "unknown"))
+                && "enabled".equals(controlledMutation.getProperty("productionSourceSwitching", "disabled"))
+                && propertyIsTrue(controlledMutation, "controlledSourceSwitchingPassed", false)
+                && controlledSourceSwitchingCoverage.allCovered()
+                && coverage.allCovered();
+        return new ControlledMutationEvidence(reviewReady, coverage, passed);
+    }
+
+    private static ControlledSourceSwitchingCoverage controlledMutationCoverage(
+            Properties workloadGate,
+            Properties controlledMutation
+    ) {
+        List<String> realWorkloadResources = resources(workloadGate, "sourceKernelResource");
+        int coveredCount = parsePositiveInt(controlledMutation.getProperty("realWorkload.covered.count", "0"));
+        int totalCount = parsePositiveInt(controlledMutation.getProperty("realWorkload.total.count", "0"));
+        int uncoveredCount = parsePositiveInt(controlledMutation.getProperty("realWorkload.uncovered.count", "0"));
+        boolean reportedAllCovered = propertyIsTrue(controlledMutation, "realWorkload.covered.all", false);
+        if (realWorkloadResources.isEmpty()) {
+            return new ControlledSourceSwitchingCoverage(List.of(), List.of(), List.of());
+        }
+        if (reportedAllCovered
+                && coveredCount == realWorkloadResources.size()
+                && totalCount == realWorkloadResources.size()
+                && uncoveredCount == 0) {
+            return new ControlledSourceSwitchingCoverage(realWorkloadResources, realWorkloadResources, List.of());
+        }
+        return new ControlledSourceSwitchingCoverage(realWorkloadResources, List.of(), realWorkloadResources);
     }
 
     private static List<String> resources(Properties properties, String suffix) {
@@ -778,6 +882,13 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         boolean allCovered() {
             return !realWorkloadResources.isEmpty() && uncoveredResources.isEmpty();
         }
+    }
+
+    private record ControlledMutationEvidence(
+            boolean reviewReady,
+            ControlledSourceSwitchingCoverage coverage,
+            boolean passed
+    ) {
     }
 
     private record ReadinessChecklistItem(

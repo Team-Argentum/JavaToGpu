@@ -1478,10 +1478,11 @@ class OpenClValidationReportTest {
             String buildScript = java.nio.file.Files.readString(findRepositoryFile("processor/build.gradle"));
             String sourceSwitchingDependency = "dependsOn 'openClProductionSourceSwitchingValidationTest'";
             assertEquals(
-                    3,
+                    4,
                     buildScript.split(java.util.regex.Pattern.quote(sourceSwitchingDependency), -1).length - 1
             );
             assertTrue(buildScript.contains("openClBackendSourcePromotionCandidateGate"));
+            assertTrue(buildScript.contains("openClProductionMutationValidationTest"));
             assertTrue(buildScript.contains("prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
             assertTrue(buildScript.contains("OpenClKernelLaunchAdvisoryNegativeFixtureCli"));
         } finally {

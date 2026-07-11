@@ -39,6 +39,15 @@ public record GpuProductionPromotionExplainabilitySummary(
         int controlledProductionSourceSwitchingRealWorkloadTotalCount,
         int controlledProductionSourceSwitchingRealWorkloadUncoveredCount,
         String controlledProductionSourceSwitchingRealWorkloadCoveredAll,
+        String controlledProductionMutationStatus,
+        String controlledProductionMutationReviewReady,
+        String controlledProductionMutationProductionMutation,
+        String controlledProductionMutationDefaultProductionMutation,
+        int controlledProductionMutationRealWorkloadCoveredCount,
+        int controlledProductionMutationRealWorkloadTotalCount,
+        int controlledProductionMutationRealWorkloadUncoveredCount,
+        String controlledProductionMutationRealWorkloadCoveredAll,
+        String controlledProductionMutationPassed,
         String controlledProductionActivationTokenSmokeStatus,
         String controlledProductionActivationTokenLoaded,
         String controlledProductionActivationTokenApprovedKernelExecuted,
@@ -91,6 +100,15 @@ public record GpuProductionPromotionExplainabilitySummary(
                 0,
                 0,
                 0,
+                "false",
+                "not-recorded",
+                "false",
+                "disabled",
+                "unknown",
+                0,
+                0,
+                0,
+                "false",
                 "false",
                 "not-recorded",
                 "false",
@@ -161,6 +179,24 @@ public record GpuProductionPromotionExplainabilitySummary(
                         "0"
                 )),
                 properties.getProperty("controlledProductionSourceSwitching.realWorkload.covered.all", "false"),
+                properties.getProperty("controlledProductionMutation.status", "not-recorded"),
+                properties.getProperty("controlledProductionMutation.reviewReady", "false"),
+                properties.getProperty("controlledProductionMutation.productionMutation", "disabled"),
+                properties.getProperty("controlledProductionMutation.defaultProductionMutation", "unknown"),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionMutation.realWorkload.covered.count",
+                        "0"
+                )),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionMutation.realWorkload.total.count",
+                        "0"
+                )),
+                parsePositiveInt(properties.getProperty(
+                        "controlledProductionMutation.realWorkload.uncovered.count",
+                        "0"
+                )),
+                properties.getProperty("controlledProductionMutation.realWorkload.covered.all", "false"),
+                properties.getProperty("controlledProductionMutation.passed", "false"),
                 properties.getProperty("controlledProductionActivationTokenSmoke.status", "not-recorded"),
                 properties.getProperty("controlledProductionActivationTokenSmoke.tokenLoaded", "false"),
                 properties.getProperty(
@@ -251,6 +287,18 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + "/" + controlledProductionSourceSwitchingRealWorkloadTotalCount
                 + ", controlledRealWorkloadUncovered=" + controlledProductionSourceSwitchingRealWorkloadUncoveredCount
                 + ", controlledRealWorkloadCoverageAll=" + controlledProductionSourceSwitchingRealWorkloadCoveredAll
+                + ", controlledProductionMutation=" + controlledProductionMutationStatus
+                + ", controlledProductionMutationReviewReady=" + controlledProductionMutationReviewReady
+                + ", controlledProductionMutationMode=" + controlledProductionMutationProductionMutation
+                + ", controlledProductionMutationDefault=" + controlledProductionMutationDefaultProductionMutation
+                + ", controlledProductionMutationRealWorkloadCoverage="
+                + controlledProductionMutationRealWorkloadCoveredCount
+                + "/" + controlledProductionMutationRealWorkloadTotalCount
+                + ", controlledProductionMutationRealWorkloadUncovered="
+                + controlledProductionMutationRealWorkloadUncoveredCount
+                + ", controlledProductionMutationRealWorkloadCoverageAll="
+                + controlledProductionMutationRealWorkloadCoveredAll
+                + ", controlledProductionMutationPassed=" + controlledProductionMutationPassed
                 + ", controlledActivationTokenSmoke=" + controlledProductionActivationTokenSmokeStatus
                 + ", controlledActivationTokenLoaded=" + controlledProductionActivationTokenLoaded
                 + ", controlledActivationTokenApprovedKernelExecuted="

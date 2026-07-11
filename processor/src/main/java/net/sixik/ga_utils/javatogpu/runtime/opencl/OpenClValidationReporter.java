@@ -25,6 +25,8 @@ public final class OpenClValidationReporter {
     private static final String IRGPU_SOURCE_REVIEW_FILE_PROPERTY = "javatogpu.opencl.irGpuSourceReviewFile";
     private static final String PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY =
             "javatogpu.opencl.productionSourceSwitchingValidationFile";
+    private static final String PRODUCTION_MUTATION_VALIDATION_FILE_PROPERTY =
+            "javatogpu.opencl.productionMutationValidationFile";
     private static final String PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY =
             "javatogpu.opencl.productionActivationTokenSmokeFile";
     private static final String PRODUCTION_ACTIVATION_TOKEN_NEGATIVE_FILE_PROPERTY =
@@ -821,6 +823,20 @@ public final class OpenClValidationReporter {
             markdown.append("- Controlled real workload coverage all: `")
                     .append(sanitizeInline(summary.controlledProductionSourceSwitchingRealWorkloadCoveredAll()))
                     .append("`\n");
+            markdown.append("- Controlled production mutation: `")
+                    .append(sanitizeInline(summary.controlledProductionMutationStatus()))
+                    .append("`\n");
+            markdown.append("- Controlled production mutation passed: `")
+                    .append(sanitizeInline(summary.controlledProductionMutationPassed()))
+                    .append("`\n");
+            markdown.append("- Controlled production mutation coverage: `")
+                    .append(summary.controlledProductionMutationRealWorkloadCoveredCount())
+                    .append("/")
+                    .append(summary.controlledProductionMutationRealWorkloadTotalCount())
+                    .append("`\n");
+            markdown.append("- Controlled production mutation coverage all: `")
+                    .append(sanitizeInline(summary.controlledProductionMutationRealWorkloadCoveredAll()))
+                    .append("`\n");
             markdown.append("- Controlled activation-token smoke: `")
                     .append(sanitizeInline(summary.controlledProductionActivationTokenSmokeStatus()))
                     .append("`\n");
@@ -1183,6 +1199,7 @@ public final class OpenClValidationReporter {
         String i3SummaryPath = System.getProperty(I3_READINESS_WORKLOAD_SUMMARY_FILE_PROPERTY);
         String supportPath = System.getProperty(BACKEND_PROMOTION_ARTIFACT_SUPPORT_FILE_PROPERTY);
         String controlledProductionSourceSwitchingPath = System.getProperty(PRODUCTION_SOURCE_SWITCHING_VALIDATION_FILE_PROPERTY);
+        String controlledProductionMutationPath = System.getProperty(PRODUCTION_MUTATION_VALIDATION_FILE_PROPERTY);
         String controlledProductionActivationTokenSmokePath = System.getProperty(
                 PRODUCTION_ACTIVATION_TOKEN_SMOKE_FILE_PROPERTY
         );
@@ -1209,6 +1226,10 @@ public final class OpenClValidationReporter {
                     || controlledProductionSourceSwitchingPath.isBlank()
                     ? new java.util.Properties()
                     : loadPropertiesIfExists(Paths.get(controlledProductionSourceSwitchingPath));
+            java.util.Properties controlledProductionMutationValidation = controlledProductionMutationPath == null
+                    || controlledProductionMutationPath.isBlank()
+                    ? new java.util.Properties()
+                    : loadPropertiesIfExists(Paths.get(controlledProductionMutationPath));
             java.util.Properties controlledProductionActivationTokenSmoke = controlledProductionActivationTokenSmokePath == null
                     || controlledProductionActivationTokenSmokePath.isBlank()
                     ? new java.util.Properties()
@@ -1225,6 +1246,7 @@ public final class OpenClValidationReporter {
                             i3Summary,
                             backendPromotionArtifactSupport,
                             controlledProductionSourceSwitchingValidation,
+                            controlledProductionMutationValidation,
                             controlledProductionActivationTokenSmoke,
                             controlledProductionActivationTokenNegative
                     ),
