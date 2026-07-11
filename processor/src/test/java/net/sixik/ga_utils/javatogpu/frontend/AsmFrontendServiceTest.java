@@ -3,6 +3,8 @@ package net.sixik.ga_utils.javatogpu.frontend;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendException;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmGpuMethod;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactParser;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactSerializer;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrAssignment;
 import net.sixik.ga_utils.javatogpu.frontend.ir.statement.GpuIrIf;
@@ -204,6 +206,14 @@ class AsmFrontendServiceTest {
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.irGpuArtifact().derivedOpenClResource());
         assertEquals(false, result.irGpuArtifact().optimizerPolicyMetadata().fastMath());
         assertEquals("default-strict", result.irGpuArtifact().optimizerPolicyMetadata().source());
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        assertTrue(manifest.contains("sourceFrontend=asm"));
+        assertTrue(manifest.contains("optimizerPolicy.fastMath=false"));
+        assertTrue(manifest.contains("optimizerPolicy.source=default-strict"));
+        assertEquals(
+                result.irGpuArtifact().optimizerPolicyMetadata(),
+                IrGpuArtifactParser.parse(manifest).optimizerPolicyMetadata()
+        );
 
         assertEquals("javatogpu/sample/Demo/kernel.cl", result.openClResource());
         assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", result.irGpuResource());
