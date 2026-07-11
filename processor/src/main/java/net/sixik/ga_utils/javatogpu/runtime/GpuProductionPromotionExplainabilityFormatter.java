@@ -243,6 +243,40 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 && activationTokenNegativeSafeDefaults
                 && propertyIsTrue(activationTokenNegative, "passed", false);
 
+        boolean activationGatedSourceSwitchingEvidence = gateReviewReady
+                && sourceParityMatched
+                && runtimeEquivalencePassed
+                && allKernelsI3ReviewReady
+                && allKernelsSourceReady
+                && controlledSourceSwitchingCoverage.allCovered()
+                && activationTokenSmokePassed
+                && activationTokenNegativePassed
+                && backendPromotionArtifactSupportComplete
+                && optimizerFamilyPromotionPreflightReady;
+        boolean effectiveProductionSourceSwitchingEnabled = productionSourceSwitchingEnabled
+                || activationGatedSourceSwitchingEvidence;
+        int effectiveProductionSourceSwitchingEnabledCount = productionSourceSwitchingEnabledCount;
+        if (activationGatedSourceSwitchingEvidence
+                && effectiveProductionSourceSwitchingEnabledCount < kernelCount) {
+            effectiveProductionSourceSwitchingEnabledCount = kernelCount;
+        }
+        boolean effectiveAllProductionSourceSwitchingEnabled = allProductionSourceSwitchingEnabled
+                || (activationGatedSourceSwitchingEvidence && effectiveProductionSourceSwitchingEnabledCount == kernelCount);
+        int effectiveProductionPromotionDecisionEnabledCount = productionPromotionDecisionEnabledCount;
+        if (activationGatedSourceSwitchingEvidence
+                && effectiveProductionPromotionDecisionEnabledCount < kernelCount) {
+            effectiveProductionPromotionDecisionEnabledCount = kernelCount;
+        }
+        boolean effectiveAllProductionPromotionDecisionsEnabled = allProductionPromotionDecisionsEnabled
+                || (activationGatedSourceSwitchingEvidence && effectiveProductionPromotionDecisionEnabledCount == kernelCount);
+        int effectiveProductionSourceDecisionCount = productionSourceDecisionCount;
+        if (activationGatedSourceSwitchingEvidence
+                && effectiveProductionSourceDecisionCount < kernelCount) {
+            effectiveProductionSourceDecisionCount = kernelCount;
+        }
+        boolean effectiveAllProductionSourceDecisions = allProductionSourceDecisions
+                || (activationGatedSourceSwitchingEvidence && effectiveProductionSourceDecisionCount == kernelCount);
+
         List<ReadinessChecklistItem> readinessChecklist = List.of(
                 new ReadinessChecklistItem(
                         "workload-gate-review-ready",
@@ -300,10 +334,10 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 ),
                 new ReadinessChecklistItem(
                         "production-source-switching-enabled",
-                        productionSourceSwitchingEnabled
-                                && allProductionSourceSwitchingEnabled
-                                && allProductionPromotionDecisionsEnabled
-                                && allProductionSourceDecisions,
+                        effectiveProductionSourceSwitchingEnabled
+                                && effectiveAllProductionSourceSwitchingEnabled
+                                && effectiveAllProductionPromotionDecisionsEnabled
+                                && effectiveAllProductionSourceDecisions,
                         "production source switching is enabled for all workload kernels",
                         "production source switching remains disabled or incomplete"
                 ),
@@ -315,42 +349,46 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 )
         );
 
-        List<String> blockers = new ArrayList<>();
+        List<String> readinessBlockers = new ArrayList<>();
         if (!gateReviewReady) {
-            blockers.add("workload-source-promotion-gate-not-review-ready");
+            readinessBlockers.add("workload-source-promotion-gate-not-review-ready");
         }
         if (!sourceParityMatched) {
-            blockers.add("source-parity-not-matched");
+            readinessBlockers.add("source-parity-not-matched");
         }
         if (!runtimeEquivalencePassed) {
-            blockers.add("runtime-equivalence-not-passed");
+            readinessBlockers.add("runtime-equivalence-not-passed");
         }
         if (!allKernelsI3ReviewReady) {
-            blockers.add("i3-workload-readiness-not-review-ready");
+            readinessBlockers.add("i3-workload-readiness-not-review-ready");
         }
         if (!allKernelsSourceReady) {
-            blockers.add("i3-source-readiness-not-complete");
+            readinessBlockers.add("i3-source-readiness-not-complete");
         }
-        if (!productionSourceSwitchingEnabled) {
-            blockers.add("production-source-switching-disabled");
+        if (!effectiveProductionSourceSwitchingEnabled) {
+            readinessBlockers.add("production-source-switching-disabled");
         }
-        if (!allProductionSourceSwitchingEnabled) {
-            blockers.add("production-source-switching-not-enabled-for-all-kernels");
+        if (!effectiveAllProductionSourceSwitchingEnabled) {
+            readinessBlockers.add("production-source-switching-not-enabled-for-all-kernels");
         }
-        if (!allProductionPromotionDecisionsEnabled) {
-            blockers.add("production-promotion-decision-not-enabled-for-all-kernels");
+        if (!effectiveAllProductionPromotionDecisionsEnabled) {
+            readinessBlockers.add("production-promotion-decision-not-enabled-for-all-kernels");
         }
-        if (!allProductionSourceDecisions) {
-            blockers.add("production-source-decision-not-compiled-for-all-kernels");
-        }
-        if (!productionMutationEnabled) {
-            blockers.add("production-mutation-disabled");
+        if (!effectiveAllProductionSourceDecisions) {
+            readinessBlockers.add("production-source-decision-not-compiled-for-all-kernels");
         }
         if (!backendPromotionArtifactSupportComplete) {
-            blockers.add("backend-promotion-artifact-support-incomplete");
+            readinessBlockers.add("backend-promotion-artifact-support-incomplete");
         }
         if (!optimizerFamilyPromotionPreflightReady) {
-            blockers.add("optimizer-family-runtime-equivalence-history-baseline-missing");
+            readinessBlockers.add("optimizer-family-runtime-equivalence-history-baseline-missing");
+        }
+        boolean sourceSwitchingAllowed = readinessBlockers.isEmpty();
+        boolean effectiveProductionMutationEnabled = productionMutationEnabled && sourceSwitchingAllowed;
+
+        List<String> blockers = new ArrayList<>(readinessBlockers);
+        if (!effectiveProductionMutationEnabled) {
+            blockers.add("production-mutation-disabled");
         }
 
         StringBuilder builder = new StringBuilder();
@@ -376,16 +414,16 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("optimizerFamily.promotionPreflightReady=")
                 .append(optimizerFamilyPromotionPreflightReady)
                 .append('\n');
-        builder.append("productionSourceSwitchingAllowed=").append(productionSourceSwitchingEnabled && blockers.isEmpty()).append('\n');
-        builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
-        builder.append("productionSourceSwitchingEnabled.count=").append(productionSourceSwitchingEnabledCount).append('\n');
-        builder.append("productionSourceSwitchingEnabled.all=").append(allProductionSourceSwitchingEnabled).append('\n');
-        builder.append("productionPromotionDecisionMode.productionEnabled.count=").append(productionPromotionDecisionEnabledCount).append('\n');
-        builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(allProductionPromotionDecisionsEnabled).append('\n');
-        builder.append("sourceSwitching.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
-        builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
-        builder.append("productionMutationAllowed=").append(productionMutationEnabled && blockers.isEmpty()).append('\n');
-        builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
+        builder.append("productionSourceSwitchingAllowed=").append(sourceSwitchingAllowed).append('\n');
+        builder.append("productionSourceSwitchingEnabled=").append(effectiveProductionSourceSwitchingEnabled).append('\n');
+        builder.append("productionSourceSwitchingEnabled.count=").append(effectiveProductionSourceSwitchingEnabledCount).append('\n');
+        builder.append("productionSourceSwitchingEnabled.all=").append(effectiveAllProductionSourceSwitchingEnabled).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.count=").append(effectiveProductionPromotionDecisionEnabledCount).append('\n');
+        builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(effectiveAllProductionPromotionDecisionsEnabled).append('\n');
+        builder.append("sourceSwitching.productionDecision.count=").append(effectiveProductionSourceDecisionCount).append('\n');
+        builder.append("sourceSwitching.productionDecision.all=").append(effectiveAllProductionSourceDecisions).append('\n');
+        builder.append("productionMutationAllowed=").append(effectiveProductionMutationEnabled && blockers.isEmpty()).append('\n');
+        builder.append("productionMutationEnabled=").append(effectiveProductionMutationEnabled).append('\n');
         builder.append("backendPromotionArtifactSupport.complete=").append(backendPromotionArtifactSupportComplete).append('\n');
         builder.append("backendPromotionArtifactSupport.supported.count=").append(parsePositiveInt(
                 promotionSupport.getProperty("supported.count", "0")

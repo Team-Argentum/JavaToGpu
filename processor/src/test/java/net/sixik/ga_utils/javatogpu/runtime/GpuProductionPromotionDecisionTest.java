@@ -43,6 +43,23 @@ class GpuProductionPromotionDecisionTest {
     }
 
     @Test
+    void sourceSwitchingReadyArtifactEnablesSourceSwitchingWithoutMutation() {
+        Properties properties = productionReadyArtifact();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("productionMutationAllowed", "false");
+        properties.setProperty("productionMutationEnabled", "false");
+        properties.setProperty("blocker.count", "1");
+        properties.setProperty("blocker.0", "production-mutation-disabled");
+
+        GpuProductionPromotionDecision decision = GpuProductionPromotionDecision.fromExplainability(properties);
+
+        assertEquals(GpuProductionPromotionDecision.PRODUCTION_ENABLED, decision.mode());
+        assertTrue(decision.productionSourceSwitchingAllowed());
+        assertFalse(decision.productionMutationAllowed());
+        assertEquals("production-mutation-disabled", decision.firstBlocker());
+    }
+
+    @Test
     void productionReadyArtifactWithIncompleteBackendPromotionSupportStaysDiagnosticOnly() {
         Properties properties = productionReadyArtifact();
         properties.setProperty("backendPromotionArtifactSupport.complete", "false");

@@ -169,8 +169,17 @@ public final class GpuProductionPromotionExplainabilityValidation {
         if (blockerCount <= 0) {
             violations.add("blocked explainability must include at least one blocker");
         }
-        if (sourceSwitchingAllowed || mutationAllowed) {
-            violations.add("blocked explainability cannot allow production source switching or mutation");
+        if (sourceSwitchingAllowed && (!sourceSwitchingEnabled
+                || !allSourceSwitchingEnabled
+                || !allPromotionDecisionsEnabled
+                || !allProductionSourceDecisions)) {
+            violations.add("blocked explainability cannot allow incomplete production source switching");
+        }
+        if (mutationAllowed) {
+            violations.add("blocked explainability cannot allow production mutation");
+        }
+        if (mutationEnabled) {
+            violations.add("blocked explainability cannot enable production mutation");
         }
     }
 

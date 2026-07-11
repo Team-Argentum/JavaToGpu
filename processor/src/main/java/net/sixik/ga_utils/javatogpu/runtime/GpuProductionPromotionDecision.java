@@ -70,6 +70,24 @@ public record GpuProductionPromotionDecision(
                 && contract.i3BlockedCount() == 0
                 && contract.i3SourceReadyCount() == contract.kernelCount()
                 && contract.blockerCount() > 0) {
+            if (contract.sourceSwitchingAllowed()
+                    && contract.sourceSwitchingEnabled()
+                    && contract.allSourceSwitchingEnabled()
+                    && contract.allPromotionDecisionsEnabled()
+                    && contract.allProductionSourceDecisions()
+                    && !contract.mutationAllowed()
+                    && !contract.mutationEnabled()) {
+                return new GpuProductionPromotionDecision(
+                        PRODUCTION_ENABLED,
+                        contract.status(),
+                        true,
+                        true,
+                        false,
+                        firstBlocker,
+                        "none",
+                        "production source switching is enabled by a valid activation-gated contract; production mutation remains disabled"
+                );
+            }
             return new GpuProductionPromotionDecision(
                     REVIEW_READY,
                     contract.status(),

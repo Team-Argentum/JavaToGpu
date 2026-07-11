@@ -40,7 +40,24 @@ class GpuProductionPromotionExplainabilityValidationTest {
                 GpuProductionPromotionExplainabilityValidation.validate(properties);
 
         assertFalse(result.valid());
-        assertTrue(result.firstViolation().contains("blocked explainability cannot allow"));
+        assertTrue(result.firstViolation().contains("production mutation"));
+    }
+
+    @Test
+    void acceptsBlockedArtifactWithCompleteSourceSwitchingButMutationDisabled() {
+        Properties properties = productionReadyArtifact();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("productionMutationAllowed", "false");
+        properties.setProperty("productionMutationEnabled", "false");
+        properties.setProperty("blocker.count", "1");
+        properties.setProperty("blocker.0", "production-mutation-disabled");
+
+        GpuProductionPromotionExplainabilityValidation.Result result =
+                GpuProductionPromotionExplainabilityValidation.validate(properties);
+
+        assertTrue(result.valid());
+        assertTrue(result.sourceSwitchingAllowed());
+        assertFalse(result.mutationAllowed());
     }
 
     @Test
