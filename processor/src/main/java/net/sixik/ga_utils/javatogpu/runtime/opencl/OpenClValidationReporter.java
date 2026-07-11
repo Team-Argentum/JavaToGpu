@@ -265,7 +265,7 @@ public final class OpenClValidationReporter {
         }
         Path baseline = Paths.get(baselinePath);
         Path history = Paths.get(historyPath);
-        if (!Files.isRegularFile(baseline) || Files.exists(history)) {
+        if (!Files.isRegularFile(baseline)) {
             return;
         }
         try {
@@ -273,10 +273,36 @@ public final class OpenClValidationReporter {
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Files.copy(baseline, history);
+            java.util.List<OpenClValidationHistoryEntry> merged = new java.util.ArrayList<>();
+            for (OpenClValidationHistoryEntry candidate : OpenClValidationHistoryIO.readAll(baseline)) {
+                addDistinctHistoryEntry(merged, candidate);
+            }
+            for (OpenClValidationHistoryEntry candidate : OpenClValidationHistoryIO.readAll(history)) {
+                addDistinctHistoryEntry(merged, candidate);
+            }
+            if (merged.isEmpty()) {
+                return;
+            }
+            merged.sort(java.util.Comparator.comparing(OpenClValidationHistoryEntry::generatedAtUtc).reversed());
+            if (merged.size() > MAX_HISTORY_ENTRIES) {
+                merged = new java.util.ArrayList<>(merged.subList(0, MAX_HISTORY_ENTRIES));
+            }
+            OpenClValidationHistoryIO.writeAll(history, merged);
         } catch (Throwable failure) {
             // Baseline seeding is advisory here; the drift validator handles missing or invalid evidence.
         }
+    }
+
+    private static void addDistinctHistoryEntry(
+            java.util.List<OpenClValidationHistoryEntry> entries,
+            OpenClValidationHistoryEntry candidate
+    ) {
+        for (OpenClValidationHistoryEntry existing : entries) {
+            if (sameRun(existing, candidate)) {
+                return;
+            }
+        }
+        entries.add(candidate);
     }
 
     private static void writeKernelLaunchAdvisorySummary(
