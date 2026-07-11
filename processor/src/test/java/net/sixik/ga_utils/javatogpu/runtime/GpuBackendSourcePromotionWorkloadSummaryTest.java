@@ -171,6 +171,44 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
     }
 
     @Test
+    void reviewReadyHistoryKeepsRuntimeEquivalenceAndOptimizerFamilyEvidence() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "review-ready");
+        properties.setProperty("reviewReady", "true");
+        properties.setProperty("sourceParityMatched", "true");
+        properties.setProperty("runtimeEquivalencePassed", "true");
+        properties.setProperty("realWorkloadEvidence", "runtime-snapshot");
+        properties.setProperty("productionSourceSwitching", "false");
+        properties.setProperty("productionPromotionOperatorAccepted.count", "0");
+        properties.setProperty("productionPromotionOperatorAccepted.all", "false");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "1");
+        properties.setProperty(
+                "kernel.0.runtimeOptimizerDrift.optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]"
+        );
+        properties.setProperty("kernel.0.optimizerFamilyPayload.family.count", "1");
+        properties.setProperty("kernel.0.optimizerFamilyPayload.family.complete.count", "1");
+        properties.setProperty("kernel.0.optimizerFamilyPayload.family.complete.all", "true");
+        properties.setProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.count", "0");
+        properties.setProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0");
+        properties.setProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.summary", "none");
+        properties.setProperty("kernel.1.optimizerFamilyPayload.family.count", "0");
+        properties.setProperty("kernel.1.optimizerFamilyPayload.family.complete.count", "0");
+        properties.setProperty("kernel.1.optimizerFamilyPayload.family.complete.all", "false");
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+
+        assertTrue(summary.historyStatus().contains("gateStatus=review-ready"));
+        assertTrue(summary.historyStatus().contains("runtimeEquivalencePassed=true"));
+        assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("optimizerPayloadCompleteAll=true"));
+        assertTrue(summary.historyStatus().contains("unexpectedWorkloadReviewReady=true"));
+    }
+
+    @Test
     void emptyPropertiesRemainNotRecorded() {
         GpuBackendSourcePromotionWorkloadSummary summary =
                 GpuBackendSourcePromotionWorkloadSummary.fromProperties(new Properties());

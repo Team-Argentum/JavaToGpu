@@ -1233,12 +1233,12 @@ public final class OpenClValidationReporter {
         }
     }
 
-    private static boolean hasOptimizerFamilyRuntimeEquivalenceHistoryBaseline(OpenClValidationHistoryEntry entry) {
+    static boolean hasOptimizerFamilyRuntimeEquivalenceHistoryBaseline(OpenClValidationHistoryEntry entry) {
         String workloadStatus = entry.backendSourcePromotionWorkloadStatus();
         String explainabilityStatus = entry.productionPromotionExplainabilityStatus();
         return containsPositiveOptimizerFamilies(workloadStatus)
                 && containsRuntimeEquivalencePassed(workloadStatus)
-                && containsRuntimeEquivalencePassed(explainabilityStatus);
+                && containsRuntimeEquivalencePassed(explainabilityStatus, workloadStatus);
     }
 
     private static boolean containsPositiveOptimizerFamilies(String status) {
@@ -1248,6 +1248,10 @@ public final class OpenClValidationReporter {
 
     private static boolean containsRuntimeEquivalencePassed(String status) {
         return status != null && status.contains("runtimeEquivalencePassed=true");
+    }
+
+    private static boolean containsRuntimeEquivalencePassed(String status, String fallbackStatus) {
+        return containsRuntimeEquivalencePassed(status) || containsRuntimeEquivalencePassed(fallbackStatus);
     }
 
     private static boolean containsPositiveMetric(String status, String token) {

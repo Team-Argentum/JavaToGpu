@@ -115,7 +115,31 @@ public record GpuBackendSourcePromotionWorkloadSummary(
             return "not recorded";
         }
         if ("review-ready".equals(status)) {
-            return "blocked (productionSourceSwitching=disabled, unexpectedWorkloadReviewReady=true)";
+            return "blocked (gateStatus=" + status
+                    + ", reviewReady=" + reviewReady
+                    + ", sourceParityMatched=" + sourceParityMatched
+                    + ", runtimeEquivalencePassed=" + runtimeEquivalencePassed
+                    + ", realWorkloadEvidence=" + realWorkloadEvidence
+                    + ", productionPromotionOperatorAccepted="
+                    + productionPromotionOperatorAcceptedCount
+                    + "/"
+                    + kernelCount
+                    + ", productionPromotionOperatorAcceptedAll="
+                    + productionPromotionOperatorAcceptedAll
+                    + ", optimizerFamilies="
+                    + optimizerFamilyCount
+                    + ", optimizerPromotionReadyFamilies="
+                    + optimizerFamilyPromotionReadyCount
+                    + ", optimizerPayloadCompleteFamilies="
+                    + optimizerFamilyPayloadCompleteCount
+                    + ", optimizerPayloadCompleteAll="
+                    + optimizerFamilyPayloadCompleteAll
+                    + optimizerFamilySummaryText()
+                    + sourceSwitchingEvidenceText()
+                    + kernelEvidence
+                    + sourceKernelResourceText()
+                    + ", productionSourceSwitching=disabled"
+                    + ", unexpectedWorkloadReviewReady=true)";
         }
         return "not-promoted (gateStatus=" + status
                 + ", reviewReady=" + reviewReady

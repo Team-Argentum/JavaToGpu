@@ -62,6 +62,31 @@ class OpenClValidationReportTest {
     }
 
     @Test
+    void optimizerFamilyHistoryBaselineAcceptsWorkloadRuntimeEquivalenceEvidence() {
+        OpenClValidationHistoryEntry entry = new OpenClValidationHistoryEntry(
+                Instant.parse("2026-07-01T12:00:00Z"),
+                "nvidia",
+                "OpenCL",
+                "NVIDIA CUDA / Mock GPU",
+                "NVIDIA Corporation",
+                "595.97",
+                "OpenCL 3.0 CUDA",
+                "openClWorkloadValidationTest=passed",
+                "passed",
+                "passed",
+                "passed",
+                "passed",
+                "review-ready (reviewReady=true, sourceParityMatched=true, runtimeEquivalencePassed=true)",
+                "blocked (gateStatus=review-ready, reviewReady=true, sourceParityMatched=true, runtimeEquivalencePassed=true, optimizerPromotionReadyFamilies=4)",
+                "blocked (contract=valid, decisionMode=review-ready, optimizerPromotionReadyFamilies=4, optimizerPayloadCompleteAll=true)",
+                "recorded",
+                "recorded"
+        );
+
+        assertTrue(OpenClValidationReporter.hasOptimizerFamilyRuntimeEquivalenceHistoryBaseline(entry));
+    }
+
+    @Test
     void bucketStatusRegistryRoundTripsThroughPropertiesFormat() throws Exception {
         java.nio.file.Path registryFile = java.nio.file.Files.createTempFile("javatogpu-opencl-buckets", ".properties");
         java.util.Map<String, OpenClValidationBucketStatus> statuses = new java.util.LinkedHashMap<>();
