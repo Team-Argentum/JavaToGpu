@@ -2,6 +2,9 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionFailurePolicy;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipationMetadata;
 
@@ -64,6 +67,8 @@ public record GpuRuntimeExtensionParticipationArtifact(
                 "runtime-ir-optimization",
                 snapshot.optimizationReport().extensionExecutionReports()
         );
+        appendRuntimeEquivalence(entries, snapshot.runtimeEquivalenceEvidence());
+        appendBackendLowerer(entries, snapshot.backendModuleArtifact());
         append(
                 entries,
                 "backend-compiler-feedback",
@@ -140,6 +145,83 @@ public record GpuRuntimeExtensionParticipationArtifact(
                 ));
             }
         }
+    }
+
+    private static void appendRuntimeEquivalence(
+            ArrayList<Entry> entries,
+            GpuRuntimeEquivalenceEvidence evidence
+    ) {
+        if (evidence == null) {
+            return;
+        }
+        entries.add(new Entry(
+                "runtime-equivalence",
+                new GpuExtensionExecutionReport(
+                        "runtime-equivalence:" + evidence.backendTarget().toLowerCase(java.util.Locale.ROOT),
+                        "runtime-equivalence-v1",
+                        GpuExtensionPhase.RUNTIME_EQUIVALENCE,
+                        GpuExtensionPermission.READ_ONLY,
+                        "runtime equivalence evidence capture",
+                        runtimeEquivalenceOutcome(evidence),
+                        GpuExtensionFailurePolicy.CONTINUE,
+                        true,
+                        evidence.executed() && !evidence.equivalent() ? "runtime-equivalence-failed" : "none",
+                        "runtime equivalence " + evidence.status(),
+                        runtimeEquivalenceDiagnostics(evidence)
+                )
+        ));
+    }
+
+    private static GpuExtensionExecutionOutcome runtimeEquivalenceOutcome(GpuRuntimeEquivalenceEvidence evidence) {
+        if (!evidence.executed()) {
+            return GpuExtensionExecutionOutcome.SKIPPED;
+        }
+        return evidence.equivalent()
+                ? GpuExtensionExecutionOutcome.SUCCEEDED
+                : GpuExtensionExecutionOutcome.FAILED_CONTINUED;
+    }
+
+    private static List<String> runtimeEquivalenceDiagnostics(GpuRuntimeEquivalenceEvidence evidence) {
+        ArrayList<String> diagnostics = new ArrayList<>();
+        diagnostics.add("status=" + evidence.status());
+        diagnostics.add("backendTarget=" + evidence.backendTarget());
+        diagnostics.add("vendor=" + evidence.vendor());
+        diagnostics.add("deviceLabel=" + evidence.deviceLabel());
+        diagnostics.add("optimizationProfile=" + evidence.optimizationProfile());
+        diagnostics.add("executed=" + evidence.executed());
+        diagnostics.add("equivalent=" + evidence.equivalent());
+        diagnostics.add("inputCase.count=" + evidence.inputCaseCount());
+        diagnostics.add("comparedOutput.count=" + evidence.comparedOutputCount());
+        diagnostics.addAll(evidence.diagnostics());
+        return diagnostics;
+    }
+
+    private static void appendBackendLowerer(ArrayList<Entry> entries, GpuBackendModuleArtifact artifact) {
+        if (artifact == null || artifact.backendTarget() == null || artifact.lowererVersion().isBlank()) {
+            return;
+        }
+        entries.add(new Entry(
+                "backend-lowerer",
+                new GpuExtensionExecutionReport(
+                        "backend-lowerer:" + artifact.backendTarget().name().toLowerCase(java.util.Locale.ROOT),
+                        artifact.lowererVersion(),
+                        GpuExtensionPhase.BACKEND_LOWERING,
+                        GpuExtensionPermission.PRODUCTION_AFFECTING,
+                        "backend module lowering",
+                        GpuExtensionExecutionOutcome.SUCCEEDED,
+                        GpuExtensionFailurePolicy.STOP_PIPELINE,
+                        true,
+                        "none",
+                        "backend lowerer produced " + artifact.kind() + " artifact " + artifact.format(),
+                        List.of(
+                                "backendTarget=" + artifact.backendTarget().name(),
+                                "backendFormat=" + artifact.format(),
+                                "backendResource=" + artifact.resource(),
+                                "sourceOrigin=" + artifact.sourceOrigin(),
+                                "runtimeLoadMode=" + artifact.runtimeLoadMode()
+                        )
+                )
+        ));
     }
 
     private static GpuExtensionExecutionReport toExecutionReport(IrGpuExtensionParticipationMetadata metadata) {

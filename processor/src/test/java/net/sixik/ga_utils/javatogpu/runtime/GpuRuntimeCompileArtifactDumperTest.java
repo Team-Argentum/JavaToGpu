@@ -79,8 +79,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(participation.contains("backendTarget=OPENCL"));
         assertTrue(participation.contains("backendFormat=opencl-c"));
         assertTrue(participation.contains("backendResource=javatogpu/sample/Demo/kernel.cl"));
-        assertTrue(participation.contains("entry.count=3"));
-        assertTrue(participation.contains("succeeded.count=2"));
+        assertTrue(participation.contains("entry.count=5"));
+        assertTrue(participation.contains("succeeded.count=3"));
+        assertTrue(participation.contains("skipped.count=1"));
         assertTrue(participation.contains("failedContinued.count=1"));
         assertTrue(participation.contains("failedClosed.count=0"));
         assertTrue(participation.contains("pipelineContinued.all=true"));
@@ -89,9 +90,19 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(participation.contains("entry.0.extensionId=device-policy:test"));
         assertTrue(participation.contains("entry.1.source=runtime-ir-optimization"));
         assertTrue(participation.contains("entry.1.extensionId=optimizer:cse"));
-        assertTrue(participation.contains("entry.2.source=backend-compiler-feedback"));
-        assertTrue(participation.contains("entry.2.extensionId=compiler-feedback:mock"));
-        assertTrue(participation.contains("entry.2.outcome=FAILED_CONTINUED"));
+        assertTrue(participation.contains("entry.2.source=runtime-equivalence"));
+        assertTrue(participation.contains("entry.2.extensionId=runtime-equivalence:unknown"));
+        assertTrue(participation.contains("entry.2.phase=RUNTIME_EQUIVALENCE"));
+        assertTrue(participation.contains("entry.2.permission=READ_ONLY"));
+        assertTrue(participation.contains("entry.2.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.3.source=backend-lowerer"));
+        assertTrue(participation.contains("entry.3.extensionId=backend-lowerer:opencl"));
+        assertTrue(participation.contains("entry.3.phase=BACKEND_LOWERING"));
+        assertTrue(participation.contains("entry.3.permission=PRODUCTION_AFFECTING"));
+        assertTrue(participation.contains("entry.3.outcome=SUCCEEDED"));
+        assertTrue(participation.contains("entry.4.source=backend-compiler-feedback"));
+        assertTrue(participation.contains("entry.4.extensionId=compiler-feedback:mock"));
+        assertTrue(participation.contains("entry.4.outcome=FAILED_CONTINUED"));
     }
 
     @Test
@@ -138,14 +149,23 @@ class GpuRuntimeCompileArtifactDumperTest {
 
         String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
         assertTrue(participation.contains("status=recorded"));
-        assertTrue(participation.contains("entry.count=1"));
-        assertTrue(participation.contains("succeeded.count=1"));
+        assertTrue(participation.contains("entry.count=3"));
+        assertTrue(participation.contains("succeeded.count=2"));
+        assertTrue(participation.contains("skipped.count=1"));
         assertTrue(participation.contains("entry.0.source=original-irgpu:ir-validation"));
         assertTrue(participation.contains("entry.0.extensionId=validator:shape-contract"));
         assertTrue(participation.contains("entry.0.extensionVersion=3"));
         assertTrue(participation.contains("entry.0.phase=IR_VALIDATION"));
         assertTrue(participation.contains("entry.0.permission=READ_ONLY"));
         assertTrue(participation.contains("entry.0.outcome=SUCCEEDED"));
+        assertTrue(participation.contains("entry.1.source=runtime-equivalence"));
+        assertTrue(participation.contains("entry.1.extensionId=runtime-equivalence:opencl"));
+        assertTrue(participation.contains("entry.1.phase=RUNTIME_EQUIVALENCE"));
+        assertTrue(participation.contains("entry.1.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.2.source=backend-lowerer"));
+        assertTrue(participation.contains("entry.2.extensionId=backend-lowerer:opencl"));
+        assertTrue(participation.contains("entry.2.extensionVersion=test-lowerer-v1"));
+        assertTrue(participation.contains("entry.2.phase=BACKEND_LOWERING"));
     }
 
     @Test
@@ -212,15 +232,20 @@ class GpuRuntimeCompileArtifactDumperTest {
         );
 
         String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
-        assertTrue(participation.contains("entry.count=2"));
-        assertTrue(participation.contains("succeeded.count=1"));
-        assertTrue(participation.contains("skipped.count=1"));
+        assertTrue(participation.contains("entry.count=4"));
+        assertTrue(participation.contains("succeeded.count=2"));
+        assertTrue(participation.contains("skipped.count=2"));
         assertTrue(participation.contains("entry.0.source=original-irgpu:ir-validation"));
         assertTrue(participation.contains("entry.0.extensionId=validator:shape-contract"));
         assertTrue(participation.contains("entry.1.source=optimized-irgpu:runtime-ir-optimization"));
         assertTrue(participation.contains("entry.1.extensionId=optimizer:review-pass"));
         assertTrue(participation.contains("entry.1.permission=MUTATION_PROPOSAL"));
         assertTrue(participation.contains("entry.1.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.2.source=runtime-equivalence"));
+        assertTrue(participation.contains("entry.2.extensionId=runtime-equivalence:opencl"));
+        assertTrue(participation.contains("entry.2.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.3.source=backend-lowerer"));
+        assertTrue(participation.contains("entry.3.extensionId=backend-lowerer:opencl"));
     }
 
     @Test

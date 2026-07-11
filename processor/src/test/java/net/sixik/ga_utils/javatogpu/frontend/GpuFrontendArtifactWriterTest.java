@@ -64,6 +64,14 @@ class GpuFrontendArtifactWriterTest {
         assertTrue(manifest.contains("entryMethod=kernel"));
         assertTrue(manifest.contains("derived.opencl.resource=javatogpu/sample/Demo/kernel.cl"));
         assertTrue(manifest.contains("entryParameter.0.name=output"));
+        assertTrue(manifest.contains("extensionParticipation.count=1"));
+        assertTrue(manifest.contains("extensionParticipation.0.source=artifact-writer"));
+        assertTrue(manifest.contains("extensionParticipation.0.extensionId=artifact-writer:frontend"));
+        assertTrue(manifest.contains("extensionParticipation.0.phase=ARTIFACT_EMISSION"));
+        assertTrue(manifest.contains("extensionParticipation.0.permission=READ_ONLY"));
+        assertTrue(manifest.contains("extensionParticipation.0.outcome=SUCCEEDED"));
+        assertTrue(manifest.contains("extensionParticipation.0.diagnostic.0=openClResource=javatogpu/sample/Demo/kernel.cl"));
+        assertTrue(manifest.contains("extensionParticipation.0.diagnostic.1=irGpuResource=javatogpu/sample/Demo/kernel.irgpu.properties"));
     }
 
     private Writer nonClosing(StringWriter writer) {
