@@ -1236,7 +1236,15 @@ public final class OpenClValidationReporter {
     }
 
     private static void applyOptimizerFamilyRuntimeEquivalenceHistoryBaseline(java.util.Properties gate) {
-        int promotionReadyFamilies = parsePositiveInt(gate.getProperty("optimizerFamily.promotionReady.count", "0"));
+        int kernelCount = parsePositiveInt(gate.getProperty("kernel.count", "0"));
+        int promotionReadyFamilies = parsePositiveInt(gate.getProperty(
+                "optimizerFamily.promotionReady.count",
+                Integer.toString(sumKernelProperty(
+                        gate,
+                        kernelCount,
+                        "runtimeOptimizerDrift.optimizerFamily.promotionReady.count"
+                ))
+        ));
         if (promotionReadyFamilies == 0 || gate.containsKey("optimizerFamily.runtimeEquivalenceHistoryBaselineReady")) {
             return;
         }
@@ -1696,6 +1704,14 @@ public final class OpenClValidationReporter {
         } catch (NumberFormatException exception) {
             return 0;
         }
+    }
+
+    private static int sumKernelProperty(java.util.Properties properties, int kernelCount, String propertyName) {
+        int sum = 0;
+        for (int index = 0; index < kernelCount; index++) {
+            sum += parsePositiveInt(properties.getProperty("kernel." + index + "." + propertyName, "0"));
+        }
+        return sum;
     }
 
     private static java.util.Properties loadPropertiesIfExists(Path path) throws IOException {

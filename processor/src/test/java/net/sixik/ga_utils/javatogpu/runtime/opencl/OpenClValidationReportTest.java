@@ -1092,9 +1092,9 @@ class OpenClValidationReportTest {
                 "realWorkloadEvidence=runtime-snapshot",
                 "kernel.count=1",
                 "kernel.0.sourceKernelResource=kernel.cl",
-                "optimizerFamily.count=1",
-                "optimizerFamily.promotionReady.count=1",
-                "optimizerFamily.summary=cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]",
+                "kernel.0.runtimeOptimizerDrift.optimizerFamily.count=1",
+                "kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count=1",
+                "kernel.0.runtimeOptimizerDrift.optimizerFamily.summary=cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]",
                 ""
         ));
         String previousWorkloadGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
