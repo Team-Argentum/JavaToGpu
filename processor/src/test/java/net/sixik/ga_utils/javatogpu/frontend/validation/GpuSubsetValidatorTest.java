@@ -728,6 +728,30 @@ class GpuSubsetValidatorTest {
     }
 
     @Test
+    void acceptsPortableAlwaysInlineAttributeOnHelperMethod() {
+        String kernelSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = helper(input[id]);
+                }
+                """;
+        String helperSource = """
+                @GPUAlwaysInline
+                @CCode
+                float helper(float value) {
+                    return value * 2.0f;
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validateKernel(
+                parser.parseMethod(kernelSource, "Demo", "sample.Demo"),
+                java.util.List.of(parser.parseMethod(helperSource, "Helpers", "sample.Helpers")),
+                java.util.List.of()
+        ));
+    }
+
+    @Test
     void acceptsConstOpenClQualifierOnHelperPointerParameter() {
         String kernelSource = """
                 @GPU
@@ -1080,6 +1104,49 @@ class GpuSubsetValidatorTest {
 
         assertEquals(
                 "Duplicate OpenCL attribute: vec_type_hint",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsDuplicateKernelMethodAttributesAcrossPortableMetadataAndRawOpenCl() {
+        String methodSource = """
+                @GPUVectorTypeHint("float4")
+                @OpenCLAttributes({"vec_type_hint(int4)"})
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "Duplicate OpenCL attribute: vec_type_hint",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsPortableStructAttributeOnKernelMethodThroughMetadataProjection() {
+        String methodSource = """
+                @GPUPacked
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "OpenCL attribute 'packed' is not valid on @GPU methods",
                 exception.getMessage()
         );
     }

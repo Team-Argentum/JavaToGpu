@@ -44,6 +44,7 @@ import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStructField;
+import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClAttributeProjection;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelNaming;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
@@ -380,7 +381,7 @@ public final class GpuSubsetValidator {
 
     private void validateMethodAttributes(ParsedGpuMethod method, boolean kernelEntry, List<GpuValidationIssue> issues) {
         Set<String> seenUniqueAttributes = new HashSet<>();
-        for (String rawAttribute : method.openClAttributes()) {
+        for (String rawAttribute : OpenClAttributeProjection.project(method.openClAttributes(), method.attributeMetadata())) {
             AttributeSpec attribute = parseAttribute(rawAttribute);
             if (!kernelEntry) {
                 if (!HELPER_METHOD_ATTRIBUTES.contains(attribute.name())) {
@@ -413,7 +414,7 @@ public final class GpuSubsetValidator {
 
     private void validateStructAttributes(ParsedGpuStruct struct, List<GpuValidationIssue> issues) {
         Set<String> seenUniqueAttributes = new HashSet<>();
-        for (String rawAttribute : struct.openClAttributes()) {
+        for (String rawAttribute : OpenClAttributeProjection.project(struct.openClAttributes(), struct.attributeMetadata())) {
             AttributeSpec attribute = parseAttribute(rawAttribute);
             if (!STRUCT_ATTRIBUTES.contains(attribute.name())) {
                 if (KERNEL_METHOD_ATTRIBUTES.contains(attribute.name())) {
@@ -429,7 +430,7 @@ public final class GpuSubsetValidator {
 
         for (ParsedGpuStructField field : struct.fields()) {
             Set<String> seenFieldAttributes = new HashSet<>();
-            for (String rawAttribute : field.openClAttributes()) {
+            for (String rawAttribute : OpenClAttributeProjection.project(field.openClAttributes(), field.attributeMetadata())) {
                 AttributeSpec attribute = parseAttribute(rawAttribute);
                 if (!FIELD_ATTRIBUTES.contains(attribute.name())) {
                     issues.add(new GpuValidationIssue(
