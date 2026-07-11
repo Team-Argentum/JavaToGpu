@@ -248,9 +248,13 @@ public final class OpenClKernelEmitter {
 
     private void emitStruct(StringBuilder builder, ParsedGpuStruct struct) {
         builder.append("typedef struct");
-        if (!struct.openClAttributes().isEmpty()) {
+        List<String> structAttributes = OpenClAttributeProjection.project(
+                struct.openClAttributes(),
+                struct.attributeMetadata()
+        );
+        if (!structAttributes.isEmpty()) {
             builder.append(" ");
-            emitAttributes(builder, struct.openClAttributes(), true);
+            emitAttributes(builder, structAttributes, true);
         }
         builder.append("{\n");
         for (ParsedGpuStructField field : struct.fields()) {
@@ -258,7 +262,7 @@ public final class OpenClKernelEmitter {
                     .append(emitType(field.javaType()))
                     .append(" ")
                     .append(field.name());
-            emitAttributes(builder, field.openClAttributes(), false);
+            emitAttributes(builder, OpenClAttributeProjection.project(field.openClAttributes(), field.attributeMetadata()), false);
             builder.append(";\n");
         }
         builder.append("} ")
@@ -612,7 +616,11 @@ public final class OpenClKernelEmitter {
         if (!kernel && parsedMethod.inline()) {
             builder.append("inline ");
         }
-        emitAttributes(builder, parsedMethod.openClAttributes(), true);
+        emitAttributes(
+                builder,
+                OpenClAttributeProjection.project(parsedMethod.openClAttributes(), parsedMethod.attributeMetadata()),
+                true
+        );
         builder.append(kernel ? "__kernel void " : emitType(parsedMethod.returnType()) + " ")
                 .append(emittedName)
                 .append("(")
@@ -798,7 +806,11 @@ public final class OpenClKernelEmitter {
         if (parsedMethod.inline()) {
             builder.append("inline ");
         }
-        emitAttributes(builder, parsedMethod.openClAttributes(), true);
+        emitAttributes(
+                builder,
+                OpenClAttributeProjection.project(parsedMethod.openClAttributes(), parsedMethod.attributeMetadata()),
+                true
+        );
         builder.append(emitType(parsedMethod.returnType()))
                 .append(" ")
                 .append(emittedName)

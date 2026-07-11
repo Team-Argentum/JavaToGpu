@@ -6,6 +6,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
+import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClAttributeProjection;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import java.util.ArrayList;
@@ -94,7 +95,14 @@ public final class OpenClIrGpuSourceAssembler {
         for (String helperSource : helperSources) {
             source.append(helperSource);
         }
-        emitAttributes(source, artifact.module().entryOpenClAttributes(), false);
+        emitAttributes(
+                source,
+                OpenClAttributeProjection.projectIr(
+                        artifact.module().entryOpenClAttributes(),
+                        artifact.module().entryAttributeMetadata()
+                ),
+                false
+        );
         source.append("__kernel void ")
                 .append(emittedName)
                 .append("(")
@@ -112,9 +120,13 @@ public final class OpenClIrGpuSourceAssembler {
     private static String emitStruct(IrGpuStructMetadata struct) {
         StringBuilder builder = new StringBuilder();
         builder.append("typedef struct");
-        if (!struct.openClAttributes().isEmpty()) {
+        List<String> structAttributes = OpenClAttributeProjection.projectIr(
+                struct.openClAttributes(),
+                struct.attributeMetadata()
+        );
+        if (!structAttributes.isEmpty()) {
             builder.append(' ');
-            emitAttributes(builder, struct.openClAttributes(), true);
+            emitAttributes(builder, structAttributes, true);
         }
         builder.append("{\n");
         for (IrGpuStructFieldMetadata field : struct.fields()) {
@@ -122,7 +134,7 @@ public final class OpenClIrGpuSourceAssembler {
                     .append(emitType(field.javaType()))
                     .append(' ')
                     .append(field.name());
-            emitAttributes(builder, field.openClAttributes(), false);
+            emitAttributes(builder, OpenClAttributeProjection.projectIr(field.openClAttributes(), field.attributeMetadata()), false);
             builder.append(";\n");
         }
         builder.append("} ")
@@ -166,7 +178,11 @@ public final class OpenClIrGpuSourceAssembler {
         }
         StringBuilder builder = new StringBuilder();
         appendInlinePrefix(builder, helperMethod);
-        emitAttributes(builder, helperMethod.openClAttributes(), false);
+        emitAttributes(
+                builder,
+                OpenClAttributeProjection.projectIr(helperMethod.openClAttributes(), helperMethod.attributeMetadata()),
+                false
+        );
         builder.append(emitType(helperMethod.returnType()))
                 .append(" ")
                 .append(emittedName)
@@ -196,7 +212,11 @@ public final class OpenClIrGpuSourceAssembler {
         }
         StringBuilder builder = new StringBuilder();
         appendInlinePrefix(builder, helperMethod);
-        emitAttributes(builder, helperMethod.openClAttributes(), false);
+        emitAttributes(
+                builder,
+                OpenClAttributeProjection.projectIr(helperMethod.openClAttributes(), helperMethod.attributeMetadata()),
+                false
+        );
         builder.append(emitType(helperMethod.returnType()))
                 .append(" ")
                 .append(emittedName)
