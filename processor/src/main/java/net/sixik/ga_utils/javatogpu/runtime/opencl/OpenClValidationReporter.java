@@ -55,8 +55,8 @@ public final class OpenClValidationReporter {
         ensureBackendSourcePromotionWorkloadGateArtifact();
         ensureI3ReadinessWorkloadSummaryArtifact();
         ensureBackendPromotionArtifactSupportArtifact();
-        ensureProductionPromotionExplainabilityArtifact();
         seedValidationHistoryFromBaseline();
+        ensureProductionPromotionExplainabilityArtifact();
         OpenClKernelLaunchAdvisorySummary launchAdvisorySummary = loadKernelLaunchAdvisorySummary();
         OpenClCompilerResourceSummary compilerResourceSummary = loadCompilerResourceSummary();
         OpenClValidationHistoryEntry currentHistoryEntry = buildHistoryEntry(
