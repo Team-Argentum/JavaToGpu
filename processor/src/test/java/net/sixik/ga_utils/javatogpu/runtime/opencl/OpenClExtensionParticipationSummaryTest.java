@@ -43,6 +43,9 @@ class OpenClExtensionParticipationSummaryTest {
                 failedClosed.count=0
                 pipelineContinued.all=true
                 firstFailure=compiler-feedback:mock:FAILED_CONTINUED
+                entry.0.source=original-irgpu:ir-validation
+                entry.1.source=device-selection
+                entry.2.source=backend-compiler-feedback
                 """);
 
         OpenClExtensionParticipationSummary summary = OpenClExtensionParticipationSummary.read(workloadGate);
@@ -58,7 +61,12 @@ class OpenClExtensionParticipationSummaryTest {
         assertEquals(1, summary.totalFailedContinued());
         assertEquals(0, summary.totalFailedClosed());
         assertEquals(1, summary.missingCount());
+        assertEquals(
+                "original-irgpu:ir-validation=1, device-selection=1, backend-compiler-feedback=1",
+                summary.sourceSummary()
+        );
         assertTrue(summary.toMarkdown().contains("## Runtime Extension Participation"));
+        assertTrue(summary.toMarkdown().contains("- Participation sources: `original-irgpu:ir-validation=1, device-selection=1, backend-compiler-feedback=1`"));
         assertTrue(summary.toMarkdown().contains("| `kernel-a.cl` | `recorded` | `3` | `1` | `0` | `true` | `compiler-feedback:mock:FAILED_CONTINUED` |"));
 
         String history = summary.toHistorySummary();

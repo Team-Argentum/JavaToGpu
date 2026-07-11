@@ -2,6 +2,8 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipationMetadata;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,6 +40,20 @@ public record GpuRuntimeExtensionParticipationArtifact(
             return new GpuRuntimeExtensionParticipationArtifact(List.of());
         }
         ArrayList<Entry> entries = new ArrayList<>();
+        snapshot.originalIrGpuArtifact().ifPresent(artifact -> appendIrGpuMetadata(
+                entries,
+                "original-irgpu",
+                artifact
+        ));
+        snapshot.optimizedIrGpuArtifact()
+                .filter(optimized -> snapshot.originalIrGpuArtifact()
+                        .map(original -> !original.equals(optimized))
+                        .orElse(true))
+                .ifPresent(artifact -> appendIrGpuMetadata(
+                        entries,
+                        "optimized-irgpu",
+                        artifact
+                ));
         snapshot.deviceSelection().ifPresent(selection -> append(
                 entries,
                 "device-selection",
@@ -106,6 +122,40 @@ public record GpuRuntimeExtensionParticipationArtifact(
                 entries.add(new Entry(source, report));
             }
         }
+    }
+
+    private static void appendIrGpuMetadata(
+            ArrayList<Entry> entries,
+            String artifactStage,
+            IrGpuArtifact artifact
+    ) {
+        if (artifact == null || artifact.extensionParticipationMetadata().isEmpty()) {
+            return;
+        }
+        for (IrGpuExtensionParticipationMetadata metadata : artifact.extensionParticipationMetadata()) {
+            if (metadata != null) {
+                entries.add(new Entry(
+                        artifactStage + ":" + metadata.source(),
+                        toExecutionReport(metadata)
+                ));
+            }
+        }
+    }
+
+    private static GpuExtensionExecutionReport toExecutionReport(IrGpuExtensionParticipationMetadata metadata) {
+        return new GpuExtensionExecutionReport(
+                metadata.extensionId(),
+                metadata.extensionVersion(),
+                metadata.phase(),
+                metadata.permission(),
+                metadata.operation(),
+                metadata.outcome(),
+                metadata.failurePolicy(),
+                metadata.pipelineContinued(),
+                metadata.failureType(),
+                metadata.message(),
+                metadata.diagnostics()
+        );
     }
 
     private long count(GpuExtensionExecutionOutcome outcome) {

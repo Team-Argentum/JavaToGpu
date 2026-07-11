@@ -124,6 +124,32 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             String latestRuntimeOptimizerDriftProperties,
             String latestOptimizerFamilyEquivalencePayloadProperties
     ) throws IOException {
+        return merge(
+                path,
+                sourceKernelResource,
+                latestGateProperties,
+                latestSourceSwitchingDecisionProperties,
+                latestRuntimeIrHandoffProperties,
+                latestRuntimeProductionMutationSafetyProperties,
+                latestI3ReadinessSummaryProperties,
+                latestRuntimeOptimizerDriftProperties,
+                latestOptimizerFamilyEquivalencePayloadProperties,
+                ""
+        );
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties,
+            String latestRuntimeIrHandoffProperties,
+            String latestRuntimeProductionMutationSafetyProperties,
+            String latestI3ReadinessSummaryProperties,
+            String latestRuntimeOptimizerDriftProperties,
+            String latestOptimizerFamilyEquivalencePayloadProperties,
+            String latestRuntimeExtensionParticipationProperties
+    ) throws IOException {
         Properties latest = loadProperties(latestGateProperties);
         Properties latestSourceSwitchingDecision = loadProperties(latestSourceSwitchingDecisionProperties);
         Properties latestRuntimeIrHandoff = loadProperties(latestRuntimeIrHandoffProperties);
@@ -131,6 +157,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         Properties latestI3ReadinessSummary = loadProperties(latestI3ReadinessSummaryProperties);
         Properties latestRuntimeOptimizerDrift = loadProperties(latestRuntimeOptimizerDriftProperties);
         Properties latestOptimizerFamilyEquivalencePayload = loadProperties(latestOptimizerFamilyEquivalencePayloadProperties);
+        Properties latestRuntimeExtensionParticipation = loadProperties(latestRuntimeExtensionParticipationProperties);
         Properties existing = new Properties();
         if (Files.exists(path)) {
             try (InputStream inputStream = Files.newInputStream(path)) {
@@ -172,6 +199,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyI3ReadinessSummaryProperties(latestI3ReadinessSummary, latestEntry);
         copyRuntimeOptimizerDriftProperties(latestRuntimeOptimizerDrift, latestEntry);
         copyOptimizerFamilyEquivalencePayloadProperties(latestOptimizerFamilyEquivalencePayload, latestEntry);
+        copyRuntimeExtensionParticipationProperties(latestRuntimeExtensionParticipation, latestEntry);
         copyIndexedProperties(latest, latestEntry, "runtimeEquivalence.diagnostic");
         copyIndexedProperties(latest, latestEntry, "reconstruction.blocker");
         copyIndexedProperties(latest, latestEntry, "reconstruction.diagnostic");
@@ -556,6 +584,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append("productionPromotionOperatorAccepted.all=").append(allProductionPromotionOperatorAccepted).append('\n');
         builder.append("sourceSwitching.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
         builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
+        appendAggregateRuntimeExtensionParticipation(builder, kernels);
         builder.append("sourceSwitching.count=").append(kernels.size()).append('\n');
         builder.append("sourceSwitching.sourcePromotionFirstBlocker.count=").append(aggregateSourcePromotionFirstBlockers.size()).append('\n');
         int sourcePromotionBlockerIndex = 0;
@@ -620,6 +649,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         appendRuntimeProductionMutationSafety(builder, prefix, entry);
         appendI3ReadinessSummary(builder, prefix, entry);
         appendRuntimeOptimizerDrift(builder, prefix, entry);
+        appendRuntimeExtensionParticipation(builder, prefix, entry);
         appendIndexedProperties(builder, prefix, entry, "runtimeEquivalence.diagnostic");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.blocker");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.diagnostic");
@@ -757,6 +787,104 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("optimizerFamilyPayload.family.count=").append(entry.getProperty("optimizerFamilyPayload.family.count", "0")).append('\n');
         builder.append(prefix).append("optimizerFamilyPayload.family.complete.count=").append(entry.getProperty("optimizerFamilyPayload.family.complete.count", "0")).append('\n');
         builder.append(prefix).append("optimizerFamilyPayload.family.complete.all=").append(entry.getProperty("optimizerFamilyPayload.family.complete.all", "false")).append('\n');
+    }
+
+    private static void copyRuntimeExtensionParticipationProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("runtimeExtensionParticipation.status", "not-recorded");
+            target.setProperty("runtimeExtensionParticipation.entry.count", "0");
+            target.setProperty("runtimeExtensionParticipation.succeeded.count", "0");
+            target.setProperty("runtimeExtensionParticipation.skipped.count", "0");
+            target.setProperty("runtimeExtensionParticipation.failedContinued.count", "0");
+            target.setProperty("runtimeExtensionParticipation.failedClosed.count", "0");
+            target.setProperty("runtimeExtensionParticipation.pipelineContinued.all", "unknown");
+            target.setProperty("runtimeExtensionParticipation.firstFailure", "none");
+            target.setProperty("runtimeExtensionParticipation.source.count", "0");
+            return;
+        }
+        target.setProperty("runtimeExtensionParticipation.status", source.getProperty("status", "unknown"));
+        target.setProperty("runtimeExtensionParticipation.entry.count", source.getProperty("entry.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.succeeded.count", source.getProperty("succeeded.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.skipped.count", source.getProperty("skipped.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.failedContinued.count", source.getProperty("failedContinued.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.failedClosed.count", source.getProperty("failedClosed.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.pipelineContinued.all", source.getProperty("pipelineContinued.all", "unknown"));
+        target.setProperty("runtimeExtensionParticipation.firstFailure", source.getProperty("firstFailure", "none"));
+        LinkedHashMap<String, Integer> sourceCounts = runtimeExtensionParticipationSourceCounts(source);
+        target.setProperty("runtimeExtensionParticipation.source.count", Integer.toString(sourceCounts.size()));
+        int sourceIndex = 0;
+        for (Map.Entry<String, Integer> sourceCount : sourceCounts.entrySet()) {
+            target.setProperty("runtimeExtensionParticipation.source." + sourceIndex + ".name", sourceCount.getKey());
+            target.setProperty("runtimeExtensionParticipation.source." + sourceIndex + ".count", Integer.toString(sourceCount.getValue()));
+            sourceIndex++;
+        }
+    }
+
+    private static LinkedHashMap<String, Integer> runtimeExtensionParticipationSourceCounts(Properties properties) {
+        LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+        int entryCount = parsePositiveInt(properties.getProperty("entry.count", "0"));
+        for (int index = 0; index < entryCount; index++) {
+            String source = properties.getProperty("entry." + index + ".source", "");
+            if (!source.isBlank()) {
+                counts.merge(source, 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
+    private static void appendAggregateRuntimeExtensionParticipation(
+            StringBuilder builder,
+            LinkedHashMap<String, Properties> kernels
+    ) {
+        int recordedKernelCount = 0;
+        int entryCount = 0;
+        int failedContinuedCount = 0;
+        int failedClosedCount = 0;
+        LinkedHashMap<String, Integer> sourceCounts = new LinkedHashMap<>();
+        for (Properties entry : kernels.values()) {
+            if ("recorded".equals(entry.getProperty("runtimeExtensionParticipation.status"))) {
+                recordedKernelCount++;
+            }
+            entryCount += parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.entry.count", "0"));
+            failedContinuedCount += parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.failedContinued.count", "0"));
+            failedClosedCount += parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.failedClosed.count", "0"));
+            int sourceCount = parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.source.count", "0"));
+            for (int index = 0; index < sourceCount; index++) {
+                String source = entry.getProperty("runtimeExtensionParticipation.source." + index + ".name", "");
+                int count = parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.source." + index + ".count", "0"));
+                if (!source.isBlank()) {
+                    sourceCounts.merge(source, count, Integer::sum);
+                }
+            }
+        }
+        builder.append("runtimeExtensionParticipation.recordedKernel.count=").append(recordedKernelCount).append('\n');
+        builder.append("runtimeExtensionParticipation.entry.count=").append(entryCount).append('\n');
+        builder.append("runtimeExtensionParticipation.failedContinued.count=").append(failedContinuedCount).append('\n');
+        builder.append("runtimeExtensionParticipation.failedClosed.count=").append(failedClosedCount).append('\n');
+        builder.append("runtimeExtensionParticipation.source.count=").append(sourceCounts.size()).append('\n');
+        int sourceIndex = 0;
+        for (Map.Entry<String, Integer> source : sourceCounts.entrySet()) {
+            builder.append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".name=").append(source.getKey()).append('\n');
+            builder.append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".count=").append(source.getValue()).append('\n');
+            sourceIndex++;
+        }
+    }
+
+    private static void appendRuntimeExtensionParticipation(StringBuilder builder, String prefix, Properties entry) {
+        builder.append(prefix).append("runtimeExtensionParticipation.status=").append(entry.getProperty("runtimeExtensionParticipation.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.entry.count=").append(entry.getProperty("runtimeExtensionParticipation.entry.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.succeeded.count=").append(entry.getProperty("runtimeExtensionParticipation.succeeded.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.skipped.count=").append(entry.getProperty("runtimeExtensionParticipation.skipped.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.failedContinued.count=").append(entry.getProperty("runtimeExtensionParticipation.failedContinued.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.failedClosed.count=").append(entry.getProperty("runtimeExtensionParticipation.failedClosed.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.pipelineContinued.all=").append(entry.getProperty("runtimeExtensionParticipation.pipelineContinued.all", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.firstFailure=").append(entry.getProperty("runtimeExtensionParticipation.firstFailure", "none")).append('\n');
+        int sourceCount = parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.source.count", "0"));
+        builder.append(prefix).append("runtimeExtensionParticipation.source.count=").append(sourceCount).append('\n');
+        for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++) {
+            builder.append(prefix).append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".name=").append(entry.getProperty("runtimeExtensionParticipation.source." + sourceIndex + ".name", "unknown")).append('\n');
+            builder.append(prefix).append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".count=").append(entry.getProperty("runtimeExtensionParticipation.source." + sourceIndex + ".count", "0")).append('\n');
+        }
     }
 
     private static void appendIndexedProperties(

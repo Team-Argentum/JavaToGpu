@@ -120,6 +120,42 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
     }
 
     @Test
+    void carriesRuntimeExtensionParticipationIntoWorkloadGateEvidence() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-extension-participation.cl",
+                blockedGateProperties("backend source promotion remains blocked for fixture"),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                runtimeExtensionParticipationProperties()
+        ));
+
+        assertEquals("1", gate.getProperty("runtimeExtensionParticipation.recordedKernel.count"));
+        assertEquals("3", gate.getProperty("runtimeExtensionParticipation.entry.count"));
+        assertEquals("1", gate.getProperty("runtimeExtensionParticipation.failedContinued.count"));
+        assertEquals("0", gate.getProperty("runtimeExtensionParticipation.failedClosed.count"));
+        assertEquals("2", gate.getProperty("runtimeExtensionParticipation.source.count"));
+        assertEquals("original-irgpu:ir-validation", gate.getProperty("runtimeExtensionParticipation.source.0.name"));
+        assertEquals("1", gate.getProperty("runtimeExtensionParticipation.source.0.count"));
+        assertEquals("backend-compiler-feedback", gate.getProperty("runtimeExtensionParticipation.source.1.name"));
+        assertEquals("2", gate.getProperty("runtimeExtensionParticipation.source.1.count"));
+        assertEquals("recorded", gate.getProperty("kernel.0.runtimeExtensionParticipation.status"));
+        assertEquals("3", gate.getProperty("kernel.0.runtimeExtensionParticipation.entry.count"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeExtensionParticipation.succeeded.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeExtensionParticipation.failedContinued.count"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeExtensionParticipation.pipelineContinued.all"));
+        assertEquals("compiler-feedback:mock:FAILED_CONTINUED", gate.getProperty("kernel.0.runtimeExtensionParticipation.firstFailure"));
+        assertEquals("original-irgpu:ir-validation", gate.getProperty("kernel.0.runtimeExtensionParticipation.source.0.name"));
+        assertEquals("backend-compiler-feedback", gate.getProperty("kernel.0.runtimeExtensionParticipation.source.1.name"));
+    }
+
+    @Test
     void updatesExistingKernelResourceInsteadOfDuplicatingIt() throws IOException {
         Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
 
@@ -797,6 +833,29 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "promotionEligible=false",
                 "productionGateStatus=" + productionGateStatus,
                 "productionProfileRequested=" + productionProfileRequested,
+                ""
+        );
+    }
+
+    private static String runtimeExtensionParticipationProperties() {
+        return String.join("\n",
+                "status=recorded",
+                "backendTarget=OPENCL",
+                "backendFormat=opencl-c",
+                "backendResource=kernel-extension-participation.cl",
+                "entry.count=3",
+                "succeeded.count=2",
+                "skipped.count=0",
+                "failedContinued.count=1",
+                "failedClosed.count=0",
+                "pipelineContinued.all=true",
+                "firstFailure=compiler-feedback:mock:FAILED_CONTINUED",
+                "entry.0.source=original-irgpu:ir-validation",
+                "entry.0.extensionId=validator:shape-contract",
+                "entry.1.source=backend-compiler-feedback",
+                "entry.1.extensionId=compiler-feedback:mock",
+                "entry.2.source=backend-compiler-feedback",
+                "entry.2.extensionId=compiler-feedback:fallback",
                 ""
         );
     }

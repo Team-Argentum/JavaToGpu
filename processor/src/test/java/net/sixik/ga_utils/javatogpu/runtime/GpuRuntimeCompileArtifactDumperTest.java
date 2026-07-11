@@ -11,6 +11,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
@@ -91,6 +92,135 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(participation.contains("entry.2.source=backend-compiler-feedback"));
         assertTrue(participation.contains("entry.2.extensionId=compiler-feedback:mock"));
         assertTrue(participation.contains("entry.2.outcome=FAILED_CONTINUED"));
+    }
+
+    @Test
+    void dumpsIrGpuExtensionParticipationIntoRuntimeParticipationArtifact() {
+        IrGpuArtifact irGpuArtifact = artifact("body\n  return original\n")
+                .withExtensionParticipationMetadata(List.of(new IrGpuExtensionParticipationMetadata(
+                        "ir-validation",
+                        "validator:shape-contract",
+                        "3",
+                        GpuExtensionPhase.IR_VALIDATION,
+                        GpuExtensionPermission.READ_ONLY,
+                        "IR validation",
+                        GpuExtensionExecutionOutcome.SUCCEEDED,
+                        GpuExtensionFailurePolicy.CONTINUE,
+                        true,
+                        "none",
+                        "validator accepted IR shape",
+                        List.of("validator diagnostic")
+                )));
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(irGpuArtifact)
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(irGpuArtifact))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                snapshot,
+                GpuBackendCompilerFeedbackRegistry.of(List.of())
+        );
+
+        String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
+        assertTrue(participation.contains("status=recorded"));
+        assertTrue(participation.contains("entry.count=1"));
+        assertTrue(participation.contains("succeeded.count=1"));
+        assertTrue(participation.contains("entry.0.source=original-irgpu:ir-validation"));
+        assertTrue(participation.contains("entry.0.extensionId=validator:shape-contract"));
+        assertTrue(participation.contains("entry.0.extensionVersion=3"));
+        assertTrue(participation.contains("entry.0.phase=IR_VALIDATION"));
+        assertTrue(participation.contains("entry.0.permission=READ_ONLY"));
+        assertTrue(participation.contains("entry.0.outcome=SUCCEEDED"));
+    }
+
+    @Test
+    void dumpsOptimizedIrGpuExtensionParticipationWhenArtifactDiffers() {
+        IrGpuArtifact originalIrGpuArtifact = artifact("body\n  return original\n")
+                .withExtensionParticipationMetadata(List.of(new IrGpuExtensionParticipationMetadata(
+                        "ir-validation",
+                        "validator:shape-contract",
+                        "3",
+                        GpuExtensionPhase.IR_VALIDATION,
+                        GpuExtensionPermission.READ_ONLY,
+                        "IR validation",
+                        GpuExtensionExecutionOutcome.SUCCEEDED,
+                        GpuExtensionFailurePolicy.CONTINUE,
+                        true,
+                        "none",
+                        "validator accepted IR shape",
+                        List.of()
+                )));
+        IrGpuArtifact optimizedIrGpuArtifact = artifact("body\n  return optimized\n")
+                .withExtensionParticipationMetadata(List.of(new IrGpuExtensionParticipationMetadata(
+                        "runtime-ir-optimization",
+                        "optimizer:review-pass",
+                        "2",
+                        GpuExtensionPhase.RUNTIME_IR_OPTIMIZATION,
+                        GpuExtensionPermission.MUTATION_PROPOSAL,
+                        "Runtime IR optimization",
+                        GpuExtensionExecutionOutcome.SKIPPED,
+                        GpuExtensionFailurePolicy.CONTINUE,
+                        true,
+                        "none",
+                        "optimizer proposed no production mutation",
+                        List.of()
+                )));
+        GpuRuntimeCompileRequest originalRequest = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(originalIrGpuArtifact)
+        );
+        GpuRuntimeCompileRequest optimizedRequest = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimizedIrGpuArtifact)
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                originalRequest,
+                optimizedRequest,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(optimizedRequest, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(optimizedRequest),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimizedIrGpuArtifact))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                snapshot,
+                GpuBackendCompilerFeedbackRegistry.of(List.of())
+        );
+
+        String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
+        assertTrue(participation.contains("entry.count=2"));
+        assertTrue(participation.contains("succeeded.count=1"));
+        assertTrue(participation.contains("skipped.count=1"));
+        assertTrue(participation.contains("entry.0.source=original-irgpu:ir-validation"));
+        assertTrue(participation.contains("entry.0.extensionId=validator:shape-contract"));
+        assertTrue(participation.contains("entry.1.source=optimized-irgpu:runtime-ir-optimization"));
+        assertTrue(participation.contains("entry.1.extensionId=optimizer:review-pass"));
+        assertTrue(participation.contains("entry.1.permission=MUTATION_PROPOSAL"));
+        assertTrue(participation.contains("entry.1.outcome=SKIPPED"));
     }
 
     @Test

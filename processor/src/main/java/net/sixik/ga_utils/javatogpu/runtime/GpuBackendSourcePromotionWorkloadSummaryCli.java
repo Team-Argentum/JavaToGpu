@@ -80,6 +80,26 @@ public final class GpuBackendSourcePromotionWorkloadSummaryCli {
         builder.append("optimizerFamilyPayload.complete.all=")
                 .append(summary.optimizerFamilyPayloadCompleteAll())
                 .append('\n');
+        builder.append("runtimeExtensionParticipation.recordedKernel.count=")
+                .append(summary.runtimeExtensionParticipationRecordedKernelCount())
+                .append('\n');
+        builder.append("runtimeExtensionParticipation.entry.count=")
+                .append(summary.runtimeExtensionParticipationEntryCount())
+                .append('\n');
+        builder.append("runtimeExtensionParticipation.failedContinued.count=")
+                .append(summary.runtimeExtensionParticipationFailedContinuedCount())
+                .append('\n');
+        builder.append("runtimeExtensionParticipation.failedClosed.count=")
+                .append(summary.runtimeExtensionParticipationFailedClosedCount())
+                .append('\n');
+        builder.append("runtimeExtensionParticipation.sources=")
+                .append(summary.runtimeExtensionParticipationSources())
+                .append('\n');
+        appendFirstCount(
+                builder,
+                "runtimeExtensionParticipation.source",
+                summary.runtimeExtensionParticipationSources()
+        );
         builder.append("historyStatus=").append(summary.historyStatus()).append('\n');
         return builder.toString();
     }

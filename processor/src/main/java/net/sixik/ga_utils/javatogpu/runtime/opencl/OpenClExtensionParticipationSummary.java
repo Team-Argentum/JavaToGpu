@@ -151,6 +151,7 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
         markdown.append("- Failed continued: `").append(totalFailedContinued()).append("`\n");
         markdown.append("- Failed closed: `").append(totalFailedClosed()).append("`\n");
         markdown.append("- Missing artifacts: `").append(missingCount()).append("`\n\n");
+        markdown.append("- Participation sources: `").append(inline(sourceSummary())).append("`\n\n");
         if (entries.isEmpty()) {
             return markdown.toString();
         }
@@ -167,6 +168,26 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
         }
         markdown.append('\n');
         return markdown.toString();
+    }
+
+    String sourceSummary() {
+        LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+        for (Entry entry : entries) {
+            for (Map.Entry<String, Integer> source : entry.sourceCounts().entrySet()) {
+                counts.merge(source.getKey(), source.getValue(), Integer::sum);
+            }
+        }
+        if (counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder summary = new StringBuilder();
+        counts.forEach((source, count) -> {
+            if (!summary.isEmpty()) {
+                summary.append(", ");
+            }
+            summary.append(source).append('=').append(count);
+        });
+        return summary.toString();
     }
 
     private static Map<String, Properties> loadParticipationArtifacts(Path artifactRoot) throws IOException {
@@ -220,7 +241,8 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
             int failedContinuedCount,
             int failedClosedCount,
             String pipelineContinuedAll,
-            String firstFailure
+            String firstFailure,
+            Map<String, Integer> sourceCounts
     ) {
 
         private static final Base64.Encoder HISTORY_ENCODER = Base64.getUrlEncoder().withoutPadding();
@@ -234,6 +256,28 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
             failedClosedCount = Math.max(0, failedClosedCount);
             pipelineContinuedAll = normalize(pipelineContinuedAll, "unknown");
             firstFailure = normalize(firstFailure, "none");
+            sourceCounts = normalizeSourceCounts(sourceCounts);
+        }
+
+        Entry(
+                String kernelResource,
+                String status,
+                int executionCount,
+                int failedContinuedCount,
+                int failedClosedCount,
+                String pipelineContinuedAll,
+                String firstFailure
+        ) {
+            this(
+                    kernelResource,
+                    status,
+                    executionCount,
+                    failedContinuedCount,
+                    failedClosedCount,
+                    pipelineContinuedAll,
+                    firstFailure,
+                    Map.of()
+            );
         }
 
         static Entry from(String kernelResource, Properties properties) {
@@ -247,7 +291,8 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
                     parseInt(properties.getProperty("failedContinued.count"), 0),
                     parseInt(properties.getProperty("failedClosed.count"), 0),
                     properties.getProperty("pipelineContinued.all", "unknown"),
-                    properties.getProperty("firstFailure", "none")
+                    properties.getProperty("firstFailure", "none"),
+                    parseSourceCounts(properties)
             );
         }
 
@@ -259,13 +304,14 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
                     encode(Integer.toString(failedContinuedCount)),
                     encode(Integer.toString(failedClosedCount)),
                     encode(pipelineContinuedAll),
-                    encode(firstFailure)
+                    encode(firstFailure),
+                    encode(formatSourceCounts(sourceCounts))
             );
         }
 
         static Optional<Entry> fromHistoryToken(String token) {
             String[] fields = token.split("\\.", -1);
-            if (fields.length != 7) {
+            if (fields.length != 7 && fields.length != 8) {
                 return Optional.empty();
             }
             try {
@@ -276,7 +322,8 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
                         Integer.parseInt(decode(fields[3])),
                         Integer.parseInt(decode(fields[4])),
                         decode(fields[5]),
-                        decode(fields[6])
+                        decode(fields[6]),
+                        fields.length == 8 ? parseSourceCounts(decode(fields[7])) : Map.of()
                 ));
             } catch (IllegalArgumentException failure) {
                 return Optional.empty();
@@ -293,6 +340,61 @@ record OpenClExtensionParticipationSummary(String status, List<Entry> entries, S
 
         private static String decode(String value) {
             return new String(HISTORY_DECODER.decode(value), StandardCharsets.UTF_8);
+        }
+
+        private static Map<String, Integer> parseSourceCounts(Properties properties) {
+            LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+            int count = parseInt(properties.getProperty("entry.count"), 0);
+            for (int index = 0; index < count; index++) {
+                String source = properties.getProperty("entry." + index + ".source", "");
+                if (!source.isBlank()) {
+                    counts.merge(source, 1, Integer::sum);
+                }
+            }
+            return counts;
+        }
+
+        private static Map<String, Integer> parseSourceCounts(String summary) {
+            LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+            if (summary == null || summary.isBlank() || "none".equals(summary)) {
+                return counts;
+            }
+            for (String token : summary.split(",", -1)) {
+                String trimmed = token.trim();
+                int separator = trimmed.lastIndexOf('=');
+                if (separator <= 0 || separator == trimmed.length() - 1) {
+                    return Map.of();
+                }
+                counts.put(trimmed.substring(0, separator), parseInt(trimmed.substring(separator + 1), 0));
+            }
+            return counts;
+        }
+
+        private static Map<String, Integer> normalizeSourceCounts(Map<String, Integer> values) {
+            if (values == null || values.isEmpty()) {
+                return Map.of();
+            }
+            LinkedHashMap<String, Integer> normalized = new LinkedHashMap<>();
+            values.forEach((source, count) -> {
+                if (source != null && !source.isBlank() && count != null && count > 0) {
+                    normalized.put(source, count);
+                }
+            });
+            return java.util.Collections.unmodifiableMap(normalized);
+        }
+
+        private static String formatSourceCounts(Map<String, Integer> counts) {
+            if (counts == null || counts.isEmpty()) {
+                return "none";
+            }
+            StringBuilder summary = new StringBuilder();
+            counts.forEach((source, count) -> {
+                if (!summary.isEmpty()) {
+                    summary.append(", ");
+                }
+                summary.append(source).append('=').append(count);
+            });
+            return summary.toString();
         }
     }
 }

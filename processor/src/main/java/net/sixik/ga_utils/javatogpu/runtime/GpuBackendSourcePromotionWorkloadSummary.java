@@ -29,6 +29,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         String optimizerFamilySummary,
         int optimizerFamilyPayloadCompleteCount,
         String optimizerFamilyPayloadCompleteAll,
+        int runtimeExtensionParticipationRecordedKernelCount,
+        int runtimeExtensionParticipationEntryCount,
+        int runtimeExtensionParticipationFailedContinuedCount,
+        int runtimeExtensionParticipationFailedClosedCount,
+        String runtimeExtensionParticipationSources,
         String sourceSwitchingDecisions,
         String sourcePromotionFirstBlockers,
         String sourcePromotionFirstBlockerFamilies,
@@ -55,6 +60,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 "none",
                 0,
                 "false",
+                0,
+                0,
+                0,
+                0,
+                "",
                 "",
                 "",
                 "",
@@ -103,6 +113,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                         "optimizerFamilyPayload.family.complete.count",
                         "optimizerFamilyPayload.family.complete.all"
                 ),
+                runtimeExtensionParticipationRecordedKernelCount(properties, kernelCount),
+                runtimeExtensionParticipationEntryCount(properties, kernelCount),
+                runtimeExtensionParticipationFailedContinuedCount(properties, kernelCount),
+                runtimeExtensionParticipationFailedClosedCount(properties, kernelCount),
+                summarizeRuntimeExtensionParticipationSources(properties, kernelCount),
                 summarizeSourceSwitchingDecisions(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockers(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockerFamilies(properties, kernelCount),
@@ -135,6 +150,7 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     + ", optimizerPayloadCompleteAll="
                     + optimizerFamilyPayloadCompleteAll
                     + optimizerFamilySummaryText()
+                    + runtimeExtensionParticipationEvidenceText()
                     + sourceSwitchingEvidenceText()
                     + kernelEvidence
                     + sourceKernelResourceText()
@@ -161,6 +177,7 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 + ", optimizerPayloadCompleteAll="
                 + optimizerFamilyPayloadCompleteAll
                 + optimizerFamilySummaryText()
+                + runtimeExtensionParticipationEvidenceText()
                 + sourceSwitchingEvidenceText()
                 + kernelEvidence
                 + sourceKernelResourceText()
@@ -177,6 +194,26 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         }
         if (!sourcePromotionFirstBlockerFamilies.isBlank()) {
             builder.append(", sourcePromotionFirstBlockerFamilies=").append(sourcePromotionFirstBlockerFamilies);
+        }
+        return builder.toString();
+    }
+
+    public String runtimeExtensionParticipationEvidenceText() {
+        if (runtimeExtensionParticipationEntryCount == 0
+                && runtimeExtensionParticipationRecordedKernelCount == 0
+                && runtimeExtensionParticipationSources.isBlank()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", runtimeExtensionParticipation=recordedKernels=")
+                .append(runtimeExtensionParticipationRecordedKernelCount)
+                .append("/executions=")
+                .append(runtimeExtensionParticipationEntryCount)
+                .append("/failedContinued=")
+                .append(runtimeExtensionParticipationFailedContinuedCount)
+                .append("/failedClosed=")
+                .append(runtimeExtensionParticipationFailedClosedCount);
+        if (!runtimeExtensionParticipationSources.isBlank()) {
+            builder.append("/sources=").append(runtimeExtensionParticipationSources);
         }
         return builder.toString();
     }
@@ -313,6 +350,69 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return summarizeCounts(decisionCounts);
     }
 
+    private static int runtimeExtensionParticipationRecordedKernelCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.recordedKernel.count");
+        if (aggregate != null) {
+            return parsePositiveInt(aggregate);
+        }
+        int count = 0;
+        for (int index = 0; index < kernelCount; index++) {
+            if ("recorded".equals(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.status"))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int runtimeExtensionParticipationEntryCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.entry.count");
+        return aggregate == null
+                ? sumKernelProperty(properties, kernelCount, "runtimeExtensionParticipation.entry.count")
+                : parsePositiveInt(aggregate);
+    }
+
+    private static int runtimeExtensionParticipationFailedContinuedCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.failedContinued.count");
+        return aggregate == null
+                ? sumKernelProperty(properties, kernelCount, "runtimeExtensionParticipation.failedContinued.count")
+                : parsePositiveInt(aggregate);
+    }
+
+    private static int runtimeExtensionParticipationFailedClosedCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.failedClosed.count");
+        return aggregate == null
+                ? sumKernelProperty(properties, kernelCount, "runtimeExtensionParticipation.failedClosed.count")
+                : parsePositiveInt(aggregate);
+    }
+
+    private static String summarizeRuntimeExtensionParticipationSources(Properties properties, int kernelCount) {
+        int aggregateSourceCount = parsePositiveInt(properties.getProperty("runtimeExtensionParticipation.source.count", "0"));
+        if (aggregateSourceCount > 0) {
+            return summarizeIndexed(properties, "runtimeExtensionParticipation.source", aggregateSourceCount);
+        }
+        Map<String, Integer> sourceCounts = new LinkedHashMap<>();
+        for (int kernelIndex = 0; kernelIndex < kernelCount; kernelIndex++) {
+            int sourceCount = parsePositiveInt(properties.getProperty(
+                    "kernel." + kernelIndex + ".runtimeExtensionParticipation.source.count",
+                    "0"
+            ));
+            for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++) {
+                String source = properties.getProperty(
+                        "kernel." + kernelIndex + ".runtimeExtensionParticipation.source." + sourceIndex + ".name",
+                        ""
+                );
+                int count = parsePositiveInt(properties.getProperty(
+                        "kernel." + kernelIndex + ".runtimeExtensionParticipation.source." + sourceIndex + ".count",
+                        "0"
+                ));
+                if (!source.isBlank()) {
+                    sourceCounts.merge(source, count, Integer::sum);
+                }
+            }
+        }
+        return summarizeCounts(sourceCounts);
+    }
+
     private static String summarizeKernelEvidence(Properties properties, int kernelCount) {
         if (kernelCount == 0) {
             return "";
@@ -360,6 +460,15 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append(properties.getProperty("kernel." + index + ".optimizerFamilyPayload.family.complete.count", "0"))
                     .append("/payloadCompleteAll=")
                     .append(properties.getProperty("kernel." + index + ".optimizerFamilyPayload.family.complete.all", "false"))
+                    .append(", extensionParticipation=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.status", "not-recorded"))
+                    .append('/')
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.entry.count", "0"))
+                    .append("executions")
+                    .append("/failedContinued=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.failedContinued.count", "0"))
+                    .append("/failedClosed=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.failedClosed.count", "0"))
                     .append("/fallback=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.fallbackDecision", "unknown"))
                     .append(", productionMutation=")

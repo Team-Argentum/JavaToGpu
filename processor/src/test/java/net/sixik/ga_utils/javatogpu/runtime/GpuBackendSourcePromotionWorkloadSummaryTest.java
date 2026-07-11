@@ -58,6 +58,19 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.count", "1");
         properties.setProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.name", "runtime-equivalence");
         properties.setProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.recordedKernel.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.entry.count", "3");
+        properties.setProperty("runtimeExtensionParticipation.failedContinued.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.failedClosed.count", "0");
+        properties.setProperty("runtimeExtensionParticipation.source.count", "2");
+        properties.setProperty("runtimeExtensionParticipation.source.0.name", "original-irgpu:ir-validation");
+        properties.setProperty("runtimeExtensionParticipation.source.0.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.source.1.name", "backend-compiler-feedback");
+        properties.setProperty("runtimeExtensionParticipation.source.1.count", "2");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.status", "recorded");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.entry.count", "3");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.failedContinued.count", "1");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.failedClosed.count", "0");
 
         GpuBackendSourcePromotionWorkloadSummary summary =
                 GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
@@ -79,14 +92,24 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         );
         assertEquals(1, summary.productionPromotionOperatorAcceptedCount());
         assertEquals("true", summary.productionPromotionOperatorAcceptedAll());
+        assertEquals(1, summary.runtimeExtensionParticipationRecordedKernelCount());
+        assertEquals(3, summary.runtimeExtensionParticipationEntryCount());
+        assertEquals(1, summary.runtimeExtensionParticipationFailedContinuedCount());
+        assertEquals(0, summary.runtimeExtensionParticipationFailedClosedCount());
+        assertEquals(
+                "original-irgpu:ir-validation=1, backend-compiler-feedback=2",
+                summary.runtimeExtensionParticipationSources()
+        );
         assertTrue(summary.historyStatus().contains("gateStatus=blocked"));
         assertTrue(summary.historyStatus().contains("realWorkloadEvidence=runtime-snapshot"));
         assertTrue(summary.historyStatus().contains("productionPromotionOperatorAccepted=1/1"));
         assertTrue(summary.historyStatus().contains("productionPromotionOperatorAcceptedAll=true"));
+        assertTrue(summary.historyStatus().contains("runtimeExtensionParticipation=recordedKernels=1/executions=3/failedContinued=1/failedClosed=0/sources=original-irgpu:ir-validation=1, backend-compiler-feedback=2"));
         assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
         assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
         assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=1"));
         assertTrue(summary.historyStatus().contains("kernelCount=1"));
+        assertTrue(summary.historyStatus().contains("extensionParticipation=recorded/3executions/failedContinued=1/failedClosed=0"));
         assertTrue(summary.historyStatus().contains("sourceSwitching=reject-production-irgpu-source/operatorAccepted=true"));
         assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/optimizerFamilies=2/promotionReadyFamilies=1"));
         assertTrue(summary.historyStatus().contains("families=source-parity=1"));
@@ -235,6 +258,13 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "0");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary", "none");
+        properties.setProperty("runtimeExtensionParticipation.recordedKernel.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.entry.count", "2");
+        properties.setProperty("runtimeExtensionParticipation.failedContinued.count", "0");
+        properties.setProperty("runtimeExtensionParticipation.failedClosed.count", "0");
+        properties.setProperty("runtimeExtensionParticipation.source.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.source.0.name", "original-irgpu:ir-validation");
+        properties.setProperty("runtimeExtensionParticipation.source.0.count", "2");
         properties.setProperty(
                 "kernel.0.sourceSwitching.sourcePromotionFirstBlocker",
                 "backend source must be reconstructed from IrGpu before promotion review"
@@ -260,6 +290,13 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(formatted.contains("optimizerFamily.count=0\n"));
         assertTrue(formatted.contains("optimizerFamily.promotionReady.count=0\n"));
         assertTrue(formatted.contains("optimizerFamily.summary=none\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.recordedKernel.count=1\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.entry.count=2\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.failedContinued.count=0\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.failedClosed.count=0\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.sources=original-irgpu:ir-validation=2\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.source.0.name=original-irgpu:ir-validation\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.source.0.count=2\n"));
         assertTrue(formatted.contains("historyStatus=not-promoted"));
     }
 }
