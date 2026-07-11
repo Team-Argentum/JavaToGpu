@@ -7,6 +7,7 @@ import com.github.javaparser.ast.type.Type;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuAttributeMetadata;
@@ -15,6 +16,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuConstantDataMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuConstantMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
@@ -235,10 +237,12 @@ public final class GpuFrontendService {
         validator.validateKernel(kernelMethod, helperMethods, relevantStructs);
 
         List<GpuIrCompiledMethod> compiledMethods = lowerer.lower(kernelMethod, helperMethods, relevantStructs);
+
         List<GpuIrCompiledMethod> compiledHelpers = compiledMethods.subList(0, helperMethods.size());
         GpuIrCompiledMethod compiledKernel = compiledMethods.get(compiledMethods.size() - 1);
         passRunner.run(compiledKernel, compiledHelpers, relevantStructs);
-        validationRunner.run(compiledKernel, compiledHelpers, relevantStructs);
+        List<GpuExtensionExecutionReport> validationExecutions =
+                validationRunner.runWithReport(compiledKernel, compiledHelpers, relevantStructs);
         List<GpuIrCompiledMethod> reachableHelpers = GpuProgramAssemblySupport.selectReachableHelpers(
                 compiledKernel,
                 compiledHelpers,
@@ -253,7 +257,19 @@ public final class GpuFrontendService {
         return new GpuFrontendCompilationResult(
                 openClSource,
                 buildIrGpuArtifact(compiledKernel, reachableHelpers, relevantStructs, derivedOpenClResource, "java-source")
+                        .withExtensionParticipationMetadata(buildIrValidationParticipationMetadata(validationExecutions))
         );
+    }
+
+    private static List<IrGpuExtensionParticipationMetadata> buildIrValidationParticipationMetadata(
+            List<GpuExtensionExecutionReport> executions
+    ) {
+        if (executions == null || executions.isEmpty()) {
+            return List.of();
+        }
+        return executions.stream()
+                .map(report -> IrGpuExtensionParticipationMetadata.fromExecutionReport("ir-validation", report))
+                .toList();
     }
 
     static IrGpuArtifact buildIrGpuArtifact(

@@ -18,8 +18,48 @@ public record IrGpuArtifact(
         String runtimeDefaultBackend,
         String runtimeOptimizationProfile,
         List<IrGpuMethodDeviceConstraint> methodDeviceConstraints,
-        List<IrGpuMethodFallbackVariant> methodFallbackVariants
+        List<IrGpuMethodFallbackVariant> methodFallbackVariants,
+        List<IrGpuExtensionParticipationMetadata> extensionParticipationMetadata
 ) {
+
+    public IrGpuArtifact(
+            IrGpuArtifactHeader header,
+            IrGpuModule module,
+            List<IrGpuEntryParameter> entryParameters,
+            IrGpuLaunchMetadata launchMetadata,
+            IrGpuValidationMetadata validationMetadata,
+            IrGpuFeatureMetadata featureMetadata,
+            IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata,
+            IrGpuRegenerationMetadata regenerationMetadata,
+            List<IrGpuStructMetadata> structMetadata,
+            List<IrGpuConstantMetadata> constants,
+            List<IrGpuConstantDataMetadata> constantData,
+            List<IrGpuBackendOutput> backendOutputs,
+            String runtimeDefaultBackend,
+            String runtimeOptimizationProfile,
+            List<IrGpuMethodDeviceConstraint> methodDeviceConstraints,
+            List<IrGpuMethodFallbackVariant> methodFallbackVariants
+    ) {
+        this(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                methodDeviceConstraints,
+                methodFallbackVariants,
+                List.of()
+        );
+    }
 
     public IrGpuArtifact(
             IrGpuArtifactHeader header,
@@ -54,6 +94,7 @@ public record IrGpuArtifact(
                 runtimeDefaultBackend,
                 runtimeOptimizationProfile,
                 methodDeviceConstraints,
+                List.of(),
                 List.of()
         );
     }
@@ -258,6 +299,9 @@ public record IrGpuArtifact(
                 : runtimeOptimizationProfile;
         methodDeviceConstraints = methodDeviceConstraints == null ? List.of() : List.copyOf(methodDeviceConstraints);
         methodFallbackVariants = methodFallbackVariants == null ? List.of() : List.copyOf(methodFallbackVariants);
+        extensionParticipationMetadata = extensionParticipationMetadata == null
+                ? List.of()
+                : List.copyOf(extensionParticipationMetadata);
     }
 
     public String derivedOpenClResource() {
@@ -300,7 +344,8 @@ public record IrGpuArtifact(
                 runtimeDefaultBackend,
                 runtimeOptimizationProfile,
                 constraints,
-                methodFallbackVariants
+                methodFallbackVariants,
+                extensionParticipationMetadata
         );
     }
 
@@ -321,7 +366,32 @@ public record IrGpuArtifact(
                 runtimeDefaultBackend,
                 runtimeOptimizationProfile,
                 methodDeviceConstraints,
-                variants
+                variants,
+                extensionParticipationMetadata
+        );
+    }
+
+    public IrGpuArtifact withExtensionParticipationMetadata(
+            List<IrGpuExtensionParticipationMetadata> participationMetadata
+    ) {
+        return new IrGpuArtifact(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                methodDeviceConstraints,
+                methodFallbackVariants,
+                participationMetadata
         );
     }
 }

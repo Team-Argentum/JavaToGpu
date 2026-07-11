@@ -19,6 +19,7 @@ public final class IrGpuArtifactSerializer {
         writeOptimizerPolicyMetadata(properties, artifact.optimizerPolicyMetadata());
         writeMethodDeviceConstraints(properties, artifact.methodDeviceConstraints());
         writeMethodFallbackVariants(properties, artifact.methodFallbackVariants());
+        writeExtensionParticipationMetadata(properties, artifact.extensionParticipationMetadata());
         writeRegenerationMetadata(properties, artifact.regenerationMetadata());
         writeStructMetadata(properties, artifact.structMetadata());
         writeConstants(properties, artifact.constants());
@@ -135,6 +136,32 @@ public final class IrGpuArtifactSerializer {
             properties.put(prefix + "priority", Integer.toString(variant.priority()));
             properties.put(prefix + "compatibilityNote", variant.compatibilityNote());
             properties.put(prefix + "source", variant.source());
+        }
+    }
+
+    private static void writeExtensionParticipationMetadata(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuExtensionParticipationMetadata> metadata
+    ) {
+        java.util.List<IrGpuExtensionParticipationMetadata> values = metadata == null
+                ? java.util.List.of()
+                : metadata;
+        properties.put("extensionParticipation.count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuExtensionParticipationMetadata value = values.get(index);
+            String prefix = "extensionParticipation." + index + ".";
+            properties.put(prefix + "source", value.source());
+            properties.put(prefix + "extensionId", value.extensionId());
+            properties.put(prefix + "extensionVersion", value.extensionVersion());
+            properties.put(prefix + "phase", value.phase().name());
+            properties.put(prefix + "permission", value.permission().name());
+            properties.put(prefix + "operation", value.operation());
+            properties.put(prefix + "outcome", value.outcome().name());
+            properties.put(prefix + "failurePolicy", value.failurePolicy().name());
+            properties.put(prefix + "pipelineContinued", Boolean.toString(value.pipelineContinued()));
+            properties.put(prefix + "failureType", value.failureType());
+            properties.put(prefix + "message", value.message());
+            writeStringList(properties, prefix + "diagnostic", value.diagnostics());
         }
     }
 

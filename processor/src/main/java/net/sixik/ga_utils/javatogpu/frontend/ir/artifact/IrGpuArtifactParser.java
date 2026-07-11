@@ -3,6 +3,10 @@ package net.sixik.ga_utils.javatogpu.frontend.ir.artifact;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionFailurePolicy;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -59,8 +63,32 @@ public final class IrGpuArtifactParser {
                 properties.getProperty("runtime.defaultBackend", "opencl"),
                 properties.getProperty("runtime.optimizationProfile", "off"),
                 parseMethodDeviceConstraints(properties),
-                parseMethodFallbackVariants(properties)
+                parseMethodFallbackVariants(properties),
+                parseExtensionParticipationMetadata(properties)
         );
+    }
+
+    private static List<IrGpuExtensionParticipationMetadata> parseExtensionParticipationMetadata(Properties properties) {
+        int count = parseInt(properties, "extensionParticipation.count", 0);
+        ArrayList<IrGpuExtensionParticipationMetadata> metadata = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "extensionParticipation." + index + ".";
+            metadata.add(new IrGpuExtensionParticipationMetadata(
+                    properties.getProperty(prefix + "source", "unknown"),
+                    properties.getProperty(prefix + "extensionId", "extension:unknown"),
+                    properties.getProperty(prefix + "extensionVersion", "unknown"),
+                    GpuExtensionPhase.valueOf(properties.getProperty(prefix + "phase", "IR_VALIDATION")),
+                    GpuExtensionPermission.valueOf(properties.getProperty(prefix + "permission", "READ_ONLY")),
+                    properties.getProperty(prefix + "operation", "extension invocation"),
+                    GpuExtensionExecutionOutcome.valueOf(properties.getProperty(prefix + "outcome", "SKIPPED")),
+                    GpuExtensionFailurePolicy.valueOf(properties.getProperty(prefix + "failurePolicy", "CONTINUE")),
+                    Boolean.parseBoolean(properties.getProperty(prefix + "pipelineContinued", "true")),
+                    properties.getProperty(prefix + "failureType", "none"),
+                    properties.getProperty(prefix + "message", ""),
+                    parseIndexedValues(properties, prefix + "diagnostic")
+            ));
+        }
+        return List.copyOf(metadata);
     }
 
     private static List<IrGpuMethodFallbackVariant> parseMethodFallbackVariants(Properties properties) {

@@ -5,15 +5,24 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactParser;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactSerializer;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
+import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
+import net.sixik.ga_utils.javatogpu.frontend.lowering.GpuIrLowerer;
+import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
+import net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.frontend.validation.GpuValidationException;
+import net.sixik.ga_utils.javatogpu.frontend.validation.GpuSubsetValidator;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -351,6 +360,72 @@ class GpuFrontendServiceTest {
         assertTrue(manifest.contains("methodFallbackVariant.0.groupId=noise-sample"));
         assertTrue(manifest.contains("methodFallbackVariant.0.variantId=dgpu-fast"));
         assertTrue(manifest.contains("methodFallbackVariant.0.priority=120"));
+    }
+
+    @Test
+    void persistsIrValidationParticipationThroughIrGpuRoundTrip() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+        GpuIrValidationProvider provider = new GpuIrValidationProvider() {
+            @Override
+            public void validate(net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRequest request) {
+                request.reportDiagnostic("validator observed " + request.method().irMethod().name());
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.ir-validator";
+            }
+
+            @Override
+            public String extensionVersion() {
+                return "7";
+            }
+        };
+        GpuIntrinsicDatabase intrinsicDatabase = GpuIntrinsicDatabase.createDefault();
+        GpuFrontendService service = new GpuFrontendService(
+                new GpuMethodParser(),
+                new GpuSubsetValidator(intrinsicDatabase),
+                new GpuIrLowerer(intrinsicDatabase),
+                new OpenClKernelEmitter(),
+                GpuIrPassRunner.loadFromServiceLoader(),
+                new GpuIrValidationRunner(List.of(provider), GpuIrValidationMode.DIAGNOSTIC)
+        );
+        ParsedGpuMethod kernelMethod = new GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertEquals(1, result.irGpuArtifact().extensionParticipationMetadata().size());
+        var metadata = result.irGpuArtifact().extensionParticipationMetadata().get(0);
+        assertEquals("ir-validation", metadata.source());
+        assertEquals("test.ir-validator", metadata.extensionId());
+        assertEquals("7", metadata.extensionVersion());
+        assertEquals("IR_VALIDATION", metadata.phase().name());
+        assertEquals("READ_ONLY", metadata.permission().name());
+        assertEquals("SUCCEEDED", metadata.outcome().name());
+        assertEquals("CONTINUE", metadata.failurePolicy().name());
+        assertTrue(metadata.pipelineContinued());
+
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        var reparsed = IrGpuArtifactParser.parse(manifest);
+
+        assertEquals(result.irGpuArtifact().extensionParticipationMetadata(), reparsed.extensionParticipationMetadata());
+        assertTrue(manifest.contains("extensionParticipation.count=1"));
+        assertTrue(manifest.contains("extensionParticipation.0.source=ir-validation"));
+        assertTrue(manifest.contains("extensionParticipation.0.extensionId=test.ir-validator"));
+        assertTrue(manifest.contains("extensionParticipation.0.extensionVersion=7"));
+        assertTrue(manifest.contains("extensionParticipation.0.phase=IR_VALIDATION"));
+        assertTrue(manifest.contains("extensionParticipation.0.outcome=SUCCEEDED"));
     }
 
     @Test
