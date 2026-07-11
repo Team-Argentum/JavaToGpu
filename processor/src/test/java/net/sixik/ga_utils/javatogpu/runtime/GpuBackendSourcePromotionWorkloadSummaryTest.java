@@ -149,6 +149,28 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
     }
 
     @Test
+    void ignoresNoFamilyKernelsWhenAggregatingOptimizerPayloadCompleteness() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "review-ready");
+        properties.setProperty("kernel.count", "3");
+        properties.setProperty("kernel.0.optimizerFamilyPayload.family.count", "1");
+        properties.setProperty("kernel.0.optimizerFamilyPayload.family.complete.count", "1");
+        properties.setProperty("kernel.0.optimizerFamilyPayload.family.complete.all", "true");
+        properties.setProperty("kernel.1.optimizerFamilyPayload.family.count", "1");
+        properties.setProperty("kernel.1.optimizerFamilyPayload.family.complete.count", "1");
+        properties.setProperty("kernel.1.optimizerFamilyPayload.family.complete.all", "true");
+        properties.setProperty("kernel.2.optimizerFamilyPayload.family.count", "0");
+        properties.setProperty("kernel.2.optimizerFamilyPayload.family.complete.count", "0");
+        properties.setProperty("kernel.2.optimizerFamilyPayload.family.complete.all", "false");
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+
+        assertEquals(2, summary.optimizerFamilyPayloadCompleteCount());
+        assertEquals("true", summary.optimizerFamilyPayloadCompleteAll());
+    }
+
+    @Test
     void emptyPropertiesRemainNotRecorded() {
         GpuBackendSourcePromotionWorkloadSummary summary =
                 GpuBackendSourcePromotionWorkloadSummary.fromProperties(new Properties());

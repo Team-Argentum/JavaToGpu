@@ -96,7 +96,13 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerFamily.promotionReady.count"),
                 summarizeOptimizerFamilies(properties, kernelCount),
                 sumKernelProperty(properties, kernelCount, "optimizerFamilyPayload.family.complete.count"),
-                allKernelBooleanPropertyWhenPresent(properties, kernelCount, "optimizerFamilyPayload.family.complete.all"),
+                allKernelBooleanPropertyWhenCountPresent(
+                        properties,
+                        kernelCount,
+                        "optimizerFamilyPayload.family.count",
+                        "optimizerFamilyPayload.family.complete.count",
+                        "optimizerFamilyPayload.family.complete.all"
+                ),
                 summarizeSourceSwitchingDecisions(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockers(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockerFamilies(properties, kernelCount),
@@ -422,15 +428,27 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return Boolean.toString(kernelCount > 0 && countKernelBooleanProperty(properties, kernelCount, propertyName) == kernelCount);
     }
 
-    private static String allKernelBooleanPropertyWhenPresent(Properties properties, int kernelCount, String propertyName) {
+    private static String allKernelBooleanPropertyWhenCountPresent(
+            Properties properties,
+            int kernelCount,
+            String countPropertyName,
+            String fallbackCountPropertyName,
+            String booleanPropertyName
+    ) {
         if (kernelCount <= 0) {
             return "false";
         }
         boolean present = false;
         for (int index = 0; index < kernelCount; index++) {
-            String value = properties.getProperty("kernel." + index + "." + propertyName, "");
-            if (value.isBlank()) {
+            String prefix = "kernel." + index + ".";
+            int count = parsePositiveInt(properties.getProperty(prefix + countPropertyName, "0"));
+            int fallbackCount = parsePositiveInt(properties.getProperty(prefix + fallbackCountPropertyName, "0"));
+            if (count == 0 && fallbackCount == 0) {
                 continue;
+            }
+            String value = properties.getProperty(prefix + booleanPropertyName, "");
+            if (value.isBlank()) {
+                return "false";
             }
             present = true;
             if (!"true".equals(value)) {
