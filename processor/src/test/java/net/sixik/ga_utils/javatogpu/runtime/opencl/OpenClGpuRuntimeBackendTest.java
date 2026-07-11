@@ -1446,6 +1446,90 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void runtimeEquivalenceRunsCseFamilyOriginalVsOptimizedComparisonWithoutProductionMutation() {
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        IrGpuArtifact optimizedArtifact = parityMatchedIrGpuArtifact();
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        ArrayList<String> compiledResources = new ArrayList<>();
+        int[] productionOutput = new int[]{0};
+
+        OpenClGpuRuntimeBackend backend = new EquivalenceSimulatingBackend(capturedSnapshot, 7, 7) {
+            @Override
+            protected GpuRuntimeIrOptimizationResult optimizeRuntimeIrWithReport(GpuRuntimeCompileRequest compileRequest) {
+                GpuRuntimeCompileRequest optimizedRequest = compileRequest.withIrGpuArtifact(java.util.Optional.of(optimizedArtifact));
+                String originalIdentity = IrGpuArtifactIdentity.stableIdentity(compileRequest.irGpuArtifact());
+                String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(optimizedRequest.irGpuArtifact());
+                GpuRuntimeIrOptimizationPassReport passReport = GpuRuntimeIrOptimizationPassReport.applied(
+                        "optimizer-family:cse:review-v1",
+                        originalIdentity,
+                        optimizedIdentity,
+                        "cse-review-evidence-ready",
+                        List.of("CSE family evidence captured for original-vs-optimized lane")
+                ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "runtime.cse.review",
+                        "review-ready",
+                        java.util.Map.ofEntries(
+                                java.util.Map.entry("optimizerFamily", "cse"),
+                                java.util.Map.entry("firstBlocker", "none"),
+                                java.util.Map.entry("runtimeEquivalencePayload.present", "true"),
+                                java.util.Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                                java.util.Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                                java.util.Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                                java.util.Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                                java.util.Map.entry("runtimeEquivalencePayload.failureFixture.present", "true")
+                        )
+                ));
+                return new GpuRuntimeIrOptimizationResult(
+                        optimizedRequest,
+                        new GpuRuntimeIrOptimizationReport(java.util.Optional.of(optimizedArtifact), List.of(passReport))
+                );
+            }
+
+            @Override
+            protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
+                return compileRequest.irGpuArtifact().isPresent()
+                        ? GpuBackendModuleArtifact.openClSource(
+                        "__kernel void kernel(__global int* output) { output[0] = 7; }",
+                        "javatogpu/sample/Demo/kernel.cl#irgpu-" + compiledResources.size(),
+                        "test-lowerer-v1",
+                        "test-irgpu-source",
+                        "test-irgpu-source-compile"
+                )
+                        : super.lowerBackendModule(compileRequest);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                compiledResources.add(moduleArtifact.resource());
+                return new OpenClCompiledKernel(compileRequest.descriptor(), moduleArtifact.resource());
+            }
+        };
+
+        backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{productionOutput}));
+
+        GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+        assertEquals("passed", snapshot.runtimeEquivalenceEvidence().status(), snapshot.runtimeEquivalenceEvidence().diagnostics().toString());
+        assertEquals(1, snapshot.runtimeEquivalenceEvidence().comparisonCases().size());
+        GpuRuntimeEquivalenceCaseEvidence caseEvidence = snapshot.runtimeEquivalenceEvidence().comparisonCases().get(0);
+        assertEquals("optimizer-family:cse:original-vs-optimized", caseEvidence.comparisonMode());
+        assertEquals("[7]", caseEvidence.referenceOutputs().get("output"));
+        assertEquals("[7]", caseEvidence.candidateOutputs().get("output"));
+        assertTrue(snapshot.runtimeEquivalenceEvidence().diagnostics().contains(
+                "optimizer family cse original and optimized OpenCL outputs matched"
+        ));
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String payload = dump.artifact("runtime-optimizer-family-equivalence-payload.properties");
+        assertTrue(payload.contains("familyBinding.status=bound"));
+        assertTrue(payload.contains("familyBinding.eligible=true"));
+        assertTrue(payload.contains("familyBinding.family=cse"));
+        assertTrue(payload.contains("runtimeEquivalence.comparisonMode.summary={optimizer-family:cse:original-vs-optimized=1}"));
+        assertArrayEquals(new int[]{1}, productionOutput);
+    }
+
+    @Test
     void runtimeEquivalenceFailsWhenIsolatedPrimitiveArrayOutputsDiffer() {
         GpuKernelDescriptor descriptor = intOutputDescriptor();
         IrGpuArtifact artifact = parityMatchedIrGpuArtifact();

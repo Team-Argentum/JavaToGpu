@@ -1161,6 +1161,23 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             ).execute(request);
         }
 
+        String optimizerFamily = singleRuntimeOptimizerFamily(request.optimizationReport());
+        if (!optimizerFamily.isBlank()) {
+            try {
+                return executeOptimizerFamilyRuntimeEquivalence(request, optimizerFamily);
+            } catch (RuntimeException exception) {
+                return GpuRuntimeEquivalenceEvidence.failed(
+                        request.optimizedCompileRequest(),
+                        0,
+                        0,
+                        java.util.List.of(
+                                "optimizer-family OpenCL runtime equivalence failed",
+                                exception.getMessage() == null ? exception.getClass().getName() : exception.getMessage()
+                        )
+                );
+            }
+        }
+
         GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
                 request.optimizedCompileRequest().irGpuArtifact().orElseThrow(),
                 request.optimizedBackendModuleArtifact().resource(),
@@ -1187,7 +1204,15 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 "opencl-source-equivalence-preflight"
         );
         try {
-            return executeArrayRuntimeEquivalence(request, reconstructedArtifact);
+            return executeArrayRuntimeEquivalence(
+                    request,
+                    request.optimizedCompileRequest(),
+                    request.optimizedBackendModuleArtifact(),
+                    request.optimizedCompileRequest(),
+                    reconstructedArtifact,
+                    "descriptor-source-vs-irgpu-reconstructed-source",
+                    "descriptor and reconstructed OpenCL outputs matched for isolated array runtime-equivalence"
+            );
         } catch (RuntimeException exception) {
             return GpuRuntimeEquivalenceEvidence.failed(
                     request.optimizedCompileRequest(),
@@ -1201,9 +1226,30 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         }
     }
 
+    private GpuRuntimeEquivalenceEvidence executeOptimizerFamilyRuntimeEquivalence(
+            GpuRuntimeEquivalenceRequest request,
+            String optimizerFamily
+    ) {
+        GpuBackendModuleArtifact originalArtifact = lowerBackendModule(request.originalCompileRequest());
+        return executeArrayRuntimeEquivalence(
+                request,
+                request.originalCompileRequest(),
+                originalArtifact,
+                request.optimizedCompileRequest(),
+                request.optimizedBackendModuleArtifact(),
+                "optimizer-family:" + optimizerFamily + ":original-vs-optimized",
+                "optimizer family " + optimizerFamily + " original and optimized OpenCL outputs matched"
+        );
+    }
+
     private GpuRuntimeEquivalenceEvidence executeArrayRuntimeEquivalence(
             GpuRuntimeEquivalenceRequest request,
-            GpuBackendModuleArtifact reconstructedArtifact
+            GpuRuntimeCompileRequest referenceCompileRequest,
+            GpuBackendModuleArtifact referenceArtifact,
+            GpuRuntimeCompileRequest candidateCompileRequest,
+            GpuBackendModuleArtifact candidateArtifact,
+            String comparisonMode,
+            String successDiagnostic
     ) {
         Object[] invocationArguments = request.invocationArguments();
         if (invocationArguments == null) {
@@ -1213,7 +1259,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             );
         }
         ArrayEquivalencePlan equivalencePlan = arrayEquivalencePlan(
-                request.optimizedCompileRequest().descriptor(),
+                candidateCompileRequest.descriptor(),
                 invocationArguments
         );
         if (!equivalencePlan.supported()) {
@@ -1223,33 +1269,34 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             );
         }
 
-        Object[] descriptorArguments = cloneEquivalenceArguments(invocationArguments);
-        Object[] reconstructedArguments = cloneEquivalenceArguments(invocationArguments);
-        try (OpenClCompiledKernel descriptorKernel = compileKernel(
-                request.optimizedCompileRequest(),
-                request.optimizedBackendModuleArtifact());
-             OpenClCompiledKernel reconstructedKernel = compileKernel(
-                     request.optimizedCompileRequest(),
-                     reconstructedArtifact)) {
+        Object[] referenceArguments = cloneEquivalenceArguments(invocationArguments);
+        Object[] candidateArguments = cloneEquivalenceArguments(invocationArguments);
+        try (OpenClCompiledKernel referenceKernel = compileKernel(
+                referenceCompileRequest,
+                referenceArtifact);
+             OpenClCompiledKernel candidateKernel = compileKernel(
+                     candidateCompileRequest,
+                     candidateArtifact)) {
             executeIsolatedRuntimeEquivalenceKernel(
-                    descriptorKernel,
-                    request.optimizedCompileRequest().descriptor(),
-                    descriptorArguments,
+                    referenceKernel,
+                    referenceCompileRequest.descriptor(),
+                    referenceArguments,
                     request.executionConfig()
             );
             executeIsolatedRuntimeEquivalenceKernel(
-                    reconstructedKernel,
-                    request.optimizedCompileRequest().descriptor(),
-                    reconstructedArguments,
+                    candidateKernel,
+                    candidateCompileRequest.descriptor(),
+                    candidateArguments,
                     request.executionConfig()
             );
         }
 
         GpuRuntimeEquivalenceCaseEvidence caseEvidence = captureArrayRuntimeEquivalenceCase(
-                request.optimizedCompileRequest().descriptor(),
+                candidateCompileRequest.descriptor(),
+                comparisonMode,
                 invocationArguments,
-                descriptorArguments,
-                reconstructedArguments,
+                referenceArguments,
+                candidateArguments,
                 equivalencePlan.outputIndexes()
         );
         List<String> mismatches = caseEvidence.diagnostics();
@@ -1263,12 +1310,33 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             );
         }
         return GpuRuntimeEquivalenceEvidence.passed(
-                request.optimizedCompileRequest(),
+                candidateCompileRequest,
                 1,
                 equivalencePlan.outputIndexes().size(),
-                List.of("descriptor and reconstructed OpenCL outputs matched for isolated array runtime-equivalence"),
+                List.of(successDiagnostic),
                 List.of(caseEvidence)
         );
+    }
+
+    private static String singleRuntimeOptimizerFamily(GpuRuntimeIrOptimizationReport report) {
+        if (report == null || report.requiresRollback()) {
+            return "";
+        }
+        java.util.LinkedHashSet<String> families = new java.util.LinkedHashSet<>();
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (passReport.analysisOnly()) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (!"none".equals(fields.getOrDefault("firstBlocker", "none"))) {
+                continue;
+            }
+            String family = fields.getOrDefault("optimizerFamily", "");
+            if (!family.isBlank()) {
+                families.add(family);
+            }
+        }
+        return families.size() == 1 ? families.iterator().next() : "";
     }
 
     private void executeIsolatedRuntimeEquivalenceKernel(
@@ -1391,6 +1459,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     private GpuRuntimeEquivalenceCaseEvidence captureArrayRuntimeEquivalenceCase(
             GpuKernelDescriptor descriptor,
+            String comparisonMode,
             Object[] invocationArguments,
             Object[] descriptorArguments,
             Object[] reconstructedArguments,
@@ -1426,7 +1495,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         }
         return new GpuRuntimeEquivalenceCaseEvidence(
                 "runtime-invocation-0",
-                "descriptor-source-vs-irgpu-reconstructed-source",
+                comparisonMode,
                 inputs,
                 referenceOutputs,
                 candidateOutputs,

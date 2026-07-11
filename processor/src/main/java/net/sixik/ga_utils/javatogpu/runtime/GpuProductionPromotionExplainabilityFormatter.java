@@ -137,15 +137,38 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         int i3SourceReadyCount = parsePositiveInt(readiness.getProperty("sourceReady.count", "0"));
         boolean allKernelsI3ReviewReady = kernelCount > 0 && i3ReviewReadyCount == kernelCount && i3BlockedCount == 0;
         boolean allKernelsSourceReady = kernelCount > 0 && i3SourceReadyCount == kernelCount;
-        int optimizerFamilyCount = parsePositiveInt(gate.getProperty("optimizerFamily.count", "0"));
+        int optimizerFamilyCount = parsePositiveInt(gate.getProperty(
+                "optimizerFamily.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerFamily.count"))
+        ));
         int optimizerFamilyPromotionReadyCount = parsePositiveInt(
-                gate.getProperty("optimizerFamily.promotionReady.count", "0")
+                gate.getProperty(
+                        "optimizerFamily.promotionReady.count",
+                        Integer.toString(sumKernelProperty(
+                                gate,
+                                kernelCount,
+                                "runtimeOptimizerDrift.optimizerFamily.promotionReady.count"
+                        ))
+                )
         );
-        String optimizerFamilySummary = gate.getProperty("optimizerFamily.summary", "none");
+        String optimizerFamilySummary = gate.getProperty(
+                "optimizerFamily.summary",
+                summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerFamily.summary")
+        );
         int optimizerFamilyPayloadCompleteCount = parsePositiveInt(
-                gate.getProperty("optimizerFamilyPayload.complete.count", "0")
+                gate.getProperty(
+                        "optimizerFamilyPayload.complete.count",
+                        Integer.toString(sumKernelProperty(
+                                gate,
+                                kernelCount,
+                                "optimizerFamilyPayload.family.complete.count"
+                        ))
+                )
         );
-        String optimizerFamilyPayloadCompleteAll = gate.getProperty("optimizerFamilyPayload.complete.all", "false");
+        String optimizerFamilyPayloadCompleteAll = gate.getProperty(
+                "optimizerFamilyPayload.complete.all",
+                allKernelBooleanProperty(gate, kernelCount, "optimizerFamilyPayload.family.complete.all")
+        );
         boolean optimizerFamilyRuntimeEquivalenceHistoryBaselineReady = propertyIsTrue(
                 gate,
                 "optimizerFamily.runtimeEquivalenceHistoryBaselineReady",
@@ -542,6 +565,50 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                     .append(resources.get(index))
                     .append('\n');
         }
+    }
+
+    private static int sumKernelProperty(Properties properties, int kernelCount, String suffix) {
+        int sum = 0;
+        for (int index = 0; index < kernelCount; index++) {
+            sum += parsePositiveInt(properties.getProperty("kernel." + index + "." + suffix, "0"));
+        }
+        return sum;
+    }
+
+    private static String allKernelBooleanProperty(Properties properties, int kernelCount, String suffix) {
+        if (kernelCount <= 0) {
+            return "false";
+        }
+        for (int index = 0; index < kernelCount; index++) {
+            if (!"true".equals(properties.getProperty("kernel." + index + "." + suffix, "false"))) {
+                return "false";
+            }
+        }
+        return "true";
+    }
+
+    private static String summarizeKernelProperty(Properties properties, int kernelCount, String suffix) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty("kernel." + index + "." + suffix, "none");
+            if (!value.isBlank() && !"none".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        if (counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (java.util.Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(entry.getKey()).append(" x").append(entry.getValue());
+        }
+        return builder.toString();
     }
 
     private static void appendReadinessChecklist(StringBuilder builder, List<ReadinessChecklistItem> checklist) {

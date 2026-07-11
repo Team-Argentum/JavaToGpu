@@ -31,6 +31,38 @@ class GpuProductionPromotionExplainabilityFormatterTest {
     }
 
     @Test
+    void rollsUpOptimizerFamilyEvidenceFromKernelScopedWorkloadGateFields() {
+        Properties workloadGate = blockedWorkloadGate();
+        workloadGate.remove("optimizerFamily.count");
+        workloadGate.remove("optimizerFamily.promotionReady.count");
+        workloadGate.remove("optimizerFamily.summary");
+        workloadGate.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "1");
+        workloadGate.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "1");
+        workloadGate.setProperty(
+                "kernel.0.runtimeOptimizerDrift.optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]"
+        );
+        workloadGate.setProperty("kernel.0.optimizerFamilyPayload.family.complete.count", "1");
+        workloadGate.setProperty("kernel.0.optimizerFamilyPayload.family.complete.all", "true");
+        workloadGate.setProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.count", "1");
+        workloadGate.setProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0");
+        workloadGate.setProperty(
+                "kernel.1.runtimeOptimizerDrift.optimizerFamily.summary",
+                "cse[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"
+        );
+        workloadGate.setProperty("kernel.1.optimizerFamilyPayload.family.complete.count", "1");
+        workloadGate.setProperty("kernel.1.optimizerFamilyPayload.family.complete.all", "true");
+
+        String formatted = GpuProductionPromotionExplainabilityFormatter.format(workloadGate, blockedReadiness());
+
+        assertTrue(formatted.contains("optimizerFamily.count=2"));
+        assertTrue(formatted.contains("optimizerFamily.promotionReady.count=1"));
+        assertTrue(formatted.contains("optimizerFamily.summary=cse[passes=1, acceptedProof=1"));
+        assertTrue(formatted.contains("optimizerFamilyPayload.complete.count=2"));
+        assertTrue(formatted.contains("optimizerFamilyPayload.complete.all=true"));
+    }
+
+    @Test
     void emitsValidProductionReadyArtifactWithContractFields() {
         String formatted = GpuProductionPromotionExplainabilityFormatter.format(productionReadyGate(), productionReadyReadiness());
 

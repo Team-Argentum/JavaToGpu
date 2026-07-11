@@ -415,6 +415,7 @@ tasks.register('openClWorkloadValidationTest', Test) {
     classpath = sourceSets.test.runtimeClasspath
     systemProperty 'javatogpu.opencl.workloadValidation', 'true'
     systemProperty 'javatogpu.opencl.compilerDiagnostics', 'true'
+    systemProperty 'javatogpu.runtime.cseReviewLane', 'true'
     String diagnosticCompileArgs = System.getenv('JTG_OPENCL_DIAGNOSTIC_COMPILE_ARGS') ?: ''
     if (!diagnosticCompileArgs.isBlank()) {
         systemProperty 'javatogpu.opencl.compilerDiagnosticArgs', diagnosticCompileArgs

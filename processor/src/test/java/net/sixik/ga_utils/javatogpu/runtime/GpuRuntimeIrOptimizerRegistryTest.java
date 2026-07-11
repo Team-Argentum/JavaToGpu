@@ -306,6 +306,46 @@ class GpuRuntimeIrOptimizerRegistryTest {
     }
 
     @Test
+    void commonSubexpressionReviewPassRecordsSingleCseFamilyEvidenceWithoutMutation() {
+        IrGpuArtifact artifact = repeatedCseTypedArtifact();
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeCommonSubexpressionReviewPass())
+        ).optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        assertFalse(report.requiresRollback());
+        assertEquals(1, report.passReports().size());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        assertEquals(GpuRuntimeIrOptimizationOutcome.APPLIED, passReport.outcome());
+        assertEquals("optimizer-family:cse:review-v1", passReport.optimizerVersion());
+        assertEquals("cse-review-evidence-ready", passReport.proofStatus());
+        assertEquals("runtime.cse.review", passReport.proofArtifact().source());
+        assertEquals("review-ready", passReport.proofArtifact().verdict());
+        assertEquals("cse", passReport.proofArtifact().fields().get("optimizerFamily"));
+        assertEquals("none", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("mutationEnabled"));
+        assertEquals(
+                "optimizer-family:cse:original-vs-optimized",
+                passReport.proofArtifact().fields().get("runtimeEquivalenceMode")
+        );
+        assertEquals("true", passReport.proofArtifact().fields().get("runtimeEquivalencePayload.present"));
+    }
+
+    @Test
+    void commonSubexpressionReviewPassBlocksFamilyEvidenceWhenNoCandidatesExist() {
+        IrGpuArtifact artifact = fastMathTypedArtifact();
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeCommonSubexpressionReviewPass())
+        ).optimizeWithReport(request(artifact));
+
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        assertEquals("blocked", passReport.proofArtifact().verdict());
+        assertEquals("no-cse-candidates", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertEquals("0", passReport.proofArtifact().fields().get("candidate.count"));
+        assertFalse(report.requiresRollback());
+    }
+
+    @Test
     void registryExportsDeterministicExtensionMetadataWithoutReorderingExplicitPasses() {
         GpuRuntimeIrOptimizationPass later = extensionPass("pass:zeta", "2", 20);
         GpuRuntimeIrOptimizationPass earlier = extensionPass("pass:alpha", "1", 10);
@@ -1056,6 +1096,65 @@ class GpuRuntimeIrOptimizerRegistryTest {
                                 "jtg_kernel",
                                 "ir-text-v1",
                                 "body\n  return ((a * b) + c)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact repeatedCseTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0, 5, 10),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrVariableDeclaration", Map.of("typeName", "int", "name", "first"), Map.of("initializer", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(2),
+                                "right", List.of(3)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "b"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "first"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableDeclaration", Map.of("typeName", "int", "name", "second"), Map.of("initializer", List.of(6))),
+                        new IrGpuTypedNode(6, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(7),
+                                "right", List.of(8)
+                        )),
+                        new IrGpuTypedNode(7, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(8, "GpuIrVariableRef", Map.of("name", "b"), Map.of()),
+                        new IrGpuTypedNode(9, "GpuIrVariableRef", Map.of("name", "second"), Map.of()),
+                        new IrGpuTypedNode(10, "GpuIrReturn", Map.of(), Map.of("value", List.of(11))),
+                        new IrGpuTypedNode(11, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(4),
+                                "right", List.of(9)
+                        ))
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  var int first = (a + b)\n  var int second = (a + b)\n  return (first + second)\n",
                                 typedBody,
                                 net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
                                 List.of(),
