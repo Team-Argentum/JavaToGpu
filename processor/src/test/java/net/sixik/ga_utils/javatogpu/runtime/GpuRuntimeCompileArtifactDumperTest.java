@@ -75,6 +75,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT));
         String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
         assertTrue(participation.contains("status=recorded"));
+        assertTrue(participation.contains("backendTarget=OPENCL"));
+        assertTrue(participation.contains("backendFormat=opencl-c"));
+        assertTrue(participation.contains("backendResource=javatogpu/sample/Demo/kernel.cl"));
         assertTrue(participation.contains("entry.count=3"));
         assertTrue(participation.contains("succeeded.count=2"));
         assertTrue(participation.contains("failedContinued.count=1"));

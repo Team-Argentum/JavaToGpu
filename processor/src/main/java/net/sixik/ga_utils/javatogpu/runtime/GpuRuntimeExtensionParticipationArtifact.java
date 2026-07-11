@@ -13,11 +13,21 @@ import java.util.Map;
  * Durable aggregate of extension participation across one runtime compile snapshot.
  */
 public record GpuRuntimeExtensionParticipationArtifact(
+        String backendTarget,
+        String backendFormat,
+        String backendResource,
         List<Entry> entries
 ) {
 
     public GpuRuntimeExtensionParticipationArtifact {
+        backendTarget = backendTarget == null || backendTarget.isBlank() ? "UNKNOWN" : backendTarget;
+        backendFormat = backendFormat == null || backendFormat.isBlank() ? "unknown" : backendFormat;
+        backendResource = backendResource == null || backendResource.isBlank() ? "unknown" : backendResource;
         entries = entries == null ? List.of() : List.copyOf(entries);
+    }
+
+    public GpuRuntimeExtensionParticipationArtifact(List<Entry> entries) {
+        this("UNKNOWN", "unknown", "unknown", entries);
     }
 
     public static GpuRuntimeExtensionParticipationArtifact from(
@@ -43,12 +53,20 @@ public record GpuRuntimeExtensionParticipationArtifact(
                 "backend-compiler-feedback",
                 compilerFeedbackReport == null ? List.of() : compilerFeedbackReport.executions()
         );
-        return new GpuRuntimeExtensionParticipationArtifact(entries);
+        return new GpuRuntimeExtensionParticipationArtifact(
+                snapshot.backendModuleArtifact().backendTarget().name(),
+                snapshot.backendModuleArtifact().format(),
+                snapshot.backendModuleArtifact().resource(),
+                entries
+        );
     }
 
     public Map<String, String> artifactFields() {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         fields.put("status", entries.isEmpty() ? "not-recorded" : "recorded");
+        fields.put("backendTarget", backendTarget);
+        fields.put("backendFormat", backendFormat);
+        fields.put("backendResource", backendResource);
         fields.put("entry.count", Integer.toString(entries.size()));
         fields.put("succeeded.count", Long.toString(count(GpuExtensionExecutionOutcome.SUCCEEDED)));
         fields.put("skipped.count", Long.toString(count(GpuExtensionExecutionOutcome.SKIPPED)));

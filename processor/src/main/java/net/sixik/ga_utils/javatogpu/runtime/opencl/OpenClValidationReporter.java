@@ -61,9 +61,11 @@ public final class OpenClValidationReporter {
         ensureProductionPromotionExplainabilityArtifact();
         OpenClKernelLaunchAdvisorySummary launchAdvisorySummary = loadKernelLaunchAdvisorySummary();
         OpenClCompilerResourceSummary compilerResourceSummary = loadCompilerResourceSummary();
+        OpenClExtensionParticipationSummary extensionParticipationSummary = loadExtensionParticipationSummary();
         OpenClValidationHistoryEntry currentHistoryEntry = buildHistoryEntry(
                 launchAdvisorySummary,
-                compilerResourceSummary
+                compilerResourceSummary,
+                extensionParticipationSummary
         );
         OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift = loadKernelLaunchAdvisoryDrift(currentHistoryEntry);
         OpenClCompilerResourceDrift compilerResourceDrift = loadCompilerResourceDrift(currentHistoryEntry);
@@ -71,7 +73,8 @@ public final class OpenClValidationReporter {
                 launchAdvisorySummary,
                 launchAdvisoryDrift,
                 compilerResourceSummary,
-                compilerResourceDrift
+                compilerResourceDrift,
+                extensionParticipationSummary
         );
         String outputPath = System.getProperty(REPORT_FILE_PROPERTY);
         if (outputPath != null && !outputPath.isBlank()) {
@@ -94,7 +97,8 @@ public final class OpenClValidationReporter {
             OpenClKernelLaunchAdvisorySummary launchAdvisorySummary,
             OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift,
             OpenClCompilerResourceSummary compilerResourceSummary,
-            OpenClCompilerResourceDrift compilerResourceDrift
+            OpenClCompilerResourceDrift compilerResourceDrift,
+            OpenClExtensionParticipationSummary extensionParticipationSummary
     ) {
         StringBuilder markdown = new StringBuilder();
         String requestedVendor = env("JTG_VALIDATION_VENDOR");
@@ -132,6 +136,7 @@ public final class OpenClValidationReporter {
         markdown.append(launchAdvisoryDrift.toMarkdown());
         markdown.append(compilerResourceSummary.toMarkdown());
         markdown.append(compilerResourceDrift.toMarkdown());
+        markdown.append(extensionParticipationSummary.toMarkdown());
         appendIrGpuSourceReviewSummary(markdown);
         appendProductionSourceSwitchingValidationSummary(markdown);
         appendLongRunningSummary(markdown);
@@ -172,6 +177,18 @@ public final class OpenClValidationReporter {
             return OpenClCompilerResourceSummary.read(Paths.get(gatePath));
         } catch (Throwable failure) {
             return OpenClCompilerResourceSummary.failed(failure);
+        }
+    }
+
+    private static OpenClExtensionParticipationSummary loadExtensionParticipationSummary() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return OpenClExtensionParticipationSummary.notRecorded();
+        }
+        try {
+            return OpenClExtensionParticipationSummary.read(Paths.get(gatePath));
+        } catch (Throwable failure) {
+            return OpenClExtensionParticipationSummary.failed(failure);
         }
     }
 
@@ -1475,7 +1492,8 @@ public final class OpenClValidationReporter {
 
     private static OpenClValidationHistoryEntry buildHistoryEntry(
             OpenClKernelLaunchAdvisorySummary launchAdvisorySummary,
-            OpenClCompilerResourceSummary compilerResourceSummary
+            OpenClCompilerResourceSummary compilerResourceSummary,
+            OpenClExtensionParticipationSummary extensionParticipationSummary
     ) {
         String requestedVendor = env("JTG_VALIDATION_VENDOR");
         String bucketSummary = summarizeBuckets();
@@ -1488,6 +1506,7 @@ public final class OpenClValidationReporter {
         String productionPromotionExplainabilityStatus = summarizeProductionPromotionExplainabilityStatus();
         String kernelLaunchAdvisoryStatus = launchAdvisorySummary.toHistorySummary();
         String compilerResourceStatus = compilerResourceSummary.toHistorySummary();
+        String extensionParticipationStatus = extensionParticipationSummary.toHistorySummary();
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
             OpenClValidationReport report = backend.validationReport();
@@ -1508,7 +1527,8 @@ public final class OpenClValidationReporter {
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus,
                     kernelLaunchAdvisoryStatus,
-                    compilerResourceStatus
+                    compilerResourceStatus,
+                    extensionParticipationStatus
             );
         } catch (Throwable failure) {
             return new OpenClValidationHistoryEntry(
@@ -1528,7 +1548,8 @@ public final class OpenClValidationReporter {
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus,
                     kernelLaunchAdvisoryStatus,
-                    compilerResourceStatus
+                    compilerResourceStatus,
+                    extensionParticipationStatus
             );
         }
     }
