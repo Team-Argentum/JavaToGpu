@@ -146,6 +146,8 @@ Older files remain useful as detailed references, but this file is the primary e
   The current repo-level slice now covers method/struct/field attribute validation, duplicate/malformed attribute diagnostics, helper-only and kernel-only attribute rules, and practical qualifier validation for `const` / `restrict` / `volatile` including duplicate, unsupported, and non-pointer misuse cases.
 - [x] Decide whether `restrict` should become a user-facing source concept, a low-level concept only, or remain unsupported.
   Current decision: keep `restrict` as an explicitly low-level user-facing concept via `@OpenCLQualifiers`, limited to pointer-like GPU parameters rather than elevating it into the normal high-level Java surface.
+- [x] Document portable-first metadata guidance and raw OpenCL escape hatches.
+  Modeled attribute concepts now have portable annotations and `IrGpu` `attributeMetadata` as the source of truth. Raw `@OpenCLAttributes`, `@OpenCLQualifiers`, and `@GPUAttribute` remain available for OpenCL-only or backend-specific expert code, while diagnostics steer common raw OpenCL attributes toward portable replacements. Future CUDA/Vulkan/Metal work should consume the portable metadata directly rather than treating OpenCL strings as the cross-backend contract.
 
 ## D. Helper / Reuse Architecture
 

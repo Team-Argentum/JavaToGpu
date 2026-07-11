@@ -20,6 +20,9 @@ Common backend metadata should also prefer portable annotations before raw strin
 `attributeMetadata` in `kernel.irgpu.properties`. OpenCL currently projects that metadata back to OpenCL attributes
 for validation and source emission, while future CUDA, Vulkan/SPIR-V, and Metal lowerers should consume the same
 metadata directly instead of parsing OpenCL-specific strings.
+When users provide a raw OpenCL attribute for a concept JavaToGpu already models, diagnostics should steer them to
+the portable annotation replacement such as `@GPUWorkGroupSize`, `@GPUWorkGroupSizeHint`, `@GPUVectorTypeHint`,
+`@GPUPacked`, `@GPUAligned`, or `@GPUAlwaysInline`.
 
 Use `@GPUAttribute` only when no portable annotation exists yet. It supports repeated usage on the same method, field, type, or parameter:
 
@@ -43,7 +46,7 @@ For vendor or device-specific metadata, narrow the selector explicitly:
 )
 ```
 
-`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only code, but new backend-specific metadata should prefer `@GPUAttribute`. Generic OpenCL emission should not apply vendor/device-specific raw attributes until device-aware lowering is available. Portable `attributeMetadata` is the source-of-truth for modeled concepts; backend-specific string attributes are compatibility projections or explicit escape hatches.
+`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only expert code, but new backend-specific metadata should prefer `@GPUAttribute`. Generic OpenCL emission should not apply vendor/device-specific raw attributes until device-aware lowering is available. Portable `attributeMetadata` is the source-of-truth for modeled concepts; backend-specific string attributes are compatibility projections or explicit escape hatches.
 
 ## Runtime selection
 

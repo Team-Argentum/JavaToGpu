@@ -28,7 +28,7 @@ Use these in source code that should compile to GPU code.
 - `@GPUAttribute` is the backend-aware raw escape hatch for metadata JavaToGpu does not model portably yet.
 - `@OpenCLAttributes` and `@OpenCLQualifiers` remain OpenCL-only compatibility annotations for existing code.
 
-Prefer portable annotations first. Use raw attributes only for backend-specific code that cannot be expressed through the normal API.
+Prefer portable annotations first. Use raw attributes only for backend-specific code that cannot be expressed through the normal API. When a raw OpenCL attribute maps to a modeled concept but is placed in an invalid context, validator diagnostics point to the portable annotation replacement instead of making users decode backend-specific attribute rules.
 
 ```java
 @GPU
@@ -133,6 +133,8 @@ static void openClOnlyKernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
+
+For OpenCL-only legacy code, `@OpenCLAttributes` and `@OpenCLQualifiers` remain valid compatibility annotations. For new code, prefer portable annotations for modeled concepts and `@GPUAttribute` for deliberate backend-specific metadata.
 
 ## `GPU.*` Builtins
 
