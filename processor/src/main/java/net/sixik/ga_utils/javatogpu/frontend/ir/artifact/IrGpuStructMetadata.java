@@ -9,14 +9,25 @@ public record IrGpuStructMetadata(
         String ownerQualifiedName,
         String ownerSimpleName,
         List<IrGpuStructFieldMetadata> fields,
-        List<String> openClAttributes
+        List<String> openClAttributes,
+        List<IrGpuAttributeMetadata> attributeMetadata
 ) {
+
+    public IrGpuStructMetadata(
+            String ownerQualifiedName,
+            String ownerSimpleName,
+            List<IrGpuStructFieldMetadata> fields,
+            List<String> openClAttributes
+    ) {
+        this(ownerQualifiedName, ownerSimpleName, fields, openClAttributes, List.of());
+    }
 
     public IrGpuStructMetadata {
         ownerQualifiedName = normalize(ownerQualifiedName, "");
         ownerSimpleName = normalize(ownerSimpleName, ownerQualifiedName);
         fields = fields == null ? List.of() : List.copyOf(fields);
         openClAttributes = openClAttributes == null ? List.of() : List.copyOf(openClAttributes);
+        attributeMetadata = attributeMetadata == null ? List.of() : List.copyOf(attributeMetadata);
     }
 
     private static String normalize(String value, String fallback) {

@@ -24,6 +24,7 @@ import net.sixik.ga_utils.javatogpu.api.UInt4;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSizeHint;
 import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLQualifiers;
 import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
@@ -120,7 +121,7 @@ public final class GpuShowcase {
         output[id] = ReusableMathLibrary.norm(input[id]);
     }
 
-    @OpenCLAttributes({"work_group_size_hint(4, 1, 1)"})
+    @GPUWorkGroupSizeHint(x = 4)
     @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     public static void attributeExample(
             @GPUGlobal float[] input,

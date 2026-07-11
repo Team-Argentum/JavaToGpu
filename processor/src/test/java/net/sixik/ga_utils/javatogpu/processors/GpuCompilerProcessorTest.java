@@ -7944,6 +7944,58 @@ class GpuCompilerProcessorTest {
     }
 
     @Test
+    void generatesKernelWithPortableGpuWorkGroupSizeHint() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-portable-workgroup-hint-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-portable-workgroup-hint-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSizeHint;
+
+                public class Demo {
+                    @GPUWorkGroupSizeHint(x = 4, y = 2, z = 1)
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(@GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __attribute__((work_group_size_hint(4, 2, 1))) __kernel void jtg_kernel(__global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = 1.0F;
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
     void generatesKernelWithNestedGpuStructsAndStructConstants() throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path classOutputDir = Files.createTempDirectory("javatogpu-nested-struct-classes");

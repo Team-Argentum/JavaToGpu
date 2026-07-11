@@ -9,6 +9,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuAttributeMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuConstantDataMetadata;
@@ -268,6 +269,7 @@ public final class GpuFrontendService {
                         compiledKernel.parsedMethod().name(),
                         compiledKernel.emittedName(),
                         compiledKernel.parsedMethod().openClAttributes(),
+                        buildAttributeMetadata(compiledKernel.parsedMethod().attributeMetadata()),
                         helperMethods.stream()
                                 .map(helper -> new IrGpuModuleMethod(
                                         helper.parsedMethod().name(),
@@ -275,6 +277,7 @@ public final class GpuFrontendService {
                                         helper.parsedMethod().returnType(),
                                         buildMethodParameters(helper),
                                         helper.parsedMethod().openClAttributes(),
+                                        buildAttributeMetadata(helper.parsedMethod().attributeMetadata()),
                                         helper.parsedMethod().inline()
                                 ))
                                 .toList(),
@@ -545,10 +548,25 @@ public final class GpuFrontendService {
                                 .map(field -> new IrGpuStructFieldMetadata(
                                         field.name(),
                                         field.javaType(),
-                                        field.openClAttributes()
+                                        field.openClAttributes(),
+                                        buildAttributeMetadata(field.attributeMetadata())
                                 ))
                                 .toList(),
-                        struct.openClAttributes()
+                        struct.openClAttributes(),
+                        buildAttributeMetadata(struct.attributeMetadata())
+                ))
+                .toList();
+    }
+
+    private static List<IrGpuAttributeMetadata> buildAttributeMetadata(
+            List<net.sixik.ga_utils.javatogpu.frontend.model.GpuAttributeMetadata> metadata
+    ) {
+        return (metadata == null ? List.<net.sixik.ga_utils.javatogpu.frontend.model.GpuAttributeMetadata>of() : metadata)
+                .stream()
+                .map(attribute -> new IrGpuAttributeMetadata(
+                        attribute.kind(),
+                        attribute.value(),
+                        attribute.source()
                 ))
                 .toList();
     }

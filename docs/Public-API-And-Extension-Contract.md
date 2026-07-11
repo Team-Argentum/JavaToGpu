@@ -9,10 +9,15 @@ Portable intent should be represented by backend-neutral annotations and `IrGpu`
 ```java
 @GPU
 @GPUWorkGroupSize(x = 8, y = 8, z = 1)
+@GPUWorkGroupSizeHint(x = 8, y = 8, z = 1)
 static void kernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
+
+Common backend metadata should also prefer portable annotations before raw strings: `@GPUWorkGroupSizeHint`,
+`@GPUVectorTypeHint`, `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` lower to the current OpenCL metadata path
+today while preserving source intent for future CUDA, Vulkan/SPIR-V, and Metal lowerers.
 
 Use `@GPUAttribute` only when no portable annotation exists yet. It supports repeated usage on the same method, field, type, or parameter:
 

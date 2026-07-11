@@ -354,6 +354,81 @@ class GpuFrontendServiceTest {
     }
 
     @Test
+    void persistsPortableAttributeMetadataThroughIrGpuRoundTrip() {
+        String methodSource = """
+                @GPUWorkGroupSize(x = 8, y = 4, z = 2)
+                @GPUWorkGroupSizeHint(x = 4, y = 2, z = 1)
+                @GPUVectorTypeHint("float4")
+                @GPU
+                void kernel(@GPUGlobal Pair[] pairs, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = scale(pairs[id].x);
+                }
+                """;
+        String helperSource = """
+                @GPUAlwaysInline
+                @CCode(inline = true)
+                float scale(float value) {
+                    return value * 2.0f;
+                }
+                """;
+        String structSource = """
+                @GPUPacked
+                @GPUAligned(16)
+                @GPUStruct
+                class Pair {
+                    @GPUAligned(8)
+                    float x;
+                    float y;
+                }
+                """;
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        ParsedGpuMethod kernelMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+        ParsedGpuMethod helperMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(helperSource, "Demo", "sample.Demo");
+        ParsedGpuStruct struct = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuStructParser()
+                .parseStruct(structSource, "Pair", "sample.Demo.Pair");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(helperMethod),
+                List.of(struct),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertEquals(3, result.irGpuArtifact().module().entryAttributeMetadata().size());
+        assertEquals("required-work-group-size", result.irGpuArtifact().module().entryAttributeMetadata().get(0).kind());
+        assertEquals("8,4,2", result.irGpuArtifact().module().entryAttributeMetadata().get(0).value());
+        assertEquals("work-group-size-hint", result.irGpuArtifact().module().entryAttributeMetadata().get(1).kind());
+        assertEquals("vector-type-hint", result.irGpuArtifact().module().entryAttributeMetadata().get(2).kind());
+        assertEquals("always-inline", result.irGpuArtifact().module().helperMethods().get(0).attributeMetadata().get(0).kind());
+        assertEquals("packed", result.irGpuArtifact().structMetadata().get(0).attributeMetadata().get(0).kind());
+        assertEquals("aligned", result.irGpuArtifact().structMetadata().get(0).attributeMetadata().get(1).kind());
+        assertEquals("16", result.irGpuArtifact().structMetadata().get(0).attributeMetadata().get(1).value());
+        assertEquals("aligned", result.irGpuArtifact().structMetadata().get(0).fields().get(0).attributeMetadata().get(0).kind());
+        assertEquals("8", result.irGpuArtifact().structMetadata().get(0).fields().get(0).attributeMetadata().get(0).value());
+
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        var reparsed = IrGpuArtifactParser.parse(manifest);
+
+        assertEquals(result.irGpuArtifact().module().entryAttributeMetadata(), reparsed.module().entryAttributeMetadata());
+        assertEquals(
+                result.irGpuArtifact().module().helperMethods().get(0).attributeMetadata(),
+                reparsed.module().helperMethods().get(0).attributeMetadata()
+        );
+        assertEquals(result.irGpuArtifact().structMetadata().get(0).attributeMetadata(), reparsed.structMetadata().get(0).attributeMetadata());
+        assertEquals(
+                result.irGpuArtifact().structMetadata().get(0).fields().get(0).attributeMetadata(),
+                reparsed.structMetadata().get(0).fields().get(0).attributeMetadata()
+        );
+        assertTrue(manifest.contains("entry.attributeMetadata.0.kind=required-work-group-size"));
+        assertTrue(manifest.contains("helper.0.attributeMetadata.0.kind=always-inline"));
+        assertTrue(manifest.contains("structMetadata.0.attributeMetadata.0.kind=packed"));
+        assertTrue(manifest.contains("structMetadata.0.field.0.attributeMetadata.0.value=8"));
+    }
+
+    @Test
     void parsesValidatesLowersAndEmitsKernelWithExternalInlineCCodeHelper() {
         String methodSource = """
                 @GPU

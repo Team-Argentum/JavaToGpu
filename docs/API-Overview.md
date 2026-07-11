@@ -15,6 +15,9 @@ Use these in source code that should compile to GPU code.
 - `@GPU` marks a static Java method as a GPU kernel entry point.
 - `@GPUGlobal`, `@GPUConstant`, and `@GPULocal` choose the OpenCL address space for array or pointer-like parameters.
 - `@GPUWorkGroupSize` declares a portable required work-group size for the kernel.
+- `@GPUWorkGroupSizeHint` declares a portable preferred work-group size hint for backends that support it.
+- `@GPUVectorTypeHint` declares a portable preferred vector type hint for backend lowerers that use it.
+- `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` cover common layout and helper emission metadata without raw backend strings.
 - `@GPUOptimize` records method-level optimizer policy such as `fastMath`; the default remains strict.
 - `@GPUDeviceConstraint` restricts a method to supported backends, vendors, device classes, and required runtime features.
 - `@GPUFallbackVariant` groups ABI-compatible implementations that runtime may choose for different devices.
@@ -30,6 +33,7 @@ Prefer portable annotations first. Use raw attributes only for backend-specific 
 ```java
 @GPU
 @GPUWorkGroupSize(x = 8, y = 8, z = 1)
+@GPUWorkGroupSizeHint(x = 8, y = 8, z = 1)
 @GPUOptimize(fastMath = false)
 static void kernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
