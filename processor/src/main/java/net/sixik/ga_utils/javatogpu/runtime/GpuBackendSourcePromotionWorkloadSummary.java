@@ -96,7 +96,7 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerFamily.promotionReady.count"),
                 summarizeOptimizerFamilies(properties, kernelCount),
                 sumKernelProperty(properties, kernelCount, "optimizerFamilyPayload.family.complete.count"),
-                allKernelBooleanProperty(properties, kernelCount, "optimizerFamilyPayload.family.complete.all"),
+                allKernelBooleanPropertyWhenPresent(properties, kernelCount, "optimizerFamilyPayload.family.complete.all"),
                 summarizeSourceSwitchingDecisions(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockers(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockerFamilies(properties, kernelCount),
@@ -420,6 +420,24 @@ public record GpuBackendSourcePromotionWorkloadSummary(
 
     private static String allKernelBooleanProperty(Properties properties, int kernelCount, String propertyName) {
         return Boolean.toString(kernelCount > 0 && countKernelBooleanProperty(properties, kernelCount, propertyName) == kernelCount);
+    }
+
+    private static String allKernelBooleanPropertyWhenPresent(Properties properties, int kernelCount, String propertyName) {
+        if (kernelCount <= 0) {
+            return "false";
+        }
+        boolean present = false;
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty("kernel." + index + "." + propertyName, "");
+            if (value.isBlank()) {
+                continue;
+            }
+            present = true;
+            if (!"true".equals(value)) {
+                return "false";
+            }
+        }
+        return Boolean.toString(present);
     }
 
     private record OptimizerFamilyAggregate(

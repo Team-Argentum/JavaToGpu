@@ -52,6 +52,12 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         );
         workloadGate.setProperty("kernel.1.optimizerFamilyPayload.family.complete.count", "1");
         workloadGate.setProperty("kernel.1.optimizerFamilyPayload.family.complete.all", "true");
+        workloadGate.setProperty("kernel.2.runtimeOptimizerDrift.optimizerFamily.count", "0");
+        workloadGate.setProperty("kernel.2.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0");
+        workloadGate.setProperty("kernel.2.runtimeOptimizerDrift.optimizerFamily.summary", "none");
+        workloadGate.setProperty("kernel.2.optimizerFamilyPayload.family.count", "0");
+        workloadGate.setProperty("kernel.2.optimizerFamilyPayload.family.complete.count", "0");
+        workloadGate.setProperty("kernel.2.optimizerFamilyPayload.family.complete.all", "false");
 
         String formatted = GpuProductionPromotionExplainabilityFormatter.format(workloadGate, blockedReadiness());
 

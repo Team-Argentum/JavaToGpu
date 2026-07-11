@@ -332,16 +332,21 @@ class GpuRuntimeIrOptimizerRegistryTest {
     }
 
     @Test
-    void commonSubexpressionReviewPassBlocksFamilyEvidenceWhenNoCandidatesExist() {
+    void commonSubexpressionReviewPassKeepsNoCandidateKernelsDiagnosticOnly() {
         IrGpuArtifact artifact = fastMathTypedArtifact();
         GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(
                 List.of(new GpuRuntimeCommonSubexpressionReviewPass())
         ).optimizeWithReport(request(artifact));
 
         GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
-        assertEquals("blocked", passReport.proofArtifact().verdict());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertTrue(passReport.analysisOnly());
+        assertEquals("diagnostic-only", passReport.proofArtifact().verdict());
+        assertFalse(passReport.proofArtifact().fields().containsKey("optimizerFamily"));
         assertEquals("no-cse-candidates", passReport.proofArtifact().fields().get("firstBlocker"));
         assertEquals("0", passReport.proofArtifact().fields().get("candidate.count"));
+        assertEquals("true", passReport.proofArtifact().fields().get("analysisOnly"));
+        assertEquals("false", passReport.proofArtifact().fields().get("runtimeEquivalencePayload.present"));
         assertFalse(report.requiresRollback());
     }
 

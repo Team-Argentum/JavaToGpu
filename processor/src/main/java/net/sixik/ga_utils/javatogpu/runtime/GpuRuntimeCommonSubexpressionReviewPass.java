@@ -25,13 +25,15 @@ public final class GpuRuntimeCommonSubexpressionReviewPass implements GpuRuntime
         String identity = artifact.map(IrGpuArtifactIdentity::stableIdentity).orElse("irgpu:missing");
         CseReview review = artifact.map(this::review).orElseGet(CseReview::missingArtifact);
         Map<String, String> fields = review.fields();
-        GpuRuntimeIrOptimizationPassReport passReport = GpuRuntimeIrOptimizationPassReport.applied(
-                PASS_VERSION,
-                identity,
-                identity,
-                review.proofStatus(),
-                review.diagnostics()
-        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+        GpuRuntimeIrOptimizationPassReport passReport = (review.analysisOnly()
+                ? GpuRuntimeIrOptimizationPassReport.skipped(PASS_VERSION, identity, review.proofStatus())
+                : GpuRuntimeIrOptimizationPassReport.applied(
+                        PASS_VERSION,
+                        identity,
+                        identity,
+                        review.proofStatus(),
+                        review.diagnostics()
+                )).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
                 "runtime.cse.review",
                 review.verdict(),
                 fields
@@ -80,6 +82,19 @@ public final class GpuRuntimeCommonSubexpressionReviewPass implements GpuRuntime
         fields.put("candidate.count", Integer.toString(candidateCount));
         fields.put("mutationEnabled", "false");
         fields.put("productionAffecting", "false");
+        if (candidateCount == 0) {
+            fields.remove("optimizerFamily");
+            fields.put("analysisOnly", "true");
+            fields.put("runtimeEquivalencePayload.present", "false");
+            fields.put("firstBlocker", "no-cse-candidates");
+            return new CseReview(
+                    fields,
+                    "diagnostic-only",
+                    "cse-candidate-missing",
+                    List.of("CSE review lane found no typed repeated-expression candidates"),
+                    true
+            );
+        }
         fields.put("runtimeEquivalenceMode", "optimizer-family:cse:original-vs-optimized");
         fields.put("runtimeEquivalencePayload.present", "true");
         fields.put("runtimeEquivalencePayload.cpuReference.present", "true");
@@ -99,13 +114,14 @@ public final class GpuRuntimeCommonSubexpressionReviewPass implements GpuRuntime
         fields.put("cseRuntimeEquivalencePayload.Tolerance", "captured-by-opencl-family-runtime-equivalence");
         fields.put("cseRuntimeEquivalencePayload.FailureFixture", "captured-by-opencl-family-runtime-equivalence");
         fields.put("cseRuntimeEquivalencePayload.ReferenceMode", "opencl-original-vs-optimized-isolated-array");
-        fields.put("firstBlocker", candidateCount == 0 ? "no-cse-candidates" : "none");
-        String verdict = candidateCount == 0 ? "blocked" : "review-ready";
-        String proofStatus = candidateCount == 0 ? "cse-candidate-missing" : "cse-review-evidence-ready";
-        List<String> diagnostics = candidateCount == 0
-                ? List.of("CSE review lane found no typed repeated-expression candidates")
-                : List.of("CSE review lane recorded optimizer-family evidence; production mutation remains disabled");
-        return new CseReview(fields, verdict, proofStatus, diagnostics);
+        fields.put("firstBlocker", "none");
+        return new CseReview(
+                fields,
+                "review-ready",
+                "cse-review-evidence-ready",
+                List.of("CSE review lane recorded optimizer-family evidence; production mutation remains disabled"),
+                false
+        );
     }
 
     private static Map<Integer, IrGpuTypedNode> nodesById(IrGpuMethodBody methodBody) {
@@ -171,7 +187,8 @@ public final class GpuRuntimeCommonSubexpressionReviewPass implements GpuRuntime
             Map<String, String> fields,
             String verdict,
             String proofStatus,
-            List<String> diagnostics
+            List<String> diagnostics,
+            boolean analysisOnly
     ) {
         private CseReview {
             fields = fields == null ? Map.of() : Map.copyOf(fields);
@@ -180,13 +197,21 @@ public final class GpuRuntimeCommonSubexpressionReviewPass implements GpuRuntime
 
         private static CseReview missingArtifact() {
             LinkedHashMap<String, String> fields = baseFields();
+            fields.remove("optimizerFamily");
             fields.put("methodBody.count", "0");
             fields.put("typedBody.count", "0");
             fields.put("candidate.count", "0");
             fields.put("mutationEnabled", "false");
             fields.put("productionAffecting", "false");
+            fields.put("analysisOnly", "true");
             fields.put("firstBlocker", "irgpu-artifact-missing");
-            return new CseReview(fields, "blocked", "irgpu-artifact-missing", List.of("CSE review lane skipped because IrGpu artifact is missing"));
+            return new CseReview(
+                    fields,
+                    "diagnostic-only",
+                    "irgpu-artifact-missing",
+                    List.of("CSE review lane skipped because IrGpu artifact is missing"),
+                    true
+            );
         }
     }
 }

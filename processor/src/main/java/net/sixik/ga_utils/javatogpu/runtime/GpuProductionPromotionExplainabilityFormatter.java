@@ -167,7 +167,13 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         );
         String optimizerFamilyPayloadCompleteAll = gate.getProperty(
                 "optimizerFamilyPayload.complete.all",
-                allKernelBooleanProperty(gate, kernelCount, "optimizerFamilyPayload.family.complete.all")
+                allKernelBooleanPropertyWhenCountPresent(
+                        gate,
+                        kernelCount,
+                        "optimizerFamilyPayload.family.count",
+                        "optimizerFamilyPayload.family.complete.count",
+                        "optimizerFamilyPayload.family.complete.all"
+                )
         );
         boolean optimizerFamilyRuntimeEquivalenceHistoryBaselineReady = propertyIsTrue(
                 gate,
@@ -575,16 +581,34 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         return sum;
     }
 
-    private static String allKernelBooleanProperty(Properties properties, int kernelCount, String suffix) {
+    private static String allKernelBooleanPropertyWhenCountPresent(
+            Properties properties,
+            int kernelCount,
+            String countSuffix,
+            String fallbackCountSuffix,
+            String booleanSuffix
+    ) {
         if (kernelCount <= 0) {
             return "false";
         }
+        boolean present = false;
         for (int index = 0; index < kernelCount; index++) {
-            if (!"true".equals(properties.getProperty("kernel." + index + "." + suffix, "false"))) {
+            String prefix = "kernel." + index + ".";
+            int count = parsePositiveInt(properties.getProperty(prefix + countSuffix, "0"));
+            int fallbackCount = parsePositiveInt(properties.getProperty(prefix + fallbackCountSuffix, "0"));
+            if (count == 0 && fallbackCount == 0) {
+                continue;
+            }
+            String value = properties.getProperty(prefix + booleanSuffix, "");
+            if (value.isBlank()) {
+                return "false";
+            }
+            present = true;
+            if (!"true".equals(value)) {
                 return "false";
             }
         }
-        return "true";
+        return Boolean.toString(present);
     }
 
     private static String summarizeKernelProperty(Properties properties, int kernelCount, String suffix) {
