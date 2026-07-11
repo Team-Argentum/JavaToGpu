@@ -19,6 +19,8 @@ public final class GpuRuntimeCompileArtifactDumper {
 
     public static final String RUNTIME_DEVICE_SELECTION_ARTIFACT = "runtime-device-selection.properties";
     public static final String BACKEND_COMPILER_FEEDBACK_ARTIFACT = "backend-compiler-feedback.properties";
+    public static final String RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT =
+            "runtime-extension-participation.properties";
     public static final String RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD_DIRECTORY =
             "runtime-optimizer-family-equivalence-payload";
 
@@ -77,6 +79,10 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.put("backend-module.properties", formatBackendModule(snapshot.backendModuleArtifact()));
         artifacts.put("backend-diagnostics.properties", formatBackendDiagnostics(snapshot));
         artifacts.put(BACKEND_COMPILER_FEEDBACK_ARTIFACT, compilerFeedbackReport.toPropertiesText());
+        artifacts.put(
+                RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT,
+                GpuRuntimeExtensionParticipationArtifact.from(snapshot, compilerFeedbackReport).toPropertiesText()
+        );
         artifacts.put("opencl-irgpu-reconstruction-preview.properties", formatOpenClIrGpuReconstructionPreview(snapshot));
         artifacts.put("backend-source-reconstruction.properties", formatBackendSourceReconstruction(snapshot));
         artifacts.put(GpuPromotionArtifactRegistry.BACKEND_SOURCE_PROMOTION_GATE, formatBackendSourcePromotionGate(snapshot));

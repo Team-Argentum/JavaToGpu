@@ -2,6 +2,11 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionFailurePolicy;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
@@ -25,6 +30,65 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GpuRuntimeCompileArtifactDumperTest {
 
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+
+    @Test
+    void dumpsRuntimeExtensionParticipationArtifact() {
+        GpuExtensionExecutionReport optimizerExecution = execution(
+                "optimizer:cse",
+                GpuExtensionPhase.RUNTIME_IR_OPTIMIZATION,
+                GpuExtensionPermission.MUTATION_PROPOSAL,
+                GpuExtensionExecutionOutcome.SUCCEEDED,
+                true
+        );
+        GpuExtensionExecutionReport deviceSelectionExecution = execution(
+                "device-policy:test",
+                GpuExtensionPhase.DEVICE_SELECTION,
+                GpuExtensionPermission.READ_ONLY,
+                GpuExtensionExecutionOutcome.SUCCEEDED,
+                true
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor())
+                .withDeviceSelection(syntheticDeviceSelection(deviceSelectionExecution))
+                .withOptimizationReport(new GpuRuntimeIrOptimizationReport(
+                        Optional.empty(),
+                        List.of(),
+                        GpuOptimizationStrategyDecision.none(null),
+                        List.of(optimizerExecution)
+                ))
+                .withCompileLog("mock compiler resource log");
+        GpuBackendCompilerFeedbackRegistry compilerFeedbackRegistry = GpuBackendCompilerFeedbackRegistry.of(List.of(
+                new GpuBackendCompilerFeedbackProvider() {
+                    @Override
+                    public String extensionId() {
+                        return "compiler-feedback:mock";
+                    }
+
+                    @Override
+                    public Optional<GpuBackendCompilerFeedback> inspect(GpuBackendCompilerFeedbackRequest request) {
+                        throw new IllegalStateException("mock feedback unavailable");
+                    }
+                }
+        ));
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot, compilerFeedbackRegistry);
+
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT));
+        String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
+        assertTrue(participation.contains("status=recorded"));
+        assertTrue(participation.contains("entry.count=3"));
+        assertTrue(participation.contains("succeeded.count=2"));
+        assertTrue(participation.contains("failedContinued.count=1"));
+        assertTrue(participation.contains("failedClosed.count=0"));
+        assertTrue(participation.contains("pipelineContinued.all=true"));
+        assertTrue(participation.contains("firstFailure=compiler-feedback:mock:FAILED_CONTINUED"));
+        assertTrue(participation.contains("entry.0.source=device-selection"));
+        assertTrue(participation.contains("entry.0.extensionId=device-policy:test"));
+        assertTrue(participation.contains("entry.1.source=runtime-ir-optimization"));
+        assertTrue(participation.contains("entry.1.extensionId=optimizer:cse"));
+        assertTrue(participation.contains("entry.2.source=backend-compiler-feedback"));
+        assertTrue(participation.contains("entry.2.extensionId=compiler-feedback:mock"));
+        assertTrue(participation.contains("entry.2.outcome=FAILED_CONTINUED"));
+    }
 
     @Test
     void dumpsStructuredRuntimeEquivalenceComparisonCases() {
@@ -1773,6 +1837,41 @@ class GpuRuntimeCompileArtifactDumperTest {
                 "javatogpu/sample/Demo/kernel.cl",
                 "__kernel void kernel(__global int* output) { output[0] = 1; }",
                 List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+    }
+
+    private static GpuExtensionExecutionReport execution(
+            String extensionId,
+            GpuExtensionPhase phase,
+            GpuExtensionPermission permission,
+            GpuExtensionExecutionOutcome outcome,
+            boolean pipelineContinued
+    ) {
+        return new GpuExtensionExecutionReport(
+                extensionId,
+                "test-version",
+                phase,
+                permission,
+                "test operation",
+                outcome,
+                GpuExtensionFailurePolicy.CONTINUE,
+                pipelineContinued,
+                "none",
+                "test execution",
+                List.of()
+        );
+    }
+
+    private static GpuRuntimeDeviceSelection syntheticDeviceSelection(GpuExtensionExecutionReport execution) {
+        return new GpuRuntimeDeviceSelection(
+                Optional.empty(),
+                List.of(),
+                List.of(),
+                List.of(execution),
+                true,
+                false,
+                "none",
+                List.of("synthetic device-selection execution for participation artifact test")
         );
     }
 
