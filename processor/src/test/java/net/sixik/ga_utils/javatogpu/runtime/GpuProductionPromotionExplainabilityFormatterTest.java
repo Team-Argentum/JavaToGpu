@@ -20,6 +20,15 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("optimizerFamily.count=2"));
         assertTrue(formatted.contains("optimizerFamily.promotionReady.count=1"));
         assertTrue(formatted.contains("optimizerFamily.summary=cse[passes=1, acceptedProof=1"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.count=0"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.ready.count=0"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.blocked.count=0"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.conflict.count=0"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.conflict.conflictResolutionImplemented=false"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.conflict.selectionApplied=false"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.rewriteBuilderImplemented=false"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.mutationAllowed=false"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.selectedIrReplacement=false"));
         assertTrue(formatted.contains("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=false"));
         assertTrue(formatted.contains("optimizerFamily.promotionPreflightReady=false"));
         assertTrue(formatted.contains("optimizer-family-runtime-equivalence-history-baseline-missing"));

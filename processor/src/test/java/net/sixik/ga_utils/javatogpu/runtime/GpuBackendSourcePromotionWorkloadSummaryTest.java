@@ -43,6 +43,16 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.valid.count", "3");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "1");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "replacement-plan-root-missing");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.count", "4");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.ready.count", "3");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.blocked.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.firstBlocker", "replacement-plan-root-missing");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "rewrite-sketch-covered-node-overlap");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented", "false");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied", "false");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented", "false");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement", "false");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "2");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "1");
         properties.setProperty(
@@ -98,6 +108,12 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertEquals(3, summary.optimizerReplacementPlanValidationValidCount());
         assertEquals(1, summary.optimizerReplacementPlanValidationInvalidCount());
         assertEquals("replacement-plan-root-missing=1", summary.optimizerReplacementPlanValidationFirstBlockers());
+        assertEquals(4, summary.optimizerRewriteSketchCount());
+        assertEquals(3, summary.optimizerRewriteSketchReadyCount());
+        assertEquals(1, summary.optimizerRewriteSketchBlockedCount());
+        assertEquals("replacement-plan-root-missing=1", summary.optimizerRewriteSketchFirstBlockers());
+        assertEquals(1, summary.optimizerRewriteSketchConflictCount());
+        assertEquals("rewrite-sketch-covered-node-overlap=1", summary.optimizerRewriteSketchConflictFirstBlockers());
         assertEquals(2, summary.optimizerFamilyCount());
         assertEquals(1, summary.optimizerFamilyPromotionReadyCount());
         assertEquals(
@@ -122,11 +138,12 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
         assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
         assertTrue(summary.historyStatus().contains("optimizerReplacementPlans=complete=3/partial=1/validation=valid=3/total=4/invalid=1/validationFirstBlockers=replacement-plan-root-missing=1/firstBlockers=multiply-operands-incomplete=1"));
+        assertTrue(summary.historyStatus().contains("optimizerRewriteSketches=ready=3/total=4/blocked=1/conflicts=1/rewriteBuilderImplemented=false/mutationAllowed=false/selectedIrReplacement=false/firstBlockers=replacement-plan-root-missing=1/conflictFirstBlockers=rewrite-sketch-covered-node-overlap=1/selectionApplied=false"));
         assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=1"));
         assertTrue(summary.historyStatus().contains("kernelCount=1"));
         assertTrue(summary.historyStatus().contains("extensionParticipation=recorded/3executions/failedContinued=1/failedClosed=0"));
         assertTrue(summary.historyStatus().contains("sourceSwitching=reject-production-irgpu-source/operatorAccepted=true"));
-        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/replacementPlanComplete=3/replacementPlanPartial=1/replacementPlanFirstBlocker=multiply-operands-incomplete/replacementPlanValidationValid=3/replacementPlanValidationTotal=4/replacementPlanValidationInvalid=1/replacementPlanValidationFirstBlocker=replacement-plan-root-missing/optimizerRules=0/optimizerRuleDetails=none/optimizerFamilies=2/promotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/replacementPlanComplete=3/replacementPlanPartial=1/replacementPlanFirstBlocker=multiply-operands-incomplete/replacementPlanValidationValid=3/replacementPlanValidationTotal=4/replacementPlanValidationInvalid=1/replacementPlanValidationFirstBlocker=replacement-plan-root-missing/rewriteSketchReady=3/rewriteSketchTotal=4/rewriteSketchBlocked=1/rewriteSketchFirstBlocker=replacement-plan-root-missing/rewriteSketchConflicts=1/rewriteSketchConflictFirstBlocker=rewrite-sketch-covered-node-overlap/rewriteSketchConflictResolutionImplemented=false/rewriteSketchSelectionApplied=false/rewriteSelectionStatus=not-required/rewriteSelectionFirstBlocker=no-rewrite-sketches/rewriteSelectionApplied=false/rewriteBuilderImplemented=false/selectedIrReplacement=false/optimizerRules=0/optimizerRuleDetails=none/optimizerFamilies=2/promotionReadyFamilies=1"));
         assertTrue(summary.historyStatus().contains("families=source-parity=1"));
     }
 

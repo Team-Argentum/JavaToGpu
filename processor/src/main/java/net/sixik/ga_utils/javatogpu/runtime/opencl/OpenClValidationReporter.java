@@ -1087,6 +1087,22 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")))
                     .append("`, replacementPlanValidationFirstBlocker=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")))
+                    .append("`, rewriteSketch=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.ready.count", "0")))
+                    .append("/")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.count", "0")))
+                    .append(" ready, blocked=")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.blocked.count", "0")))
+                    .append("`, rewriteSketchFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.firstBlocker", "none")))
+                    .append("`, rewriteSketchConflicts=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.count", "0")))
+                    .append("`, rewriteSketchConflictFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "none")))
+                    .append("`, rewriteSelection=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.status", "not-required")))
+                    .append("`, rewriteSelectionFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.firstBlocker", "no-rewrite-sketches")))
                     .append("`, optimizerRules=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.count", "0")))
                     .append("`, optimizerRuleDetails=`")
@@ -1457,6 +1473,19 @@ public final class OpenClValidationReporter {
             builder.append(prefix).append("optimizerDriftReplacementPlanValidationValidCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0")).append('\n');
             builder.append(prefix).append("optimizerDriftReplacementPlanValidationInvalidCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")).append('\n');
             builder.append(prefix).append("optimizerDriftReplacementPlanValidationFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchReadyCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.ready.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchBlockedCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.blocked.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchConflictCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchConflictFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchConflictResolutionImplemented=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchSelectionApplied=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSelectionStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.status", "not-required")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSelectionFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.firstBlocker", "no-rewrite-sketches")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSelectionApplied=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.selectionApplied", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteBuilderImplemented=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftSelectedIrReplacement=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement", "false")).append('\n');
             builder.append(prefix).append("optimizerDriftRuleCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.count", "0")).append('\n');
             builder.append(prefix).append("optimizerDriftRuleSummary=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.summary", "none")).append('\n');
             builder.append(prefix).append("optimizerDriftRuleDetails=").append(kernelOptimizerRuleDetails(gate, prefix)).append('\n');
@@ -1518,6 +1547,14 @@ public final class OpenClValidationReporter {
                     .append(properties.getProperty(prefix + "replacementPlan.validation.invalid.count", "0"))
                     .append(", planValidationFirstBlocker=")
                     .append(properties.getProperty(prefix + "replacementPlan.validation.firstBlocker", "none"))
+                    .append(", rewriteSketches=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.count", "0"))
+                    .append(", readySketches=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.ready.count", "0"))
+                    .append(", blockedSketches=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.blocked.count", "0"))
+                    .append(", rewriteSketchFirstBlocker=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.firstBlocker", "none"))
                     .append(", firstBlocker=")
                     .append(properties.getProperty(
                             prefix + "firstBlocker",

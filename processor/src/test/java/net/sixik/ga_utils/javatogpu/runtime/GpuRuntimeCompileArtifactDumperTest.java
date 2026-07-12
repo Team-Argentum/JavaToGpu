@@ -2017,6 +2017,14 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("replacementPlan.firstBlocker", "multiply-operands-incomplete"),
                         Map.entry("replacementPlan.validation.invalid.count", "1"),
                         Map.entry("replacementPlan.validation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteSketch.count", "6"),
+                        Map.entry("rewriteSketch.ready.count", "5"),
+                        Map.entry("rewriteSketch.blocked.count", "1"),
+                        Map.entry("rewriteSketch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteSketch.conflict.count", "1"),
+                        Map.entry("rewriteSketch.conflict.firstBlocker", "rewrite-sketch-covered-node-overlap"),
+                        Map.entry("rewriteSelection.status", "blocked"),
+                        Map.entry("rewriteSelection.firstBlocker", "rewrite-sketch-conflict-resolution-required"),
                         Map.entry("rule.count", "2"),
                         Map.entry("rule.0.id", "madFma"),
                         Map.entry("rule.0.version", "peephole-rule:mad-fma-v1"),
@@ -2037,6 +2045,10 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.0.replacementPlan.validation.valid.count", "2"),
                         Map.entry("rule.0.replacementPlan.validation.invalid.count", "1"),
                         Map.entry("rule.0.replacementPlan.validation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteSketch.count", "3"),
+                        Map.entry("rule.0.rewriteSketch.ready.count", "2"),
+                        Map.entry("rule.0.rewriteSketch.blocked.count", "1"),
+                        Map.entry("rule.0.rewriteSketch.firstBlocker", "replacement-plan-root-missing"),
                         Map.entry("rule.0.firstBlocker", "multiply-operands-incomplete"),
                         Map.entry("rule.1.id", "clamp"),
                         Map.entry("rule.1.version", "peephole-rule:clamp-v1"),
@@ -2057,6 +2069,10 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.1.replacementPlan.validation.valid.count", "3"),
                         Map.entry("rule.1.replacementPlan.validation.invalid.count", "0"),
                         Map.entry("rule.1.replacementPlan.validation.firstBlocker", "none"),
+                        Map.entry("rule.1.rewriteSketch.count", "3"),
+                        Map.entry("rule.1.rewriteSketch.ready.count", "3"),
+                        Map.entry("rule.1.rewriteSketch.blocked.count", "0"),
+                        Map.entry("rule.1.rewriteSketch.firstBlocker", "none"),
                         Map.entry("rule.1.firstBlocker", "none")
                 )
         ));
@@ -2087,17 +2103,48 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("replacementPlan.validation.valid.count=5"));
         assertTrue(drift.contains("replacementPlan.validation.invalid.count=1"));
         assertTrue(drift.contains("replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteSketch.count=6"));
+        assertTrue(drift.contains("rewriteSketch.ready.count=5"));
+        assertTrue(drift.contains("rewriteSketch.blocked.count=1"));
+        assertTrue(drift.contains("rewriteSketch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteSketch.rewriteBuilderImplemented=false"));
+        assertTrue(drift.contains("rewriteSketch.mutationAllowed=false"));
+        assertTrue(drift.contains("rewriteSketch.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteSketch.conflict.count=1"));
+        assertTrue(drift.contains("rewriteSketch.conflict.firstBlocker=rewrite-sketch-covered-node-overlap"));
+        assertTrue(drift.contains("rewriteSketch.conflict.conflictResolutionImplemented=false"));
+        assertTrue(drift.contains("rewriteSketch.conflict.selectionApplied=false"));
+        assertTrue(drift.contains("rewriteSelection.sketch.count=6"));
+        assertTrue(drift.contains("rewriteSelection.sketch.ready.count=5"));
+        assertTrue(drift.contains("rewriteSelection.sketch.blocked.count=1"));
+        assertTrue(drift.contains("rewriteSelection.conflict.count=1"));
+        assertTrue(drift.contains("rewriteSelection.status=blocked"));
+        assertTrue(drift.contains("rewriteSelection.firstBlocker=rewrite-sketch-conflict-resolution-required"));
+        assertTrue(drift.contains("rewriteSelection.rewriteBuilderImplemented=false"));
+        assertTrue(drift.contains("rewriteSelection.conflictResolutionImplemented=false"));
+        assertTrue(drift.contains("rewriteSelection.runtimeEquivalenceRequired=true"));
+        assertTrue(drift.contains("rewriteSelection.runtimeEquivalenceProven=false"));
+        assertTrue(drift.contains("rewriteSelection.approvalRequired=true"));
+        assertTrue(drift.contains("rewriteSelection.approvalAccepted=false"));
+        assertTrue(drift.contains("rewriteSelection.mutationAllowed=false"));
+        assertTrue(drift.contains("rewriteSelection.selectionApplied=false"));
+        assertTrue(drift.contains("rewriteSelection.selectedIrReplacement=false"));
         assertTrue(drift.contains("optimizerRule.count=2"));
         assertTrue(drift.contains("optimizerRule.0.id=madFma"));
         assertTrue(drift.contains("optimizerRule.0.blocked.count=1"));
         assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.count=3"));
         assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.invalid.count=1"));
         assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.firstBlocker=replacement-plan-root-missing"));
         assertTrue(drift.contains("optimizerRule.0.firstBlocker=multiply-operands-incomplete"));
         assertTrue(drift.contains("optimizerRule.1.id=clamp"));
         assertTrue(drift.contains("optimizerRule.1.skipped.count=1"));
         assertTrue(drift.contains("optimizerRule.summary=madFma[candidates=2, proposals=0, applied=0, skipped=0, blocked=1"));
         assertTrue(drift.contains("planValidations=3, invalidPlanValidations=1, planValidationFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteSketches=3, readySketches=2, blockedSketches=1, rewriteSketchFirstBlocker=replacement-plan-root-missing"));
         assertTrue(drift.contains("optimizerFamily.count=1"));
         assertTrue(drift.contains("optimizerFamily.summary=peephole[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"));
         assertTrue(drift.contains("selectedRuntimeIrStage=original"));

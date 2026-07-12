@@ -34,6 +34,14 @@ public record GpuProductionPromotionExplainabilitySummary(
         int optimizerReplacementPlanValidationValidCount,
         int optimizerReplacementPlanValidationInvalidCount,
         String optimizerReplacementPlanValidationFirstBlockers,
+        int optimizerRewriteSketchCount,
+        int optimizerRewriteSketchReadyCount,
+        int optimizerRewriteSketchBlockedCount,
+        String optimizerRewriteSketchFirstBlockers,
+        int optimizerRewriteSketchConflictCount,
+        String optimizerRewriteSketchConflictFirstBlockers,
+        String optimizerRewriteSelectionStatuses,
+        String optimizerRewriteSelectionFirstBlockers,
         int optimizerRuleCount,
         String optimizerRuleSummary,
         String optimizerRuleDetails,
@@ -106,6 +114,14 @@ public record GpuProductionPromotionExplainabilitySummary(
                 0,
                 0,
                 "",
+                0,
+                0,
+                0,
+                "",
+                0,
+                "",
+                "none",
+                "none",
                 0,
                 "none",
                 "none",
@@ -185,6 +201,14 @@ public record GpuProductionPromotionExplainabilitySummary(
                 parsePositiveInt(properties.getProperty("optimizerReplacementPlan.validation.valid.count", "0")),
                 parsePositiveInt(properties.getProperty("optimizerReplacementPlan.validation.invalid.count", "0")),
                 properties.getProperty("optimizerReplacementPlan.validation.firstBlockers", ""),
+                parsePositiveInt(properties.getProperty("optimizerRewriteSketch.count", "0")),
+                parsePositiveInt(properties.getProperty("optimizerRewriteSketch.ready.count", "0")),
+                parsePositiveInt(properties.getProperty("optimizerRewriteSketch.blocked.count", "0")),
+                properties.getProperty("optimizerRewriteSketch.firstBlockers", ""),
+                parsePositiveInt(properties.getProperty("optimizerRewriteSketch.conflict.count", "0")),
+                properties.getProperty("optimizerRewriteSketch.conflict.firstBlockers", ""),
+                properties.getProperty("optimizerRewriteSelection.statuses", "none"),
+                properties.getProperty("optimizerRewriteSelection.firstBlockers", "none"),
                 parsePositiveInt(properties.getProperty("optimizerRule.count", "0")),
                 properties.getProperty("optimizerRule.summary", "none"),
                 properties.getProperty("optimizerRule.details", "none"),
@@ -310,6 +334,7 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + optimizerFamilyPromotionPreflightReady
                 + optimizerFamilySummaryText()
                 + optimizerReplacementPlanSummaryText()
+                + optimizerRewriteSketchSummaryText()
                 + optimizerRuleSummaryText()
                 + ", backendPromotionArtifactSupportComplete=" + backendPromotionArtifactSupportComplete
                 + ", backendPromotionArtifactSupportMissing=" + backendPromotionArtifactSupportMissingCount
@@ -412,6 +437,54 @@ public record GpuProductionPromotionExplainabilitySummary(
                 && !optimizerReplacementPlanValidationFirstBlockers.isBlank()) {
             builder.append("/validationFirstBlockers=").append(optimizerReplacementPlanValidationFirstBlockers);
         }
+        return builder.toString();
+    }
+
+    private String optimizerRewriteSketchSummaryText() {
+        if (optimizerRewriteSketchCount == 0
+                && optimizerRewriteSketchReadyCount == 0
+                && optimizerRewriteSketchBlockedCount == 0
+                && optimizerRewriteSketchConflictCount == 0
+                && (optimizerRewriteSketchFirstBlockers == null || optimizerRewriteSketchFirstBlockers.isBlank())
+                && (optimizerRewriteSketchConflictFirstBlockers == null
+                || optimizerRewriteSketchConflictFirstBlockers.isBlank())
+                && (optimizerRewriteSelectionStatuses == null
+                || optimizerRewriteSelectionStatuses.isBlank()
+                || "none".equals(optimizerRewriteSelectionStatuses))
+                && (optimizerRewriteSelectionFirstBlockers == null
+                || optimizerRewriteSelectionFirstBlockers.isBlank()
+                || "none".equals(optimizerRewriteSelectionFirstBlockers))) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", optimizerRewriteSketches=ready=")
+                .append(optimizerRewriteSketchReadyCount)
+                .append("/total=")
+                .append(optimizerRewriteSketchCount)
+                .append("/blocked=")
+                .append(optimizerRewriteSketchBlockedCount)
+                .append("/conflicts=")
+                .append(optimizerRewriteSketchConflictCount)
+                .append("/rewriteBuilderImplemented=false")
+                .append("/mutationAllowed=false")
+                .append("/selectedIrReplacement=false");
+        if (optimizerRewriteSketchFirstBlockers != null && !optimizerRewriteSketchFirstBlockers.isBlank()) {
+            builder.append("/firstBlockers=").append(optimizerRewriteSketchFirstBlockers);
+        }
+        if (optimizerRewriteSketchConflictFirstBlockers != null
+                && !optimizerRewriteSketchConflictFirstBlockers.isBlank()) {
+            builder.append("/conflictFirstBlockers=").append(optimizerRewriteSketchConflictFirstBlockers);
+        }
+        if (optimizerRewriteSelectionStatuses != null
+                && !optimizerRewriteSelectionStatuses.isBlank()
+                && !"none".equals(optimizerRewriteSelectionStatuses)) {
+            builder.append("/selectionStatus=").append(optimizerRewriteSelectionStatuses);
+        }
+        if (optimizerRewriteSelectionFirstBlockers != null
+                && !optimizerRewriteSelectionFirstBlockers.isBlank()
+                && !"none".equals(optimizerRewriteSelectionFirstBlockers)) {
+            builder.append("/selectionFirstBlockers=").append(optimizerRewriteSelectionFirstBlockers);
+        }
+        builder.append("/selectionApplied=false");
         return builder.toString();
     }
 

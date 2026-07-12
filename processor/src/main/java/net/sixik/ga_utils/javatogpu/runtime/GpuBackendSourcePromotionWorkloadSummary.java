@@ -31,6 +31,14 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         int optimizerReplacementPlanValidationValidCount,
         int optimizerReplacementPlanValidationInvalidCount,
         String optimizerReplacementPlanValidationFirstBlockers,
+        int optimizerRewriteSketchCount,
+        int optimizerRewriteSketchReadyCount,
+        int optimizerRewriteSketchBlockedCount,
+        String optimizerRewriteSketchFirstBlockers,
+        int optimizerRewriteSketchConflictCount,
+        String optimizerRewriteSketchConflictFirstBlockers,
+        String optimizerRewriteSelectionStatuses,
+        String optimizerRewriteSelectionFirstBlockers,
         int optimizerRuleCount,
         String optimizerRuleSummary,
         String optimizerRuleDetails,
@@ -71,6 +79,14 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 0,
                 0,
                 0,
+                "",
+                0,
+                0,
+                0,
+                "",
+                0,
+                "",
+                "",
                 "",
                 0,
                 "none",
@@ -129,6 +145,14 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.valid.count"),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.invalid.count"),
                 summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.ready.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.blocked.count"),
+                summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.firstBlocker"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.conflict.count"),
+                summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker"),
+                summarizeRewriteSelectionStatuses(properties, kernelCount),
+                summarizeRewriteSelectionFirstBlockers(properties, kernelCount),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerRule.count"),
                 summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerRule.summary"),
                 summarizeOptimizerRules(properties, kernelCount),
@@ -180,6 +204,7 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     + ", optimizerPayloadCompleteAll="
                     + optimizerFamilyPayloadCompleteAll
                     + optimizerReplacementPlanEvidenceText()
+                    + optimizerRewriteSketchEvidenceText()
                     + optimizerRuleSummaryText()
                     + optimizerFamilySummaryText()
                     + runtimeExtensionParticipationEvidenceText()
@@ -209,6 +234,7 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 + ", optimizerPayloadCompleteAll="
                 + optimizerFamilyPayloadCompleteAll
                 + optimizerReplacementPlanEvidenceText()
+                + optimizerRewriteSketchEvidenceText()
                 + optimizerRuleSummaryText()
                 + optimizerFamilySummaryText()
                 + runtimeExtensionParticipationEvidenceText()
@@ -312,6 +338,44 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return builder.toString();
     }
 
+    private String optimizerRewriteSketchEvidenceText() {
+        if (optimizerRewriteSketchCount == 0
+                && optimizerRewriteSketchReadyCount == 0
+                && optimizerRewriteSketchBlockedCount == 0
+                && optimizerRewriteSketchConflictCount == 0
+                && optimizerRewriteSketchFirstBlockers.isBlank()
+                && optimizerRewriteSketchConflictFirstBlockers.isBlank()
+                && optimizerRewriteSelectionStatuses.isBlank()
+                && optimizerRewriteSelectionFirstBlockers.isBlank()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", optimizerRewriteSketches=ready=")
+                .append(optimizerRewriteSketchReadyCount)
+                .append("/total=")
+                .append(optimizerRewriteSketchCount)
+                .append("/blocked=")
+                .append(optimizerRewriteSketchBlockedCount)
+                .append("/conflicts=")
+                .append(optimizerRewriteSketchConflictCount)
+                .append("/rewriteBuilderImplemented=false")
+                .append("/mutationAllowed=false")
+                .append("/selectedIrReplacement=false");
+        if (!optimizerRewriteSketchFirstBlockers.isBlank()) {
+            builder.append("/firstBlockers=").append(optimizerRewriteSketchFirstBlockers);
+        }
+        if (!optimizerRewriteSketchConflictFirstBlockers.isBlank()) {
+            builder.append("/conflictFirstBlockers=").append(optimizerRewriteSketchConflictFirstBlockers);
+        }
+        if (!optimizerRewriteSelectionStatuses.isBlank()) {
+            builder.append("/selectionStatus=").append(optimizerRewriteSelectionStatuses);
+        }
+        if (!optimizerRewriteSelectionFirstBlockers.isBlank()) {
+            builder.append("/selectionFirstBlockers=").append(optimizerRewriteSelectionFirstBlockers);
+        }
+        builder.append("/selectionApplied=false");
+        return builder.toString();
+    }
+
     private static String summarizeReplacementPlanFirstBlockers(Properties properties, int kernelCount) {
         Map<String, Integer> blockerCounts = new LinkedHashMap<>();
         for (int index = 0; index < kernelCount; index++) {
@@ -332,6 +396,36 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         for (int index = 0; index < kernelCount; index++) {
             String value = properties.getProperty("kernel." + index + "." + propertyName, "");
             if (value.isBlank() || "none".equals(value) || "unknown".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteSelectionStatuses(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.status",
+                    ""
+            );
+            if (value.isBlank() || "unknown".equals(value) || "not-required".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteSelectionFirstBlockers(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.firstBlocker",
+                    ""
+            );
+            if (value.isBlank() || "none".equals(value) || "unknown".equals(value) || "no-rewrite-sketches".equals(value)) {
                 continue;
             }
             counts.merge(value, 1, Integer::sum);
@@ -595,6 +689,71 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                             "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.validation.firstBlocker",
                             "none"
                     ))
+                    .append("/rewriteSketchReady=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.ready.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchTotal=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchBlocked=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.blocked.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.firstBlocker",
+                            "none"
+                    ))
+                    .append("/rewriteSketchConflicts=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchConflictFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker",
+                            "none"
+                    ))
+                    .append("/rewriteSketchConflictResolutionImplemented=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented",
+                            "false"
+                    ))
+                    .append("/rewriteSketchSelectionApplied=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied",
+                            "false"
+                    ))
+                    .append("/rewriteSelectionStatus=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.status",
+                            "not-required"
+                    ))
+                    .append("/rewriteSelectionFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.firstBlocker",
+                            "no-rewrite-sketches"
+                    ))
+                    .append("/rewriteSelectionApplied=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.selectionApplied",
+                            "false"
+                    ))
+                    .append("/rewriteBuilderImplemented=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented",
+                            "false"
+                    ))
+                    .append("/selectedIrReplacement=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement",
+                            "false"
+                    ))
                     .append("/optimizerRules=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.optimizerRule.count", "0"))
                     .append("/optimizerRuleDetails=")
@@ -753,6 +912,10 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.valid.count", "0")),
                     parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.invalid.count", "0")),
                     properties.getProperty(prefix + "replacementPlan.validation.firstBlocker", "none"),
+                    parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.ready.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.blocked.count", "0")),
+                    properties.getProperty(prefix + "rewriteSketch.firstBlocker", "none"),
                     properties.getProperty(prefix + "firstBlocker", properties.getProperty(prefix + "replacementPlan.firstBlocker", "none"))
             ));
         }
@@ -790,6 +953,14 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append(rule.replacementPlanValidationInvalidCount())
                     .append(", planValidationFirstBlocker=")
                     .append(rule.replacementPlanValidationFirstBlocker())
+                    .append(", rewriteSketches=")
+                    .append(rule.rewriteSketchCount())
+                    .append(", readySketches=")
+                    .append(rule.rewriteSketchReadyCount())
+                    .append(", blockedSketches=")
+                    .append(rule.rewriteSketchBlockedCount())
+                    .append(", rewriteSketchFirstBlocker=")
+                    .append(rule.rewriteSketchFirstBlocker())
                     .append(", firstBlocker=")
                     .append(rule.firstBlocker())
                     .append(']');
@@ -876,11 +1047,15 @@ public record GpuBackendSourcePromotionWorkloadSummary(
             int replacementPlanValidationValidCount,
             int replacementPlanValidationInvalidCount,
             String replacementPlanValidationFirstBlocker,
+            int rewriteSketchCount,
+            int rewriteSketchReadyCount,
+            int rewriteSketchBlockedCount,
+            String rewriteSketchFirstBlocker,
             String firstBlocker
     ) {
 
         private static OptimizerRuleAggregate empty(String id) {
-            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", "none");
+            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", 0, 0, 0, "none", "none");
         }
 
         private OptimizerRuleAggregate add(
@@ -896,6 +1071,10 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 int replacementPlanValidationValidCount,
                 int replacementPlanValidationInvalidCount,
                 String nextValidationBlocker,
+                int rewriteSketchCount,
+                int rewriteSketchReadyCount,
+                int rewriteSketchBlockedCount,
+                String nextRewriteSketchBlocker,
                 String nextBlocker
         ) {
             String blocker = firstBlocker;
@@ -905,6 +1084,13 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     && !nextValidationBlocker.isBlank()
                     && !"none".equals(nextValidationBlocker)) {
                 validationBlocker = nextValidationBlocker;
+            }
+            String sketchBlocker = rewriteSketchFirstBlocker;
+            if ("none".equals(sketchBlocker)
+                    && nextRewriteSketchBlocker != null
+                    && !nextRewriteSketchBlocker.isBlank()
+                    && !"none".equals(nextRewriteSketchBlocker)) {
+                sketchBlocker = nextRewriteSketchBlocker;
             }
             if ("none".equals(blocker)
                     && nextBlocker != null
@@ -926,6 +1112,10 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     this.replacementPlanValidationValidCount + replacementPlanValidationValidCount,
                     this.replacementPlanValidationInvalidCount + replacementPlanValidationInvalidCount,
                     validationBlocker,
+                    this.rewriteSketchCount + rewriteSketchCount,
+                    this.rewriteSketchReadyCount + rewriteSketchReadyCount,
+                    this.rewriteSketchBlockedCount + rewriteSketchBlockedCount,
+                    sketchBlocker,
                     blocker
             );
         }

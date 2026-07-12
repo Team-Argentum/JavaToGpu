@@ -31,6 +31,12 @@ class GpuProductionPromotionExplainabilitySummaryTest {
                 "optimizerFamily.summary",
                 "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"
         );
+        properties.setProperty("optimizerRewriteSketch.count", "4");
+        properties.setProperty("optimizerRewriteSketch.ready.count", "3");
+        properties.setProperty("optimizerRewriteSketch.blocked.count", "1");
+        properties.setProperty("optimizerRewriteSketch.firstBlockers", "replacement-plan-root-missing x1");
+        properties.setProperty("optimizerRewriteSketch.conflict.count", "1");
+        properties.setProperty("optimizerRewriteSketch.conflict.firstBlockers", "rewrite-sketch-covered-node-overlap x1");
         properties.setProperty("blocker.count", "2");
         properties.setProperty("blocker.0", "workload-source-promotion-gate-not-review-ready");
         properties.setProperty("blocker.1", "production-mutation-disabled");
@@ -48,8 +54,13 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(summary.historyStatus().contains("i3SourceReadyAll=false"));
         assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
         assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
+        assertEquals(4, summary.optimizerRewriteSketchCount());
+        assertEquals(3, summary.optimizerRewriteSketchReadyCount());
+        assertEquals(1, summary.optimizerRewriteSketchBlockedCount());
+        assertEquals(1, summary.optimizerRewriteSketchConflictCount());
         assertTrue(summary.historyStatus().contains("optimizerRuntimeEquivalenceHistoryBaselineReady=false"));
         assertTrue(summary.historyStatus().contains("optimizerPromotionPreflightReady=true"));
+        assertTrue(summary.historyStatus().contains("optimizerRewriteSketches=ready=3/total=4/blocked=1/conflicts=1/rewriteBuilderImplemented=false/mutationAllowed=false/selectedIrReplacement=false/firstBlockers=replacement-plan-root-missing x1/conflictFirstBlockers=rewrite-sketch-covered-node-overlap x1"));
         assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=1"));
         assertTrue(summary.historyStatus().contains("backendPromotionArtifactSupportComplete=unknown"));
         assertTrue(summary.historyStatus().contains("controlledSourceSwitching=not-recorded"));
@@ -103,6 +114,12 @@ class GpuProductionPromotionExplainabilitySummaryTest {
                 "optimizerFamily.summary",
                 "cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true]"
         );
+        properties.setProperty("optimizerRewriteSketch.count", "2");
+        properties.setProperty("optimizerRewriteSketch.ready.count", "2");
+        properties.setProperty("optimizerRewriteSketch.blocked.count", "0");
+        properties.setProperty("optimizerRewriteSketch.firstBlockers", "");
+        properties.setProperty("optimizerRewriteSketch.conflict.count", "0");
+        properties.setProperty("optimizerRewriteSketch.conflict.firstBlockers", "");
         properties.setProperty("blocker.count", "1");
         properties.setProperty("blocker.0", "production-mutation-disabled");
         properties.setProperty("controlledProductionSourceSwitching.status", "passed");
@@ -153,6 +170,14 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("optimizerFamily.count=2\n"));
         assertTrue(formatted.contains("optimizerFamily.promotionReady.count=1\n"));
         assertTrue(formatted.contains("optimizerFamily.summary=cse[passes=1"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.count=2\n"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.ready.count=2\n"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.blocked.count=0\n"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.conflict.count=0\n"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.conflict.conflictResolutionImplemented=false\n"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.conflict.selectionApplied=false\n"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.rewriteBuilderImplemented=false\n"));
+        assertTrue(formatted.contains("optimizerRewriteSketch.selectedIrReplacement=false\n"));
         assertTrue(formatted.contains("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=false\n"));
         assertTrue(formatted.contains("optimizerFamily.promotionPreflightReady=true\n"));
         assertTrue(formatted.contains("backendPromotionArtifactSupport.complete=unknown\n"));

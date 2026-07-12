@@ -207,6 +207,38 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 "optimizerReplacementPlan.validation.firstBlockers",
                 summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker")
         );
+        int optimizerRewriteSketchCount = parsePositiveInt(gate.getProperty(
+                "optimizerRewriteSketch.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.rewriteSketch.count"))
+        ));
+        int optimizerRewriteSketchReadyCount = parsePositiveInt(gate.getProperty(
+                "optimizerRewriteSketch.ready.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.rewriteSketch.ready.count"))
+        ));
+        int optimizerRewriteSketchBlockedCount = parsePositiveInt(gate.getProperty(
+                "optimizerRewriteSketch.blocked.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.rewriteSketch.blocked.count"))
+        ));
+        String optimizerRewriteSketchFirstBlockers = gate.getProperty(
+                "optimizerRewriteSketch.firstBlockers",
+                summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.rewriteSketch.firstBlocker")
+        );
+        int optimizerRewriteSketchConflictCount = parsePositiveInt(gate.getProperty(
+                "optimizerRewriteSketch.conflict.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.rewriteSketch.conflict.count"))
+        ));
+        String optimizerRewriteSketchConflictFirstBlockers = gate.getProperty(
+                "optimizerRewriteSketch.conflict.firstBlockers",
+                summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker")
+        );
+        String optimizerRewriteSelectionStatuses = gate.getProperty(
+                "optimizerRewriteSelection.statuses",
+                summarizeRewriteSelectionStatuses(gate, kernelCount)
+        );
+        String optimizerRewriteSelectionFirstBlockers = gate.getProperty(
+                "optimizerRewriteSelection.firstBlockers",
+                summarizeRewriteSelectionFirstBlockers(gate, kernelCount)
+        );
         int optimizerRuleCount = parsePositiveInt(gate.getProperty(
                 "optimizerRule.count",
                 Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerRule.count"))
@@ -483,6 +515,25 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("optimizerReplacementPlan.validation.valid.count=").append(optimizerReplacementPlanValidationValidCount).append('\n');
         builder.append("optimizerReplacementPlan.validation.invalid.count=").append(optimizerReplacementPlanValidationInvalidCount).append('\n');
         builder.append("optimizerReplacementPlan.validation.firstBlockers=").append(optimizerReplacementPlanValidationFirstBlockers).append('\n');
+        builder.append("optimizerRewriteSketch.count=").append(optimizerRewriteSketchCount).append('\n');
+        builder.append("optimizerRewriteSketch.ready.count=").append(optimizerRewriteSketchReadyCount).append('\n');
+        builder.append("optimizerRewriteSketch.blocked.count=").append(optimizerRewriteSketchBlockedCount).append('\n');
+        builder.append("optimizerRewriteSketch.firstBlockers=").append(optimizerRewriteSketchFirstBlockers).append('\n');
+        builder.append("optimizerRewriteSketch.conflict.count=").append(optimizerRewriteSketchConflictCount).append('\n');
+        builder.append("optimizerRewriteSketch.conflict.firstBlockers=").append(optimizerRewriteSketchConflictFirstBlockers).append('\n');
+        builder.append("optimizerRewriteSketch.conflict.conflictResolutionImplemented=false\n");
+        builder.append("optimizerRewriteSketch.conflict.selectionApplied=false\n");
+        builder.append("optimizerRewriteSketch.conflict.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteSketch.rewriteBuilderImplemented=false\n");
+        builder.append("optimizerRewriteSketch.mutationAllowed=false\n");
+        builder.append("optimizerRewriteSketch.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteSelection.statuses=").append(optimizerRewriteSelectionStatuses).append('\n');
+        builder.append("optimizerRewriteSelection.firstBlockers=").append(optimizerRewriteSelectionFirstBlockers).append('\n');
+        builder.append("optimizerRewriteSelection.rewriteBuilderImplemented=false\n");
+        builder.append("optimizerRewriteSelection.conflictResolutionImplemented=false\n");
+        builder.append("optimizerRewriteSelection.mutationAllowed=false\n");
+        builder.append("optimizerRewriteSelection.selectionApplied=false\n");
+        builder.append("optimizerRewriteSelection.selectedIrReplacement=false\n");
         builder.append("optimizerRule.count=").append(optimizerRuleCount).append('\n');
         builder.append("optimizerRule.summary=").append(optimizerRuleSummary).append('\n');
         builder.append("optimizerRule.details=").append(optimizerRuleDetails).append('\n');
@@ -827,6 +878,57 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         return builder.toString();
     }
 
+    private static String summarizeRewriteSelectionStatuses(Properties properties, int kernelCount) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.status",
+                    "not-required"
+            );
+            if (!value.isBlank() && !"unknown".equals(value) && !"not-required".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteSelectionFirstBlockers(Properties properties, int kernelCount) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.firstBlocker",
+                    "no-rewrite-sketches"
+            );
+            if (!value.isBlank()
+                    && !"none".equals(value)
+                    && !"unknown".equals(value)
+                    && !"no-rewrite-sketches".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeCounts(java.util.LinkedHashMap<String, Integer> counts) {
+        if (counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (java.util.Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(entry.getKey()).append(" x").append(entry.getValue());
+        }
+        return builder.toString();
+    }
+
     private static String summarizeOptimizerRules(Properties properties, int kernelCount) {
         if (kernelCount <= 0) {
             return "none";
@@ -855,6 +957,10 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                         parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.valid.count", "0")),
                         parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.invalid.count", "0")),
                         properties.getProperty(prefix + "replacementPlan.validation.firstBlocker", "none"),
+                        parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.ready.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.blocked.count", "0")),
+                        properties.getProperty(prefix + "rewriteSketch.firstBlocker", "none"),
                         properties.getProperty(prefix + "firstBlocker", properties.getProperty(prefix + "replacementPlan.firstBlocker", "none"))
                 ));
             }
@@ -890,6 +996,14 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                     .append(rule.replacementPlanValidationInvalidCount())
                     .append(", planValidationFirstBlocker=")
                     .append(rule.replacementPlanValidationFirstBlocker())
+                    .append(", rewriteSketches=")
+                    .append(rule.rewriteSketchCount())
+                    .append(", readySketches=")
+                    .append(rule.rewriteSketchReadyCount())
+                    .append(", blockedSketches=")
+                    .append(rule.rewriteSketchBlockedCount())
+                    .append(", rewriteSketchFirstBlocker=")
+                    .append(rule.rewriteSketchFirstBlocker())
                     .append(", firstBlocker=")
                     .append(rule.firstBlocker())
                     .append(']');
@@ -1008,11 +1122,15 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             int replacementPlanValidationValidCount,
             int replacementPlanValidationInvalidCount,
             String replacementPlanValidationFirstBlocker,
+            int rewriteSketchCount,
+            int rewriteSketchReadyCount,
+            int rewriteSketchBlockedCount,
+            String rewriteSketchFirstBlocker,
             String firstBlocker
     ) {
 
         private static OptimizerRuleAggregate empty(String id) {
-            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", "none");
+            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", 0, 0, 0, "none", "none");
         }
 
         private OptimizerRuleAggregate add(
@@ -1028,6 +1146,10 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 int replacementPlanValidationValidCount,
                 int replacementPlanValidationInvalidCount,
                 String nextValidationBlocker,
+                int rewriteSketchCount,
+                int rewriteSketchReadyCount,
+                int rewriteSketchBlockedCount,
+                String nextRewriteSketchBlocker,
                 String nextBlocker
         ) {
             String blocker = firstBlocker;
@@ -1037,6 +1159,13 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                     && !nextValidationBlocker.isBlank()
                     && !"none".equals(nextValidationBlocker)) {
                 validationBlocker = nextValidationBlocker;
+            }
+            String sketchBlocker = rewriteSketchFirstBlocker;
+            if ("none".equals(sketchBlocker)
+                    && nextRewriteSketchBlocker != null
+                    && !nextRewriteSketchBlocker.isBlank()
+                    && !"none".equals(nextRewriteSketchBlocker)) {
+                sketchBlocker = nextRewriteSketchBlocker;
             }
             if ("none".equals(blocker)
                     && nextBlocker != null
@@ -1058,6 +1187,10 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                     this.replacementPlanValidationValidCount + replacementPlanValidationValidCount,
                     this.replacementPlanValidationInvalidCount + replacementPlanValidationInvalidCount,
                     validationBlocker,
+                    this.rewriteSketchCount + rewriteSketchCount,
+                    this.rewriteSketchReadyCount + rewriteSketchReadyCount,
+                    this.rewriteSketchBlockedCount + rewriteSketchBlockedCount,
+                    sketchBlocker,
                     blocker
             );
         }

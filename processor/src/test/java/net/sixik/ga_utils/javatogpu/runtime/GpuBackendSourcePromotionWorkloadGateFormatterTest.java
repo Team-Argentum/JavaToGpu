@@ -409,12 +409,26 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.valid.count"));
         assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.invalid.count"));
         assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.ready.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.blocked.count"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.firstBlocker"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.mutationAllowed"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.count"));
+        assertEquals("rewrite-sketch-covered-node-overlap", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.count"));
         assertEquals("madFma", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.id"));
         assertEquals("3", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.candidate.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.blocked.count"));
         assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.replacementPlan.validation.count"));
         assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.replacementPlan.validation.invalid.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.rewriteSketch.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.rewriteSketch.ready.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.rewriteSketch.blocked.count"));
         assertEquals("multiply-operands-incomplete", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.firstBlocker"));
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
@@ -441,6 +455,12 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.valid.count"));
         assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.invalid.count"));
         assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.ready.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.blocked.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.conflict.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker"));
         assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerRule.count"));
         assertEquals(null, gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerRule.0.id"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.count"));
@@ -848,9 +868,22 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "replacementPlan.validation.valid.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
                 "replacementPlan.validation.invalid.count=0",
                 "replacementPlan.validation.firstBlocker=none",
+                "rewriteSketch.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "rewriteSketch.ready.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "rewriteSketch.blocked.count=0",
+                "rewriteSketch.firstBlocker=none",
+                "rewriteSketch.rewriteBuilderImplemented=false",
+                "rewriteSketch.mutationAllowed=false",
+                "rewriteSketch.selectedIrReplacement=false",
+                "rewriteSketch.conflict.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "rewriteSketch.conflict.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "rewrite-sketch-covered-node-overlap" : "none"),
+                "rewriteSketch.conflict.conflictResolutionImplemented=false",
+                "rewriteSketch.conflict.selectionApplied=false",
+                "rewriteSketch.conflict.mutationAllowed=false",
+                "rewriteSketch.conflict.selectedIrReplacement=false",
                 "optimizerRule.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
                 "optimizerRule.summary=" + ("optimized".equals(selectedRuntimeIrStage)
-                        ? "madFma[candidates=3, proposals=0, applied=0, skipped=0, blocked=1, mutationProposed=false, replacementPlans=4, completePlans=3, partialPlans=1, planValidations=4, invalidPlanValidations=0, planValidationFirstBlocker=none, firstBlocker=multiply-operands-incomplete]"
+                        ? "madFma[candidates=3, proposals=0, applied=0, skipped=0, blocked=1, mutationProposed=false, replacementPlans=4, completePlans=3, partialPlans=1, planValidations=4, invalidPlanValidations=0, planValidationFirstBlocker=none, rewriteSketches=4, readySketches=4, blockedSketches=0, rewriteSketchFirstBlocker=none, firstBlocker=multiply-operands-incomplete]"
                         : "none"),
                 "optimizerRule.0.id=" + ("optimized".equals(selectedRuntimeIrStage) ? "madFma" : ""),
                 "optimizerRule.0.version=peephole-rule:mad-fma-v1",
@@ -871,6 +904,13 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "optimizerRule.0.replacementPlan.validation.valid.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
                 "optimizerRule.0.replacementPlan.validation.invalid.count=0",
                 "optimizerRule.0.replacementPlan.validation.firstBlocker=none",
+                "optimizerRule.0.rewriteSketch.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.rewriteSketch.ready.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.rewriteSketch.blocked.count=0",
+                "optimizerRule.0.rewriteSketch.firstBlocker=none",
+                "optimizerRule.0.rewriteSketch.rewriteBuilderImplemented=false",
+                "optimizerRule.0.rewriteSketch.mutationAllowed=false",
+                "optimizerRule.0.rewriteSketch.selectedIrReplacement=false",
                 "optimizerRule.0.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "multiply-operands-incomplete" : "none"),
                 "optimizerFamily.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "2" : "1"),
                 "optimizerFamily.promotionReady.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),

@@ -65,6 +65,59 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
                 .append(summary.optimizerFamilyPromotionReadyCount())
                 .append('\n');
         builder.append("optimizerFamily.summary=").append(summary.optimizerFamilySummary()).append('\n');
+        builder.append("optimizerReplacementPlan.complete.count=")
+                .append(summary.optimizerReplacementPlanCompleteCount())
+                .append('\n');
+        builder.append("optimizerReplacementPlan.partial.count=")
+                .append(summary.optimizerReplacementPlanPartialCount())
+                .append('\n');
+        builder.append("optimizerReplacementPlan.firstBlockers=")
+                .append(summary.optimizerReplacementPlanFirstBlockers())
+                .append('\n');
+        builder.append("optimizerReplacementPlan.validation.count=")
+                .append(summary.optimizerReplacementPlanValidationCount())
+                .append('\n');
+        builder.append("optimizerReplacementPlan.validation.valid.count=")
+                .append(summary.optimizerReplacementPlanValidationValidCount())
+                .append('\n');
+        builder.append("optimizerReplacementPlan.validation.invalid.count=")
+                .append(summary.optimizerReplacementPlanValidationInvalidCount())
+                .append('\n');
+        builder.append("optimizerReplacementPlan.validation.firstBlockers=")
+                .append(summary.optimizerReplacementPlanValidationFirstBlockers())
+                .append('\n');
+        builder.append("optimizerRewriteSketch.count=").append(summary.optimizerRewriteSketchCount()).append('\n');
+        builder.append("optimizerRewriteSketch.ready.count=").append(summary.optimizerRewriteSketchReadyCount()).append('\n');
+        builder.append("optimizerRewriteSketch.blocked.count=").append(summary.optimizerRewriteSketchBlockedCount()).append('\n');
+        builder.append("optimizerRewriteSketch.firstBlockers=")
+                .append(summary.optimizerRewriteSketchFirstBlockers())
+                .append('\n');
+        builder.append("optimizerRewriteSketch.conflict.count=")
+                .append(summary.optimizerRewriteSketchConflictCount())
+                .append('\n');
+        builder.append("optimizerRewriteSketch.conflict.firstBlockers=")
+                .append(summary.optimizerRewriteSketchConflictFirstBlockers())
+                .append('\n');
+        builder.append("optimizerRewriteSketch.conflict.conflictResolutionImplemented=false\n");
+        builder.append("optimizerRewriteSketch.conflict.selectionApplied=false\n");
+        builder.append("optimizerRewriteSketch.conflict.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteSketch.rewriteBuilderImplemented=false\n");
+        builder.append("optimizerRewriteSketch.mutationAllowed=false\n");
+        builder.append("optimizerRewriteSketch.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteSelection.statuses=")
+                .append(summary.optimizerRewriteSelectionStatuses())
+                .append('\n');
+        builder.append("optimizerRewriteSelection.firstBlockers=")
+                .append(summary.optimizerRewriteSelectionFirstBlockers())
+                .append('\n');
+        builder.append("optimizerRewriteSelection.rewriteBuilderImplemented=false\n");
+        builder.append("optimizerRewriteSelection.conflictResolutionImplemented=false\n");
+        builder.append("optimizerRewriteSelection.mutationAllowed=false\n");
+        builder.append("optimizerRewriteSelection.selectionApplied=false\n");
+        builder.append("optimizerRewriteSelection.selectedIrReplacement=false\n");
+        builder.append("optimizerRule.count=").append(summary.optimizerRuleCount()).append('\n');
+        builder.append("optimizerRule.summary=").append(summary.optimizerRuleSummary()).append('\n');
+        builder.append("optimizerRule.details=").append(summary.optimizerRuleDetails()).append('\n');
         builder.append("optimizerFamilyPayload.complete.count=")
                 .append(summary.optimizerFamilyPayloadCompleteCount())
                 .append('\n');

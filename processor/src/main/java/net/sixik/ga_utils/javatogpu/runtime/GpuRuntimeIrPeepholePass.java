@@ -97,6 +97,13 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                 Integer.toString(analysis.invalidReplacementPlanValidationCount())
         );
         fields.put("replacementPlan.validation.firstBlocker", analysis.firstReplacementPlanValidationBlocker());
+        List<GpuRuntimeIrPeepholeRewriteSketch> rewriteSketches = rewriteSketches(analysis.ruleReports());
+        List<GpuRuntimeIrPeepholeRewriteSketchConflict> rewriteSketchConflicts = rewriteSketchConflicts(rewriteSketches);
+        appendRewriteSketchFields(fields, "rewriteSketch", rewriteSketches);
+        appendRewriteSketchConflictFields(fields, "rewriteSketch.conflict", rewriteSketchConflicts);
+        fields.putAll(GpuRuntimeIrPeepholeRewriteSelectionReadiness
+                .from(rewriteSketches, rewriteSketchConflicts)
+                .fields("rewriteSelection"));
         fields.put("rule.mix.candidate.count", Integer.toString(candidateCount(analysis, "mix")));
         fields.put("rule.madFma.candidate.count", Integer.toString(candidateCount(analysis, "madFma")));
         fields.put("rule.clamp.candidate.count", Integer.toString(candidateCount(analysis, "clamp")));
@@ -167,6 +174,7 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                     ? executionProofStatus(rule, analysis)
                     : reports.get(0).proofStatus());
             appendReplacementPlanFields(fields, prefix, reports);
+            appendRewriteSketchFields(fields, prefix + ".rewriteSketch", rewriteSketches(reports));
             fields.put(prefix + ".firstBlocker", ruleFirstBlocker(fields, prefix, reports.isEmpty()));
         }
     }
@@ -233,6 +241,103 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                 .orElse("none"));
         if (!validations.isEmpty()) {
             fields.putAll(validations.get(0).fields(prefix + ".replacementPlan.validation.0"));
+        }
+    }
+
+    private static List<GpuRuntimeIrPeepholeRewriteSketch> rewriteSketches(
+            List<GpuRuntimeIrPeepholeRuleReport> reports
+    ) {
+        java.util.ArrayList<GpuRuntimeIrPeepholeRewriteSketch> sketches = new java.util.ArrayList<>();
+        for (GpuRuntimeIrPeepholeRuleReport report : reports) {
+            List<GpuRuntimeIrPeepholeReplacementPlan> plans = report.replacementPlans();
+            List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations = report.replacementPlanValidations();
+            for (int index = 0; index < plans.size(); index++) {
+                GpuRuntimeIrPeepholeReplacementPlanValidation validation = index < validations.size()
+                        ? validations.get(index)
+                        : null;
+                sketches.add(GpuRuntimeIrPeepholeRewriteSketch.from(plans.get(index), validation));
+            }
+        }
+        return List.copyOf(sketches);
+    }
+
+    private static void appendRewriteSketchFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            List<GpuRuntimeIrPeepholeRewriteSketch> sketches
+    ) {
+        fields.put(prefix + ".count", Integer.toString(sketches.size()));
+        fields.put(prefix + ".ready.count", Long.toString(sketches.stream()
+                .filter(GpuRuntimeIrPeepholeRewriteSketch::sketchReady)
+                .count()));
+        fields.put(prefix + ".blocked.count", Long.toString(sketches.stream()
+                .filter(sketch -> !sketch.sketchReady())
+                .count()));
+        fields.put(prefix + ".firstBlocker", sketches.stream()
+                .filter(sketch -> !sketch.sketchReady())
+                .map(GpuRuntimeIrPeepholeRewriteSketch::firstBlocker)
+                .findFirst()
+                .orElse("none"));
+        fields.put(prefix + ".rewriteBuilderImplemented", "false");
+        fields.put(prefix + ".mutationAllowed", "false");
+        fields.put(prefix + ".selectedIrReplacement", "false");
+        fields.put(prefix + ".runtimeEquivalenceRequired", Boolean.toString(!sketches.isEmpty()));
+        fields.put(prefix + ".approvalRequired", Boolean.toString(!sketches.isEmpty()));
+        if (!sketches.isEmpty()) {
+            fields.putAll(sketches.get(0).fields(prefix + ".0"));
+        }
+    }
+
+    private static List<GpuRuntimeIrPeepholeRewriteSketchConflict> rewriteSketchConflicts(
+            List<GpuRuntimeIrPeepholeRewriteSketch> sketches
+    ) {
+        java.util.ArrayList<GpuRuntimeIrPeepholeRewriteSketchConflict> conflicts = new java.util.ArrayList<>();
+        for (int leftIndex = 0; leftIndex < sketches.size(); leftIndex++) {
+            GpuRuntimeIrPeepholeRewriteSketch left = sketches.get(leftIndex);
+            if (!left.sketchReady()) {
+                continue;
+            }
+            for (int rightIndex = leftIndex + 1; rightIndex < sketches.size(); rightIndex++) {
+                GpuRuntimeIrPeepholeRewriteSketch right = sketches.get(rightIndex);
+                if (!right.sketchReady() || !left.methodName().equals(right.methodName())) {
+                    continue;
+                }
+                List<Integer> overlapping = overlappingNodeIds(left.coveredNodeIds(), right.coveredNodeIds());
+                if (!overlapping.isEmpty()) {
+                    conflicts.add(GpuRuntimeIrPeepholeRewriteSketchConflict.between(left, right, overlapping));
+                }
+            }
+        }
+        return List.copyOf(conflicts);
+    }
+
+    private static List<Integer> overlappingNodeIds(List<Integer> first, List<Integer> second) {
+        java.util.LinkedHashSet<Integer> secondIds = new java.util.LinkedHashSet<>(second == null ? List.of() : second);
+        java.util.ArrayList<Integer> overlap = new java.util.ArrayList<>();
+        for (Integer id : first == null ? List.<Integer>of() : first) {
+            if (id != null && secondIds.contains(id) && !overlap.contains(id)) {
+                overlap.add(id);
+            }
+        }
+        return List.copyOf(overlap);
+    }
+
+    private static void appendRewriteSketchConflictFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            List<GpuRuntimeIrPeepholeRewriteSketchConflict> conflicts
+    ) {
+        fields.put(prefix + ".count", Integer.toString(conflicts.size()));
+        fields.put(prefix + ".firstBlocker", conflicts.stream()
+                .map(GpuRuntimeIrPeepholeRewriteSketchConflict::firstBlocker)
+                .findFirst()
+                .orElse("none"));
+        fields.put(prefix + ".conflictResolutionImplemented", "false");
+        fields.put(prefix + ".selectionApplied", "false");
+        fields.put(prefix + ".mutationAllowed", "false");
+        fields.put(prefix + ".selectedIrReplacement", "false");
+        if (!conflicts.isEmpty()) {
+            fields.putAll(conflicts.get(0).fields(prefix + ".0"));
         }
     }
 

@@ -30,6 +30,14 @@ public record GpuRuntimeOptimizerDriftArtifact(
         int replacementPlanValidationValidCount,
         int replacementPlanValidationInvalidCount,
         String replacementPlanValidationFirstBlocker,
+        int rewriteSketchCount,
+        int rewriteSketchReadyCount,
+        int rewriteSketchBlockedCount,
+        String rewriteSketchFirstBlocker,
+        int rewriteSketchConflictCount,
+        String rewriteSketchConflictFirstBlocker,
+        String rewriteSelectionStatus,
+        String rewriteSelectionFirstBlocker,
         int optimizerRuleCount,
         String optimizerRuleSummary,
         String optimizerRuleDetailsProperties,
@@ -67,6 +75,14 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     0,
                     "none",
                     0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    "none",
+                    "not-required",
+                    "no-rewrite-sketches",
+                    0,
                     "none",
                     "",
                     0,
@@ -84,6 +100,12 @@ public record GpuRuntimeOptimizerDriftArtifact(
         GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
         Map<String, OptimizerFamilyEvidence> optimizerFamilies = optimizerFamilies(report);
         Map<String, OptimizerRuleEvidence> optimizerRules = optimizerRules(report);
+        int rewriteSketchCount = rewriteSketchCount(report);
+        int rewriteSketchReadyCount = rewriteSketchReadyCount(report);
+        int rewriteSketchBlockedCount = rewriteSketchBlockedCount(report);
+        String rewriteSketchFirstBlocker = rewriteSketchFirstBlocker(report);
+        int rewriteSketchConflictCount = rewriteSketchConflictCount(report);
+        String rewriteSketchConflictFirstBlocker = rewriteSketchConflictFirstBlocker(report);
         return new GpuRuntimeOptimizerDriftArtifact(
                 optimizationPassCount(report),
                 count(report, GpuRuntimeIrOptimizationOutcome.APPLIED),
@@ -108,6 +130,21 @@ public record GpuRuntimeOptimizerDriftArtifact(
                 replacementPlanValidationValidCount(report),
                 replacementPlanValidationInvalidCount(report),
                 replacementPlanValidationFirstBlocker(report),
+                rewriteSketchCount,
+                rewriteSketchReadyCount,
+                rewriteSketchBlockedCount,
+                rewriteSketchFirstBlocker,
+                rewriteSketchConflictCount,
+                rewriteSketchConflictFirstBlocker,
+                rewriteSelectionStatus(report, rewriteSketchCount),
+                rewriteSelectionFirstBlocker(
+                        report,
+                        rewriteSketchCount,
+                        rewriteSketchReadyCount,
+                        rewriteSketchBlockedCount,
+                        rewriteSketchFirstBlocker,
+                        rewriteSketchConflictCount
+                ),
                 optimizerRules.size(),
                 formatOptimizerRuleSummary(optimizerRules),
                 formatOptimizerRuleProperties(optimizerRules),
@@ -150,6 +187,34 @@ public record GpuRuntimeOptimizerDriftArtifact(
         builder.append("replacementPlan.validation.valid.count=").append(replacementPlanValidationValidCount).append('\n');
         builder.append("replacementPlan.validation.invalid.count=").append(replacementPlanValidationInvalidCount).append('\n');
         builder.append("replacementPlan.validation.firstBlocker=").append(replacementPlanValidationFirstBlocker).append('\n');
+        builder.append("rewriteSketch.count=").append(rewriteSketchCount).append('\n');
+        builder.append("rewriteSketch.ready.count=").append(rewriteSketchReadyCount).append('\n');
+        builder.append("rewriteSketch.blocked.count=").append(rewriteSketchBlockedCount).append('\n');
+        builder.append("rewriteSketch.firstBlocker=").append(rewriteSketchFirstBlocker).append('\n');
+        builder.append("rewriteSketch.rewriteBuilderImplemented=false\n");
+        builder.append("rewriteSketch.mutationAllowed=false\n");
+        builder.append("rewriteSketch.selectedIrReplacement=false\n");
+        builder.append("rewriteSketch.conflict.count=").append(rewriteSketchConflictCount).append('\n');
+        builder.append("rewriteSketch.conflict.firstBlocker=").append(rewriteSketchConflictFirstBlocker).append('\n');
+        builder.append("rewriteSketch.conflict.conflictResolutionImplemented=false\n");
+        builder.append("rewriteSketch.conflict.selectionApplied=false\n");
+        builder.append("rewriteSketch.conflict.mutationAllowed=false\n");
+        builder.append("rewriteSketch.conflict.selectedIrReplacement=false\n");
+        builder.append("rewriteSelection.sketch.count=").append(rewriteSketchCount).append('\n');
+        builder.append("rewriteSelection.sketch.ready.count=").append(rewriteSketchReadyCount).append('\n');
+        builder.append("rewriteSelection.sketch.blocked.count=").append(rewriteSketchBlockedCount).append('\n');
+        builder.append("rewriteSelection.conflict.count=").append(rewriteSketchConflictCount).append('\n');
+        builder.append("rewriteSelection.status=").append(rewriteSelectionStatus).append('\n');
+        builder.append("rewriteSelection.firstBlocker=").append(rewriteSelectionFirstBlocker).append('\n');
+        builder.append("rewriteSelection.rewriteBuilderImplemented=false\n");
+        builder.append("rewriteSelection.conflictResolutionImplemented=false\n");
+        builder.append("rewriteSelection.runtimeEquivalenceRequired=").append(rewriteSketchReadyCount > 0).append('\n');
+        builder.append("rewriteSelection.runtimeEquivalenceProven=false\n");
+        builder.append("rewriteSelection.approvalRequired=").append(rewriteSketchReadyCount > 0).append('\n');
+        builder.append("rewriteSelection.approvalAccepted=false\n");
+        builder.append("rewriteSelection.mutationAllowed=false\n");
+        builder.append("rewriteSelection.selectionApplied=false\n");
+        builder.append("rewriteSelection.selectedIrReplacement=false\n");
         builder.append("optimizerRule.count=").append(optimizerRuleCount).append('\n');
         builder.append("optimizerRule.summary=").append(optimizerRuleSummary).append('\n');
         if (optimizerRuleDetailsProperties != null && !optimizerRuleDetailsProperties.isBlank()) {
@@ -276,6 +341,152 @@ public record GpuRuntimeOptimizerDriftArtifact(
         return "none";
     }
 
+    private static int rewriteSketchCount(GpuRuntimeIrOptimizationReport report) {
+        return rewriteSketchRuleCount(report, ".rewriteSketch.count");
+    }
+
+    private static int rewriteSketchReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return rewriteSketchRuleCount(report, ".rewriteSketch.ready.count");
+    }
+
+    private static int rewriteSketchBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("rewriteSketch.blocked.count"));
+                total += passTotal > 0 ? passTotal : rewriteSketchRuleCount(fields, ".rewriteSketch.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int rewriteSketchRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += rewriteSketchRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int rewriteSketchRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String rewriteSketchFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("rewriteSketch.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".rewriteSketch.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int rewriteSketchConflictCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += parseInt(passReport.proofArtifact().fields().get("rewriteSketch.conflict.count"));
+            }
+        }
+        return total;
+    }
+
+    private static String rewriteSketchConflictFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                String blocker = passReport.proofArtifact().fields().getOrDefault(
+                        "rewriteSketch.conflict.firstBlocker",
+                        "none"
+                );
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static String rewriteSelectionStatus(GpuRuntimeIrOptimizationReport report, int rewriteSketchCount) {
+        String fallback = rewriteSketchCount == 0 ? "not-required" : "blocked";
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                String status = passReport.proofArtifact().fields().getOrDefault("rewriteSelection.status", "");
+                if ("blocked".equals(status)) {
+                    return status;
+                }
+                if (!status.isBlank()) {
+                    fallback = status;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static String rewriteSelectionFirstBlocker(
+            GpuRuntimeIrOptimizationReport report,
+            int rewriteSketchCount,
+            int rewriteSketchReadyCount,
+            int rewriteSketchBlockedCount,
+            String rewriteSketchFirstBlocker,
+            int rewriteSketchConflictCount
+    ) {
+        String fallback = derivedRewriteSelectionFirstBlocker(
+                rewriteSketchCount,
+                rewriteSketchReadyCount,
+                rewriteSketchBlockedCount,
+                rewriteSketchFirstBlocker,
+                rewriteSketchConflictCount
+        );
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                String blocker = passReport.proofArtifact().fields().getOrDefault("rewriteSelection.firstBlocker", "");
+                if (!blocker.isBlank() && !"none".equals(blocker) && !"no-rewrite-sketches".equals(blocker)) {
+                    return blocker;
+                }
+                if (!blocker.isBlank()) {
+                    fallback = blocker;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static String derivedRewriteSelectionFirstBlocker(
+            int rewriteSketchCount,
+            int rewriteSketchReadyCount,
+            int rewriteSketchBlockedCount,
+            String rewriteSketchFirstBlocker,
+            int rewriteSketchConflictCount
+    ) {
+        if (rewriteSketchCount == 0) {
+            return "no-rewrite-sketches";
+        }
+        if (rewriteSketchBlockedCount > 0) {
+            return rewriteSketchFirstBlocker == null || rewriteSketchFirstBlocker.isBlank() || "none".equals(rewriteSketchFirstBlocker)
+                    ? "rewrite-sketch-blocked"
+                    : rewriteSketchFirstBlocker;
+        }
+        if (rewriteSketchConflictCount > 0) {
+            return "rewrite-sketch-conflict-resolution-required";
+        }
+        return rewriteSketchReadyCount > 0 ? "rewrite-builder-not-implemented" : "no-rewrite-sketches";
+    }
+
     private static String firstRuleBlocker(Map<String, String> fields, String suffix) {
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             String blocker = entry.getValue();
@@ -345,6 +556,14 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     .append(rule.replacementPlanValidationInvalidCount())
                     .append(", planValidationFirstBlocker=")
                     .append(rule.replacementPlanValidationFirstBlocker())
+                    .append(", rewriteSketches=")
+                    .append(rule.rewriteSketchCount())
+                    .append(", readySketches=")
+                    .append(rule.rewriteSketchReadyCount())
+                    .append(", blockedSketches=")
+                    .append(rule.rewriteSketchBlockedCount())
+                    .append(", rewriteSketchFirstBlocker=")
+                    .append(rule.rewriteSketchFirstBlocker())
                     .append(", firstBlocker=")
                     .append(rule.firstBlocker())
                     .append(']');
@@ -379,6 +598,13 @@ public record GpuRuntimeOptimizerDriftArtifact(
             builder.append(prefix).append("replacementPlan.validation.valid.count=").append(rule.replacementPlanValidationValidCount()).append('\n');
             builder.append(prefix).append("replacementPlan.validation.invalid.count=").append(rule.replacementPlanValidationInvalidCount()).append('\n');
             builder.append(prefix).append("replacementPlan.validation.firstBlocker=").append(rule.replacementPlanValidationFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteSketch.count=").append(rule.rewriteSketchCount()).append('\n');
+            builder.append(prefix).append("rewriteSketch.ready.count=").append(rule.rewriteSketchReadyCount()).append('\n');
+            builder.append(prefix).append("rewriteSketch.blocked.count=").append(rule.rewriteSketchBlockedCount()).append('\n');
+            builder.append(prefix).append("rewriteSketch.firstBlocker=").append(rule.rewriteSketchFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteSketch.rewriteBuilderImplemented=false\n");
+            builder.append(prefix).append("rewriteSketch.mutationAllowed=false\n");
+            builder.append(prefix).append("rewriteSketch.selectedIrReplacement=false\n");
             builder.append(prefix).append("firstBlocker=").append(rule.firstBlocker()).append('\n');
             index++;
         }
@@ -527,6 +753,10 @@ public record GpuRuntimeOptimizerDriftArtifact(
             int replacementPlanValidationValidCount,
             int replacementPlanValidationInvalidCount,
             String replacementPlanValidationFirstBlocker,
+            int rewriteSketchCount,
+            int rewriteSketchReadyCount,
+            int rewriteSketchBlockedCount,
+            String rewriteSketchFirstBlocker,
             String firstBlocker
     ) {
 
@@ -550,6 +780,10 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     0,
                     0,
                     "none",
+                    0,
+                    0,
+                    0,
+                    "none",
                     "none"
             );
         }
@@ -562,6 +796,13 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     && !nextValidationBlocker.isBlank()
                     && !"none".equals(nextValidationBlocker)) {
                 validationBlocker = nextValidationBlocker;
+            }
+            String sketchBlocker = rewriteSketchFirstBlocker;
+            String nextSketchBlocker = fields.getOrDefault(prefix + ".rewriteSketch.firstBlocker", "none");
+            if ("none".equals(sketchBlocker)
+                    && !nextSketchBlocker.isBlank()
+                    && !"none".equals(nextSketchBlocker)) {
+                sketchBlocker = nextSketchBlocker;
             }
             String nextBlocker = fields.getOrDefault(
                     prefix + ".firstBlocker",
@@ -589,6 +830,10 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     replacementPlanValidationValidCount + parseInt(fields.get(prefix + ".replacementPlan.validation.valid.count")),
                     replacementPlanValidationInvalidCount + parseInt(fields.get(prefix + ".replacementPlan.validation.invalid.count")),
                     validationBlocker,
+                    rewriteSketchCount + parseInt(fields.get(prefix + ".rewriteSketch.count")),
+                    rewriteSketchReadyCount + parseInt(fields.get(prefix + ".rewriteSketch.ready.count")),
+                    rewriteSketchBlockedCount + parseInt(fields.get(prefix + ".rewriteSketch.blocked.count")),
+                    sketchBlocker,
                     blocker
             );
         }
