@@ -90,11 +90,18 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         fields.put("rule.count", Integer.toString(ruleRegistry.rules().size()));
         fields.put("candidate.count", Integer.toString(analysis.candidateCount()));
         fields.put("proposal.count", Integer.toString(analysis.proposalCount()));
-        fields.put("rule.mix.candidate.count", "0");
+        fields.put("replacementPlan.partial.count", Integer.toString(analysis.partialReplacementPlanCount()));
+        fields.put("replacementPlan.firstBlocker", analysis.firstReplacementPlanBlocker());
+        fields.put(
+                "replacementPlan.validation.invalid.count",
+                Integer.toString(analysis.invalidReplacementPlanValidationCount())
+        );
+        fields.put("replacementPlan.validation.firstBlocker", analysis.firstReplacementPlanValidationBlocker());
+        fields.put("rule.mix.candidate.count", Integer.toString(candidateCount(analysis, "mix")));
         fields.put("rule.madFma.candidate.count", Integer.toString(candidateCount(analysis, "madFma")));
-        fields.put("rule.clamp.candidate.count", "0");
-        fields.put("rule.step.candidate.count", "0");
-        fields.put("rule.dot.candidate.count", "0");
+        fields.put("rule.clamp.candidate.count", Integer.toString(candidateCount(analysis, "clamp")));
+        fields.put("rule.step.candidate.count", Integer.toString(candidateCount(analysis, "step")));
+        fields.put("rule.dot.candidate.count", Integer.toString(candidateCount(analysis, "dot")));
         appendRuleFields(fields, analysis);
         fields.put("rule.execution.count", Integer.toString(analysis.executionReports().size()));
         fields.put("rule.execution.failedContinued.count", Long.toString(analysis.executionReports().stream()
@@ -107,6 +114,10 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                 artifact,
                 typedIrAvailable,
                 analysis.candidateCount(),
+                analysis.invalidReplacementPlanValidationCount(),
+                analysis.firstReplacementPlanValidationBlocker(),
+                analysis.partialReplacementPlanCount(),
+                analysis.firstReplacementPlanBlocker(),
                 analysis.failedClosed()
         ));
         return Map.copyOf(fields);
@@ -141,11 +152,87 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             fields.put(prefix + ".proposal.count", Integer.toString(reports.stream()
                     .mapToInt(GpuRuntimeIrPeepholeRuleReport::proposalCount)
                     .sum()));
-            fields.put(prefix + ".mutationProposed", Boolean.toString(reports.stream()
-                    .anyMatch(GpuRuntimeIrPeepholeRuleReport::mutationProposed)));
+            int candidateCount = reports.stream().mapToInt(GpuRuntimeIrPeepholeRuleReport::candidateCount).sum();
+            int proposalCount = reports.stream().mapToInt(GpuRuntimeIrPeepholeRuleReport::proposalCount).sum();
+            long partialPlanCount = reports.stream()
+                    .flatMap(report -> report.replacementPlans().stream())
+                    .filter(plan -> !plan.complete())
+                    .count();
+            boolean mutationProposed = reports.stream().anyMatch(GpuRuntimeIrPeepholeRuleReport::mutationProposed);
+            fields.put(prefix + ".applied.count", mutationProposed ? "1" : "0");
+            fields.put(prefix + ".skipped.count", reports.isEmpty() || (candidateCount == 0 && proposalCount == 0 && partialPlanCount == 0) ? "1" : "0");
+            fields.put(prefix + ".blocked.count", !mutationProposed && (candidateCount > 0 || partialPlanCount > 0) ? "1" : "0");
+            fields.put(prefix + ".mutationProposed", Boolean.toString(mutationProposed));
             fields.put(prefix + ".proofStatus", reports.isEmpty()
                     ? executionProofStatus(rule, analysis)
                     : reports.get(0).proofStatus());
+            appendReplacementPlanFields(fields, prefix, reports);
+            fields.put(prefix + ".firstBlocker", ruleFirstBlocker(fields, prefix, reports.isEmpty()));
+        }
+    }
+
+    private static String ruleFirstBlocker(
+            Map<String, String> fields,
+            String prefix,
+            boolean reportsEmpty
+    ) {
+        String validationBlocker = fields.getOrDefault(prefix + ".replacementPlan.validation.firstBlocker", "none");
+        if (!validationBlocker.isBlank() && !"none".equals(validationBlocker)) {
+            return validationBlocker;
+        }
+        String replacementBlocker = fields.getOrDefault(prefix + ".replacementPlan.firstBlocker", "none");
+        if (!replacementBlocker.isBlank() && !"none".equals(replacementBlocker)) {
+            return replacementBlocker;
+        }
+        if (parsePositiveInt(fields.get(prefix + ".candidate.count")) > 0) {
+            return "rewrite-engine-not-implemented";
+        }
+        if (reportsEmpty) {
+            return fields.getOrDefault(prefix + ".proofStatus", "not-run");
+        }
+        return "none";
+    }
+
+    private static void appendReplacementPlanFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            List<GpuRuntimeIrPeepholeRuleReport> reports
+    ) {
+        List<GpuRuntimeIrPeepholeReplacementPlan> plans = reports.stream()
+                .flatMap(report -> report.replacementPlans().stream())
+                .toList();
+        fields.put(prefix + ".replacementPlan.count", Integer.toString(plans.size()));
+        fields.put(prefix + ".replacementPlan.complete.count", Long.toString(plans.stream()
+                .filter(GpuRuntimeIrPeepholeReplacementPlan::complete)
+                .count()));
+        fields.put(prefix + ".replacementPlan.partial.count", Long.toString(plans.stream()
+                .filter(plan -> !plan.complete())
+                .count()));
+        fields.put(prefix + ".replacementPlan.firstBlocker", plans.stream()
+                .filter(plan -> !plan.complete())
+                .map(GpuRuntimeIrPeepholeReplacementPlan::firstBlocker)
+                .findFirst()
+                .orElse("none"));
+        if (!plans.isEmpty()) {
+            fields.putAll(plans.get(0).fields(prefix + ".replacementPlan.0"));
+        }
+        List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations = reports.stream()
+                .flatMap(report -> report.replacementPlanValidations().stream())
+                .toList();
+        fields.put(prefix + ".replacementPlan.validation.count", Integer.toString(validations.size()));
+        fields.put(prefix + ".replacementPlan.validation.valid.count", Long.toString(validations.stream()
+                .filter(GpuRuntimeIrPeepholeReplacementPlanValidation::valid)
+                .count()));
+        fields.put(prefix + ".replacementPlan.validation.invalid.count", Long.toString(validations.stream()
+                .filter(validation -> !validation.valid())
+                .count()));
+        fields.put(prefix + ".replacementPlan.validation.firstBlocker", validations.stream()
+                .filter(validation -> !validation.valid())
+                .map(GpuRuntimeIrPeepholeReplacementPlanValidation::firstBlocker)
+                .findFirst()
+                .orElse("none"));
+        if (!validations.isEmpty()) {
+            fields.putAll(validations.get(0).fields(prefix + ".replacementPlan.validation.0"));
         }
     }
 
@@ -169,6 +256,10 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             Optional<IrGpuArtifact> artifact,
             boolean typedIrAvailable,
             int candidateCount,
+            int invalidReplacementPlanValidationCount,
+            String firstReplacementPlanValidationBlocker,
+            int partialReplacementPlanCount,
+            String firstReplacementPlanBlocker,
             boolean failedClosed
     ) {
         if (artifact.isEmpty()) {
@@ -180,6 +271,16 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         if (failedClosed) {
             return "rule-execution-failed-closed";
         }
+        if (invalidReplacementPlanValidationCount > 0) {
+            return firstReplacementPlanValidationBlocker == null || firstReplacementPlanValidationBlocker.isBlank()
+                    ? "replacement-plan-validation-failed"
+                    : firstReplacementPlanValidationBlocker;
+        }
+        if (partialReplacementPlanCount > 0) {
+            return firstReplacementPlanBlocker == null || firstReplacementPlanBlocker.isBlank()
+                    ? "replacement-plan-incomplete"
+                    : firstReplacementPlanBlocker;
+        }
         return candidateCount == 0 ? "no-peephole-candidates" : "rewrite-engine-not-implemented";
     }
 
@@ -190,10 +291,24 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                     "typed runtime IR is required; text-based peephole rewriting is disabled";
             case "no-peephole-candidates" -> "typed runtime IR contains no supported peephole candidates";
             case "rule-execution-failed-closed" -> "peephole rule execution failed closed in a production profile";
+            case "replacement-plan-root-missing", "replacement-plan-root-not-covered",
+                 "replacement-plan-covered-node-missing", "replacement-plan-input-node-missing",
+                 "replacement-plan-validation-failed" ->
+                    "typed peephole replacement plan failed structural validation; no mutation proposal was emitted";
+            case "add-operands-incomplete", "multiply-operands-incomplete", "replacement-plan-incomplete" ->
+                    "typed peephole replacement plan is incomplete; no mutation proposal was emitted";
             case "rewrite-engine-not-implemented" ->
                     "typed peephole candidates detected, but structural rewrite and proof emission are not implemented";
             default -> "peephole preflight blocked";
         };
+    }
+
+    private static int parsePositiveInt(String value) {
+        try {
+            return Math.max(0, Integer.parseInt(value == null ? "0" : value));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
 }

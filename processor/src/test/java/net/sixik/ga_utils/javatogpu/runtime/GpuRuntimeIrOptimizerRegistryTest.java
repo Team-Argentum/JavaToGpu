@@ -512,6 +512,36 @@ class GpuRuntimeIrOptimizerRegistryTest {
     }
 
     @Test
+    void builtInPeepholeRegistryKeepsStableDiagnosticRuleOrder() {
+        GpuRuntimeIrPeepholeRuleRegistry registry = GpuRuntimeIrPeepholeRuleRegistry.loadWithBuiltIns();
+
+        assertEquals(
+                List.of("madFma", "clamp", "dot", "mix", "step"),
+                registry.rules().stream().map(GpuRuntimeIrPeepholeRule::ruleId).toList()
+        );
+        assertEquals(
+                List.of(
+                        "peephole-rule:mad-fma-v1",
+                        "peephole-rule:clamp-v1",
+                        "peephole-rule:dot-v1",
+                        "peephole-rule:mix-v1",
+                        "peephole-rule:step-v1"
+                ),
+                registry.rules().stream().map(GpuRuntimeIrPeepholeRule::ruleVersion).toList()
+        );
+        assertEquals(
+                List.of(
+                        "javatogpu.peephole.mad-fma",
+                        "javatogpu.peephole.clamp",
+                        "javatogpu.peephole.dot",
+                        "javatogpu.peephole.mix",
+                        "javatogpu.peephole.step"
+                ),
+                registry.rules().stream().map(GpuRuntimeIrPeepholeRule::extensionId).toList()
+        );
+    }
+
+    @Test
     void diagnosticPeepholePassFindsTypedMadFmaCandidateWithoutMutatingIr() {
         IrGpuArtifact artifact = fastMathTypedArtifact();
         GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
@@ -526,7 +556,212 @@ class GpuRuntimeIrOptimizerRegistryTest {
         assertEquals("true", passReport.proofArtifact().fields().get("typedIrAvailable"));
         assertEquals("1", passReport.proofArtifact().fields().get("candidate.count"));
         assertEquals("1", passReport.proofArtifact().fields().get("rule.madFma.candidate.count"));
+        assertEquals("5", passReport.proofArtifact().fields().get("rule.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.complete.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rule.0.replacementPlan.partial.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.firstBlocker"));
+        assertEquals("madFma", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.ruleId"));
+        assertEquals("kernel", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.methodName"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.rootNodeId"));
+        assertEquals("mad-fma", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.replacementKind"));
+        assertEquals("1,2", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.coveredNodeIds"));
+        assertEquals("3,4,5", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.complete"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.firstBlocker"));
+        assertEquals("0", passReport.proofArtifact().fields().get("replacementPlan.validation.invalid.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("replacementPlan.validation.firstBlocker"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.valid.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.invalid.count"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.valid"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.rootExists"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.coveredIncludesRoot"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.missingCoveredNodeIds"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.missingInputNodeIds"));
+        assertEquals("clamp", passReport.proofArtifact().fields().get("rule.1.id"));
+        assertEquals("dot", passReport.proofArtifact().fields().get("rule.2.id"));
+        assertEquals("mix", passReport.proofArtifact().fields().get("rule.3.id"));
+        assertEquals("step", passReport.proofArtifact().fields().get("rule.4.id"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.1.skipped.count"));
+        assertEquals("no-candidate", passReport.proofArtifact().fields().get("rule.1.proofStatus"));
         assertEquals("rewrite-engine-not-implemented", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassReportsPartialMadFmaPlanWithoutCandidate() {
+        IrGpuArtifact artifact = fastMathPartialMadFmaTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("0", fields.get("candidate.count"));
+        assertEquals("0", fields.get("rule.madFma.candidate.count"));
+        assertEquals("3", fields.get("replacementPlan.partial.count"));
+        assertEquals("multiply-operands-incomplete", fields.get("replacementPlan.firstBlocker"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.count"));
+        assertEquals("0", fields.get("rule.0.replacementPlan.complete.count"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.partial.count"));
+        assertEquals("multiply-operands-incomplete", fields.get("rule.0.replacementPlan.firstBlocker"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.0.rootNodeId"));
+        assertEquals("1,2", fields.get("rule.0.replacementPlan.0.coveredNodeIds"));
+        assertEquals("5", fields.get("rule.0.replacementPlan.0.inputNodeIds"));
+        assertEquals("false", fields.get("rule.0.replacementPlan.0.complete"));
+        assertEquals("multiply-operands-incomplete", fields.get("rule.0.replacementPlan.0.firstBlocker"));
+        assertEquals("dot", fields.get("rule.2.id"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.count"));
+        assertEquals("0", fields.get("rule.2.replacementPlan.complete.count"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.partial.count"));
+        assertEquals("dot-multiply-operands-incomplete", fields.get("rule.2.replacementPlan.firstBlocker"));
+        assertEquals("mix", fields.get("rule.3.id"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.count"));
+        assertEquals("0", fields.get("rule.3.replacementPlan.complete.count"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.partial.count"));
+        assertEquals("mix-multiply-operands-incomplete", fields.get("rule.3.replacementPlan.firstBlocker"));
+        assertEquals("multiply-operands-incomplete", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("replacement plan is incomplete"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedClampCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathClampTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("1", fields.get("candidate.count"));
+        assertEquals("0", fields.get("rule.madFma.candidate.count"));
+        assertEquals("1", fields.get("rule.clamp.candidate.count"));
+        assertEquals("clamp", fields.get("rule.1.id"));
+        assertEquals("1", fields.get("rule.1.candidate.count"));
+        assertEquals("1", fields.get("rule.1.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.1.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.1.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.1.replacementPlan.firstBlocker"));
+        assertEquals("clamp", fields.get("rule.1.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.1.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.1.replacementPlan.0.rootNodeId"));
+        assertEquals("clamp", fields.get("rule.1.replacementPlan.0.replacementKind"));
+        assertEquals("1,2", fields.get("rule.1.replacementPlan.0.coveredNodeIds"));
+        assertEquals("3,4,5", fields.get("rule.1.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.1.replacementPlan.0.complete"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedStepCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathStepTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("1", fields.get("candidate.count"));
+        assertEquals("0", fields.get("rule.madFma.candidate.count"));
+        assertEquals("0", fields.get("rule.clamp.candidate.count"));
+        assertEquals("1", fields.get("rule.step.candidate.count"));
+        assertEquals("step", fields.get("rule.4.id"));
+        assertEquals("1", fields.get("rule.4.candidate.count"));
+        assertEquals("1", fields.get("rule.4.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.4.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.4.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.4.replacementPlan.firstBlocker"));
+        assertEquals("step", fields.get("rule.4.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.4.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.4.replacementPlan.0.rootNodeId"));
+        assertEquals("step", fields.get("rule.4.replacementPlan.0.replacementKind"));
+        assertEquals("1,2", fields.get("rule.4.replacementPlan.0.coveredNodeIds"));
+        assertEquals("4,3", fields.get("rule.4.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.4.replacementPlan.0.complete"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedDotCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathDotTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("2", fields.get("candidate.count"));
+        assertEquals("1", fields.get("rule.madFma.candidate.count"));
+        assertEquals("0", fields.get("rule.clamp.candidate.count"));
+        assertEquals("1", fields.get("rule.dot.candidate.count"));
+        assertEquals("dot", fields.get("rule.2.id"));
+        assertEquals("1", fields.get("rule.2.candidate.count"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.2.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.2.replacementPlan.firstBlocker"));
+        assertEquals("dot", fields.get("rule.2.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.2.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.0.rootNodeId"));
+        assertEquals("dot", fields.get("rule.2.replacementPlan.0.replacementKind"));
+        assertEquals("1,2,5", fields.get("rule.2.replacementPlan.0.coveredNodeIds"));
+        assertEquals("3,4,6,7", fields.get("rule.2.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.2.replacementPlan.0.complete"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedMixCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathMixTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("2", fields.get("candidate.count"));
+        assertEquals("1", fields.get("rule.madFma.candidate.count"));
+        assertEquals("0", fields.get("rule.clamp.candidate.count"));
+        assertEquals("0", fields.get("rule.dot.candidate.count"));
+        assertEquals("1", fields.get("rule.mix.candidate.count"));
+        assertEquals("mix", fields.get("rule.3.id"));
+        assertEquals("1", fields.get("rule.3.candidate.count"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.3.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.3.replacementPlan.firstBlocker"));
+        assertEquals("mix", fields.get("rule.3.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.3.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.0.rootNodeId"));
+        assertEquals("mix", fields.get("rule.3.replacementPlan.0.replacementKind"));
+        assertEquals("1,2,3", fields.get("rule.3.replacementPlan.0.coveredNodeIds"));
+        assertEquals("4,5,6", fields.get("rule.3.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.3.replacementPlan.0.complete"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
         assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
     }
 
@@ -572,6 +807,65 @@ class GpuRuntimeIrOptimizerRegistryTest {
         assertEquals("custom-rule-v3", fields.get("rule.0.extensionVersion"));
         assertEquals("2", fields.get("rule.0.candidate.count"));
         assertEquals("1", fields.get("rule.execution.count"));
+    }
+
+    @Test
+    void diagnosticPeepholePassRejectsStructurallyInvalidReplacementPlan() {
+        GpuRuntimeIrPeepholeRule invalidPlanRule = new GpuRuntimeIrPeepholeRule() {
+            @Override
+            public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
+                return GpuRuntimeIrPeepholeRuleReport.diagnosticCandidates(
+                        this,
+                        context.methodBody().name(),
+                        1,
+                        Map.of("family", "invalid-plan-test"),
+                        List.of(GpuRuntimeIrPeepholeReplacementPlan.complete(
+                                ruleId(),
+                                context.methodBody().name(),
+                                999,
+                                "invalid-test",
+                                List.of(999),
+                                List.of(1)
+                        ))
+                );
+            }
+
+            @Override
+            public String ruleId() {
+                return "invalidPlanRule";
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.peephole.invalid-plan";
+            }
+        };
+        GpuRuntimeIrPeepholePass pass = new GpuRuntimeIrPeepholePass(
+                GpuRuntimeIrPeepholeRuleRegistry.of(List.of(invalidPlanRule))
+        );
+        IrGpuArtifact artifact = fastMathTypedArtifact();
+
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass))
+                .optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("1", fields.get("candidate.count"));
+        assertEquals("1", fields.get("replacementPlan.validation.invalid.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("replacementPlan.validation.firstBlocker"));
+        assertEquals("replacement-plan-root-missing", fields.get("firstBlocker"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.firstBlocker"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.validation.count"));
+        assertEquals("0", fields.get("rule.0.replacementPlan.validation.valid.count"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.validation.invalid.count"));
+        assertEquals("false", fields.get("rule.0.replacementPlan.validation.0.valid"));
+        assertEquals("false", fields.get("rule.0.replacementPlan.validation.0.rootExists"));
+        assertEquals("true", fields.get("rule.0.replacementPlan.validation.0.coveredIncludesRoot"));
+        assertEquals("999", fields.get("rule.0.replacementPlan.validation.0.missingCoveredNodeIds"));
+        assertEquals("none", fields.get("rule.0.replacementPlan.validation.0.missingInputNodeIds"));
+        assertTrue(passReport.toLine().contains("structural validation"));
     }
 
     @Test
@@ -1101,6 +1395,263 @@ class GpuRuntimeIrOptimizerRegistryTest {
                                 "jtg_kernel",
                                 "ir-text-v1",
                                 "body\n  return ((a * b) + c)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathPartialMadFmaTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(2),
+                                "right", List.of(5)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(3)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableRef", Map.of("name", "c"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return ((a * <missing>) + c)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathClampTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrIntrinsicCall", Map.of("name", "min"), Map.of(
+                                "args", List.of(2, 5)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrIntrinsicCall", Map.of("name", "max"), Map.of(
+                                "args", List.of(3, 4)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "x"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "lo"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableRef", Map.of("name", "hi"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return min(max(x, lo), hi)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathStepTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrConditional", Map.of(), Map.of(
+                                "condition", List.of(2),
+                                "then", List.of(5),
+                                "else", List.of(6)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "<"), Map.of(
+                                "left", List.of(3),
+                                "right", List.of(4)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "x"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "edge"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrLiteral", Map.of("sourceText", "0.0f"), Map.of()),
+                        new IrGpuTypedNode(6, "GpuIrLiteral", Map.of("sourceText", "1.0f"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return x < edge ? 0.0f : 1.0f\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathDotTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(2),
+                                "right", List.of(5)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(3),
+                                "right", List.of(4)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "a0"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "b0"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(6),
+                                "right", List.of(7)
+                        )),
+                        new IrGpuTypedNode(6, "GpuIrVariableRef", Map.of("name", "a1"), Map.of()),
+                        new IrGpuTypedNode(7, "GpuIrVariableRef", Map.of("name", "b1"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return (a0 * b0) + (a1 * b1)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathMixTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(4),
+                                "right", List.of(2)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(6),
+                                "right", List.of(3)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrBinary", Map.of("operator", "-"), Map.of(
+                                "left", List.of(5),
+                                "right", List.of(4)
+                        )),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableRef", Map.of("name", "b"), Map.of()),
+                        new IrGpuTypedNode(6, "GpuIrVariableRef", Map.of("name", "t"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return a + t * (b - a)\n",
                                 typedBody,
                                 net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
                                 List.of(),

@@ -1991,6 +1991,120 @@ class GpuRuntimeCompileArtifactDumperTest {
     }
 
     @Test
+    void optimizerDriftArtifactCapturesReadOnlyReplacementPlanTelemetry() {
+        IrGpuArtifact original = artifact("body\n  return original\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport peepholeReport = GpuRuntimeIrOptimizationPassReport.skipped(
+                "optimizer:peephole-diagnostic-v1",
+                "irgpu:sha256:original",
+                "typed peephole replacement plans recorded without mutation"
+        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                "runtime.peephole.preflight",
+                "blocked",
+                Map.ofEntries(
+                        Map.entry("optimizerFamily", "peephole"),
+                        Map.entry("replacementPlan.partial.count", "1"),
+                        Map.entry("replacementPlan.firstBlocker", "multiply-operands-incomplete"),
+                        Map.entry("replacementPlan.validation.invalid.count", "1"),
+                        Map.entry("replacementPlan.validation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.count", "2"),
+                        Map.entry("rule.0.id", "madFma"),
+                        Map.entry("rule.0.version", "peephole-rule:mad-fma-v1"),
+                        Map.entry("rule.0.extensionId", "javatogpu.peephole.mad-fma"),
+                        Map.entry("rule.0.extensionVersion", "peephole-rule:mad-fma-v1"),
+                        Map.entry("rule.0.proofStatus", "candidate-detected"),
+                        Map.entry("rule.0.candidate.count", "2"),
+                        Map.entry("rule.0.proposal.count", "0"),
+                        Map.entry("rule.0.applied.count", "0"),
+                        Map.entry("rule.0.skipped.count", "0"),
+                        Map.entry("rule.0.blocked.count", "1"),
+                        Map.entry("rule.0.mutationProposed", "false"),
+                        Map.entry("rule.0.replacementPlan.count", "3"),
+                        Map.entry("rule.0.replacementPlan.complete.count", "2"),
+                        Map.entry("rule.0.replacementPlan.partial.count", "1"),
+                        Map.entry("rule.0.replacementPlan.firstBlocker", "multiply-operands-incomplete"),
+                        Map.entry("rule.0.replacementPlan.validation.count", "3"),
+                        Map.entry("rule.0.replacementPlan.validation.valid.count", "2"),
+                        Map.entry("rule.0.replacementPlan.validation.invalid.count", "1"),
+                        Map.entry("rule.0.replacementPlan.validation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.firstBlocker", "multiply-operands-incomplete"),
+                        Map.entry("rule.1.id", "clamp"),
+                        Map.entry("rule.1.version", "peephole-rule:clamp-v1"),
+                        Map.entry("rule.1.extensionId", "javatogpu.peephole.clamp"),
+                        Map.entry("rule.1.extensionVersion", "peephole-rule:clamp-v1"),
+                        Map.entry("rule.1.proofStatus", "no-candidate"),
+                        Map.entry("rule.1.candidate.count", "0"),
+                        Map.entry("rule.1.proposal.count", "0"),
+                        Map.entry("rule.1.applied.count", "0"),
+                        Map.entry("rule.1.skipped.count", "1"),
+                        Map.entry("rule.1.blocked.count", "0"),
+                        Map.entry("rule.1.mutationProposed", "false"),
+                        Map.entry("rule.1.replacementPlan.count", "3"),
+                        Map.entry("rule.1.replacementPlan.complete.count", "3"),
+                        Map.entry("rule.1.replacementPlan.partial.count", "0"),
+                        Map.entry("rule.1.replacementPlan.firstBlocker", "none"),
+                        Map.entry("rule.1.replacementPlan.validation.count", "3"),
+                        Map.entry("rule.1.replacementPlan.validation.valid.count", "3"),
+                        Map.entry("rule.1.replacementPlan.validation.invalid.count", "0"),
+                        Map.entry("rule.1.replacementPlan.validation.firstBlocker", "none"),
+                        Map.entry("rule.1.firstBlocker", "none")
+                )
+        ));
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(peepholeReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String drift = dump.artifact("runtime-optimizer-drift.properties");
+
+        assertTrue(drift.contains("pass.count=1"));
+        assertTrue(drift.contains("pass.skipped.count=1"));
+        assertTrue(drift.contains("proofArtifact.count=1"));
+        assertTrue(drift.contains("replacementPlan.complete.count=5"));
+        assertTrue(drift.contains("replacementPlan.partial.count=1"));
+        assertTrue(drift.contains("replacementPlan.firstBlocker=multiply-operands-incomplete"));
+        assertTrue(drift.contains("replacementPlan.validation.count=6"));
+        assertTrue(drift.contains("replacementPlan.validation.valid.count=5"));
+        assertTrue(drift.contains("replacementPlan.validation.invalid.count=1"));
+        assertTrue(drift.contains("replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.id=madFma"));
+        assertTrue(drift.contains("optimizerRule.0.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.invalid.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.firstBlocker=multiply-operands-incomplete"));
+        assertTrue(drift.contains("optimizerRule.1.id=clamp"));
+        assertTrue(drift.contains("optimizerRule.1.skipped.count=1"));
+        assertTrue(drift.contains("optimizerRule.summary=madFma[candidates=2, proposals=0, applied=0, skipped=0, blocked=1"));
+        assertTrue(drift.contains("planValidations=3, invalidPlanValidations=1, planValidationFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerFamily.count=1"));
+        assertTrue(drift.contains("optimizerFamily.summary=peephole[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"));
+        assertTrue(drift.contains("selectedRuntimeIrStage=original"));
+        assertTrue(drift.contains("optimizedIrRejected=false"));
+    }
+
+    @Test
     void dumpsRuntimeIrOptimizerEvidenceArtifactForProposalBridgeReports() {
         IrGpuArtifact original = artifact("body\n  return original\n");
         GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(

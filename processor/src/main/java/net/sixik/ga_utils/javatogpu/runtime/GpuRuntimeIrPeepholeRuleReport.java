@@ -15,6 +15,8 @@ public record GpuRuntimeIrPeepholeRuleReport(
         boolean mutationProposed,
         String proofStatus,
         Map<String, String> fields,
+        List<GpuRuntimeIrPeepholeReplacementPlan> replacementPlans,
+        List<GpuRuntimeIrPeepholeReplacementPlanValidation> replacementPlanValidations,
         List<String> diagnostics
 ) {
 
@@ -26,7 +28,38 @@ public record GpuRuntimeIrPeepholeRuleReport(
         proposalCount = Math.max(0, proposalCount);
         proofStatus = normalize(proofStatus, "not-proven");
         fields = fields == null ? Map.of() : Map.copyOf(fields);
+        replacementPlans = replacementPlans == null ? List.of() : List.copyOf(replacementPlans);
+        replacementPlanValidations = replacementPlanValidations == null
+                ? List.of()
+                : List.copyOf(replacementPlanValidations);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+    }
+
+    public GpuRuntimeIrPeepholeRuleReport(
+            String ruleId,
+            String ruleVersion,
+            String methodName,
+            int candidateCount,
+            int proposalCount,
+            boolean mutationProposed,
+            String proofStatus,
+            Map<String, String> fields,
+            List<GpuRuntimeIrPeepholeReplacementPlan> replacementPlans,
+            List<String> diagnostics
+    ) {
+        this(
+                ruleId,
+                ruleVersion,
+                methodName,
+                candidateCount,
+                proposalCount,
+                mutationProposed,
+                proofStatus,
+                fields,
+                replacementPlans,
+                List.of(),
+                diagnostics
+        );
     }
 
     public static GpuRuntimeIrPeepholeRuleReport diagnosticCandidates(
@@ -44,7 +77,49 @@ public record GpuRuntimeIrPeepholeRuleReport(
                 false,
                 candidateCount > 0 ? "candidate-detected" : "no-candidate",
                 fields,
+                List.of(),
+                List.of(),
                 List.of("rule is diagnostic-only; no mutation proposal was emitted")
+        );
+    }
+
+    public static GpuRuntimeIrPeepholeRuleReport diagnosticCandidates(
+            GpuRuntimeIrPeepholeRule rule,
+            String methodName,
+            int candidateCount,
+            Map<String, String> fields,
+            List<GpuRuntimeIrPeepholeReplacementPlan> replacementPlans
+    ) {
+        return new GpuRuntimeIrPeepholeRuleReport(
+                rule.ruleId(),
+                rule.ruleVersion(),
+                methodName,
+                candidateCount,
+                0,
+                false,
+                candidateCount > 0 ? "candidate-detected" : "no-candidate",
+                fields,
+                replacementPlans,
+                List.of(),
+                List.of("rule is diagnostic-only; no mutation proposal was emitted")
+        );
+    }
+
+    public GpuRuntimeIrPeepholeRuleReport withReplacementPlanValidations(
+            List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations
+    ) {
+        return new GpuRuntimeIrPeepholeRuleReport(
+                ruleId,
+                ruleVersion,
+                methodName,
+                candidateCount,
+                proposalCount,
+                mutationProposed,
+                proofStatus,
+                fields,
+                replacementPlans,
+                validations,
+                diagnostics
         );
     }
 

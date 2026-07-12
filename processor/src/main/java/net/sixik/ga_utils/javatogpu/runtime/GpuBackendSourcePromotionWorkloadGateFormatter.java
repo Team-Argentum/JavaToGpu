@@ -454,6 +454,15 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             target.setProperty("runtimeOptimizerDrift.proofArtifact.count", "0");
             target.setProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0");
             target.setProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0");
+            target.setProperty("runtimeOptimizerDrift.replacementPlan.complete.count", "0");
+            target.setProperty("runtimeOptimizerDrift.replacementPlan.partial.count", "0");
+            target.setProperty("runtimeOptimizerDrift.replacementPlan.firstBlocker", "none");
+            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.count", "0");
+            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0");
+            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0");
+            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none");
+            target.setProperty("runtimeOptimizerDrift.optimizerRule.count", "0");
+            target.setProperty("runtimeOptimizerDrift.optimizerRule.summary", "none");
             target.setProperty("runtimeOptimizerDrift.fallbackDecision", target.getProperty("runtimeIrHandoff.fallbackDecision", "none"));
             target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrStage", target.getProperty("runtimeIrHandoff.selectedStage", "original"));
             target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrIdentity", target.getProperty("runtimeIrHandoff.selected.identity", "unknown"));
@@ -474,6 +483,16 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.count");
         copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.accepted.count");
         copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.blocking.count");
+        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.complete.count", "0");
+        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.partial.count", "0");
+        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.firstBlocker", "none");
+        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.count", "0");
+        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.valid.count", "0");
+        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.invalid.count", "0");
+        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.firstBlocker", "none");
+        copyRuntimeOptimizerDriftProperty(source, target, "optimizerRule.count", "0");
+        copyRuntimeOptimizerDriftProperty(source, target, "optimizerRule.summary", "none");
+        copyIndexedPropertyGroup(source, target, "runtimeOptimizerDrift.optimizerRule", "optimizerRule");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.count");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.promotionReady.count");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.summary");
@@ -492,6 +511,38 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
     private static void copyRuntimeOptimizerDriftProperty(Properties source, Properties target, String key) {
         target.setProperty("runtimeOptimizerDrift." + key, source.getProperty(key, "unknown"));
+    }
+
+    private static void copyRuntimeOptimizerDriftProperty(
+            Properties source,
+            Properties target,
+            String key,
+            String defaultValue
+    ) {
+        target.setProperty("runtimeOptimizerDrift." + key, source.getProperty(key, defaultValue));
+    }
+
+    private static void copyIndexedPropertyGroup(
+            Properties source,
+            Properties target,
+            String targetKeyPrefix,
+            String sourceKeyPrefix
+    ) {
+        int count = parsePositiveInt(source.getProperty(sourceKeyPrefix + ".count", "0"));
+        target.setProperty(targetKeyPrefix + ".count", Integer.toString(count));
+        String sourceIndexedPrefix = sourceKeyPrefix + ".";
+        String targetIndexedPrefix = targetKeyPrefix + ".";
+        for (String key : source.stringPropertyNames().stream().sorted().toList()) {
+            if (!key.startsWith(sourceIndexedPrefix)) {
+                continue;
+            }
+            String suffix = key.substring(sourceIndexedPrefix.length());
+            int index = indexedPropertyIndex(suffix);
+            if (index < 0 || index >= count) {
+                continue;
+            }
+            target.setProperty(targetIndexedPrefix + suffix, source.getProperty(key, "unknown"));
+        }
     }
 
     private static void copyOptimizerFamilyEquivalencePayloadProperties(Properties source, Properties target) {
@@ -769,6 +820,16 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.accepted.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.blocking.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.complete.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.complete.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.partial.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.partial.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.firstBlocker", "none")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.valid.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.invalid.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.optimizerRule.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerRule.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeOptimizerDrift.optimizerRule.summary=").append(entry.getProperty("runtimeOptimizerDrift.optimizerRule.summary", "none")).append('\n');
+        appendIndexedPropertyGroup(builder, prefix, entry, "runtimeOptimizerDrift.optimizerRule");
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.promotionReady.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.summary=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.summary", "none")).append('\n');
@@ -885,6 +946,41 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             builder.append(prefix).append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".name=").append(entry.getProperty("runtimeExtensionParticipation.source." + sourceIndex + ".name", "unknown")).append('\n');
             builder.append(prefix).append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".count=").append(entry.getProperty("runtimeExtensionParticipation.source." + sourceIndex + ".count", "0")).append('\n');
         }
+    }
+
+    private static void appendIndexedPropertyGroup(
+            StringBuilder builder,
+            String kernelPrefix,
+            Properties entry,
+            String keyPrefix
+    ) {
+        String indexedPrefix = keyPrefix + ".";
+        int count = parsePositiveInt(entry.getProperty(keyPrefix + ".count", "0"));
+        for (String key : entry.stringPropertyNames().stream().sorted().toList()) {
+            if (!key.startsWith(indexedPrefix)) {
+                continue;
+            }
+            String suffix = key.substring(indexedPrefix.length());
+            int index = indexedPropertyIndex(suffix);
+            if (index < 0 || index >= count) {
+                continue;
+            }
+            builder.append(kernelPrefix).append(key).append('=').append(entry.getProperty(key, "unknown")).append('\n');
+        }
+    }
+
+    private static int indexedPropertyIndex(String suffix) {
+        if (suffix == null || suffix.isBlank() || !Character.isDigit(suffix.charAt(0))) {
+            return -1;
+        }
+        int end = 0;
+        while (end < suffix.length() && Character.isDigit(suffix.charAt(end))) {
+            end++;
+        }
+        if (end == suffix.length() || suffix.charAt(end) != '.') {
+            return -1;
+        }
+        return parsePositiveInt(suffix.substring(0, end));
     }
 
     private static void appendIndexedProperties(

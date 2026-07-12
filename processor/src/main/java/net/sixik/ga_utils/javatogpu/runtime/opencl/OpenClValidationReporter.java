@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Optional;
+import java.util.Properties;
 
 /**
  * Small CLI entry point for generating a vendor-validation snapshot report.
@@ -1072,6 +1073,24 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.proofArtifact.accepted.count", "0")))
                     .append("`, blockingProof=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.proofArtifact.blocking.count", "0")))
+                    .append("`, replacementPlanComplete=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.complete.count", "0")))
+                    .append("`, replacementPlanPartial=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.partial.count", "0")))
+                    .append("`, replacementPlanFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.firstBlocker", "none")))
+                    .append("`, replacementPlanValidation=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0")))
+                    .append("/")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.count", "0")))
+                    .append(" valid, invalid=")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")))
+                    .append("`, replacementPlanValidationFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")))
+                    .append("`, optimizerRules=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.count", "0")))
+                    .append("`, optimizerRuleDetails=`")
+                    .append(sanitizeInline(kernelOptimizerRuleDetails(properties, prefix)))
                     .append("`, optimizerFamilies=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.optimizerFamily.count", "0")))
                     .append("`, promotionReadyFamilies=`")
@@ -1431,6 +1450,16 @@ public final class OpenClValidationReporter {
             builder.append(prefix).append("optimizerDriftStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.status", "not-recorded")).append('\n');
             builder.append(prefix).append("optimizerDriftPassCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.count", "0")).append('\n');
             builder.append(prefix).append("optimizerDriftRolledBackCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanCompleteCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.complete.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanPartialCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.partial.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationValidCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationInvalidCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRuleCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRuleSummary=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.summary", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRuleDetails=").append(kernelOptimizerRuleDetails(gate, prefix)).append('\n');
             builder.append(prefix).append("optimizerDriftFallbackDecision=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
             builder.append(prefix).append("sourceReady=").append(gate.getProperty(prefix + "i3Readiness.sourceReady", "unknown")).append('\n');
             builder.append(prefix).append("sourcePromotionStatus=").append(gate.getProperty(prefix + "i3Readiness.sourcePromotionStatus", "unknown")).append('\n');
@@ -1450,6 +1479,53 @@ public final class OpenClValidationReporter {
             case "production-enabled", "review-ready", "blocked" -> status;
             default -> "blocked";
         };
+    }
+
+    private static String kernelOptimizerRuleDetails(Properties properties, String kernelPrefix) {
+        int ruleCount = parsePositiveInt(properties.getProperty(
+                kernelPrefix + "runtimeOptimizerDrift.optimizerRule.count",
+                "0"
+        ));
+        if (ruleCount == 0) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int ruleIndex = 0; ruleIndex < ruleCount; ruleIndex++) {
+            String prefix = kernelPrefix + "runtimeOptimizerDrift.optimizerRule." + ruleIndex + ".";
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(properties.getProperty(prefix + "id", "unknown"))
+                    .append("[candidates=")
+                    .append(properties.getProperty(prefix + "candidate.count", "0"))
+                    .append(", proposals=")
+                    .append(properties.getProperty(prefix + "proposal.count", "0"))
+                    .append(", applied=")
+                    .append(properties.getProperty(prefix + "applied.count", "0"))
+                    .append(", skipped=")
+                    .append(properties.getProperty(prefix + "skipped.count", "0"))
+                    .append(", blocked=")
+                    .append(properties.getProperty(prefix + "blocked.count", "0"))
+                    .append(", replacementPlans=")
+                    .append(properties.getProperty(prefix + "replacementPlan.count", "0"))
+                    .append(", completePlans=")
+                    .append(properties.getProperty(prefix + "replacementPlan.complete.count", "0"))
+                    .append(", partialPlans=")
+                    .append(properties.getProperty(prefix + "replacementPlan.partial.count", "0"))
+                    .append(", planValidations=")
+                    .append(properties.getProperty(prefix + "replacementPlan.validation.count", "0"))
+                    .append(", invalidPlanValidations=")
+                    .append(properties.getProperty(prefix + "replacementPlan.validation.invalid.count", "0"))
+                    .append(", planValidationFirstBlocker=")
+                    .append(properties.getProperty(prefix + "replacementPlan.validation.firstBlocker", "none"))
+                    .append(", firstBlocker=")
+                    .append(properties.getProperty(
+                            prefix + "firstBlocker",
+                            properties.getProperty(prefix + "replacementPlan.firstBlocker", "none")
+                    ))
+                    .append(']');
+        }
+        return builder.toString();
     }
 
     private static String i3ReadinessWorkloadSummaryDiagnostic(

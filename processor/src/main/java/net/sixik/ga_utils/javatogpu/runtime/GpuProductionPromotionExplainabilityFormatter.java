@@ -179,6 +179,46 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 "optimizerFamily.summary",
                 summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerFamily.summary")
         );
+        int optimizerReplacementPlanCompleteCount = parsePositiveInt(gate.getProperty(
+                "optimizerReplacementPlan.complete.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.complete.count"))
+        ));
+        int optimizerReplacementPlanPartialCount = parsePositiveInt(gate.getProperty(
+                "optimizerReplacementPlan.partial.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.partial.count"))
+        ));
+        String optimizerReplacementPlanFirstBlockers = gate.getProperty(
+                "optimizerReplacementPlan.firstBlockers",
+                summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.firstBlocker")
+        );
+        int optimizerReplacementPlanValidationCount = parsePositiveInt(gate.getProperty(
+                "optimizerReplacementPlan.validation.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.count"))
+        ));
+        int optimizerReplacementPlanValidationValidCount = parsePositiveInt(gate.getProperty(
+                "optimizerReplacementPlan.validation.valid.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.valid.count"))
+        ));
+        int optimizerReplacementPlanValidationInvalidCount = parsePositiveInt(gate.getProperty(
+                "optimizerReplacementPlan.validation.invalid.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.invalid.count"))
+        ));
+        String optimizerReplacementPlanValidationFirstBlockers = gate.getProperty(
+                "optimizerReplacementPlan.validation.firstBlockers",
+                summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker")
+        );
+        int optimizerRuleCount = parsePositiveInt(gate.getProperty(
+                "optimizerRule.count",
+                Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerRule.count"))
+        ));
+        String optimizerRuleSummary = gate.getProperty(
+                "optimizerRule.summary",
+                summarizeKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerRule.summary")
+        );
+        String optimizerRuleDetails = gate.getProperty(
+                "optimizerRule.details",
+                summarizeOptimizerRules(gate, kernelCount)
+        );
         int optimizerFamilyPayloadCompleteCount = parsePositiveInt(
                 gate.getProperty(
                         "optimizerFamilyPayload.complete.count",
@@ -436,6 +476,16 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("optimizerFamily.count=").append(optimizerFamilyCount).append('\n');
         builder.append("optimizerFamily.promotionReady.count=").append(optimizerFamilyPromotionReadyCount).append('\n');
         builder.append("optimizerFamily.summary=").append(optimizerFamilySummary).append('\n');
+        builder.append("optimizerReplacementPlan.complete.count=").append(optimizerReplacementPlanCompleteCount).append('\n');
+        builder.append("optimizerReplacementPlan.partial.count=").append(optimizerReplacementPlanPartialCount).append('\n');
+        builder.append("optimizerReplacementPlan.firstBlockers=").append(optimizerReplacementPlanFirstBlockers).append('\n');
+        builder.append("optimizerReplacementPlan.validation.count=").append(optimizerReplacementPlanValidationCount).append('\n');
+        builder.append("optimizerReplacementPlan.validation.valid.count=").append(optimizerReplacementPlanValidationValidCount).append('\n');
+        builder.append("optimizerReplacementPlan.validation.invalid.count=").append(optimizerReplacementPlanValidationInvalidCount).append('\n');
+        builder.append("optimizerReplacementPlan.validation.firstBlockers=").append(optimizerReplacementPlanValidationFirstBlockers).append('\n');
+        builder.append("optimizerRule.count=").append(optimizerRuleCount).append('\n');
+        builder.append("optimizerRule.summary=").append(optimizerRuleSummary).append('\n');
+        builder.append("optimizerRule.details=").append(optimizerRuleDetails).append('\n');
         builder.append("optimizerFamilyPayload.complete.count=").append(optimizerFamilyPayloadCompleteCount).append('\n');
         builder.append("optimizerFamilyPayload.complete.all=").append(optimizerFamilyPayloadCompleteAll).append('\n');
         builder.append("optimizerFamily.runtimeEquivalenceHistoryBaselineReady=")
@@ -777,6 +827,76 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         return builder.toString();
     }
 
+    private static String summarizeOptimizerRules(Properties properties, int kernelCount) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, OptimizerRuleAggregate> rules = new java.util.LinkedHashMap<>();
+        for (int kernelIndex = 0; kernelIndex < kernelCount; kernelIndex++) {
+            String basePrefix = "kernel." + kernelIndex + ".runtimeOptimizerDrift.optimizerRule.";
+            int ruleCount = parsePositiveInt(properties.getProperty(basePrefix + "count", "0"));
+            for (int ruleIndex = 0; ruleIndex < ruleCount; ruleIndex++) {
+                String prefix = basePrefix + ruleIndex + ".";
+                String id = properties.getProperty(prefix + "id", "");
+                if (id.isBlank()) {
+                    continue;
+                }
+                OptimizerRuleAggregate existing = rules.getOrDefault(id, OptimizerRuleAggregate.empty(id));
+                rules.put(id, existing.add(
+                        parsePositiveInt(properties.getProperty(prefix + "candidate.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "proposal.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "applied.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "skipped.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "blocked.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "replacementPlan.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "replacementPlan.complete.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "replacementPlan.partial.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.valid.count", "0")),
+                        parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.invalid.count", "0")),
+                        properties.getProperty(prefix + "replacementPlan.validation.firstBlocker", "none"),
+                        properties.getProperty(prefix + "firstBlocker", properties.getProperty(prefix + "replacementPlan.firstBlocker", "none"))
+                ));
+            }
+        }
+        if (rules.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (OptimizerRuleAggregate rule : rules.values()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(rule.id())
+                    .append("[candidates=")
+                    .append(rule.candidateCount())
+                    .append(", proposals=")
+                    .append(rule.proposalCount())
+                    .append(", applied=")
+                    .append(rule.appliedCount())
+                    .append(", skipped=")
+                    .append(rule.skippedCount())
+                    .append(", blocked=")
+                    .append(rule.blockedCount())
+                    .append(", replacementPlans=")
+                    .append(rule.replacementPlanCount())
+                    .append(", completePlans=")
+                    .append(rule.replacementPlanCompleteCount())
+                    .append(", partialPlans=")
+                    .append(rule.replacementPlanPartialCount())
+                    .append(", planValidations=")
+                    .append(rule.replacementPlanValidationCount())
+                    .append(", invalidPlanValidations=")
+                    .append(rule.replacementPlanValidationInvalidCount())
+                    .append(", planValidationFirstBlocker=")
+                    .append(rule.replacementPlanValidationFirstBlocker())
+                    .append(", firstBlocker=")
+                    .append(rule.firstBlocker())
+                    .append(']');
+        }
+        return builder.toString();
+    }
+
     private static void appendReadinessChecklist(StringBuilder builder, List<ReadinessChecklistItem> checklist) {
         int readyCount = 0;
         List<ReadinessChecklistItem> blocked = new ArrayList<>();
@@ -871,6 +991,75 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             return Math.max(0, Integer.parseInt(value == null ? "0" : value.trim()));
         } catch (NumberFormatException ignored) {
             return 0;
+        }
+    }
+
+    private record OptimizerRuleAggregate(
+            String id,
+            int candidateCount,
+            int proposalCount,
+            int appliedCount,
+            int skippedCount,
+            int blockedCount,
+            int replacementPlanCount,
+            int replacementPlanCompleteCount,
+            int replacementPlanPartialCount,
+            int replacementPlanValidationCount,
+            int replacementPlanValidationValidCount,
+            int replacementPlanValidationInvalidCount,
+            String replacementPlanValidationFirstBlocker,
+            String firstBlocker
+    ) {
+
+        private static OptimizerRuleAggregate empty(String id) {
+            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", "none");
+        }
+
+        private OptimizerRuleAggregate add(
+                int candidateCount,
+                int proposalCount,
+                int appliedCount,
+                int skippedCount,
+                int blockedCount,
+                int replacementPlanCount,
+                int replacementPlanCompleteCount,
+                int replacementPlanPartialCount,
+                int replacementPlanValidationCount,
+                int replacementPlanValidationValidCount,
+                int replacementPlanValidationInvalidCount,
+                String nextValidationBlocker,
+                String nextBlocker
+        ) {
+            String blocker = firstBlocker;
+            String validationBlocker = replacementPlanValidationFirstBlocker;
+            if ("none".equals(validationBlocker)
+                    && nextValidationBlocker != null
+                    && !nextValidationBlocker.isBlank()
+                    && !"none".equals(nextValidationBlocker)) {
+                validationBlocker = nextValidationBlocker;
+            }
+            if ("none".equals(blocker)
+                    && nextBlocker != null
+                    && !nextBlocker.isBlank()
+                    && !"none".equals(nextBlocker)) {
+                blocker = nextBlocker;
+            }
+            return new OptimizerRuleAggregate(
+                    id,
+                    this.candidateCount + candidateCount,
+                    this.proposalCount + proposalCount,
+                    this.appliedCount + appliedCount,
+                    this.skippedCount + skippedCount,
+                    this.blockedCount + blockedCount,
+                    this.replacementPlanCount + replacementPlanCount,
+                    this.replacementPlanCompleteCount + replacementPlanCompleteCount,
+                    this.replacementPlanPartialCount + replacementPlanPartialCount,
+                    this.replacementPlanValidationCount + replacementPlanValidationCount,
+                    this.replacementPlanValidationValidCount + replacementPlanValidationValidCount,
+                    this.replacementPlanValidationInvalidCount + replacementPlanValidationInvalidCount,
+                    validationBlocker,
+                    blocker
+            );
         }
     }
 

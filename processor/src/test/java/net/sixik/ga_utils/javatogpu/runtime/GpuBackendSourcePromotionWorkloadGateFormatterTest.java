@@ -402,6 +402,20 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.accepted.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.blocking.count"));
+        assertEquals("3", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.complete.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.partial.count"));
+        assertEquals("multiply-operands-incomplete", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.firstBlocker"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.valid.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.invalid.count"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.count"));
+        assertEquals("madFma", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.id"));
+        assertEquals("3", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.candidate.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.blocked.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.replacementPlan.validation.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.replacementPlan.validation.invalid.count"));
+        assertEquals("multiply-operands-incomplete", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.firstBlocker"));
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
         assertEquals("cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary"));
@@ -420,6 +434,15 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.accepted.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.blocking.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.complete.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.partial.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.valid.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.invalid.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerRule.count"));
+        assertEquals(null, gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerRule.0.id"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.count"));
         assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
         assertEquals("vector[passes=2, acceptedProof=1, blockingProof=1, rolledBack=1, failed=0, promotionReady=false]", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.summary"));
@@ -818,6 +841,37 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "proofArtifact.count=2",
                 "proofArtifact.accepted.count=1",
                 "proofArtifact.blocking.count=1",
+                "replacementPlan.complete.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "3" : "0"),
+                "replacementPlan.partial.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "replacementPlan.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "multiply-operands-incomplete" : "none"),
+                "replacementPlan.validation.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "replacementPlan.validation.valid.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "replacementPlan.validation.invalid.count=0",
+                "replacementPlan.validation.firstBlocker=none",
+                "optimizerRule.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "optimizerRule.summary=" + ("optimized".equals(selectedRuntimeIrStage)
+                        ? "madFma[candidates=3, proposals=0, applied=0, skipped=0, blocked=1, mutationProposed=false, replacementPlans=4, completePlans=3, partialPlans=1, planValidations=4, invalidPlanValidations=0, planValidationFirstBlocker=none, firstBlocker=multiply-operands-incomplete]"
+                        : "none"),
+                "optimizerRule.0.id=" + ("optimized".equals(selectedRuntimeIrStage) ? "madFma" : ""),
+                "optimizerRule.0.version=peephole-rule:mad-fma-v1",
+                "optimizerRule.0.extensionId=javatogpu.peephole.mad-fma",
+                "optimizerRule.0.extensionVersion=peephole-rule:mad-fma-v1",
+                "optimizerRule.0.proofStatus=candidate-detected",
+                "optimizerRule.0.candidate.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "3" : "0"),
+                "optimizerRule.0.proposal.count=0",
+                "optimizerRule.0.applied.count=0",
+                "optimizerRule.0.skipped.count=0",
+                "optimizerRule.0.blocked.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "optimizerRule.0.mutationProposed=false",
+                "optimizerRule.0.replacementPlan.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.replacementPlan.complete.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "3" : "0"),
+                "optimizerRule.0.replacementPlan.partial.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "optimizerRule.0.replacementPlan.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "multiply-operands-incomplete" : "none"),
+                "optimizerRule.0.replacementPlan.validation.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.replacementPlan.validation.valid.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.replacementPlan.validation.invalid.count=0",
+                "optimizerRule.0.replacementPlan.validation.firstBlocker=none",
+                "optimizerRule.0.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "multiply-operands-incomplete" : "none"),
                 "optimizerFamily.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "2" : "1"),
                 "optimizerFamily.promotionReady.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
                 "optimizerFamily.summary=" + ("optimized".equals(selectedRuntimeIrStage)

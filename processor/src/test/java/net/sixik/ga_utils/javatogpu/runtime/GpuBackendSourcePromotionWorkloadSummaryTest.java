@@ -36,6 +36,13 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count", "2");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.accepted.count", "1");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.blocking.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.complete.count", "3");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.partial.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.firstBlocker", "multiply-operands-incomplete");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.count", "4");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.valid.count", "3");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "replacement-plan-root-missing");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "2");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "1");
         properties.setProperty(
@@ -84,6 +91,13 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertEquals(2, summary.optimizerProofArtifactCount());
         assertEquals(1, summary.optimizerAcceptedProofArtifactCount());
         assertEquals(1, summary.optimizerBlockingProofArtifactCount());
+        assertEquals(3, summary.optimizerReplacementPlanCompleteCount());
+        assertEquals(1, summary.optimizerReplacementPlanPartialCount());
+        assertEquals("multiply-operands-incomplete=1", summary.optimizerReplacementPlanFirstBlockers());
+        assertEquals(4, summary.optimizerReplacementPlanValidationCount());
+        assertEquals(3, summary.optimizerReplacementPlanValidationValidCount());
+        assertEquals(1, summary.optimizerReplacementPlanValidationInvalidCount());
+        assertEquals("replacement-plan-root-missing=1", summary.optimizerReplacementPlanValidationFirstBlockers());
         assertEquals(2, summary.optimizerFamilyCount());
         assertEquals(1, summary.optimizerFamilyPromotionReadyCount());
         assertEquals(
@@ -107,11 +121,12 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(summary.historyStatus().contains("runtimeExtensionParticipation=recordedKernels=1/executions=3/failedContinued=1/failedClosed=0/sources=original-irgpu:ir-validation=1, backend-compiler-feedback=2"));
         assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
         assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("optimizerReplacementPlans=complete=3/partial=1/validation=valid=3/total=4/invalid=1/validationFirstBlockers=replacement-plan-root-missing=1/firstBlockers=multiply-operands-incomplete=1"));
         assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=1"));
         assertTrue(summary.historyStatus().contains("kernelCount=1"));
         assertTrue(summary.historyStatus().contains("extensionParticipation=recorded/3executions/failedContinued=1/failedClosed=0"));
         assertTrue(summary.historyStatus().contains("sourceSwitching=reject-production-irgpu-source/operatorAccepted=true"));
-        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/optimizerFamilies=2/promotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/replacementPlanComplete=3/replacementPlanPartial=1/replacementPlanFirstBlocker=multiply-operands-incomplete/replacementPlanValidationValid=3/replacementPlanValidationTotal=4/replacementPlanValidationInvalid=1/replacementPlanValidationFirstBlocker=replacement-plan-root-missing/optimizerRules=0/optimizerRuleDetails=none/optimizerFamilies=2/promotionReadyFamilies=1"));
         assertTrue(summary.historyStatus().contains("families=source-parity=1"));
     }
 

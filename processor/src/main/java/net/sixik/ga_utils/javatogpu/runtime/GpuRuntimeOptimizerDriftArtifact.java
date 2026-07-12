@@ -23,6 +23,16 @@ public record GpuRuntimeOptimizerDriftArtifact(
         int proofArtifactCount,
         int acceptedProofArtifactCount,
         int blockingProofArtifactCount,
+        int replacementPlanCompleteCount,
+        int replacementPlanPartialCount,
+        String replacementPlanFirstBlocker,
+        int replacementPlanValidationCount,
+        int replacementPlanValidationValidCount,
+        int replacementPlanValidationInvalidCount,
+        String replacementPlanValidationFirstBlocker,
+        int optimizerRuleCount,
+        String optimizerRuleSummary,
+        String optimizerRuleDetailsProperties,
         int optimizerFamilyCount,
         int optimizerFamilyPromotionReadyCount,
         String optimizerFamilySummary,
@@ -51,6 +61,16 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     0,
                     0,
                     0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    "none",
+                    "",
+                    0,
+                    0,
                     "",
                     "not-requested",
                     false
@@ -63,6 +83,7 @@ public record GpuRuntimeOptimizerDriftArtifact(
         GpuRuntimeProductionOptimizerGate gate = snapshot.productionOptimizerGate();
         GpuRuntimeIrSelection selection = snapshot.runtimeIrSelection();
         Map<String, OptimizerFamilyEvidence> optimizerFamilies = optimizerFamilies(report);
+        Map<String, OptimizerRuleEvidence> optimizerRules = optimizerRules(report);
         return new GpuRuntimeOptimizerDriftArtifact(
                 optimizationPassCount(report),
                 count(report, GpuRuntimeIrOptimizationOutcome.APPLIED),
@@ -80,6 +101,16 @@ public record GpuRuntimeOptimizerDriftArtifact(
                 proofArtifactCount(report),
                 acceptedProofArtifactCount(report),
                 blockingProofArtifactCount(report),
+                replacementPlanCompleteCount(report),
+                replacementPlanPartialCount(report),
+                replacementPlanFirstBlocker(report),
+                replacementPlanValidationCount(report),
+                replacementPlanValidationValidCount(report),
+                replacementPlanValidationInvalidCount(report),
+                replacementPlanValidationFirstBlocker(report),
+                optimizerRules.size(),
+                formatOptimizerRuleSummary(optimizerRules),
+                formatOptimizerRuleProperties(optimizerRules),
                 optimizerFamilies.size(),
                 promotionReadyFamilyCount(optimizerFamilies),
                 formatOptimizerFamilySummary(optimizerFamilies),
@@ -112,6 +143,18 @@ public record GpuRuntimeOptimizerDriftArtifact(
         builder.append("proofArtifact.count=").append(proofArtifactCount).append('\n');
         builder.append("proofArtifact.accepted.count=").append(acceptedProofArtifactCount).append('\n');
         builder.append("proofArtifact.blocking.count=").append(blockingProofArtifactCount).append('\n');
+        builder.append("replacementPlan.complete.count=").append(replacementPlanCompleteCount).append('\n');
+        builder.append("replacementPlan.partial.count=").append(replacementPlanPartialCount).append('\n');
+        builder.append("replacementPlan.firstBlocker=").append(replacementPlanFirstBlocker).append('\n');
+        builder.append("replacementPlan.validation.count=").append(replacementPlanValidationCount).append('\n');
+        builder.append("replacementPlan.validation.valid.count=").append(replacementPlanValidationValidCount).append('\n');
+        builder.append("replacementPlan.validation.invalid.count=").append(replacementPlanValidationInvalidCount).append('\n');
+        builder.append("replacementPlan.validation.firstBlocker=").append(replacementPlanValidationFirstBlocker).append('\n');
+        builder.append("optimizerRule.count=").append(optimizerRuleCount).append('\n');
+        builder.append("optimizerRule.summary=").append(optimizerRuleSummary).append('\n');
+        if (optimizerRuleDetailsProperties != null && !optimizerRuleDetailsProperties.isBlank()) {
+            builder.append(optimizerRuleDetailsProperties);
+        }
         builder.append("optimizerFamily.count=").append(optimizerFamilyCount).append('\n');
         builder.append("optimizerFamily.promotionReady.count=").append(optimizerFamilyPromotionReadyCount).append('\n');
         builder.append("optimizerFamily.summary=").append(optimizerFamilySummary).append('\n');
@@ -148,6 +191,209 @@ public record GpuRuntimeOptimizerDriftArtifact(
                 .filter(GpuRuntimeOptimizerDriftArtifact::hasProofArtifact)
                 .filter(passReport -> isBlockingVerdict(passReport.proofArtifact().verdict()))
                 .count();
+    }
+
+    private static int replacementPlanCompleteCount(GpuRuntimeIrOptimizationReport report) {
+        return replacementPlanRuleCount(report, ".replacementPlan.complete.count");
+    }
+
+    private static int replacementPlanPartialCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("replacementPlan.partial.count"));
+                total += passTotal > 0 ? passTotal : replacementPlanRuleCount(fields, ".replacementPlan.partial.count");
+            }
+        }
+        return total;
+    }
+
+    private static int replacementPlanRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += replacementPlanRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int replacementPlanRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String replacementPlanFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                String blocker = passReport.proofArtifact().fields().getOrDefault("replacementPlan.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int replacementPlanValidationCount(GpuRuntimeIrOptimizationReport report) {
+        return replacementPlanRuleCount(report, ".replacementPlan.validation.count");
+    }
+
+    private static int replacementPlanValidationValidCount(GpuRuntimeIrOptimizationReport report) {
+        return replacementPlanRuleCount(report, ".replacementPlan.validation.valid.count");
+    }
+
+    private static int replacementPlanValidationInvalidCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("replacementPlan.validation.invalid.count"));
+                total += passTotal > 0 ? passTotal : replacementPlanRuleCount(fields, ".replacementPlan.validation.invalid.count");
+            }
+        }
+        return total;
+    }
+
+    private static String replacementPlanValidationFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("replacementPlan.validation.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".replacementPlan.validation.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static String firstRuleBlocker(Map<String, String> fields, String suffix) {
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            String blocker = entry.getValue();
+            if (entry.getKey().startsWith("rule.")
+                    && entry.getKey().endsWith(suffix)
+                    && blocker != null
+                    && !blocker.isBlank()
+                    && !"none".equals(blocker)) {
+                return blocker;
+            }
+        }
+        return "none";
+    }
+
+    private static Map<String, OptimizerRuleEvidence> optimizerRules(GpuRuntimeIrOptimizationReport report) {
+        Map<String, OptimizerRuleEvidence> rules = new LinkedHashMap<>();
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (passReport.analysisOnly() || !hasProofArtifact(passReport)) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            int ruleCount = parseInt(fields.get("rule.count"));
+            for (int index = 0; index < ruleCount; index++) {
+                String prefix = "rule." + index;
+                String id = fields.getOrDefault(prefix + ".id", "");
+                if (id.isBlank()) {
+                    continue;
+                }
+                OptimizerRuleEvidence existing = rules.getOrDefault(id, OptimizerRuleEvidence.empty(id));
+                rules.put(id, existing.add(fields, prefix));
+            }
+        }
+        return rules;
+    }
+
+    private static String formatOptimizerRuleSummary(Map<String, OptimizerRuleEvidence> rules) {
+        if (rules.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (OptimizerRuleEvidence rule : rules.values()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(rule.id())
+                    .append("[candidates=")
+                    .append(rule.candidateCount())
+                    .append(", proposals=")
+                    .append(rule.proposalCount())
+                    .append(", applied=")
+                    .append(rule.appliedCount())
+                    .append(", skipped=")
+                    .append(rule.skippedCount())
+                    .append(", blocked=")
+                    .append(rule.blockedCount())
+                    .append(", mutationProposed=")
+                    .append(rule.mutationProposed())
+                    .append(", replacementPlans=")
+                    .append(rule.replacementPlanCount())
+                    .append(", completePlans=")
+                    .append(rule.replacementPlanCompleteCount())
+                    .append(", partialPlans=")
+                    .append(rule.replacementPlanPartialCount())
+                    .append(", planValidations=")
+                    .append(rule.replacementPlanValidationCount())
+                    .append(", invalidPlanValidations=")
+                    .append(rule.replacementPlanValidationInvalidCount())
+                    .append(", planValidationFirstBlocker=")
+                    .append(rule.replacementPlanValidationFirstBlocker())
+                    .append(", firstBlocker=")
+                    .append(rule.firstBlocker())
+                    .append(']');
+        }
+        return builder.toString();
+    }
+
+    private static String formatOptimizerRuleProperties(Map<String, OptimizerRuleEvidence> rules) {
+        if (rules.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        int index = 0;
+        for (OptimizerRuleEvidence rule : rules.values()) {
+            String prefix = "optimizerRule." + index + ".";
+            builder.append(prefix).append("id=").append(rule.id()).append('\n');
+            builder.append(prefix).append("version=").append(rule.version()).append('\n');
+            builder.append(prefix).append("extensionId=").append(rule.extensionId()).append('\n');
+            builder.append(prefix).append("extensionVersion=").append(rule.extensionVersion()).append('\n');
+            builder.append(prefix).append("proofStatus=").append(rule.proofStatus()).append('\n');
+            builder.append(prefix).append("candidate.count=").append(rule.candidateCount()).append('\n');
+            builder.append(prefix).append("proposal.count=").append(rule.proposalCount()).append('\n');
+            builder.append(prefix).append("applied.count=").append(rule.appliedCount()).append('\n');
+            builder.append(prefix).append("skipped.count=").append(rule.skippedCount()).append('\n');
+            builder.append(prefix).append("blocked.count=").append(rule.blockedCount()).append('\n');
+            builder.append(prefix).append("mutationProposed=").append(rule.mutationProposed()).append('\n');
+            builder.append(prefix).append("replacementPlan.count=").append(rule.replacementPlanCount()).append('\n');
+            builder.append(prefix).append("replacementPlan.complete.count=").append(rule.replacementPlanCompleteCount()).append('\n');
+            builder.append(prefix).append("replacementPlan.partial.count=").append(rule.replacementPlanPartialCount()).append('\n');
+            builder.append(prefix).append("replacementPlan.firstBlocker=").append(rule.firstBlocker()).append('\n');
+            builder.append(prefix).append("replacementPlan.validation.count=").append(rule.replacementPlanValidationCount()).append('\n');
+            builder.append(prefix).append("replacementPlan.validation.valid.count=").append(rule.replacementPlanValidationValidCount()).append('\n');
+            builder.append(prefix).append("replacementPlan.validation.invalid.count=").append(rule.replacementPlanValidationInvalidCount()).append('\n');
+            builder.append(prefix).append("replacementPlan.validation.firstBlocker=").append(rule.replacementPlanValidationFirstBlocker()).append('\n');
+            builder.append(prefix).append("firstBlocker=").append(rule.firstBlocker()).append('\n');
+            index++;
+        }
+        return builder.toString();
+    }
+
+    private static int parseInt(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private static boolean hasProofArtifact(GpuRuntimeIrOptimizationPassReport passReport) {
@@ -259,6 +505,99 @@ public record GpuRuntimeOptimizerDriftArtifact(
 
         private boolean promotionReady() {
             return acceptedProofCount > 0 && blockingProofCount == 0 && rolledBackCount == 0 && failedCount == 0;
+        }
+    }
+
+    private record OptimizerRuleEvidence(
+            String id,
+            String version,
+            String extensionId,
+            String extensionVersion,
+            String proofStatus,
+            int candidateCount,
+            int proposalCount,
+            int appliedCount,
+            int skippedCount,
+            int blockedCount,
+            boolean mutationProposed,
+            int replacementPlanCount,
+            int replacementPlanCompleteCount,
+            int replacementPlanPartialCount,
+            int replacementPlanValidationCount,
+            int replacementPlanValidationValidCount,
+            int replacementPlanValidationInvalidCount,
+            String replacementPlanValidationFirstBlocker,
+            String firstBlocker
+    ) {
+
+        private static OptimizerRuleEvidence empty(String id) {
+            return new OptimizerRuleEvidence(
+                    id,
+                    "unknown",
+                    "unknown",
+                    "unknown",
+                    "unknown",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "none",
+                    "none"
+            );
+        }
+
+        private OptimizerRuleEvidence add(Map<String, String> fields, String prefix) {
+            String blocker = firstBlocker;
+            String validationBlocker = replacementPlanValidationFirstBlocker;
+            String nextValidationBlocker = fields.getOrDefault(prefix + ".replacementPlan.validation.firstBlocker", "none");
+            if ("none".equals(validationBlocker)
+                    && !nextValidationBlocker.isBlank()
+                    && !"none".equals(nextValidationBlocker)) {
+                validationBlocker = nextValidationBlocker;
+            }
+            String nextBlocker = fields.getOrDefault(
+                    prefix + ".firstBlocker",
+                    fields.getOrDefault(prefix + ".replacementPlan.firstBlocker", "none")
+            );
+            if ("none".equals(blocker) && !nextBlocker.isBlank() && !"none".equals(nextBlocker)) {
+                blocker = nextBlocker;
+            }
+            return new OptimizerRuleEvidence(
+                    id,
+                    firstKnown(version, fields.getOrDefault(prefix + ".version", "unknown")),
+                    firstKnown(extensionId, fields.getOrDefault(prefix + ".extensionId", "unknown")),
+                    firstKnown(extensionVersion, fields.getOrDefault(prefix + ".extensionVersion", "unknown")),
+                    firstKnown(proofStatus, fields.getOrDefault(prefix + ".proofStatus", "unknown")),
+                    candidateCount + parseInt(fields.get(prefix + ".candidate.count")),
+                    proposalCount + parseInt(fields.get(prefix + ".proposal.count")),
+                    appliedCount + parseInt(fields.get(prefix + ".applied.count")),
+                    skippedCount + parseInt(fields.get(prefix + ".skipped.count")),
+                    blockedCount + parseInt(fields.get(prefix + ".blocked.count")),
+                    mutationProposed || Boolean.parseBoolean(fields.getOrDefault(prefix + ".mutationProposed", "false")),
+                    replacementPlanCount + parseInt(fields.get(prefix + ".replacementPlan.count")),
+                    replacementPlanCompleteCount + parseInt(fields.get(prefix + ".replacementPlan.complete.count")),
+                    replacementPlanPartialCount + parseInt(fields.get(prefix + ".replacementPlan.partial.count")),
+                    replacementPlanValidationCount + parseInt(fields.get(prefix + ".replacementPlan.validation.count")),
+                    replacementPlanValidationValidCount + parseInt(fields.get(prefix + ".replacementPlan.validation.valid.count")),
+                    replacementPlanValidationInvalidCount + parseInt(fields.get(prefix + ".replacementPlan.validation.invalid.count")),
+                    validationBlocker,
+                    blocker
+            );
+        }
+
+        private static String firstKnown(String current, String next) {
+            if (current != null && !current.isBlank() && !"unknown".equals(current)) {
+                return current;
+            }
+            return next == null || next.isBlank() ? "unknown" : next;
         }
     }
 }
