@@ -1484,7 +1484,13 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Runtime-equivalence review first blocker: `preview-readiness-blocked-by-proof`"));
             assertTrue(reportMarkdown.contains("- Runtime-equivalence review production mutation: `disabled`"));
             assertTrue(reportMarkdown.contains("- Runtime-equivalence review selected IR replacement: `disabled`"));
-            assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `2` | `2` | `3` | `1` | `2` | `2` | `2` | `ir-optimizer:text-canonicalization:1=1` |"));
+            assertTrue(reportMarkdown.contains("- Review package status: `not-required`"));
+            assertTrue(reportMarkdown.contains("- Review package required kernels: `0`"));
+            assertTrue(reportMarkdown.contains("- Review package first blocker: `none`"));
+            assertTrue(reportMarkdown.contains("- Review package manual review only: `true`"));
+            assertTrue(reportMarkdown.contains("- Review package production mutation: `disabled`"));
+            assertTrue(reportMarkdown.contains("- Review package selected IR replacement: `disabled`"));
+            assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `2` | `2` | `3` | `1` | `2` | `2` | `2` | `not-recorded` | `none` | `ir-optimizer:text-canonicalization:1=1` |"));
             assertTrue(reportMarkdown.contains("ir-optimizer:text-canonicalization:1=1"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));
             assertTrue(summaryMarkdown.contains("- Blocking: `0`"));

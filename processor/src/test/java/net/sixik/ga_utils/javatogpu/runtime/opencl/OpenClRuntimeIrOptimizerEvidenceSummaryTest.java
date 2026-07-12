@@ -75,6 +75,14 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
                 typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=true
                 typedDeadCodePreview.approvalRequiredBeforeRewrite=true
                 typedDeadCodePreview.sideEffectFreedomProven=false
+                reviewPackage.status=pending-manual-review
+                reviewPackage.required=true
+                reviewPackage.complete=false
+                reviewPackage.firstBlocker=preview-readiness-blocked-by-proof
+                reviewPackage.proposalPass.count=1
+                reviewPackage.pendingApproval.count=1
+                reviewPackage.runtimeEquivalence.status=blocked
+                reviewPackage.manualReviewOnly=true
                 pass.0.passVersion=ir-optimizer:no-op:1
                 pass.1.passVersion=ir-optimizer:text-canonicalization:1
                 pass.2.passVersion=ir-optimizer:text-canonicalization:1
@@ -139,6 +147,12 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertEquals("blocked", summary.runtimeEquivalenceReviewStatus());
         assertTrue(summary.runtimeEquivalenceReviewRequired());
         assertEquals("preview-readiness-blocked-by-proof", summary.runtimeEquivalenceReviewFirstBlocker());
+        assertEquals("pending-manual-review", summary.reviewPackageStatus());
+        assertEquals(1, summary.totalReviewPackageRequiredCount());
+        assertEquals(0, summary.totalReviewPackageCompleteCount());
+        assertEquals(1, summary.totalReviewPackageProposalPassCount());
+        assertEquals(1, summary.totalReviewPackagePendingApprovalCount());
+        assertEquals("preview-readiness-blocked-by-proof", summary.reviewPackageFirstBlocker());
         assertEquals(
                 "ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2",
                 summary.providerSummary()
@@ -168,9 +182,18 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review first blocker: `preview-readiness-blocked-by-proof`"));
         assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review production mutation: `disabled`"));
         assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review selected IR replacement: `disabled`"));
+        assertTrue(summary.toMarkdown().contains("- Review package status: `pending-manual-review`"));
+        assertTrue(summary.toMarkdown().contains("- Review package required kernels: `1`"));
+        assertTrue(summary.toMarkdown().contains("- Review package complete kernels: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Review package proposal passes: `1`"));
+        assertTrue(summary.toMarkdown().contains("- Review package pending approvals: `1`"));
+        assertTrue(summary.toMarkdown().contains("- Review package first blocker: `preview-readiness-blocked-by-proof`"));
+        assertTrue(summary.toMarkdown().contains("- Review package manual review only: `true`"));
+        assertTrue(summary.toMarkdown().contains("- Review package production mutation: `disabled`"));
+        assertTrue(summary.toMarkdown().contains("- Review package selected IR replacement: `disabled`"));
         assertTrue(summary.toMarkdown().contains("- Providers: `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2`"));
-        assertTrue(summary.toMarkdown().contains("| `kernel-a.cl` | `recorded` | `3` | `2` | `1` | `1` | `1` | `2` | `3` | `5` | `4` | `2` | `6` | `3` | `4` | `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2` |"));
-        assertTrue(summary.toMarkdown().contains("| `kernel-b.cl` | `missing` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `none` |"));
+        assertTrue(summary.toMarkdown().contains("| `kernel-a.cl` | `recorded` | `3` | `2` | `1` | `1` | `1` | `2` | `3` | `5` | `4` | `2` | `6` | `3` | `4` | `pending-manual-review` | `preview-readiness-blocked-by-proof` | `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2` |"));
+        assertTrue(summary.toMarkdown().contains("| `kernel-b.cl` | `missing` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `not-recorded` | `review-package-not-recorded` | `none` |"));
     }
 
     @Test
@@ -206,6 +229,14 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
                 typedDeadCodePreview.pass.count=1
                 typedDeadCodePreview.unreachableNode.count=1
                 typedDeadCodePreview.sideEffectFreedomProven=true
+                reviewPackage.status=pending-manual-review
+                reviewPackage.required=true
+                reviewPackage.complete=false
+                reviewPackage.firstBlocker=optimized-ir-proposal-missing
+                reviewPackage.proposalPass.count=0
+                reviewPackage.pendingApproval.count=0
+                reviewPackage.runtimeEquivalence.status=review-ready
+                reviewPackage.manualReviewOnly=true
                 pass.0.passVersion=ir-optimizer:constant-folding-preview:1
                 pass.1.passVersion=ir-optimizer:safe-local-cse-preview:1
                 pass.2.passVersion=ir-optimizer:typed-dead-code-preview:1
@@ -218,6 +249,8 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.runtimeEquivalenceReviewEligible());
         assertTrue(summary.runtimeEquivalenceReviewRequired());
         assertEquals("none", summary.runtimeEquivalenceReviewFirstBlocker());
+        assertEquals("pending-manual-review", summary.reviewPackageStatus());
+        assertEquals("optimized-ir-proposal-missing", summary.reviewPackageFirstBlocker());
         assertEquals(3, summary.totalPreviewReadinessFamilyCount());
         assertEquals(3, summary.totalPreviewReadinessCandidateFamilyCount());
         assertEquals(0, summary.totalPreviewReadinessBlockedFamilyCount());

@@ -817,6 +817,22 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("runtimeEquivalenceReview.productionMutation=disabled\n");
         builder.append("runtimeEquivalenceReview.selectedIrReplacement=disabled\n");
         builder.append("runtimeEquivalenceReview.manualReviewOnly=true\n");
+        ReviewPackageEvidence reviewPackage = reviewPackageEvidence(irOptimizerReports, runtimeEquivalenceReview);
+        builder.append("reviewPackage.status=").append(reviewPackage.status()).append('\n');
+        builder.append("reviewPackage.required=").append(reviewPackage.required()).append('\n');
+        builder.append("reviewPackage.complete=").append(reviewPackage.complete()).append('\n');
+        builder.append("reviewPackage.firstBlocker=")
+                .append(safePropertyValue(reviewPackage.firstBlocker())).append('\n');
+        builder.append("reviewPackage.proposalPass.count=").append(reviewPackage.proposalPassCount()).append('\n');
+        builder.append("reviewPackage.pendingApproval.count=").append(reviewPackage.pendingApprovalCount()).append('\n');
+        builder.append("reviewPackage.runtimeEquivalence.status=")
+                .append(safePropertyValue(reviewPackage.runtimeEquivalenceStatus())).append('\n');
+        builder.append("reviewPackage.originalIrRequired=true\n");
+        builder.append("reviewPackage.optimizedIrRequired=true\n");
+        builder.append("reviewPackage.proofSummaryRequired=true\n");
+        builder.append("reviewPackage.manualReviewOnly=true\n");
+        builder.append("reviewPackage.productionMutation=disabled\n");
+        builder.append("reviewPackage.selectedIrReplacement=disabled\n");
         for (int index = 0; index < irOptimizerReports.size(); index++) {
             GpuRuntimeIrOptimizationPassReport passReport = irOptimizerReports.get(index);
             String prefix = "pass." + index + ".";
@@ -1128,6 +1144,50 @@ public final class GpuRuntimeCompileArtifactDumper {
         );
     }
 
+    private static ReviewPackageEvidence reviewPackageEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            RuntimeEquivalenceReviewEvidence runtimeEquivalenceReview
+    ) {
+        int proposalPassCount = 0;
+        int pendingApprovalCount = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null) {
+                continue;
+            }
+            ApprovalTemplateEvidence approvalTemplate = approvalTemplateEvidence(passReport);
+            if (approvalTemplate.applicable()) {
+                proposalPassCount++;
+            }
+            if ("pending".equals(approvalTemplate.status())) {
+                pendingApprovalCount++;
+            }
+        }
+        boolean required = runtimeEquivalenceReview.required() || proposalPassCount > 0;
+        boolean complete = false;
+        String firstBlocker;
+        if (!required) {
+            firstBlocker = "review-package-not-required";
+        } else if (!runtimeEquivalenceReview.eligible()) {
+            firstBlocker = runtimeEquivalenceReview.firstBlocker();
+        } else if (pendingApprovalCount > 0) {
+            firstBlocker = "approval-template-pending";
+        } else if (proposalPassCount <= 0) {
+            firstBlocker = "optimized-ir-proposal-missing";
+        } else {
+            firstBlocker = "manual-review-required";
+        }
+        String status = required ? "pending-manual-review" : "not-required";
+        return new ReviewPackageEvidence(
+                status,
+                required,
+                complete,
+                firstBlocker,
+                proposalPassCount,
+                pendingApprovalCount,
+                runtimeEquivalenceReview.status()
+        );
+    }
+
     private static String previewReadinessStatus(List<PreviewFamilyReadiness> families) {
         if (families.stream().allMatch(family -> "not-recorded".equals(family.status()))) {
             return "not-recorded";
@@ -1290,6 +1350,17 @@ public final class GpuRuntimeCompileArtifactDumper {
             boolean required,
             String firstBlocker,
             String familySummary
+    ) {
+    }
+
+    private record ReviewPackageEvidence(
+            String status,
+            boolean required,
+            boolean complete,
+            String firstBlocker,
+            int proposalPassCount,
+            int pendingApprovalCount,
+            String runtimeEquivalenceStatus
     ) {
     }
 

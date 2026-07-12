@@ -205,6 +205,43 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         };
     }
 
+    int totalReviewPackageRequiredCount() {
+        return (int) entries.stream().filter(Entry::reviewPackageRequired).count();
+    }
+
+    int totalReviewPackageCompleteCount() {
+        return (int) entries.stream().filter(Entry::reviewPackageComplete).count();
+    }
+
+    int totalReviewPackageProposalPassCount() {
+        return entries.stream().mapToInt(Entry::reviewPackageProposalPassCount).sum();
+    }
+
+    int totalReviewPackagePendingApprovalCount() {
+        return entries.stream().mapToInt(Entry::reviewPackagePendingApprovalCount).sum();
+    }
+
+    String reviewPackageStatus() {
+        if (entries.isEmpty() || entries.stream().allMatch(entry -> "missing".equals(entry.status()))) {
+            return "not-recorded";
+        }
+        if (totalReviewPackageRequiredCount() <= 0) {
+            return "not-required";
+        }
+        return totalReviewPackageCompleteCount() == totalReviewPackageRequiredCount()
+                ? "complete"
+                : "pending-manual-review";
+    }
+
+    String reviewPackageFirstBlocker() {
+        for (Entry entry : entries) {
+            if (entry.reviewPackageRequired() && !entry.reviewPackageComplete()) {
+                return entry.reviewPackageFirstBlocker();
+            }
+        }
+        return "none";
+    }
+
     private List<PreviewFamilyReadiness> previewReadinessFamilies() {
         return List.of(
                 new PreviewFamilyReadiness(
@@ -334,12 +371,23 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                 .append(inline(runtimeEquivalenceReviewFirstBlocker())).append("`\n");
         markdown.append("- Runtime-equivalence review production mutation: `disabled`\n");
         markdown.append("- Runtime-equivalence review selected IR replacement: `disabled`\n");
+        markdown.append("- Review package status: `").append(reviewPackageStatus()).append("`\n");
+        markdown.append("- Review package required kernels: `").append(totalReviewPackageRequiredCount()).append("`\n");
+        markdown.append("- Review package complete kernels: `").append(totalReviewPackageCompleteCount()).append("`\n");
+        markdown.append("- Review package proposal passes: `").append(totalReviewPackageProposalPassCount()).append("`\n");
+        markdown.append("- Review package pending approvals: `")
+                .append(totalReviewPackagePendingApprovalCount()).append("`\n");
+        markdown.append("- Review package first blocker: `")
+                .append(inline(reviewPackageFirstBlocker())).append("`\n");
+        markdown.append("- Review package manual review only: `true`\n");
+        markdown.append("- Review package production mutation: `disabled`\n");
+        markdown.append("- Review package selected IR replacement: `disabled`\n");
         markdown.append("- Providers: `").append(inline(providerSummary())).append("`\n\n");
         if (entries.isEmpty()) {
             return markdown.toString();
         }
-        markdown.append("| Kernel resource | Status | Passes | Proposal-only | Selected | Rolled back | Approval pending | Approval N/A | CF candidates | CF skipped | CSE candidates | CSE duplicates | CSE blocked | TDC unreachable | TDC blocked | Providers |\n");
-        markdown.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
+        markdown.append("| Kernel resource | Status | Passes | Proposal-only | Selected | Rolled back | Approval pending | Approval N/A | CF candidates | CF skipped | CSE candidates | CSE duplicates | CSE blocked | TDC unreachable | TDC blocked | Review package | Review blocker | Providers |\n");
+        markdown.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |\n");
         for (Entry entry : entries) {
             markdown.append("| `").append(table(entry.kernelResource())).append("` | `")
                     .append(table(entry.status())).append("` | `")
@@ -356,6 +404,8 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     .append(entry.safeLocalCsePreviewBlockedCount()).append("` | `")
                     .append(entry.typedDeadCodePreviewUnreachableNodeCount()).append("` | `")
                     .append(entry.typedDeadCodePreviewBlockedCount()).append("` | `")
+                    .append(table(entry.reviewPackageStatus())).append("` | `")
+                    .append(table(entry.reviewPackageFirstBlocker())).append("` | `")
                     .append(table(formatProviderCounts(entry.providerCounts()))).append("` |\n");
         }
         markdown.append('\n');
@@ -508,6 +558,14 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             boolean typedDeadCodePreviewRuntimeEquivalenceRequiredBeforeRewrite,
             boolean typedDeadCodePreviewApprovalRequiredBeforeRewrite,
             boolean typedDeadCodePreviewSideEffectFreedomProven,
+            String reviewPackageStatus,
+            boolean reviewPackageRequired,
+            boolean reviewPackageComplete,
+            String reviewPackageFirstBlocker,
+            int reviewPackageProposalPassCount,
+            int reviewPackagePendingApprovalCount,
+            String reviewPackageRuntimeEquivalenceStatus,
+            boolean reviewPackageManualReviewOnly,
             Map<String, Integer> providerCounts
     ) {
 
@@ -542,6 +600,11 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             typedDeadCodePreviewBlockedMissingRootCount = Math.max(0, typedDeadCodePreviewBlockedMissingRootCount);
             typedDeadCodePreviewBlockedMissingChildReferenceCount = Math.max(0, typedDeadCodePreviewBlockedMissingChildReferenceCount);
             typedDeadCodePreviewBlockedSideEffectingUnreachableNodeCount = Math.max(0, typedDeadCodePreviewBlockedSideEffectingUnreachableNodeCount);
+            reviewPackageStatus = normalize(reviewPackageStatus, "not-recorded");
+            reviewPackageFirstBlocker = normalize(reviewPackageFirstBlocker, "none");
+            reviewPackageProposalPassCount = Math.max(0, reviewPackageProposalPassCount);
+            reviewPackagePendingApprovalCount = Math.max(0, reviewPackagePendingApprovalCount);
+            reviewPackageRuntimeEquivalenceStatus = normalize(reviewPackageRuntimeEquivalenceStatus, "unknown");
             providerCounts = normalizeProviderCounts(providerCounts);
         }
 
@@ -604,7 +667,9 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             if (properties == null || properties.isEmpty()) {
                 return new Entry(kernelResource, "missing", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         false, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0, false, false, false, false,
-                        0, 0, 0, 0, 0, 0, 0, false, false, false, Map.of());
+                        0, 0, 0, 0, 0, 0, 0, false, false, false,
+                        "not-recorded", false, false, "review-package-not-recorded", 0, 0, "unknown", false,
+                        Map.of());
             }
             return new Entry(
                     kernelResource,
@@ -648,6 +713,14 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     parseBoolean(properties.getProperty("typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite")),
                     parseBoolean(properties.getProperty("typedDeadCodePreview.approvalRequiredBeforeRewrite")),
                     parseBoolean(properties.getProperty("typedDeadCodePreview.sideEffectFreedomProven")),
+                    properties.getProperty("reviewPackage.status", "not-recorded"),
+                    parseBoolean(properties.getProperty("reviewPackage.required")),
+                    parseBoolean(properties.getProperty("reviewPackage.complete")),
+                    properties.getProperty("reviewPackage.firstBlocker", "none"),
+                    parseInt(properties.getProperty("reviewPackage.proposalPass.count"), 0),
+                    parseInt(properties.getProperty("reviewPackage.pendingApproval.count"), 0),
+                    properties.getProperty("reviewPackage.runtimeEquivalence.status", "unknown"),
+                    parseBoolean(properties.getProperty("reviewPackage.manualReviewOnly")),
                     parseProviderCounts(properties)
             );
         }
