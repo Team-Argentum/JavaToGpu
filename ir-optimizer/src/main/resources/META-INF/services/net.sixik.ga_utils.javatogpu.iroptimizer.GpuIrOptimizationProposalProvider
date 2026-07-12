@@ -1,0 +1,4 @@
+net.sixik.ga_utils.javatogpu.iroptimizer.GpuIrNoOpProposalProvider
+net.sixik.ga_utils.javatogpu.iroptimizer.GpuIrTextCanonicalizationProposalProvider
+net.sixik.ga_utils.javatogpu.iroptimizer.GpuIrHelperDependencyDeduplicationProposalProvider
+net.sixik.ga_utils.javatogpu.iroptimizer.GpuIrConstantFoldingPreviewProposalProvider

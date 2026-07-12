@@ -62,6 +62,7 @@ public final class OpenClValidationReporter {
         OpenClKernelLaunchAdvisorySummary launchAdvisorySummary = loadKernelLaunchAdvisorySummary();
         OpenClCompilerResourceSummary compilerResourceSummary = loadCompilerResourceSummary();
         OpenClExtensionParticipationSummary extensionParticipationSummary = loadExtensionParticipationSummary();
+        OpenClRuntimeIrOptimizerEvidenceSummary irOptimizerEvidenceSummary = loadIrOptimizerEvidenceSummary();
         OpenClValidationHistoryEntry currentHistoryEntry = buildHistoryEntry(
                 launchAdvisorySummary,
                 compilerResourceSummary,
@@ -74,7 +75,8 @@ public final class OpenClValidationReporter {
                 launchAdvisoryDrift,
                 compilerResourceSummary,
                 compilerResourceDrift,
-                extensionParticipationSummary
+                extensionParticipationSummary,
+                irOptimizerEvidenceSummary
         );
         String outputPath = System.getProperty(REPORT_FILE_PROPERTY);
         if (outputPath != null && !outputPath.isBlank()) {
@@ -98,7 +100,8 @@ public final class OpenClValidationReporter {
             OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift,
             OpenClCompilerResourceSummary compilerResourceSummary,
             OpenClCompilerResourceDrift compilerResourceDrift,
-            OpenClExtensionParticipationSummary extensionParticipationSummary
+            OpenClExtensionParticipationSummary extensionParticipationSummary,
+            OpenClRuntimeIrOptimizerEvidenceSummary irOptimizerEvidenceSummary
     ) {
         StringBuilder markdown = new StringBuilder();
         String requestedVendor = env("JTG_VALIDATION_VENDOR");
@@ -137,6 +140,7 @@ public final class OpenClValidationReporter {
         markdown.append(compilerResourceSummary.toMarkdown());
         markdown.append(compilerResourceDrift.toMarkdown());
         markdown.append(extensionParticipationSummary.toMarkdown());
+        markdown.append(irOptimizerEvidenceSummary.toMarkdown());
         appendIrGpuSourceReviewSummary(markdown);
         appendProductionSourceSwitchingValidationSummary(markdown);
         appendLongRunningSummary(markdown);
@@ -189,6 +193,18 @@ public final class OpenClValidationReporter {
             return OpenClExtensionParticipationSummary.read(Paths.get(gatePath));
         } catch (Throwable failure) {
             return OpenClExtensionParticipationSummary.failed(failure);
+        }
+    }
+
+    private static OpenClRuntimeIrOptimizerEvidenceSummary loadIrOptimizerEvidenceSummary() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return OpenClRuntimeIrOptimizerEvidenceSummary.notRecorded();
+        }
+        try {
+            return OpenClRuntimeIrOptimizerEvidenceSummary.read(Paths.get(gatePath));
+        } catch (Throwable failure) {
+            return OpenClRuntimeIrOptimizerEvidenceSummary.failed(failure);
         }
     }
 

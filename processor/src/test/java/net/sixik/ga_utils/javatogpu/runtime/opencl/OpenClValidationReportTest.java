@@ -980,8 +980,8 @@ class OpenClValidationReportTest {
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourcePromotionFirstBlockers=runtime equivalence must execute and pass before backend source promotion=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourcePromotionFirstBlockerFamilies=runtime-equivalence=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernelCount=2"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review/operatorAccepted=false/sourcePromotionFirstBlocker=none, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source/operatorAccepted=false/sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review/operatorAccepted=false/sourcePromotionFirstBlocker=none, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false, extensionParticipation=not-recorded/0executions/failedContinued=0/failedClosed=0/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source/operatorAccepted=false/sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false, extensionParticipation=not-recorded/0executions/failedContinued=0/failedClosed=0/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("productionSourceSwitching=disabled"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("contract=valid"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("decisionMode=diagnostic-only"));
@@ -1362,6 +1362,28 @@ class OpenClValidationReportTest {
                         ""
                 )
         );
+        java.nio.file.Files.writeString(
+                artifactDirectory.resolve("backend-module.properties"),
+                String.join("\n",
+                        "resource=workload/perlin.cl",
+                        "backendTarget=OPENCL",
+                        ""
+                )
+        );
+        java.nio.file.Files.writeString(
+                artifactDirectory.resolve(
+                        net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper
+                                .RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT),
+                String.join("\n",
+                        "status=recorded",
+                        "pass.count=1",
+                        "proposalOnly.count=1",
+                        "selectedOptimized.count=0",
+                        "rolledBack.count=0",
+                        "pass.0.passVersion=ir-optimizer:text-canonicalization:1",
+                        ""
+                )
+        );
         String previousGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
         String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
         String previousSummaryFile = System.getProperty("javatogpu.opencl.kernelLaunchAdvisorySummaryFile");
@@ -1406,6 +1428,9 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("## Kernel Launch Advisories"));
             assertTrue(reportMarkdown.contains("- Non-preferred multiple: `1`"));
             assertTrue(reportMarkdown.contains("`workload/perlin.cl` | `non-preferred-multiple`"));
+            assertTrue(reportMarkdown.contains("## Runtime IR Optimizer Evidence"));
+            assertTrue(reportMarkdown.contains("- Proposal-only count: `1`"));
+            assertTrue(reportMarkdown.contains("ir-optimizer:text-canonicalization:1=1"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));
             assertTrue(summaryMarkdown.contains("- Blocking: `0`"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisory Drift"));

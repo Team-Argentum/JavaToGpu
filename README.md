@@ -103,6 +103,8 @@ Advanced topics:
 - [Language Contract](docs/Language-Contract.md)
 - [OpenCL Data Model](docs/OpenCL-Data-Model.md)
 - [IR Validation](docs/IR-Validation.md)
+- [IR Optimizer](docs/IR-Optimizer.md)
+- IR Vendor Optimizer is documented in the IR Optimizer guide as a separate optional provider artifact.
 - [Validation and Operations](docs/Validation-and-Operations.md)
 - [Diagnostics Reference](docs/Diagnostics-Reference.md)
 - [ASM Contract](docs/ASM-Contract.md)
@@ -138,6 +140,8 @@ Start with `validation-report.md` when checking a run.
 
 - `processor` - annotation processor, compiler, OpenCL emitter, runtime, launchers, tests, and validation buckets.
 - `ir-validation` - optional stricter IR validation module.
+- `ir-optimizer` - optional backend-neutral IR optimizer skeleton and future transform module.
+- `ir-vendor-optimizer` - optional vendor-specific IR optimizer provider skeleton; it plugs into the vendor proposal SPI and is not loaded by the default runtime optimizer bridge.
 - `examples-app` - example kernels and usage patterns.
 - `test-app` - consumer-style sample application.
 - `docs` - public documentation.
@@ -149,9 +153,11 @@ Published artifacts:
 ```text
 io.github.deussixik:javatogpu
 io.github.deussixik:javatogpu-ir-validation
+io.github.deussixik:javatogpu-ir-optimizer
+io.github.deussixik:javatogpu-ir-vendor-optimizer
 ```
 
-Publishing is configured for the main processor artifact and the optional IR validation artifact. Keep Maven Central credentials and signing keys outside the repository. See [Publishing Guide](docs/Publishing.md).
+Publishing is configured for the main processor artifact, optional IR validation artifact, optional backend-neutral IR optimizer artifact, and optional vendor optimizer provider artifact. Keep Maven Central credentials and signing keys outside the repository. See [Publishing Guide](docs/Publishing.md).
 
 ## License
 

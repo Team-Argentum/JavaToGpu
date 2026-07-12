@@ -21,6 +21,8 @@ public final class GpuRuntimeCompileArtifactDumper {
     public static final String BACKEND_COMPILER_FEEDBACK_ARTIFACT = "backend-compiler-feedback.properties";
     public static final String RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT =
             "runtime-extension-participation.properties";
+    public static final String RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT =
+            "runtime-ir-optimizer-evidence.properties";
     public static final String RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD_DIRECTORY =
             "runtime-optimizer-family-equivalence-payload";
 
@@ -98,6 +100,10 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.putAll(optimizerFamilyEquivalenceArtifacts.files());
         if (snapshot.optimizationReport().hasReports() || snapshot.productionOptimizerGate().productionProfileRequested()) {
             artifacts.put("optimizer-report.txt", snapshot.optimizationReport().toText());
+        }
+        String irOptimizerEvidence = formatRuntimeIrOptimizerEvidence(snapshot.optimizationReport());
+        if (!irOptimizerEvidence.isBlank()) {
+            artifacts.put(RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT, irOptimizerEvidence);
         }
         String runtimeIrAnalysis = formatRuntimeIrAnalysis(snapshot.optimizationReport(), compilerFeedbackReport);
         if (!runtimeIrAnalysis.isBlank()) {
@@ -697,6 +703,166 @@ public final class GpuRuntimeCompileArtifactDumper {
         }
         appendCompilerFeedbackAnalysis(builder, analysisReports, compilerFeedbackReport);
         return builder.toString();
+    }
+
+    private static String formatRuntimeIrOptimizerEvidence(GpuRuntimeIrOptimizationReport report) {
+        List<GpuRuntimeIrOptimizationPassReport> irOptimizerReports = report.passReports().stream()
+                .filter(GpuRuntimeCompileArtifactDumper::isRuntimeIrOptimizerEvidence)
+                .toList();
+        if (irOptimizerReports.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("status=recorded\n");
+        builder.append("source=runtime-ir-optimizer\n");
+        builder.append("providerPrefix=javatogpu.ir-optimizer\n");
+        builder.append("pass.count=").append(irOptimizerReports.size()).append('\n');
+        builder.append("applied.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.APPLIED)).append('\n');
+        builder.append("skipped.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.SKIPPED)).append('\n');
+        builder.append("rolledBack.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.ROLLED_BACK)).append('\n');
+        builder.append("failed.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.FAILED)).append('\n');
+        builder.append("proposalOnly.count=").append(countProofStatus(irOptimizerReports, "proposal-only")).append('\n');
+        builder.append("selectedOptimized.count=").append(countProofStatus(irOptimizerReports, "optimized-selected")).append('\n');
+        builder.append("approvalTemplate.pending.count=")
+                .append(countApprovalTemplateStatus(irOptimizerReports, "pending"))
+                .append('\n');
+        builder.append("approvalTemplate.notApplicable.count=")
+                .append(countApprovalTemplateStatus(irOptimizerReports, "not-applicable"))
+                .append('\n');
+        for (int index = 0; index < irOptimizerReports.size(); index++) {
+            GpuRuntimeIrOptimizationPassReport passReport = irOptimizerReports.get(index);
+            String prefix = "pass." + index + ".";
+            ApprovalTemplateEvidence approvalTemplate = approvalTemplateEvidence(passReport);
+            builder.append(prefix).append("passVersion=")
+                    .append(safePropertyValue(passReport.optimizerVersion())).append('\n');
+            builder.append(prefix).append("stage=").append(passReport.stage()).append('\n');
+            builder.append(prefix).append("outcome=").append(passReport.outcome()).append('\n');
+            builder.append(prefix).append("proofStatus=")
+                    .append(safePropertyValue(passReport.proofStatus())).append('\n');
+            builder.append(prefix).append("originalIrIdentity=")
+                    .append(safePropertyValue(passReport.originalIrIdentity())).append('\n');
+            builder.append(prefix).append("transformedIrIdentity=")
+                    .append(safePropertyValue(passReport.transformedIrIdentity())).append('\n');
+            builder.append(prefix).append("rollbackReason=")
+                    .append(safePropertyValue(passReport.rollbackReason())).append('\n');
+            builder.append(prefix).append("proofArtifact.source=")
+                    .append(safePropertyValue(passReport.proofArtifact().source())).append('\n');
+            builder.append(prefix).append("proofArtifact.verdict=")
+                    .append(safePropertyValue(passReport.proofArtifact().verdict())).append('\n');
+            builder.append(prefix).append("proofArtifact.field.count=")
+                    .append(passReport.proofArtifact().fields().size()).append('\n');
+            passReport.proofArtifact().fields().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> builder.append(prefix).append("proofArtifact.field.")
+                            .append(safePropertyValue(entry.getKey())).append('=')
+                            .append(safePropertyValue(entry.getValue())).append('\n'));
+            builder.append(prefix).append("approvalTemplate.status=")
+                    .append(approvalTemplate.status()).append('\n');
+            builder.append(prefix).append("approvalTemplate.applicable=")
+                    .append(approvalTemplate.applicable()).append('\n');
+            builder.append(prefix).append("approvalTemplate.firstBlocker=")
+                    .append(safePropertyValue(approvalTemplate.firstBlocker())).append('\n');
+            builder.append(prefix).append("approvalTemplate.productionMutation=disabled\n");
+            builder.append(prefix).append("approvalTemplate.manualReviewOnly=true\n");
+            if (approvalTemplate.applicable()) {
+                builder.append(prefix)
+                        .append("approvalTemplate.resourceDirectory=META-INF/javatogpu/ir-optimization-approvals/\n");
+            }
+            builder.append(prefix).append("diagnostic.count=").append(passReport.diagnostics().size()).append('\n');
+            for (int diagnosticIndex = 0; diagnosticIndex < passReport.diagnostics().size(); diagnosticIndex++) {
+                builder.append(prefix).append("diagnostic.").append(diagnosticIndex).append('=')
+                        .append(safePropertyValue(passReport.diagnostics().get(diagnosticIndex))).append('\n');
+            }
+        }
+        return builder.toString();
+    }
+
+    private static boolean isRuntimeIrOptimizerEvidence(GpuRuntimeIrOptimizationPassReport passReport) {
+        if (passReport == null) {
+            return false;
+        }
+        String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+        String proofSource = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+        return optimizerVersion.startsWith("javatogpu.ir-optimizer")
+                || proofSource.startsWith("ir-optimizer");
+    }
+
+    private static long countOutcome(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            GpuRuntimeIrOptimizationOutcome outcome
+    ) {
+        return passReports.stream().filter(passReport -> passReport.outcome() == outcome).count();
+    }
+
+    private static long countProofStatus(List<GpuRuntimeIrOptimizationPassReport> passReports, String proofStatus) {
+        return passReports.stream()
+                .filter(passReport -> proofStatus.equals(passReport.proofStatus()))
+                .count();
+    }
+
+    private static long countApprovalTemplateStatus(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            String status
+    ) {
+        return passReports.stream()
+                .map(GpuRuntimeCompileArtifactDumper::approvalTemplateEvidence)
+                .filter(evidence -> status.equals(evidence.status()))
+                .count();
+    }
+
+    private static ApprovalTemplateEvidence approvalTemplateEvidence(GpuRuntimeIrOptimizationPassReport passReport) {
+        if (passReport == null) {
+            return ApprovalTemplateEvidence.notApplicable("pass-report-missing");
+        }
+        Map<String, String> proofFields = passReport.proofArtifact().fields();
+        if ("false".equals(proofFields.get("rewrite.proposed"))
+                || "true".equals(proofFields.get("previewOnly"))) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-decision-not-proposed");
+        }
+        if (!"proposal-only".equals(passReport.proofStatus())
+                && !"optimized-selected".equals(passReport.proofStatus())) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-decision-not-proposed");
+        }
+        if (!distinctIrIdentities(passReport.originalIrIdentity(), passReport.transformedIrIdentity())) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-identities-not-distinct");
+        }
+        String proofSource = passReport.proofArtifact().source();
+        if (proofSource == null
+                || proofSource.isBlank()
+                || "none".equals(proofSource)
+                || "ir-optimizer".equals(proofSource)) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-proof-source-not-specific");
+        }
+        String proofVerdict = passReport.proofArtifact().verdict() == null
+                ? ""
+                : passReport.proofArtifact().verdict().toLowerCase(java.util.Locale.ROOT);
+        if (proofVerdict.isBlank()
+                || proofVerdict.contains("not-proven")
+                || proofVerdict.contains("rejected")
+                || proofVerdict.contains("failed")) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-proof-verdict-not-accepted");
+        }
+        return ApprovalTemplateEvidence.pending();
+    }
+
+    private static boolean distinctIrIdentities(String original, String transformed) {
+        String normalizedOriginal = original == null ? "" : original;
+        String normalizedTransformed = transformed == null ? "" : transformed;
+        return !normalizedOriginal.isBlank()
+                && !normalizedTransformed.isBlank()
+                && !"irgpu:missing".equals(normalizedOriginal)
+                && !"irgpu:missing".equals(normalizedTransformed)
+                && !normalizedOriginal.equals(normalizedTransformed);
+    }
+
+    private record ApprovalTemplateEvidence(String status, boolean applicable, String firstBlocker) {
+        private static ApprovalTemplateEvidence pending() {
+            return new ApprovalTemplateEvidence("pending", true, "none");
+        }
+
+        private static ApprovalTemplateEvidence notApplicable(String firstBlocker) {
+            return new ApprovalTemplateEvidence("not-applicable", false, firstBlocker);
+        }
     }
 
     private static void appendCompilerFeedbackAnalysis(

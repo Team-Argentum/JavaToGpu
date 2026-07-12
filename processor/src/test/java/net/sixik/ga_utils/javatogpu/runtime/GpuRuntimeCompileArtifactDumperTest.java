@@ -22,6 +22,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -1987,6 +1988,122 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedIrRejected=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("fallbackDecision=optimizer-rollback"));
+    }
+
+    @Test
+    void dumpsRuntimeIrOptimizerEvidenceArtifactForProposalBridgeReports() {
+        IrGpuArtifact original = artifact("body\n  return original\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport noOpReport = GpuRuntimeIrOptimizationPassReport.skipped(
+                "javatogpu.ir-optimizer.noop:1",
+                "irgpu:sha256:original",
+                "no-op proposal provider keeps original IR selected"
+        ).withStage(GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY)
+                .withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer",
+                        "not-mutating",
+                        Map.of("provider", "noop")
+                ));
+        GpuRuntimeIrOptimizationPassReport canonicalizationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.text-canonicalization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:canonical",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.text-canonicalization",
+                        "semantics-neutral-text-normalization",
+                        Map.of(
+                                "changedMethodBodies", "1",
+                                "mutationRequired", "false",
+                                "normalizations", "crlf-to-lf,trailing-whitespace"
+                        )
+                ),
+                List.of("optimized artifact validated but mutation is disabled; original IR remains selected")
+        );
+        GpuRuntimeIrOptimizationPassReport previewReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.constant-folding-preview:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:original",
+                "not-mutating",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.constant-folding-preview",
+                        "preview-candidates-recorded",
+                        Map.of(
+                                "candidate.count", "1",
+                                "previewOnly", "true",
+                                "rewrite.proposed", "false"
+                        )
+                ),
+                List.of("constant folding preview recorded evidence; no rewrite was proposed")
+        );
+        GpuRuntimeIrOptimizationPassReport unrelatedReport = GpuRuntimeIrOptimizationPassReport.applied(
+                "optimizer:other",
+                "irgpu:sha256:original",
+                "irgpu:sha256:other",
+                "proof:other",
+                List.of("unrelated optimizer evidence")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(noOpReport, canonicalizationReport, previewReport, unrelatedReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT));
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        assertTrue(evidence.contains("status=recorded"));
+        assertTrue(evidence.contains("source=runtime-ir-optimizer"));
+        assertTrue(evidence.contains("providerPrefix=javatogpu.ir-optimizer"));
+        assertTrue(evidence.contains("pass.count=3"));
+        assertTrue(evidence.contains("skipped.count=3"));
+        assertTrue(evidence.contains("applied.count=0"));
+        assertTrue(evidence.contains("proposalOnly.count=1"));
+        assertTrue(evidence.contains("selectedOptimized.count=0"));
+        assertTrue(evidence.contains("approvalTemplate.pending.count=1"));
+        assertTrue(evidence.contains("approvalTemplate.notApplicable.count=2"));
+        assertTrue(evidence.contains("pass.0.passVersion=javatogpu.ir-optimizer.noop:1"));
+        assertTrue(evidence.contains("pass.1.passVersion=javatogpu.ir-optimizer.text-canonicalization:1"));
+        assertTrue(evidence.contains("pass.2.passVersion=javatogpu.ir-optimizer.constant-folding-preview:1"));
+        assertTrue(evidence.contains("pass.1.proofStatus=proposal-only"));
+        assertTrue(evidence.contains("pass.1.transformedIrIdentity=irgpu:sha256:canonical"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.source=ir-optimizer.text-canonicalization"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.changedMethodBodies=1"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.mutationRequired=false"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.1.approvalTemplate.status=pending"));
+        assertTrue(evidence.contains("pass.1.approvalTemplate.applicable=true"));
+        assertTrue(evidence.contains("pass.1.approvalTemplate.resourceDirectory=META-INF/javatogpu/ir-optimization-approvals/"));
+        assertTrue(evidence.contains("pass.2.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.2.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.2.proofArtifact.field.previewOnly=true"));
+        assertFalse(evidence.contains("optimizer:other"));
     }
 
     private static GpuKernelDescriptor descriptor() {
