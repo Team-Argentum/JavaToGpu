@@ -128,6 +128,14 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertEquals(1, summary.totalTypedDeadCodePreviewPassCount());
         assertEquals(3, summary.totalTypedDeadCodePreviewUnreachableNodeCount());
         assertEquals(4, summary.totalTypedDeadCodePreviewBlockedCount());
+        assertEquals(3, summary.totalPreviewReadinessFamilyCount());
+        assertEquals(3, summary.totalPreviewReadinessCandidateFamilyCount());
+        assertEquals(3, summary.totalPreviewReadinessBlockedFamilyCount());
+        assertEquals("blocked-by-proof", summary.previewReadinessStatus());
+        assertEquals(
+                "constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof",
+                summary.previewReadinessFamilySummary()
+        );
         assertEquals(
                 "ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2",
                 summary.providerSummary()
@@ -146,8 +154,63 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.toMarkdown().contains("- Typed dead-code preview passes: `1`"));
         assertTrue(summary.toMarkdown().contains("- Typed dead-code preview unreachable nodes: `3`"));
         assertTrue(summary.toMarkdown().contains("- Typed dead-code preview blockers: `4`"));
+        assertTrue(summary.toMarkdown().contains("- Preview readiness status: `blocked-by-proof`"));
+        assertTrue(summary.toMarkdown().contains("- Preview readiness families: `constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof`"));
+        assertTrue(summary.toMarkdown().contains("- Preview readiness recorded families: `3`"));
+        assertTrue(summary.toMarkdown().contains("- Preview readiness candidate families: `3`"));
+        assertTrue(summary.toMarkdown().contains("- Preview readiness blocked families: `3`"));
         assertTrue(summary.toMarkdown().contains("- Providers: `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2`"));
         assertTrue(summary.toMarkdown().contains("| `kernel-a.cl` | `recorded` | `3` | `2` | `1` | `1` | `1` | `2` | `3` | `5` | `4` | `2` | `6` | `3` | `4` | `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2` |"));
         assertTrue(summary.toMarkdown().contains("| `kernel-b.cl` | `missing` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `none` |"));
+    }
+
+    @Test
+    void marksPreviewReadinessReadyWhenCandidatesHaveNoBlockers() throws Exception {
+        Path reportDirectory = temporaryDirectory.resolve("ready-reports").resolve("opencl");
+        Files.createDirectories(reportDirectory);
+        Path workloadGate = reportDirectory.resolve("backend-source-promotion-workload-gate.properties");
+        Files.writeString(workloadGate, """
+                kernel.count=1
+                kernel.0.sourceKernelResource=kernel-ready.cl
+                """);
+        Path artifactDirectory = reportDirectory
+                .resolve("runtime-compile-artifacts")
+                .resolve("kernel-ready");
+        Files.createDirectories(artifactDirectory);
+        Files.writeString(artifactDirectory.resolve("backend-module.properties"), """
+                resource=kernel-ready.cl
+                backendTarget=OPENCL
+                """);
+        Files.writeString(artifactDirectory.resolve(
+                GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT), """
+                status=recorded
+                pass.count=3
+                proposalOnly.count=3
+                constantFoldingPreview.pass.count=1
+                constantFoldingPreview.candidate.count=1
+                constantFoldingPreview.integerOverflowProven=true
+                constantFoldingPreview.floatingPointRoundingProven=true
+                safeLocalCsePreview.pass.count=1
+                safeLocalCsePreview.duplicateExpression.count=1
+                safeLocalCsePreview.dominanceProven=true
+                safeLocalCsePreview.sideEffectFreedomProven=true
+                typedDeadCodePreview.pass.count=1
+                typedDeadCodePreview.unreachableNode.count=1
+                typedDeadCodePreview.sideEffectFreedomProven=true
+                pass.0.passVersion=ir-optimizer:constant-folding-preview:1
+                pass.1.passVersion=ir-optimizer:safe-local-cse-preview:1
+                pass.2.passVersion=ir-optimizer:typed-dead-code-preview:1
+                """);
+
+        OpenClRuntimeIrOptimizerEvidenceSummary summary = OpenClRuntimeIrOptimizerEvidenceSummary.read(workloadGate);
+
+        assertEquals("ready-for-runtime-equivalence-review", summary.previewReadinessStatus());
+        assertEquals(3, summary.totalPreviewReadinessFamilyCount());
+        assertEquals(3, summary.totalPreviewReadinessCandidateFamilyCount());
+        assertEquals(0, summary.totalPreviewReadinessBlockedFamilyCount());
+        assertTrue(summary.toMarkdown().contains("- Preview readiness status: `ready-for-runtime-equivalence-review`"));
+        assertTrue(summary.toMarkdown().contains("constant-folding=ready-for-runtime-equivalence-review"));
+        assertTrue(summary.toMarkdown().contains("safe-local-cse=ready-for-runtime-equivalence-review"));
+        assertTrue(summary.toMarkdown().contains("typed-dead-code=ready-for-runtime-equivalence-review"));
     }
 }

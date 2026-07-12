@@ -1473,6 +1473,11 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Typed dead-code preview passes: `1`"));
             assertTrue(reportMarkdown.contains("- Typed dead-code preview unreachable nodes: `2`"));
             assertTrue(reportMarkdown.contains("- Typed dead-code preview blockers: `2`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness status: `blocked-by-proof`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness families: `constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness recorded families: `3`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness candidate families: `3`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness blocked families: `3`"));
             assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `2` | `2` | `3` | `1` | `2` | `2` | `2` | `ir-optimizer:text-canonicalization:1=1` |"));
             assertTrue(reportMarkdown.contains("ir-optimizer:text-canonicalization:1=1"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));

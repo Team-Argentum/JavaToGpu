@@ -136,6 +136,115 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         return entries.stream().mapToInt(Entry::typedDeadCodePreviewBlockedCount).sum();
     }
 
+    int totalPreviewReadinessFamilyCount() {
+        return (int) previewReadinessFamilies().stream()
+                .filter(family -> !"not-recorded".equals(family.status()))
+                .count();
+    }
+
+    int totalPreviewReadinessCandidateFamilyCount() {
+        return (int) previewReadinessFamilies().stream()
+                .filter(family -> family.candidateCount() > 0)
+                .count();
+    }
+
+    int totalPreviewReadinessBlockedFamilyCount() {
+        return (int) previewReadinessFamilies().stream()
+                .filter(family -> "blocked-by-proof".equals(family.status()))
+                .count();
+    }
+
+    String previewReadinessStatus() {
+        List<PreviewFamilyReadiness> families = previewReadinessFamilies();
+        if (families.stream().allMatch(family -> "not-recorded".equals(family.status()))) {
+            return "not-recorded";
+        }
+        if (families.stream().anyMatch(family -> "blocked-by-proof".equals(family.status()))) {
+            return "blocked-by-proof";
+        }
+        if (families.stream().anyMatch(family -> "ready-for-runtime-equivalence-review".equals(family.status()))) {
+            return "ready-for-runtime-equivalence-review";
+        }
+        if (families.stream().anyMatch(family -> "candidates-recorded".equals(family.status()))) {
+            return "candidates-recorded";
+        }
+        return "no-candidates";
+    }
+
+    String previewReadinessFamilySummary() {
+        StringBuilder summary = new StringBuilder();
+        for (PreviewFamilyReadiness family : previewReadinessFamilies()) {
+            if (!summary.isEmpty()) {
+                summary.append(", ");
+            }
+            summary.append(family.family()).append('=').append(family.status());
+        }
+        return summary.toString();
+    }
+
+    private List<PreviewFamilyReadiness> previewReadinessFamilies() {
+        return List.of(
+                new PreviewFamilyReadiness(
+                        "constant-folding",
+                        previewFamilyStatus(
+                                totalConstantFoldingPreviewPassCount(),
+                                totalConstantFoldingPreviewCandidateCount(),
+                                totalConstantFoldingPreviewSkippedCount() + totalConstantFoldingPreviewProofBlockerCount()
+                        ),
+                        totalConstantFoldingPreviewCandidateCount(),
+                        totalConstantFoldingPreviewSkippedCount() + totalConstantFoldingPreviewProofBlockerCount()
+                ),
+                new PreviewFamilyReadiness(
+                        "safe-local-cse",
+                        previewFamilyStatus(
+                                totalSafeLocalCsePreviewPassCount(),
+                                totalSafeLocalCsePreviewDuplicateExpressionCount(),
+                                totalSafeLocalCsePreviewBlockedCount() + totalSafeLocalCsePreviewProofBlockerCount()
+                        ),
+                        totalSafeLocalCsePreviewDuplicateExpressionCount(),
+                        totalSafeLocalCsePreviewBlockedCount() + totalSafeLocalCsePreviewProofBlockerCount()
+                ),
+                new PreviewFamilyReadiness(
+                        "typed-dead-code",
+                        previewFamilyStatus(
+                                totalTypedDeadCodePreviewPassCount(),
+                                totalTypedDeadCodePreviewUnreachableNodeCount(),
+                                totalTypedDeadCodePreviewBlockedCount() + totalTypedDeadCodePreviewProofBlockerCount()
+                        ),
+                        totalTypedDeadCodePreviewUnreachableNodeCount(),
+                        totalTypedDeadCodePreviewBlockedCount() + totalTypedDeadCodePreviewProofBlockerCount()
+                )
+        );
+    }
+
+    private int totalConstantFoldingPreviewProofBlockerCount() {
+        return entries.stream().mapToInt(Entry::constantFoldingPreviewProofBlockerCount).sum();
+    }
+
+    private int totalSafeLocalCsePreviewProofBlockerCount() {
+        return entries.stream().mapToInt(Entry::safeLocalCsePreviewProofBlockerCount).sum();
+    }
+
+    private int totalTypedDeadCodePreviewProofBlockerCount() {
+        return entries.stream().mapToInt(Entry::typedDeadCodePreviewProofBlockerCount).sum();
+    }
+
+    private static String previewFamilyStatus(int passCount, int candidateCount, int blockerCount) {
+        if (passCount <= 0) {
+            return "not-recorded";
+        }
+        if (candidateCount <= 0 && blockerCount <= 0) {
+            return "no-candidates";
+        }
+        if (blockerCount > 0) {
+            return "blocked-by-proof";
+        }
+        if (candidateCount > 0) {
+            return "ready-for-runtime-equivalence-review";
+        }
+        return "candidates-recorded";
+    }
+
     String providerSummary() {
         LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
         for (Entry entry : entries) {
@@ -188,6 +297,13 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                 .append(totalTypedDeadCodePreviewUnreachableNodeCount()).append("`\n");
         markdown.append("- Typed dead-code preview blockers: `")
                 .append(totalTypedDeadCodePreviewBlockedCount()).append("`\n");
+        markdown.append("- Preview readiness status: `").append(previewReadinessStatus()).append("`\n");
+        markdown.append("- Preview readiness families: `").append(inline(previewReadinessFamilySummary())).append("`\n");
+        markdown.append("- Preview readiness recorded families: `").append(totalPreviewReadinessFamilyCount()).append("`\n");
+        markdown.append("- Preview readiness candidate families: `")
+                .append(totalPreviewReadinessCandidateFamilyCount()).append("`\n");
+        markdown.append("- Preview readiness blocked families: `")
+                .append(totalPreviewReadinessBlockedFamilyCount()).append("`\n");
         markdown.append("- Providers: `").append(inline(providerSummary())).append("`\n\n");
         if (entries.isEmpty()) {
             return markdown.toString();
@@ -317,6 +433,9 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         return summary.toString();
     }
 
+    private record PreviewFamilyReadiness(String family, String status, int candidateCount, int blockerCount) {
+    }
+
     record Entry(
             String kernelResource,
             String status,
@@ -414,6 +533,41 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             return typedDeadCodePreviewBlockedMissingRootCount
                     + typedDeadCodePreviewBlockedMissingChildReferenceCount
                     + typedDeadCodePreviewBlockedSideEffectingUnreachableNodeCount;
+        }
+
+        int constantFoldingPreviewProofBlockerCount() {
+            if (constantFoldingPreviewCandidateCount <= 0) {
+                return 0;
+            }
+            int blockers = 0;
+            if (!constantFoldingPreviewIntegerOverflowProven) {
+                blockers++;
+            }
+            if (!constantFoldingPreviewFloatingPointRoundingProven) {
+                blockers++;
+            }
+            return blockers;
+        }
+
+        int safeLocalCsePreviewProofBlockerCount() {
+            if (safeLocalCsePreviewDuplicateExpressionCount <= 0) {
+                return 0;
+            }
+            int blockers = 0;
+            if (!safeLocalCsePreviewDominanceProven) {
+                blockers++;
+            }
+            if (!safeLocalCsePreviewSideEffectFreedomProven) {
+                blockers++;
+            }
+            return blockers;
+        }
+
+        int typedDeadCodePreviewProofBlockerCount() {
+            if (typedDeadCodePreviewUnreachableNodeCount <= 0) {
+                return 0;
+            }
+            return typedDeadCodePreviewSideEffectFreedomProven ? 0 : 1;
         }
 
         static Entry from(String kernelResource, Properties properties) {

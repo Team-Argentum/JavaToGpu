@@ -793,6 +793,19 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .append(typedDeadCodePreview.approvalRequiredBeforeRewrite()).append('\n');
         builder.append("typedDeadCodePreview.sideEffectFreedomProven=")
                 .append(typedDeadCodePreview.sideEffectFreedomProven()).append('\n');
+        PreviewReadinessEvidence previewReadiness = previewReadinessEvidence(
+                constantFoldingPreview,
+                safeLocalCsePreview,
+                typedDeadCodePreview
+        );
+        builder.append("previewReadiness.status=").append(previewReadiness.status()).append('\n');
+        builder.append("previewReadiness.family.count=").append(previewReadiness.familyCount()).append('\n');
+        builder.append("previewReadiness.candidateFamily.count=")
+                .append(previewReadiness.candidateFamilyCount()).append('\n');
+        builder.append("previewReadiness.blockedFamily.count=")
+                .append(previewReadiness.blockedFamilyCount()).append('\n');
+        builder.append("previewReadiness.familySummary=")
+                .append(safePropertyValue(previewReadiness.familySummary())).append('\n');
         for (int index = 0; index < irOptimizerReports.size(); index++) {
             GpuRuntimeIrOptimizationPassReport passReport = irOptimizerReports.get(index);
             String prefix = "pass." + index + ".";
@@ -1029,6 +1042,90 @@ public final class GpuRuntimeCompileArtifactDumper {
         );
     }
 
+    private static PreviewReadinessEvidence previewReadinessEvidence(
+            ConstantFoldingPreviewEvidence constantFoldingPreview,
+            SafeLocalCsePreviewEvidence safeLocalCsePreview,
+            TypedDeadCodePreviewEvidence typedDeadCodePreview
+    ) {
+        PreviewFamilyReadiness constantFolding = new PreviewFamilyReadiness(
+                "constant-folding",
+                previewFamilyStatus(
+                        constantFoldingPreview.passCount(),
+                        constantFoldingPreview.candidateCount(),
+                        constantFoldingPreview.skippedCount() + constantFoldingPreview.proofBlockerCount()
+                ),
+                constantFoldingPreview.candidateCount(),
+                constantFoldingPreview.skippedCount() + constantFoldingPreview.proofBlockerCount()
+        );
+        PreviewFamilyReadiness safeLocalCse = new PreviewFamilyReadiness(
+                "safe-local-cse",
+                previewFamilyStatus(
+                        safeLocalCsePreview.passCount(),
+                        safeLocalCsePreview.duplicateExpressionCount(),
+                        safeLocalCsePreview.blockedCount() + safeLocalCsePreview.proofBlockerCount()
+                ),
+                safeLocalCsePreview.duplicateExpressionCount(),
+                safeLocalCsePreview.blockedCount() + safeLocalCsePreview.proofBlockerCount()
+        );
+        PreviewFamilyReadiness typedDeadCode = new PreviewFamilyReadiness(
+                "typed-dead-code",
+                previewFamilyStatus(
+                        typedDeadCodePreview.passCount(),
+                        typedDeadCodePreview.unreachableNodeCount(),
+                        typedDeadCodePreview.blockedCount() + typedDeadCodePreview.proofBlockerCount()
+                ),
+                typedDeadCodePreview.unreachableNodeCount(),
+                typedDeadCodePreview.blockedCount() + typedDeadCodePreview.proofBlockerCount()
+        );
+        List<PreviewFamilyReadiness> families = List.of(constantFolding, safeLocalCse, typedDeadCode);
+        int familyCount = (int) families.stream()
+                .filter(family -> !"not-recorded".equals(family.status()))
+                .count();
+        int candidateFamilyCount = (int) families.stream()
+                .filter(family -> family.candidateCount() > 0)
+                .count();
+        int blockedFamilyCount = (int) families.stream()
+                .filter(family -> "blocked-by-proof".equals(family.status()))
+                .count();
+        String status = previewReadinessStatus(families);
+        String familySummary = families.stream()
+                .map(family -> family.family() + "=" + family.status())
+                .collect(java.util.stream.Collectors.joining(", "));
+        return new PreviewReadinessEvidence(status, familyCount, candidateFamilyCount, blockedFamilyCount, familySummary);
+    }
+
+    private static String previewReadinessStatus(List<PreviewFamilyReadiness> families) {
+        if (families.stream().allMatch(family -> "not-recorded".equals(family.status()))) {
+            return "not-recorded";
+        }
+        if (families.stream().anyMatch(family -> "blocked-by-proof".equals(family.status()))) {
+            return "blocked-by-proof";
+        }
+        if (families.stream().anyMatch(family -> "ready-for-runtime-equivalence-review".equals(family.status()))) {
+            return "ready-for-runtime-equivalence-review";
+        }
+        if (families.stream().anyMatch(family -> "candidates-recorded".equals(family.status()))) {
+            return "candidates-recorded";
+        }
+        return "no-candidates";
+    }
+
+    private static String previewFamilyStatus(int passCount, int candidateCount, int blockerCount) {
+        if (passCount <= 0) {
+            return "not-recorded";
+        }
+        if (candidateCount <= 0 && blockerCount <= 0) {
+            return "no-candidates";
+        }
+        if (blockerCount > 0) {
+            return "blocked-by-proof";
+        }
+        if (candidateCount > 0) {
+            return "ready-for-runtime-equivalence-review";
+        }
+        return "candidates-recorded";
+    }
+
     private static int parseNonNegativeInt(String value) {
         try {
             return Math.max(0, Integer.parseInt(value));
@@ -1057,6 +1154,27 @@ public final class GpuRuntimeCompileArtifactDumper {
             boolean integerOverflowProven,
             boolean floatingPointRoundingProven
     ) {
+        private int skippedCount() {
+            return skippedNonPlainLiteralCount
+                    + skippedDivideByZeroCount
+                    + skippedNonEvenDivisionCount
+                    + skippedUnsupportedOperatorCount
+                    + skippedNonLiteralOperandCount;
+        }
+
+        private int proofBlockerCount() {
+            if (candidateCount <= 0) {
+                return 0;
+            }
+            int blockers = 0;
+            if (!integerOverflowProven) {
+                blockers++;
+            }
+            if (!floatingPointRoundingProven) {
+                blockers++;
+            }
+            return blockers;
+        }
     }
 
     private record SafeLocalCsePreviewEvidence(
@@ -1073,6 +1191,25 @@ public final class GpuRuntimeCompileArtifactDumper {
             boolean dominanceProven,
             boolean sideEffectFreedomProven
     ) {
+        private int blockedCount() {
+            return blockedUnsupportedOperatorCount
+                    + blockedImpureOperandCount
+                    + blockedControlFlowBoundaryCount;
+        }
+
+        private int proofBlockerCount() {
+            if (duplicateExpressionCount <= 0) {
+                return 0;
+            }
+            int blockers = 0;
+            if (!dominanceProven) {
+                blockers++;
+            }
+            if (!sideEffectFreedomProven) {
+                blockers++;
+            }
+            return blockers;
+        }
     }
 
     private record TypedDeadCodePreviewEvidence(
@@ -1086,6 +1223,30 @@ public final class GpuRuntimeCompileArtifactDumper {
             boolean runtimeEquivalenceRequiredBeforeRewrite,
             boolean approvalRequiredBeforeRewrite,
             boolean sideEffectFreedomProven
+    ) {
+        private int blockedCount() {
+            return blockedMissingRootCount
+                    + blockedMissingChildReferenceCount
+                    + blockedSideEffectingUnreachableNodeCount;
+        }
+
+        private int proofBlockerCount() {
+            if (unreachableNodeCount <= 0) {
+                return 0;
+            }
+            return sideEffectFreedomProven ? 0 : 1;
+        }
+    }
+
+    private record PreviewFamilyReadiness(String family, String status, int candidateCount, int blockerCount) {
+    }
+
+    private record PreviewReadinessEvidence(
+            String status,
+            int familyCount,
+            int candidateFamilyCount,
+            int blockedFamilyCount,
+            String familySummary
     ) {
     }
 

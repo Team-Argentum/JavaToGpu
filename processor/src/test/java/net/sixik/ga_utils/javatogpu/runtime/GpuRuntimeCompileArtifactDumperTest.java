@@ -2186,6 +2186,11 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(evidence.contains("typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=true"));
         assertTrue(evidence.contains("typedDeadCodePreview.approvalRequiredBeforeRewrite=true"));
         assertTrue(evidence.contains("typedDeadCodePreview.sideEffectFreedomProven=false"));
+        assertTrue(evidence.contains("previewReadiness.status=blocked-by-proof"));
+        assertTrue(evidence.contains("previewReadiness.family.count=3"));
+        assertTrue(evidence.contains("previewReadiness.candidateFamily.count=3"));
+        assertTrue(evidence.contains("previewReadiness.blockedFamily.count=3"));
+        assertTrue(evidence.contains("previewReadiness.familySummary=constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof"));
         assertTrue(evidence.contains("pass.0.passVersion=javatogpu.ir-optimizer.noop:1"));
         assertTrue(evidence.contains("pass.1.passVersion=javatogpu.ir-optimizer.text-canonicalization:1"));
         assertTrue(evidence.contains("pass.2.passVersion=javatogpu.ir-optimizer.constant-folding-preview:1"));
