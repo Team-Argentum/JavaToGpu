@@ -115,6 +115,33 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("optimizerRewriteSelection.mutationAllowed=false\n");
         builder.append("optimizerRewriteSelection.selectionApplied=false\n");
         builder.append("optimizerRewriteSelection.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteProof.statuses=")
+                .append(summary.optimizerRewriteProofStatuses())
+                .append('\n');
+        builder.append("optimizerRewriteProof.firstBlockers=")
+                .append(summary.optimizerRewriteProofFirstBlockers())
+                .append('\n');
+        builder.append("optimizerRewriteProof.proofAccepted=false\n");
+        builder.append("optimizerRewriteProof.runtimeEquivalencePayload.complete=false\n");
+        builder.append("optimizerRewriteProof.rollbackClean=false\n");
+        builder.append("optimizerRewriteProof.approvalAccepted=false\n");
+        builder.append("optimizerRewriteProof.mutationAllowed=false\n");
+        builder.append("optimizerRewriteProof.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteReviewPackage.statuses=")
+                .append(summary.optimizerRewriteReviewPackageStatuses())
+                .append('\n');
+        builder.append("optimizerRewriteReviewPackage.firstBlockers=")
+                .append(summary.optimizerRewriteReviewPackageFirstBlockers())
+                .append('\n');
+        builder.append("optimizerRewriteReviewPackage.complete=false\n");
+        builder.append("optimizerRewriteReviewPackage.proofAccepted=false\n");
+        builder.append("optimizerRewriteReviewPackage.runtimeEquivalencePayload.complete=false\n");
+        builder.append("optimizerRewriteReviewPackage.rollbackClean=false\n");
+        builder.append("optimizerRewriteReviewPackage.approvalAccepted=false\n");
+        builder.append("optimizerRewriteReviewPackage.mutationAllowed=false\n");
+        builder.append("optimizerRewriteReviewPackage.selectionApplied=false\n");
+        builder.append("optimizerRewriteReviewPackage.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteReviewPackage.manualReviewOnly=true\n");
         builder.append("optimizerRule.count=").append(summary.optimizerRuleCount()).append('\n');
         builder.append("optimizerRule.summary=").append(summary.optimizerRuleSummary()).append('\n');
         builder.append("optimizerRule.details=").append(summary.optimizerRuleDetails()).append('\n');

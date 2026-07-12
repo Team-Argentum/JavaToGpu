@@ -38,6 +38,10 @@ public record GpuRuntimeOptimizerDriftArtifact(
         String rewriteSketchConflictFirstBlocker,
         String rewriteSelectionStatus,
         String rewriteSelectionFirstBlocker,
+        String rewriteProofStatus,
+        String rewriteProofFirstBlocker,
+        String rewriteReviewPackageStatus,
+        String rewriteReviewPackageFirstBlocker,
         int optimizerRuleCount,
         String optimizerRuleSummary,
         String optimizerRuleDetailsProperties,
@@ -82,6 +86,10 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     "none",
                     "not-required",
                     "no-rewrite-sketches",
+                    "not-required",
+                    "no-proof-candidates",
+                    "not-required",
+                    "no-review-candidates",
                     0,
                     "none",
                     "",
@@ -106,6 +114,8 @@ public record GpuRuntimeOptimizerDriftArtifact(
         String rewriteSketchFirstBlocker = rewriteSketchFirstBlocker(report);
         int rewriteSketchConflictCount = rewriteSketchConflictCount(report);
         String rewriteSketchConflictFirstBlocker = rewriteSketchConflictFirstBlocker(report);
+        String rewriteProofStatus = rewriteProofStatus(report, rewriteSketchReadyCount);
+        String rewriteProofFirstBlocker = rewriteProofFirstBlocker(report);
         return new GpuRuntimeOptimizerDriftArtifact(
                 optimizationPassCount(report),
                 count(report, GpuRuntimeIrOptimizationOutcome.APPLIED),
@@ -144,6 +154,15 @@ public record GpuRuntimeOptimizerDriftArtifact(
                         rewriteSketchBlockedCount,
                         rewriteSketchFirstBlocker,
                         rewriteSketchConflictCount
+                ),
+                rewriteProofStatus,
+                rewriteProofFirstBlocker,
+                rewriteReviewPackageStatus(report, rewriteSketchReadyCount),
+                rewriteReviewPackageFirstBlocker(
+                        report,
+                        rewriteSketchReadyCount,
+                        rewriteSketchConflictCount,
+                        rewriteProofFirstBlocker
                 ),
                 optimizerRules.size(),
                 formatOptimizerRuleSummary(optimizerRules),
@@ -215,6 +234,31 @@ public record GpuRuntimeOptimizerDriftArtifact(
         builder.append("rewriteSelection.mutationAllowed=false\n");
         builder.append("rewriteSelection.selectionApplied=false\n");
         builder.append("rewriteSelection.selectedIrReplacement=false\n");
+        builder.append("rewriteProof.status=").append(rewriteProofStatus).append('\n');
+        builder.append("rewriteProof.firstBlocker=").append(rewriteProofFirstBlocker).append('\n');
+        builder.append("rewriteProof.proofAccepted=false\n");
+        builder.append("rewriteProof.runtimeEquivalencePayload.present=false\n");
+        builder.append("rewriteProof.runtimeEquivalencePayload.complete=false\n");
+        builder.append("rewriteProof.rollbackEvidence.present=false\n");
+        builder.append("rewriteProof.rollbackClean=false\n");
+        builder.append("rewriteProof.approvalAccepted=false\n");
+        builder.append("rewriteProof.mutationAllowed=false\n");
+        builder.append("rewriteProof.selectedIrReplacement=false\n");
+        builder.append("rewriteReviewPackage.status=").append(rewriteReviewPackageStatus).append('\n');
+        builder.append("rewriteReviewPackage.firstBlocker=").append(rewriteReviewPackageFirstBlocker).append('\n');
+        builder.append("rewriteReviewPackage.required=").append(rewriteSketchReadyCount > 0).append('\n');
+        builder.append("rewriteReviewPackage.complete=false\n");
+        builder.append("rewriteReviewPackage.conflict.count=").append(rewriteSketchConflictCount).append('\n');
+        builder.append("rewriteReviewPackage.proofAccepted=false\n");
+        builder.append("rewriteReviewPackage.runtimeEquivalencePayload.present=false\n");
+        builder.append("rewriteReviewPackage.runtimeEquivalencePayload.complete=false\n");
+        builder.append("rewriteReviewPackage.rollbackEvidence.present=false\n");
+        builder.append("rewriteReviewPackage.rollbackClean=false\n");
+        builder.append("rewriteReviewPackage.approvalAccepted=false\n");
+        builder.append("rewriteReviewPackage.mutationAllowed=false\n");
+        builder.append("rewriteReviewPackage.selectionApplied=false\n");
+        builder.append("rewriteReviewPackage.selectedIrReplacement=false\n");
+        builder.append("rewriteReviewPackage.manualReviewOnly=true\n");
         builder.append("optimizerRule.count=").append(optimizerRuleCount).append('\n');
         builder.append("optimizerRule.summary=").append(optimizerRuleSummary).append('\n');
         if (optimizerRuleDetailsProperties != null && !optimizerRuleDetailsProperties.isBlank()) {
@@ -487,6 +531,100 @@ public record GpuRuntimeOptimizerDriftArtifact(
         return rewriteSketchReadyCount > 0 ? "rewrite-builder-not-implemented" : "no-rewrite-sketches";
     }
 
+    private static String rewriteProofStatus(GpuRuntimeIrOptimizationReport report, int rewriteSketchReadyCount) {
+        String fallback = rewriteSketchReadyCount == 0 ? "not-required" : "blocked";
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                String status = passReport.proofArtifact().fields().getOrDefault("rewriteProof.status", "");
+                if ("blocked".equals(status)) {
+                    return status;
+                }
+                if (!status.isBlank()) {
+                    fallback = status;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static String rewriteProofFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        String fallback = "no-proof-candidates";
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("rewriteProof.firstBlocker", "");
+                if (!blocker.isBlank() && !"none".equals(blocker) && !"no-proof-candidates".equals(blocker)) {
+                    return blocker;
+                }
+                if (!blocker.isBlank()) {
+                    fallback = blocker;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static String rewriteReviewPackageStatus(GpuRuntimeIrOptimizationReport report, int rewriteSketchReadyCount) {
+        String fallback = rewriteSketchReadyCount == 0 ? "not-required" : "blocked";
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                String status = passReport.proofArtifact().fields().getOrDefault("rewriteReviewPackage.status", "");
+                if ("blocked".equals(status)) {
+                    return status;
+                }
+                if (!status.isBlank()) {
+                    fallback = status;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static String rewriteReviewPackageFirstBlocker(
+            GpuRuntimeIrOptimizationReport report,
+            int rewriteSketchReadyCount,
+            int rewriteSketchConflictCount,
+            String rewriteProofFirstBlocker
+    ) {
+        String fallback = derivedRewriteReviewPackageFirstBlocker(
+                rewriteSketchReadyCount,
+                rewriteSketchConflictCount,
+                rewriteProofFirstBlocker
+        );
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                String blocker = passReport.proofArtifact().fields().getOrDefault("rewriteReviewPackage.firstBlocker", "");
+                if (!blocker.isBlank() && !"none".equals(blocker) && !"no-review-candidates".equals(blocker)) {
+                    return blocker;
+                }
+                if (!blocker.isBlank()) {
+                    fallback = blocker;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static String derivedRewriteReviewPackageFirstBlocker(
+            int rewriteSketchReadyCount,
+            int rewriteSketchConflictCount,
+            String rewriteProofFirstBlocker
+    ) {
+        if (rewriteSketchReadyCount == 0) {
+            return "no-review-candidates";
+        }
+        if (rewriteSketchConflictCount > 0) {
+            return "rewrite-sketch-conflict-resolution-required";
+        }
+        if (rewriteProofFirstBlocker == null
+                || rewriteProofFirstBlocker.isBlank()
+                || "none".equals(rewriteProofFirstBlocker)
+                || "no-proof-candidates".equals(rewriteProofFirstBlocker)) {
+            return "runtime-equivalence-payload-missing";
+        }
+        return rewriteProofFirstBlocker;
+    }
+
     private static String firstRuleBlocker(Map<String, String> fields, String suffix) {
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             String blocker = entry.getValue();
@@ -564,6 +702,18 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     .append(rule.rewriteSketchBlockedCount())
                     .append(", rewriteSketchFirstBlocker=")
                     .append(rule.rewriteSketchFirstBlocker())
+                    .append(", rewriteSelectionStatus=")
+                    .append(rule.rewriteSelectionStatus())
+                    .append(", rewriteSelectionFirstBlocker=")
+                    .append(rule.rewriteSelectionFirstBlocker())
+                    .append(", rewriteProofStatus=")
+                    .append(rule.rewriteProofStatus())
+                    .append(", rewriteProofFirstBlocker=")
+                    .append(rule.rewriteProofFirstBlocker())
+                    .append(", rewriteReviewPackageStatus=")
+                    .append(rule.rewriteReviewPackageStatus())
+                    .append(", rewriteReviewPackageFirstBlocker=")
+                    .append(rule.rewriteReviewPackageFirstBlocker())
                     .append(", firstBlocker=")
                     .append(rule.firstBlocker())
                     .append(']');
@@ -605,6 +755,20 @@ public record GpuRuntimeOptimizerDriftArtifact(
             builder.append(prefix).append("rewriteSketch.rewriteBuilderImplemented=false\n");
             builder.append(prefix).append("rewriteSketch.mutationAllowed=false\n");
             builder.append(prefix).append("rewriteSketch.selectedIrReplacement=false\n");
+            builder.append(prefix).append("rewriteSelection.status=").append(rule.rewriteSelectionStatus()).append('\n');
+            builder.append(prefix).append("rewriteSelection.firstBlocker=").append(rule.rewriteSelectionFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteSelection.selectionApplied=false\n");
+            builder.append(prefix).append("rewriteSelection.selectedIrReplacement=false\n");
+            builder.append(prefix).append("rewriteProof.status=").append(rule.rewriteProofStatus()).append('\n');
+            builder.append(prefix).append("rewriteProof.firstBlocker=").append(rule.rewriteProofFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteProof.proofAccepted=false\n");
+            builder.append(prefix).append("rewriteProof.runtimeEquivalencePayload.complete=false\n");
+            builder.append(prefix).append("rewriteProof.rollbackClean=false\n");
+            builder.append(prefix).append("rewriteProof.selectedIrReplacement=false\n");
+            builder.append(prefix).append("rewriteReviewPackage.status=").append(rule.rewriteReviewPackageStatus()).append('\n');
+            builder.append(prefix).append("rewriteReviewPackage.firstBlocker=").append(rule.rewriteReviewPackageFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteReviewPackage.complete=false\n");
+            builder.append(prefix).append("rewriteReviewPackage.selectedIrReplacement=false\n");
             builder.append(prefix).append("firstBlocker=").append(rule.firstBlocker()).append('\n');
             index++;
         }
@@ -757,6 +921,12 @@ public record GpuRuntimeOptimizerDriftArtifact(
             int rewriteSketchReadyCount,
             int rewriteSketchBlockedCount,
             String rewriteSketchFirstBlocker,
+            String rewriteSelectionStatus,
+            String rewriteSelectionFirstBlocker,
+            String rewriteProofStatus,
+            String rewriteProofFirstBlocker,
+            String rewriteReviewPackageStatus,
+            String rewriteReviewPackageFirstBlocker,
             String firstBlocker
     ) {
 
@@ -784,6 +954,12 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     0,
                     0,
                     "none",
+                    "not-required",
+                    "no-rewrite-sketches",
+                    "not-required",
+                    "no-proof-candidates",
+                    "not-required",
+                    "no-review-candidates",
                     "none"
             );
         }
@@ -804,6 +980,36 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     && !"none".equals(nextSketchBlocker)) {
                 sketchBlocker = nextSketchBlocker;
             }
+            String selectionStatus = firstNonDefault(
+                    rewriteSelectionStatus,
+                    fields.getOrDefault(prefix + ".rewriteSelection.status", "not-required"),
+                    "not-required"
+            );
+            String selectionBlocker = firstNonDefault(
+                    rewriteSelectionFirstBlocker,
+                    fields.getOrDefault(prefix + ".rewriteSelection.firstBlocker", "no-rewrite-sketches"),
+                    "no-rewrite-sketches"
+            );
+            String proofStatus = firstNonDefault(
+                    rewriteProofStatus,
+                    fields.getOrDefault(prefix + ".rewriteProof.status", "not-required"),
+                    "not-required"
+            );
+            String proofBlocker = firstNonDefault(
+                    rewriteProofFirstBlocker,
+                    fields.getOrDefault(prefix + ".rewriteProof.firstBlocker", "no-proof-candidates"),
+                    "no-proof-candidates"
+            );
+            String reviewPackageStatus = firstNonDefault(
+                    rewriteReviewPackageStatus,
+                    fields.getOrDefault(prefix + ".rewriteReviewPackage.status", "not-required"),
+                    "not-required"
+            );
+            String reviewPackageBlocker = firstNonDefault(
+                    rewriteReviewPackageFirstBlocker,
+                    fields.getOrDefault(prefix + ".rewriteReviewPackage.firstBlocker", "no-review-candidates"),
+                    "no-review-candidates"
+            );
             String nextBlocker = fields.getOrDefault(
                     prefix + ".firstBlocker",
                     fields.getOrDefault(prefix + ".replacementPlan.firstBlocker", "none")
@@ -834,8 +1040,24 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     rewriteSketchReadyCount + parseInt(fields.get(prefix + ".rewriteSketch.ready.count")),
                     rewriteSketchBlockedCount + parseInt(fields.get(prefix + ".rewriteSketch.blocked.count")),
                     sketchBlocker,
+                    selectionStatus,
+                    selectionBlocker,
+                    proofStatus,
+                    proofBlocker,
+                    reviewPackageStatus,
+                    reviewPackageBlocker,
                     blocker
             );
+        }
+
+        private static String firstNonDefault(String current, String next, String defaultValue) {
+            if (current != null && !current.isBlank() && !defaultValue.equals(current) && !"unknown".equals(current)) {
+                return current;
+            }
+            if (next != null && !next.isBlank() && !defaultValue.equals(next) && !"unknown".equals(next)) {
+                return next;
+            }
+            return defaultValue;
         }
 
         private static String firstKnown(String current, String next) {

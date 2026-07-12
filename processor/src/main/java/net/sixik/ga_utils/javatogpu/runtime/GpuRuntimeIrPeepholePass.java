@@ -34,7 +34,7 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         GpuRuntimeIrPeepholeRuleRegistry.Analysis analysis = artifact
                 .map(value -> ruleRegistry.analyze(request, value))
                 .orElseGet(() -> new GpuRuntimeIrPeepholeRuleRegistry.Analysis(List.of(), List.of(), false));
-        Map<String, String> fields = diagnosticFields(artifact, request, analysis);
+        Map<String, String> fields = diagnosticFields(artifact, request, analysis, identity);
         GpuRuntimeIrOptimizationPassReport passReport = GpuRuntimeIrOptimizationPassReport.skipped(
                 VERSION,
                 identity,
@@ -65,7 +65,8 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
     private Map<String, String> diagnosticFields(
             Optional<IrGpuArtifact> artifact,
             GpuRuntimeIrOptimizationRequest request,
-            GpuRuntimeIrPeepholeRuleRegistry.Analysis analysis
+            GpuRuntimeIrPeepholeRuleRegistry.Analysis analysis,
+            String originalIrIdentity
     ) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         fields.put("optimizerFamily", "peephole");
@@ -101,15 +102,21 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         List<GpuRuntimeIrPeepholeRewriteSketchConflict> rewriteSketchConflicts = rewriteSketchConflicts(rewriteSketches);
         appendRewriteSketchFields(fields, "rewriteSketch", rewriteSketches);
         appendRewriteSketchConflictFields(fields, "rewriteSketch.conflict", rewriteSketchConflicts);
-        fields.putAll(GpuRuntimeIrPeepholeRewriteSelectionReadiness
-                .from(rewriteSketches, rewriteSketchConflicts)
-                .fields("rewriteSelection"));
+        GpuRuntimeIrPeepholeRewriteSelectionReadiness selectionReadiness =
+                GpuRuntimeIrPeepholeRewriteSelectionReadiness.from(rewriteSketches, rewriteSketchConflicts);
+        fields.putAll(selectionReadiness.fields("rewriteSelection"));
+        GpuRuntimeIrPeepholeRewriteProofReadiness proofReadiness =
+                GpuRuntimeIrPeepholeRewriteProofReadiness.from(selectionReadiness, originalIrIdentity);
+        fields.putAll(proofReadiness.fields("rewriteProof"));
+        fields.putAll(GpuRuntimeIrPeepholeRewriteReviewPackage
+                .from(selectionReadiness, proofReadiness)
+                .fields("rewriteReviewPackage"));
         fields.put("rule.mix.candidate.count", Integer.toString(candidateCount(analysis, "mix")));
         fields.put("rule.madFma.candidate.count", Integer.toString(candidateCount(analysis, "madFma")));
         fields.put("rule.clamp.candidate.count", Integer.toString(candidateCount(analysis, "clamp")));
         fields.put("rule.step.candidate.count", Integer.toString(candidateCount(analysis, "step")));
         fields.put("rule.dot.candidate.count", Integer.toString(candidateCount(analysis, "dot")));
-        appendRuleFields(fields, analysis);
+        appendRuleFields(fields, analysis, originalIrIdentity);
         fields.put("rule.execution.count", Integer.toString(analysis.executionReports().size()));
         fields.put("rule.execution.failedContinued.count", Long.toString(analysis.executionReports().stream()
                 .filter(report -> report.outcome() == net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome.FAILED_CONTINUED)
@@ -139,7 +146,8 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
 
     private void appendRuleFields(
             LinkedHashMap<String, String> fields,
-            GpuRuntimeIrPeepholeRuleRegistry.Analysis analysis
+            GpuRuntimeIrPeepholeRuleRegistry.Analysis analysis,
+            String originalIrIdentity
     ) {
         java.util.LinkedHashMap<String, List<GpuRuntimeIrPeepholeRuleReport>> reportsByRule = new java.util.LinkedHashMap<>();
         for (GpuRuntimeIrPeepholeRuleReport report : analysis.ruleReports()) {
@@ -174,7 +182,19 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                     ? executionProofStatus(rule, analysis)
                     : reports.get(0).proofStatus());
             appendReplacementPlanFields(fields, prefix, reports);
-            appendRewriteSketchFields(fields, prefix + ".rewriteSketch", rewriteSketches(reports));
+            List<GpuRuntimeIrPeepholeRewriteSketch> ruleSketches = rewriteSketches(reports);
+            List<GpuRuntimeIrPeepholeRewriteSketchConflict> ruleConflicts = rewriteSketchConflicts(ruleSketches);
+            appendRewriteSketchFields(fields, prefix + ".rewriteSketch", ruleSketches);
+            appendRewriteSketchConflictFields(fields, prefix + ".rewriteSketch.conflict", ruleConflicts);
+            GpuRuntimeIrPeepholeRewriteSelectionReadiness ruleSelectionReadiness =
+                    GpuRuntimeIrPeepholeRewriteSelectionReadiness.from(ruleSketches, ruleConflicts);
+            fields.putAll(ruleSelectionReadiness.fields(prefix + ".rewriteSelection"));
+            GpuRuntimeIrPeepholeRewriteProofReadiness ruleProofReadiness =
+                    GpuRuntimeIrPeepholeRewriteProofReadiness.from(ruleSelectionReadiness, originalIrIdentity);
+            fields.putAll(ruleProofReadiness.fields(prefix + ".rewriteProof"));
+            fields.putAll(GpuRuntimeIrPeepholeRewriteReviewPackage
+                    .from(ruleSelectionReadiness, ruleProofReadiness)
+                    .fields(prefix + ".rewriteReviewPackage"));
             fields.put(prefix + ".firstBlocker", ruleFirstBlocker(fields, prefix, reports.isEmpty()));
         }
     }

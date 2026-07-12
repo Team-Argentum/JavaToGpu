@@ -2025,6 +2025,12 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rewriteSketch.conflict.firstBlocker", "rewrite-sketch-covered-node-overlap"),
                         Map.entry("rewriteSelection.status", "blocked"),
                         Map.entry("rewriteSelection.firstBlocker", "rewrite-sketch-conflict-resolution-required"),
+                        Map.entry("rewriteProof.status", "blocked"),
+                        Map.entry("rewriteProof.firstBlocker", "rewrite-sketch-conflict-resolution-required"),
+                        Map.entry("rewriteReviewPackage.status", "blocked"),
+                        Map.entry("rewriteReviewPackage.firstBlocker", "rewrite-sketch-conflict-resolution-required"),
+                        Map.entry("rewriteReviewPackage.complete", "false"),
+                        Map.entry("rewriteReviewPackage.selectedIrReplacement", "false"),
                         Map.entry("rule.count", "2"),
                         Map.entry("rule.0.id", "madFma"),
                         Map.entry("rule.0.version", "peephole-rule:mad-fma-v1"),
@@ -2049,6 +2055,14 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.0.rewriteSketch.ready.count", "2"),
                         Map.entry("rule.0.rewriteSketch.blocked.count", "1"),
                         Map.entry("rule.0.rewriteSketch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteSelection.status", "blocked"),
+                        Map.entry("rule.0.rewriteSelection.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteProof.status", "blocked"),
+                        Map.entry("rule.0.rewriteProof.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.0.rewriteReviewPackage.status", "blocked"),
+                        Map.entry("rule.0.rewriteReviewPackage.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.0.rewriteReviewPackage.complete", "false"),
+                        Map.entry("rule.0.rewriteReviewPackage.selectedIrReplacement", "false"),
                         Map.entry("rule.0.firstBlocker", "multiply-operands-incomplete"),
                         Map.entry("rule.1.id", "clamp"),
                         Map.entry("rule.1.version", "peephole-rule:clamp-v1"),
@@ -2073,6 +2087,14 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.1.rewriteSketch.ready.count", "3"),
                         Map.entry("rule.1.rewriteSketch.blocked.count", "0"),
                         Map.entry("rule.1.rewriteSketch.firstBlocker", "none"),
+                        Map.entry("rule.1.rewriteSelection.status", "blocked"),
+                        Map.entry("rule.1.rewriteSelection.firstBlocker", "rewrite-builder-not-implemented"),
+                        Map.entry("rule.1.rewriteProof.status", "blocked"),
+                        Map.entry("rule.1.rewriteProof.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.1.rewriteReviewPackage.status", "blocked"),
+                        Map.entry("rule.1.rewriteReviewPackage.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.1.rewriteReviewPackage.complete", "false"),
+                        Map.entry("rule.1.rewriteReviewPackage.selectedIrReplacement", "false"),
                         Map.entry("rule.1.firstBlocker", "none")
                 )
         ));
@@ -2129,6 +2151,20 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("rewriteSelection.mutationAllowed=false"));
         assertTrue(drift.contains("rewriteSelection.selectionApplied=false"));
         assertTrue(drift.contains("rewriteSelection.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteProof.status=blocked"));
+        assertTrue(drift.contains("rewriteProof.firstBlocker=rewrite-sketch-conflict-resolution-required"));
+        assertTrue(drift.contains("rewriteProof.proofAccepted=false"));
+        assertTrue(drift.contains("rewriteProof.runtimeEquivalencePayload.present=false"));
+        assertTrue(drift.contains("rewriteProof.runtimeEquivalencePayload.complete=false"));
+        assertTrue(drift.contains("rewriteProof.rollbackEvidence.present=false"));
+        assertTrue(drift.contains("rewriteProof.rollbackClean=false"));
+        assertTrue(drift.contains("rewriteProof.approvalAccepted=false"));
+        assertTrue(drift.contains("rewriteProof.mutationAllowed=false"));
+        assertTrue(drift.contains("rewriteProof.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteReviewPackage.status=blocked"));
+        assertTrue(drift.contains("rewriteReviewPackage.firstBlocker=rewrite-sketch-conflict-resolution-required"));
+        assertTrue(drift.contains("rewriteReviewPackage.complete=false"));
+        assertTrue(drift.contains("rewriteReviewPackage.selectedIrReplacement=false"));
         assertTrue(drift.contains("optimizerRule.count=2"));
         assertTrue(drift.contains("optimizerRule.0.id=madFma"));
         assertTrue(drift.contains("optimizerRule.0.blocked.count=1"));
@@ -2139,12 +2175,22 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.ready.count=2"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.blocked.count=1"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSelection.status=blocked"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSelection.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.status=blocked"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.firstBlocker=runtime-equivalence-payload-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.proofAccepted=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.status=blocked"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.firstBlocker=runtime-equivalence-payload-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.complete=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.selectedIrReplacement=false"));
         assertTrue(drift.contains("optimizerRule.0.firstBlocker=multiply-operands-incomplete"));
         assertTrue(drift.contains("optimizerRule.1.id=clamp"));
         assertTrue(drift.contains("optimizerRule.1.skipped.count=1"));
         assertTrue(drift.contains("optimizerRule.summary=madFma[candidates=2, proposals=0, applied=0, skipped=0, blocked=1"));
         assertTrue(drift.contains("planValidations=3, invalidPlanValidations=1, planValidationFirstBlocker=replacement-plan-root-missing"));
-        assertTrue(drift.contains("rewriteSketches=3, readySketches=2, blockedSketches=1, rewriteSketchFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteSketches=3, readySketches=2, blockedSketches=1, rewriteSketchFirstBlocker=replacement-plan-root-missing, rewriteSelectionStatus=blocked, rewriteSelectionFirstBlocker=replacement-plan-root-missing, rewriteProofStatus=blocked, rewriteProofFirstBlocker=runtime-equivalence-payload-missing"));
         assertTrue(drift.contains("optimizerFamily.count=1"));
         assertTrue(drift.contains("optimizerFamily.summary=peephole[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"));
         assertTrue(drift.contains("selectedRuntimeIrStage=original"));

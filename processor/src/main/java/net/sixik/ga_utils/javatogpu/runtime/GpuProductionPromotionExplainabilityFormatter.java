@@ -239,6 +239,22 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 "optimizerRewriteSelection.firstBlockers",
                 summarizeRewriteSelectionFirstBlockers(gate, kernelCount)
         );
+        String optimizerRewriteProofStatuses = gate.getProperty(
+                "optimizerRewriteProof.statuses",
+                summarizeRewriteProofStatuses(gate, kernelCount)
+        );
+        String optimizerRewriteProofFirstBlockers = gate.getProperty(
+                "optimizerRewriteProof.firstBlockers",
+                summarizeRewriteProofFirstBlockers(gate, kernelCount)
+        );
+        String optimizerRewriteReviewPackageStatuses = gate.getProperty(
+                "optimizerRewriteReviewPackage.statuses",
+                summarizeRewriteReviewPackageStatuses(gate, kernelCount)
+        );
+        String optimizerRewriteReviewPackageFirstBlockers = gate.getProperty(
+                "optimizerRewriteReviewPackage.firstBlockers",
+                summarizeRewriteReviewPackageFirstBlockers(gate, kernelCount)
+        );
         int optimizerRuleCount = parsePositiveInt(gate.getProperty(
                 "optimizerRule.count",
                 Integer.toString(sumKernelProperty(gate, kernelCount, "runtimeOptimizerDrift.optimizerRule.count"))
@@ -534,6 +550,25 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("optimizerRewriteSelection.mutationAllowed=false\n");
         builder.append("optimizerRewriteSelection.selectionApplied=false\n");
         builder.append("optimizerRewriteSelection.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteProof.statuses=").append(optimizerRewriteProofStatuses).append('\n');
+        builder.append("optimizerRewriteProof.firstBlockers=").append(optimizerRewriteProofFirstBlockers).append('\n');
+        builder.append("optimizerRewriteProof.proofAccepted=false\n");
+        builder.append("optimizerRewriteProof.runtimeEquivalencePayload.complete=false\n");
+        builder.append("optimizerRewriteProof.rollbackClean=false\n");
+        builder.append("optimizerRewriteProof.approvalAccepted=false\n");
+        builder.append("optimizerRewriteProof.mutationAllowed=false\n");
+        builder.append("optimizerRewriteProof.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteReviewPackage.statuses=").append(optimizerRewriteReviewPackageStatuses).append('\n');
+        builder.append("optimizerRewriteReviewPackage.firstBlockers=").append(optimizerRewriteReviewPackageFirstBlockers).append('\n');
+        builder.append("optimizerRewriteReviewPackage.complete=false\n");
+        builder.append("optimizerRewriteReviewPackage.proofAccepted=false\n");
+        builder.append("optimizerRewriteReviewPackage.runtimeEquivalencePayload.complete=false\n");
+        builder.append("optimizerRewriteReviewPackage.rollbackClean=false\n");
+        builder.append("optimizerRewriteReviewPackage.approvalAccepted=false\n");
+        builder.append("optimizerRewriteReviewPackage.mutationAllowed=false\n");
+        builder.append("optimizerRewriteReviewPackage.selectionApplied=false\n");
+        builder.append("optimizerRewriteReviewPackage.selectedIrReplacement=false\n");
+        builder.append("optimizerRewriteReviewPackage.manualReviewOnly=true\n");
         builder.append("optimizerRule.count=").append(optimizerRuleCount).append('\n');
         builder.append("optimizerRule.summary=").append(optimizerRuleSummary).append('\n');
         builder.append("optimizerRule.details=").append(optimizerRuleDetails).append('\n');
@@ -915,6 +950,80 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         return summarizeCounts(counts);
     }
 
+    private static String summarizeRewriteProofStatuses(Properties properties, int kernelCount) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteProof.status",
+                    "not-required"
+            );
+            if (!value.isBlank() && !"unknown".equals(value) && !"not-required".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteProofFirstBlockers(Properties properties, int kernelCount) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteProof.firstBlocker",
+                    "no-proof-candidates"
+            );
+            if (!value.isBlank()
+                    && !"none".equals(value)
+                    && !"unknown".equals(value)
+                    && !"no-proof-candidates".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteReviewPackageStatuses(Properties properties, int kernelCount) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteReviewPackage.status",
+                    "not-required"
+            );
+            if (!value.isBlank() && !"unknown".equals(value) && !"not-required".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteReviewPackageFirstBlockers(Properties properties, int kernelCount) {
+        if (kernelCount <= 0) {
+            return "none";
+        }
+        java.util.LinkedHashMap<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker",
+                    "no-review-candidates"
+            );
+            if (!value.isBlank()
+                    && !"none".equals(value)
+                    && !"unknown".equals(value)
+                    && !"no-review-candidates".equals(value)) {
+                counts.merge(value, 1, Integer::sum);
+            }
+        }
+        return summarizeCounts(counts);
+    }
+
     private static String summarizeCounts(java.util.LinkedHashMap<String, Integer> counts) {
         if (counts.isEmpty()) {
             return "none";
@@ -961,6 +1070,10 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                         parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.ready.count", "0")),
                         parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.blocked.count", "0")),
                         properties.getProperty(prefix + "rewriteSketch.firstBlocker", "none"),
+                        properties.getProperty(prefix + "rewriteSelection.status", "not-required"),
+                        properties.getProperty(prefix + "rewriteSelection.firstBlocker", "no-rewrite-sketches"),
+                        properties.getProperty(prefix + "rewriteProof.status", "not-required"),
+                        properties.getProperty(prefix + "rewriteProof.firstBlocker", "no-proof-candidates"),
                         properties.getProperty(prefix + "firstBlocker", properties.getProperty(prefix + "replacementPlan.firstBlocker", "none"))
                 ));
             }
@@ -1004,6 +1117,14 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                     .append(rule.rewriteSketchBlockedCount())
                     .append(", rewriteSketchFirstBlocker=")
                     .append(rule.rewriteSketchFirstBlocker())
+                    .append(", rewriteSelectionStatus=")
+                    .append(rule.rewriteSelectionStatus())
+                    .append(", rewriteSelectionFirstBlocker=")
+                    .append(rule.rewriteSelectionFirstBlocker())
+                    .append(", rewriteProofStatus=")
+                    .append(rule.rewriteProofStatus())
+                    .append(", rewriteProofFirstBlocker=")
+                    .append(rule.rewriteProofFirstBlocker())
                     .append(", firstBlocker=")
                     .append(rule.firstBlocker())
                     .append(']');
@@ -1126,11 +1247,15 @@ public final class GpuProductionPromotionExplainabilityFormatter {
             int rewriteSketchReadyCount,
             int rewriteSketchBlockedCount,
             String rewriteSketchFirstBlocker,
+            String rewriteSelectionStatus,
+            String rewriteSelectionFirstBlocker,
+            String rewriteProofStatus,
+            String rewriteProofFirstBlocker,
             String firstBlocker
     ) {
 
         private static OptimizerRuleAggregate empty(String id) {
-            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", 0, 0, 0, "none", "none");
+            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", 0, 0, 0, "none", "not-required", "no-rewrite-sketches", "not-required", "no-proof-candidates", "none");
         }
 
         private OptimizerRuleAggregate add(
@@ -1150,6 +1275,10 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 int rewriteSketchReadyCount,
                 int rewriteSketchBlockedCount,
                 String nextRewriteSketchBlocker,
+                String nextRewriteSelectionStatus,
+                String nextRewriteSelectionBlocker,
+                String nextRewriteProofStatus,
+                String nextRewriteProofBlocker,
                 String nextBlocker
         ) {
             String blocker = firstBlocker;
@@ -1167,6 +1296,10 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                     && !"none".equals(nextRewriteSketchBlocker)) {
                 sketchBlocker = nextRewriteSketchBlocker;
             }
+            String selectionStatus = firstNonDefault(rewriteSelectionStatus, nextRewriteSelectionStatus, "not-required");
+            String selectionBlocker = firstNonDefault(rewriteSelectionFirstBlocker, nextRewriteSelectionBlocker, "no-rewrite-sketches");
+            String proofStatus = firstNonDefault(rewriteProofStatus, nextRewriteProofStatus, "not-required");
+            String proofBlocker = firstNonDefault(rewriteProofFirstBlocker, nextRewriteProofBlocker, "no-proof-candidates");
             if ("none".equals(blocker)
                     && nextBlocker != null
                     && !nextBlocker.isBlank()
@@ -1191,8 +1324,22 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                     this.rewriteSketchReadyCount + rewriteSketchReadyCount,
                     this.rewriteSketchBlockedCount + rewriteSketchBlockedCount,
                     sketchBlocker,
+                    selectionStatus,
+                    selectionBlocker,
+                    proofStatus,
+                    proofBlocker,
                     blocker
             );
+        }
+
+        private static String firstNonDefault(String current, String next, String defaultValue) {
+            if (current != null && !current.isBlank() && !defaultValue.equals(current) && !"unknown".equals(current)) {
+                return current;
+            }
+            if (next != null && !next.isBlank() && !defaultValue.equals(next) && !"unknown".equals(next)) {
+                return next;
+            }
+            return defaultValue;
         }
     }
 

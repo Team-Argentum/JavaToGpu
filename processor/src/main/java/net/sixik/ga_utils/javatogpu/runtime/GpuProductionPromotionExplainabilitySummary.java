@@ -42,6 +42,10 @@ public record GpuProductionPromotionExplainabilitySummary(
         String optimizerRewriteSketchConflictFirstBlockers,
         String optimizerRewriteSelectionStatuses,
         String optimizerRewriteSelectionFirstBlockers,
+        String optimizerRewriteProofStatuses,
+        String optimizerRewriteProofFirstBlockers,
+        String optimizerRewriteReviewPackageStatuses,
+        String optimizerRewriteReviewPackageFirstBlockers,
         int optimizerRuleCount,
         String optimizerRuleSummary,
         String optimizerRuleDetails,
@@ -120,6 +124,10 @@ public record GpuProductionPromotionExplainabilitySummary(
                 "",
                 0,
                 "",
+                "none",
+                "none",
+                "none",
+                "none",
                 "none",
                 "none",
                 0,
@@ -209,6 +217,10 @@ public record GpuProductionPromotionExplainabilitySummary(
                 properties.getProperty("optimizerRewriteSketch.conflict.firstBlockers", ""),
                 properties.getProperty("optimizerRewriteSelection.statuses", "none"),
                 properties.getProperty("optimizerRewriteSelection.firstBlockers", "none"),
+                properties.getProperty("optimizerRewriteProof.statuses", "none"),
+                properties.getProperty("optimizerRewriteProof.firstBlockers", "none"),
+                properties.getProperty("optimizerRewriteReviewPackage.statuses", "none"),
+                properties.getProperty("optimizerRewriteReviewPackage.firstBlockers", "none"),
                 parsePositiveInt(properties.getProperty("optimizerRule.count", "0")),
                 properties.getProperty("optimizerRule.summary", "none"),
                 properties.getProperty("optimizerRule.details", "none"),
@@ -453,7 +465,19 @@ public record GpuProductionPromotionExplainabilitySummary(
                 || "none".equals(optimizerRewriteSelectionStatuses))
                 && (optimizerRewriteSelectionFirstBlockers == null
                 || optimizerRewriteSelectionFirstBlockers.isBlank()
-                || "none".equals(optimizerRewriteSelectionFirstBlockers))) {
+                || "none".equals(optimizerRewriteSelectionFirstBlockers))
+                && (optimizerRewriteProofStatuses == null
+                || optimizerRewriteProofStatuses.isBlank()
+                || "none".equals(optimizerRewriteProofStatuses))
+                && (optimizerRewriteProofFirstBlockers == null
+                || optimizerRewriteProofFirstBlockers.isBlank()
+                || "none".equals(optimizerRewriteProofFirstBlockers))
+                && (optimizerRewriteReviewPackageStatuses == null
+                || optimizerRewriteReviewPackageStatuses.isBlank()
+                || "none".equals(optimizerRewriteReviewPackageStatuses))
+                && (optimizerRewriteReviewPackageFirstBlockers == null
+                || optimizerRewriteReviewPackageFirstBlockers.isBlank()
+                || "none".equals(optimizerRewriteReviewPackageFirstBlockers))) {
             return "";
         }
         StringBuilder builder = new StringBuilder(", optimizerRewriteSketches=ready=")
@@ -485,6 +509,31 @@ public record GpuProductionPromotionExplainabilitySummary(
             builder.append("/selectionFirstBlockers=").append(optimizerRewriteSelectionFirstBlockers);
         }
         builder.append("/selectionApplied=false");
+        if (optimizerRewriteProofStatuses != null
+                && !optimizerRewriteProofStatuses.isBlank()
+                && !"none".equals(optimizerRewriteProofStatuses)) {
+            builder.append("/proofStatus=").append(optimizerRewriteProofStatuses);
+        }
+        if (optimizerRewriteProofFirstBlockers != null
+                && !optimizerRewriteProofFirstBlockers.isBlank()
+                && !"none".equals(optimizerRewriteProofFirstBlockers)) {
+            builder.append("/proofFirstBlockers=").append(optimizerRewriteProofFirstBlockers);
+        }
+        builder.append("/proofAccepted=false")
+                .append("/runtimeEquivalencePayloadComplete=false")
+                .append("/rollbackClean=false");
+        if (optimizerRewriteReviewPackageStatuses != null
+                && !optimizerRewriteReviewPackageStatuses.isBlank()
+                && !"none".equals(optimizerRewriteReviewPackageStatuses)) {
+            builder.append("/reviewPackageStatus=").append(optimizerRewriteReviewPackageStatuses);
+        }
+        if (optimizerRewriteReviewPackageFirstBlockers != null
+                && !optimizerRewriteReviewPackageFirstBlockers.isBlank()
+                && !"none".equals(optimizerRewriteReviewPackageFirstBlockers)) {
+            builder.append("/reviewPackageFirstBlockers=").append(optimizerRewriteReviewPackageFirstBlockers);
+        }
+        builder.append("/reviewPackageComplete=false")
+                .append("/reviewPackageManualReviewOnly=true");
         return builder.toString();
     }
 
