@@ -96,6 +96,46 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         return entries.stream().mapToInt(Entry::approvalTemplateNotApplicableCount).sum();
     }
 
+    int totalConstantFoldingPreviewPassCount() {
+        return entries.stream().mapToInt(Entry::constantFoldingPreviewPassCount).sum();
+    }
+
+    int totalConstantFoldingPreviewCandidateCount() {
+        return entries.stream().mapToInt(Entry::constantFoldingPreviewCandidateCount).sum();
+    }
+
+    int totalConstantFoldingPreviewSkippedCount() {
+        return entries.stream().mapToInt(Entry::constantFoldingPreviewSkippedCount).sum();
+    }
+
+    int totalSafeLocalCsePreviewPassCount() {
+        return entries.stream().mapToInt(Entry::safeLocalCsePreviewPassCount).sum();
+    }
+
+    int totalSafeLocalCsePreviewCandidateExpressionCount() {
+        return entries.stream().mapToInt(Entry::safeLocalCsePreviewCandidateExpressionCount).sum();
+    }
+
+    int totalSafeLocalCsePreviewDuplicateExpressionCount() {
+        return entries.stream().mapToInt(Entry::safeLocalCsePreviewDuplicateExpressionCount).sum();
+    }
+
+    int totalSafeLocalCsePreviewBlockedCount() {
+        return entries.stream().mapToInt(Entry::safeLocalCsePreviewBlockedCount).sum();
+    }
+
+    int totalTypedDeadCodePreviewPassCount() {
+        return entries.stream().mapToInt(Entry::typedDeadCodePreviewPassCount).sum();
+    }
+
+    int totalTypedDeadCodePreviewUnreachableNodeCount() {
+        return entries.stream().mapToInt(Entry::typedDeadCodePreviewUnreachableNodeCount).sum();
+    }
+
+    int totalTypedDeadCodePreviewBlockedCount() {
+        return entries.stream().mapToInt(Entry::typedDeadCodePreviewBlockedCount).sum();
+    }
+
     String providerSummary() {
         LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
         for (Entry entry : entries) {
@@ -133,12 +173,27 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         markdown.append("- Rolled back count: `").append(totalRolledBackCount()).append("`\n");
         markdown.append("- Approval templates pending: `").append(totalApprovalTemplatePendingCount()).append("`\n");
         markdown.append("- Approval templates not applicable: `").append(totalApprovalTemplateNotApplicableCount()).append("`\n");
+        markdown.append("- Constant folding preview passes: `").append(totalConstantFoldingPreviewPassCount()).append("`\n");
+        markdown.append("- Constant folding preview candidates: `").append(totalConstantFoldingPreviewCandidateCount()).append("`\n");
+        markdown.append("- Constant folding preview skipped blockers: `").append(totalConstantFoldingPreviewSkippedCount()).append("`\n");
+        markdown.append("- Safe local CSE preview passes: `").append(totalSafeLocalCsePreviewPassCount()).append("`\n");
+        markdown.append("- Safe local CSE preview candidate expressions: `")
+                .append(totalSafeLocalCsePreviewCandidateExpressionCount()).append("`\n");
+        markdown.append("- Safe local CSE preview duplicate expressions: `")
+                .append(totalSafeLocalCsePreviewDuplicateExpressionCount()).append("`\n");
+        markdown.append("- Safe local CSE preview blockers: `")
+                .append(totalSafeLocalCsePreviewBlockedCount()).append("`\n");
+        markdown.append("- Typed dead-code preview passes: `").append(totalTypedDeadCodePreviewPassCount()).append("`\n");
+        markdown.append("- Typed dead-code preview unreachable nodes: `")
+                .append(totalTypedDeadCodePreviewUnreachableNodeCount()).append("`\n");
+        markdown.append("- Typed dead-code preview blockers: `")
+                .append(totalTypedDeadCodePreviewBlockedCount()).append("`\n");
         markdown.append("- Providers: `").append(inline(providerSummary())).append("`\n\n");
         if (entries.isEmpty()) {
             return markdown.toString();
         }
-        markdown.append("| Kernel resource | Status | Passes | Proposal-only | Selected | Rolled back | Approval pending | Approval N/A | Providers |\n");
-        markdown.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
+        markdown.append("| Kernel resource | Status | Passes | Proposal-only | Selected | Rolled back | Approval pending | Approval N/A | CF candidates | CF skipped | CSE candidates | CSE duplicates | CSE blocked | TDC unreachable | TDC blocked | Providers |\n");
+        markdown.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
         for (Entry entry : entries) {
             markdown.append("| `").append(table(entry.kernelResource())).append("` | `")
                     .append(table(entry.status())).append("` | `")
@@ -148,6 +203,13 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     .append(entry.rolledBackCount()).append("` | `")
                     .append(entry.approvalTemplatePendingCount()).append("` | `")
                     .append(entry.approvalTemplateNotApplicableCount()).append("` | `")
+                    .append(entry.constantFoldingPreviewCandidateCount()).append("` | `")
+                    .append(entry.constantFoldingPreviewSkippedCount()).append("` | `")
+                    .append(entry.safeLocalCsePreviewCandidateExpressionCount()).append("` | `")
+                    .append(entry.safeLocalCsePreviewDuplicateExpressionCount()).append("` | `")
+                    .append(entry.safeLocalCsePreviewBlockedCount()).append("` | `")
+                    .append(entry.typedDeadCodePreviewUnreachableNodeCount()).append("` | `")
+                    .append(entry.typedDeadCodePreviewBlockedCount()).append("` | `")
                     .append(table(formatProviderCounts(entry.providerCounts()))).append("` |\n");
         }
         markdown.append('\n');
@@ -264,6 +326,39 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             int rolledBackCount,
             int approvalTemplatePendingCount,
             int approvalTemplateNotApplicableCount,
+            int constantFoldingPreviewPassCount,
+            int constantFoldingPreviewCandidateCount,
+            int constantFoldingPreviewSkippedNonPlainLiteralCount,
+            int constantFoldingPreviewSkippedDivideByZeroCount,
+            int constantFoldingPreviewSkippedNonEvenDivisionCount,
+            int constantFoldingPreviewSkippedUnsupportedOperatorCount,
+            int constantFoldingPreviewSkippedNonLiteralOperandCount,
+            boolean constantFoldingPreviewRuntimeEquivalenceRequiredBeforeRewrite,
+            boolean constantFoldingPreviewApprovalRequiredBeforeRewrite,
+            boolean constantFoldingPreviewIntegerOverflowProven,
+            boolean constantFoldingPreviewFloatingPointRoundingProven,
+            int safeLocalCsePreviewPassCount,
+            int safeLocalCsePreviewExpressionCount,
+            int safeLocalCsePreviewCandidateExpressionCount,
+            int safeLocalCsePreviewDuplicateExpressionCount,
+            int safeLocalCsePreviewEquivalenceClassCount,
+            int safeLocalCsePreviewBlockedUnsupportedOperatorCount,
+            int safeLocalCsePreviewBlockedImpureOperandCount,
+            int safeLocalCsePreviewBlockedControlFlowBoundaryCount,
+            boolean safeLocalCsePreviewRuntimeEquivalenceRequiredBeforeRewrite,
+            boolean safeLocalCsePreviewApprovalRequiredBeforeRewrite,
+            boolean safeLocalCsePreviewDominanceProven,
+            boolean safeLocalCsePreviewSideEffectFreedomProven,
+            int typedDeadCodePreviewPassCount,
+            int typedDeadCodePreviewNodeCount,
+            int typedDeadCodePreviewReachableNodeCount,
+            int typedDeadCodePreviewUnreachableNodeCount,
+            int typedDeadCodePreviewBlockedMissingRootCount,
+            int typedDeadCodePreviewBlockedMissingChildReferenceCount,
+            int typedDeadCodePreviewBlockedSideEffectingUnreachableNodeCount,
+            boolean typedDeadCodePreviewRuntimeEquivalenceRequiredBeforeRewrite,
+            boolean typedDeadCodePreviewApprovalRequiredBeforeRewrite,
+            boolean typedDeadCodePreviewSideEffectFreedomProven,
             Map<String, Integer> providerCounts
     ) {
 
@@ -276,12 +371,56 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             rolledBackCount = Math.max(0, rolledBackCount);
             approvalTemplatePendingCount = Math.max(0, approvalTemplatePendingCount);
             approvalTemplateNotApplicableCount = Math.max(0, approvalTemplateNotApplicableCount);
+            constantFoldingPreviewPassCount = Math.max(0, constantFoldingPreviewPassCount);
+            constantFoldingPreviewCandidateCount = Math.max(0, constantFoldingPreviewCandidateCount);
+            constantFoldingPreviewSkippedNonPlainLiteralCount = Math.max(0, constantFoldingPreviewSkippedNonPlainLiteralCount);
+            constantFoldingPreviewSkippedDivideByZeroCount = Math.max(0, constantFoldingPreviewSkippedDivideByZeroCount);
+            constantFoldingPreviewSkippedNonEvenDivisionCount = Math.max(0, constantFoldingPreviewSkippedNonEvenDivisionCount);
+            constantFoldingPreviewSkippedUnsupportedOperatorCount = Math.max(0, constantFoldingPreviewSkippedUnsupportedOperatorCount);
+            constantFoldingPreviewSkippedNonLiteralOperandCount = Math.max(0, constantFoldingPreviewSkippedNonLiteralOperandCount);
+            safeLocalCsePreviewPassCount = Math.max(0, safeLocalCsePreviewPassCount);
+            safeLocalCsePreviewExpressionCount = Math.max(0, safeLocalCsePreviewExpressionCount);
+            safeLocalCsePreviewCandidateExpressionCount = Math.max(0, safeLocalCsePreviewCandidateExpressionCount);
+            safeLocalCsePreviewDuplicateExpressionCount = Math.max(0, safeLocalCsePreviewDuplicateExpressionCount);
+            safeLocalCsePreviewEquivalenceClassCount = Math.max(0, safeLocalCsePreviewEquivalenceClassCount);
+            safeLocalCsePreviewBlockedUnsupportedOperatorCount = Math.max(0, safeLocalCsePreviewBlockedUnsupportedOperatorCount);
+            safeLocalCsePreviewBlockedImpureOperandCount = Math.max(0, safeLocalCsePreviewBlockedImpureOperandCount);
+            safeLocalCsePreviewBlockedControlFlowBoundaryCount = Math.max(0, safeLocalCsePreviewBlockedControlFlowBoundaryCount);
+            typedDeadCodePreviewPassCount = Math.max(0, typedDeadCodePreviewPassCount);
+            typedDeadCodePreviewNodeCount = Math.max(0, typedDeadCodePreviewNodeCount);
+            typedDeadCodePreviewReachableNodeCount = Math.max(0, typedDeadCodePreviewReachableNodeCount);
+            typedDeadCodePreviewUnreachableNodeCount = Math.max(0, typedDeadCodePreviewUnreachableNodeCount);
+            typedDeadCodePreviewBlockedMissingRootCount = Math.max(0, typedDeadCodePreviewBlockedMissingRootCount);
+            typedDeadCodePreviewBlockedMissingChildReferenceCount = Math.max(0, typedDeadCodePreviewBlockedMissingChildReferenceCount);
+            typedDeadCodePreviewBlockedSideEffectingUnreachableNodeCount = Math.max(0, typedDeadCodePreviewBlockedSideEffectingUnreachableNodeCount);
             providerCounts = normalizeProviderCounts(providerCounts);
+        }
+
+        int constantFoldingPreviewSkippedCount() {
+            return constantFoldingPreviewSkippedNonPlainLiteralCount
+                    + constantFoldingPreviewSkippedDivideByZeroCount
+                    + constantFoldingPreviewSkippedNonEvenDivisionCount
+                    + constantFoldingPreviewSkippedUnsupportedOperatorCount
+                    + constantFoldingPreviewSkippedNonLiteralOperandCount;
+        }
+
+        int safeLocalCsePreviewBlockedCount() {
+            return safeLocalCsePreviewBlockedUnsupportedOperatorCount
+                    + safeLocalCsePreviewBlockedImpureOperandCount
+                    + safeLocalCsePreviewBlockedControlFlowBoundaryCount;
+        }
+
+        int typedDeadCodePreviewBlockedCount() {
+            return typedDeadCodePreviewBlockedMissingRootCount
+                    + typedDeadCodePreviewBlockedMissingChildReferenceCount
+                    + typedDeadCodePreviewBlockedSideEffectingUnreachableNodeCount;
         }
 
         static Entry from(String kernelResource, Properties properties) {
             if (properties == null || properties.isEmpty()) {
-                return new Entry(kernelResource, "missing", 0, 0, 0, 0, 0, 0, Map.of());
+                return new Entry(kernelResource, "missing", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        false, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0, false, false, false, false,
+                        0, 0, 0, 0, 0, 0, 0, false, false, false, Map.of());
             }
             return new Entry(
                     kernelResource,
@@ -292,8 +431,48 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     parseInt(properties.getProperty("rolledBack.count"), 0),
                     parseInt(properties.getProperty("approvalTemplate.pending.count"), 0),
                     parseInt(properties.getProperty("approvalTemplate.notApplicable.count"), 0),
+                    parseInt(properties.getProperty("constantFoldingPreview.pass.count"), 0),
+                    parseInt(properties.getProperty("constantFoldingPreview.candidate.count"), 0),
+                    parseInt(properties.getProperty("constantFoldingPreview.skipped.nonPlainLiteral.count"), 0),
+                    parseInt(properties.getProperty("constantFoldingPreview.skipped.divideByZero.count"), 0),
+                    parseInt(properties.getProperty("constantFoldingPreview.skipped.nonEvenDivision.count"), 0),
+                    parseInt(properties.getProperty("constantFoldingPreview.skipped.unsupportedOperator.count"), 0),
+                    parseInt(properties.getProperty("constantFoldingPreview.skipped.nonLiteralOperand.count"), 0),
+                    parseBoolean(properties.getProperty("constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite")),
+                    parseBoolean(properties.getProperty("constantFoldingPreview.approvalRequiredBeforeRewrite")),
+                    parseBoolean(properties.getProperty("constantFoldingPreview.integerOverflowProven")),
+                    parseBoolean(properties.getProperty("constantFoldingPreview.floatingPointRoundingProven")),
+                    parseInt(properties.getProperty("safeLocalCsePreview.pass.count"), 0),
+                    parseInt(properties.getProperty("safeLocalCsePreview.expression.count"), 0),
+                    parseInt(properties.getProperty("safeLocalCsePreview.candidateExpression.count"), 0),
+                    parseInt(properties.getProperty("safeLocalCsePreview.duplicateExpression.count"), 0),
+                    parseInt(properties.getProperty("safeLocalCsePreview.equivalenceClass.count"), 0),
+                    parseInt(properties.getProperty("safeLocalCsePreview.blocked.unsupportedOperator.count"), 0),
+                    parseInt(properties.getProperty("safeLocalCsePreview.blocked.impureOperand.count"), 0),
+                    parseInt(properties.getProperty("safeLocalCsePreview.blocked.controlFlowBoundary.count"), 0),
+                    parseBoolean(properties.getProperty("safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite")),
+                    parseBoolean(properties.getProperty("safeLocalCsePreview.approvalRequiredBeforeRewrite")),
+                    parseBoolean(properties.getProperty("safeLocalCsePreview.dominanceProven")),
+                    parseBoolean(properties.getProperty("safeLocalCsePreview.sideEffectFreedomProven")),
+                    parseInt(properties.getProperty("typedDeadCodePreview.pass.count"), 0),
+                    parseInt(properties.getProperty("typedDeadCodePreview.node.count"), 0),
+                    parseInt(properties.getProperty("typedDeadCodePreview.reachableNode.count"), 0),
+                    parseInt(properties.getProperty("typedDeadCodePreview.unreachableNode.count"), 0),
+                    parseInt(properties.getProperty("typedDeadCodePreview.blocked.missingRoot.count"), 0),
+                    parseInt(properties.getProperty("typedDeadCodePreview.blocked.missingChildReference.count"), 0),
+                    parseInt(properties.getProperty("typedDeadCodePreview.blocked.sideEffectingUnreachableNode.count"), 0),
+                    parseBoolean(properties.getProperty("typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite")),
+                    parseBoolean(properties.getProperty("typedDeadCodePreview.approvalRequiredBeforeRewrite")),
+                    parseBoolean(properties.getProperty("typedDeadCodePreview.sideEffectFreedomProven")),
                     parseProviderCounts(properties)
             );
+        }
+
+        private static boolean parseBoolean(String value) {
+            return "true".equalsIgnoreCase(value)
+                    || "yes".equalsIgnoreCase(value)
+                    || "enabled".equalsIgnoreCase(value)
+                    || "required".equalsIgnoreCase(value);
         }
 
         private static String normalize(String value, String fallback) {

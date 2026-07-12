@@ -42,8 +42,16 @@ class GpuIrConstantFoldingPreviewProposalProviderTest {
         assertSame(original, proposal.originalArtifact());
         assertEquals("preview-candidates-recorded", proposal.proofArtifact().verdict());
         assertEquals("1", proposal.proofArtifact().fields().get("candidate.count"));
+        assertEquals("0", proposal.proofArtifact().fields().get("skipped.nonPlainLiteral.count"));
+        assertEquals("0", proposal.proofArtifact().fields().get("skipped.divideByZero.count"));
         assertEquals("false", proposal.proofArtifact().fields().get("rewrite.proposed"));
         assertEquals("true", proposal.proofArtifact().fields().get("previewOnly"));
+        assertEquals("true", proposal.proofArtifact().fields().get("policy.proposalOnly"));
+        assertEquals("false", proposal.proofArtifact().fields().get("policy.mutationAllowed"));
+        assertEquals("true", proposal.proofArtifact().fields().get("proof.runtimeEquivalenceRequiredBeforeRewrite"));
+        assertEquals("true", proposal.proofArtifact().fields().get("proof.approvalRequiredBeforeRewrite"));
+        assertEquals("false", proposal.proofArtifact().fields().get("safety.integerOverflowProven"));
+        assertEquals("false", proposal.proofArtifact().fields().get("safety.floatingPointRoundingProven"));
         assertEquals("{+=1}", proposal.proofArtifact().fields().get("operator.counts"));
         assertEquals("{integer=1}", proposal.proofArtifact().fields().get("numericKind.counts"));
         assertEquals("+", proposal.proofArtifact().fields().get("firstOperator"));
@@ -109,9 +117,41 @@ class GpuIrConstantFoldingPreviewProposalProviderTest {
         assertEquals(GpuIrOptimizationProposalDecision.NO_CHANGE, proposal.decision());
         assertEquals("preview-no-candidates", proposal.proofArtifact().verdict());
         assertEquals("0", proposal.proofArtifact().fields().get("candidate.count"));
+        assertEquals("1", proposal.proofArtifact().fields().get("skipped.nonPlainLiteral.count"));
+        assertEquals("1", proposal.proofArtifact().fields().get("skipped.divideByZero.count"));
+        assertEquals("0", proposal.proofArtifact().fields().get("skipped.nonEvenDivision.count"));
+        assertEquals("0", proposal.proofArtifact().fields().get("skipped.unsupportedOperator.count"));
+        assertEquals("0", proposal.proofArtifact().fields().get("skipped.nonLiteralOperand.count"));
         assertEquals("{}", proposal.proofArtifact().fields().get("operator.counts"));
         assertEquals("{}", proposal.proofArtifact().fields().get("numericKind.counts"));
+        assertEquals("division-by-zero", proposal.proofArtifact().fields().get("firstSkippedReason"));
         assertEquals("no-simple-literal-binary-candidates", proposal.proofArtifact().fields().get("firstBlocker"));
+    }
+
+    @Test
+    void recordsNonEvenDivisionAndUnsupportedOperatorBlockers() {
+        IrGpuArtifact original = artifact(typedBody(
+                new IrGpuTypedNode(0, "GpuIrBinary", Map.of("operator", "/"), Map.of(
+                        "left", List.of(1),
+                        "right", List.of(2)
+                )),
+                new IrGpuTypedNode(1, "GpuIrLiteral", Map.of("sourceText", "1"), Map.of()),
+                new IrGpuTypedNode(2, "GpuIrLiteral", Map.of("sourceText", "3"), Map.of()),
+                new IrGpuTypedNode(3, "GpuIrBinary", Map.of("operator", "%"), Map.of(
+                        "left", List.of(4),
+                        "right", List.of(5)
+                )),
+                new IrGpuTypedNode(4, "GpuIrLiteral", Map.of("sourceText", "5"), Map.of()),
+                new IrGpuTypedNode(5, "GpuIrLiteral", Map.of("sourceText", "2"), Map.of())
+        ));
+
+        GpuIrOptimizationProposal proposal = new GpuIrConstantFoldingPreviewProposalProvider()
+                .propose(new GpuIrOptimizationProposalRequest(original));
+
+        assertEquals("0", proposal.proofArtifact().fields().get("candidate.count"));
+        assertEquals("1", proposal.proofArtifact().fields().get("skipped.nonEvenDivision.count"));
+        assertEquals("1", proposal.proofArtifact().fields().get("skipped.unsupportedOperator.count"));
+        assertEquals("non-even-division", proposal.proofArtifact().fields().get("firstSkippedReason"));
     }
 
     @Test

@@ -36,6 +36,8 @@ class GpuIrOptimizationProposalRegistryTest {
         assertTrue(providerIds.contains(GpuIrTextCanonicalizationProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.contains(GpuIrHelperDependencyDeduplicationProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.contains(GpuIrConstantFoldingPreviewProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrSafeLocalCsePreviewProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrTypedDeadCodePreviewProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.stream().noneMatch(id -> id.contains("vendor")));
     }
 

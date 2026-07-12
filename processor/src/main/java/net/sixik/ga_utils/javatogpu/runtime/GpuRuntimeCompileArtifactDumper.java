@@ -729,6 +729,70 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("approvalTemplate.notApplicable.count=")
                 .append(countApprovalTemplateStatus(irOptimizerReports, "not-applicable"))
                 .append('\n');
+        ConstantFoldingPreviewEvidence constantFoldingPreview = constantFoldingPreviewEvidence(irOptimizerReports);
+        builder.append("constantFoldingPreview.pass.count=").append(constantFoldingPreview.passCount()).append('\n');
+        builder.append("constantFoldingPreview.candidate.count=").append(constantFoldingPreview.candidateCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.nonPlainLiteral.count=")
+                .append(constantFoldingPreview.skippedNonPlainLiteralCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.divideByZero.count=")
+                .append(constantFoldingPreview.skippedDivideByZeroCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.nonEvenDivision.count=")
+                .append(constantFoldingPreview.skippedNonEvenDivisionCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.unsupportedOperator.count=")
+                .append(constantFoldingPreview.skippedUnsupportedOperatorCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.nonLiteralOperand.count=")
+                .append(constantFoldingPreview.skippedNonLiteralOperandCount()).append('\n');
+        builder.append("constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite=")
+                .append(constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite()).append('\n');
+        builder.append("constantFoldingPreview.approvalRequiredBeforeRewrite=")
+                .append(constantFoldingPreview.approvalRequiredBeforeRewrite()).append('\n');
+        builder.append("constantFoldingPreview.integerOverflowProven=")
+                .append(constantFoldingPreview.integerOverflowProven()).append('\n');
+        builder.append("constantFoldingPreview.floatingPointRoundingProven=")
+                .append(constantFoldingPreview.floatingPointRoundingProven()).append('\n');
+        SafeLocalCsePreviewEvidence safeLocalCsePreview = safeLocalCsePreviewEvidence(irOptimizerReports);
+        builder.append("safeLocalCsePreview.pass.count=").append(safeLocalCsePreview.passCount()).append('\n');
+        builder.append("safeLocalCsePreview.expression.count=")
+                .append(safeLocalCsePreview.expressionCount()).append('\n');
+        builder.append("safeLocalCsePreview.candidateExpression.count=")
+                .append(safeLocalCsePreview.candidateExpressionCount()).append('\n');
+        builder.append("safeLocalCsePreview.duplicateExpression.count=")
+                .append(safeLocalCsePreview.duplicateExpressionCount()).append('\n');
+        builder.append("safeLocalCsePreview.equivalenceClass.count=")
+                .append(safeLocalCsePreview.equivalenceClassCount()).append('\n');
+        builder.append("safeLocalCsePreview.blocked.unsupportedOperator.count=")
+                .append(safeLocalCsePreview.blockedUnsupportedOperatorCount()).append('\n');
+        builder.append("safeLocalCsePreview.blocked.impureOperand.count=")
+                .append(safeLocalCsePreview.blockedImpureOperandCount()).append('\n');
+        builder.append("safeLocalCsePreview.blocked.controlFlowBoundary.count=")
+                .append(safeLocalCsePreview.blockedControlFlowBoundaryCount()).append('\n');
+        builder.append("safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite=")
+                .append(safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite()).append('\n');
+        builder.append("safeLocalCsePreview.approvalRequiredBeforeRewrite=")
+                .append(safeLocalCsePreview.approvalRequiredBeforeRewrite()).append('\n');
+        builder.append("safeLocalCsePreview.dominanceProven=")
+                .append(safeLocalCsePreview.dominanceProven()).append('\n');
+        builder.append("safeLocalCsePreview.sideEffectFreedomProven=")
+                .append(safeLocalCsePreview.sideEffectFreedomProven()).append('\n');
+        TypedDeadCodePreviewEvidence typedDeadCodePreview = typedDeadCodePreviewEvidence(irOptimizerReports);
+        builder.append("typedDeadCodePreview.pass.count=").append(typedDeadCodePreview.passCount()).append('\n');
+        builder.append("typedDeadCodePreview.node.count=").append(typedDeadCodePreview.nodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.reachableNode.count=")
+                .append(typedDeadCodePreview.reachableNodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.unreachableNode.count=")
+                .append(typedDeadCodePreview.unreachableNodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.blocked.missingRoot.count=")
+                .append(typedDeadCodePreview.blockedMissingRootCount()).append('\n');
+        builder.append("typedDeadCodePreview.blocked.missingChildReference.count=")
+                .append(typedDeadCodePreview.blockedMissingChildReferenceCount()).append('\n');
+        builder.append("typedDeadCodePreview.blocked.sideEffectingUnreachableNode.count=")
+                .append(typedDeadCodePreview.blockedSideEffectingUnreachableNodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=")
+                .append(typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite()).append('\n');
+        builder.append("typedDeadCodePreview.approvalRequiredBeforeRewrite=")
+                .append(typedDeadCodePreview.approvalRequiredBeforeRewrite()).append('\n');
+        builder.append("typedDeadCodePreview.sideEffectFreedomProven=")
+                .append(typedDeadCodePreview.sideEffectFreedomProven()).append('\n');
         for (int index = 0; index < irOptimizerReports.size(); index++) {
             GpuRuntimeIrOptimizationPassReport passReport = irOptimizerReports.get(index);
             String prefix = "pass." + index + ".";
@@ -808,6 +872,221 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .map(GpuRuntimeCompileArtifactDumper::approvalTemplateEvidence)
                 .filter(evidence -> status.equals(evidence.status()))
                 .count();
+    }
+
+    private static ConstantFoldingPreviewEvidence constantFoldingPreviewEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int candidateCount = 0;
+        int skippedNonPlainLiteralCount = 0;
+        int skippedDivideByZeroCount = 0;
+        int skippedNonEvenDivisionCount = 0;
+        int skippedUnsupportedOperatorCount = 0;
+        int skippedNonLiteralOperandCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeRewrite = false;
+        boolean approvalRequiredBeforeRewrite = false;
+        boolean integerOverflowProven = false;
+        boolean floatingPointRoundingProven = false;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            if (!source.contains("constant-folding-preview")
+                    && !passReport.optimizerVersion().contains("constant-folding-preview")) {
+                continue;
+            }
+            passCount++;
+            candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
+            skippedNonPlainLiteralCount += parseNonNegativeInt(fields.get("skipped.nonPlainLiteral.count"));
+            skippedDivideByZeroCount += parseNonNegativeInt(fields.get("skipped.divideByZero.count"));
+            skippedNonEvenDivisionCount += parseNonNegativeInt(fields.get("skipped.nonEvenDivision.count"));
+            skippedUnsupportedOperatorCount += parseNonNegativeInt(fields.get("skipped.unsupportedOperator.count"));
+            skippedNonLiteralOperandCount += parseNonNegativeInt(fields.get("skipped.nonLiteralOperand.count"));
+            runtimeEquivalenceRequiredBeforeRewrite |= parseBoolean(fields.get("proof.runtimeEquivalenceRequiredBeforeRewrite"));
+            approvalRequiredBeforeRewrite |= parseBoolean(fields.get("proof.approvalRequiredBeforeRewrite"));
+            integerOverflowProven |= parseBoolean(fields.get("safety.integerOverflowProven"));
+            floatingPointRoundingProven |= parseBoolean(fields.get("safety.floatingPointRoundingProven"));
+        }
+        return new ConstantFoldingPreviewEvidence(
+                passCount,
+                candidateCount,
+                skippedNonPlainLiteralCount,
+                skippedDivideByZeroCount,
+                skippedNonEvenDivisionCount,
+                skippedUnsupportedOperatorCount,
+                skippedNonLiteralOperandCount,
+                runtimeEquivalenceRequiredBeforeRewrite,
+                approvalRequiredBeforeRewrite,
+                integerOverflowProven,
+                floatingPointRoundingProven
+        );
+    }
+
+    private static SafeLocalCsePreviewEvidence safeLocalCsePreviewEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int expressionCount = 0;
+        int candidateExpressionCount = 0;
+        int duplicateExpressionCount = 0;
+        int equivalenceClassCount = 0;
+        int blockedUnsupportedOperatorCount = 0;
+        int blockedImpureOperandCount = 0;
+        int blockedControlFlowBoundaryCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeRewrite = false;
+        boolean approvalRequiredBeforeRewrite = false;
+        boolean dominanceProven = false;
+        boolean sideEffectFreedomProven = false;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("safe-local-cse-preview")
+                    && !optimizerVersion.contains("safe-local-cse-preview")) {
+                continue;
+            }
+            passCount++;
+            expressionCount += parseNonNegativeInt(fields.get("expression.count"));
+            candidateExpressionCount += parseNonNegativeInt(fields.get("candidateExpression.count"));
+            duplicateExpressionCount += parseNonNegativeInt(fields.get("duplicateExpression.count"));
+            equivalenceClassCount += parseNonNegativeInt(fields.get("equivalenceClass.count"));
+            blockedUnsupportedOperatorCount += parseNonNegativeInt(fields.get("blocked.unsupportedOperator.count"));
+            blockedImpureOperandCount += parseNonNegativeInt(fields.get("blocked.impureOperand.count"));
+            blockedControlFlowBoundaryCount += parseNonNegativeInt(fields.get("blocked.controlFlowBoundary.count"));
+            runtimeEquivalenceRequiredBeforeRewrite |= parseBoolean(fields.get("proof.runtimeEquivalenceRequiredBeforeRewrite"));
+            approvalRequiredBeforeRewrite |= parseBoolean(fields.get("proof.approvalRequiredBeforeRewrite"));
+            dominanceProven |= parseBoolean(fields.get("safety.dominanceProven"));
+            sideEffectFreedomProven |= parseBoolean(fields.get("safety.sideEffectFreedomProven"));
+        }
+        return new SafeLocalCsePreviewEvidence(
+                passCount,
+                expressionCount,
+                candidateExpressionCount,
+                duplicateExpressionCount,
+                equivalenceClassCount,
+                blockedUnsupportedOperatorCount,
+                blockedImpureOperandCount,
+                blockedControlFlowBoundaryCount,
+                runtimeEquivalenceRequiredBeforeRewrite,
+                approvalRequiredBeforeRewrite,
+                dominanceProven,
+                sideEffectFreedomProven
+        );
+    }
+
+    private static TypedDeadCodePreviewEvidence typedDeadCodePreviewEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int nodeCount = 0;
+        int reachableNodeCount = 0;
+        int unreachableNodeCount = 0;
+        int blockedMissingRootCount = 0;
+        int blockedMissingChildReferenceCount = 0;
+        int blockedSideEffectingUnreachableNodeCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeRewrite = false;
+        boolean approvalRequiredBeforeRewrite = false;
+        boolean sideEffectFreedomProven = false;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("typed-dead-code-preview")
+                    && !optimizerVersion.contains("typed-dead-code-preview")) {
+                continue;
+            }
+            passCount++;
+            nodeCount += parseNonNegativeInt(fields.get("node.count"));
+            reachableNodeCount += parseNonNegativeInt(fields.get("reachableNode.count"));
+            unreachableNodeCount += parseNonNegativeInt(fields.get("unreachableNode.count"));
+            blockedMissingRootCount += parseNonNegativeInt(fields.get("blocked.missingRoot.count"));
+            blockedMissingChildReferenceCount += parseNonNegativeInt(fields.get("blocked.missingChildReference.count"));
+            blockedSideEffectingUnreachableNodeCount += parseNonNegativeInt(fields.get("blocked.sideEffectingUnreachableNode.count"));
+            runtimeEquivalenceRequiredBeforeRewrite |= parseBoolean(fields.get("proof.runtimeEquivalenceRequiredBeforeRewrite"));
+            approvalRequiredBeforeRewrite |= parseBoolean(fields.get("proof.approvalRequiredBeforeRewrite"));
+            sideEffectFreedomProven |= parseBoolean(fields.get("safety.sideEffectFreedomProven"));
+        }
+        return new TypedDeadCodePreviewEvidence(
+                passCount,
+                nodeCount,
+                reachableNodeCount,
+                unreachableNodeCount,
+                blockedMissingRootCount,
+                blockedMissingChildReferenceCount,
+                blockedSideEffectingUnreachableNodeCount,
+                runtimeEquivalenceRequiredBeforeRewrite,
+                approvalRequiredBeforeRewrite,
+                sideEffectFreedomProven
+        );
+    }
+
+    private static int parseNonNegativeInt(String value) {
+        try {
+            return Math.max(0, Integer.parseInt(value));
+        } catch (RuntimeException ignored) {
+            return 0;
+        }
+    }
+
+    private static boolean parseBoolean(String value) {
+        return "true".equalsIgnoreCase(value)
+                || "yes".equalsIgnoreCase(value)
+                || "enabled".equalsIgnoreCase(value)
+                || "required".equalsIgnoreCase(value);
+    }
+
+    private record ConstantFoldingPreviewEvidence(
+            int passCount,
+            int candidateCount,
+            int skippedNonPlainLiteralCount,
+            int skippedDivideByZeroCount,
+            int skippedNonEvenDivisionCount,
+            int skippedUnsupportedOperatorCount,
+            int skippedNonLiteralOperandCount,
+            boolean runtimeEquivalenceRequiredBeforeRewrite,
+            boolean approvalRequiredBeforeRewrite,
+            boolean integerOverflowProven,
+            boolean floatingPointRoundingProven
+    ) {
+    }
+
+    private record SafeLocalCsePreviewEvidence(
+            int passCount,
+            int expressionCount,
+            int candidateExpressionCount,
+            int duplicateExpressionCount,
+            int equivalenceClassCount,
+            int blockedUnsupportedOperatorCount,
+            int blockedImpureOperandCount,
+            int blockedControlFlowBoundaryCount,
+            boolean runtimeEquivalenceRequiredBeforeRewrite,
+            boolean approvalRequiredBeforeRewrite,
+            boolean dominanceProven,
+            boolean sideEffectFreedomProven
+    ) {
+    }
+
+    private record TypedDeadCodePreviewEvidence(
+            int passCount,
+            int nodeCount,
+            int reachableNodeCount,
+            int unreachableNodeCount,
+            int blockedMissingRootCount,
+            int blockedMissingChildReferenceCount,
+            int blockedSideEffectingUnreachableNodeCount,
+            boolean runtimeEquivalenceRequiredBeforeRewrite,
+            boolean approvalRequiredBeforeRewrite,
+            boolean sideEffectFreedomProven
+    ) {
     }
 
     private static ApprovalTemplateEvidence approvalTemplateEvidence(GpuRuntimeIrOptimizationPassReport passReport) {

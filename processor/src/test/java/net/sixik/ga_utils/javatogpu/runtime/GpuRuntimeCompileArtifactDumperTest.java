@@ -2044,10 +2044,19 @@ class GpuRuntimeCompileArtifactDumperTest {
                 GpuRuntimeIrOptimizationProofArtifact.fromFields(
                         "ir-optimizer.constant-folding-preview",
                         "preview-candidates-recorded",
-                        Map.of(
-                                "candidate.count", "1",
-                                "previewOnly", "true",
-                                "rewrite.proposed", "false"
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("previewOnly", "true"),
+                                Map.entry("rewrite.proposed", "false"),
+                                Map.entry("skipped.nonPlainLiteral.count", "2"),
+                                Map.entry("skipped.divideByZero.count", "1"),
+                                Map.entry("skipped.nonEvenDivision.count", "1"),
+                                Map.entry("skipped.unsupportedOperator.count", "1"),
+                                Map.entry("skipped.nonLiteralOperand.count", "1"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeRewrite", "true"),
+                                Map.entry("proof.approvalRequiredBeforeRewrite", "true"),
+                                Map.entry("safety.integerOverflowProven", "false"),
+                                Map.entry("safety.floatingPointRoundingProven", "false")
                         )
                 ),
                 List.of("constant folding preview recorded evidence; no rewrite was proposed")
@@ -2059,9 +2068,66 @@ class GpuRuntimeCompileArtifactDumperTest {
                 "proof:other",
                 List.of("unrelated optimizer evidence")
         );
+        GpuRuntimeIrOptimizationPassReport safeLocalCsePreviewReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.safe-local-cse-preview:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:original",
+                "not-mutating",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.safe-local-cse-preview",
+                        "preview-candidates-recorded",
+                        Map.ofEntries(
+                                Map.entry("expression.count", "5"),
+                                Map.entry("candidateExpression.count", "3"),
+                                Map.entry("duplicateExpression.count", "2"),
+                                Map.entry("equivalenceClass.count", "1"),
+                                Map.entry("blocked.unsupportedOperator.count", "1"),
+                                Map.entry("blocked.impureOperand.count", "2"),
+                                Map.entry("blocked.controlFlowBoundary.count", "3"),
+                                Map.entry("previewOnly", "true"),
+                                Map.entry("rewrite.proposed", "false"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeRewrite", "true"),
+                                Map.entry("proof.approvalRequiredBeforeRewrite", "true"),
+                                Map.entry("safety.dominanceProven", "false"),
+                                Map.entry("safety.sideEffectFreedomProven", "false")
+                        )
+                ),
+                List.of("safe local CSE preview recorded evidence; no rewrite was proposed")
+        );
+        GpuRuntimeIrOptimizationPassReport typedDeadCodePreviewReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.typed-dead-code-preview:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:original",
+                "not-mutating",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.typed-dead-code-preview",
+                        "preview-candidates-recorded",
+                        Map.ofEntries(
+                                Map.entry("node.count", "8"),
+                                Map.entry("reachableNode.count", "5"),
+                                Map.entry("unreachableNode.count", "3"),
+                                Map.entry("blocked.missingRoot.count", "1"),
+                                Map.entry("blocked.missingChildReference.count", "2"),
+                                Map.entry("blocked.sideEffectingUnreachableNode.count", "1"),
+                                Map.entry("previewOnly", "true"),
+                                Map.entry("rewrite.proposed", "false"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeRewrite", "true"),
+                                Map.entry("proof.approvalRequiredBeforeRewrite", "true"),
+                                Map.entry("safety.sideEffectFreedomProven", "false")
+                        )
+                ),
+                List.of("typed dead-code preview recorded evidence; no rewrite was proposed")
+        );
         GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
                 Optional.of(original),
-                List.of(noOpReport, canonicalizationReport, previewReport, unrelatedReport),
+                List.of(noOpReport, canonicalizationReport, previewReport, safeLocalCsePreviewReport,
+                        typedDeadCodePreviewReport, unrelatedReport),
                 GpuOptimizationStrategyDecision.none(request)
         );
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
@@ -2080,16 +2146,51 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(evidence.contains("status=recorded"));
         assertTrue(evidence.contains("source=runtime-ir-optimizer"));
         assertTrue(evidence.contains("providerPrefix=javatogpu.ir-optimizer"));
-        assertTrue(evidence.contains("pass.count=3"));
-        assertTrue(evidence.contains("skipped.count=3"));
+        assertTrue(evidence.contains("pass.count=5"));
+        assertTrue(evidence.contains("skipped.count=5"));
         assertTrue(evidence.contains("applied.count=0"));
         assertTrue(evidence.contains("proposalOnly.count=1"));
         assertTrue(evidence.contains("selectedOptimized.count=0"));
         assertTrue(evidence.contains("approvalTemplate.pending.count=1"));
-        assertTrue(evidence.contains("approvalTemplate.notApplicable.count=2"));
+        assertTrue(evidence.contains("approvalTemplate.notApplicable.count=4"));
+        assertTrue(evidence.contains("constantFoldingPreview.pass.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.candidate.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.nonPlainLiteral.count=2"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.divideByZero.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.nonEvenDivision.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.unsupportedOperator.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.nonLiteralOperand.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("constantFoldingPreview.approvalRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("constantFoldingPreview.integerOverflowProven=false"));
+        assertTrue(evidence.contains("constantFoldingPreview.floatingPointRoundingProven=false"));
+        assertTrue(evidence.contains("safeLocalCsePreview.pass.count=1"));
+        assertTrue(evidence.contains("safeLocalCsePreview.expression.count=5"));
+        assertTrue(evidence.contains("safeLocalCsePreview.candidateExpression.count=3"));
+        assertTrue(evidence.contains("safeLocalCsePreview.duplicateExpression.count=2"));
+        assertTrue(evidence.contains("safeLocalCsePreview.equivalenceClass.count=1"));
+        assertTrue(evidence.contains("safeLocalCsePreview.blocked.unsupportedOperator.count=1"));
+        assertTrue(evidence.contains("safeLocalCsePreview.blocked.impureOperand.count=2"));
+        assertTrue(evidence.contains("safeLocalCsePreview.blocked.controlFlowBoundary.count=3"));
+        assertTrue(evidence.contains("safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("safeLocalCsePreview.approvalRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("safeLocalCsePreview.dominanceProven=false"));
+        assertTrue(evidence.contains("safeLocalCsePreview.sideEffectFreedomProven=false"));
+        assertTrue(evidence.contains("typedDeadCodePreview.pass.count=1"));
+        assertTrue(evidence.contains("typedDeadCodePreview.node.count=8"));
+        assertTrue(evidence.contains("typedDeadCodePreview.reachableNode.count=5"));
+        assertTrue(evidence.contains("typedDeadCodePreview.unreachableNode.count=3"));
+        assertTrue(evidence.contains("typedDeadCodePreview.blocked.missingRoot.count=1"));
+        assertTrue(evidence.contains("typedDeadCodePreview.blocked.missingChildReference.count=2"));
+        assertTrue(evidence.contains("typedDeadCodePreview.blocked.sideEffectingUnreachableNode.count=1"));
+        assertTrue(evidence.contains("typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("typedDeadCodePreview.approvalRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("typedDeadCodePreview.sideEffectFreedomProven=false"));
         assertTrue(evidence.contains("pass.0.passVersion=javatogpu.ir-optimizer.noop:1"));
         assertTrue(evidence.contains("pass.1.passVersion=javatogpu.ir-optimizer.text-canonicalization:1"));
         assertTrue(evidence.contains("pass.2.passVersion=javatogpu.ir-optimizer.constant-folding-preview:1"));
+        assertTrue(evidence.contains("pass.3.passVersion=javatogpu.ir-optimizer.safe-local-cse-preview:1"));
+        assertTrue(evidence.contains("pass.4.passVersion=javatogpu.ir-optimizer.typed-dead-code-preview:1"));
         assertTrue(evidence.contains("pass.1.proofStatus=proposal-only"));
         assertTrue(evidence.contains("pass.1.transformedIrIdentity=irgpu:sha256:canonical"));
         assertTrue(evidence.contains("pass.1.proofArtifact.source=ir-optimizer.text-canonicalization"));
@@ -2103,6 +2204,12 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(evidence.contains("pass.2.approvalTemplate.status=not-applicable"));
         assertTrue(evidence.contains("pass.2.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
         assertTrue(evidence.contains("pass.2.proofArtifact.field.previewOnly=true"));
+        assertTrue(evidence.contains("pass.3.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.3.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.3.proofArtifact.field.duplicateExpression.count=2"));
+        assertTrue(evidence.contains("pass.4.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.4.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.4.proofArtifact.field.unreachableNode.count=3"));
         assertFalse(evidence.contains("optimizer:other"));
     }
 

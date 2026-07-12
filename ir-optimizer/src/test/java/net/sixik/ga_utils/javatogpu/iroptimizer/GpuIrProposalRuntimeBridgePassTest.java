@@ -52,11 +52,13 @@ class GpuIrProposalRuntimeBridgePassTest {
     void bridgeLoadsProposalProvidersInDeterministicOrder() {
         GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass();
 
-        assertEquals(4, bridge.proposalProviders().size());
+        assertEquals(6, bridge.proposalProviders().size());
         assertInstanceOf(GpuIrNoOpProposalProvider.class, bridge.proposalProviders().get(0));
         assertInstanceOf(GpuIrTextCanonicalizationProposalProvider.class, bridge.proposalProviders().get(1));
         assertInstanceOf(GpuIrHelperDependencyDeduplicationProposalProvider.class, bridge.proposalProviders().get(2));
         assertInstanceOf(GpuIrConstantFoldingPreviewProposalProvider.class, bridge.proposalProviders().get(3));
+        assertInstanceOf(GpuIrSafeLocalCsePreviewProposalProvider.class, bridge.proposalProviders().get(4));
+        assertInstanceOf(GpuIrTypedDeadCodePreviewProposalProvider.class, bridge.proposalProviders().get(5));
     }
 
     @Test
@@ -68,6 +70,8 @@ class GpuIrProposalRuntimeBridgePassTest {
         assertTrue(neutralDescriptor.contains(GpuIrTextCanonicalizationProposalProvider.class.getName()));
         assertTrue(neutralDescriptor.contains(GpuIrHelperDependencyDeduplicationProposalProvider.class.getName()));
         assertTrue(neutralDescriptor.contains(GpuIrConstantFoldingPreviewProposalProvider.class.getName()));
+        assertTrue(neutralDescriptor.contains(GpuIrSafeLocalCsePreviewProposalProvider.class.getName()));
+        assertTrue(neutralDescriptor.contains(GpuIrTypedDeadCodePreviewProposalProvider.class.getName()));
         assertTrue(neutralDescriptor.stream().noneMatch(value -> value.contains("irvendoroptimizer")));
         assertTrue(vendorDescriptor.isEmpty());
     }
@@ -81,7 +85,7 @@ class GpuIrProposalRuntimeBridgePassTest {
 
         assertSame(original, report.artifact().orElseThrow());
         assertFalse(report.requiresRollback());
-        assertEquals(4, report.passReports().size());
+        assertEquals(6, report.passReports().size());
         assertEquals(GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY, report.passReports().get(1).stage());
         assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, report.passReports().get(1).outcome());
         assertEquals("proposal-only", report.passReports().get(1).proofStatus());

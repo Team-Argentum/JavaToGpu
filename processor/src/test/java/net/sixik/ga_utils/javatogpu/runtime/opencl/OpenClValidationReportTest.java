@@ -1380,6 +1380,39 @@ class OpenClValidationReportTest {
                         "proposalOnly.count=1",
                         "selectedOptimized.count=0",
                         "rolledBack.count=0",
+                        "constantFoldingPreview.pass.count=1",
+                        "constantFoldingPreview.candidate.count=2",
+                        "constantFoldingPreview.skipped.nonPlainLiteral.count=1",
+                        "constantFoldingPreview.skipped.divideByZero.count=1",
+                        "constantFoldingPreview.skipped.nonEvenDivision.count=0",
+                        "constantFoldingPreview.skipped.unsupportedOperator.count=0",
+                        "constantFoldingPreview.skipped.nonLiteralOperand.count=0",
+                        "constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite=true",
+                        "constantFoldingPreview.approvalRequiredBeforeRewrite=true",
+                        "constantFoldingPreview.integerOverflowProven=false",
+                        "constantFoldingPreview.floatingPointRoundingProven=false",
+                        "safeLocalCsePreview.pass.count=1",
+                        "safeLocalCsePreview.expression.count=5",
+                        "safeLocalCsePreview.candidateExpression.count=3",
+                        "safeLocalCsePreview.duplicateExpression.count=1",
+                        "safeLocalCsePreview.equivalenceClass.count=1",
+                        "safeLocalCsePreview.blocked.unsupportedOperator.count=1",
+                        "safeLocalCsePreview.blocked.impureOperand.count=0",
+                        "safeLocalCsePreview.blocked.controlFlowBoundary.count=1",
+                        "safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite=true",
+                        "safeLocalCsePreview.approvalRequiredBeforeRewrite=true",
+                        "safeLocalCsePreview.dominanceProven=false",
+                        "safeLocalCsePreview.sideEffectFreedomProven=false",
+                        "typedDeadCodePreview.pass.count=1",
+                        "typedDeadCodePreview.node.count=7",
+                        "typedDeadCodePreview.reachableNode.count=5",
+                        "typedDeadCodePreview.unreachableNode.count=2",
+                        "typedDeadCodePreview.blocked.missingRoot.count=0",
+                        "typedDeadCodePreview.blocked.missingChildReference.count=1",
+                        "typedDeadCodePreview.blocked.sideEffectingUnreachableNode.count=1",
+                        "typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=true",
+                        "typedDeadCodePreview.approvalRequiredBeforeRewrite=true",
+                        "typedDeadCodePreview.sideEffectFreedomProven=false",
                         "pass.0.passVersion=ir-optimizer:text-canonicalization:1",
                         ""
                 )
@@ -1430,6 +1463,17 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("`workload/perlin.cl` | `non-preferred-multiple`"));
             assertTrue(reportMarkdown.contains("## Runtime IR Optimizer Evidence"));
             assertTrue(reportMarkdown.contains("- Proposal-only count: `1`"));
+            assertTrue(reportMarkdown.contains("- Constant folding preview passes: `1`"));
+            assertTrue(reportMarkdown.contains("- Constant folding preview candidates: `2`"));
+            assertTrue(reportMarkdown.contains("- Constant folding preview skipped blockers: `2`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview passes: `1`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview candidate expressions: `3`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview duplicate expressions: `1`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview blockers: `2`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code preview passes: `1`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code preview unreachable nodes: `2`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code preview blockers: `2`"));
+            assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `2` | `2` | `3` | `1` | `2` | `2` | `2` | `ir-optimizer:text-canonicalization:1=1` |"));
             assertTrue(reportMarkdown.contains("ir-optimizer:text-canonicalization:1=1"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));
             assertTrue(summaryMarkdown.contains("- Blocking: `0`"));
