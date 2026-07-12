@@ -78,6 +78,7 @@ def openClPromotionGitSha = providers.gradleProperty('openClPromotionGitSha')
         .orElse('unknown')
 def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-drift.properties').get().asFile
 def openClCompilerResourceDriftFile = layout.buildDirectory.file('reports/opencl/runtime-compiler-resource-drift.properties').get().asFile
+def openClRuntimeIrOptimizerEvidenceDirectory = layout.buildDirectory.dir('reports/opencl/runtime-compile-artifacts').get().asFile
 def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
 def openClValidationHistoryMarkdownFile = layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile
 def openClValidationHistoryCacheDirectory = layout.buildDirectory.dir('opencl-validation-history-cache').get().asFile
@@ -650,6 +651,16 @@ tasks.register('validateOpenClCompilerResourceDrift', JavaExec) {
     inputs.file(openClCompilerResourceDriftFile)
 }
 
+tasks.register('validateOpenClRuntimeIrOptimizerEvidence', JavaExec) {
+    group = 'verification'
+    description = 'Fails OpenCL CI when runtime IR optimizer evidence loses fail-closed review-package guardrails.'
+    dependsOn 'openClValidationReport'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClRuntimeIrOptimizerEvidenceValidatorCli'
+    args openClRuntimeIrOptimizerEvidenceDirectory.absolutePath
+    inputs.dir(openClRuntimeIrOptimizerEvidenceDirectory)
+}
+
 tasks.register('prepareOpenClKernelLaunchAdvisoryNegativeFixture', JavaExec) {
     group = 'verification'
     description = 'Mutates only the restored validation-history baseline to force a per-kernel drift regression.'
@@ -997,6 +1008,7 @@ tasks.register('openClNvidiaRoutine') {
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'
+    finalizedBy 'validateOpenClRuntimeIrOptimizerEvidence'
 }
 
 tasks.register('openClOperationalRoutine') {
@@ -1011,6 +1023,7 @@ tasks.register('openClOperationalRoutine') {
     dependsOn 'openClLongRunningStabilityTest'
     dependsOn 'benchmarkTest'
     finalizedBy 'openClValidationReport'
+    finalizedBy 'validateOpenClRuntimeIrOptimizerEvidence'
 }
 
 tasks.register('benchmarkTest', Test) {

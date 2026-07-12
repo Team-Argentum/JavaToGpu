@@ -60,6 +60,7 @@ Important buckets include:
 - `:processor:openClProductionActivationTokenNegativeTest`
 - `:processor:openClOptimizerFamilyPayloadFixtureTest`
 - `:processor:openClValidationReport`
+- `:processor:validateOpenClRuntimeIrOptimizerEvidence`
 
 You usually do not need to run buckets one by one unless you are narrowing down a failure.
 
@@ -100,6 +101,8 @@ Use `activate` only after manifest validation succeeds. The workflow then writes
 `openClValidationReport` folds both activation-token artifacts into production-promotion explainability. A successful controlled activation records token loading, approved-kernel execution, full real-workload coverage, digest-mismatch rejection, unapproved-kernel rejection, unchanged rejected output, and safe defaults as separate readiness evidence. The RTX 5070 promotion checkpoint now demonstrates the complete production-ready path: `production-promotion-explainability.properties` records `status=production-ready`, `contract.status=valid`, `decision.mode=production-enabled`, `readinessChecklist.ready.count=11`, and `blocker.count=0` while still requiring explicit manifest-bound activation evidence.
 
 The vendor workflow also runs `openClOptimizerFamilyPayloadFixtureTest` after the main validation bucket. It must produce `fixture-summary.properties` with two complete families and fourteen durable files. This fixture proves the nested artifact contract is uploadable and path-safe; it does not alter real-workload optimizer-family counts or production readiness.
+
+`validateOpenClRuntimeIrOptimizerEvidence` checks `runtime-ir-optimizer-evidence.properties` under `runtime-compile-artifacts`. It fails if runtime-equivalence review or review-package guardrails stop being fail-closed, if production mutation or selected-IR replacement becomes enabled, if a required review package has no blocker, or if a package is marked complete before manual-review activation exists. The operational and NVIDIA routines run this validator after `openClValidationReport`.
 
 ## Optional IR Validation
 
