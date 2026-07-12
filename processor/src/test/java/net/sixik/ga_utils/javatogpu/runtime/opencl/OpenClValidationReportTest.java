@@ -1478,6 +1478,12 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Preview readiness recorded families: `3`"));
             assertTrue(reportMarkdown.contains("- Preview readiness candidate families: `3`"));
             assertTrue(reportMarkdown.contains("- Preview readiness blocked families: `3`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review status: `blocked`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review eligible: `false`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review required: `true`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review first blocker: `preview-readiness-blocked-by-proof`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review production mutation: `disabled`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review selected IR replacement: `disabled`"));
             assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `2` | `2` | `3` | `1` | `2` | `2` | `2` | `ir-optimizer:text-canonicalization:1=1` |"));
             assertTrue(reportMarkdown.contains("ir-optimizer:text-canonicalization:1=1"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));

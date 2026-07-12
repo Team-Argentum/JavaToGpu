@@ -2191,6 +2191,14 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(evidence.contains("previewReadiness.candidateFamily.count=3"));
         assertTrue(evidence.contains("previewReadiness.blockedFamily.count=3"));
         assertTrue(evidence.contains("previewReadiness.familySummary=constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=blocked"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=false"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.required=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=preview-readiness-blocked-by-proof"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.familySummary=constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.productionMutation=disabled"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.selectedIrReplacement=disabled"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.manualReviewOnly=true"));
         assertTrue(evidence.contains("pass.0.passVersion=javatogpu.ir-optimizer.noop:1"));
         assertTrue(evidence.contains("pass.1.passVersion=javatogpu.ir-optimizer.text-canonicalization:1"));
         assertTrue(evidence.contains("pass.2.passVersion=javatogpu.ir-optimizer.constant-folding-preview:1"));

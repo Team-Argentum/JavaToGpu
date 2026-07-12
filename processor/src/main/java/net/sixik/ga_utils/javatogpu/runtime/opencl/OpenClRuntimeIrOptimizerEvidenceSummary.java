@@ -182,6 +182,29 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         return summary.toString();
     }
 
+    String runtimeEquivalenceReviewStatus() {
+        return runtimeEquivalenceReviewEligible() ? "review-ready" : "blocked";
+    }
+
+    boolean runtimeEquivalenceReviewEligible() {
+        return "ready-for-runtime-equivalence-review".equals(previewReadinessStatus());
+    }
+
+    boolean runtimeEquivalenceReviewRequired() {
+        return totalPreviewReadinessCandidateFamilyCount() > 0;
+    }
+
+    String runtimeEquivalenceReviewFirstBlocker() {
+        return switch (previewReadinessStatus()) {
+            case "ready-for-runtime-equivalence-review" -> "none";
+            case "not-recorded" -> "preview-readiness-not-recorded";
+            case "no-candidates" -> "preview-readiness-no-candidates";
+            case "blocked-by-proof" -> "preview-readiness-blocked-by-proof";
+            case "candidates-recorded" -> "preview-readiness-candidates-not-proof-clean";
+            default -> "preview-readiness-unknown";
+        };
+    }
+
     private List<PreviewFamilyReadiness> previewReadinessFamilies() {
         return List.of(
                 new PreviewFamilyReadiness(
@@ -304,6 +327,13 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                 .append(totalPreviewReadinessCandidateFamilyCount()).append("`\n");
         markdown.append("- Preview readiness blocked families: `")
                 .append(totalPreviewReadinessBlockedFamilyCount()).append("`\n");
+        markdown.append("- Runtime-equivalence review status: `").append(runtimeEquivalenceReviewStatus()).append("`\n");
+        markdown.append("- Runtime-equivalence review eligible: `").append(runtimeEquivalenceReviewEligible()).append("`\n");
+        markdown.append("- Runtime-equivalence review required: `").append(runtimeEquivalenceReviewRequired()).append("`\n");
+        markdown.append("- Runtime-equivalence review first blocker: `")
+                .append(inline(runtimeEquivalenceReviewFirstBlocker())).append("`\n");
+        markdown.append("- Runtime-equivalence review production mutation: `disabled`\n");
+        markdown.append("- Runtime-equivalence review selected IR replacement: `disabled`\n");
         markdown.append("- Providers: `").append(inline(providerSummary())).append("`\n\n");
         if (entries.isEmpty()) {
             return markdown.toString();

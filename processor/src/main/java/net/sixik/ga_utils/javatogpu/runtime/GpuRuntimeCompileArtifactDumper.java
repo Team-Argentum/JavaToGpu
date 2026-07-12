@@ -806,6 +806,17 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .append(previewReadiness.blockedFamilyCount()).append('\n');
         builder.append("previewReadiness.familySummary=")
                 .append(safePropertyValue(previewReadiness.familySummary())).append('\n');
+        RuntimeEquivalenceReviewEvidence runtimeEquivalenceReview = runtimeEquivalenceReviewEvidence(previewReadiness);
+        builder.append("runtimeEquivalenceReview.status=").append(runtimeEquivalenceReview.status()).append('\n');
+        builder.append("runtimeEquivalenceReview.eligible=").append(runtimeEquivalenceReview.eligible()).append('\n');
+        builder.append("runtimeEquivalenceReview.required=").append(runtimeEquivalenceReview.required()).append('\n');
+        builder.append("runtimeEquivalenceReview.firstBlocker=")
+                .append(safePropertyValue(runtimeEquivalenceReview.firstBlocker())).append('\n');
+        builder.append("runtimeEquivalenceReview.familySummary=")
+                .append(safePropertyValue(runtimeEquivalenceReview.familySummary())).append('\n');
+        builder.append("runtimeEquivalenceReview.productionMutation=disabled\n");
+        builder.append("runtimeEquivalenceReview.selectedIrReplacement=disabled\n");
+        builder.append("runtimeEquivalenceReview.manualReviewOnly=true\n");
         for (int index = 0; index < irOptimizerReports.size(); index++) {
             GpuRuntimeIrOptimizationPassReport passReport = irOptimizerReports.get(index);
             String prefix = "pass." + index + ".";
@@ -1094,6 +1105,29 @@ public final class GpuRuntimeCompileArtifactDumper {
         return new PreviewReadinessEvidence(status, familyCount, candidateFamilyCount, blockedFamilyCount, familySummary);
     }
 
+    private static RuntimeEquivalenceReviewEvidence runtimeEquivalenceReviewEvidence(
+            PreviewReadinessEvidence previewReadiness
+    ) {
+        boolean required = previewReadiness.candidateFamilyCount() > 0;
+        boolean eligible = "ready-for-runtime-equivalence-review".equals(previewReadiness.status());
+        String status = eligible ? "review-ready" : "blocked";
+        String firstBlocker = switch (previewReadiness.status()) {
+            case "ready-for-runtime-equivalence-review" -> "none";
+            case "not-recorded" -> "preview-readiness-not-recorded";
+            case "no-candidates" -> "preview-readiness-no-candidates";
+            case "blocked-by-proof" -> "preview-readiness-blocked-by-proof";
+            case "candidates-recorded" -> "preview-readiness-candidates-not-proof-clean";
+            default -> "preview-readiness-unknown";
+        };
+        return new RuntimeEquivalenceReviewEvidence(
+                status,
+                eligible,
+                required,
+                firstBlocker,
+                previewReadiness.familySummary()
+        );
+    }
+
     private static String previewReadinessStatus(List<PreviewFamilyReadiness> families) {
         if (families.stream().allMatch(family -> "not-recorded".equals(family.status()))) {
             return "not-recorded";
@@ -1246,6 +1280,15 @@ public final class GpuRuntimeCompileArtifactDumper {
             int familyCount,
             int candidateFamilyCount,
             int blockedFamilyCount,
+            String familySummary
+    ) {
+    }
+
+    private record RuntimeEquivalenceReviewEvidence(
+            String status,
+            boolean eligible,
+            boolean required,
+            String firstBlocker,
             String familySummary
     ) {
     }

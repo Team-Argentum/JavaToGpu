@@ -136,6 +136,9 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
                 "constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof",
                 summary.previewReadinessFamilySummary()
         );
+        assertEquals("blocked", summary.runtimeEquivalenceReviewStatus());
+        assertTrue(summary.runtimeEquivalenceReviewRequired());
+        assertEquals("preview-readiness-blocked-by-proof", summary.runtimeEquivalenceReviewFirstBlocker());
         assertEquals(
                 "ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2",
                 summary.providerSummary()
@@ -159,6 +162,12 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.toMarkdown().contains("- Preview readiness recorded families: `3`"));
         assertTrue(summary.toMarkdown().contains("- Preview readiness candidate families: `3`"));
         assertTrue(summary.toMarkdown().contains("- Preview readiness blocked families: `3`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review status: `blocked`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review eligible: `false`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review required: `true`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review first blocker: `preview-readiness-blocked-by-proof`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review production mutation: `disabled`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review selected IR replacement: `disabled`"));
         assertTrue(summary.toMarkdown().contains("- Providers: `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2`"));
         assertTrue(summary.toMarkdown().contains("| `kernel-a.cl` | `recorded` | `3` | `2` | `1` | `1` | `1` | `2` | `3` | `5` | `4` | `2` | `6` | `3` | `4` | `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2` |"));
         assertTrue(summary.toMarkdown().contains("| `kernel-b.cl` | `missing` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `none` |"));
@@ -205,6 +214,10 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         OpenClRuntimeIrOptimizerEvidenceSummary summary = OpenClRuntimeIrOptimizerEvidenceSummary.read(workloadGate);
 
         assertEquals("ready-for-runtime-equivalence-review", summary.previewReadinessStatus());
+        assertEquals("review-ready", summary.runtimeEquivalenceReviewStatus());
+        assertTrue(summary.runtimeEquivalenceReviewEligible());
+        assertTrue(summary.runtimeEquivalenceReviewRequired());
+        assertEquals("none", summary.runtimeEquivalenceReviewFirstBlocker());
         assertEquals(3, summary.totalPreviewReadinessFamilyCount());
         assertEquals(3, summary.totalPreviewReadinessCandidateFamilyCount());
         assertEquals(0, summary.totalPreviewReadinessBlockedFamilyCount());
@@ -212,5 +225,8 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.toMarkdown().contains("constant-folding=ready-for-runtime-equivalence-review"));
         assertTrue(summary.toMarkdown().contains("safe-local-cse=ready-for-runtime-equivalence-review"));
         assertTrue(summary.toMarkdown().contains("typed-dead-code=ready-for-runtime-equivalence-review"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review status: `review-ready`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review eligible: `true`"));
+        assertTrue(summary.toMarkdown().contains("- Runtime-equivalence review first blocker: `none`"));
     }
 }
