@@ -154,6 +154,67 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void runtimeCompileArtifactDirectoryPropertyDumpsOriginalAndOptimizedIrArtifacts() throws Exception {
+        Path artifactRoot = Files.createTempDirectory("javatogpu-runtime-ir-dump");
+        String property = "javatogpu.opencl.runtimeCompileArtifactDirectory";
+        String previousArtifactRoot = System.getProperty(property);
+        try {
+            System.setProperty(property, artifactRoot.toString());
+            IrGpuArtifact original = testIrGpuArtifact("body\n  return original\n");
+            IrGpuArtifact optimized = testIrGpuArtifact("body\n  return optimized\n");
+            GpuRuntimeCompileRequest originalRequest = new GpuRuntimeCompileRequest(
+                    intOutputDescriptor(),
+                    GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                    GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                    Optional.of(original)
+            );
+            GpuRuntimeCompileRequest optimizedRequest = originalRequest.withIrGpuArtifact(Optional.of(optimized));
+            GpuBackendModuleArtifact originalBackendArtifact = GpuBackendModuleArtifact.openClSource(
+                    "__kernel void kernel(__global int* output) { output[0] = 0; }",
+                    "javatogpu/sample/Demo/kernel-original.cl",
+                    "test-lowerer-v1"
+            );
+            GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                    "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                    "javatogpu/sample/Demo/kernel.cl",
+                    "test-lowerer-v1"
+            );
+            GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                    originalRequest,
+                    optimizedRequest,
+                    backendArtifact,
+                    net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp.from(
+                            optimizedRequest,
+                            backendArtifact,
+                            "optimizer:manual-dump-test"
+                    ),
+                    net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance.from(optimizedRequest),
+                    new GpuRuntimeIrOptimizationReport(Optional.of(optimized), List.of())
+            ).withBackendStageModuleArtifacts(originalBackendArtifact, backendArtifact);
+
+            OpenClGpuRuntimeBackend.writeRuntimeCompileArtifactsIfConfigured(snapshot);
+
+            Path artifactDirectory;
+            try (java.util.stream.Stream<Path> directories = Files.list(artifactRoot)) {
+                artifactDirectory = directories.filter(Files::isDirectory).findFirst().orElseThrow();
+            }
+            assertTrue(Files.readString(artifactDirectory.resolve("original.irgpu.properties")).contains("return original"));
+            assertTrue(Files.readString(artifactDirectory.resolve("optimized.irgpu.properties")).contains("return optimized"));
+            assertTrue(Files.readString(artifactDirectory.resolve("original.backend.opencl-c")).contains("output[0] = 0"));
+            assertTrue(Files.readString(artifactDirectory.resolve("optimized.backend.opencl-c")).contains("output[0] = 1"));
+            assertTrue(Files.readString(artifactDirectory.resolve("backend.opencl-c")).contains("__kernel void kernel"));
+            assertTrue(Files.exists(artifactDirectory.resolve("runtime-ir-handoff.properties")));
+            assertTrue(Files.exists(artifactDirectory.resolve("compile-provenance.properties")));
+        } finally {
+            if (previousArtifactRoot == null) {
+                System.clearProperty(property);
+            } else {
+                System.setProperty(property, previousArtifactRoot);
+            }
+        }
+    }
+
+    @Test
     void writesOptimizerFamilyPayloadFixtureArtifacts() throws Exception {
         String outputDirectory = System.getProperty(OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_DIRECTORY_PROPERTY);
         org.junit.jupiter.api.Assumptions.assumeTrue(

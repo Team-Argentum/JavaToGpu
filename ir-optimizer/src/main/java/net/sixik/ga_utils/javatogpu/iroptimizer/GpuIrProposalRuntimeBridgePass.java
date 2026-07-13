@@ -117,6 +117,7 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
         GpuRuntimeIrOptimizationProofArtifact proofArtifact = proposal
                 .map(GpuIrOptimizationProposal::proofArtifact)
                 .orElseGet(() -> proof(report.status().name().toLowerCase(java.util.Locale.ROOT), Map.of()));
+        proofArtifact = withCandidateFields(proofArtifact, report);
 
         return switch (report.status()) {
             case OPTIMIZED_SELECTED -> new GpuRuntimeIrOptimizationPassReport(
@@ -182,6 +183,22 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
 
     private static GpuRuntimeIrOptimizationProofArtifact proof(String verdict, Map<String, String> fields) {
         return GpuRuntimeIrOptimizationProofArtifact.fromFields("ir-optimizer.proposal-runtime-bridge", verdict, fields);
+    }
+
+    private static GpuRuntimeIrOptimizationProofArtifact withCandidateFields(
+            GpuRuntimeIrOptimizationProofArtifact proofArtifact,
+            GpuIrOptimizationSandwichReport report
+    ) {
+        if (report.optimizedArtifactCandidate().isEmpty()) {
+            return proofArtifact;
+        }
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>(proofArtifact.fields());
+        fields.putAll(report.optimizedArtifactCandidate().orElseThrow().fields("optimizedArtifactCandidate"));
+        return GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                proofArtifact.source(),
+                proofArtifact.verdict(),
+                fields
+        );
     }
 
     private static Map<String, String> contextFields(GpuRuntimeIrOptimizationRequest request, boolean mutationAllowed) {

@@ -1463,6 +1463,12 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("`workload/perlin.cl` | `non-preferred-multiple`"));
             assertTrue(reportMarkdown.contains("## Runtime IR Optimizer Evidence"));
             assertTrue(reportMarkdown.contains("- Proposal-only count: `1`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate status: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidates: `0`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate first blocker: `no-candidates`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate selection first blocker: `no-candidates`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate selection applied: `false`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate selected IR replacement: `false`"));
             assertTrue(reportMarkdown.contains("- Constant folding preview passes: `1`"));
             assertTrue(reportMarkdown.contains("- Constant folding preview candidates: `2`"));
             assertTrue(reportMarkdown.contains("- Constant folding preview skipped blockers: `2`"));
@@ -1490,7 +1496,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Review package manual review only: `true`"));
             assertTrue(reportMarkdown.contains("- Review package production mutation: `disabled`"));
             assertTrue(reportMarkdown.contains("- Review package selected IR replacement: `disabled`"));
-            assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `2` | `2` | `3` | `1` | `2` | `2` | `2` | `not-recorded` | `none` | `ir-optimizer:text-canonicalization:1=1` |"));
+            assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `not-recorded` | `no-candidates` | `no-candidates` | `2` | `2` | `3` | `1` | `2` | `2` | `2` | `not-recorded` | `none` | `ir-optimizer:text-canonicalization:1=1` |"));
             assertTrue(reportMarkdown.contains("ir-optimizer:text-canonicalization:1=1"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));
             assertTrue(summaryMarkdown.contains("- Blocking: `0`"));

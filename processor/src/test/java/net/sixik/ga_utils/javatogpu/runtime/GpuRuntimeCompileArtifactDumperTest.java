@@ -321,6 +321,11 @@ class GpuRuntimeCompileArtifactDumperTest {
     void dumpsOriginalOptimizedAndBackendArtifacts() {
         IrGpuArtifact original = artifact("body\n  return original\n");
         IrGpuArtifact optimized = artifact("body\n  return optimized\n");
+        GpuBackendModuleArtifact originalBackendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/original/kernel.cl",
+                "test-lowerer-v1"
+        );
         GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
                 "__kernel void kernel(__global int* out) { out[0] = 2; }",
                 "runtime/lowered/kernel.cl",
@@ -412,7 +417,8 @@ class GpuRuntimeCompileArtifactDumperTest {
                 List.of(location()),
                 "build ok",
                 List.of("equivalence:skipped")
-        ).withDeviceSelection(deviceSelection());
+        ).withBackendStageModuleArtifacts(originalBackendArtifact, backendArtifact)
+                .withDeviceSelection(deviceSelection());
 
         GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
 
@@ -510,6 +516,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-map.properties").contains("methodBody.0.emittedName=jtg_kernel"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("methodBody.0.format=ir-text-v1"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("methodBody.0.sourceKind=java-source"));
+        assertEquals(originalBackendArtifact.source(), dump.artifact("original.backend.opencl-c"));
+        assertEquals(backendArtifact.source(), dump.artifact("optimized.backend.opencl-c"));
         assertEquals(backendArtifact.source(), dump.artifact("backend.opencl-c"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendTarget=OPENCL"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("deviceLabel=Mock GPU"));
@@ -2510,10 +2518,21 @@ class GpuRuntimeCompileArtifactDumperTest {
                 GpuRuntimeIrOptimizationProofArtifact.fromFields(
                         "ir-optimizer.text-canonicalization",
                         "semantics-neutral-text-normalization",
-                        Map.of(
-                                "changedMethodBodies", "1",
-                                "mutationRequired", "false",
-                                "normalizations", "crlf-to-lf,trailing-whitespace"
+                        Map.ofEntries(
+                                Map.entry("changedMethodBodies", "1"),
+                                Map.entry("mutationRequired", "false"),
+                                Map.entry("normalizations", "crlf-to-lf,trailing-whitespace"),
+                                Map.entry("optimizedArtifactCandidate.status", "candidate-ready"),
+                                Map.entry("optimizedArtifactCandidate.candidateBuilt", "true"),
+                                Map.entry("optimizedArtifactCandidate.optimizedValidationPassed", "true"),
+                                Map.entry("optimizedArtifactCandidate.proofPresent", "true"),
+                                Map.entry("optimizedArtifactCandidate.rollbackRequired", "true"),
+                                Map.entry("optimizedArtifactCandidate.mutationAllowed", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionReady", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionApplied", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectedIrReplacement", "false"),
+                                Map.entry("optimizedArtifactCandidate.firstBlocker", "none"),
+                                Map.entry("optimizedArtifactCandidate.selectionFirstBlocker", "mutation-disabled")
                         )
                 ),
                 List.of("optimized artifact validated but mutation is disabled; original IR remains selected")
@@ -2638,6 +2657,18 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(evidence.contains("selectedOptimized.count=0"));
         assertTrue(evidence.contains("approvalTemplate.pending.count=1"));
         assertTrue(evidence.contains("approvalTemplate.notApplicable.count=4"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.status=candidate-ready"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.count=1"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.ready.count=1"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.blocked.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionReady.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.mutationAllowed.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.firstBlocker=none"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionFirstBlocker=mutation-disabled"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement=false"));
         assertTrue(evidence.contains("constantFoldingPreview.pass.count=1"));
         assertTrue(evidence.contains("constantFoldingPreview.candidate.count=1"));
         assertTrue(evidence.contains("constantFoldingPreview.skipped.nonPlainLiteral.count=2"));
@@ -2707,6 +2738,9 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(evidence.contains("pass.1.proofArtifact.source=ir-optimizer.text-canonicalization"));
         assertTrue(evidence.contains("pass.1.proofArtifact.field.changedMethodBodies=1"));
         assertTrue(evidence.contains("pass.1.proofArtifact.field.mutationRequired=false"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.optimizedArtifactCandidate.status=candidate-ready"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.optimizedArtifactCandidate.selectedIrReplacement=false"));
         assertTrue(evidence.contains("pass.0.approvalTemplate.status=not-applicable"));
         assertTrue(evidence.contains("pass.0.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
         assertTrue(evidence.contains("pass.1.approvalTemplate.status=pending"));

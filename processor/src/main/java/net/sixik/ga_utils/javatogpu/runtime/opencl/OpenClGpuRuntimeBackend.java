@@ -134,6 +134,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
 
     private static final java.util.regex.Pattern DOUBLE_USAGE_PATTERN = java.util.regex.Pattern.compile("\\bdouble(?:[234])?\\b");
     private static final String BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY = "javatogpu.opencl.backendSourcePromotionWorkloadGateFile";
+    private static final String RUNTIME_COMPILE_ARTIFACT_DIRECTORY_PROPERTY = "javatogpu.opencl.runtimeCompileArtifactDirectory";
     private static final String PRODUCTION_PROMOTION_EXPLAINABILITY_FILE_PROPERTY = "javatogpu.opencl.productionPromotionExplainabilityFile";
     private static final Object SHARED_RUNTIME_LOCK = new Object();
     private static final Map<GpuRuntimeCompileCacheKey, OpenClCompiledKernel> SHARED_COMPILED_KERNELS = new ConcurrentHashMap<>();
@@ -393,6 +394,9 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         compileRequest = applyProductionPromotionDecision(compileRequest);
         GpuRuntimeIrOptimizationResult optimizationResult = optimizeRuntimeIrWithReport(compileRequest);
         GpuRuntimeCompileRequest optimizedCompileRequest = optimizationResult.compileRequest();
+        GpuBackendModuleArtifact originalModuleArtifact = runtimeCompileArtifactsConfigured()
+                ? lowerBackendModule(compileRequest)
+                : null;
         GpuBackendModuleArtifact optimizedModuleArtifact = lowerBackendModule(optimizedCompileRequest);
         GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence = executeRuntimeEquivalence(new GpuRuntimeEquivalenceRequest(
                 compileRequest,
@@ -421,6 +425,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         );
         GpuBackendModuleArtifact moduleArtifact = sameSelectedIr(optimizedCompileRequest, selectedCompileRequest)
                 ? optimizedModuleArtifact
+                : sameSelectedIr(compileRequest, selectedCompileRequest) && originalModuleArtifact != null
+                ? originalModuleArtifact
                 : lowerBackendModule(selectedCompileRequest);
         GpuRuntimeCompileInvalidationStamp invalidationStamp = GpuRuntimeCompileInvalidationStamp.from(
                 selectedCompileRequest,
@@ -435,7 +441,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 GpuRuntimeCompileProvenance.from(selectedCompileRequest),
                 optimizationResult.report(),
                 runtimeEquivalenceEvidence
-        );
+        ).withBackendStageModuleArtifacts(originalModuleArtifact, optimizedModuleArtifact);
         GpuBackendSourcePromotionGate sourcePromotionGate = backendSourcePromotionGate(
                 selectedCompileRequest,
                 moduleArtifact,
@@ -3239,24 +3245,55 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     private void dumpRuntimeCompileArtifacts(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
-        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
-        if (outputPath == null || outputPath.isBlank()) {
+        writeRuntimeCompileArtifactsIfConfigured(artifactSnapshot);
+    }
+
+    private static boolean runtimeCompileArtifactsConfigured() {
+        return propertyConfigured(RUNTIME_COMPILE_ARTIFACT_DIRECTORY_PROPERTY)
+                || propertyConfigured(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+    }
+
+    private static boolean propertyConfigured(String property) {
+        String value = System.getProperty(property);
+        return value != null && !value.isBlank();
+    }
+
+    static void writeRuntimeCompileArtifactsIfConfigured(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+        java.util.List<java.nio.file.Path> artifactDirectories = runtimeCompileArtifactDirectories(artifactSnapshot);
+        if (artifactDirectories.isEmpty()) {
             return;
         }
         try {
-            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
-            java.nio.file.Path reportDirectory = gatePath.getParent();
-            if (reportDirectory == null) {
-                return;
-            }
-            java.nio.file.Path artifactDirectory = runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot);
-            java.nio.file.Files.createDirectories(artifactDirectory);
-
             GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(artifactSnapshot);
-            writeRuntimeCompileArtifactDump(artifactDirectory, dump);
+            for (java.nio.file.Path artifactDirectory : artifactDirectories) {
+                java.nio.file.Files.createDirectories(artifactDirectory);
+                writeRuntimeCompileArtifactDump(artifactDirectory, dump);
+            }
         } catch (RuntimeException | java.io.IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL runtime compile artifacts", exception);
         }
+    }
+
+    private static java.util.List<java.nio.file.Path> runtimeCompileArtifactDirectories(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
+        java.util.LinkedHashSet<java.nio.file.Path> directories = new java.util.LinkedHashSet<>();
+        String explicitArtifactRoot = System.getProperty(RUNTIME_COMPILE_ARTIFACT_DIRECTORY_PROPERTY);
+        if (explicitArtifactRoot != null && !explicitArtifactRoot.isBlank()) {
+            directories.add(runtimeCompileArtifactDirectoryFromRoot(
+                    java.nio.file.Paths.get(explicitArtifactRoot),
+                    artifactSnapshot
+            ));
+        }
+        String outputPath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (outputPath != null && !outputPath.isBlank()) {
+            java.nio.file.Path gatePath = java.nio.file.Paths.get(outputPath);
+            java.nio.file.Path reportDirectory = gatePath.getParent();
+            if (reportDirectory != null) {
+                directories.add(runtimeCompileArtifactDirectory(reportDirectory, artifactSnapshot));
+            }
+        }
+        return java.util.List.copyOf(directories);
     }
 
     static void writeRuntimeCompileArtifactDump(
@@ -3310,7 +3347,20 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuRuntimeCompileArtifactSnapshot artifactSnapshot
     ) {
         return reportDirectory
+                .toAbsolutePath()
+                .normalize()
                 .resolve("runtime-compile-artifacts")
+                .resolve(runtimeCompileArtifactDirectoryName(artifactSnapshot))
+                .normalize();
+    }
+
+    private static java.nio.file.Path runtimeCompileArtifactDirectoryFromRoot(
+            java.nio.file.Path artifactRootDirectory,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
+        return artifactRootDirectory
+                .toAbsolutePath()
+                .normalize()
                 .resolve(runtimeCompileArtifactDirectoryName(artifactSnapshot));
     }
 

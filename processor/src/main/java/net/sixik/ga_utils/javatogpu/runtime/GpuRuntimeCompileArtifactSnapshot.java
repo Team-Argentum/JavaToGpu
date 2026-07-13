@@ -29,7 +29,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
         String compileLog,
         List<String> runtimeValidationEvidence,
         Optional<GpuRuntimeDeviceSelection> deviceSelection,
-        List<GpuRuntimeBinaryArtifact> binaryArtifacts
+        List<GpuRuntimeBinaryArtifact> binaryArtifacts,
+        Optional<GpuBackendModuleArtifact> originalBackendModuleArtifact,
+        Optional<GpuBackendModuleArtifact> optimizedBackendModuleArtifact
 ) {
 
     public GpuRuntimeCompileArtifactSnapshot {
@@ -77,6 +79,12 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 : List.copyOf(runtimeValidationEvidence);
         deviceSelection = deviceSelection == null ? Optional.empty() : deviceSelection;
         binaryArtifacts = binaryArtifacts == null ? List.of() : List.copyOf(binaryArtifacts);
+        originalBackendModuleArtifact = originalBackendModuleArtifact == null
+                ? Optional.empty()
+                : originalBackendModuleArtifact;
+        optimizedBackendModuleArtifact = optimizedBackendModuleArtifact == null
+                ? Optional.empty()
+                : optimizedBackendModuleArtifact;
     }
 
     public GpuRuntimeCompileArtifactSnapshot(
@@ -114,7 +122,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                List.of()
+                List.of(),
+                Optional.empty(),
+                Optional.empty()
         );
     }
 
@@ -445,7 +455,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -467,7 +479,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                artifacts
+                artifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -489,7 +503,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 evidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -512,7 +528,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -534,7 +552,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -556,7 +576,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -578,7 +600,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -600,7 +624,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -624,7 +650,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 deviceSelection,
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -648,7 +676,10 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 sourceLocations,
                 compileLog,
                 runtimeValidationEvidence,
-                deviceSelection
+                deviceSelection,
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -672,7 +703,9 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 Optional.empty(),
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
         );
     }
 
@@ -694,7 +727,36 @@ public record GpuRuntimeCompileArtifactSnapshot(
                 compileLog,
                 runtimeValidationEvidence,
                 Optional.ofNullable(selection),
-                binaryArtifacts
+                binaryArtifacts,
+                originalBackendModuleArtifact,
+                optimizedBackendModuleArtifact
+        );
+    }
+
+    public GpuRuntimeCompileArtifactSnapshot withBackendStageModuleArtifacts(
+            GpuBackendModuleArtifact originalBackendModuleArtifact,
+            GpuBackendModuleArtifact optimizedBackendModuleArtifact
+    ) {
+        return new GpuRuntimeCompileArtifactSnapshot(
+                originalIrGpuArtifact,
+                optimizedIrGpuArtifact,
+                backendModuleArtifact,
+                invalidationStamp,
+                compileProvenance,
+                optimizationReport,
+                runtimeEquivalenceEvidence,
+                fallbackEvidence,
+                productionOptimizerGate,
+                runtimeIrSelection,
+                backendSourceSwitchingDecision,
+                backendSourcePromotionGate,
+                sourceLocations,
+                compileLog,
+                runtimeValidationEvidence,
+                deviceSelection,
+                binaryArtifacts,
+                Optional.ofNullable(originalBackendModuleArtifact),
+                Optional.ofNullable(optimizedBackendModuleArtifact)
         );
     }
 }

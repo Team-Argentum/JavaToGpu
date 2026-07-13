@@ -14,16 +14,39 @@ public record GpuIrOptimizationSandwichReport(
         IrGpuArtifact originalArtifact,
         IrGpuArtifact selectedArtifact,
         Optional<GpuIrOptimizationProposal> proposal,
+        Optional<GpuIrOptimizedArtifactCandidate> optimizedArtifactCandidate,
         GpuIrOptimizationValidationResult originalValidation,
         Optional<GpuIrOptimizationValidationResult> optimizedValidation,
         GpuIrOptimizationSandwichStatus status,
         List<String> diagnostics
 ) {
 
+    public GpuIrOptimizationSandwichReport(
+            IrGpuArtifact originalArtifact,
+            IrGpuArtifact selectedArtifact,
+            Optional<GpuIrOptimizationProposal> proposal,
+            GpuIrOptimizationValidationResult originalValidation,
+            Optional<GpuIrOptimizationValidationResult> optimizedValidation,
+            GpuIrOptimizationSandwichStatus status,
+            List<String> diagnostics
+    ) {
+        this(
+                originalArtifact,
+                selectedArtifact,
+                proposal,
+                Optional.empty(),
+                originalValidation,
+                optimizedValidation,
+                status,
+                diagnostics
+        );
+    }
+
     public GpuIrOptimizationSandwichReport {
         originalArtifact = Objects.requireNonNull(originalArtifact, "originalArtifact");
         selectedArtifact = Objects.requireNonNull(selectedArtifact, "selectedArtifact");
         proposal = proposal == null ? Optional.empty() : proposal;
+        optimizedArtifactCandidate = optimizedArtifactCandidate == null ? Optional.empty() : optimizedArtifactCandidate;
         originalValidation = Objects.requireNonNull(originalValidation, "originalValidation");
         optimizedValidation = optimizedValidation == null ? Optional.empty() : optimizedValidation;
         status = status == null ? GpuIrOptimizationSandwichStatus.NO_CHANGE : status;

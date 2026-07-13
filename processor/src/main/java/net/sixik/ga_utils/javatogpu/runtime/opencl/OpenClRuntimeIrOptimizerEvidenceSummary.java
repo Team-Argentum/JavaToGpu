@@ -96,6 +96,67 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         return entries.stream().mapToInt(Entry::approvalTemplateNotApplicableCount).sum();
     }
 
+    int totalOptimizedArtifactCandidateCount() {
+        return entries.stream().mapToInt(Entry::optimizedArtifactCandidateCount).sum();
+    }
+
+    int totalOptimizedArtifactCandidateReadyCount() {
+        return entries.stream().mapToInt(Entry::optimizedArtifactCandidateReadyCount).sum();
+    }
+
+    int totalOptimizedArtifactCandidateBlockedCount() {
+        return entries.stream().mapToInt(Entry::optimizedArtifactCandidateBlockedCount).sum();
+    }
+
+    int totalOptimizedArtifactCandidateSelectionReadyCount() {
+        return entries.stream().mapToInt(Entry::optimizedArtifactCandidateSelectionReadyCount).sum();
+    }
+
+    int totalOptimizedArtifactCandidateSelectionAppliedCount() {
+        return entries.stream().mapToInt(Entry::optimizedArtifactCandidateSelectionAppliedCount).sum();
+    }
+
+    int totalOptimizedArtifactCandidateSelectedIrReplacementCount() {
+        return entries.stream().mapToInt(Entry::optimizedArtifactCandidateSelectedIrReplacementCount).sum();
+    }
+
+    int totalOptimizedArtifactCandidateMutationAllowedCount() {
+        return entries.stream().mapToInt(Entry::optimizedArtifactCandidateMutationAllowedCount).sum();
+    }
+
+    String optimizedArtifactCandidateStatus() {
+        int count = totalOptimizedArtifactCandidateCount();
+        if (count <= 0) {
+            return "not-recorded";
+        }
+        int readyCount = totalOptimizedArtifactCandidateReadyCount();
+        int blockedCount = totalOptimizedArtifactCandidateBlockedCount();
+        if (readyCount > 0 && blockedCount > 0) {
+            return "mixed";
+        }
+        return blockedCount > 0 ? "blocked" : "candidate-ready";
+    }
+
+    String optimizedArtifactCandidateFirstBlocker() {
+        for (Entry entry : entries) {
+            if (entry.optimizedArtifactCandidateCount() > 0
+                    && !"none".equals(entry.optimizedArtifactCandidateFirstBlocker())) {
+                return entry.optimizedArtifactCandidateFirstBlocker();
+            }
+        }
+        return totalOptimizedArtifactCandidateCount() > 0 ? "none" : "no-candidates";
+    }
+
+    String optimizedArtifactCandidateSelectionFirstBlocker() {
+        for (Entry entry : entries) {
+            if (entry.optimizedArtifactCandidateCount() > 0
+                    && !"none".equals(entry.optimizedArtifactCandidateSelectionFirstBlocker())) {
+                return entry.optimizedArtifactCandidateSelectionFirstBlocker();
+            }
+        }
+        return totalOptimizedArtifactCandidateCount() > 0 ? "selection-gate-not-bound" : "no-candidates";
+    }
+
     int totalConstantFoldingPreviewPassCount() {
         return entries.stream().mapToInt(Entry::constantFoldingPreviewPassCount).sum();
     }
@@ -342,6 +403,30 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         markdown.append("- Rolled back count: `").append(totalRolledBackCount()).append("`\n");
         markdown.append("- Approval templates pending: `").append(totalApprovalTemplatePendingCount()).append("`\n");
         markdown.append("- Approval templates not applicable: `").append(totalApprovalTemplateNotApplicableCount()).append("`\n");
+        markdown.append("- Optimized artifact candidate status: `")
+                .append(optimizedArtifactCandidateStatus()).append("`\n");
+        markdown.append("- Optimized artifact candidates: `")
+                .append(totalOptimizedArtifactCandidateCount()).append("`\n");
+        markdown.append("- Optimized artifact candidates ready: `")
+                .append(totalOptimizedArtifactCandidateReadyCount()).append("`\n");
+        markdown.append("- Optimized artifact candidates blocked: `")
+                .append(totalOptimizedArtifactCandidateBlockedCount()).append("`\n");
+        markdown.append("- Optimized artifact candidate first blocker: `")
+                .append(inline(optimizedArtifactCandidateFirstBlocker())).append("`\n");
+        markdown.append("- Optimized artifact candidate selection first blocker: `")
+                .append(inline(optimizedArtifactCandidateSelectionFirstBlocker())).append("`\n");
+        markdown.append("- Optimized artifact candidate selection ready count: `")
+                .append(totalOptimizedArtifactCandidateSelectionReadyCount()).append("`\n");
+        markdown.append("- Optimized artifact candidate selection applied count: `")
+                .append(totalOptimizedArtifactCandidateSelectionAppliedCount()).append("`\n");
+        markdown.append("- Optimized artifact candidate selected IR replacement count: `")
+                .append(totalOptimizedArtifactCandidateSelectedIrReplacementCount()).append("`\n");
+        markdown.append("- Optimized artifact candidate mutation-allowed count: `")
+                .append(totalOptimizedArtifactCandidateMutationAllowedCount()).append("`\n");
+        markdown.append("- Optimized artifact candidate selection applied: `")
+                .append(totalOptimizedArtifactCandidateSelectionAppliedCount() > 0).append("`\n");
+        markdown.append("- Optimized artifact candidate selected IR replacement: `")
+                .append(totalOptimizedArtifactCandidateSelectedIrReplacementCount() > 0).append("`\n");
         markdown.append("- Constant folding preview passes: `").append(totalConstantFoldingPreviewPassCount()).append("`\n");
         markdown.append("- Constant folding preview candidates: `").append(totalConstantFoldingPreviewCandidateCount()).append("`\n");
         markdown.append("- Constant folding preview skipped blockers: `").append(totalConstantFoldingPreviewSkippedCount()).append("`\n");
@@ -386,8 +471,8 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         if (entries.isEmpty()) {
             return markdown.toString();
         }
-        markdown.append("| Kernel resource | Status | Passes | Proposal-only | Selected | Rolled back | Approval pending | Approval N/A | CF candidates | CF skipped | CSE candidates | CSE duplicates | CSE blocked | TDC unreachable | TDC blocked | Review package | Review blocker | Providers |\n");
-        markdown.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |\n");
+        markdown.append("| Kernel resource | Status | Passes | Proposal-only | Selected | Rolled back | Approval pending | Approval N/A | Candidate | Candidate blocker | Selection blocker | CF candidates | CF skipped | CSE candidates | CSE duplicates | CSE blocked | TDC unreachable | TDC blocked | Review package | Review blocker | Providers |\n");
+        markdown.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |\n");
         for (Entry entry : entries) {
             markdown.append("| `").append(table(entry.kernelResource())).append("` | `")
                     .append(table(entry.status())).append("` | `")
@@ -397,6 +482,9 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     .append(entry.rolledBackCount()).append("` | `")
                     .append(entry.approvalTemplatePendingCount()).append("` | `")
                     .append(entry.approvalTemplateNotApplicableCount()).append("` | `")
+                    .append(table(entry.optimizedArtifactCandidateStatus())).append("` | `")
+                    .append(table(entry.optimizedArtifactCandidateFirstBlocker())).append("` | `")
+                    .append(table(entry.optimizedArtifactCandidateSelectionFirstBlocker())).append("` | `")
                     .append(entry.constantFoldingPreviewCandidateCount()).append("` | `")
                     .append(entry.constantFoldingPreviewSkippedCount()).append("` | `")
                     .append(entry.safeLocalCsePreviewCandidateExpressionCount()).append("` | `")
@@ -525,6 +613,16 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             int rolledBackCount,
             int approvalTemplatePendingCount,
             int approvalTemplateNotApplicableCount,
+            String optimizedArtifactCandidateStatus,
+            int optimizedArtifactCandidateCount,
+            int optimizedArtifactCandidateReadyCount,
+            int optimizedArtifactCandidateBlockedCount,
+            int optimizedArtifactCandidateSelectionReadyCount,
+            int optimizedArtifactCandidateSelectionAppliedCount,
+            int optimizedArtifactCandidateSelectedIrReplacementCount,
+            int optimizedArtifactCandidateMutationAllowedCount,
+            String optimizedArtifactCandidateFirstBlocker,
+            String optimizedArtifactCandidateSelectionFirstBlocker,
             int constantFoldingPreviewPassCount,
             int constantFoldingPreviewCandidateCount,
             int constantFoldingPreviewSkippedNonPlainLiteralCount,
@@ -578,6 +676,19 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             rolledBackCount = Math.max(0, rolledBackCount);
             approvalTemplatePendingCount = Math.max(0, approvalTemplatePendingCount);
             approvalTemplateNotApplicableCount = Math.max(0, approvalTemplateNotApplicableCount);
+            optimizedArtifactCandidateStatus = normalize(optimizedArtifactCandidateStatus, "not-recorded");
+            optimizedArtifactCandidateCount = Math.max(0, optimizedArtifactCandidateCount);
+            optimizedArtifactCandidateReadyCount = Math.max(0, optimizedArtifactCandidateReadyCount);
+            optimizedArtifactCandidateBlockedCount = Math.max(0, optimizedArtifactCandidateBlockedCount);
+            optimizedArtifactCandidateSelectionReadyCount = Math.max(0, optimizedArtifactCandidateSelectionReadyCount);
+            optimizedArtifactCandidateSelectionAppliedCount = Math.max(0, optimizedArtifactCandidateSelectionAppliedCount);
+            optimizedArtifactCandidateSelectedIrReplacementCount = Math.max(0, optimizedArtifactCandidateSelectedIrReplacementCount);
+            optimizedArtifactCandidateMutationAllowedCount = Math.max(0, optimizedArtifactCandidateMutationAllowedCount);
+            optimizedArtifactCandidateFirstBlocker = normalize(optimizedArtifactCandidateFirstBlocker, "no-candidates");
+            optimizedArtifactCandidateSelectionFirstBlocker = normalize(
+                    optimizedArtifactCandidateSelectionFirstBlocker,
+                    "no-candidates"
+            );
             constantFoldingPreviewPassCount = Math.max(0, constantFoldingPreviewPassCount);
             constantFoldingPreviewCandidateCount = Math.max(0, constantFoldingPreviewCandidateCount);
             constantFoldingPreviewSkippedNonPlainLiteralCount = Math.max(0, constantFoldingPreviewSkippedNonPlainLiteralCount);
@@ -665,12 +776,15 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
 
         static Entry from(String kernelResource, Properties properties) {
             if (properties == null || properties.isEmpty()) {
-                return new Entry(kernelResource, "missing", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                return new Entry(kernelResource, "missing", 0, 0, 0, 0, 0, 0,
+                        "not-recorded", 0, 0, 0, 0, 0, 0, 0, "no-candidates", "no-candidates",
+                        0, 0, 0, 0, 0, 0, 0,
                         false, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0, false, false, false, false,
                         0, 0, 0, 0, 0, 0, 0, false, false, false,
                         "not-recorded", false, false, "review-package-not-recorded", 0, 0, "unknown", false,
                         Map.of());
             }
+            CandidateEvidence optimizedArtifactCandidate = optimizedArtifactCandidateEvidence(properties);
             return new Entry(
                     kernelResource,
                     properties.getProperty("status", "unknown"),
@@ -680,6 +794,16 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     parseInt(properties.getProperty("rolledBack.count"), 0),
                     parseInt(properties.getProperty("approvalTemplate.pending.count"), 0),
                     parseInt(properties.getProperty("approvalTemplate.notApplicable.count"), 0),
+                    optimizedArtifactCandidate.status(),
+                    optimizedArtifactCandidate.count(),
+                    optimizedArtifactCandidate.readyCount(),
+                    optimizedArtifactCandidate.blockedCount(),
+                    optimizedArtifactCandidate.selectionReadyCount(),
+                    optimizedArtifactCandidate.selectionAppliedCount(),
+                    optimizedArtifactCandidate.selectedIrReplacementCount(),
+                    optimizedArtifactCandidate.mutationAllowedCount(),
+                    optimizedArtifactCandidate.firstBlocker(),
+                    optimizedArtifactCandidate.selectionFirstBlocker(),
                     parseInt(properties.getProperty("constantFoldingPreview.pass.count"), 0),
                     parseInt(properties.getProperty("constantFoldingPreview.candidate.count"), 0),
                     parseInt(properties.getProperty("constantFoldingPreview.skipped.nonPlainLiteral.count"), 0),
@@ -734,6 +858,143 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
 
         private static String normalize(String value, String fallback) {
             return value == null || value.isBlank() ? fallback : value;
+        }
+
+        private static CandidateEvidence optimizedArtifactCandidateEvidence(Properties properties) {
+            if (properties.containsKey("optimizedArtifactCandidate.count")
+                    || properties.containsKey("optimizedArtifactCandidate.status")) {
+                return new CandidateEvidence(
+                        properties.getProperty("optimizedArtifactCandidate.status", "not-recorded"),
+                        parseInt(properties.getProperty("optimizedArtifactCandidate.count"), 0),
+                        parseInt(properties.getProperty("optimizedArtifactCandidate.ready.count"), 0),
+                        parseInt(properties.getProperty("optimizedArtifactCandidate.blocked.count"), 0),
+                        parseInt(properties.getProperty("optimizedArtifactCandidate.selectionReady.count"), 0),
+                        parseInt(properties.getProperty("optimizedArtifactCandidate.selectionApplied.count"), 0),
+                        parseInt(properties.getProperty("optimizedArtifactCandidate.selectedIrReplacement.count"), 0),
+                        parseInt(properties.getProperty("optimizedArtifactCandidate.mutationAllowed.count"), 0),
+                        properties.getProperty("optimizedArtifactCandidate.firstBlocker", "no-candidates"),
+                        properties.getProperty("optimizedArtifactCandidate.selectionFirstBlocker", "no-candidates")
+                );
+            }
+            return optimizedArtifactCandidateEvidenceFromPassFields(properties);
+        }
+
+        private static CandidateEvidence optimizedArtifactCandidateEvidenceFromPassFields(Properties properties) {
+            int count = 0;
+            int readyCount = 0;
+            int blockedCount = 0;
+            int selectionReadyCount = 0;
+            int selectionAppliedCount = 0;
+            int selectedIrReplacementCount = 0;
+            int mutationAllowedCount = 0;
+            String firstBlocker = "no-candidates";
+            String selectionFirstBlocker = "no-candidates";
+            int passCount = parseInt(properties.getProperty("pass.count"), 0);
+            for (int index = 0; index < passCount; index++) {
+                String prefix = "pass." + index + ".proofArtifact.field.optimizedArtifactCandidate.";
+                if (!hasCandidateField(properties, prefix)) {
+                    continue;
+                }
+                count++;
+                String status = properties.getProperty(prefix + "status", "unknown");
+                if ("candidate-ready".equals(status)) {
+                    readyCount++;
+                } else {
+                    blockedCount++;
+                }
+                if (parseBoolean(properties.getProperty(prefix + "selectionReady"))) {
+                    selectionReadyCount++;
+                }
+                if (parseBoolean(properties.getProperty(prefix + "selectionApplied"))) {
+                    selectionAppliedCount++;
+                }
+                if (parseBoolean(properties.getProperty(prefix + "selectedIrReplacement"))) {
+                    selectedIrReplacementCount++;
+                }
+                if (parseBoolean(properties.getProperty(prefix + "mutationAllowed"))) {
+                    mutationAllowedCount++;
+                }
+                String candidateBlocker = properties.getProperty(prefix + "firstBlocker", "none");
+                if (isPreferredCandidateBlocker(firstBlocker, candidateBlocker)) {
+                    firstBlocker = candidateBlocker;
+                }
+                String candidateSelectionBlocker = properties.getProperty(
+                        prefix + "selectionFirstBlocker",
+                        "selection-gate-not-bound"
+                );
+                if (isPreferredCandidateBlocker(selectionFirstBlocker, candidateSelectionBlocker)) {
+                    selectionFirstBlocker = candidateSelectionBlocker;
+                }
+            }
+            String status = optimizedArtifactCandidateStatus(count, readyCount, blockedCount);
+            if (count > 0 && "no-candidates".equals(firstBlocker)) {
+                firstBlocker = "none";
+            }
+            if (count > 0 && "no-candidates".equals(selectionFirstBlocker)) {
+                selectionFirstBlocker = "selection-gate-not-bound";
+            }
+            return new CandidateEvidence(
+                    status,
+                    count,
+                    readyCount,
+                    blockedCount,
+                    selectionReadyCount,
+                    selectionAppliedCount,
+                    selectedIrReplacementCount,
+                    mutationAllowedCount,
+                    firstBlocker,
+                    selectionFirstBlocker
+            );
+        }
+
+        private static boolean hasCandidateField(Properties properties, String prefix) {
+            return properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith(prefix));
+        }
+
+        private static boolean isPreferredCandidateBlocker(String currentBlocker, String candidateBlocker) {
+            if (candidateBlocker == null || candidateBlocker.isBlank()) {
+                return false;
+            }
+            if ("no-candidates".equals(currentBlocker)) {
+                return true;
+            }
+            return "none".equals(currentBlocker) && !"none".equals(candidateBlocker);
+        }
+
+        private static String optimizedArtifactCandidateStatus(int count, int readyCount, int blockedCount) {
+            if (count <= 0) {
+                return "not-recorded";
+            }
+            if (readyCount > 0 && blockedCount > 0) {
+                return "mixed";
+            }
+            return blockedCount > 0 ? "blocked" : "candidate-ready";
+        }
+
+        private record CandidateEvidence(
+                String status,
+                int count,
+                int readyCount,
+                int blockedCount,
+                int selectionReadyCount,
+                int selectionAppliedCount,
+                int selectedIrReplacementCount,
+                int mutationAllowedCount,
+                String firstBlocker,
+                String selectionFirstBlocker
+        ) {
+            private CandidateEvidence {
+                status = normalize(status, "not-recorded");
+                count = Math.max(0, count);
+                readyCount = Math.max(0, readyCount);
+                blockedCount = Math.max(0, blockedCount);
+                selectionReadyCount = Math.max(0, selectionReadyCount);
+                selectionAppliedCount = Math.max(0, selectionAppliedCount);
+                selectedIrReplacementCount = Math.max(0, selectedIrReplacementCount);
+                mutationAllowedCount = Math.max(0, mutationAllowedCount);
+                firstBlocker = normalize(firstBlocker, "no-candidates");
+                selectionFirstBlocker = normalize(selectionFirstBlocker, "no-candidates");
+            }
         }
 
         private static Map<String, Integer> parseProviderCounts(Properties properties) {

@@ -42,6 +42,18 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
                 rolledBack.count=1
                 approvalTemplate.pending.count=1
                 approvalTemplate.notApplicable.count=2
+                optimizedArtifactCandidate.status=candidate-ready
+                optimizedArtifactCandidate.count=1
+                optimizedArtifactCandidate.ready.count=1
+                optimizedArtifactCandidate.blocked.count=0
+                optimizedArtifactCandidate.selectionReady.count=0
+                optimizedArtifactCandidate.selectionApplied.count=0
+                optimizedArtifactCandidate.selectedIrReplacement.count=0
+                optimizedArtifactCandidate.mutationAllowed.count=0
+                optimizedArtifactCandidate.firstBlocker=none
+                optimizedArtifactCandidate.selectionFirstBlocker=mutation-disabled
+                optimizedArtifactCandidate.selectionApplied=false
+                optimizedArtifactCandidate.selectedIrReplacement=false
                 constantFoldingPreview.pass.count=1
                 constantFoldingPreview.candidate.count=3
                 constantFoldingPreview.skipped.nonPlainLiteral.count=1
@@ -100,6 +112,15 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertEquals(1, summary.entries().get(0).rolledBackCount());
         assertEquals(1, summary.entries().get(0).approvalTemplatePendingCount());
         assertEquals(2, summary.entries().get(0).approvalTemplateNotApplicableCount());
+        assertEquals("candidate-ready", summary.entries().get(0).optimizedArtifactCandidateStatus());
+        assertEquals(1, summary.entries().get(0).optimizedArtifactCandidateCount());
+        assertEquals(1, summary.entries().get(0).optimizedArtifactCandidateReadyCount());
+        assertEquals(0, summary.entries().get(0).optimizedArtifactCandidateBlockedCount());
+        assertEquals(0, summary.entries().get(0).optimizedArtifactCandidateSelectionReadyCount());
+        assertEquals(0, summary.entries().get(0).optimizedArtifactCandidateSelectionAppliedCount());
+        assertEquals(0, summary.entries().get(0).optimizedArtifactCandidateSelectedIrReplacementCount());
+        assertEquals("none", summary.entries().get(0).optimizedArtifactCandidateFirstBlocker());
+        assertEquals("mutation-disabled", summary.entries().get(0).optimizedArtifactCandidateSelectionFirstBlocker());
         assertEquals(1, summary.entries().get(0).constantFoldingPreviewPassCount());
         assertEquals(3, summary.entries().get(0).constantFoldingPreviewCandidateCount());
         assertEquals(5, summary.entries().get(0).constantFoldingPreviewSkippedCount());
@@ -126,6 +147,16 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertEquals(1, summary.totalRolledBackCount());
         assertEquals(1, summary.totalApprovalTemplatePendingCount());
         assertEquals(2, summary.totalApprovalTemplateNotApplicableCount());
+        assertEquals("candidate-ready", summary.optimizedArtifactCandidateStatus());
+        assertEquals(1, summary.totalOptimizedArtifactCandidateCount());
+        assertEquals(1, summary.totalOptimizedArtifactCandidateReadyCount());
+        assertEquals(0, summary.totalOptimizedArtifactCandidateBlockedCount());
+        assertEquals(0, summary.totalOptimizedArtifactCandidateSelectionReadyCount());
+        assertEquals(0, summary.totalOptimizedArtifactCandidateSelectionAppliedCount());
+        assertEquals(0, summary.totalOptimizedArtifactCandidateSelectedIrReplacementCount());
+        assertEquals(0, summary.totalOptimizedArtifactCandidateMutationAllowedCount());
+        assertEquals("none", summary.optimizedArtifactCandidateFirstBlocker());
+        assertEquals("mutation-disabled", summary.optimizedArtifactCandidateSelectionFirstBlocker());
         assertEquals(1, summary.totalConstantFoldingPreviewPassCount());
         assertEquals(3, summary.totalConstantFoldingPreviewCandidateCount());
         assertEquals(5, summary.totalConstantFoldingPreviewSkippedCount());
@@ -161,6 +192,18 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.toMarkdown().contains("- Proposal-only count: `2`"));
         assertTrue(summary.toMarkdown().contains("- Approval templates pending: `1`"));
         assertTrue(summary.toMarkdown().contains("- Approval templates not applicable: `2`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate status: `candidate-ready`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidates: `1`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidates ready: `1`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidates blocked: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate first blocker: `none`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate selection first blocker: `mutation-disabled`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate selection ready count: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate selection applied count: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate selected IR replacement count: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate mutation-allowed count: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate selection applied: `false`"));
+        assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate selected IR replacement: `false`"));
         assertTrue(summary.toMarkdown().contains("- Constant folding preview passes: `1`"));
         assertTrue(summary.toMarkdown().contains("- Constant folding preview candidates: `3`"));
         assertTrue(summary.toMarkdown().contains("- Constant folding preview skipped blockers: `5`"));
@@ -192,8 +235,8 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.toMarkdown().contains("- Review package production mutation: `disabled`"));
         assertTrue(summary.toMarkdown().contains("- Review package selected IR replacement: `disabled`"));
         assertTrue(summary.toMarkdown().contains("- Providers: `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2`"));
-        assertTrue(summary.toMarkdown().contains("| `kernel-a.cl` | `recorded` | `3` | `2` | `1` | `1` | `1` | `2` | `3` | `5` | `4` | `2` | `6` | `3` | `4` | `pending-manual-review` | `preview-readiness-blocked-by-proof` | `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2` |"));
-        assertTrue(summary.toMarkdown().contains("| `kernel-b.cl` | `missing` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `not-recorded` | `review-package-not-recorded` | `none` |"));
+        assertTrue(summary.toMarkdown().contains("| `kernel-a.cl` | `recorded` | `3` | `2` | `1` | `1` | `1` | `2` | `candidate-ready` | `none` | `mutation-disabled` | `3` | `5` | `4` | `2` | `6` | `3` | `4` | `pending-manual-review` | `preview-readiness-blocked-by-proof` | `ir-optimizer:no-op:1=1, ir-optimizer:text-canonicalization:1=2` |"));
+        assertTrue(summary.toMarkdown().contains("| `kernel-b.cl` | `missing` | `0` | `0` | `0` | `0` | `0` | `0` | `not-recorded` | `no-candidates` | `no-candidates` | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `not-recorded` | `review-package-not-recorded` | `none` |"));
     }
 
     @Test

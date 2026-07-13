@@ -13,9 +13,11 @@ import java.util.Optional;
 public final class GpuIrOptimizationSandwichRunner {
 
     private final GpuIrOptimizationValidationGate validationGate;
+    private final GpuIrOptimizedArtifactCandidateBuilder candidateBuilder;
 
     public GpuIrOptimizationSandwichRunner(GpuIrOptimizationValidationGate validationGate) {
         this.validationGate = validationGate == null ? GpuIrOptimizationValidationGate.alwaysValid() : validationGate;
+        this.candidateBuilder = GpuIrOptimizedArtifactCandidateBuilder.failClosed();
     }
 
     public static GpuIrOptimizationSandwichRunner alwaysValid() {
@@ -99,12 +101,14 @@ public final class GpuIrOptimizationSandwichRunner {
                         Optional.of(proposal)
                 )
         );
+        GpuIrOptimizedArtifactCandidate candidate = candidateBuilder.build(request, proposal, optimizedValidation);
         diagnostics.addAll(optimizedValidation.diagnostics());
         if (!optimizedValidation.valid()) {
             return report(
                     originalArtifact,
                     originalArtifact,
                     Optional.of(proposal),
+                    Optional.of(candidate),
                     originalValidation,
                     Optional.of(optimizedValidation),
                     GpuIrOptimizationSandwichStatus.OPTIMIZED_INVALID_ROLLED_BACK,
@@ -117,6 +121,7 @@ public final class GpuIrOptimizationSandwichRunner {
                     originalArtifact,
                     originalArtifact,
                     Optional.of(proposal),
+                    Optional.of(candidate),
                     originalValidation,
                     Optional.of(optimizedValidation),
                     GpuIrOptimizationSandwichStatus.PROPOSAL_ONLY,
@@ -128,6 +133,7 @@ public final class GpuIrOptimizationSandwichRunner {
                 originalArtifact,
                 optimizedArtifact,
                 Optional.of(proposal),
+                Optional.of(candidate),
                 originalValidation,
                 Optional.of(optimizedValidation),
                 GpuIrOptimizationSandwichStatus.OPTIMIZED_SELECTED,
@@ -144,10 +150,33 @@ public final class GpuIrOptimizationSandwichRunner {
             GpuIrOptimizationSandwichStatus status,
             List<String> diagnostics
     ) {
+        return report(
+                originalArtifact,
+                selectedArtifact,
+                proposal,
+                Optional.empty(),
+                originalValidation,
+                optimizedValidation,
+                status,
+                diagnostics
+        );
+    }
+
+    private static GpuIrOptimizationSandwichReport report(
+            IrGpuArtifact originalArtifact,
+            IrGpuArtifact selectedArtifact,
+            Optional<GpuIrOptimizationProposal> proposal,
+            Optional<GpuIrOptimizedArtifactCandidate> candidate,
+            GpuIrOptimizationValidationResult originalValidation,
+            Optional<GpuIrOptimizationValidationResult> optimizedValidation,
+            GpuIrOptimizationSandwichStatus status,
+            List<String> diagnostics
+    ) {
         return new GpuIrOptimizationSandwichReport(
                 originalArtifact,
                 selectedArtifact,
                 proposal,
+                candidate,
                 originalValidation,
                 optimizedValidation,
                 status,

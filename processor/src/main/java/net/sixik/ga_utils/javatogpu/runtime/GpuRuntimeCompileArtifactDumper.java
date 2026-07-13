@@ -65,6 +65,16 @@ public final class GpuRuntimeCompileArtifactDumper {
         if (snapshot.originalIrGpuArtifact().isPresent() || snapshot.optimizedIrGpuArtifact().isPresent()) {
             artifacts.put("irgpu-regeneration.properties", formatRegenerationMetadata(snapshot));
         }
+        snapshot.originalBackendModuleArtifact().ifPresent(artifact -> putBackendStageArtifact(
+                artifacts,
+                "original",
+                artifact
+        ));
+        snapshot.optimizedBackendModuleArtifact().ifPresent(artifact -> putBackendStageArtifact(
+                artifacts,
+                "optimized",
+                artifact
+        ));
         artifacts.put("backend." + snapshot.backendModuleArtifact().format(), snapshot.backendModuleArtifact().source());
         artifacts.put("compile-provenance.properties", snapshot.compileProvenance().toPropertiesText());
         snapshot.deviceSelection().ifPresent(selection -> artifacts.put(
@@ -142,6 +152,17 @@ public final class GpuRuntimeCompileArtifactDumper {
                 + location.endLine()
                 + ":"
                 + location.endColumn();
+    }
+
+    private static void putBackendStageArtifact(
+            LinkedHashMap<String, String> artifacts,
+            String stage,
+            GpuBackendModuleArtifact artifact
+    ) {
+        if (artifact == null || !artifact.sourceAvailable()) {
+            return;
+        }
+        artifacts.put(stage + ".backend." + artifact.format(), artifact.source());
     }
 
     private static String formatProperties(Map<String, String> fields) {
@@ -729,6 +750,29 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("approvalTemplate.notApplicable.count=")
                 .append(countApprovalTemplateStatus(irOptimizerReports, "not-applicable"))
                 .append('\n');
+        OptimizedArtifactCandidateEvidence optimizedArtifactCandidate = optimizedArtifactCandidateEvidence(irOptimizerReports);
+        builder.append("optimizedArtifactCandidate.status=").append(optimizedArtifactCandidate.status()).append('\n');
+        builder.append("optimizedArtifactCandidate.count=").append(optimizedArtifactCandidate.count()).append('\n');
+        builder.append("optimizedArtifactCandidate.ready.count=")
+                .append(optimizedArtifactCandidate.readyCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.blocked.count=")
+                .append(optimizedArtifactCandidate.blockedCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionReady.count=")
+                .append(optimizedArtifactCandidate.selectionReadyCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionApplied.count=")
+                .append(optimizedArtifactCandidate.selectionAppliedCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectedIrReplacement.count=")
+                .append(optimizedArtifactCandidate.selectedIrReplacementCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.mutationAllowed.count=")
+                .append(optimizedArtifactCandidate.mutationAllowedCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.firstBlocker=")
+                .append(safePropertyValue(optimizedArtifactCandidate.firstBlocker())).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionFirstBlocker=")
+                .append(safePropertyValue(optimizedArtifactCandidate.selectionFirstBlocker())).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionApplied=")
+                .append(optimizedArtifactCandidate.selectionApplied()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectedIrReplacement=")
+                .append(optimizedArtifactCandidate.selectedIrReplacement()).append('\n');
         ConstantFoldingPreviewEvidence constantFoldingPreview = constantFoldingPreviewEvidence(irOptimizerReports);
         builder.append("constantFoldingPreview.pass.count=").append(constantFoldingPreview.passCount()).append('\n');
         builder.append("constantFoldingPreview.candidate.count=").append(constantFoldingPreview.candidateCount()).append('\n');
@@ -912,6 +956,103 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .map(GpuRuntimeCompileArtifactDumper::approvalTemplateEvidence)
                 .filter(evidence -> status.equals(evidence.status()))
                 .count();
+    }
+
+    private static OptimizedArtifactCandidateEvidence optimizedArtifactCandidateEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int count = 0;
+        int readyCount = 0;
+        int blockedCount = 0;
+        int selectionReadyCount = 0;
+        int selectionAppliedCount = 0;
+        int selectedIrReplacementCount = 0;
+        int mutationAllowedCount = 0;
+        String firstBlocker = "no-candidates";
+        String selectionFirstBlocker = "no-candidates";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (!hasOptimizedArtifactCandidate(fields)) {
+                continue;
+            }
+            count++;
+            String status = fields.getOrDefault("optimizedArtifactCandidate.status", "unknown");
+            if ("candidate-ready".equals(status)) {
+                readyCount++;
+            } else {
+                blockedCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.selectionReady"))) {
+                selectionReadyCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.selectionApplied"))) {
+                selectionAppliedCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.selectedIrReplacement"))) {
+                selectedIrReplacementCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.mutationAllowed"))) {
+                mutationAllowedCount++;
+            }
+            String candidateBlocker = fields.getOrDefault("optimizedArtifactCandidate.firstBlocker", "none");
+            if (isPreferredCandidateBlocker(firstBlocker, candidateBlocker)) {
+                firstBlocker = candidateBlocker;
+            }
+            String candidateSelectionBlocker = fields.getOrDefault(
+                    "optimizedArtifactCandidate.selectionFirstBlocker",
+                    "selection-gate-not-bound"
+            );
+            if (isPreferredCandidateBlocker(selectionFirstBlocker, candidateSelectionBlocker)) {
+                selectionFirstBlocker = candidateSelectionBlocker;
+            }
+        }
+        String status = optimizedArtifactCandidateStatus(count, readyCount, blockedCount);
+        if (count > 0 && "no-candidates".equals(firstBlocker)) {
+            firstBlocker = "none";
+        }
+        if (count > 0 && "no-candidates".equals(selectionFirstBlocker)) {
+            selectionFirstBlocker = "selection-gate-not-bound";
+        }
+        return new OptimizedArtifactCandidateEvidence(
+                status,
+                count,
+                readyCount,
+                blockedCount,
+                selectionReadyCount,
+                selectionAppliedCount,
+                selectedIrReplacementCount,
+                mutationAllowedCount,
+                firstBlocker,
+                selectionFirstBlocker
+        );
+    }
+
+    private static boolean hasOptimizedArtifactCandidate(Map<String, String> fields) {
+        return fields != null && fields.keySet().stream()
+                .anyMatch(key -> key.startsWith("optimizedArtifactCandidate."));
+    }
+
+    private static boolean isPreferredCandidateBlocker(String currentBlocker, String candidateBlocker) {
+        if (candidateBlocker == null || candidateBlocker.isBlank()) {
+            return false;
+        }
+        if ("no-candidates".equals(currentBlocker)) {
+            return true;
+        }
+        return "none".equals(currentBlocker) && !"none".equals(candidateBlocker);
+    }
+
+    private static String optimizedArtifactCandidateStatus(int count, int readyCount, int blockedCount) {
+        if (count <= 0) {
+            return "not-recorded";
+        }
+        if (readyCount > 0 && blockedCount > 0) {
+            return "mixed";
+        }
+        return blockedCount > 0 ? "blocked" : "candidate-ready";
     }
 
     private static ConstantFoldingPreviewEvidence constantFoldingPreviewEvidence(
@@ -1362,6 +1503,27 @@ public final class GpuRuntimeCompileArtifactDumper {
             int pendingApprovalCount,
             String runtimeEquivalenceStatus
     ) {
+    }
+
+    private record OptimizedArtifactCandidateEvidence(
+            String status,
+            int count,
+            int readyCount,
+            int blockedCount,
+            int selectionReadyCount,
+            int selectionAppliedCount,
+            int selectedIrReplacementCount,
+            int mutationAllowedCount,
+            String firstBlocker,
+            String selectionFirstBlocker
+    ) {
+        private boolean selectionApplied() {
+            return selectionAppliedCount > 0;
+        }
+
+        private boolean selectedIrReplacement() {
+            return selectedIrReplacementCount > 0;
+        }
     }
 
     private static ApprovalTemplateEvidence approvalTemplateEvidence(GpuRuntimeIrOptimizationPassReport passReport) {

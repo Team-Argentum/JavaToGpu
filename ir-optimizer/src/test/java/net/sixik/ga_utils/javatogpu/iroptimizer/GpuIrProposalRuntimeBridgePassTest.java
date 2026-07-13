@@ -7,7 +7,13 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationOutcome;
@@ -16,10 +22,14 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationStage;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClRuntimeIrOptimizerEvidenceValidatorCli;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -27,12 +37,16 @@ import java.util.Optional;
 import java.util.ServiceLoader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuIrProposalRuntimeBridgePassTest {
+
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void runtimeBridgeIsTheOnlyServiceLoadedRuntimePassFromModule() {
@@ -89,8 +103,76 @@ class GpuIrProposalRuntimeBridgePassTest {
         assertEquals(GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY, report.passReports().get(1).stage());
         assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, report.passReports().get(1).outcome());
         assertEquals("proposal-only", report.passReports().get(1).proofStatus());
+        assertEquals(
+                "candidate-ready",
+                report.passReports().get(1).proofArtifact().fields().get("optimizedArtifactCandidate.status")
+        );
+        assertEquals(
+                "mutation-disabled",
+                report.passReports().get(1).proofArtifact().fields().get("optimizedArtifactCandidate.selectionFirstBlocker")
+        );
+        assertEquals(
+                "false",
+                report.passReports().get(1).proofArtifact().fields().get("optimizedArtifactCandidate.selectionApplied")
+        );
+        assertEquals(
+                "false",
+                report.passReports().get(1).proofArtifact().fields().get("optimizedArtifactCandidate.selectedIrReplacement")
+        );
         assertTrue(report.passReports().get(1).diagnostics().contains(
                 "optimized artifact validated but mutation is disabled; original IR remains selected"
+        ));
+    }
+
+    @Test
+    void bridgeCandidateEnvelopeReachesRuntimeEvidenceArtifact() throws Exception {
+        IrGpuArtifact original = artifact("body  \r\n  return original\t\r\n");
+        GpuRuntimeCompileRequest compileRequest = request(original);
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuIrProposalRuntimeBridgePass(
+                List.of(new GpuIrTextCanonicalizationProposalProvider()),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        ).run(new GpuRuntimeIrOptimizationRequest(compileRequest, Optional.of(original)));
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void run(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/run.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                compileRequest,
+                compileRequest,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(compileRequest, backendArtifact, "ir-optimizer:e2e"),
+                GpuRuntimeCompileProvenance.from(compileRequest),
+                optimizationReport
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT));
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        assertTrue(evidence.contains("status=recorded"));
+        assertTrue(evidence.contains("pass.count=1"));
+        assertTrue(evidence.contains("proposalOnly.count=1"));
+        assertTrue(evidence.contains("selectedOptimized.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.status=candidate-ready"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.count=1"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.ready.count=1"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionFirstBlocker=mutation-disabled"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement=false"));
+        assertTrue(evidence.contains("pass.0.proofArtifact.field.optimizedArtifactCandidate.status=candidate-ready"));
+        assertTrue(evidence.contains("pass.0.proofArtifact.field.optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("pass.0.proofArtifact.field.optimizedArtifactCandidate.selectedIrReplacement=false"));
+
+        Path evidenceFile = temporaryDirectory.resolve(
+                GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT
+        );
+        Files.writeString(evidenceFile, evidence, StandardCharsets.UTF_8);
+        assertDoesNotThrow(() -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(
+                new String[]{evidenceFile.toString()}
         ));
     }
 
@@ -110,6 +192,14 @@ class GpuIrProposalRuntimeBridgePassTest {
         assertEquals(1, report.passReports().size());
         assertEquals(GpuRuntimeIrOptimizationOutcome.APPLIED, report.passReports().get(0).outcome());
         assertEquals("optimized-selected", report.passReports().get(0).proofStatus());
+        assertEquals(
+                "selection-gate-not-bound",
+                report.passReports().get(0).proofArtifact().fields().get("optimizedArtifactCandidate.selectionFirstBlocker")
+        );
+        assertEquals(
+                "false",
+                report.passReports().get(0).proofArtifact().fields().get("optimizedArtifactCandidate.selectionApplied")
+        );
         assertFalse(report.requiresRollback());
     }
 

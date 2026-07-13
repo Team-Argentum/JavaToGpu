@@ -136,6 +136,14 @@ processor/build/reports/opencl/
 
 Start with `validation-report.md` when checking a run.
 
+Run the optional IR optimizer journal example:
+
+```powershell
+.\gradlew.bat :examples-app:runOptimizationJournalExample --console=plain
+```
+
+The example is documented in [examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md](examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md) and shows how to opt into the optimizer module while dumping original and optimized IR artifacts for review.
+
 ## Project Layout
 
 - `processor` - annotation processor, compiler, OpenCL emitter, runtime, launchers, tests, and validation buckets.

@@ -84,6 +84,11 @@ processor/build/reports/opencl/backend-source-promotion-activation-gate.properti
 processor/build/reports/opencl/backend-source-promotion-activation-gate.properties.sha256
 processor/build/reports/opencl/production-activation-token-smoke.properties
 processor/build/reports/opencl/production-activation-token-negative.properties
+<custom-dir-from-javatogpu.opencl.runtimeCompileArtifactDirectory>/**/original.irgpu.properties
+<custom-dir-from-javatogpu.opencl.runtimeCompileArtifactDirectory>/**/optimized.irgpu.properties
+<custom-dir-from-javatogpu.opencl.runtimeCompileArtifactDirectory>/**/original.backend.opencl-c
+<custom-dir-from-javatogpu.opencl.runtimeCompileArtifactDirectory>/**/optimized.backend.opencl-c
+<custom-dir-from-javatogpu.opencl.runtimeCompileArtifactDirectory>/**/backend.opencl-c
 processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-ir-optimizer-evidence.properties
 processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-optimizer-family-equivalence-payload/
 processor/build/reports/opencl/optimizer-family-payload-fixture/
@@ -91,6 +96,8 @@ processor/build/test-results/
 ```
 
 These files are more useful than a screenshot because they preserve bucket status, device details, and machine-readable failure state.
+
+For local pre/post optimizer inspection, set `-Djavatogpu.opencl.runtimeCompileArtifactDirectory=<directory>` on the runtime process. This writes the same per-kernel artifact bundle independently of the validation report path, including `original.irgpu.properties`, `optimized.irgpu.properties`, `original.backend.opencl-c`, `optimized.backend.opencl-c`, selected `backend.opencl-c`, `runtime-ir-handoff.properties`, and optimizer evidence when present.
 
 The candidate gate combines the real-workload gate with controlled source-switching acceptance for the same kernel resources and device identity. `review-ready` means the candidate evidence is complete; default production source switching and production mutation remain disabled.
 
@@ -102,7 +109,7 @@ Use `activate` only after manifest validation succeeds. The workflow then writes
 
 The vendor workflow also runs `openClOptimizerFamilyPayloadFixtureTest` after the main validation bucket. It must produce `fixture-summary.properties` with two complete families and fourteen durable files. This fixture proves the nested artifact contract is uploadable and path-safe; it does not alter real-workload optimizer-family counts or production readiness.
 
-`validateOpenClRuntimeIrOptimizerEvidence` checks `runtime-ir-optimizer-evidence.properties` under `runtime-compile-artifacts`. It fails if runtime-equivalence review or review-package guardrails stop being fail-closed, if production mutation or selected-IR replacement becomes enabled, if a required review package has no blocker, or if a package is marked complete before manual-review activation exists. The operational and NVIDIA routines run this validator after `openClValidationReport`.
+`validateOpenClRuntimeIrOptimizerEvidence` checks `runtime-ir-optimizer-evidence.properties` under `runtime-compile-artifacts`. It fails if runtime-equivalence review, optimized-artifact candidate, or review-package guardrails stop being fail-closed, if production mutation or selected-IR replacement becomes enabled, if candidate selection is applied, if a required review package has no blocker, or if a package is marked complete before manual-review activation exists. The operational and NVIDIA routines run this validator after `openClValidationReport`.
 
 ## Optional IR Validation
 

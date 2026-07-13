@@ -8,6 +8,7 @@ version = '1.0-SNAPSHOT'
 
 dependencies {
     implementation project(':processor')
+    implementation project(':ir-optimizer')
     annotationProcessor project(':processor')
     if (providers.gradleProperty('javatogpu.enableIrValidationExamples').map { it.toBoolean() }.getOrElse(false)) {
         annotationProcessor project(':ir-validation')
@@ -31,6 +32,16 @@ tasks.register('rewriteGpuMethods', JavaExec) {
     classpath = project(':processor').sourceSets.main.runtimeClasspath
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuMethodBodyRewriter'
     args layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
+}
+
+tasks.register('runOptimizationJournalExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.OptimizationJournalExample'
+    def journalDir = providers.gradleProperty('javatogpu.optimizerJournalDir')
+    if (journalDir.isPresent()) {
+        args journalDir.get()
+    }
 }
 
 tasks.named('classes') {

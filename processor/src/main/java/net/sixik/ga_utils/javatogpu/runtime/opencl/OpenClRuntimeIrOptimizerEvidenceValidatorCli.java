@@ -87,6 +87,7 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         requireValue(artifact, properties, "reviewPackage.originalIrRequired", "true");
         requireValue(artifact, properties, "reviewPackage.optimizedIrRequired", "true");
         requireValue(artifact, properties, "reviewPackage.proofSummaryRequired", "true");
+        validateOptimizedArtifactCandidateGuardrails(artifact, properties);
 
         String reviewPackageStatus = requirePresent(artifact, properties, "reviewPackage.status");
         boolean required = parseBoolean(requirePresent(artifact, properties, "reviewPackage.required"));
@@ -121,6 +122,69 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         if (pendingApprovalCount > proposalPassCount) {
             throw new IllegalStateException("Pending approval count exceeds proposal pass count for " + artifact
                     + ": pending=" + pendingApprovalCount + ", proposalPasses=" + proposalPassCount);
+        }
+    }
+
+    private static void validateOptimizedArtifactCandidateGuardrails(Path artifact, Properties properties) {
+        String status = requirePresent(artifact, properties, "optimizedArtifactCandidate.status");
+        int count = parseNonNegativeInt(artifact, properties, "optimizedArtifactCandidate.count");
+        int readyCount = parseNonNegativeInt(artifact, properties, "optimizedArtifactCandidate.ready.count");
+        int blockedCount = parseNonNegativeInt(artifact, properties, "optimizedArtifactCandidate.blocked.count");
+        int selectionReadyCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "optimizedArtifactCandidate.selectionReady.count"
+        );
+        int selectionAppliedCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "optimizedArtifactCandidate.selectionApplied.count"
+        );
+        int selectedIrReplacementCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "optimizedArtifactCandidate.selectedIrReplacement.count"
+        );
+        parseNonNegativeInt(artifact, properties, "optimizedArtifactCandidate.mutationAllowed.count");
+        String firstBlocker = requirePresent(artifact, properties, "optimizedArtifactCandidate.firstBlocker");
+        String selectionFirstBlocker = requirePresent(
+                artifact,
+                properties,
+                "optimizedArtifactCandidate.selectionFirstBlocker"
+        );
+        requireValue(artifact, properties, "optimizedArtifactCandidate.selectionApplied", "false");
+        requireValue(artifact, properties, "optimizedArtifactCandidate.selectedIrReplacement", "false");
+
+        if (!List.of("not-recorded", "candidate-ready", "blocked", "mixed").contains(status)) {
+            throw new IllegalStateException("Unsupported optimized artifact candidate status for " + artifact
+                    + ": " + status);
+        }
+        if (readyCount + blockedCount > count) {
+            throw new IllegalStateException("Optimized artifact candidate ready/blocked counts exceed total for "
+                    + artifact + ": ready=" + readyCount + ", blocked=" + blockedCount + ", total=" + count);
+        }
+        if (count == 0 && !"not-recorded".equals(status)) {
+            throw new IllegalStateException("Missing optimized artifact candidates must use not-recorded status for "
+                    + artifact + ": status=" + status);
+        }
+        if (count == 0 && (!"no-candidates".equals(firstBlocker)
+                || !"no-candidates".equals(selectionFirstBlocker))) {
+            throw new IllegalStateException("Missing optimized artifact candidates must expose no-candidates blockers for "
+                    + artifact);
+        }
+        if (count > 0 && "not-recorded".equals(status)) {
+            throw new IllegalStateException("Recorded optimized artifact candidates cannot use not-recorded status for "
+                    + artifact);
+        }
+        if (count > 0 && ("none".equals(selectionFirstBlocker) || "no-candidates".equals(selectionFirstBlocker))) {
+            throw new IllegalStateException("Optimized artifact candidates must keep selection blocked for "
+                    + artifact + ": selectionFirstBlocker=" + selectionFirstBlocker);
+        }
+        if (selectionReadyCount > 0 || selectionAppliedCount > 0 || selectedIrReplacementCount > 0) {
+            throw new IllegalStateException("Optimized artifact candidates must not become runtime selection for "
+                    + artifact + ": selectionReady=" + selectionReadyCount
+                    + ", selectionApplied=" + selectionAppliedCount
+                    + ", selectedIrReplacement=" + selectedIrReplacementCount);
         }
     }
 
