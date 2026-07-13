@@ -144,9 +144,20 @@ public final class GpuRuntimeIrPeepholeRuleRegistry {
             GpuRuntimeIrPeepholeRuleContext context,
             GpuRuntimeIrPeepholeRuleReport report
     ) {
-        return report.withReplacementPlanValidations(report.replacementPlans().stream()
+        List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations = report.replacementPlans().stream()
                 .map(plan -> GpuRuntimeIrPeepholeReplacementPlanValidation.validate(plan, context.graph()))
-                .toList());
+                .toList();
+        GpuRuntimeIrPeepholeTypedRewriteVisitor visitor = GpuRuntimeIrPeepholeTypedRewriteVisitor.forGraph(
+                context.graph()
+        );
+        ArrayList<GpuRuntimeIrPeepholeRewriteVisitPreflight> visitPreflights = new ArrayList<>();
+        for (int index = 0; index < report.replacementPlans().size(); index++) {
+            GpuRuntimeIrPeepholeReplacementPlanValidation validation = index < validations.size()
+                    ? validations.get(index)
+                    : null;
+            visitPreflights.add(visitor.preflight(report.replacementPlans().get(index), validation));
+        }
+        return report.withReplacementPlanAnalysis(validations, visitPreflights);
     }
 
     public record Analysis(
@@ -195,6 +206,35 @@ public final class GpuRuntimeIrPeepholeRuleRegistry {
                     .flatMap(report -> report.replacementPlanValidations().stream())
                     .filter(validation -> !validation.valid())
                     .map(GpuRuntimeIrPeepholeReplacementPlanValidation::firstBlocker)
+                    .findFirst()
+                    .orElse("none");
+        }
+
+        public int rewriteVisitPreflightCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .count();
+        }
+
+        public int rewriteVisitPreflightReadyCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .filter(GpuRuntimeIrPeepholeRewriteVisitPreflight::visitorReady)
+                    .count();
+        }
+
+        public int rewriteVisitPreflightBlockedCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .filter(preflight -> !preflight.visitorReady())
+                    .count();
+        }
+
+        public String firstRewriteVisitPreflightBlocker() {
+            return ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .filter(preflight -> !preflight.visitorReady())
+                    .map(GpuRuntimeIrPeepholeRewriteVisitPreflight::firstBlocker)
                     .findFirst()
                     .orElse("none");
         }

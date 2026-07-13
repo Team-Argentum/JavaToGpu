@@ -30,6 +30,38 @@ public record GpuRuntimeOptimizerDriftArtifact(
         int replacementPlanValidationValidCount,
         int replacementPlanValidationInvalidCount,
         String replacementPlanValidationFirstBlocker,
+        int rewriteVisitorCount,
+        int rewriteVisitorReadyCount,
+        int rewriteVisitorBlockedCount,
+        String rewriteVisitorFirstBlocker,
+        int replacementBlueprintCount,
+        int replacementBlueprintReadyCount,
+        int replacementBlueprintBlockedCount,
+        String replacementBlueprintFirstBlocker,
+        int rewriteTransactionCount,
+        int rewriteTransactionReadyCount,
+        int rewriteTransactionBlockedCount,
+        String rewriteTransactionFirstBlocker,
+        int nodeIdAllocationCount,
+        int nodeIdAllocationReadyCount,
+        int nodeIdAllocationBlockedCount,
+        String nodeIdAllocationFirstBlocker,
+        int replacementNodeCount,
+        int replacementNodeReadyCount,
+        int replacementNodeBlockedCount,
+        String replacementNodeFirstBlocker,
+        int graphPatchCount,
+        int graphPatchReadyCount,
+        int graphPatchBlockedCount,
+        String graphPatchFirstBlocker,
+        int transformedGraphCount,
+        int transformedGraphReadyCount,
+        int transformedGraphBlockedCount,
+        String transformedGraphFirstBlocker,
+        int irArtifactEnvelopeCount,
+        int irArtifactEnvelopeReadyCount,
+        int irArtifactEnvelopeBlockedCount,
+        String irArtifactEnvelopeFirstBlocker,
         int rewriteSketchCount,
         int rewriteSketchReadyCount,
         int rewriteSketchBlockedCount,
@@ -83,6 +115,38 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     0,
                     "none",
                     0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
                     "none",
                     "not-required",
                     "no-rewrite-sketches",
@@ -112,6 +176,38 @@ public record GpuRuntimeOptimizerDriftArtifact(
         int rewriteSketchReadyCount = rewriteSketchReadyCount(report);
         int rewriteSketchBlockedCount = rewriteSketchBlockedCount(report);
         String rewriteSketchFirstBlocker = rewriteSketchFirstBlocker(report);
+        int rewriteVisitorCount = rewriteVisitorCount(report);
+        int rewriteVisitorReadyCount = rewriteVisitorReadyCount(report);
+        int rewriteVisitorBlockedCount = rewriteVisitorBlockedCount(report);
+        String rewriteVisitorFirstBlocker = rewriteVisitorFirstBlocker(report);
+        int replacementBlueprintCount = replacementBlueprintCount(report);
+        int replacementBlueprintReadyCount = replacementBlueprintReadyCount(report);
+        int replacementBlueprintBlockedCount = replacementBlueprintBlockedCount(report);
+        String replacementBlueprintFirstBlocker = replacementBlueprintFirstBlocker(report);
+        int rewriteTransactionCount = rewriteTransactionCount(report);
+        int rewriteTransactionReadyCount = rewriteTransactionReadyCount(report);
+        int rewriteTransactionBlockedCount = rewriteTransactionBlockedCount(report);
+        String rewriteTransactionFirstBlocker = rewriteTransactionFirstBlocker(report);
+        int nodeIdAllocationCount = nodeIdAllocationCount(report);
+        int nodeIdAllocationReadyCount = nodeIdAllocationReadyCount(report);
+        int nodeIdAllocationBlockedCount = nodeIdAllocationBlockedCount(report);
+        String nodeIdAllocationFirstBlocker = nodeIdAllocationFirstBlocker(report);
+        int replacementNodeCount = replacementNodeCount(report);
+        int replacementNodeReadyCount = replacementNodeReadyCount(report);
+        int replacementNodeBlockedCount = replacementNodeBlockedCount(report);
+        String replacementNodeFirstBlocker = replacementNodeFirstBlocker(report);
+        int graphPatchCount = graphPatchCount(report);
+        int graphPatchReadyCount = graphPatchReadyCount(report);
+        int graphPatchBlockedCount = graphPatchBlockedCount(report);
+        String graphPatchFirstBlocker = graphPatchFirstBlocker(report);
+        int transformedGraphCount = transformedGraphCount(report);
+        int transformedGraphReadyCount = transformedGraphReadyCount(report);
+        int transformedGraphBlockedCount = transformedGraphBlockedCount(report);
+        String transformedGraphFirstBlocker = transformedGraphFirstBlocker(report);
+        int irArtifactEnvelopeCount = irArtifactEnvelopeCount(report);
+        int irArtifactEnvelopeReadyCount = irArtifactEnvelopeReadyCount(report);
+        int irArtifactEnvelopeBlockedCount = irArtifactEnvelopeBlockedCount(report);
+        String irArtifactEnvelopeFirstBlocker = irArtifactEnvelopeFirstBlocker(report);
         int rewriteSketchConflictCount = rewriteSketchConflictCount(report);
         String rewriteSketchConflictFirstBlocker = rewriteSketchConflictFirstBlocker(report);
         String rewriteProofStatus = rewriteProofStatus(report, rewriteSketchReadyCount);
@@ -140,6 +236,38 @@ public record GpuRuntimeOptimizerDriftArtifact(
                 replacementPlanValidationValidCount(report),
                 replacementPlanValidationInvalidCount(report),
                 replacementPlanValidationFirstBlocker(report),
+                rewriteVisitorCount,
+                rewriteVisitorReadyCount,
+                rewriteVisitorBlockedCount,
+                rewriteVisitorFirstBlocker,
+                replacementBlueprintCount,
+                replacementBlueprintReadyCount,
+                replacementBlueprintBlockedCount,
+                replacementBlueprintFirstBlocker,
+                rewriteTransactionCount,
+                rewriteTransactionReadyCount,
+                rewriteTransactionBlockedCount,
+                rewriteTransactionFirstBlocker,
+                nodeIdAllocationCount,
+                nodeIdAllocationReadyCount,
+                nodeIdAllocationBlockedCount,
+                nodeIdAllocationFirstBlocker,
+                replacementNodeCount,
+                replacementNodeReadyCount,
+                replacementNodeBlockedCount,
+                replacementNodeFirstBlocker,
+                graphPatchCount,
+                graphPatchReadyCount,
+                graphPatchBlockedCount,
+                graphPatchFirstBlocker,
+                transformedGraphCount,
+                transformedGraphReadyCount,
+                transformedGraphBlockedCount,
+                transformedGraphFirstBlocker,
+                irArtifactEnvelopeCount,
+                irArtifactEnvelopeReadyCount,
+                irArtifactEnvelopeBlockedCount,
+                irArtifactEnvelopeFirstBlocker,
                 rewriteSketchCount,
                 rewriteSketchReadyCount,
                 rewriteSketchBlockedCount,
@@ -206,6 +334,90 @@ public record GpuRuntimeOptimizerDriftArtifact(
         builder.append("replacementPlan.validation.valid.count=").append(replacementPlanValidationValidCount).append('\n');
         builder.append("replacementPlan.validation.invalid.count=").append(replacementPlanValidationInvalidCount).append('\n');
         builder.append("replacementPlan.validation.firstBlocker=").append(replacementPlanValidationFirstBlocker).append('\n');
+        builder.append("rewriteVisitor.count=").append(rewriteVisitorCount).append('\n');
+        builder.append("rewriteVisitor.ready.count=").append(rewriteVisitorReadyCount).append('\n');
+        builder.append("rewriteVisitor.blocked.count=").append(rewriteVisitorBlockedCount).append('\n');
+        builder.append("rewriteVisitor.firstBlocker=").append(rewriteVisitorFirstBlocker).append('\n');
+        builder.append("rewriteVisitor.visitorImplemented=true\n");
+        builder.append("rewriteVisitor.replacementBuilderImplemented=false\n");
+        builder.append("rewriteVisitor.transformedIrBuilt=false\n");
+        builder.append("rewriteVisitor.mutationAllowed=false\n");
+        builder.append("rewriteVisitor.selectedIrReplacement=false\n");
+        builder.append("replacementBlueprint.count=").append(replacementBlueprintCount).append('\n');
+        builder.append("replacementBlueprint.ready.count=").append(replacementBlueprintReadyCount).append('\n');
+        builder.append("replacementBlueprint.blocked.count=").append(replacementBlueprintBlockedCount).append('\n');
+        builder.append("replacementBlueprint.firstBlocker=").append(replacementBlueprintFirstBlocker).append('\n');
+        builder.append("replacementBlueprint.blueprintImplemented=true\n");
+        builder.append("replacementBlueprint.replacementBuilderImplemented=false\n");
+        builder.append("replacementBlueprint.transformedIrBuilt=false\n");
+        builder.append("replacementBlueprint.mutationAllowed=false\n");
+        builder.append("replacementBlueprint.selectedIrReplacement=false\n");
+        builder.append("rewriteTransaction.count=").append(rewriteTransactionCount).append('\n');
+        builder.append("rewriteTransaction.ready.count=").append(rewriteTransactionReadyCount).append('\n');
+        builder.append("rewriteTransaction.blocked.count=").append(rewriteTransactionBlockedCount).append('\n');
+        builder.append("rewriteTransaction.firstBlocker=").append(rewriteTransactionFirstBlocker).append('\n');
+        builder.append("rewriteTransaction.transactionPreflightImplemented=true\n");
+        builder.append("rewriteTransaction.nodeIdAllocatorImplemented=false\n");
+        builder.append("rewriteTransaction.graphRewriteImplemented=false\n");
+        builder.append("rewriteTransaction.transformedIrBuilt=false\n");
+        builder.append("rewriteTransaction.mutationAllowed=false\n");
+        builder.append("rewriteTransaction.selectedIrReplacement=false\n");
+        builder.append("nodeIdAllocation.count=").append(nodeIdAllocationCount).append('\n');
+        builder.append("nodeIdAllocation.ready.count=").append(nodeIdAllocationReadyCount).append('\n');
+        builder.append("nodeIdAllocation.blocked.count=").append(nodeIdAllocationBlockedCount).append('\n');
+        builder.append("nodeIdAllocation.firstBlocker=").append(nodeIdAllocationFirstBlocker).append('\n');
+        builder.append("nodeIdAllocation.allocationPreflightImplemented=true\n");
+        builder.append("nodeIdAllocation.nodeIdsReserved=false\n");
+        builder.append("nodeIdAllocation.nodeIdAllocatorApplied=false\n");
+        builder.append("nodeIdAllocation.graphRewriteImplemented=false\n");
+        builder.append("nodeIdAllocation.transformedIrBuilt=false\n");
+        builder.append("nodeIdAllocation.mutationAllowed=false\n");
+        builder.append("nodeIdAllocation.selectedIrReplacement=false\n");
+        builder.append("replacementNode.count=").append(replacementNodeCount).append('\n');
+        builder.append("replacementNode.ready.count=").append(replacementNodeReadyCount).append('\n');
+        builder.append("replacementNode.blocked.count=").append(replacementNodeBlockedCount).append('\n');
+        builder.append("replacementNode.firstBlocker=").append(replacementNodeFirstBlocker).append('\n');
+        builder.append("replacementNode.replacementNodePreflightImplemented=true\n");
+        builder.append("replacementNode.replacementNodeBuilt=false\n");
+        builder.append("replacementNode.replacementBuilderImplemented=false\n");
+        builder.append("replacementNode.graphRewriteImplemented=false\n");
+        builder.append("replacementNode.transformedIrBuilt=false\n");
+        builder.append("replacementNode.mutationAllowed=false\n");
+        builder.append("replacementNode.selectedIrReplacement=false\n");
+        builder.append("graphPatch.count=").append(graphPatchCount).append('\n');
+        builder.append("graphPatch.ready.count=").append(graphPatchReadyCount).append('\n');
+        builder.append("graphPatch.blocked.count=").append(graphPatchBlockedCount).append('\n');
+        builder.append("graphPatch.firstBlocker=").append(graphPatchFirstBlocker).append('\n');
+        builder.append("graphPatch.graphPatchPreflightImplemented=true\n");
+        builder.append("graphPatch.graphPatchApplied=false\n");
+        builder.append("graphPatch.graphRewriteImplemented=false\n");
+        builder.append("graphPatch.transformedIrBuilt=false\n");
+        builder.append("graphPatch.mutationAllowed=false\n");
+        builder.append("graphPatch.selectedIrReplacement=false\n");
+        builder.append("transformedGraph.count=").append(transformedGraphCount).append('\n');
+        builder.append("transformedGraph.ready.count=").append(transformedGraphReadyCount).append('\n');
+        builder.append("transformedGraph.blocked.count=").append(transformedGraphBlockedCount).append('\n');
+        builder.append("transformedGraph.firstBlocker=").append(transformedGraphFirstBlocker).append('\n');
+        builder.append("transformedGraph.materializationPreflightImplemented=true\n");
+        builder.append("transformedGraph.transformedGraphBuilt=false\n");
+        builder.append("transformedGraph.transformedIrBuilt=false\n");
+        builder.append("transformedGraph.graphPatchApplied=false\n");
+        builder.append("transformedGraph.graphRewriteImplemented=false\n");
+        builder.append("transformedGraph.mutationAllowed=false\n");
+        builder.append("transformedGraph.selectedIrReplacement=false\n");
+        builder.append("irArtifactEnvelope.count=").append(irArtifactEnvelopeCount).append('\n');
+        builder.append("irArtifactEnvelope.ready.count=").append(irArtifactEnvelopeReadyCount).append('\n');
+        builder.append("irArtifactEnvelope.blocked.count=").append(irArtifactEnvelopeBlockedCount).append('\n');
+        builder.append("irArtifactEnvelope.firstBlocker=").append(irArtifactEnvelopeFirstBlocker).append('\n');
+        builder.append("irArtifactEnvelope.artifactEnvelopePreflightImplemented=true\n");
+        builder.append("irArtifactEnvelope.artifactEnvelopeBuilt=false\n");
+        builder.append("irArtifactEnvelope.optimizedArtifactBuilt=false\n");
+        builder.append("irArtifactEnvelope.transformedGraphBuilt=false\n");
+        builder.append("irArtifactEnvelope.transformedIrBuilt=false\n");
+        builder.append("irArtifactEnvelope.graphPatchApplied=false\n");
+        builder.append("irArtifactEnvelope.graphRewriteImplemented=false\n");
+        builder.append("irArtifactEnvelope.mutationAllowed=false\n");
+        builder.append("irArtifactEnvelope.selectedIrReplacement=false\n");
         builder.append("rewriteSketch.count=").append(rewriteSketchCount).append('\n');
         builder.append("rewriteSketch.ready.count=").append(rewriteSketchReadyCount).append('\n');
         builder.append("rewriteSketch.blocked.count=").append(rewriteSketchBlockedCount).append('\n');
@@ -377,6 +589,446 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     return blocker;
                 }
                 String ruleBlocker = firstRuleBlocker(fields, ".replacementPlan.validation.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int rewriteVisitorCount(GpuRuntimeIrOptimizationReport report) {
+        return rewriteVisitorRuleCount(report, ".rewriteVisitor.count");
+    }
+
+    private static int rewriteVisitorReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return rewriteVisitorRuleCount(report, ".rewriteVisitor.ready.count");
+    }
+
+    private static int rewriteVisitorBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("rewriteVisitor.blocked.count"));
+                total += passTotal > 0 ? passTotal : rewriteVisitorRuleCount(fields, ".rewriteVisitor.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int rewriteVisitorRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += rewriteVisitorRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int rewriteVisitorRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String rewriteVisitorFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("rewriteVisitor.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".rewriteVisitor.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int replacementBlueprintCount(GpuRuntimeIrOptimizationReport report) {
+        return replacementBlueprintRuleCount(report, ".replacementBlueprint.count");
+    }
+
+    private static int replacementBlueprintReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return replacementBlueprintRuleCount(report, ".replacementBlueprint.ready.count");
+    }
+
+    private static int replacementBlueprintBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("replacementBlueprint.blocked.count"));
+                total += passTotal > 0 ? passTotal : replacementBlueprintRuleCount(fields, ".replacementBlueprint.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int replacementBlueprintRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += replacementBlueprintRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int replacementBlueprintRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String replacementBlueprintFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("replacementBlueprint.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".replacementBlueprint.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int rewriteTransactionCount(GpuRuntimeIrOptimizationReport report) {
+        return rewriteTransactionRuleCount(report, ".rewriteTransaction.count");
+    }
+
+    private static int rewriteTransactionReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return rewriteTransactionRuleCount(report, ".rewriteTransaction.ready.count");
+    }
+
+    private static int rewriteTransactionBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("rewriteTransaction.blocked.count"));
+                total += passTotal > 0 ? passTotal : rewriteTransactionRuleCount(fields, ".rewriteTransaction.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int rewriteTransactionRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += rewriteTransactionRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int rewriteTransactionRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String rewriteTransactionFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("rewriteTransaction.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".rewriteTransaction.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int nodeIdAllocationCount(GpuRuntimeIrOptimizationReport report) {
+        return nodeIdAllocationRuleCount(report, ".nodeIdAllocation.count");
+    }
+
+    private static int nodeIdAllocationReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return nodeIdAllocationRuleCount(report, ".nodeIdAllocation.ready.count");
+    }
+
+    private static int nodeIdAllocationBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("nodeIdAllocation.blocked.count"));
+                total += passTotal > 0 ? passTotal : nodeIdAllocationRuleCount(fields, ".nodeIdAllocation.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int nodeIdAllocationRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += nodeIdAllocationRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int nodeIdAllocationRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String nodeIdAllocationFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("nodeIdAllocation.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".nodeIdAllocation.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int replacementNodeCount(GpuRuntimeIrOptimizationReport report) {
+        return replacementNodeRuleCount(report, ".replacementNode.count");
+    }
+
+    private static int replacementNodeReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return replacementNodeRuleCount(report, ".replacementNode.ready.count");
+    }
+
+    private static int replacementNodeBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("replacementNode.blocked.count"));
+                total += passTotal > 0 ? passTotal : replacementNodeRuleCount(fields, ".replacementNode.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int replacementNodeRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += replacementNodeRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int replacementNodeRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String replacementNodeFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("replacementNode.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".replacementNode.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int graphPatchCount(GpuRuntimeIrOptimizationReport report) {
+        return graphPatchRuleCount(report, ".graphPatch.count");
+    }
+
+    private static int graphPatchReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return graphPatchRuleCount(report, ".graphPatch.ready.count");
+    }
+
+    private static int graphPatchBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("graphPatch.blocked.count"));
+                total += passTotal > 0 ? passTotal : graphPatchRuleCount(fields, ".graphPatch.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int graphPatchRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += graphPatchRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int graphPatchRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String graphPatchFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("graphPatch.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".graphPatch.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int transformedGraphCount(GpuRuntimeIrOptimizationReport report) {
+        return transformedGraphRuleCount(report, ".transformedGraph.count");
+    }
+
+    private static int transformedGraphReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return transformedGraphRuleCount(report, ".transformedGraph.ready.count");
+    }
+
+    private static int transformedGraphBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("transformedGraph.blocked.count"));
+                total += passTotal > 0 ? passTotal : transformedGraphRuleCount(fields, ".transformedGraph.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int transformedGraphRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += transformedGraphRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int transformedGraphRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String transformedGraphFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("transformedGraph.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".transformedGraph.firstBlocker");
+                if (!"none".equals(ruleBlocker)) {
+                    return ruleBlocker;
+                }
+            }
+        }
+        return "none";
+    }
+
+    private static int irArtifactEnvelopeCount(GpuRuntimeIrOptimizationReport report) {
+        return irArtifactEnvelopeRuleCount(report, ".irArtifactEnvelope.count");
+    }
+
+    private static int irArtifactEnvelopeReadyCount(GpuRuntimeIrOptimizationReport report) {
+        return irArtifactEnvelopeRuleCount(report, ".irArtifactEnvelope.ready.count");
+    }
+
+    private static int irArtifactEnvelopeBlockedCount(GpuRuntimeIrOptimizationReport report) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                int passTotal = parseInt(fields.get("irArtifactEnvelope.blocked.count"));
+                total += passTotal > 0 ? passTotal : irArtifactEnvelopeRuleCount(fields, ".irArtifactEnvelope.blocked.count");
+            }
+        }
+        return total;
+    }
+
+    private static int irArtifactEnvelopeRuleCount(GpuRuntimeIrOptimizationReport report, String suffix) {
+        int total = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                total += irArtifactEnvelopeRuleCount(passReport.proofArtifact().fields(), suffix);
+            }
+        }
+        return total;
+    }
+
+    private static int irArtifactEnvelopeRuleCount(Map<String, String> fields, String suffix) {
+        return fields.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("rule."))
+                .filter(entry -> entry.getKey().endsWith(suffix))
+                .mapToInt(entry -> parseInt(entry.getValue()))
+                .sum();
+    }
+
+    private static String irArtifactEnvelopeFirstBlocker(GpuRuntimeIrOptimizationReport report) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : report.passReports()) {
+            if (!passReport.analysisOnly() && hasProofArtifact(passReport)) {
+                Map<String, String> fields = passReport.proofArtifact().fields();
+                String blocker = fields.getOrDefault("irArtifactEnvelope.firstBlocker", "none");
+                if (!blocker.isBlank() && !"none".equals(blocker)) {
+                    return blocker;
+                }
+                String ruleBlocker = firstRuleBlocker(fields, ".irArtifactEnvelope.firstBlocker");
                 if (!"none".equals(ruleBlocker)) {
                     return ruleBlocker;
                 }
@@ -694,6 +1346,70 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     .append(rule.replacementPlanValidationInvalidCount())
                     .append(", planValidationFirstBlocker=")
                     .append(rule.replacementPlanValidationFirstBlocker())
+                    .append(", rewriteVisitors=")
+                    .append(rule.rewriteVisitorCount())
+                    .append(", readyVisitors=")
+                    .append(rule.rewriteVisitorReadyCount())
+                    .append(", blockedVisitors=")
+                    .append(rule.rewriteVisitorBlockedCount())
+                    .append(", rewriteVisitorFirstBlocker=")
+                    .append(rule.rewriteVisitorFirstBlocker())
+                    .append(", replacementBlueprints=")
+                    .append(rule.replacementBlueprintCount())
+                    .append(", readyBlueprints=")
+                    .append(rule.replacementBlueprintReadyCount())
+                    .append(", blockedBlueprints=")
+                    .append(rule.replacementBlueprintBlockedCount())
+                    .append(", replacementBlueprintFirstBlocker=")
+                    .append(rule.replacementBlueprintFirstBlocker())
+                    .append(", rewriteTransactions=")
+                    .append(rule.rewriteTransactionCount())
+                    .append(", readyTransactions=")
+                    .append(rule.rewriteTransactionReadyCount())
+                    .append(", blockedTransactions=")
+                    .append(rule.rewriteTransactionBlockedCount())
+                    .append(", rewriteTransactionFirstBlocker=")
+                    .append(rule.rewriteTransactionFirstBlocker())
+                    .append(", nodeIdAllocations=")
+                    .append(rule.nodeIdAllocationCount())
+                    .append(", readyNodeIdAllocations=")
+                    .append(rule.nodeIdAllocationReadyCount())
+                    .append(", blockedNodeIdAllocations=")
+                    .append(rule.nodeIdAllocationBlockedCount())
+                    .append(", nodeIdAllocationFirstBlocker=")
+                    .append(rule.nodeIdAllocationFirstBlocker())
+                    .append(", replacementNodes=")
+                    .append(rule.replacementNodeCount())
+                    .append(", readyReplacementNodes=")
+                    .append(rule.replacementNodeReadyCount())
+                    .append(", blockedReplacementNodes=")
+                    .append(rule.replacementNodeBlockedCount())
+                    .append(", replacementNodeFirstBlocker=")
+                    .append(rule.replacementNodeFirstBlocker())
+                    .append(", graphPatches=")
+                    .append(rule.graphPatchCount())
+                    .append(", readyGraphPatches=")
+                    .append(rule.graphPatchReadyCount())
+                    .append(", blockedGraphPatches=")
+                    .append(rule.graphPatchBlockedCount())
+                    .append(", graphPatchFirstBlocker=")
+                    .append(rule.graphPatchFirstBlocker())
+                    .append(", transformedGraphs=")
+                    .append(rule.transformedGraphCount())
+                    .append(", readyTransformedGraphs=")
+                    .append(rule.transformedGraphReadyCount())
+                    .append(", blockedTransformedGraphs=")
+                    .append(rule.transformedGraphBlockedCount())
+                    .append(", transformedGraphFirstBlocker=")
+                    .append(rule.transformedGraphFirstBlocker())
+                    .append(", irArtifactEnvelopes=")
+                    .append(rule.irArtifactEnvelopeCount())
+                    .append(", readyIrArtifactEnvelopes=")
+                    .append(rule.irArtifactEnvelopeReadyCount())
+                    .append(", blockedIrArtifactEnvelopes=")
+                    .append(rule.irArtifactEnvelopeBlockedCount())
+                    .append(", irArtifactEnvelopeFirstBlocker=")
+                    .append(rule.irArtifactEnvelopeFirstBlocker())
                     .append(", rewriteSketches=")
                     .append(rule.rewriteSketchCount())
                     .append(", readySketches=")
@@ -748,6 +1464,90 @@ public record GpuRuntimeOptimizerDriftArtifact(
             builder.append(prefix).append("replacementPlan.validation.valid.count=").append(rule.replacementPlanValidationValidCount()).append('\n');
             builder.append(prefix).append("replacementPlan.validation.invalid.count=").append(rule.replacementPlanValidationInvalidCount()).append('\n');
             builder.append(prefix).append("replacementPlan.validation.firstBlocker=").append(rule.replacementPlanValidationFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteVisitor.count=").append(rule.rewriteVisitorCount()).append('\n');
+            builder.append(prefix).append("rewriteVisitor.ready.count=").append(rule.rewriteVisitorReadyCount()).append('\n');
+            builder.append(prefix).append("rewriteVisitor.blocked.count=").append(rule.rewriteVisitorBlockedCount()).append('\n');
+            builder.append(prefix).append("rewriteVisitor.firstBlocker=").append(rule.rewriteVisitorFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteVisitor.visitorImplemented=true\n");
+            builder.append(prefix).append("rewriteVisitor.replacementBuilderImplemented=false\n");
+            builder.append(prefix).append("rewriteVisitor.transformedIrBuilt=false\n");
+            builder.append(prefix).append("rewriteVisitor.mutationAllowed=false\n");
+            builder.append(prefix).append("rewriteVisitor.selectedIrReplacement=false\n");
+            builder.append(prefix).append("replacementBlueprint.count=").append(rule.replacementBlueprintCount()).append('\n');
+            builder.append(prefix).append("replacementBlueprint.ready.count=").append(rule.replacementBlueprintReadyCount()).append('\n');
+            builder.append(prefix).append("replacementBlueprint.blocked.count=").append(rule.replacementBlueprintBlockedCount()).append('\n');
+            builder.append(prefix).append("replacementBlueprint.firstBlocker=").append(rule.replacementBlueprintFirstBlocker()).append('\n');
+            builder.append(prefix).append("replacementBlueprint.blueprintImplemented=true\n");
+            builder.append(prefix).append("replacementBlueprint.replacementBuilderImplemented=false\n");
+            builder.append(prefix).append("replacementBlueprint.transformedIrBuilt=false\n");
+            builder.append(prefix).append("replacementBlueprint.mutationAllowed=false\n");
+            builder.append(prefix).append("replacementBlueprint.selectedIrReplacement=false\n");
+            builder.append(prefix).append("rewriteTransaction.count=").append(rule.rewriteTransactionCount()).append('\n');
+            builder.append(prefix).append("rewriteTransaction.ready.count=").append(rule.rewriteTransactionReadyCount()).append('\n');
+            builder.append(prefix).append("rewriteTransaction.blocked.count=").append(rule.rewriteTransactionBlockedCount()).append('\n');
+            builder.append(prefix).append("rewriteTransaction.firstBlocker=").append(rule.rewriteTransactionFirstBlocker()).append('\n');
+            builder.append(prefix).append("rewriteTransaction.transactionPreflightImplemented=true\n");
+            builder.append(prefix).append("rewriteTransaction.nodeIdAllocatorImplemented=false\n");
+            builder.append(prefix).append("rewriteTransaction.graphRewriteImplemented=false\n");
+            builder.append(prefix).append("rewriteTransaction.transformedIrBuilt=false\n");
+            builder.append(prefix).append("rewriteTransaction.mutationAllowed=false\n");
+            builder.append(prefix).append("rewriteTransaction.selectedIrReplacement=false\n");
+            builder.append(prefix).append("nodeIdAllocation.count=").append(rule.nodeIdAllocationCount()).append('\n');
+            builder.append(prefix).append("nodeIdAllocation.ready.count=").append(rule.nodeIdAllocationReadyCount()).append('\n');
+            builder.append(prefix).append("nodeIdAllocation.blocked.count=").append(rule.nodeIdAllocationBlockedCount()).append('\n');
+            builder.append(prefix).append("nodeIdAllocation.firstBlocker=").append(rule.nodeIdAllocationFirstBlocker()).append('\n');
+            builder.append(prefix).append("nodeIdAllocation.allocationPreflightImplemented=true\n");
+            builder.append(prefix).append("nodeIdAllocation.nodeIdsReserved=false\n");
+            builder.append(prefix).append("nodeIdAllocation.nodeIdAllocatorApplied=false\n");
+            builder.append(prefix).append("nodeIdAllocation.graphRewriteImplemented=false\n");
+            builder.append(prefix).append("nodeIdAllocation.transformedIrBuilt=false\n");
+            builder.append(prefix).append("nodeIdAllocation.mutationAllowed=false\n");
+            builder.append(prefix).append("nodeIdAllocation.selectedIrReplacement=false\n");
+            builder.append(prefix).append("replacementNode.count=").append(rule.replacementNodeCount()).append('\n');
+            builder.append(prefix).append("replacementNode.ready.count=").append(rule.replacementNodeReadyCount()).append('\n');
+            builder.append(prefix).append("replacementNode.blocked.count=").append(rule.replacementNodeBlockedCount()).append('\n');
+            builder.append(prefix).append("replacementNode.firstBlocker=").append(rule.replacementNodeFirstBlocker()).append('\n');
+            builder.append(prefix).append("replacementNode.replacementNodePreflightImplemented=true\n");
+            builder.append(prefix).append("replacementNode.replacementNodeBuilt=false\n");
+            builder.append(prefix).append("replacementNode.replacementBuilderImplemented=false\n");
+            builder.append(prefix).append("replacementNode.graphRewriteImplemented=false\n");
+            builder.append(prefix).append("replacementNode.transformedIrBuilt=false\n");
+            builder.append(prefix).append("replacementNode.mutationAllowed=false\n");
+            builder.append(prefix).append("replacementNode.selectedIrReplacement=false\n");
+            builder.append(prefix).append("graphPatch.count=").append(rule.graphPatchCount()).append('\n');
+            builder.append(prefix).append("graphPatch.ready.count=").append(rule.graphPatchReadyCount()).append('\n');
+            builder.append(prefix).append("graphPatch.blocked.count=").append(rule.graphPatchBlockedCount()).append('\n');
+            builder.append(prefix).append("graphPatch.firstBlocker=").append(rule.graphPatchFirstBlocker()).append('\n');
+            builder.append(prefix).append("graphPatch.graphPatchPreflightImplemented=true\n");
+            builder.append(prefix).append("graphPatch.graphPatchApplied=false\n");
+            builder.append(prefix).append("graphPatch.graphRewriteImplemented=false\n");
+            builder.append(prefix).append("graphPatch.transformedIrBuilt=false\n");
+            builder.append(prefix).append("graphPatch.mutationAllowed=false\n");
+            builder.append(prefix).append("graphPatch.selectedIrReplacement=false\n");
+            builder.append(prefix).append("transformedGraph.count=").append(rule.transformedGraphCount()).append('\n');
+            builder.append(prefix).append("transformedGraph.ready.count=").append(rule.transformedGraphReadyCount()).append('\n');
+            builder.append(prefix).append("transformedGraph.blocked.count=").append(rule.transformedGraphBlockedCount()).append('\n');
+            builder.append(prefix).append("transformedGraph.firstBlocker=").append(rule.transformedGraphFirstBlocker()).append('\n');
+            builder.append(prefix).append("transformedGraph.materializationPreflightImplemented=true\n");
+            builder.append(prefix).append("transformedGraph.transformedGraphBuilt=false\n");
+            builder.append(prefix).append("transformedGraph.transformedIrBuilt=false\n");
+            builder.append(prefix).append("transformedGraph.graphPatchApplied=false\n");
+            builder.append(prefix).append("transformedGraph.graphRewriteImplemented=false\n");
+            builder.append(prefix).append("transformedGraph.mutationAllowed=false\n");
+            builder.append(prefix).append("transformedGraph.selectedIrReplacement=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.count=").append(rule.irArtifactEnvelopeCount()).append('\n');
+            builder.append(prefix).append("irArtifactEnvelope.ready.count=").append(rule.irArtifactEnvelopeReadyCount()).append('\n');
+            builder.append(prefix).append("irArtifactEnvelope.blocked.count=").append(rule.irArtifactEnvelopeBlockedCount()).append('\n');
+            builder.append(prefix).append("irArtifactEnvelope.firstBlocker=").append(rule.irArtifactEnvelopeFirstBlocker()).append('\n');
+            builder.append(prefix).append("irArtifactEnvelope.artifactEnvelopePreflightImplemented=true\n");
+            builder.append(prefix).append("irArtifactEnvelope.artifactEnvelopeBuilt=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.optimizedArtifactBuilt=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.transformedGraphBuilt=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.transformedIrBuilt=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.graphPatchApplied=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.graphRewriteImplemented=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.mutationAllowed=false\n");
+            builder.append(prefix).append("irArtifactEnvelope.selectedIrReplacement=false\n");
             builder.append(prefix).append("rewriteSketch.count=").append(rule.rewriteSketchCount()).append('\n');
             builder.append(prefix).append("rewriteSketch.ready.count=").append(rule.rewriteSketchReadyCount()).append('\n');
             builder.append(prefix).append("rewriteSketch.blocked.count=").append(rule.rewriteSketchBlockedCount()).append('\n');
@@ -917,6 +1717,38 @@ public record GpuRuntimeOptimizerDriftArtifact(
             int replacementPlanValidationValidCount,
             int replacementPlanValidationInvalidCount,
             String replacementPlanValidationFirstBlocker,
+            int rewriteVisitorCount,
+            int rewriteVisitorReadyCount,
+            int rewriteVisitorBlockedCount,
+            String rewriteVisitorFirstBlocker,
+            int replacementBlueprintCount,
+            int replacementBlueprintReadyCount,
+            int replacementBlueprintBlockedCount,
+            String replacementBlueprintFirstBlocker,
+            int rewriteTransactionCount,
+            int rewriteTransactionReadyCount,
+            int rewriteTransactionBlockedCount,
+            String rewriteTransactionFirstBlocker,
+            int nodeIdAllocationCount,
+            int nodeIdAllocationReadyCount,
+            int nodeIdAllocationBlockedCount,
+            String nodeIdAllocationFirstBlocker,
+            int replacementNodeCount,
+            int replacementNodeReadyCount,
+            int replacementNodeBlockedCount,
+            String replacementNodeFirstBlocker,
+            int graphPatchCount,
+            int graphPatchReadyCount,
+            int graphPatchBlockedCount,
+            String graphPatchFirstBlocker,
+            int transformedGraphCount,
+            int transformedGraphReadyCount,
+            int transformedGraphBlockedCount,
+            String transformedGraphFirstBlocker,
+            int irArtifactEnvelopeCount,
+            int irArtifactEnvelopeReadyCount,
+            int irArtifactEnvelopeBlockedCount,
+            String irArtifactEnvelopeFirstBlocker,
             int rewriteSketchCount,
             int rewriteSketchReadyCount,
             int rewriteSketchBlockedCount,
@@ -954,6 +1786,38 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     0,
                     0,
                     "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
+                    0,
+                    0,
+                    0,
+                    "none",
                     "not-required",
                     "no-rewrite-sketches",
                     "not-required",
@@ -979,6 +1843,62 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     && !nextSketchBlocker.isBlank()
                     && !"none".equals(nextSketchBlocker)) {
                 sketchBlocker = nextSketchBlocker;
+            }
+            String visitorBlocker = rewriteVisitorFirstBlocker;
+            String nextVisitorBlocker = fields.getOrDefault(prefix + ".rewriteVisitor.firstBlocker", "none");
+            if ("none".equals(visitorBlocker)
+                    && !nextVisitorBlocker.isBlank()
+                    && !"none".equals(nextVisitorBlocker)) {
+                visitorBlocker = nextVisitorBlocker;
+            }
+            String blueprintBlocker = replacementBlueprintFirstBlocker;
+            String nextBlueprintBlocker = fields.getOrDefault(prefix + ".replacementBlueprint.firstBlocker", "none");
+            if ("none".equals(blueprintBlocker)
+                    && !nextBlueprintBlocker.isBlank()
+                    && !"none".equals(nextBlueprintBlocker)) {
+                blueprintBlocker = nextBlueprintBlocker;
+            }
+            String transactionBlocker = rewriteTransactionFirstBlocker;
+            String nextTransactionBlocker = fields.getOrDefault(prefix + ".rewriteTransaction.firstBlocker", "none");
+            if ("none".equals(transactionBlocker)
+                    && !nextTransactionBlocker.isBlank()
+                    && !"none".equals(nextTransactionBlocker)) {
+                transactionBlocker = nextTransactionBlocker;
+            }
+            String allocationBlocker = nodeIdAllocationFirstBlocker;
+            String nextAllocationBlocker = fields.getOrDefault(prefix + ".nodeIdAllocation.firstBlocker", "none");
+            if ("none".equals(allocationBlocker)
+                    && !nextAllocationBlocker.isBlank()
+                    && !"none".equals(nextAllocationBlocker)) {
+                allocationBlocker = nextAllocationBlocker;
+            }
+            String replacementNodeBlocker = replacementNodeFirstBlocker;
+            String nextReplacementNodeBlocker = fields.getOrDefault(prefix + ".replacementNode.firstBlocker", "none");
+            if ("none".equals(replacementNodeBlocker)
+                    && !nextReplacementNodeBlocker.isBlank()
+                    && !"none".equals(nextReplacementNodeBlocker)) {
+                replacementNodeBlocker = nextReplacementNodeBlocker;
+            }
+            String graphPatchBlocker = graphPatchFirstBlocker;
+            String nextGraphPatchBlocker = fields.getOrDefault(prefix + ".graphPatch.firstBlocker", "none");
+            if ("none".equals(graphPatchBlocker)
+                    && !nextGraphPatchBlocker.isBlank()
+                    && !"none".equals(nextGraphPatchBlocker)) {
+                graphPatchBlocker = nextGraphPatchBlocker;
+            }
+            String transformedGraphBlocker = transformedGraphFirstBlocker;
+            String nextTransformedGraphBlocker = fields.getOrDefault(prefix + ".transformedGraph.firstBlocker", "none");
+            if ("none".equals(transformedGraphBlocker)
+                    && !nextTransformedGraphBlocker.isBlank()
+                    && !"none".equals(nextTransformedGraphBlocker)) {
+                transformedGraphBlocker = nextTransformedGraphBlocker;
+            }
+            String irArtifactEnvelopeBlocker = irArtifactEnvelopeFirstBlocker;
+            String nextIrArtifactEnvelopeBlocker = fields.getOrDefault(prefix + ".irArtifactEnvelope.firstBlocker", "none");
+            if ("none".equals(irArtifactEnvelopeBlocker)
+                    && !nextIrArtifactEnvelopeBlocker.isBlank()
+                    && !"none".equals(nextIrArtifactEnvelopeBlocker)) {
+                irArtifactEnvelopeBlocker = nextIrArtifactEnvelopeBlocker;
             }
             String selectionStatus = firstNonDefault(
                     rewriteSelectionStatus,
@@ -1036,6 +1956,38 @@ public record GpuRuntimeOptimizerDriftArtifact(
                     replacementPlanValidationValidCount + parseInt(fields.get(prefix + ".replacementPlan.validation.valid.count")),
                     replacementPlanValidationInvalidCount + parseInt(fields.get(prefix + ".replacementPlan.validation.invalid.count")),
                     validationBlocker,
+                    rewriteVisitorCount + parseInt(fields.get(prefix + ".rewriteVisitor.count")),
+                    rewriteVisitorReadyCount + parseInt(fields.get(prefix + ".rewriteVisitor.ready.count")),
+                    rewriteVisitorBlockedCount + parseInt(fields.get(prefix + ".rewriteVisitor.blocked.count")),
+                    visitorBlocker,
+                    replacementBlueprintCount + parseInt(fields.get(prefix + ".replacementBlueprint.count")),
+                    replacementBlueprintReadyCount + parseInt(fields.get(prefix + ".replacementBlueprint.ready.count")),
+                    replacementBlueprintBlockedCount + parseInt(fields.get(prefix + ".replacementBlueprint.blocked.count")),
+                    blueprintBlocker,
+                    rewriteTransactionCount + parseInt(fields.get(prefix + ".rewriteTransaction.count")),
+                    rewriteTransactionReadyCount + parseInt(fields.get(prefix + ".rewriteTransaction.ready.count")),
+                    rewriteTransactionBlockedCount + parseInt(fields.get(prefix + ".rewriteTransaction.blocked.count")),
+                    transactionBlocker,
+                    nodeIdAllocationCount + parseInt(fields.get(prefix + ".nodeIdAllocation.count")),
+                    nodeIdAllocationReadyCount + parseInt(fields.get(prefix + ".nodeIdAllocation.ready.count")),
+                    nodeIdAllocationBlockedCount + parseInt(fields.get(prefix + ".nodeIdAllocation.blocked.count")),
+                    allocationBlocker,
+                    replacementNodeCount + parseInt(fields.get(prefix + ".replacementNode.count")),
+                    replacementNodeReadyCount + parseInt(fields.get(prefix + ".replacementNode.ready.count")),
+                    replacementNodeBlockedCount + parseInt(fields.get(prefix + ".replacementNode.blocked.count")),
+                    replacementNodeBlocker,
+                    graphPatchCount + parseInt(fields.get(prefix + ".graphPatch.count")),
+                    graphPatchReadyCount + parseInt(fields.get(prefix + ".graphPatch.ready.count")),
+                    graphPatchBlockedCount + parseInt(fields.get(prefix + ".graphPatch.blocked.count")),
+                    graphPatchBlocker,
+                    transformedGraphCount + parseInt(fields.get(prefix + ".transformedGraph.count")),
+                    transformedGraphReadyCount + parseInt(fields.get(prefix + ".transformedGraph.ready.count")),
+                    transformedGraphBlockedCount + parseInt(fields.get(prefix + ".transformedGraph.blocked.count")),
+                    transformedGraphBlocker,
+                    irArtifactEnvelopeCount + parseInt(fields.get(prefix + ".irArtifactEnvelope.count")),
+                    irArtifactEnvelopeReadyCount + parseInt(fields.get(prefix + ".irArtifactEnvelope.ready.count")),
+                    irArtifactEnvelopeBlockedCount + parseInt(fields.get(prefix + ".irArtifactEnvelope.blocked.count")),
+                    irArtifactEnvelopeBlocker,
                     rewriteSketchCount + parseInt(fields.get(prefix + ".rewriteSketch.count")),
                     rewriteSketchReadyCount + parseInt(fields.get(prefix + ".rewriteSketch.ready.count")),
                     rewriteSketchBlockedCount + parseInt(fields.get(prefix + ".rewriteSketch.blocked.count")),

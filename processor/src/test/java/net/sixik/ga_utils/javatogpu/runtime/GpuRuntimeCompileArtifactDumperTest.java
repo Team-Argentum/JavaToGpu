@@ -2021,6 +2021,38 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rewriteSketch.ready.count", "5"),
                         Map.entry("rewriteSketch.blocked.count", "1"),
                         Map.entry("rewriteSketch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteVisitor.count", "6"),
+                        Map.entry("rewriteVisitor.ready.count", "5"),
+                        Map.entry("rewriteVisitor.blocked.count", "1"),
+                        Map.entry("rewriteVisitor.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("replacementBlueprint.count", "6"),
+                        Map.entry("replacementBlueprint.ready.count", "5"),
+                        Map.entry("replacementBlueprint.blocked.count", "1"),
+                        Map.entry("replacementBlueprint.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteTransaction.count", "6"),
+                        Map.entry("rewriteTransaction.ready.count", "5"),
+                        Map.entry("rewriteTransaction.blocked.count", "1"),
+                        Map.entry("rewriteTransaction.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("nodeIdAllocation.count", "6"),
+                        Map.entry("nodeIdAllocation.ready.count", "5"),
+                        Map.entry("nodeIdAllocation.blocked.count", "1"),
+                        Map.entry("nodeIdAllocation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("replacementNode.count", "6"),
+                        Map.entry("replacementNode.ready.count", "5"),
+                        Map.entry("replacementNode.blocked.count", "1"),
+                        Map.entry("replacementNode.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("graphPatch.count", "6"),
+                        Map.entry("graphPatch.ready.count", "5"),
+                        Map.entry("graphPatch.blocked.count", "1"),
+                        Map.entry("graphPatch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("transformedGraph.count", "6"),
+                        Map.entry("transformedGraph.ready.count", "5"),
+                        Map.entry("transformedGraph.blocked.count", "1"),
+                        Map.entry("transformedGraph.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("irArtifactEnvelope.count", "6"),
+                        Map.entry("irArtifactEnvelope.ready.count", "5"),
+                        Map.entry("irArtifactEnvelope.blocked.count", "1"),
+                        Map.entry("irArtifactEnvelope.firstBlocker", "replacement-plan-root-missing"),
                         Map.entry("rewriteSketch.conflict.count", "1"),
                         Map.entry("rewriteSketch.conflict.firstBlocker", "rewrite-sketch-covered-node-overlap"),
                         Map.entry("rewriteSelection.status", "blocked"),
@@ -2055,6 +2087,38 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.0.rewriteSketch.ready.count", "2"),
                         Map.entry("rule.0.rewriteSketch.blocked.count", "1"),
                         Map.entry("rule.0.rewriteSketch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteVisitor.count", "3"),
+                        Map.entry("rule.0.rewriteVisitor.ready.count", "2"),
+                        Map.entry("rule.0.rewriteVisitor.blocked.count", "1"),
+                        Map.entry("rule.0.rewriteVisitor.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.replacementBlueprint.count", "3"),
+                        Map.entry("rule.0.replacementBlueprint.ready.count", "2"),
+                        Map.entry("rule.0.replacementBlueprint.blocked.count", "1"),
+                        Map.entry("rule.0.replacementBlueprint.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteTransaction.count", "3"),
+                        Map.entry("rule.0.rewriteTransaction.ready.count", "2"),
+                        Map.entry("rule.0.rewriteTransaction.blocked.count", "1"),
+                        Map.entry("rule.0.rewriteTransaction.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.nodeIdAllocation.count", "3"),
+                        Map.entry("rule.0.nodeIdAllocation.ready.count", "2"),
+                        Map.entry("rule.0.nodeIdAllocation.blocked.count", "1"),
+                        Map.entry("rule.0.nodeIdAllocation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.replacementNode.count", "3"),
+                        Map.entry("rule.0.replacementNode.ready.count", "2"),
+                        Map.entry("rule.0.replacementNode.blocked.count", "1"),
+                        Map.entry("rule.0.replacementNode.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.graphPatch.count", "3"),
+                        Map.entry("rule.0.graphPatch.ready.count", "2"),
+                        Map.entry("rule.0.graphPatch.blocked.count", "1"),
+                        Map.entry("rule.0.graphPatch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.transformedGraph.count", "3"),
+                        Map.entry("rule.0.transformedGraph.ready.count", "2"),
+                        Map.entry("rule.0.transformedGraph.blocked.count", "1"),
+                        Map.entry("rule.0.transformedGraph.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.irArtifactEnvelope.count", "3"),
+                        Map.entry("rule.0.irArtifactEnvelope.ready.count", "2"),
+                        Map.entry("rule.0.irArtifactEnvelope.blocked.count", "1"),
+                        Map.entry("rule.0.irArtifactEnvelope.firstBlocker", "replacement-plan-root-missing"),
                         Map.entry("rule.0.rewriteSelection.status", "blocked"),
                         Map.entry("rule.0.rewriteSelection.firstBlocker", "replacement-plan-root-missing"),
                         Map.entry("rule.0.rewriteProof.status", "blocked"),
@@ -2087,6 +2151,38 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.1.rewriteSketch.ready.count", "3"),
                         Map.entry("rule.1.rewriteSketch.blocked.count", "0"),
                         Map.entry("rule.1.rewriteSketch.firstBlocker", "none"),
+                        Map.entry("rule.1.rewriteVisitor.count", "3"),
+                        Map.entry("rule.1.rewriteVisitor.ready.count", "3"),
+                        Map.entry("rule.1.rewriteVisitor.blocked.count", "0"),
+                        Map.entry("rule.1.rewriteVisitor.firstBlocker", "none"),
+                        Map.entry("rule.1.replacementBlueprint.count", "3"),
+                        Map.entry("rule.1.replacementBlueprint.ready.count", "3"),
+                        Map.entry("rule.1.replacementBlueprint.blocked.count", "0"),
+                        Map.entry("rule.1.replacementBlueprint.firstBlocker", "none"),
+                        Map.entry("rule.1.rewriteTransaction.count", "3"),
+                        Map.entry("rule.1.rewriteTransaction.ready.count", "3"),
+                        Map.entry("rule.1.rewriteTransaction.blocked.count", "0"),
+                        Map.entry("rule.1.rewriteTransaction.firstBlocker", "none"),
+                        Map.entry("rule.1.nodeIdAllocation.count", "3"),
+                        Map.entry("rule.1.nodeIdAllocation.ready.count", "3"),
+                        Map.entry("rule.1.nodeIdAllocation.blocked.count", "0"),
+                        Map.entry("rule.1.nodeIdAllocation.firstBlocker", "none"),
+                        Map.entry("rule.1.replacementNode.count", "3"),
+                        Map.entry("rule.1.replacementNode.ready.count", "3"),
+                        Map.entry("rule.1.replacementNode.blocked.count", "0"),
+                        Map.entry("rule.1.replacementNode.firstBlocker", "none"),
+                        Map.entry("rule.1.graphPatch.count", "3"),
+                        Map.entry("rule.1.graphPatch.ready.count", "3"),
+                        Map.entry("rule.1.graphPatch.blocked.count", "0"),
+                        Map.entry("rule.1.graphPatch.firstBlocker", "none"),
+                        Map.entry("rule.1.transformedGraph.count", "3"),
+                        Map.entry("rule.1.transformedGraph.ready.count", "3"),
+                        Map.entry("rule.1.transformedGraph.blocked.count", "0"),
+                        Map.entry("rule.1.transformedGraph.firstBlocker", "none"),
+                        Map.entry("rule.1.irArtifactEnvelope.count", "3"),
+                        Map.entry("rule.1.irArtifactEnvelope.ready.count", "3"),
+                        Map.entry("rule.1.irArtifactEnvelope.blocked.count", "0"),
+                        Map.entry("rule.1.irArtifactEnvelope.firstBlocker", "none"),
                         Map.entry("rule.1.rewriteSelection.status", "blocked"),
                         Map.entry("rule.1.rewriteSelection.firstBlocker", "rewrite-builder-not-implemented"),
                         Map.entry("rule.1.rewriteProof.status", "blocked"),
@@ -2125,6 +2221,80 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("replacementPlan.validation.valid.count=5"));
         assertTrue(drift.contains("replacementPlan.validation.invalid.count=1"));
         assertTrue(drift.contains("replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteVisitor.count=6"));
+        assertTrue(drift.contains("rewriteVisitor.ready.count=5"));
+        assertTrue(drift.contains("rewriteVisitor.blocked.count=1"));
+        assertTrue(drift.contains("rewriteVisitor.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteVisitor.visitorImplemented=true"));
+        assertTrue(drift.contains("rewriteVisitor.replacementBuilderImplemented=false"));
+        assertTrue(drift.contains("rewriteVisitor.transformedIrBuilt=false"));
+        assertTrue(drift.contains("rewriteVisitor.selectedIrReplacement=false"));
+        assertTrue(drift.contains("replacementBlueprint.count=6"));
+        assertTrue(drift.contains("replacementBlueprint.ready.count=5"));
+        assertTrue(drift.contains("replacementBlueprint.blocked.count=1"));
+        assertTrue(drift.contains("replacementBlueprint.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("replacementBlueprint.blueprintImplemented=true"));
+        assertTrue(drift.contains("replacementBlueprint.replacementBuilderImplemented=false"));
+        assertTrue(drift.contains("replacementBlueprint.transformedIrBuilt=false"));
+        assertTrue(drift.contains("replacementBlueprint.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteTransaction.count=6"));
+        assertTrue(drift.contains("rewriteTransaction.ready.count=5"));
+        assertTrue(drift.contains("rewriteTransaction.blocked.count=1"));
+        assertTrue(drift.contains("rewriteTransaction.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteTransaction.transactionPreflightImplemented=true"));
+        assertTrue(drift.contains("rewriteTransaction.nodeIdAllocatorImplemented=false"));
+        assertTrue(drift.contains("rewriteTransaction.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("rewriteTransaction.transformedIrBuilt=false"));
+        assertTrue(drift.contains("rewriteTransaction.selectedIrReplacement=false"));
+        assertTrue(drift.contains("nodeIdAllocation.count=6"));
+        assertTrue(drift.contains("nodeIdAllocation.ready.count=5"));
+        assertTrue(drift.contains("nodeIdAllocation.blocked.count=1"));
+        assertTrue(drift.contains("nodeIdAllocation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("nodeIdAllocation.allocationPreflightImplemented=true"));
+        assertTrue(drift.contains("nodeIdAllocation.nodeIdsReserved=false"));
+        assertTrue(drift.contains("nodeIdAllocation.nodeIdAllocatorApplied=false"));
+        assertTrue(drift.contains("nodeIdAllocation.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("nodeIdAllocation.transformedIrBuilt=false"));
+        assertTrue(drift.contains("nodeIdAllocation.selectedIrReplacement=false"));
+        assertTrue(drift.contains("replacementNode.count=6"));
+        assertTrue(drift.contains("replacementNode.ready.count=5"));
+        assertTrue(drift.contains("replacementNode.blocked.count=1"));
+        assertTrue(drift.contains("replacementNode.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("replacementNode.replacementNodePreflightImplemented=true"));
+        assertTrue(drift.contains("replacementNode.replacementNodeBuilt=false"));
+        assertTrue(drift.contains("replacementNode.replacementBuilderImplemented=false"));
+        assertTrue(drift.contains("replacementNode.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("replacementNode.transformedIrBuilt=false"));
+        assertTrue(drift.contains("replacementNode.selectedIrReplacement=false"));
+        assertTrue(drift.contains("graphPatch.count=6"));
+        assertTrue(drift.contains("graphPatch.ready.count=5"));
+        assertTrue(drift.contains("graphPatch.blocked.count=1"));
+        assertTrue(drift.contains("graphPatch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("graphPatch.graphPatchPreflightImplemented=true"));
+        assertTrue(drift.contains("graphPatch.graphPatchApplied=false"));
+        assertTrue(drift.contains("graphPatch.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("graphPatch.transformedIrBuilt=false"));
+        assertTrue(drift.contains("graphPatch.selectedIrReplacement=false"));
+        assertTrue(drift.contains("transformedGraph.count=6"));
+        assertTrue(drift.contains("transformedGraph.ready.count=5"));
+        assertTrue(drift.contains("transformedGraph.blocked.count=1"));
+        assertTrue(drift.contains("transformedGraph.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("transformedGraph.materializationPreflightImplemented=true"));
+        assertTrue(drift.contains("transformedGraph.transformedGraphBuilt=false"));
+        assertTrue(drift.contains("transformedGraph.transformedIrBuilt=false"));
+        assertTrue(drift.contains("transformedGraph.graphPatchApplied=false"));
+        assertTrue(drift.contains("transformedGraph.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("transformedGraph.selectedIrReplacement=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.count=6"));
+        assertTrue(drift.contains("irArtifactEnvelope.ready.count=5"));
+        assertTrue(drift.contains("irArtifactEnvelope.blocked.count=1"));
+        assertTrue(drift.contains("irArtifactEnvelope.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("irArtifactEnvelope.artifactEnvelopePreflightImplemented=true"));
+        assertTrue(drift.contains("irArtifactEnvelope.artifactEnvelopeBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.optimizedArtifactBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.transformedGraphBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.transformedIrBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.selectedIrReplacement=false"));
         assertTrue(drift.contains("rewriteSketch.count=6"));
         assertTrue(drift.contains("rewriteSketch.ready.count=5"));
         assertTrue(drift.contains("rewriteSketch.blocked.count=1"));
@@ -2171,6 +2341,52 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.count=3"));
         assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.invalid.count=1"));
         assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.nodeIdsReserved=false"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.replacementNodeBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.graphPatchApplied=false"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.transformedGraphBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.artifactEnvelopeBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.optimizedArtifactBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.selectedIrReplacement=false"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.count=3"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.ready.count=2"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.blocked.count=1"));
@@ -2190,6 +2406,10 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("optimizerRule.1.skipped.count=1"));
         assertTrue(drift.contains("optimizerRule.summary=madFma[candidates=2, proposals=0, applied=0, skipped=0, blocked=1"));
         assertTrue(drift.contains("planValidations=3, invalidPlanValidations=1, planValidationFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("replacementNodes=3, readyReplacementNodes=2, blockedReplacementNodes=1, replacementNodeFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("graphPatches=3, readyGraphPatches=2, blockedGraphPatches=1, graphPatchFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("transformedGraphs=3, readyTransformedGraphs=2, blockedTransformedGraphs=1, transformedGraphFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("irArtifactEnvelopes=3, readyIrArtifactEnvelopes=2, blockedIrArtifactEnvelopes=1, irArtifactEnvelopeFirstBlocker=replacement-plan-root-missing"));
         assertTrue(drift.contains("rewriteSketches=3, readySketches=2, blockedSketches=1, rewriteSketchFirstBlocker=replacement-plan-root-missing, rewriteSelectionStatus=blocked, rewriteSelectionFirstBlocker=replacement-plan-root-missing, rewriteProofStatus=blocked, rewriteProofFirstBlocker=runtime-equivalence-payload-missing"));
         assertTrue(drift.contains("optimizerFamily.count=1"));
         assertTrue(drift.contains("optimizerFamily.summary=peephole[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"));

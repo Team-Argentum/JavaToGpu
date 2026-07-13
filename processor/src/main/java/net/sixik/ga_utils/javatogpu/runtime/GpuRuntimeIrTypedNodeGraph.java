@@ -50,6 +50,13 @@ public final class GpuRuntimeIrTypedNodeGraph {
         return nodesById;
     }
 
+    public int maxNodeId() {
+        return nodesById.keySet().stream()
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
+    }
+
     public IrGpuTypedNode node(int id) {
         return nodesById.get(id);
     }

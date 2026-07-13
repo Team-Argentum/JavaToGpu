@@ -17,6 +17,7 @@ public record GpuRuntimeIrPeepholeRuleReport(
         Map<String, String> fields,
         List<GpuRuntimeIrPeepholeReplacementPlan> replacementPlans,
         List<GpuRuntimeIrPeepholeReplacementPlanValidation> replacementPlanValidations,
+        List<GpuRuntimeIrPeepholeRewriteVisitPreflight> rewriteVisitPreflights,
         List<String> diagnostics
 ) {
 
@@ -32,6 +33,7 @@ public record GpuRuntimeIrPeepholeRuleReport(
         replacementPlanValidations = replacementPlanValidations == null
                 ? List.of()
                 : List.copyOf(replacementPlanValidations);
+        rewriteVisitPreflights = rewriteVisitPreflights == null ? List.of() : List.copyOf(rewriteVisitPreflights);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
     }
 
@@ -58,6 +60,7 @@ public record GpuRuntimeIrPeepholeRuleReport(
                 fields,
                 replacementPlans,
                 List.of(),
+                List.of(),
                 diagnostics
         );
     }
@@ -77,6 +80,7 @@ public record GpuRuntimeIrPeepholeRuleReport(
                 false,
                 candidateCount > 0 ? "candidate-detected" : "no-candidate",
                 fields,
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of("rule is diagnostic-only; no mutation proposal was emitted")
@@ -101,12 +105,14 @@ public record GpuRuntimeIrPeepholeRuleReport(
                 fields,
                 replacementPlans,
                 List.of(),
+                List.of(),
                 List.of("rule is diagnostic-only; no mutation proposal was emitted")
         );
     }
 
-    public GpuRuntimeIrPeepholeRuleReport withReplacementPlanValidations(
-            List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations
+    public GpuRuntimeIrPeepholeRuleReport withReplacementPlanAnalysis(
+            List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations,
+            List<GpuRuntimeIrPeepholeRewriteVisitPreflight> visitPreflights
     ) {
         return new GpuRuntimeIrPeepholeRuleReport(
                 ruleId,
@@ -119,8 +125,15 @@ public record GpuRuntimeIrPeepholeRuleReport(
                 fields,
                 replacementPlans,
                 validations,
+                visitPreflights,
                 diagnostics
         );
+    }
+
+    public GpuRuntimeIrPeepholeRuleReport withReplacementPlanValidations(
+            List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations
+    ) {
+        return withReplacementPlanAnalysis(validations, rewriteVisitPreflights);
     }
 
     private static String normalize(String value, String fallback) {
