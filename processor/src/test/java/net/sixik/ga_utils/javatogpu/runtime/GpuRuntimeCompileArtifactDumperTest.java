@@ -2053,6 +2053,14 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("irArtifactEnvelope.ready.count", "5"),
                         Map.entry("irArtifactEnvelope.blocked.count", "1"),
                         Map.entry("irArtifactEnvelope.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("artifactProofBinding.count", "6"),
+                        Map.entry("artifactProofBinding.ready.count", "0"),
+                        Map.entry("artifactProofBinding.blocked.count", "6"),
+                        Map.entry("artifactProofBinding.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("artifactSelection.count", "6"),
+                        Map.entry("artifactSelection.ready.count", "0"),
+                        Map.entry("artifactSelection.blocked.count", "6"),
+                        Map.entry("artifactSelection.firstBlocker", "replacement-plan-root-missing"),
                         Map.entry("rewriteSketch.conflict.count", "1"),
                         Map.entry("rewriteSketch.conflict.firstBlocker", "rewrite-sketch-covered-node-overlap"),
                         Map.entry("rewriteSelection.status", "blocked"),
@@ -2119,6 +2127,14 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.0.irArtifactEnvelope.ready.count", "2"),
                         Map.entry("rule.0.irArtifactEnvelope.blocked.count", "1"),
                         Map.entry("rule.0.irArtifactEnvelope.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.artifactProofBinding.count", "3"),
+                        Map.entry("rule.0.artifactProofBinding.ready.count", "0"),
+                        Map.entry("rule.0.artifactProofBinding.blocked.count", "3"),
+                        Map.entry("rule.0.artifactProofBinding.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.artifactSelection.count", "3"),
+                        Map.entry("rule.0.artifactSelection.ready.count", "0"),
+                        Map.entry("rule.0.artifactSelection.blocked.count", "3"),
+                        Map.entry("rule.0.artifactSelection.firstBlocker", "replacement-plan-root-missing"),
                         Map.entry("rule.0.rewriteSelection.status", "blocked"),
                         Map.entry("rule.0.rewriteSelection.firstBlocker", "replacement-plan-root-missing"),
                         Map.entry("rule.0.rewriteProof.status", "blocked"),
@@ -2183,6 +2199,14 @@ class GpuRuntimeCompileArtifactDumperTest {
                         Map.entry("rule.1.irArtifactEnvelope.ready.count", "3"),
                         Map.entry("rule.1.irArtifactEnvelope.blocked.count", "0"),
                         Map.entry("rule.1.irArtifactEnvelope.firstBlocker", "none"),
+                        Map.entry("rule.1.artifactProofBinding.count", "3"),
+                        Map.entry("rule.1.artifactProofBinding.ready.count", "0"),
+                        Map.entry("rule.1.artifactProofBinding.blocked.count", "3"),
+                        Map.entry("rule.1.artifactProofBinding.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.1.artifactSelection.count", "3"),
+                        Map.entry("rule.1.artifactSelection.ready.count", "0"),
+                        Map.entry("rule.1.artifactSelection.blocked.count", "3"),
+                        Map.entry("rule.1.artifactSelection.firstBlocker", "runtime-equivalence-payload-missing"),
                         Map.entry("rule.1.rewriteSelection.status", "blocked"),
                         Map.entry("rule.1.rewriteSelection.firstBlocker", "rewrite-builder-not-implemented"),
                         Map.entry("rule.1.rewriteProof.status", "blocked"),
@@ -2295,6 +2319,26 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("irArtifactEnvelope.transformedGraphBuilt=false"));
         assertTrue(drift.contains("irArtifactEnvelope.transformedIrBuilt=false"));
         assertTrue(drift.contains("irArtifactEnvelope.selectedIrReplacement=false"));
+        assertTrue(drift.contains("artifactProofBinding.count=6"));
+        assertTrue(drift.contains("artifactProofBinding.ready.count=0"));
+        assertTrue(drift.contains("artifactProofBinding.blocked.count=6"));
+        assertTrue(drift.contains("artifactProofBinding.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactProofBinding.bindingPreflightImplemented=true"));
+        assertTrue(drift.contains("artifactProofBinding.proofBound=false"));
+        assertTrue(drift.contains("artifactProofBinding.rollbackBound=false"));
+        assertTrue(drift.contains("artifactProofBinding.approvalBound=false"));
+        assertTrue(drift.contains("artifactProofBinding.optimizedArtifactBuilt=false"));
+        assertTrue(drift.contains("artifactProofBinding.selectedIrReplacement=false"));
+        assertTrue(drift.contains("artifactSelection.count=6"));
+        assertTrue(drift.contains("artifactSelection.ready.count=0"));
+        assertTrue(drift.contains("artifactSelection.blocked.count=6"));
+        assertTrue(drift.contains("artifactSelection.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactSelection.selectionPreflightImplemented=true"));
+        assertTrue(drift.contains("artifactSelection.productionGateRequired=true"));
+        assertTrue(drift.contains("artifactSelection.productionGateAccepted=false"));
+        assertTrue(drift.contains("artifactSelection.selectionApplied=false"));
+        assertTrue(drift.contains("artifactSelection.optimizedArtifactSelected=false"));
+        assertTrue(drift.contains("artifactSelection.selectedIrReplacement=false"));
         assertTrue(drift.contains("rewriteSketch.count=6"));
         assertTrue(drift.contains("rewriteSketch.ready.count=5"));
         assertTrue(drift.contains("rewriteSketch.blocked.count=1"));
@@ -2387,6 +2431,18 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.artifactEnvelopeBuilt=false"));
         assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.optimizedArtifactBuilt=false"));
         assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.ready.count=0"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.blocked.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.proofBound=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.ready.count=0"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.blocked.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.selectionApplied=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.selectedIrReplacement=false"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.count=3"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.ready.count=2"));
         assertTrue(drift.contains("optimizerRule.0.rewriteSketch.blocked.count=1"));
@@ -2410,6 +2466,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(drift.contains("graphPatches=3, readyGraphPatches=2, blockedGraphPatches=1, graphPatchFirstBlocker=replacement-plan-root-missing"));
         assertTrue(drift.contains("transformedGraphs=3, readyTransformedGraphs=2, blockedTransformedGraphs=1, transformedGraphFirstBlocker=replacement-plan-root-missing"));
         assertTrue(drift.contains("irArtifactEnvelopes=3, readyIrArtifactEnvelopes=2, blockedIrArtifactEnvelopes=1, irArtifactEnvelopeFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactProofBindings=3, readyArtifactProofBindings=0, blockedArtifactProofBindings=3, artifactProofBindingFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactSelections=3, readyArtifactSelections=0, blockedArtifactSelections=3, artifactSelectionFirstBlocker=replacement-plan-root-missing"));
         assertTrue(drift.contains("rewriteSketches=3, readySketches=2, blockedSketches=1, rewriteSketchFirstBlocker=replacement-plan-root-missing, rewriteSelectionStatus=blocked, rewriteSelectionFirstBlocker=replacement-plan-root-missing, rewriteProofStatus=blocked, rewriteProofFirstBlocker=runtime-equivalence-payload-missing"));
         assertTrue(drift.contains("optimizerFamily.count=1"));
         assertTrue(drift.contains("optimizerFamily.summary=peephole[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"));

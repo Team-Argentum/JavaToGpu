@@ -712,6 +712,69 @@ class GpuRuntimeIrOptimizerRegistryTest {
         );
         assertEquals("false", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.artifactEnvelopeBuilt"));
         assertEquals("false", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactProofBinding.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("artifactProofBinding.ready.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactProofBinding.blocked.count"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("artifactProofBinding.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("artifactProofBinding.bindingPreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.proofBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.rollbackBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.approvalBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.optimizedArtifactBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.selectedIrReplacement"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.firstBlocker"));
+        assertEquals(passReport.originalIrIdentity(), passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.originalIrIdentity"));
+        assertEquals("not-built", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.optimizedArtifactIdentity"));
+        assertEquals("runtime-equivalence-required", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofAnchor"));
+        assertEquals("original-ir", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackAnchor"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofStatus"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofFirstBlocker"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.reviewPackageStatus"));
+        assertEquals("runtime-equivalence-payload-missing", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.reviewPackageFirstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.artifactEnvelopeReady"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.runtimeEquivalencePayload.complete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackEvidence.present"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackClean"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.approvalAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.reviewPackageComplete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.bindingReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.approvalBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.optimizedArtifactBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactSelection.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("artifactSelection.ready.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactSelection.blocked.count"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("artifactSelection.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("artifactSelection.selectionPreflightImplemented"));
+        assertEquals("true", passReport.proofArtifact().fields().get("artifactSelection.productionGateRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.productionGateAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.selectionApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.optimizedArtifactSelected"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.selectedIrReplacement"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.firstBlocker"));
+        assertEquals(passReport.originalIrIdentity(), passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.originalIrIdentity"));
+        assertEquals("not-built", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.optimizedArtifactIdentity"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBindingStatus"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBindingFirstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBindingReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.rollbackBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.approvalBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.optimizedArtifactBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.transformedIrBuilt"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.productionGateRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.productionGateAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.mutationPolicyAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.selectionReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.selectionApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.optimizedArtifactSelected"));
         assertEquals("1", passReport.proofArtifact().fields().get("rewriteSketch.count"));
         assertEquals("1", passReport.proofArtifact().fields().get("rewriteSketch.ready.count"));
         assertEquals("0", passReport.proofArtifact().fields().get("rewriteSketch.blocked.count"));
@@ -795,6 +858,28 @@ class GpuRuntimeIrOptimizerRegistryTest {
         assertEquals("no-candidate", passReport.proofArtifact().fields().get("rule.1.proofStatus"));
         assertEquals("rewrite-engine-not-implemented", passReport.proofArtifact().fields().get("firstBlocker"));
         assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePreflightsKeepProductionEnablingFieldsDisabled() {
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+        for (IrGpuArtifact artifact : List.of(
+                fastMathTypedArtifact(),
+                fastMathPartialMadFmaTypedArtifact(),
+                fastMathClampTypedArtifact(),
+                fastMathStepTypedArtifact(),
+                fastMathDotTypedArtifact(),
+                fastMathMixTypedArtifact()
+        )) {
+            GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+            GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+
+            assertSame(artifact, report.artifact().orElseThrow());
+            assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+            assertNoProductionEnablingPreflightFields(passReport.proofArtifact().fields());
+        }
     }
 
     @Test
@@ -1190,6 +1275,42 @@ class GpuRuntimeIrOptimizerRegistryTest {
         assertEquals("false", fields.get("rule.0.irArtifactEnvelope.0.artifactEnvelopeBuilt"));
         assertEquals("false", fields.get("irArtifactEnvelope.optimizedArtifactBuilt"));
         assertEquals("false", fields.get("irArtifactEnvelope.selectedIrReplacement"));
+        assertEquals("1", fields.get("artifactProofBinding.count"));
+        assertEquals("0", fields.get("artifactProofBinding.ready.count"));
+        assertEquals("1", fields.get("artifactProofBinding.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("artifactProofBinding.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.artifactProofBinding.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactProofBinding.0.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.artifactEnvelopeReady"));
+        assertEquals("not-required", fields.get("rule.0.artifactProofBinding.0.proofStatus"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactProofBinding.0.proofFirstBlocker"));
+        assertEquals("not-required", fields.get("rule.0.artifactProofBinding.0.reviewPackageStatus"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactProofBinding.0.reviewPackageFirstBlocker"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.proofRequired"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.bindingReady"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.proofBound"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.optimizedArtifactBuilt"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.transformedIrBuilt"));
+        assertEquals("false", fields.get("artifactProofBinding.optimizedArtifactBuilt"));
+        assertEquals("false", fields.get("artifactProofBinding.selectedIrReplacement"));
+        assertEquals("1", fields.get("artifactSelection.count"));
+        assertEquals("0", fields.get("artifactSelection.ready.count"));
+        assertEquals("1", fields.get("artifactSelection.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("artifactSelection.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.artifactSelection.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactSelection.0.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.artifactSelection.0.proofBindingStatus"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactSelection.0.proofBindingFirstBlocker"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.proofBindingReady"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.optimizedArtifactBuilt"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.transformedIrBuilt"));
+        assertEquals("true", fields.get("rule.0.artifactSelection.0.productionGateRequired"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.productionGateAccepted"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.mutationPolicyAllowed"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.selectionReady"));
+        assertEquals("false", fields.get("artifactSelection.selectionApplied"));
+        assertEquals("false", fields.get("artifactSelection.optimizedArtifactSelected"));
+        assertEquals("false", fields.get("artifactSelection.selectedIrReplacement"));
         assertEquals("0", fields.get("rewriteSketch.ready.count"));
         assertEquals("1", fields.get("rewriteSketch.blocked.count"));
         assertEquals("replacement-plan-root-missing", fields.get("rewriteSketch.firstBlocker"));
@@ -1534,6 +1655,47 @@ class GpuRuntimeIrOptimizerRegistryTest {
                 ),
                 Optional.of(artifact)
         );
+    }
+
+    private static void assertNoProductionEnablingPreflightFields(Map<String, String> fields) {
+        List<String> forbiddenTrueSuffixes = List.of(
+                ".replacementBuilderImplemented",
+                ".nodeIdsReserved",
+                ".nodeIdAllocatorApplied",
+                ".replacementNodeBuilt",
+                ".graphPatchApplied",
+                ".graphRewriteImplemented",
+                ".transformedGraphBuilt",
+                ".artifactEnvelopeBuilt",
+                ".optimizedArtifactBuilt",
+                ".transformedIrBuilt",
+                ".rewriteBuilderImplemented",
+                ".conflictResolutionImplemented",
+                ".runtimeEquivalenceProven",
+                ".proofAccepted",
+                ".runtimeEquivalencePayload.present",
+                ".runtimeEquivalencePayload.complete",
+                ".rollbackEvidence.present",
+                ".rollbackClean",
+                ".approvalAccepted",
+                ".reviewAccepted",
+                ".proofBound",
+                ".rollbackBound",
+                ".approvalBound",
+                ".bindingReady",
+                ".productionGateAccepted",
+                ".mutationPolicyAllowed",
+                ".selectionApplied",
+                ".optimizedArtifactSelected",
+                ".selectionReady",
+                ".mutationAllowed",
+                ".selectedIrReplacement"
+        );
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            boolean forbidden = forbiddenTrueSuffixes.stream().anyMatch(entry.getKey()::endsWith);
+            assertFalse(forbidden && "true".equals(entry.getValue()),
+                    () -> "production-enabling preflight field unexpectedly true: " + entry.getKey());
+        }
     }
 
     private static GpuKernelDescriptor descriptor() {

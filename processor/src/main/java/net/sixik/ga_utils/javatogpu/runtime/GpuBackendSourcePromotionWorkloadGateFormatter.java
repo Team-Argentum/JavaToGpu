@@ -17,6 +17,191 @@ import java.util.Properties;
  */
 public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
+    private static final String RUNTIME_OPTIMIZER_DRIFT_PREFIX = "runtimeOptimizerDrift.";
+
+    private static final DriftProperty[] RUNTIME_OPTIMIZER_DRIFT_PROPERTIES = {
+            driftProperty("pass.count", "0", "unknown"),
+            driftProperty("pass.applied.count", "0", "unknown"),
+            driftProperty("pass.skipped.count", "0", "unknown"),
+            driftProperty("pass.rolledBack.count", "0", "unknown"),
+            driftProperty("pass.failed.count", "0", "unknown"),
+            driftProperty("proofArtifact.count", "0", "unknown"),
+            driftProperty("proofArtifact.accepted.count", "0", "unknown"),
+            driftProperty("proofArtifact.blocking.count", "0", "unknown"),
+            driftProperty("replacementPlan.complete.count", "0"),
+            driftProperty("replacementPlan.partial.count", "0"),
+            driftProperty("replacementPlan.firstBlocker", "none"),
+            driftProperty("replacementPlan.validation.count", "0"),
+            driftProperty("replacementPlan.validation.valid.count", "0"),
+            driftProperty("replacementPlan.validation.invalid.count", "0"),
+            driftProperty("replacementPlan.validation.firstBlocker", "none"),
+            driftProperty("rewriteVisitor.count", "0"),
+            driftProperty("rewriteVisitor.ready.count", "0"),
+            driftProperty("rewriteVisitor.blocked.count", "0"),
+            driftProperty("rewriteVisitor.firstBlocker", "none"),
+            driftProperty("rewriteVisitor.visitorImplemented", "true"),
+            driftProperty("rewriteVisitor.replacementBuilderImplemented", "false"),
+            driftProperty("rewriteVisitor.transformedIrBuilt", "false"),
+            driftProperty("rewriteVisitor.mutationAllowed", "false"),
+            driftProperty("rewriteVisitor.selectedIrReplacement", "false"),
+            driftProperty("replacementBlueprint.count", "0"),
+            driftProperty("replacementBlueprint.ready.count", "0"),
+            driftProperty("replacementBlueprint.blocked.count", "0"),
+            driftProperty("replacementBlueprint.firstBlocker", "none"),
+            driftProperty("replacementBlueprint.blueprintImplemented", "true"),
+            driftProperty("replacementBlueprint.replacementBuilderImplemented", "false"),
+            driftProperty("replacementBlueprint.transformedIrBuilt", "false"),
+            driftProperty("replacementBlueprint.mutationAllowed", "false"),
+            driftProperty("replacementBlueprint.selectedIrReplacement", "false"),
+            driftProperty("rewriteTransaction.count", "0"),
+            driftProperty("rewriteTransaction.ready.count", "0"),
+            driftProperty("rewriteTransaction.blocked.count", "0"),
+            driftProperty("rewriteTransaction.firstBlocker", "none"),
+            driftProperty("rewriteTransaction.transactionPreflightImplemented", "true"),
+            driftProperty("rewriteTransaction.nodeIdAllocatorImplemented", "false"),
+            driftProperty("rewriteTransaction.graphRewriteImplemented", "false"),
+            driftProperty("rewriteTransaction.transformedIrBuilt", "false"),
+            driftProperty("rewriteTransaction.mutationAllowed", "false"),
+            driftProperty("rewriteTransaction.selectedIrReplacement", "false"),
+            driftProperty("nodeIdAllocation.count", "0"),
+            driftProperty("nodeIdAllocation.ready.count", "0"),
+            driftProperty("nodeIdAllocation.blocked.count", "0"),
+            driftProperty("nodeIdAllocation.firstBlocker", "none"),
+            driftProperty("nodeIdAllocation.allocationPreflightImplemented", "true"),
+            driftProperty("nodeIdAllocation.nodeIdsReserved", "false"),
+            driftProperty("nodeIdAllocation.nodeIdAllocatorApplied", "false"),
+            driftProperty("nodeIdAllocation.graphRewriteImplemented", "false"),
+            driftProperty("nodeIdAllocation.transformedIrBuilt", "false"),
+            driftProperty("nodeIdAllocation.mutationAllowed", "false"),
+            driftProperty("nodeIdAllocation.selectedIrReplacement", "false"),
+            driftProperty("replacementNode.count", "0"),
+            driftProperty("replacementNode.ready.count", "0"),
+            driftProperty("replacementNode.blocked.count", "0"),
+            driftProperty("replacementNode.firstBlocker", "none"),
+            driftProperty("replacementNode.replacementNodePreflightImplemented", "true"),
+            driftProperty("replacementNode.replacementNodeBuilt", "false"),
+            driftProperty("replacementNode.replacementBuilderImplemented", "false"),
+            driftProperty("replacementNode.graphRewriteImplemented", "false"),
+            driftProperty("replacementNode.transformedIrBuilt", "false"),
+            driftProperty("replacementNode.mutationAllowed", "false"),
+            driftProperty("replacementNode.selectedIrReplacement", "false"),
+            driftProperty("graphPatch.count", "0"),
+            driftProperty("graphPatch.ready.count", "0"),
+            driftProperty("graphPatch.blocked.count", "0"),
+            driftProperty("graphPatch.firstBlocker", "none"),
+            driftProperty("graphPatch.graphPatchPreflightImplemented", "true"),
+            driftProperty("graphPatch.graphPatchApplied", "false"),
+            driftProperty("graphPatch.graphRewriteImplemented", "false"),
+            driftProperty("graphPatch.transformedIrBuilt", "false"),
+            driftProperty("graphPatch.mutationAllowed", "false"),
+            driftProperty("graphPatch.selectedIrReplacement", "false"),
+            driftProperty("transformedGraph.count", "0"),
+            driftProperty("transformedGraph.ready.count", "0"),
+            driftProperty("transformedGraph.blocked.count", "0"),
+            driftProperty("transformedGraph.firstBlocker", "none"),
+            driftProperty("transformedGraph.materializationPreflightImplemented", "true"),
+            driftProperty("transformedGraph.transformedGraphBuilt", "false"),
+            driftProperty("transformedGraph.transformedIrBuilt", "false"),
+            driftProperty("transformedGraph.graphPatchApplied", "false"),
+            driftProperty("transformedGraph.graphRewriteImplemented", "false"),
+            driftProperty("transformedGraph.mutationAllowed", "false"),
+            driftProperty("transformedGraph.selectedIrReplacement", "false"),
+            driftProperty("irArtifactEnvelope.count", "0"),
+            driftProperty("irArtifactEnvelope.ready.count", "0"),
+            driftProperty("irArtifactEnvelope.blocked.count", "0"),
+            driftProperty("irArtifactEnvelope.firstBlocker", "none"),
+            driftProperty("irArtifactEnvelope.artifactEnvelopePreflightImplemented", "true"),
+            driftProperty("irArtifactEnvelope.artifactEnvelopeBuilt", "false"),
+            driftProperty("irArtifactEnvelope.optimizedArtifactBuilt", "false"),
+            driftProperty("irArtifactEnvelope.transformedGraphBuilt", "false"),
+            driftProperty("irArtifactEnvelope.transformedIrBuilt", "false"),
+            driftProperty("irArtifactEnvelope.graphPatchApplied", "false"),
+            driftProperty("irArtifactEnvelope.graphRewriteImplemented", "false"),
+            driftProperty("irArtifactEnvelope.mutationAllowed", "false"),
+            driftProperty("irArtifactEnvelope.selectedIrReplacement", "false"),
+            driftProperty("artifactProofBinding.count", "0"),
+            driftProperty("artifactProofBinding.ready.count", "0"),
+            driftProperty("artifactProofBinding.blocked.count", "0"),
+            driftProperty("artifactProofBinding.firstBlocker", "none"),
+            driftProperty("artifactProofBinding.bindingPreflightImplemented", "true"),
+            driftProperty("artifactProofBinding.proofBound", "false"),
+            driftProperty("artifactProofBinding.rollbackBound", "false"),
+            driftProperty("artifactProofBinding.approvalBound", "false"),
+            driftProperty("artifactProofBinding.optimizedArtifactBuilt", "false"),
+            driftProperty("artifactProofBinding.transformedIrBuilt", "false"),
+            driftProperty("artifactProofBinding.mutationAllowed", "false"),
+            driftProperty("artifactProofBinding.selectedIrReplacement", "false"),
+            driftProperty("artifactSelection.count", "0"),
+            driftProperty("artifactSelection.ready.count", "0"),
+            driftProperty("artifactSelection.blocked.count", "0"),
+            driftProperty("artifactSelection.firstBlocker", "none"),
+            driftProperty("artifactSelection.selectionPreflightImplemented", "true"),
+            driftProperty("artifactSelection.productionGateRequired", "false"),
+            driftProperty("artifactSelection.productionGateAccepted", "false"),
+            driftProperty("artifactSelection.mutationPolicyAllowed", "false"),
+            driftProperty("artifactSelection.selectionApplied", "false"),
+            driftProperty("artifactSelection.optimizedArtifactSelected", "false"),
+            driftProperty("artifactSelection.optimizedArtifactBuilt", "false"),
+            driftProperty("artifactSelection.transformedIrBuilt", "false"),
+            driftProperty("artifactSelection.mutationAllowed", "false"),
+            driftProperty("artifactSelection.selectedIrReplacement", "false"),
+            driftProperty("rewriteSketch.count", "0"),
+            driftProperty("rewriteSketch.ready.count", "0"),
+            driftProperty("rewriteSketch.blocked.count", "0"),
+            driftProperty("rewriteSketch.firstBlocker", "none"),
+            driftProperty("rewriteSketch.rewriteBuilderImplemented", "false"),
+            driftProperty("rewriteSketch.mutationAllowed", "false"),
+            driftProperty("rewriteSketch.selectedIrReplacement", "false"),
+            driftProperty("rewriteSketch.conflict.count", "0"),
+            driftProperty("rewriteSketch.conflict.firstBlocker", "none"),
+            driftProperty("rewriteSketch.conflict.conflictResolutionImplemented", "false"),
+            driftProperty("rewriteSketch.conflict.selectionApplied", "false"),
+            driftProperty("rewriteSketch.conflict.mutationAllowed", "false"),
+            driftProperty("rewriteSketch.conflict.selectedIrReplacement", "false"),
+            driftProperty("rewriteSelection.sketch.count", "0"),
+            driftProperty("rewriteSelection.sketch.ready.count", "0"),
+            driftProperty("rewriteSelection.sketch.blocked.count", "0"),
+            driftProperty("rewriteSelection.conflict.count", "0"),
+            driftProperty("rewriteSelection.status", "not-required"),
+            driftProperty("rewriteSelection.firstBlocker", "no-rewrite-sketches"),
+            driftProperty("rewriteSelection.rewriteBuilderImplemented", "false"),
+            driftProperty("rewriteSelection.conflictResolutionImplemented", "false"),
+            driftProperty("rewriteSelection.runtimeEquivalenceRequired", "false"),
+            driftProperty("rewriteSelection.runtimeEquivalenceProven", "false"),
+            driftProperty("rewriteSelection.approvalRequired", "false"),
+            driftProperty("rewriteSelection.approvalAccepted", "false"),
+            driftProperty("rewriteSelection.mutationAllowed", "false"),
+            driftProperty("rewriteSelection.selectionApplied", "false"),
+            driftProperty("rewriteSelection.selectedIrReplacement", "false"),
+            driftProperty("rewriteProof.status", "not-required"),
+            driftProperty("rewriteProof.firstBlocker", "no-proof-candidates"),
+            driftProperty("rewriteProof.proofAccepted", "false"),
+            driftProperty("rewriteProof.runtimeEquivalencePayload.present", "false"),
+            driftProperty("rewriteProof.runtimeEquivalencePayload.complete", "false"),
+            driftProperty("rewriteProof.rollbackEvidence.present", "false"),
+            driftProperty("rewriteProof.rollbackClean", "false"),
+            driftProperty("rewriteProof.approvalAccepted", "false"),
+            driftProperty("rewriteProof.mutationAllowed", "false"),
+            driftProperty("rewriteProof.selectedIrReplacement", "false"),
+            driftProperty("rewriteReviewPackage.status", "not-required"),
+            driftProperty("rewriteReviewPackage.firstBlocker", "no-review-candidates"),
+            driftProperty("rewriteReviewPackage.required", "false"),
+            driftProperty("rewriteReviewPackage.complete", "false"),
+            driftProperty("rewriteReviewPackage.conflict.count", "0"),
+            driftProperty("rewriteReviewPackage.proofAccepted", "false"),
+            driftProperty("rewriteReviewPackage.runtimeEquivalencePayload.present", "false"),
+            driftProperty("rewriteReviewPackage.runtimeEquivalencePayload.complete", "false"),
+            driftProperty("rewriteReviewPackage.rollbackEvidence.present", "false"),
+            driftProperty("rewriteReviewPackage.rollbackClean", "false"),
+            driftProperty("rewriteReviewPackage.approvalAccepted", "false"),
+            driftProperty("rewriteReviewPackage.mutationAllowed", "false"),
+            driftProperty("rewriteReviewPackage.selectionApplied", "false"),
+            driftProperty("rewriteReviewPackage.selectedIrReplacement", "false"),
+            driftProperty("rewriteReviewPackage.manualReviewOnly", "true"),
+            driftProperty("optimizerRule.count", "0"),
+            driftProperty("optimizerRule.summary", "none"),
+    };
+
     private GpuBackendSourcePromotionWorkloadGateFormatter() {
     }
 
@@ -446,160 +631,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     private static void copyRuntimeOptimizerDriftProperties(Properties source, Properties target) {
         if (source == null || source.isEmpty()) {
             target.setProperty("runtimeOptimizerDrift.status", "not-recorded");
-            target.setProperty("runtimeOptimizerDrift.pass.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.applied.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.skipped.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.rolledBack.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.failed.count", "0");
-            target.setProperty("runtimeOptimizerDrift.proofArtifact.count", "0");
-            target.setProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0");
-            target.setProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementPlan.complete.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementPlan.partial.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementPlan.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.visitorImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.replacementBuilderImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteVisitor.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.blueprintImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.replacementBuilderImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementBlueprint.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.transactionPreflightImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.nodeIdAllocatorImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.graphRewriteImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteTransaction.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.count", "0");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.allocationPreflightImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.nodeIdsReserved", "false");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.nodeIdAllocatorApplied", "false");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.graphRewriteImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.nodeIdAllocation.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.replacementNodePreflightImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.replacementNodeBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.replacementBuilderImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.graphRewriteImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.replacementNode.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.count", "0");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.graphPatchPreflightImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.graphPatchApplied", "false");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.graphRewriteImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.graphPatch.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.count", "0");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.materializationPreflightImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.transformedGraphBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.graphPatchApplied", "false");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.graphRewriteImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.transformedGraph.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.count", "0");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.artifactEnvelopePreflightImplemented", "true");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.artifactEnvelopeBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.optimizedArtifactBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.transformedGraphBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.transformedIrBuilt", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.graphPatchApplied", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.graphRewriteImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.irArtifactEnvelope.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.conflict.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "none");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.conflict.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSketch.conflict.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.sketch.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.sketch.ready.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.sketch.blocked.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.conflict.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.status", "not-required");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.firstBlocker", "no-rewrite-sketches");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.rewriteBuilderImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.conflictResolutionImplemented", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.runtimeEquivalenceRequired", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.runtimeEquivalenceProven", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.approvalRequired", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.approvalAccepted", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.selectionApplied", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteSelection.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.status", "not-required");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.firstBlocker", "no-proof-candidates");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.proofAccepted", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.runtimeEquivalencePayload.present", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.runtimeEquivalencePayload.complete", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.rollbackEvidence.present", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.rollbackClean", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.approvalAccepted", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteProof.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.status", "not-required");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker", "no-review-candidates");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.required", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.complete", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.conflict.count", "0");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.proofAccepted", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.runtimeEquivalencePayload.present", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.runtimeEquivalencePayload.complete", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.rollbackEvidence.present", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.rollbackClean", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.approvalAccepted", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.mutationAllowed", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.selectionApplied", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.selectedIrReplacement", "false");
-            target.setProperty("runtimeOptimizerDrift.rewriteReviewPackage.manualReviewOnly", "true");
-            target.setProperty("runtimeOptimizerDrift.optimizerRule.count", "0");
-            target.setProperty("runtimeOptimizerDrift.optimizerRule.summary", "none");
+            copyDefaultRuntimeOptimizerDriftProperties(target);
             target.setProperty("runtimeOptimizerDrift.fallbackDecision", target.getProperty("runtimeIrHandoff.fallbackDecision", "none"));
             target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrStage", target.getProperty("runtimeIrHandoff.selectedStage", "original"));
             target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrIdentity", target.getProperty("runtimeIrHandoff.selected.identity", "unknown"));
@@ -612,160 +644,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             target.setProperty("runtimeOptimizerDrift.productionProfileRequested", target.getProperty("runtimeProductionMutationSafety.productionProfileRequested", "unknown"));
             return;
         }
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.applied.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.skipped.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.rolledBack.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.failed.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.accepted.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.blocking.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.complete.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.partial.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.valid.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.invalid.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementPlan.validation.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.visitorImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.replacementBuilderImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteVisitor.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.blueprintImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.replacementBuilderImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementBlueprint.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.transactionPreflightImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.nodeIdAllocatorImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.graphRewriteImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteTransaction.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.allocationPreflightImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.nodeIdsReserved", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.nodeIdAllocatorApplied", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.graphRewriteImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "nodeIdAllocation.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.replacementNodePreflightImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.replacementNodeBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.replacementBuilderImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.graphRewriteImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "replacementNode.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.graphPatchPreflightImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.graphPatchApplied", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.graphRewriteImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "graphPatch.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.materializationPreflightImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.transformedGraphBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.graphPatchApplied", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.graphRewriteImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "transformedGraph.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.artifactEnvelopePreflightImplemented", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.artifactEnvelopeBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.optimizedArtifactBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.transformedGraphBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.transformedIrBuilt", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.graphPatchApplied", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.graphRewriteImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "irArtifactEnvelope.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.rewriteBuilderImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.conflict.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.conflict.firstBlocker", "none");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.conflict.conflictResolutionImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.conflict.selectionApplied", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.conflict.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSketch.conflict.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.sketch.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.sketch.ready.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.sketch.blocked.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.conflict.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.status", "not-required");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.firstBlocker", "no-rewrite-sketches");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.rewriteBuilderImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.conflictResolutionImplemented", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.runtimeEquivalenceRequired", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.runtimeEquivalenceProven", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.approvalRequired", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.approvalAccepted", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.selectionApplied", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteSelection.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.status", "not-required");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.firstBlocker", "no-proof-candidates");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.proofAccepted", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.runtimeEquivalencePayload.present", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.runtimeEquivalencePayload.complete", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.rollbackEvidence.present", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.rollbackClean", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.approvalAccepted", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteProof.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.status", "not-required");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.firstBlocker", "no-review-candidates");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.required", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.complete", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.conflict.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.proofAccepted", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.runtimeEquivalencePayload.present", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.runtimeEquivalencePayload.complete", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.rollbackEvidence.present", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.rollbackClean", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.approvalAccepted", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.mutationAllowed", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.selectionApplied", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.selectedIrReplacement", "false");
-        copyRuntimeOptimizerDriftProperty(source, target, "rewriteReviewPackage.manualReviewOnly", "true");
-        copyRuntimeOptimizerDriftProperty(source, target, "optimizerRule.count", "0");
-        copyRuntimeOptimizerDriftProperty(source, target, "optimizerRule.summary", "none");
+        copyRuntimeOptimizerDriftPropertiesFromSource(source, target);
         copyIndexedPropertyGroup(source, target, "runtimeOptimizerDrift.optimizerRule", "optimizerRule");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.count");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.promotionReady.count");
@@ -783,8 +662,20 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         target.setProperty("runtimeOptimizerDrift.status", "recorded");
     }
 
+    private static void copyDefaultRuntimeOptimizerDriftProperties(Properties target) {
+        for (DriftProperty property : RUNTIME_OPTIMIZER_DRIFT_PROPERTIES) {
+            target.setProperty(RUNTIME_OPTIMIZER_DRIFT_PREFIX + property.key(), property.emptySourceDefault());
+        }
+    }
+
+    private static void copyRuntimeOptimizerDriftPropertiesFromSource(Properties source, Properties target) {
+        for (DriftProperty property : RUNTIME_OPTIMIZER_DRIFT_PROPERTIES) {
+            copyRuntimeOptimizerDriftProperty(source, target, property.key(), property.recordedSourceDefault());
+        }
+    }
+
     private static void copyRuntimeOptimizerDriftProperty(Properties source, Properties target, String key) {
-        target.setProperty("runtimeOptimizerDrift." + key, source.getProperty(key, "unknown"));
+        target.setProperty(RUNTIME_OPTIMIZER_DRIFT_PREFIX + key, source.getProperty(key, "unknown"));
     }
 
     private static void copyRuntimeOptimizerDriftProperty(
@@ -793,7 +684,18 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             String key,
             String defaultValue
     ) {
-        target.setProperty("runtimeOptimizerDrift." + key, source.getProperty(key, defaultValue));
+        target.setProperty(RUNTIME_OPTIMIZER_DRIFT_PREFIX + key, source.getProperty(key, defaultValue));
+    }
+
+    private static DriftProperty driftProperty(String key, String defaultValue) {
+        return driftProperty(key, defaultValue, defaultValue);
+    }
+
+    private static DriftProperty driftProperty(String key, String emptySourceDefault, String recordedSourceDefault) {
+        return new DriftProperty(key, emptySourceDefault, recordedSourceDefault);
+    }
+
+    private record DriftProperty(String key, String emptySourceDefault, String recordedSourceDefault) {
     }
 
     private static void copyIndexedPropertyGroup(
@@ -1086,160 +988,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
     private static void appendRuntimeOptimizerDrift(StringBuilder builder, String prefix, Properties entry) {
         builder.append(prefix).append("runtimeOptimizerDrift.status=").append(entry.getProperty("runtimeOptimizerDrift.status", "not-recorded")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.applied.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.applied.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.skipped.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.skipped.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.rolledBack.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.failed.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.failed.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.accepted.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.blocking.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.complete.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.complete.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.partial.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.partial.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.valid.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.invalid.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementPlan.validation.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.visitorImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.visitorImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.replacementBuilderImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.replacementBuilderImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteVisitor.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.rewriteVisitor.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.blueprintImplemented=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.blueprintImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.replacementBuilderImplemented=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.replacementBuilderImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementBlueprint.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.replacementBlueprint.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.transactionPreflightImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.transactionPreflightImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.nodeIdAllocatorImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.nodeIdAllocatorImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.graphRewriteImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.graphRewriteImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteTransaction.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.rewriteTransaction.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.count=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.allocationPreflightImplemented=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.allocationPreflightImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.nodeIdsReserved=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.nodeIdsReserved", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.nodeIdAllocatorApplied=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.nodeIdAllocatorApplied", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.graphRewriteImplemented=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.graphRewriteImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.nodeIdAllocation.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.nodeIdAllocation.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.replacementNodePreflightImplemented=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.replacementNodePreflightImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.replacementNodeBuilt=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.replacementNodeBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.replacementBuilderImplemented=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.replacementBuilderImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.graphRewriteImplemented=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.graphRewriteImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.replacementNode.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.replacementNode.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.count=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.graphPatchPreflightImplemented=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.graphPatchPreflightImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.graphPatchApplied=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.graphPatchApplied", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.graphRewriteImplemented=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.graphRewriteImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.graphPatch.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.graphPatch.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.count=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.materializationPreflightImplemented=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.materializationPreflightImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.transformedGraphBuilt=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.transformedGraphBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.graphPatchApplied=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.graphPatchApplied", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.graphRewriteImplemented=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.graphRewriteImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.transformedGraph.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.transformedGraph.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.count=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.artifactEnvelopePreflightImplemented=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.artifactEnvelopePreflightImplemented", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.artifactEnvelopeBuilt=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.artifactEnvelopeBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.optimizedArtifactBuilt=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.optimizedArtifactBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.transformedGraphBuilt=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.transformedGraphBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.transformedIrBuilt=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.transformedIrBuilt", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.graphPatchApplied=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.graphPatchApplied", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.graphRewriteImplemented=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.graphRewriteImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.irArtifactEnvelope.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.irArtifactEnvelope.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.conflict.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.conflict.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "none")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.conflict.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.conflict.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSketch.conflict.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSketch.conflict.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.sketch.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.sketch.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.sketch.ready.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.sketch.ready.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.sketch.blocked.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.sketch.blocked.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.conflict.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.conflict.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.status=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.status", "not-required")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.firstBlocker", "no-rewrite-sketches")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.rewriteBuilderImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.rewriteBuilderImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.conflictResolutionImplemented=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.conflictResolutionImplemented", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.runtimeEquivalenceRequired=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.runtimeEquivalenceRequired", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.runtimeEquivalenceProven=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.runtimeEquivalenceProven", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.approvalRequired=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.approvalRequired", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.approvalAccepted=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.approvalAccepted", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.selectionApplied=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.selectionApplied", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteSelection.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.rewriteSelection.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.status=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.status", "not-required")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.firstBlocker", "no-proof-candidates")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.proofAccepted=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.proofAccepted", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.runtimeEquivalencePayload.present=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.runtimeEquivalencePayload.present", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.runtimeEquivalencePayload.complete=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.runtimeEquivalencePayload.complete", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.rollbackEvidence.present=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.rollbackEvidence.present", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.rollbackClean=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.rollbackClean", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.approvalAccepted=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.approvalAccepted", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteProof.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.rewriteProof.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.status=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.status", "not-required")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker", "no-review-candidates")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.required=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.required", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.complete=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.complete", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.conflict.count=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.conflict.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.proofAccepted=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.proofAccepted", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.runtimeEquivalencePayload.present=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.runtimeEquivalencePayload.present", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.runtimeEquivalencePayload.complete=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.runtimeEquivalencePayload.complete", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.rollbackEvidence.present=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.rollbackEvidence.present", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.rollbackClean=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.rollbackClean", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.approvalAccepted=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.approvalAccepted", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.mutationAllowed=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.mutationAllowed", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.selectionApplied=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.selectionApplied", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.selectedIrReplacement=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.selectedIrReplacement", "false")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.rewriteReviewPackage.manualReviewOnly=").append(entry.getProperty("runtimeOptimizerDrift.rewriteReviewPackage.manualReviewOnly", "true")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.optimizerRule.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerRule.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.optimizerRule.summary=").append(entry.getProperty("runtimeOptimizerDrift.optimizerRule.summary", "none")).append('\n');
+        appendRuntimeOptimizerDriftProperties(builder, prefix, entry);
         appendIndexedPropertyGroup(builder, prefix, entry, "runtimeOptimizerDrift.optimizerRule");
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.promotionReady.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0")).append('\n');
@@ -1259,6 +1008,13 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("optimizerFamilyPayload.family.count=").append(entry.getProperty("optimizerFamilyPayload.family.count", "0")).append('\n');
         builder.append(prefix).append("optimizerFamilyPayload.family.complete.count=").append(entry.getProperty("optimizerFamilyPayload.family.complete.count", "0")).append('\n');
         builder.append(prefix).append("optimizerFamilyPayload.family.complete.all=").append(entry.getProperty("optimizerFamilyPayload.family.complete.all", "false")).append('\n');
+    }
+
+    private static void appendRuntimeOptimizerDriftProperties(StringBuilder builder, String prefix, Properties entry) {
+        for (DriftProperty property : RUNTIME_OPTIMIZER_DRIFT_PROPERTIES) {
+            String key = RUNTIME_OPTIMIZER_DRIFT_PREFIX + property.key();
+            builder.append(prefix).append(key).append('=').append(entry.getProperty(key, property.emptySourceDefault())).append('\n');
+        }
     }
 
     private static void copyRuntimeExtensionParticipationProperties(Properties source, Properties target) {

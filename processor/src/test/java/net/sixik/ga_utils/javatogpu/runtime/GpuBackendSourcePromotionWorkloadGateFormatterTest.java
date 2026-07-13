@@ -156,6 +156,96 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
     }
 
     @Test
+    void keepsRuntimeOptimizerDriftDefaultsAlignedWhenArtifactIsMissing() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-missing-drift.cl",
+                blockedGateProperties("backend source promotion remains blocked for fixture"),
+                "",
+                runtimeIrHandoffProperties(
+                        "optimized",
+                        "true",
+                        "false",
+                        "none",
+                        "false",
+                        "optimized runtime IR remains diagnostic-only"
+                ),
+                runtimeProductionMutationSafetyProperties(
+                        "disabled",
+                        "false",
+                        "blocked",
+                        "true",
+                        "original",
+                        "production mutation remains blocked"
+                ),
+                "",
+                ""
+        ));
+
+        assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeOptimizerDrift.status"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.proofBound"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.productionGateAccepted"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.optimizedArtifactSelected"));
+        assertEquals("not-required", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSelection.status"));
+        assertEquals("no-proof-candidates", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteProof.firstBlocker"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteReviewPackage.manualReviewOnly"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
+        assertEquals("optimized", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedRuntimeIrStage"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizedIrRejected"));
+        assertEquals("blocked", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionGateStatus"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionProfileRequested"));
+    }
+
+    @Test
+    void keepsRuntimeOptimizerDriftRecordedDefaultsAlignedWhenArtifactIsPartial() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-partial-drift.cl",
+                blockedGateProperties("backend source promotion remains blocked for fixture"),
+                "",
+                "",
+                "",
+                "",
+                String.join("\n",
+                        "optimizerFamily.count=2",
+                        "optimizerFamily.promotionReady.count=1",
+                        "optimizerFamily.summary=fixture-family-summary",
+                        "selectedProfile=diagnostic-only",
+                        "productionGateStatus=blocked",
+                        "productionProfileRequested=true",
+                        ""
+                )
+        ));
+
+        assertEquals("recorded", gate.getProperty("kernel.0.runtimeOptimizerDrift.status"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.count"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.applied.count"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.complete.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.proofBound"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.productionGateAccepted"));
+        assertEquals("not-required", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSelection.status"));
+        assertEquals("no-proof-candidates", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteProof.firstBlocker"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
+        assertEquals("fixture-family-summary", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
+        assertEquals("diagnostic-only", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedProfile"));
+        assertEquals("blocked", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionGateStatus"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionProfileRequested"));
+    }
+
+    @Test
     void updatesExistingKernelResourceInsteadOfDuplicatingIt() throws IOException {
         Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
 

@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Diagnostic-only entrypoint for future structural runtime IR peephole rewrites.
@@ -112,7 +114,8 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         appendGraphPatchFields(fields, "graphPatch", graphPatches);
         List<GpuRuntimeIrPeepholeTransformedGraphPreflight> transformedGraphs = transformedGraphs(graphPatches, originalIrIdentity);
         appendTransformedGraphFields(fields, "transformedGraph", transformedGraphs);
-        appendIrArtifactEnvelopeFields(fields, "irArtifactEnvelope", irArtifactEnvelopes(transformedGraphs));
+        List<GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight> artifactEnvelopes = irArtifactEnvelopes(transformedGraphs);
+        appendIrArtifactEnvelopeFields(fields, "irArtifactEnvelope", artifactEnvelopes);
         List<GpuRuntimeIrPeepholeRewriteSketch> rewriteSketches = rewriteSketches(analysis.ruleReports());
         List<GpuRuntimeIrPeepholeRewriteSketchConflict> rewriteSketchConflicts = rewriteSketchConflicts(rewriteSketches);
         appendRewriteSketchFields(fields, "rewriteSketch", rewriteSketches);
@@ -123,9 +126,24 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         GpuRuntimeIrPeepholeRewriteProofReadiness proofReadiness =
                 GpuRuntimeIrPeepholeRewriteProofReadiness.from(selectionReadiness, originalIrIdentity);
         fields.putAll(proofReadiness.fields("rewriteProof"));
-        fields.putAll(GpuRuntimeIrPeepholeRewriteReviewPackage
-                .from(selectionReadiness, proofReadiness)
-                .fields("rewriteReviewPackage"));
+        GpuRuntimeIrPeepholeRewriteReviewPackage reviewPackage = GpuRuntimeIrPeepholeRewriteReviewPackage
+                .from(selectionReadiness, proofReadiness);
+        fields.putAll(reviewPackage.fields("rewriteReviewPackage"));
+        List<GpuRuntimeIrPeepholeArtifactProofBindingPreflight> artifactProofBindings = artifactProofBindings(
+                artifactEnvelopes,
+                proofReadiness,
+                reviewPackage
+        );
+        appendArtifactProofBindingFields(
+                fields,
+                "artifactProofBinding",
+                artifactProofBindings
+        );
+        appendArtifactSelectionFields(
+                fields,
+                "artifactSelection",
+                artifactSelections(artifactProofBindings)
+        );
         fields.put("rule.mix.candidate.count", Integer.toString(candidateCount(analysis, "mix")));
         fields.put("rule.madFma.candidate.count", Integer.toString(candidateCount(analysis, "madFma")));
         fields.put("rule.clamp.candidate.count", Integer.toString(candidateCount(analysis, "clamp")));
@@ -250,10 +268,13 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                     prefix + ".transformedGraph",
                     ruleTransformedGraphs
             );
+            List<GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight> ruleArtifactEnvelopes = irArtifactEnvelopes(
+                    ruleTransformedGraphs
+            );
             appendIrArtifactEnvelopeFields(
                     fields,
                     prefix + ".irArtifactEnvelope",
-                    irArtifactEnvelopes(ruleTransformedGraphs)
+                    ruleArtifactEnvelopes
             );
             List<GpuRuntimeIrPeepholeRewriteSketch> ruleSketches = rewriteSketches(reports);
             List<GpuRuntimeIrPeepholeRewriteSketchConflict> ruleConflicts = rewriteSketchConflicts(ruleSketches);
@@ -265,9 +286,24 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             GpuRuntimeIrPeepholeRewriteProofReadiness ruleProofReadiness =
                     GpuRuntimeIrPeepholeRewriteProofReadiness.from(ruleSelectionReadiness, originalIrIdentity);
             fields.putAll(ruleProofReadiness.fields(prefix + ".rewriteProof"));
-            fields.putAll(GpuRuntimeIrPeepholeRewriteReviewPackage
-                    .from(ruleSelectionReadiness, ruleProofReadiness)
-                    .fields(prefix + ".rewriteReviewPackage"));
+            GpuRuntimeIrPeepholeRewriteReviewPackage ruleReviewPackage = GpuRuntimeIrPeepholeRewriteReviewPackage
+                    .from(ruleSelectionReadiness, ruleProofReadiness);
+            fields.putAll(ruleReviewPackage.fields(prefix + ".rewriteReviewPackage"));
+            List<GpuRuntimeIrPeepholeArtifactProofBindingPreflight> ruleArtifactProofBindings = artifactProofBindings(
+                    ruleArtifactEnvelopes,
+                    ruleProofReadiness,
+                    ruleReviewPackage
+            );
+            appendArtifactProofBindingFields(
+                    fields,
+                    prefix + ".artifactProofBinding",
+                    ruleArtifactProofBindings
+            );
+            appendArtifactSelectionFields(
+                    fields,
+                    prefix + ".artifactSelection",
+                    artifactSelections(ruleArtifactProofBindings)
+            );
             fields.put(prefix + ".firstBlocker", ruleFirstBlocker(fields, prefix, reports.isEmpty()));
         }
     }
@@ -365,31 +401,88 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
                 .toList();
     }
 
+    private static <T> void appendPreflightSummaryFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            List<T> items,
+            Predicate<T> ready,
+            Function<T, String> firstBlocker
+    ) {
+        fields.put(prefix + ".count", Integer.toString(items.size()));
+        fields.put(prefix + ".ready.count", Long.toString(items.stream()
+                .filter(ready)
+                .count()));
+        fields.put(prefix + ".blocked.count", Long.toString(items.stream()
+                .filter(item -> !ready.test(item))
+                .count()));
+        fields.put(prefix + ".firstBlocker", items.stream()
+                .filter(item -> !ready.test(item))
+                .map(firstBlocker)
+                .findFirst()
+                .orElse("none"));
+    }
+
+    private static <T> void appendFirstPreflightFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            List<T> items,
+            Function<T, Map<String, String>> itemFields
+    ) {
+        if (!items.isEmpty()) {
+            fields.putAll(itemFields.apply(items.get(0)));
+        }
+    }
+
+    private static void appendProofBindingGuardFields(LinkedHashMap<String, String> fields, String prefix) {
+        fields.put(prefix + ".proofBound", "false");
+        fields.put(prefix + ".rollbackBound", "false");
+        fields.put(prefix + ".approvalBound", "false");
+        appendArtifactBuildGuardFields(fields, prefix);
+        appendMutationGuardFields(fields, prefix);
+    }
+
+    private static void appendArtifactSelectionGuardFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            boolean productionGateRequired
+    ) {
+        fields.put(prefix + ".productionGateRequired", Boolean.toString(productionGateRequired));
+        fields.put(prefix + ".productionGateAccepted", "false");
+        fields.put(prefix + ".mutationPolicyAllowed", "false");
+        fields.put(prefix + ".selectionApplied", "false");
+        fields.put(prefix + ".optimizedArtifactSelected", "false");
+        appendArtifactBuildGuardFields(fields, prefix);
+        appendMutationGuardFields(fields, prefix);
+    }
+
+    private static void appendArtifactBuildGuardFields(LinkedHashMap<String, String> fields, String prefix) {
+        fields.put(prefix + ".optimizedArtifactBuilt", "false");
+        fields.put(prefix + ".transformedIrBuilt", "false");
+    }
+
+    private static void appendMutationGuardFields(LinkedHashMap<String, String> fields, String prefix) {
+        fields.put(prefix + ".mutationAllowed", "false");
+        fields.put(prefix + ".selectedIrReplacement", "false");
+    }
+
     private static void appendRewriteVisitorFields(
             LinkedHashMap<String, String> fields,
             String prefix,
             List<GpuRuntimeIrPeepholeRewriteVisitPreflight> preflights
     ) {
-        fields.put(prefix + ".count", Integer.toString(preflights.size()));
-        fields.put(prefix + ".ready.count", Long.toString(preflights.stream()
-                .filter(GpuRuntimeIrPeepholeRewriteVisitPreflight::visitorReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(preflights.stream()
-                .filter(preflight -> !preflight.visitorReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", preflights.stream()
-                .filter(preflight -> !preflight.visitorReady())
-                .map(GpuRuntimeIrPeepholeRewriteVisitPreflight::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                preflights,
+                GpuRuntimeIrPeepholeRewriteVisitPreflight::visitorReady,
+                GpuRuntimeIrPeepholeRewriteVisitPreflight::firstBlocker
+        );
         fields.put(prefix + ".visitorImplemented", "true");
         fields.put(prefix + ".replacementBuilderImplemented", "false");
         fields.put(prefix + ".transformedIrBuilt", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!preflights.isEmpty()) {
-            fields.putAll(preflights.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, preflights, preflight -> preflight.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeReplacementBlueprint> replacementBlueprints(
@@ -408,26 +501,19 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeReplacementBlueprint> blueprints
     ) {
-        fields.put(prefix + ".count", Integer.toString(blueprints.size()));
-        fields.put(prefix + ".ready.count", Long.toString(blueprints.stream()
-                .filter(GpuRuntimeIrPeepholeReplacementBlueprint::blueprintReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(blueprints.stream()
-                .filter(blueprint -> !blueprint.blueprintReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", blueprints.stream()
-                .filter(blueprint -> !blueprint.blueprintReady())
-                .map(GpuRuntimeIrPeepholeReplacementBlueprint::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                blueprints,
+                GpuRuntimeIrPeepholeReplacementBlueprint::blueprintReady,
+                GpuRuntimeIrPeepholeReplacementBlueprint::firstBlocker
+        );
         fields.put(prefix + ".blueprintImplemented", "true");
         fields.put(prefix + ".replacementBuilderImplemented", "false");
         fields.put(prefix + ".transformedIrBuilt", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!blueprints.isEmpty()) {
-            fields.putAll(blueprints.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, blueprints, blueprint -> blueprint.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeRewriteTransactionPreflight> rewriteTransactions(
@@ -452,27 +538,20 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeRewriteTransactionPreflight> transactions
     ) {
-        fields.put(prefix + ".count", Integer.toString(transactions.size()));
-        fields.put(prefix + ".ready.count", Long.toString(transactions.stream()
-                .filter(GpuRuntimeIrPeepholeRewriteTransactionPreflight::transactionReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(transactions.stream()
-                .filter(transaction -> !transaction.transactionReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", transactions.stream()
-                .filter(transaction -> !transaction.transactionReady())
-                .map(GpuRuntimeIrPeepholeRewriteTransactionPreflight::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                transactions,
+                GpuRuntimeIrPeepholeRewriteTransactionPreflight::transactionReady,
+                GpuRuntimeIrPeepholeRewriteTransactionPreflight::firstBlocker
+        );
         fields.put(prefix + ".transactionPreflightImplemented", "true");
         fields.put(prefix + ".nodeIdAllocatorImplemented", "false");
         fields.put(prefix + ".graphRewriteImplemented", "false");
         fields.put(prefix + ".transformedIrBuilt", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!transactions.isEmpty()) {
-            fields.putAll(transactions.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, transactions, transaction -> transaction.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeNodeIdAllocationPreflight> nodeIdAllocations(
@@ -497,18 +576,13 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeNodeIdAllocationPreflight> allocations
     ) {
-        fields.put(prefix + ".count", Integer.toString(allocations.size()));
-        fields.put(prefix + ".ready.count", Long.toString(allocations.stream()
-                .filter(GpuRuntimeIrPeepholeNodeIdAllocationPreflight::allocationReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(allocations.stream()
-                .filter(allocation -> !allocation.allocationReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", allocations.stream()
-                .filter(allocation -> !allocation.allocationReady())
-                .map(GpuRuntimeIrPeepholeNodeIdAllocationPreflight::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                allocations,
+                GpuRuntimeIrPeepholeNodeIdAllocationPreflight::allocationReady,
+                GpuRuntimeIrPeepholeNodeIdAllocationPreflight::firstBlocker
+        );
         fields.put(prefix + ".allocationPreflightImplemented", "true");
         fields.put(prefix + ".nodeIdsReserved", "false");
         fields.put(prefix + ".nodeIdAllocatorApplied", "false");
@@ -516,9 +590,7 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         fields.put(prefix + ".transformedIrBuilt", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!allocations.isEmpty()) {
-            fields.putAll(allocations.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, allocations, allocation -> allocation.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeReplacementNodePreflight> replacementNodes(
@@ -543,18 +615,13 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeReplacementNodePreflight> nodes
     ) {
-        fields.put(prefix + ".count", Integer.toString(nodes.size()));
-        fields.put(prefix + ".ready.count", Long.toString(nodes.stream()
-                .filter(GpuRuntimeIrPeepholeReplacementNodePreflight::replacementNodeReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(nodes.stream()
-                .filter(node -> !node.replacementNodeReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", nodes.stream()
-                .filter(node -> !node.replacementNodeReady())
-                .map(GpuRuntimeIrPeepholeReplacementNodePreflight::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                nodes,
+                GpuRuntimeIrPeepholeReplacementNodePreflight::replacementNodeReady,
+                GpuRuntimeIrPeepholeReplacementNodePreflight::firstBlocker
+        );
         fields.put(prefix + ".replacementNodePreflightImplemented", "true");
         fields.put(prefix + ".replacementNodeBuilt", "false");
         fields.put(prefix + ".replacementBuilderImplemented", "false");
@@ -562,9 +629,7 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         fields.put(prefix + ".transformedIrBuilt", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!nodes.isEmpty()) {
-            fields.putAll(nodes.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, nodes, node -> node.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeGraphPatchPreflight> graphPatches(
@@ -589,27 +654,20 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeGraphPatchPreflight> patches
     ) {
-        fields.put(prefix + ".count", Integer.toString(patches.size()));
-        fields.put(prefix + ".ready.count", Long.toString(patches.stream()
-                .filter(GpuRuntimeIrPeepholeGraphPatchPreflight::graphPatchReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(patches.stream()
-                .filter(patch -> !patch.graphPatchReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", patches.stream()
-                .filter(patch -> !patch.graphPatchReady())
-                .map(GpuRuntimeIrPeepholeGraphPatchPreflight::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                patches,
+                GpuRuntimeIrPeepholeGraphPatchPreflight::graphPatchReady,
+                GpuRuntimeIrPeepholeGraphPatchPreflight::firstBlocker
+        );
         fields.put(prefix + ".graphPatchPreflightImplemented", "true");
         fields.put(prefix + ".graphPatchApplied", "false");
         fields.put(prefix + ".graphRewriteImplemented", "false");
         fields.put(prefix + ".transformedIrBuilt", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!patches.isEmpty()) {
-            fields.putAll(patches.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, patches, patch -> patch.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeTransformedGraphPreflight> transformedGraphs(
@@ -629,18 +687,13 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeTransformedGraphPreflight> transformedGraphs
     ) {
-        fields.put(prefix + ".count", Integer.toString(transformedGraphs.size()));
-        fields.put(prefix + ".ready.count", Long.toString(transformedGraphs.stream()
-                .filter(GpuRuntimeIrPeepholeTransformedGraphPreflight::materializationReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(transformedGraphs.stream()
-                .filter(graph -> !graph.materializationReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", transformedGraphs.stream()
-                .filter(graph -> !graph.materializationReady())
-                .map(GpuRuntimeIrPeepholeTransformedGraphPreflight::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                transformedGraphs,
+                GpuRuntimeIrPeepholeTransformedGraphPreflight::materializationReady,
+                GpuRuntimeIrPeepholeTransformedGraphPreflight::firstBlocker
+        );
         fields.put(prefix + ".materializationPreflightImplemented", "true");
         fields.put(prefix + ".transformedGraphBuilt", "false");
         fields.put(prefix + ".transformedIrBuilt", "false");
@@ -648,9 +701,7 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         fields.put(prefix + ".graphRewriteImplemented", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!transformedGraphs.isEmpty()) {
-            fields.putAll(transformedGraphs.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, transformedGraphs, graph -> graph.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight> irArtifactEnvelopes(
@@ -669,18 +720,13 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight> envelopes
     ) {
-        fields.put(prefix + ".count", Integer.toString(envelopes.size()));
-        fields.put(prefix + ".ready.count", Long.toString(envelopes.stream()
-                .filter(GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight::artifactEnvelopeReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(envelopes.stream()
-                .filter(envelope -> !envelope.artifactEnvelopeReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", envelopes.stream()
-                .filter(envelope -> !envelope.artifactEnvelopeReady())
-                .map(GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                envelopes,
+                GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight::artifactEnvelopeReady,
+                GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight::firstBlocker
+        );
         fields.put(prefix + ".artifactEnvelopePreflightImplemented", "true");
         fields.put(prefix + ".artifactEnvelopeBuilt", "false");
         fields.put(prefix + ".optimizedArtifactBuilt", "false");
@@ -690,9 +736,69 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         fields.put(prefix + ".graphRewriteImplemented", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
-        if (!envelopes.isEmpty()) {
-            fields.putAll(envelopes.get(0).fields(prefix + ".0"));
+        appendFirstPreflightFields(fields, prefix, envelopes, envelope -> envelope.fields(prefix + ".0"));
+    }
+
+    private static List<GpuRuntimeIrPeepholeArtifactProofBindingPreflight> artifactProofBindings(
+            List<GpuRuntimeIrPeepholeIrArtifactEnvelopePreflight> envelopes,
+            GpuRuntimeIrPeepholeRewriteProofReadiness proofReadiness,
+            GpuRuntimeIrPeepholeRewriteReviewPackage reviewPackage
+    ) {
+        if (envelopes == null || envelopes.isEmpty()) {
+            return List.of();
         }
+        return envelopes.stream()
+                .map(envelope -> GpuRuntimeIrPeepholeArtifactProofBindingPreflight.from(
+                        envelope,
+                        proofReadiness,
+                        reviewPackage
+                ))
+                .toList();
+    }
+
+    private static void appendArtifactProofBindingFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            List<GpuRuntimeIrPeepholeArtifactProofBindingPreflight> bindings
+    ) {
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                bindings,
+                GpuRuntimeIrPeepholeArtifactProofBindingPreflight::bindingReady,
+                GpuRuntimeIrPeepholeArtifactProofBindingPreflight::firstBlocker
+        );
+        fields.put(prefix + ".bindingPreflightImplemented", "true");
+        appendProofBindingGuardFields(fields, prefix);
+        appendFirstPreflightFields(fields, prefix, bindings, binding -> binding.fields(prefix + ".0"));
+    }
+
+    private static List<GpuRuntimeIrPeepholeOptimizedArtifactSelectionPreflight> artifactSelections(
+            List<GpuRuntimeIrPeepholeArtifactProofBindingPreflight> bindings
+    ) {
+        if (bindings == null || bindings.isEmpty()) {
+            return List.of();
+        }
+        return bindings.stream()
+                .map(GpuRuntimeIrPeepholeOptimizedArtifactSelectionPreflight::from)
+                .toList();
+    }
+
+    private static void appendArtifactSelectionFields(
+            LinkedHashMap<String, String> fields,
+            String prefix,
+            List<GpuRuntimeIrPeepholeOptimizedArtifactSelectionPreflight> selections
+    ) {
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                selections,
+                GpuRuntimeIrPeepholeOptimizedArtifactSelectionPreflight::selectionReady,
+                GpuRuntimeIrPeepholeOptimizedArtifactSelectionPreflight::firstBlocker
+        );
+        fields.put(prefix + ".selectionPreflightImplemented", "true");
+        appendArtifactSelectionGuardFields(fields, prefix, !selections.isEmpty());
+        appendFirstPreflightFields(fields, prefix, selections, selection -> selection.fields(prefix + ".0"));
     }
 
     private static void appendRewriteSketchFields(
@@ -700,26 +806,19 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
             String prefix,
             List<GpuRuntimeIrPeepholeRewriteSketch> sketches
     ) {
-        fields.put(prefix + ".count", Integer.toString(sketches.size()));
-        fields.put(prefix + ".ready.count", Long.toString(sketches.stream()
-                .filter(GpuRuntimeIrPeepholeRewriteSketch::sketchReady)
-                .count()));
-        fields.put(prefix + ".blocked.count", Long.toString(sketches.stream()
-                .filter(sketch -> !sketch.sketchReady())
-                .count()));
-        fields.put(prefix + ".firstBlocker", sketches.stream()
-                .filter(sketch -> !sketch.sketchReady())
-                .map(GpuRuntimeIrPeepholeRewriteSketch::firstBlocker)
-                .findFirst()
-                .orElse("none"));
+        appendPreflightSummaryFields(
+                fields,
+                prefix,
+                sketches,
+                GpuRuntimeIrPeepholeRewriteSketch::sketchReady,
+                GpuRuntimeIrPeepholeRewriteSketch::firstBlocker
+        );
         fields.put(prefix + ".rewriteBuilderImplemented", "false");
         fields.put(prefix + ".mutationAllowed", "false");
         fields.put(prefix + ".selectedIrReplacement", "false");
         fields.put(prefix + ".runtimeEquivalenceRequired", Boolean.toString(!sketches.isEmpty()));
         fields.put(prefix + ".approvalRequired", Boolean.toString(!sketches.isEmpty()));
-        if (!sketches.isEmpty()) {
-            fields.putAll(sketches.get(0).fields(prefix + ".0"));
-        }
+        appendFirstPreflightFields(fields, prefix, sketches, sketch -> sketch.fields(prefix + ".0"));
     }
 
     private static List<GpuRuntimeIrPeepholeRewriteSketchConflict> rewriteSketchConflicts(
