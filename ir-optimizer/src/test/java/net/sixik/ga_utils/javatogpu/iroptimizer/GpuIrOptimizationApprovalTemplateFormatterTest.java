@@ -45,15 +45,76 @@ class GpuIrOptimizationApprovalTemplateFormatterTest {
                 proposal,
                 request(original)
         );
+        String resourcePath = GpuIrOptimizationApprovalManifest.resourcePath(proposal, request(original));
 
         assertTrue(result.applicable());
         assertEquals("pending", result.status());
         assertEquals("none", result.firstBlocker());
         assertTrue(result.templateText().contains("status=pending"));
+        assertTrue(result.templateText().contains("manifest.resourcePath=" + resourcePath));
         assertTrue(result.templateText().contains("binding.optimizerId=optimizer:test"));
         assertTrue(result.templateText().contains("authorization.productionMutation=disabled"));
+        assertEquals("false", result.fields().get("runtimeEquivalencePayload.required"));
+        assertEquals(resourcePath, result.fields().get("resourcePath"));
         assertTrue(result.toPropertiesText().contains("template.present=true"));
         assertTrue(result.toPropertiesText().contains("template.resourceDirectory=META-INF/javatogpu/ir-optimization-approvals/"));
+        assertTrue(result.toPropertiesText().contains("template.resourcePath=" + resourcePath));
+    }
+
+    @Test
+    void exposesRuntimeEquivalencePayloadBindingForPendingTemplate() {
+        IrGpuArtifact original = artifact("body\n");
+        GpuIrOptimizationProposal proposal = proposed(
+                original,
+                artifact("body optimized\n"),
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.test-proof",
+                        "runtime-equivalence-passed",
+                        Map.ofEntries(
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                                Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.failureFixture.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.Case.Count", "1"),
+                                Map.entry("runtimeEquivalencePayload.resource", "artifact://payload/cf"),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.comparisonMode",
+                                        "optimizer-family:constant-folding-materialization:review-candidate"
+                                )
+                        )
+                )
+        );
+
+        GpuIrOptimizationApprovalTemplateResult result = GpuIrOptimizationApprovalTemplateFormatter.format(
+                proposal,
+                request(original)
+        );
+
+        assertTrue(result.applicable());
+        assertEquals("true", result.fields().get("runtimeEquivalencePayload.required"));
+        assertEquals("true", result.fields().get("runtimeEquivalencePayload.present"));
+        assertEquals("true", result.fields().get("runtimeEquivalencePayload.passed"));
+        assertEquals("true", result.fields().get("runtimeEquivalencePayload.componentsComplete"));
+        assertEquals("1", result.fields().get("runtimeEquivalencePayload.caseCount"));
+        assertEquals("artifact://payload/cf", result.fields().get("runtimeEquivalencePayload.resource"));
+        assertEquals(
+                "optimizer-family:constant-folding-materialization:review-candidate",
+                result.fields().get("runtimeEquivalencePayload.comparisonMode")
+        );
+        assertTrue(result.fields().get("resourcePath").startsWith(
+                GpuIrOptimizationApprovalManifest.RESOURCE_DIRECTORY + "approval-"
+        ));
+        assertTrue(result.templateText().contains("binding.runtimeEquivalencePayload.resource=artifact://payload/cf"));
+        assertTrue(result.templateText().contains(
+                "binding.runtimeEquivalencePayload.comparisonMode=optimizer-family:constant-folding-materialization:review-candidate"
+        ));
+        assertTrue(result.templateText().contains("manifest.resourcePath=" + result.fields().get("resourcePath")));
+        assertTrue(result.toPropertiesText().contains("runtimeEquivalencePayload.componentsComplete=true"));
     }
 
     @Test

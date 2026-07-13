@@ -2,6 +2,9 @@ package net.sixik.ga_utils.javatogpu.iroptimizer;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationProofArtifact;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -36,6 +39,9 @@ public final class GpuIrOptimizationApprovalManifest {
         builder.append("formatVersion=1\n");
         builder.append("status=pending\n");
         builder.append("scope=").append(SCOPE).append('\n');
+        builder.append("manifest.resourcePath=")
+                .append(propertyValue(resourcePathFor(normalizedProposal, normalizedRequest)))
+                .append('\n');
         builder.append("approval.id=").append(REQUIRED).append('\n');
         builder.append("approval.approvedBy=").append(REQUIRED).append('\n');
         builder.append("approval.approvedAtUtc=").append(REQUIRED).append('\n');
@@ -49,11 +55,42 @@ public final class GpuIrOptimizationApprovalManifest {
         builder.append("binding.deviceLabel=").append(context(normalizedRequest, "deviceProfile.label", "unknown")).append('\n');
         builder.append("binding.proof.source=").append(propertyValue(proof.source())).append('\n');
         builder.append("binding.proof.verdict=").append(propertyValue(proof.verdict())).append('\n');
+        RuntimeEquivalencePayloadBinding payloadBinding = RuntimeEquivalencePayloadBinding.from(proof);
+        builder.append("binding.runtimeEquivalencePayload.required=")
+                .append(payloadBinding.required()).append('\n');
+        builder.append("binding.runtimeEquivalencePayload.present=")
+                .append(payloadBinding.present()).append('\n');
+        builder.append("binding.runtimeEquivalencePayload.passed=")
+                .append(payloadBinding.passed()).append('\n');
+        builder.append("binding.runtimeEquivalencePayload.componentsComplete=")
+                .append(payloadBinding.componentsComplete()).append('\n');
+        builder.append("binding.runtimeEquivalencePayload.caseCount=")
+                .append(payloadBinding.caseCount()).append('\n');
+        builder.append("binding.runtimeEquivalencePayload.resource=")
+                .append(propertyValue(payloadBinding.resource())).append('\n');
+        builder.append("binding.runtimeEquivalencePayload.comparisonMode=")
+                .append(propertyValue(payloadBinding.comparisonMode())).append('\n');
         builder.append("binding.rollback.required=true\n");
         builder.append("authorization.productionMutation=disabled\n");
         builder.append("authorization.scope=manual-review-only\n");
         builder.append("diagnostic=complete approval fields and set status=approved; validation remains review-only\n");
         return builder.toString();
+    }
+
+    public static String resourceName(
+            GpuIrOptimizationProposal proposal,
+            GpuIrOptimizationProposalRequest request
+    ) {
+        GpuIrOptimizationProposal normalizedProposal = requireProposalCandidate(proposal);
+        GpuIrOptimizationProposalRequest normalizedRequest = normalizeRequest(request, normalizedProposal);
+        return resourceNameFor(normalizedProposal, normalizedRequest);
+    }
+
+    public static String resourcePath(
+            GpuIrOptimizationProposal proposal,
+            GpuIrOptimizationProposalRequest request
+    ) {
+        return RESOURCE_DIRECTORY + resourceName(proposal, request);
     }
 
     public static Validation validate(
@@ -78,6 +115,16 @@ public final class GpuIrOptimizationApprovalManifest {
         requireEquals(blockers, normalizedManifest, "formatVersion", "1", "manifest-format-version-mismatch");
         requireEquals(blockers, normalizedManifest, "status", "approved", "manifest-not-approved");
         requireEquals(blockers, normalizedManifest, "scope", SCOPE, "manifest-scope-mismatch");
+        String manifestResourcePath = normalizedProposal == null
+                ? "missing"
+                : resourcePathFor(normalizedProposal, normalizedRequest);
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "manifest.resourcePath",
+                manifestResourcePath,
+                "manifest-resource-path-mismatch"
+        );
         requireApprovalValue(blockers, approvalId, "manifest-approval-id-missing");
         requireApprovalValue(blockers, approvedBy, "manifest-approved-by-missing");
         requireApprovalValue(blockers, approvedAtUtc, "manifest-approved-at-missing");
@@ -107,6 +154,59 @@ public final class GpuIrOptimizationApprovalManifest {
         requireBindingEquals(blockers, normalizedManifest, "binding.deviceLabel", context(normalizedRequest, "deviceProfile.label", "unknown"), "manifest-device-label-mismatch");
         requireBindingEquals(blockers, normalizedManifest, "binding.proof.source", proof.source(), "manifest-proof-source-mismatch");
         requireBindingEquals(blockers, normalizedManifest, "binding.proof.verdict", proof.verdict(), "manifest-proof-verdict-mismatch");
+        RuntimeEquivalencePayloadBinding payloadBinding = RuntimeEquivalencePayloadBinding.from(proof);
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "binding.runtimeEquivalencePayload.required",
+                Boolean.toString(payloadBinding.required()),
+                "manifest-runtime-equivalence-payload-required-mismatch"
+        );
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "binding.runtimeEquivalencePayload.present",
+                Boolean.toString(payloadBinding.present()),
+                "manifest-runtime-equivalence-payload-present-mismatch"
+        );
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "binding.runtimeEquivalencePayload.passed",
+                Boolean.toString(payloadBinding.passed()),
+                "manifest-runtime-equivalence-payload-passed-mismatch"
+        );
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "binding.runtimeEquivalencePayload.componentsComplete",
+                Boolean.toString(payloadBinding.componentsComplete()),
+                "manifest-runtime-equivalence-payload-components-mismatch"
+        );
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "binding.runtimeEquivalencePayload.caseCount",
+                Integer.toString(payloadBinding.caseCount()),
+                "manifest-runtime-equivalence-payload-case-count-mismatch"
+        );
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "binding.runtimeEquivalencePayload.resource",
+                payloadBinding.resource(),
+                "manifest-runtime-equivalence-payload-resource-mismatch"
+        );
+        requireBindingEquals(
+                blockers,
+                normalizedManifest,
+                "binding.runtimeEquivalencePayload.comparisonMode",
+                payloadBinding.comparisonMode(),
+                "manifest-runtime-equivalence-payload-comparison-mode-mismatch"
+        );
+        if (payloadBinding.required() && !payloadBinding.approvalReady()) {
+            blockers.add(payloadBinding.firstBlocker());
+        }
         requireEquals(blockers, normalizedManifest, "binding.rollback.required", "true", "manifest-rollback-required-mismatch");
         requireEquals(blockers, normalizedManifest, "authorization.productionMutation", "disabled", "manifest-production-mutation-not-disabled");
         requireEquals(blockers, normalizedManifest, "authorization.scope", "manual-review-only", "manifest-authorization-scope-mismatch");
@@ -115,6 +215,7 @@ public final class GpuIrOptimizationApprovalManifest {
         return new Validation(
                 valid,
                 valid ? "approved" : "blocked",
+                manifestResourcePath,
                 approvalId,
                 approvedBy,
                 approvedAtUtc,
@@ -128,6 +229,13 @@ public final class GpuIrOptimizationApprovalManifest {
                 context(normalizedRequest, "deviceProfile.label", "unknown"),
                 proof.source(),
                 proof.verdict(),
+                payloadBinding.required(),
+                payloadBinding.present(),
+                payloadBinding.passed(),
+                payloadBinding.componentsComplete(),
+                payloadBinding.caseCount(),
+                payloadBinding.resource(),
+                payloadBinding.comparisonMode(),
                 List.copyOf(blockers)
         );
     }
@@ -211,12 +319,79 @@ public final class GpuIrOptimizationApprovalManifest {
         }
     }
 
+    private static String resourcePathFor(
+            GpuIrOptimizationProposal proposal,
+            GpuIrOptimizationProposalRequest request
+    ) {
+        return RESOURCE_DIRECTORY + resourceNameFor(proposal, request);
+    }
+
+    private static String resourceNameFor(
+            GpuIrOptimizationProposal proposal,
+            GpuIrOptimizationProposalRequest request
+    ) {
+        return "approval-" + sha256Hex(resourceFingerprint(proposal, request)).substring(0, 24) + ".properties";
+    }
+
+    private static String resourceFingerprint(
+            GpuIrOptimizationProposal proposal,
+            GpuIrOptimizationProposalRequest request
+    ) {
+        RuntimeEquivalencePayloadBinding payloadBinding = RuntimeEquivalencePayloadBinding.from(proposal.proofArtifact());
+        return String.join(
+                "\n",
+                SCOPE,
+                propertyValue(proposal.optimizerId()),
+                propertyValue(proposal.optimizerVersion()),
+                propertyValue(proposal.originalIdentity()),
+                propertyValue(proposal.optimizedIdentity()),
+                context(request, "backendTarget", "UNKNOWN"),
+                propertyValue(request.optimizerProfile()),
+                context(request, "deviceProfile.vendor", "unknown"),
+                context(request, "deviceProfile.label", "unknown"),
+                propertyValue(proposal.proofArtifact().source()),
+                propertyValue(proposal.proofArtifact().verdict()),
+                Boolean.toString(payloadBinding.required()),
+                Boolean.toString(payloadBinding.present()),
+                Boolean.toString(payloadBinding.passed()),
+                Boolean.toString(payloadBinding.componentsComplete()),
+                Integer.toString(payloadBinding.caseCount()),
+                propertyValue(payloadBinding.resource()),
+                propertyValue(payloadBinding.comparisonMode())
+        );
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(digest.length * 2);
+            for (byte part : digest) {
+                builder.append(String.format(java.util.Locale.ROOT, "%02x", part & 0xff));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is required for optimizer approval manifest resources", exception);
+        }
+    }
+
     private static String context(GpuIrOptimizationProposalRequest request, String key, String fallback) {
         return propertyValue(request.contextFields().getOrDefault(key, fallback));
     }
 
     private static String propertyValue(String value) {
         return normalize(value, "unknown").replace('\\', '/').replace('\r', ' ').replace('\n', ' ');
+    }
+
+    private static boolean proofBoolean(Map<String, String> fields, String key) {
+        return "true".equalsIgnoreCase(fields.getOrDefault(key, "false"));
+    }
+
+    private static int proofInt(Map<String, String> fields, String key) {
+        try {
+            return Math.max(0, Integer.parseInt(fields.getOrDefault(key, "0")));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private static String normalize(String value, String fallback) {
@@ -226,6 +401,7 @@ public final class GpuIrOptimizationApprovalManifest {
     public record Validation(
             boolean valid,
             String status,
+            String manifestResourcePath,
             String approvalId,
             String approvedBy,
             String approvedAtUtc,
@@ -239,10 +415,18 @@ public final class GpuIrOptimizationApprovalManifest {
             String deviceLabel,
             String proofSource,
             String proofVerdict,
+            boolean runtimeEquivalencePayloadRequired,
+            boolean runtimeEquivalencePayloadPresent,
+            boolean runtimeEquivalencePayloadPassed,
+            boolean runtimeEquivalencePayloadComponentsComplete,
+            int runtimeEquivalencePayloadCaseCount,
+            String runtimeEquivalencePayloadResource,
+            String runtimeEquivalencePayloadComparisonMode,
             List<String> blockers
     ) {
         public Validation {
             status = normalize(status, valid ? "approved" : "blocked");
+            manifestResourcePath = normalize(manifestResourcePath, "missing");
             approvalId = normalize(approvalId, "approval:missing");
             approvedBy = normalize(approvedBy, "missing");
             approvedAtUtc = normalize(approvedAtUtc, "missing");
@@ -256,6 +440,9 @@ public final class GpuIrOptimizationApprovalManifest {
             deviceLabel = normalize(deviceLabel, "unknown");
             proofSource = normalize(proofSource, "missing");
             proofVerdict = normalize(proofVerdict, "missing");
+            runtimeEquivalencePayloadCaseCount = Math.max(0, runtimeEquivalencePayloadCaseCount);
+            runtimeEquivalencePayloadResource = normalize(runtimeEquivalencePayloadResource, "not-required");
+            runtimeEquivalencePayloadComparisonMode = normalize(runtimeEquivalencePayloadComparisonMode, "not-required");
             blockers = blockers == null ? List.of() : List.copyOf(blockers);
             if (valid && !blockers.isEmpty()) {
                 throw new IllegalArgumentException("Valid optimizer approval manifest must not contain blockers");
@@ -272,6 +459,7 @@ public final class GpuIrOptimizationApprovalManifest {
             builder.append("status=").append(status).append('\n');
             builder.append("valid=").append(valid).append('\n');
             builder.append("scope=").append(SCOPE).append("-validation\n");
+            builder.append("manifest.resourcePath=").append(propertyValue(manifestResourcePath)).append('\n');
             builder.append("approval.id=").append(propertyValue(approvalId)).append('\n');
             builder.append("approval.approvedBy=").append(propertyValue(approvedBy)).append('\n');
             builder.append("approval.approvedAtUtc=").append(propertyValue(approvedAtUtc)).append('\n');
@@ -285,6 +473,16 @@ public final class GpuIrOptimizationApprovalManifest {
             builder.append("binding.deviceLabel=").append(propertyValue(deviceLabel)).append('\n');
             builder.append("binding.proof.source=").append(propertyValue(proofSource)).append('\n');
             builder.append("binding.proof.verdict=").append(propertyValue(proofVerdict)).append('\n');
+            builder.append("binding.runtimeEquivalencePayload.required=").append(runtimeEquivalencePayloadRequired).append('\n');
+            builder.append("binding.runtimeEquivalencePayload.present=").append(runtimeEquivalencePayloadPresent).append('\n');
+            builder.append("binding.runtimeEquivalencePayload.passed=").append(runtimeEquivalencePayloadPassed).append('\n');
+            builder.append("binding.runtimeEquivalencePayload.componentsComplete=")
+                    .append(runtimeEquivalencePayloadComponentsComplete).append('\n');
+            builder.append("binding.runtimeEquivalencePayload.caseCount=").append(runtimeEquivalencePayloadCaseCount).append('\n');
+            builder.append("binding.runtimeEquivalencePayload.resource=")
+                    .append(propertyValue(runtimeEquivalencePayloadResource)).append('\n');
+            builder.append("binding.runtimeEquivalencePayload.comparisonMode=")
+                    .append(propertyValue(runtimeEquivalencePayloadComparisonMode)).append('\n');
             builder.append("authorization.productionMutation=disabled\n");
             builder.append("authorization.scope=manual-review-only\n");
             builder.append("blocker.count=").append(blockers.size()).append('\n');
@@ -295,6 +493,62 @@ public final class GpuIrOptimizationApprovalManifest {
                     ? "optimizer approval manifest is valid for the reviewed proposal; selection remains external"
                     : "optimizer approval manifest is blocked by " + firstBlocker()).append('\n');
             return builder.toString();
+        }
+    }
+
+    private record RuntimeEquivalencePayloadBinding(
+            boolean required,
+            boolean present,
+            boolean passed,
+            boolean componentsComplete,
+            int caseCount,
+            String resource,
+            String comparisonMode
+    ) {
+        private static RuntimeEquivalencePayloadBinding from(GpuRuntimeIrOptimizationProofArtifact proof) {
+            Map<String, String> fields = proof == null ? Map.of() : proof.fields();
+            boolean required = proofBoolean(fields, "proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+                    || proofBoolean(fields, "runtimeEquivalencePayload.required");
+            boolean present = proofBoolean(fields, "runtimeEquivalencePayload.present");
+            boolean passed = proofBoolean(fields, "runtimeEquivalencePayload.passed");
+            boolean componentsComplete = proofBoolean(fields, "runtimeEquivalencePayload.cpuReference.present")
+                    && proofBoolean(fields, "runtimeEquivalencePayload.preOptimizationOutput.present")
+                    && proofBoolean(fields, "runtimeEquivalencePayload.postOptimizationOutput.present")
+                    && proofBoolean(fields, "runtimeEquivalencePayload.tolerance.present")
+                    && proofBoolean(fields, "runtimeEquivalencePayload.failureFixture.present");
+            int caseCount = proofInt(fields, "runtimeEquivalencePayload.Case.Count");
+            return new RuntimeEquivalencePayloadBinding(
+                    required,
+                    present,
+                    passed,
+                    componentsComplete,
+                    caseCount,
+                    required ? fields.getOrDefault("runtimeEquivalencePayload.resource", "missing") : "not-required",
+                    required ? fields.getOrDefault("runtimeEquivalencePayload.comparisonMode", "missing") : "not-required"
+            );
+        }
+
+        private boolean approvalReady() {
+            return !required || (present && passed && componentsComplete && caseCount > 0);
+        }
+
+        private String firstBlocker() {
+            if (!required) {
+                return "none";
+            }
+            if (!present) {
+                return "runtime-equivalence-payload-missing";
+            }
+            if (!passed) {
+                return "runtime-equivalence-payload-not-passed";
+            }
+            if (!componentsComplete) {
+                return "runtime-equivalence-payload-components-incomplete";
+            }
+            if (caseCount <= 0) {
+                return "runtime-equivalence-payload-cases-missing";
+            }
+            return "none";
         }
     }
 }

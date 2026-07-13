@@ -37,6 +37,21 @@ public final class OptimizationJournalExample {
             "optimizer-report.txt",
             "runtime-ir-optimizer-evidence.properties"
     );
+    private static final List<String> EXPECTED_OPTIMIZED_SOURCE_MARKERS = List.of(
+            "mad(",
+            "clamp(",
+            "step(",
+            "mix(",
+            "vload4("
+    );
+    private static final List<String> EXPECTED_EVIDENCE_MARKERS = List.of(
+            "madFmaMaterialization.status",
+            "clampMaterialization.status",
+            "stepMaterialization.status",
+            "mixMaterialization.status",
+            "loopVectorizationMaterialization.status",
+            "runtimeEquivalenceReview.familySummary"
+    );
 
     private OptimizationJournalExample() {
     }
@@ -46,8 +61,12 @@ public final class OptimizationJournalExample {
         String previousArtifactDirectory = System.getProperty(ARTIFACT_DIRECTORY_PROPERTY);
         System.setProperty(ARTIFACT_DIRECTORY_PROPERTY, journalRoot.toString());
 
-        float[] input = new float[]{1.0f, 2.0f, 3.0f, 4.0f};
-        float[] output = new float[input.length];
+        int vectorRows = 4;
+        float[] input = new float[vectorRows * 4];
+        for (int index = 0; index < input.length; index++) {
+            input[index] = index + 1.0f;
+        }
+        float[] output = new float[vectorRows];
         GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions.openCl(
                 List.of(),
                 "diagnostic"
@@ -58,15 +77,36 @@ public final class OptimizationJournalExample {
         System.out.println("Artifact journal root: " + journalRoot.toAbsolutePath().normalize());
         System.out.println("Runtime artifact property: -D" + ARTIFACT_DIRECTORY_PROPERTY + "=" + journalRoot);
 
+
+        int sizeX = 16;
+        int sizeY = 256;
+        int sizeZ = 16;
+
+        float chunkOffsetX = 1024.0f;
+        float chunkOffsetY = 0.0f;
+        float chunkOffsetZ = -512.0f;
+
+        int totalVoxels = sizeX * sizeY * sizeZ;
+        float[] densityMap = new float[totalVoxels];
+
         try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
             GpuGeneratedLauncherInvoker.invokeWithConfigAndCompileOptions(
                     OptimizationJournalExample.class,
                     "optimizerJournalKernel",
-                    GpuExecutionConfig.oneDimensional(input.length),
+                    GpuExecutionConfig.oneDimensional(output.length),
                     compileOptions,
                     input,
                     output,
                     0f
+            );
+            GpuGeneratedLauncherInvoker.invokeWithConfigAndCompileOptions(
+                    OptimizationJournalExample.class,
+                    "computeVoxelDensity",
+                    GpuExecutionConfig.threeDimensional(sizeX, sizeY, sizeZ),
+                    compileOptions,
+                    densityMap,
+                    sizeX, sizeY,
+                    chunkOffsetX, chunkOffsetY, chunkOffsetZ
             );
             System.out.println("output[0] = " + output[0]);
             printJournal(journalRoot);
@@ -80,7 +120,7 @@ public final class OptimizationJournalExample {
     }
 
     @net.sixik.ga_utils.javatogpu.api.annotations.GPU
-    @GPUOptimize(fastMath = true) // Разрешаем оптимизатору применять fma/mad/mix и менять округление
+    @GPUOptimize(fastMath = true) // Allows diagnostic peephole evidence such as mad/fma/mix planning.
     public static void optimizerJournalKernel(
             @GPUGlobal float[] input,
             @GPUGlobal float[] output,
@@ -89,37 +129,74 @@ public final class OptimizationJournalExample {
         int id = GPU.get_global_id(0);
         float value = input[id];
 
-        // 1. Мишень для CSE (Common Subexpression Elimination)
-        // Выражение (value * 3.1415f) повторяется три раза подряд без мутации 'value'.
-        float a = value * 3.1415f;
-        float b = (value * 3.1415f) + 10.0f;
-        float c = (value * 3.1415f) - 5.0f;
+        // Existing-local CSE review candidate: later repeats can reuse scale in optimized.backend.opencl-c.
+        float scale = value * 3.1415f;
+        float shifted = (value * 3.1415f) + 10.0f;
+        float lowered = (value * 3.1415f) - 5.0f;
 
-        // 2. Мишень для InstCombine (mad / fma)
-        // Паттерн a * b + c
-        float fmaTarget = a * b + c;
-
-        // 3. Мишень для InstCombine (clamp)
-        // Паттерн min(max(x, lo), hi)
+        // Fast-math mad/fma now materializes into the optimized review artifact only.
+        float fmaTarget = scale * shifted + lowered;
         float clampTarget = GPU.min(GPU.max(fmaTarget, 0.0f), 1.0f);
+        float mixTarget = scale + t * (shifted - scale);
 
-        // 4. Мишень для InstCombine (mix / lerp)
-        // Паттерн a + t * (b - a)
-        float mixTarget = a + t * (b - a);
+        // Constant-folding materialization can collapse this in the optimized review artifact.
+        int foldedSeed = (2 + 3) * 4;
 
-        // 5. Мишень для Auto-vectorization
-        // Последовательный доступ к памяти внутри цикла с фиксированным размером
         float sum = 0.0f;
         for (int i = 0; i < 4; i++) {
             sum = sum + input[id * 4 + i];
         }
 
-        // 6. Давление на регистры (Register Pressure)
-        // Множество промежуточных переменных сходятся в одном тяжелом математическом выражении,
-        // что должно отразиться в GpuRuntimeRegisterPressureAnalyzer
-        float heavyMath = GPU.sin(clampTarget) + GPU.cos(mixTarget) + sum;
+        foldedSeed += (int) sum;
 
-        output[id] = heavyMath;
+        // A small expression chain keeps register-pressure diagnostics visible in the journal.
+        float heavyMath = GPU.sin(clampTarget) + GPU.cos(mixTarget) + lowered;
+        output[id] = heavyMath + foldedSeed * 0.001f;
+    }
+
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+    @GPUOptimize(fastMath = true)
+    public static void computeVoxelDensity(
+            @GPUGlobal float[] densityMap,
+            int sizeX, int sizeY,
+            float offsetX, float offsetY, float offsetZ
+    ) {
+        // (3D NDRange)
+        int x = GPU.get_global_id(0);
+        int y = GPU.get_global_id(1);
+        int z = GPU.get_global_id(2);
+
+        // Target CSE
+        int index = x + (y * sizeX) + (z * sizeX * sizeY);
+
+        // Target (CSE + MAD/FMA)
+        float worldX = (x * 0.015f) + offsetX;
+        float worldY = (y * 0.015f) + offsetY;
+        float worldZ = (z * 0.015f) + offsetZ;
+
+        // Target (MAD/FMA)
+        float nx = worldX * 2.5f + 10.0f;
+        float ny = worldY * 2.5f + 10.0f;
+        float nz = worldZ * 2.5f + 10.0f;
+
+        // Target Register
+        float wave1 = GPU.sin(nx) * GPU.cos(ny) + GPU.sin(nz);
+        float wave2 = GPU.cos(nx) * GPU.sin(ny) + GPU.cos(nz);
+
+        // Target (Clamp (min/max))  = clamp(wave1, -1.0f, 1.0f)?
+        float clampedWave = GPU.min(GPU.max(wave1, -1.0f), 1.0f);
+
+        // Target hidden Mix/Lerp = mix(wave2, clampedWave, 0.5f) -> a + t * (b - a)?
+        float blend = wave2 + 0.5f * (clampedWave - wave2);
+
+        // Target Step
+        float threshold = 0.25f;
+        float isSolid = blend > threshold ? 1.0f : 0.0f;
+
+        // Target (Mix/MAD) = mix(clampedWave * 0.1f, blend, isSolid)
+        float finalDensity = blend * isSolid + (1.0f - isSolid) * (clampedWave * 0.1f);
+
+        densityMap[index] = finalDensity;
     }
 
     static Path resolveJournalRoot(String[] args) {
@@ -127,6 +204,14 @@ public final class OptimizationJournalExample {
             return Path.of(args[0]);
         }
         return DEFAULT_JOURNAL_ROOT;
+    }
+
+    static List<String> expectedOptimizedSourceMarkers() {
+        return EXPECTED_OPTIMIZED_SOURCE_MARKERS;
+    }
+
+    static List<String> expectedEvidenceMarkers() {
+        return EXPECTED_EVIDENCE_MARKERS;
     }
 
     static List<Path> interestingJournalFiles(Path journalRoot) throws IOException {
@@ -152,6 +237,14 @@ public final class OptimizationJournalExample {
             System.out.println("Journal artifacts:");
             for (Path file : files) {
                 System.out.println(" - " + journalRoot.relativize(file));
+            }
+            System.out.println("Expected review-only markers in optimized.backend.opencl-c:");
+            for (String marker : expectedOptimizedSourceMarkers()) {
+                System.out.println(" - " + marker);
+            }
+            System.out.println("Expected evidence markers in runtime-ir-optimizer-evidence.properties:");
+            for (String marker : expectedEvidenceMarkers()) {
+                System.out.println(" - " + marker);
             }
         } catch (IOException exception) {
             System.out.println("Failed to list journal artifacts: " + exception.getMessage());

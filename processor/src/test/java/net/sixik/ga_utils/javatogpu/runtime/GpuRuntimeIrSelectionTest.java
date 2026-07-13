@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
@@ -33,6 +34,41 @@ class GpuRuntimeIrSelectionTest {
         assertFalse(selection.optimizedRejected());
         assertEquals(GpuRuntimeCompileProvenance.NO_FALLBACK, selection.fallbackDecision());
         assertTrue(selection.diagnostic().contains("optimized IrGpu is selected"));
+    }
+
+    @Test
+    void materializedCandidateCanRemainReviewOnlyWhenReportSelectsOriginal() {
+        IrGpuArtifact original = artifact("body\n  return original\n");
+        IrGpuArtifact candidate = artifact("body\n  return optimized candidate\n");
+        GpuRuntimeIrOptimizationPassReport passReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "optimizer:proposal-only",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                IrGpuArtifactIdentity.stableIdentity(original),
+                IrGpuArtifactIdentity.stableIdentity(candidate),
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields("test", "candidate-ready", java.util.Map.of()),
+                List.of("candidate materialized for review only")
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = snapshot(
+                original,
+                candidate,
+                new GpuRuntimeIrOptimizationReport(
+                        Optional.of(original),
+                        Optional.of(candidate),
+                        List.of(passReport)
+                )
+        );
+
+        GpuRuntimeIrSelection selection = GpuRuntimeIrSelection.from(snapshot);
+
+        assertEquals("original", selection.selectedStage());
+        assertEquals(IrGpuArtifactIdentity.stableIdentity(original), selection.selectedIdentity());
+        assertEquals(IrGpuArtifactIdentity.stableIdentity(candidate), selection.optimizedIdentity());
+        assertTrue(selection.transformed());
+        assertFalse(selection.optimizedRejected());
+        assertTrue(selection.diagnostic().contains("candidate is materialized for review"));
     }
 
     @Test

@@ -28,6 +28,7 @@ public final class GpuIrOptimizationApprovalTemplateFormatter {
             String template = GpuIrOptimizationApprovalManifest.template(proposal, request);
             fields.put("diagnostic", "optimizer approval template is pending manual review");
             fields.put("resourceDirectory", GpuIrOptimizationApprovalManifest.RESOURCE_DIRECTORY);
+            fields.put("resourcePath", GpuIrOptimizationApprovalManifest.resourcePath(proposal, request));
             return GpuIrOptimizationApprovalTemplateResult.pending(template, fields);
         } catch (IllegalArgumentException | IllegalStateException failure) {
             String blocker = firstBlocker(failure);
@@ -43,9 +44,54 @@ public final class GpuIrOptimizationApprovalTemplateFormatter {
         fields.put("optimizerVersion", proposal == null ? "missing" : proposal.optimizerVersion());
         fields.put("decision", proposal == null ? "missing" : proposal.decision().name());
         fields.put("hasOptimizedArtifact", Boolean.toString(proposal != null && proposal.hasOptimizedArtifact()));
+        Map<String, String> proofFields = proposal == null ? Map.of() : proposal.proofArtifact().fields();
+        boolean runtimeEquivalencePayloadRequired = fieldIsTrue(
+                proofFields,
+                "proof.runtimeEquivalencePayloadRequiredBeforeSelection"
+        ) || fieldIsTrue(proofFields, "runtimeEquivalencePayload.required");
+        boolean runtimeEquivalencePayloadComponentsComplete = fieldIsTrue(
+                proofFields,
+                "runtimeEquivalencePayload.cpuReference.present"
+        ) && fieldIsTrue(proofFields, "runtimeEquivalencePayload.preOptimizationOutput.present")
+                && fieldIsTrue(proofFields, "runtimeEquivalencePayload.postOptimizationOutput.present")
+                && fieldIsTrue(proofFields, "runtimeEquivalencePayload.tolerance.present")
+                && fieldIsTrue(proofFields, "runtimeEquivalencePayload.failureFixture.present");
+        fields.put("runtimeEquivalencePayload.required", Boolean.toString(runtimeEquivalencePayloadRequired));
+        fields.put(
+                "runtimeEquivalencePayload.present",
+                Boolean.toString(fieldIsTrue(proofFields, "runtimeEquivalencePayload.present"))
+        );
+        fields.put(
+                "runtimeEquivalencePayload.passed",
+                Boolean.toString(fieldIsTrue(proofFields, "runtimeEquivalencePayload.passed"))
+        );
+        fields.put(
+                "runtimeEquivalencePayload.componentsComplete",
+                Boolean.toString(runtimeEquivalencePayloadComponentsComplete)
+        );
+        fields.put(
+                "runtimeEquivalencePayload.caseCount",
+                proofFields.getOrDefault("runtimeEquivalencePayload.Case.Count", "0")
+        );
+        fields.put(
+                "runtimeEquivalencePayload.resource",
+                runtimeEquivalencePayloadRequired
+                        ? proofFields.getOrDefault("runtimeEquivalencePayload.resource", "missing")
+                        : "not-required"
+        );
+        fields.put(
+                "runtimeEquivalencePayload.comparisonMode",
+                runtimeEquivalencePayloadRequired
+                        ? proofFields.getOrDefault("runtimeEquivalencePayload.comparisonMode", "missing")
+                        : "not-required"
+        );
         fields.put("productionMutation", "disabled");
         fields.put("manualReviewOnly", "true");
         return fields;
+    }
+
+    private static boolean fieldIsTrue(Map<String, String> fields, String key) {
+        return "true".equalsIgnoreCase(fields.getOrDefault(key, "false"));
     }
 
     private static String firstBlocker(Throwable failure) {

@@ -397,7 +397,9 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         GpuBackendModuleArtifact originalModuleArtifact = runtimeCompileArtifactsConfigured()
                 ? lowerBackendModule(compileRequest)
                 : null;
-        GpuBackendModuleArtifact optimizedModuleArtifact = lowerBackendModule(optimizedCompileRequest);
+        GpuBackendModuleArtifact optimizedModuleArtifact = runtimeCompileArtifactsConfigured()
+                ? lowerOptimizedReviewModule(optimizedCompileRequest, optimizationResult.report())
+                : lowerBackendModule(optimizedCompileRequest);
         GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence = executeRuntimeEquivalence(new GpuRuntimeEquivalenceRequest(
                 compileRequest,
                 optimizedCompileRequest,
@@ -1125,6 +1127,35 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return lowerer.lower(compileRequest);
     }
 
+    private GpuBackendModuleArtifact lowerOptimizedReviewModule(
+            GpuRuntimeCompileRequest optimizedCompileRequest,
+            GpuRuntimeIrOptimizationReport optimizationReport
+    ) {
+        if (optimizationReport == null
+                || optimizationReport.candidateArtifact().isEmpty()
+                || sameIr(optimizationReport.artifact(), optimizationReport.candidateArtifact())) {
+            return lowerBackendModule(optimizedCompileRequest);
+        }
+        GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                optimizedCompileRequest.irGpuArtifact().orElse(null),
+                optimizedCompileRequest.descriptor().kernelResource()
+        );
+        if (!reconstruction.reconstructed() || !reconstruction.sourceAvailable()) {
+            return lowerBackendModule(optimizedCompileRequest);
+        }
+        return GpuBackendModuleArtifact.openClSource(
+                reconstruction.source(),
+                optimizedCompileRequest.descriptor().kernelResource() + "#irgpu-review-candidate",
+                OpenClBackendLowerer.VERSION,
+                "irgpu-review-candidate",
+                "opencl-irgpu-review-candidate"
+        );
+    }
+
+    private static boolean sameIr(Optional<IrGpuArtifact> first, Optional<IrGpuArtifact> second) {
+        return IrGpuArtifactIdentity.stableIdentity(first).equals(IrGpuArtifactIdentity.stableIdentity(second));
+    }
+
     protected GpuRuntimeCompileRequest optimizeRuntimeIr(GpuRuntimeCompileRequest compileRequest) {
         Optional<IrGpuArtifact> optimizedArtifact = irOptimizerRegistry.optimize(new GpuRuntimeIrOptimizationRequest(
                 compileRequest,
@@ -1148,7 +1179,9 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                         selectOptimizationStrategy(compileRequest)
                 )
         );
-        GpuRuntimeCompileRequest optimizedCompileRequest = compileRequest.withIrGpuArtifact(optimizationReport.artifact());
+        GpuRuntimeCompileRequest optimizedCompileRequest = compileRequest.withIrGpuArtifact(
+                optimizationReport.artifactForOptimizedReview()
+        );
         return new GpuRuntimeIrOptimizationResult(optimizedCompileRequest, optimizationReport);
     }
 

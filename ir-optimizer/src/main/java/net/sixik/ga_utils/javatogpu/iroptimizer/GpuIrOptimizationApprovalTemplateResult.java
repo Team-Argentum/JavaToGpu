@@ -61,6 +61,10 @@ public record GpuIrOptimizationApprovalTemplateResult(
             values.put("template.present", "true");
             values.put("template.scope", GpuIrOptimizationApprovalManifest.SCOPE);
             values.put("template.resourceDirectory", GpuIrOptimizationApprovalManifest.RESOURCE_DIRECTORY);
+            String resourcePath = fields.get("resourcePath");
+            if (resourcePath != null && !resourcePath.isBlank()) {
+                values.put("template.resourcePath", resourcePath);
+            }
         } else {
             values.put("template.present", "false");
         }

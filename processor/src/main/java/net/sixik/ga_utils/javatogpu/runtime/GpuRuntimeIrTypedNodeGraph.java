@@ -106,7 +106,7 @@ public final class GpuRuntimeIrTypedNodeGraph {
     }
 
     public String callName(IrGpuTypedNode node) {
-        return attribute(node, "name", "function", "intrinsic");
+        return attribute(node, "name", "function", "intrinsic", "backendName");
     }
 
     public List<Integer> callArguments(IrGpuTypedNode node) {

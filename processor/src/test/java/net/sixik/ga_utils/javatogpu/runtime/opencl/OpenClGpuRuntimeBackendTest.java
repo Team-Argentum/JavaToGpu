@@ -215,6 +215,116 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void runtimeCompileArtifactDirectoryDumpsMaterializedCandidateWithoutSelectingIt() throws Exception {
+        Path artifactRoot = Files.createTempDirectory("javatogpu-runtime-ir-candidate-dump");
+        Path classpathRoot = Files.createTempDirectory("javatogpu-runtime-ir-candidate-classpath");
+        Path artifactPath = classpathRoot.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        Files.createDirectories(artifactPath.getParent());
+        Files.writeString(artifactPath, irGpuArtifactProperties("return original"));
+        String property = "javatogpu.opencl.runtimeCompileArtifactDirectory";
+        String previousArtifactRoot = System.getProperty(property);
+        AtomicReference<GpuRuntimeCompileArtifactSnapshot> capturedSnapshot = new AtomicReference<>();
+        AtomicReference<GpuRuntimeCompileRequest> finalCompileRequest = new AtomicReference<>();
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new URL[]{classpathRoot.toUri().toURL()},
+                OpenClGpuRuntimeBackendTest.class.getClassLoader()
+        )) {
+            System.setProperty(property, artifactRoot.toString());
+            OpenClGpuRuntimeBackend backend = new SnapshotCapturingBackend(capturedSnapshot) {
+                @Override
+                protected GpuRuntimeIrOptimizationResult optimizeRuntimeIrWithReport(GpuRuntimeCompileRequest compileRequest) {
+                    IrGpuArtifact originalArtifact = compileRequest.irGpuArtifact().orElseThrow();
+                    IrGpuArtifact candidateArtifact = testIrGpuArtifact("body\n  return optimized candidate\n");
+                    String originalIdentity = IrGpuArtifactIdentity.stableIdentity(originalArtifact);
+                    String candidateIdentity = IrGpuArtifactIdentity.stableIdentity(candidateArtifact);
+                    GpuRuntimeIrOptimizationPassReport passReport = new GpuRuntimeIrOptimizationPassReport(
+                            net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                            "optimizer:proposal-only-candidate",
+                            net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                            originalIdentity,
+                            candidateIdentity,
+                            "proposal-only",
+                            "",
+                            GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                                    "test.proposalOnly",
+                                    "candidate-ready",
+                                    java.util.Map.of("optimizedArtifactCandidate.status", "candidate-ready")
+                            ),
+                            List.of("candidate materialized but production mutation remains disabled")
+                    );
+                    return new GpuRuntimeIrOptimizationResult(
+                            compileRequest.withIrGpuArtifact(Optional.of(candidateArtifact)),
+                            new GpuRuntimeIrOptimizationReport(
+                                    Optional.of(originalArtifact),
+                                    Optional.of(candidateArtifact),
+                                    List.of(passReport)
+                            )
+                    );
+                }
+
+                @Override
+                protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
+                    String body = compileRequest.irGpuArtifact()
+                            .map(artifact -> artifact.module().methodBodies().get(0).body())
+                            .orElse("");
+                    boolean optimized = body.contains("optimized candidate");
+                    return GpuBackendModuleArtifact.openClSource(
+                            optimized
+                                    ? "__kernel void kernel(__global int* output) { output[0] = 2; }"
+                                    : "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                            optimized
+                                    ? "runtime/lowered/kernel-optimized.cl"
+                                    : "runtime/lowered/kernel-original.cl",
+                            "test-lowerer-v1"
+                    );
+                }
+
+                @Override
+                protected OpenClCompiledKernel compileKernel(
+                        GpuRuntimeCompileRequest compileRequest,
+                        GpuBackendModuleArtifact moduleArtifact
+                ) {
+                    finalCompileRequest.set(compileRequest);
+                    return super.compileKernel(compileRequest, moduleArtifact);
+                }
+            };
+
+            backend.invoke(new GpuKernelInvocation(
+                    descriptorWithIrGpuResource(),
+                    new Object[]{new int[]{0}}
+            ).withArtifactClassLoader(classLoader));
+
+            GpuRuntimeCompileArtifactSnapshot snapshot = capturedSnapshot.get();
+            String originalIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.originalIrGpuArtifact());
+            String optimizedIdentity = IrGpuArtifactIdentity.stableIdentity(snapshot.optimizedIrGpuArtifact());
+            assertNotEquals(originalIdentity, optimizedIdentity);
+            assertEquals(originalIdentity, IrGpuArtifactIdentity.stableIdentity(finalCompileRequest.get().irGpuArtifact()));
+            assertEquals("original", snapshot.runtimeIrSelection().selectedStage());
+            assertTrue(snapshot.runtimeIrSelection().transformed());
+            assertFalse(snapshot.runtimeIrSelection().optimizedRejected());
+            assertTrue(snapshot.originalBackendModuleArtifact().orElseThrow().source().contains("output[0] = 1"));
+            assertTrue(snapshot.optimizedBackendModuleArtifact().orElseThrow().source().contains("output[0] = 2"));
+            assertTrue(snapshot.backendModuleArtifact().source().contains("output[0] = 1"));
+
+            Path artifactDirectory;
+            try (java.util.stream.Stream<Path> directories = Files.list(artifactRoot)) {
+                artifactDirectory = directories.filter(Files::isDirectory).findFirst().orElseThrow();
+            }
+            assertTrue(Files.readString(artifactDirectory.resolve("original.backend.opencl-c")).contains("output[0] = 1"));
+            assertTrue(Files.readString(artifactDirectory.resolve("optimized.backend.opencl-c")).contains("output[0] = 2"));
+            assertTrue(Files.readString(artifactDirectory.resolve("backend.opencl-c")).contains("output[0] = 1"));
+            assertTrue(Files.readString(artifactDirectory.resolve("runtime-ir-handoff.properties")).contains("selectedStage=original"));
+            assertTrue(Files.readString(artifactDirectory.resolve("runtime-ir-handoff.properties")).contains("optimizedDiffersFromOriginal=true"));
+        } finally {
+            if (previousArtifactRoot == null) {
+                System.clearProperty(property);
+            } else {
+                System.setProperty(property, previousArtifactRoot);
+            }
+        }
+    }
+
+    @Test
     void writesOptimizerFamilyPayloadFixtureArtifacts() throws Exception {
         String outputDirectory = System.getProperty(OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_DIRECTORY_PROPERTY);
         org.junit.jupiter.api.Assumptions.assumeTrue(

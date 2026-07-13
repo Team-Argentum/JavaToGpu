@@ -35,9 +35,17 @@ class GpuIrOptimizationProposalRegistryTest {
         assertTrue(providerIds.contains(GpuIrNoOpOptimizationPass.PASS_ID));
         assertTrue(providerIds.contains(GpuIrTextCanonicalizationProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.contains(GpuIrHelperDependencyDeduplicationProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrBackendNeutralSourceMaterializationProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.contains(GpuIrConstantFoldingPreviewProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrConstantFoldingMaterializationProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.contains(GpuIrSafeLocalCsePreviewProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrSafeLocalCseMaterializationProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrMadFmaMaterializationProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrClampMaterializationProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrStepMaterializationProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrMixMaterializationProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.contains(GpuIrTypedDeadCodePreviewProposalProvider.PROVIDER_ID));
+        assertTrue(providerIds.contains(GpuIrTypedDeadCodeMaterializationProposalProvider.PROVIDER_ID));
         assertTrue(providerIds.stream().noneMatch(id -> id.contains("vendor")));
     }
 
