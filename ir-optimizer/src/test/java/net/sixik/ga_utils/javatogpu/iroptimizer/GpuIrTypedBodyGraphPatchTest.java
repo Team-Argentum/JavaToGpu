@@ -57,6 +57,27 @@ class GpuIrTypedBodyGraphPatchTest {
     }
 
     @Test
+    void reportsMissingRootsAndChildReferencesDuringReachability() {
+        IrGpuTypedBody body = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0, 404),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrAssignment", Map.of(), Map.of("value", List.of(1, 405))),
+                        new IrGpuTypedNode(1, "GpuIrLiteral", Map.of("sourceText", "1"), Map.of())
+                )
+        );
+
+        GpuIrTypedBodyGraphPatch.Reachability reachability = GpuIrTypedBodyGraphPatch
+                .reachability(body, GpuIrTypedBodyGraphPatch.nodesById(body));
+
+        assertEquals(1, reachability.rootMissingCount());
+        assertEquals(1, reachability.missingChildReferenceCount());
+        assertTrue(reachability.reachableNodeIds().contains(0));
+        assertTrue(reachability.reachableNodeIds().contains(1));
+        assertFalse(reachability.reachableNodeIds().contains(404));
+    }
+
+    @Test
     void keepsOriginalBodyWhenReplacementRootWasNotPresent() {
         IrGpuTypedBody body = typedBody();
         IrGpuTypedNode replacement = GpuIrTypedBodyGraphPatch.intrinsicCall(
@@ -94,6 +115,22 @@ class GpuIrTypedBodyGraphPatchTest {
         assertEquals("body\n  set tmp = intrinsic(mad template=\"\" args=[out[0], 2, unreachable])\n", applied.body());
         assertEquals("GpuIrIntrinsicCall", GpuIrTypedBodyGraphPatch.nodesById(applied.typedBody()).get(2).kind());
         assertEquals("mad", GpuIrTypedBodyGraphPatch.nodesById(applied.typedBody()).get(2).attributes().get("name"));
+    }
+
+    @Test
+    void appliesTextPatchAfterSearchStartIndex() {
+        IrGpuTypedBody body = typedBody();
+        IrGpuTypedNode replacement = new IrGpuTypedNode(2, "GpuIrVariableRef", Map.of("name", "tmp"), Map.of());
+        String text = "body\n  var int tmp = (out[0] + 2)\n  set tmp2 = (out[0] + 2)\n";
+
+        GpuIrTypedBodyGraphPatch.Applied applied = GpuIrTypedBodyGraphPatch
+                .plan("(out[0] + 2)", "tmp", replacement, text.indexOf("set tmp2"))
+                .apply(body, text);
+
+        assertTrue(applied.applied());
+        assertEquals("body\n  var int tmp = (out[0] + 2)\n  set tmp2 = tmp\n", applied.body());
+        assertEquals("GpuIrVariableRef", GpuIrTypedBodyGraphPatch.nodesById(applied.typedBody()).get(2).kind());
+        assertEquals("tmp", GpuIrTypedBodyGraphPatch.nodesById(applied.typedBody()).get(2).attributes().get("name"));
     }
 
     @Test

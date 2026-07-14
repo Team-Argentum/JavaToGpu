@@ -14,6 +14,7 @@ public record GpuRuntimeCompileOptions(
 ) {
 
     public static final String OPENCL_IRGPU_SOURCE_REVIEW_PROFILE = "source-reconstruction-review";
+    public static final String IR_OPTIMIZER_EXPERIMENTAL_APPLY_PROFILE = "ir-optimizer-experimental-apply";
 
     public GpuRuntimeCompileOptions(
             GpuBackendTarget backendTarget,
@@ -92,6 +93,32 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 GpuBackendCompileOptions.openClProductionIrGpuSource(compileArgs)
+        );
+    }
+
+    public static GpuRuntimeCompileOptions openClIrOptimizerExperimentalApply(
+            List<String> compileArgs,
+            String optimizationProfile
+    ) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                compileArgs,
+                optimizationProfile,
+                GpuBackendCompileOptions.openCl(compileArgs).withRuntimeIrOptimizerExperimentalApply()
+        );
+    }
+
+    public static GpuRuntimeCompileOptions openClIrOptimizerExperimentalApply(List<String> compileArgs) {
+        return openClIrOptimizerExperimentalApply(compileArgs, IR_OPTIMIZER_EXPERIMENTAL_APPLY_PROFILE);
+    }
+
+    public GpuRuntimeCompileOptions withRuntimeIrOptimizerExperimentalApply() {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withRuntimeIrOptimizerExperimentalApply(),
+                deviceOverride
         );
     }
 

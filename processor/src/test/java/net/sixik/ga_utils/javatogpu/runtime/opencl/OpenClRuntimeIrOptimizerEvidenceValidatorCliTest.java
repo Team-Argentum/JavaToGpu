@@ -105,6 +105,27 @@ class OpenClRuntimeIrOptimizerEvidenceValidatorCliTest {
     }
 
     @Test
+    void rejectsExperimentalApplySelectionWithoutExplicitValidatorFlag() throws Exception {
+        Path artifact = temporaryDirectory.resolve(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        Files.writeString(artifact, experimentalApplyEvidence());
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(new String[]{artifact.toString()})
+        );
+    }
+
+    @Test
+    void acceptsExperimentalApplySelectionWithExplicitValidatorFlag() throws Exception {
+        Path artifact = temporaryDirectory.resolve(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        Files.writeString(artifact, experimentalApplyEvidence());
+
+        assertDoesNotThrow(() -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(
+                new String[]{"--allow-experimental-apply", artifact.toString()}
+        ));
+    }
+
+    @Test
     void rejectsRequiredPackageWithoutBlocker() throws Exception {
         Path artifact = temporaryDirectory.resolve(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
         Files.writeString(artifact, failClosedEvidence("pending-manual-review", "true", "none", "1", "0"));
@@ -289,6 +310,62 @@ class OpenClRuntimeIrOptimizerEvidenceValidatorCliTest {
     }
 
     @Test
+    void rejectsLoopVectorizationReviewReadyWithInvalidatedTypedBodyRebuild() throws Exception {
+        Path artifact = temporaryDirectory.resolve(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        String invalidatedLoopEvidence = loopVectorizationMaterializationEvidence(
+                "review-ready",
+                "none",
+                "1",
+                "1",
+                "1",
+                "true",
+                "true",
+                "true"
+        )
+                .replace(
+                        "loopVectorizationMaterialization.typedBody.materialized.count=1",
+                        "loopVectorizationMaterialization.typedBody.materialized.count=0"
+                )
+                .replace(
+                        "loopVectorizationMaterialization.typedBody.invalidated.count=0",
+                        "loopVectorizationMaterialization.typedBody.invalidated.count=1"
+                )
+                .replace(
+                        "loopVectorizationMaterialization.typedBody.rebuild.built.count=1",
+                        "loopVectorizationMaterialization.typedBody.rebuild.built.count=0"
+                )
+                .replace(
+                        "loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=1",
+                        "loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=0"
+                )
+                .replace(
+                        "loopVectorizationMaterialization.typedBody.rebuild.rejected.count=0",
+                        "loopVectorizationMaterialization.typedBody.rebuild.rejected.count=1"
+                )
+                .replace(
+                        "loopVectorizationMaterialization.typedBody.rebuild.status=validated",
+                        "loopVectorizationMaterialization.typedBody.rebuild.status=invalidated"
+                )
+                .replace(
+                        "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker=none",
+                        "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker="
+                                + "typed-body-rebuild-statement-conversion-blocked"
+                );
+        Files.writeString(artifact, failClosedEvidence(
+                "pending-manual-review",
+                "true",
+                "approval-template-pending",
+                "1",
+                "1"
+        ) + invalidatedLoopEvidence);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(new String[]{artifact.toString()})
+        );
+    }
+
+    @Test
     void rejectsLoopVectorizationReviewReadyWithoutProofs() throws Exception {
         Path artifact = temporaryDirectory.resolve(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
         Files.writeString(artifact, failClosedEvidence(
@@ -332,6 +409,37 @@ class OpenClRuntimeIrOptimizerEvidenceValidatorCliTest {
                 "true",
                 "true"
         ));
+
+        assertDoesNotThrow(() -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(new String[]{artifact.toString()}));
+    }
+
+    @Test
+    void acceptsSafeLocalCseIntroducedTemporaryReviewReadyEvidenceAsManualReviewOnly() throws Exception {
+        Path artifact = temporaryDirectory.resolve(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        String introducedTemporaryEvidence = safeLocalCseMaterializationEvidence(
+                "review-ready",
+                "none",
+                "1",
+                "1",
+                "1",
+                "true",
+                "true"
+        )
+                .replace(
+                        "safeLocalCseMaterialization.localBinding.count=1",
+                        "safeLocalCseMaterialization.localBinding.count=0"
+                )
+                .replace(
+                        "safeLocalCseMaterialization.introducedTemporary.count=0",
+                        "safeLocalCseMaterialization.introducedTemporary.count=1"
+                );
+        Files.writeString(artifact, failClosedEvidence(
+                "pending-manual-review",
+                "true",
+                "approval-template-pending",
+                "1",
+                "1"
+        ) + introducedTemporaryEvidence);
 
         assertDoesNotThrow(() -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(new String[]{artifact.toString()}));
     }
@@ -445,6 +553,36 @@ class OpenClRuntimeIrOptimizerEvidenceValidatorCliTest {
                 "reviewPackage.manualReviewOnly=true",
                 "reviewPackage.productionMutation=disabled",
                 "reviewPackage.selectedIrReplacement=disabled",
+                ""
+        );
+    }
+
+    private static String experimentalApplyEvidence() {
+        return failClosedEvidence(
+                "pending-manual-review",
+                "true",
+                "approval-template-pending",
+                "1",
+                "1"
+        )
+                .replace("selectedOptimized.count=0", "selectedOptimized.count=1")
+                .replace("optimizedArtifactCandidate.status=not-recorded", "optimizedArtifactCandidate.status=candidate-ready")
+                .replace("optimizedArtifactCandidate.count=0", "optimizedArtifactCandidate.count=1")
+                .replace("optimizedArtifactCandidate.ready.count=0", "optimizedArtifactCandidate.ready.count=1")
+                .replace("optimizedArtifactCandidate.selectionReady.count=0", "optimizedArtifactCandidate.selectionReady.count=1")
+                .replace("optimizedArtifactCandidate.selectionApplied.count=0", "optimizedArtifactCandidate.selectionApplied.count=1")
+                .replace("optimizedArtifactCandidate.selectedIrReplacement.count=0", "optimizedArtifactCandidate.selectedIrReplacement.count=1")
+                .replace("optimizedArtifactCandidate.mutationAllowed.count=0", "optimizedArtifactCandidate.mutationAllowed.count=1")
+                .replace("optimizedArtifactCandidate.firstBlocker=no-candidates", "optimizedArtifactCandidate.firstBlocker=none")
+                .replace("optimizedArtifactCandidate.selectionFirstBlocker=no-candidates", "optimizedArtifactCandidate.selectionFirstBlocker=none")
+                .replace("optimizedArtifactCandidate.selectionApplied=false", "optimizedArtifactCandidate.selectionApplied=true")
+                .replace("optimizedArtifactCandidate.selectedIrReplacement=false", "optimizedArtifactCandidate.selectedIrReplacement=true")
+                + String.join("\n",
+                "experimentalApply.requested=true",
+                "experimentalApply.enabled=true",
+                "experimentalApply.requested.count=1",
+                "experimentalApply.enabled.count=1",
+                "experimentalApply.selected.count=1",
                 ""
         );
     }
@@ -619,6 +757,7 @@ class OpenClRuntimeIrOptimizerEvidenceValidatorCliTest {
         return String.join("\n",
                 "safeLocalCseMaterialization.pass.count=1",
                 "safeLocalCseMaterialization.localBinding.count=1",
+                "safeLocalCseMaterialization.introducedTemporary.count=0",
                 "safeLocalCseMaterialization.candidate.count=1",
                 "safeLocalCseMaterialization.transformedNode.count=" + transformedNodeCount,
                 "safeLocalCseMaterialization.changedMethodBody.count=1",
@@ -659,6 +798,13 @@ class OpenClRuntimeIrOptimizerEvidenceValidatorCliTest {
                 "loopVectorizationMaterialization.bodyTextReplacement.count=1",
                 "loopVectorizationMaterialization.typedBody.materialized.count=1",
                 "loopVectorizationMaterialization.typedBody.invalidated.count=0",
+                "loopVectorizationMaterialization.typedBody.rebuild.attempted.count=1",
+                "loopVectorizationMaterialization.typedBody.rebuild.parsed.count=1",
+                "loopVectorizationMaterialization.typedBody.rebuild.built.count=1",
+                "loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=1",
+                "loopVectorizationMaterialization.typedBody.rebuild.rejected.count=0",
+                "loopVectorizationMaterialization.typedBody.rebuild.status=validated",
+                "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker=none",
                 "loopVectorizationMaterialization.skipped.loopShape.count=0",
                 "loopVectorizationMaterialization.skipped.unsupportedWidth.count=0",
                 "loopVectorizationMaterialization.skipped.unsafeLoadPattern.count=0",

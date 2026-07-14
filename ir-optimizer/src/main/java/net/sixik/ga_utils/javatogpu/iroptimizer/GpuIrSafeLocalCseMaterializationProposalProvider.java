@@ -9,7 +9,6 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationProofArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuSourceEmission;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -93,6 +92,7 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
             int methodBodyCount,
             int typedBodyCount,
             int localBindingCount,
+            int introducedTemporaryCount,
             int candidateCount,
             int transformedNodeCount,
             int changedMethodBodyCount,
@@ -164,6 +164,7 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
                     stats.methodBodyCount,
                     stats.typedBodyCount,
                     stats.localBindingCount,
+                    stats.introducedTemporaryCount,
                     stats.candidateCount,
                     stats.transformedNodeCount,
                     stats.changedMethodBodyCount,
@@ -196,6 +197,7 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
                     stats.methodBodyCount,
                     stats.typedBodyCount,
                     stats.localBindingCount,
+                    stats.introducedTemporaryCount,
                     stats.candidateCount,
                     stats.transformedNodeCount,
                     stats.changedMethodBodyCount,
@@ -239,7 +241,7 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
         private String diagnostic() {
             if (changed()) {
                 return "safe local CSE materialization rewrote " + transformedNodeCount
-                        + " repeated pure expression(s) to existing local references";
+                        + " repeated pure expression(s) to local references";
             }
             return "safe local CSE materialization produced no review candidate: " + firstBlocker;
         }
@@ -250,6 +252,7 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
             fields.put("methodBody.rewriteScope", "all-method-bodies");
             fields.put("typedBody.count", Integer.toString(typedBodyCount));
             fields.put("localBinding.count", Integer.toString(localBindingCount));
+            fields.put("introducedTemporary.count", Integer.toString(introducedTemporaryCount));
             fields.put("candidate.count", Integer.toString(candidateCount));
             fields.put("transformedNode.count", Integer.toString(transformedNodeCount));
             fields.put("changedMethodBody.count", Integer.toString(changedMethodBodyCount));
@@ -307,16 +310,26 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
                     + ", first=" + firstReplacement);
             fields.put("runtimeEquivalencePayload.Tolerance", "mode=exact-expression-reuse, floatingPoint=unchanged");
             fields.put("runtimeEquivalencePayload.FailureFixture", "none");
-            fields.put("runtimeEquivalencePayload.ReferenceMode", "static-existing-local-expression-reuse");
+            fields.put(
+                    "runtimeEquivalencePayload.ReferenceMode",
+                    introducedTemporaryCount > 0
+                            ? "static-local-expression-reuse-with-introduced-temporary"
+                            : "static-existing-local-expression-reuse"
+            );
             fields.put("runtimeEquivalencePayload.CaseIdentity", "method-name-and-node-id");
             appendRuntimeEquivalenceCases(fields, transformedCandidates);
             fields.put("reviewPackage.required", Boolean.toString(changed()));
             fields.put("reviewPackage.firstBlocker", changed() ? "approval-pending" : firstBlocker);
-            fields.put("safety.scope", "straight-line-existing-local-pure-binary-expression-reuse");
+            fields.put(
+                    "safety.scope",
+                    introducedTemporaryCount > 0
+                            ? "straight-line-existing-or-introduced-local-pure-binary-expression-reuse"
+                            : "straight-line-existing-local-pure-binary-expression-reuse"
+            );
             fields.put("safety.dominanceProven", Boolean.toString(changed()));
             fields.put("safety.sideEffectFreedomProven", Boolean.toString(changed()));
-            fields.put("safety.valueNumberingScope", "method-local-straight-line-existing-local");
-            fields.put("safety.newTemporaryIntroduced", "false");
+            fields.put("safety.valueNumberingScope", "method-local-straight-line");
+            fields.put("safety.newTemporaryIntroduced", Boolean.toString(introducedTemporaryCount > 0));
             fields.put("openClReview.sourceReady", Boolean.toString(openClReviewSourceReady));
             fields.put("openClReview.sourceLength", openClReviewSourceLength);
             fields.put("firstTransformedNode", firstTransformedNode);
@@ -365,8 +378,9 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
         IrGpuMethodBody rewrittenMethodBody = methodBody;
         int maxPasses = Math.max(1, methodBody.typedBody().nodes().size());
         for (int pass = 0; pass < maxPasses; pass++) {
-            Map<Integer, IrGpuTypedNode> nodesById = nodesById(rewrittenMethodBody.typedBody());
-            Reachability reachability = reachableNodeIds(rewrittenMethodBody.typedBody(), nodesById);
+            Map<Integer, IrGpuTypedNode> nodesById = GpuIrTypedBodyGraphPatch.nodesById(rewrittenMethodBody.typedBody());
+            GpuIrTypedBodyGraphPatch.Reachability reachability = GpuIrTypedBodyGraphPatch
+                    .reachability(rewrittenMethodBody.typedBody(), nodesById);
             if (reachability.rootMissingCount() > 0 || reachability.missingChildReferenceCount() > 0) {
                 stats.skippedMissingChildReferenceCount += reachability.rootMissingCount()
                         + reachability.missingChildReferenceCount();
@@ -384,6 +398,50 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
                     scanStats
             );
             if (scanResult.candidate().isEmpty()) {
+                Optional<TemporaryCseCandidate> temporaryCandidate = firstTemporaryIntroductionCandidate(
+                        rewrittenMethodBody.name(),
+                        rewrittenMethodBody.body(),
+                        rewrittenMethodBody.typedBody(),
+                        nodesById,
+                        reachability.reachableNodeIds(),
+                        scanStats
+                );
+                if (temporaryCandidate.isPresent()) {
+                    TemporaryCseCandidate candidate = temporaryCandidate.orElseThrow();
+                    TemporaryPatch patch = applyTemporaryIntroduction(
+                            rewrittenMethodBody.typedBody(),
+                            rewrittenMethodBody.body(),
+                            nodesById,
+                            candidate
+                    );
+                    stats.add(scanStats);
+                    if (!patch.applied()) {
+                        stats.candidateCount += candidate.occurrenceCount();
+                        stats.recordPatchBlocker(patch.blocker());
+                        break;
+                    }
+
+                    stats.candidateCount += candidate.occurrenceCount();
+                    stats.transformedNodeCount += candidate.occurrenceCount();
+                    stats.changedMethodBodyCount = 1;
+                    stats.bodyTextReplacementCount += candidate.occurrenceCount();
+                    stats.fixedPointPassCount++;
+                    stats.introducedTemporaryCount++;
+                    stats.transformedCandidates.addAll(candidate.toCseCandidates());
+                    if ("none".equals(stats.firstTransformedNode)) {
+                        CseCandidate first = candidate.toCseCandidates().get(0);
+                        stats.firstTransformedNode = first.summary();
+                        stats.firstExpression = first.expressionText();
+                        stats.firstReplacement = first.replacementText();
+                    }
+
+                    rewrittenMethodBody = copyWithBodyAndTypedBody(
+                            rewrittenMethodBody,
+                            patch.body(),
+                            patch.typedBody()
+                    );
+                    continue;
+                }
                 if (stats.transformedNodeCount == 0) {
                     stats.add(scanStats);
                 }
@@ -391,17 +449,12 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
             }
 
             CseCandidate candidate = scanResult.candidate().orElseThrow();
-            Replacement replacement = replaceAfter(
-                    rewrittenMethodBody.body(),
-                    candidate.expressionText(),
-                    candidate.replacementText(),
-                    candidate.bindingSearchStart()
-            );
+            GpuIrTypedBodyGraphPatch.Applied patch = graphPatch(candidate)
+                    .apply(rewrittenMethodBody.typedBody(), rewrittenMethodBody.body());
             stats.add(scanStats);
-            if (!replacement.replaced()) {
+            if (!patch.applied()) {
                 stats.candidateCount++;
-                stats.skippedBodyTextPatternMissingCount++;
-                stats.setFirstBlocker("body-text-pattern-missing");
+                stats.recordPatchBlocker(patch.blocker());
                 break;
             }
 
@@ -417,10 +470,23 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
                 stats.firstReplacement = candidate.replacementText();
             }
 
-            IrGpuTypedBody rewrittenTypedBody = rewriteTypedBody(rewrittenMethodBody.typedBody(), candidate);
-            rewrittenMethodBody = copyWithBodyAndTypedBody(rewrittenMethodBody, replacement.body(), rewrittenTypedBody);
+            rewrittenMethodBody = copyWithBodyAndTypedBody(rewrittenMethodBody, patch.body(), patch.typedBody());
         }
         return new MethodRewrite(rewrittenMethodBody, stats);
+    }
+
+    private static GpuIrTypedBodyGraphPatch.Plan graphPatch(CseCandidate candidate) {
+        return GpuIrTypedBodyGraphPatch.plan(
+                candidate.expressionText(),
+                candidate.replacementText(),
+                new IrGpuTypedNode(
+                        candidate.nodeId(),
+                        "GpuIrVariableRef",
+                        Map.of("name", candidate.replacementText()),
+                        Map.of()
+                ),
+                candidate.bindingSearchStart()
+        );
     }
 
     private record ScanResult(Optional<CseCandidate> candidate) {
@@ -431,6 +497,13 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
 
         private static ScanResult found(CseCandidate candidate) {
             return new ScanResult(Optional.of(candidate));
+        }
+    }
+
+    private record TemporaryPatch(IrGpuTypedBody typedBody, String body, boolean applied, String blocker) {
+
+        private static TemporaryPatch blocked(IrGpuTypedBody typedBody, String body, String blocker) {
+            return new TemporaryPatch(typedBody, body, false, blocker);
         }
     }
 
@@ -458,6 +531,215 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
             stats.skippedNoExistingLocalBindingCount++;
         }
         return ScanResult.none();
+    }
+
+    private static Optional<TemporaryCseCandidate> firstTemporaryIntroductionCandidate(
+            String methodName,
+            String body,
+            IrGpuTypedBody typedBody,
+            Map<Integer, IrGpuTypedNode> nodesById,
+            Set<Integer> reachableNodeIds,
+            RewriteStats stats
+    ) {
+        LinkedHashMap<String, ArrayList<ExpressionOccurrence>> occurrencesByFingerprint = new LinkedHashMap<>();
+        List<Integer> roots = typedBody.rootNodeIds();
+        for (int rootIndex = 0; rootIndex < roots.size(); rootIndex++) {
+            IrGpuTypedNode root = nodesById.get(roots.get(rootIndex));
+            if (root == null || !reachableNodeIds.contains(root.id())) {
+                continue;
+            }
+            collectExpressionOccurrences(rootIndex, root, nodesById, reachableNodeIds, occurrencesByFingerprint);
+        }
+
+        Set<String> localNames = collectLocalNames(typedBody, nodesById);
+        for (ArrayList<ExpressionOccurrence> occurrences : occurrencesByFingerprint.values()) {
+            if (occurrences.size() < 2) {
+                continue;
+            }
+            ExpressionOccurrence first = occurrences.get(0);
+            if (hasLocalInvalidationBetween(typedBody, nodesById, first.expression().variableNames(), occurrences)) {
+                stats.skippedLocalInvalidationCount++;
+                stats.setFirstBlocker("local-invalidation-between-cse-uses");
+                continue;
+            }
+            int textOccurrenceCount = allIndexesOf(body, first.expression().sourceText()).size();
+            if (textOccurrenceCount != occurrences.size()) {
+                stats.skippedBodyTextPatternMissingCount++;
+                stats.setFirstBlocker("body-text-pattern-missing");
+                continue;
+            }
+            return Optional.of(new TemporaryCseCandidate(
+                    methodName,
+                    nextTemporaryName(localNames),
+                    inferTemporaryType(first.node(), first.expression().sourceText()),
+                    first.expression(),
+                    List.copyOf(occurrences)
+            ));
+        }
+        return Optional.empty();
+    }
+
+    private static void collectExpressionOccurrences(
+            int rootIndex,
+            IrGpuTypedNode node,
+            Map<Integer, IrGpuTypedNode> nodesById,
+            Set<Integer> reachableNodeIds,
+            LinkedHashMap<String, ArrayList<ExpressionOccurrence>> occurrencesByFingerprint
+    ) {
+        Optional<PureExpression> expression = pureExpression(node, nodesById, null);
+        if (expression.isPresent() && "GpuIrBinary".equals(node.kind())) {
+            PureExpression pureExpression = expression.orElseThrow();
+            occurrencesByFingerprint.computeIfAbsent(pureExpression.fingerprint(), ignored -> new ArrayList<>())
+                    .add(new ExpressionOccurrence(rootIndex, node.id(), node, pureExpression));
+        }
+        for (Map.Entry<String, List<Integer>> entry : node.children().entrySet()) {
+            if ("target".equals(entry.getKey())) {
+                continue;
+            }
+            for (Integer childId : entry.getValue()) {
+                if (!reachableNodeIds.contains(childId)) {
+                    continue;
+                }
+                IrGpuTypedNode child = nodesById.get(childId);
+                if (child != null) {
+                    collectExpressionOccurrences(rootIndex, child, nodesById, reachableNodeIds, occurrencesByFingerprint);
+                }
+            }
+        }
+    }
+
+    private static boolean hasLocalInvalidationBetween(
+            IrGpuTypedBody typedBody,
+            Map<Integer, IrGpuTypedNode> nodesById,
+            Set<String> variableNames,
+            List<ExpressionOccurrence> occurrences
+    ) {
+        if (variableNames.isEmpty() || occurrences.isEmpty()) {
+            return false;
+        }
+        int firstRootIndex = occurrences.stream().mapToInt(ExpressionOccurrence::rootIndex).min().orElse(0);
+        int lastRootIndex = occurrences.stream().mapToInt(ExpressionOccurrence::rootIndex).max().orElse(firstRootIndex);
+        List<Integer> roots = typedBody.rootNodeIds();
+        for (int index = firstRootIndex; index <= lastRootIndex && index < roots.size(); index++) {
+            IrGpuTypedNode root = nodesById.get(roots.get(index));
+            if (root == null) {
+                continue;
+            }
+            Optional<BindingSource> source = bindingSource(root, nodesById);
+            if (source.isPresent() && variableNames.contains(source.orElseThrow().targetName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static TemporaryPatch applyTemporaryIntroduction(
+            IrGpuTypedBody typedBody,
+            String body,
+            Map<Integer, IrGpuTypedNode> nodesById,
+            TemporaryCseCandidate candidate
+    ) {
+        if (typedBody == null || !typedBody.available()) {
+            return TemporaryPatch.blocked(typedBody, body, "typed-body-missing");
+        }
+        if (body == null || candidate.expression().sourceText().isBlank()) {
+            return TemporaryPatch.blocked(typedBody, body, "body-text-pattern-missing");
+        }
+        List<Integer> indexes = allIndexesOf(body, candidate.expression().sourceText());
+        if (indexes.size() != candidate.occurrenceCount()) {
+            return TemporaryPatch.blocked(typedBody, body, "body-text-pattern-missing");
+        }
+
+        String replacedBody = replaceAll(body, candidate.expression().sourceText(), candidate.temporaryName());
+        int lineStart = lineStart(body, indexes.get(0));
+        String declaration = lineIndentation(body, lineStart)
+                + "var " + candidate.typeName() + " " + candidate.temporaryName()
+                + " = " + candidate.expression().sourceText() + "\n";
+        String patchedBody = replacedBody.substring(0, lineStart) + declaration + replacedBody.substring(lineStart);
+        IrGpuTypedBody patchedTypedBody = introduceTemporaryTypedBody(typedBody, nodesById, candidate);
+        GpuIrTypedBodyGraphPatch.Reachability reachability = GpuIrTypedBodyGraphPatch.reachability(
+                patchedTypedBody,
+                GpuIrTypedBodyGraphPatch.nodesById(patchedTypedBody)
+        );
+        if (reachability.rootMissingCount() > 0 || reachability.missingChildReferenceCount() > 0) {
+            return TemporaryPatch.blocked(typedBody, body, "typed-temporary-graph-invalid");
+        }
+        return new TemporaryPatch(patchedTypedBody, patchedBody, true, "none");
+    }
+
+    private static IrGpuTypedBody introduceTemporaryTypedBody(
+            IrGpuTypedBody typedBody,
+            Map<Integer, IrGpuTypedNode> nodesById,
+            TemporaryCseCandidate candidate
+    ) {
+        LinkedHashSet<Integer> occurrenceIds = new LinkedHashSet<>();
+        for (ExpressionOccurrence occurrence : candidate.occurrences()) {
+            occurrenceIds.add(occurrence.nodeId());
+        }
+        IdAllocator ids = new IdAllocator(GpuIrTypedBodyGraphPatch.nextNodeId(typedBody));
+        int declarationId = ids.next();
+        CloneResult initializer = cloneSubtree(candidate.occurrences().get(0).nodeId(), nodesById, ids);
+        IrGpuTypedNode declaration = new IrGpuTypedNode(
+                declarationId,
+                "GpuIrVariableDeclaration",
+                Map.of("typeName", candidate.typeName(), "name", candidate.temporaryName()),
+                Map.of("initializer", List.of(initializer.rootNodeId()))
+        );
+
+        ArrayList<IrGpuTypedNode> nodes = new ArrayList<>();
+        for (IrGpuTypedNode node : typedBody.nodes()) {
+            if (occurrenceIds.contains(node.id())) {
+                nodes.add(new IrGpuTypedNode(
+                        node.id(),
+                        "GpuIrVariableRef",
+                        Map.of("name", candidate.temporaryName()),
+                        Map.of()
+                ));
+            } else {
+                nodes.add(node);
+            }
+        }
+        nodes.add(declaration);
+        nodes.addAll(initializer.nodes());
+
+        ArrayList<Integer> roots = new ArrayList<>(typedBody.rootNodeIds());
+        int insertionIndex = Math.max(0, Math.min(candidate.firstRootIndex(), roots.size()));
+        roots.add(insertionIndex, declarationId);
+        return new IrGpuTypedBody(typedBody.format(), roots, nodes);
+    }
+
+    private static CloneResult cloneSubtree(
+            int nodeId,
+            Map<Integer, IrGpuTypedNode> nodesById,
+            IdAllocator ids
+    ) {
+        IrGpuTypedNode node = nodesById.get(nodeId);
+        if (node == null) {
+            int missingId = ids.next();
+            return new CloneResult(
+                    missingId,
+                    List.of(new IrGpuTypedNode(missingId, "GpuIrLiteral", Map.of("sourceText", "0"), Map.of()))
+            );
+        }
+        LinkedHashMap<String, List<Integer>> children = new LinkedHashMap<>();
+        ArrayList<IrGpuTypedNode> clonedNodes = new ArrayList<>();
+        for (Map.Entry<String, List<Integer>> entry : node.children().entrySet()) {
+            ArrayList<Integer> clonedChildIds = new ArrayList<>();
+            for (Integer childId : entry.getValue()) {
+                CloneResult child = cloneSubtree(childId, nodesById, ids);
+                clonedChildIds.add(child.rootNodeId());
+                clonedNodes.addAll(child.nodes());
+            }
+            children.put(entry.getKey(), List.copyOf(clonedChildIds));
+        }
+        int clonedId = ids.next();
+        clonedNodes.add(new IrGpuTypedNode(
+                clonedId,
+                node.kind(),
+                new LinkedHashMap<>(node.attributes()),
+                children
+        ));
+        return new CloneResult(clonedId, clonedNodes);
     }
 
     private static void updateLocalBindings(
@@ -606,6 +888,14 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
     private record PureExpression(String fingerprint, String sourceText, Set<String> variableNames) {
     }
 
+    private record ExpressionOccurrence(
+            int rootIndex,
+            int nodeId,
+            IrGpuTypedNode node,
+            PureExpression expression
+    ) {
+    }
+
     private static Optional<PureExpression> pureExpressionChild(
             IrGpuTypedNode node,
             String childName,
@@ -692,12 +982,176 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
             int nodeId,
             String expressionText,
             String replacementText,
-            int bindingSearchStart
+            int bindingSearchStart,
+            String rewriteKind,
+            String replacementInputName
     ) {
+
+        private CseCandidate(
+                String methodName,
+                int nodeId,
+                String expressionText,
+                String replacementText,
+                int bindingSearchStart
+        ) {
+            this(
+                    methodName,
+                    nodeId,
+                    expressionText,
+                    replacementText,
+                    bindingSearchStart,
+                    "safe-local-cse-reuse-existing-local",
+                    "existingLocal"
+            );
+        }
 
         private String summary() {
             return methodName + "#" + nodeId + "=" + expressionText + "->" + replacementText;
         }
+    }
+
+    private record TemporaryCseCandidate(
+            String methodName,
+            String temporaryName,
+            String typeName,
+            PureExpression expression,
+            List<ExpressionOccurrence> occurrences
+    ) {
+
+        private TemporaryCseCandidate {
+            occurrences = occurrences == null ? List.of() : List.copyOf(occurrences);
+        }
+
+        private int occurrenceCount() {
+            return occurrences.size();
+        }
+
+        private int firstRootIndex() {
+            return occurrences.stream().mapToInt(ExpressionOccurrence::rootIndex).min().orElse(0);
+        }
+
+        private List<CseCandidate> toCseCandidates() {
+            ArrayList<CseCandidate> candidates = new ArrayList<>();
+            for (ExpressionOccurrence occurrence : occurrences) {
+                candidates.add(new CseCandidate(
+                        methodName,
+                        occurrence.nodeId(),
+                        expression.sourceText(),
+                        temporaryName,
+                        0,
+                        "safe-local-cse-introduce-local",
+                        "introducedLocal"
+                ));
+            }
+            return List.copyOf(candidates);
+        }
+    }
+
+    private record CloneResult(int rootNodeId, List<IrGpuTypedNode> nodes) {
+    }
+
+    private static final class IdAllocator {
+        private int nextId;
+
+        private IdAllocator(int nextId) {
+            this.nextId = Math.max(0, nextId);
+        }
+
+        private int next() {
+            return nextId++;
+        }
+    }
+
+    private static Set<String> collectLocalNames(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        for (IrGpuTypedNode node : typedBody.nodes()) {
+            if ("GpuIrVariableDeclaration".equals(node.kind())) {
+                String name = node.attributes().getOrDefault("name", "");
+                if (isSimpleLocalName(name)) {
+                    names.add(name);
+                }
+            }
+            Optional<String> targetName = simpleTargetName(node, nodesById);
+            targetName.ifPresent(names::add);
+        }
+        return Set.copyOf(names);
+    }
+
+    private static String nextTemporaryName(Set<String> localNames) {
+        Set<String> names = localNames == null ? Set.of() : localNames;
+        for (int index = 0; index < 10_000; index++) {
+            String candidate = "jtg_cse" + index;
+            if (!names.contains(candidate)) {
+                return candidate;
+            }
+        }
+        return "jtg_cse_overflow";
+    }
+
+    private static String inferTemporaryType(IrGpuTypedNode node, String expressionText) {
+        String resultType = firstAttribute(node, "resultType", "typeName", "valueType");
+        if (!resultType.isBlank()) {
+            return resultType;
+        }
+        String text = expressionText == null ? "" : expressionText;
+        if (text.matches(".*[0-9][.][0-9].*") || text.matches(".*[fFdD]\\b.*")) {
+            return "float";
+        }
+        return "int";
+    }
+
+    private static String firstAttribute(IrGpuTypedNode node, String... names) {
+        if (node == null || names == null) {
+            return "";
+        }
+        for (String name : names) {
+            String value = node.attributes().getOrDefault(name, "");
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private static List<Integer> allIndexesOf(String text, String pattern) {
+        if (text == null || pattern == null || pattern.isBlank()) {
+            return List.of();
+        }
+        ArrayList<Integer> indexes = new ArrayList<>();
+        int index = text.indexOf(pattern);
+        while (index >= 0) {
+            indexes.add(index);
+            index = text.indexOf(pattern, index + pattern.length());
+        }
+        return List.copyOf(indexes);
+    }
+
+    private static String replaceAll(String text, String pattern, String replacement) {
+        StringBuilder builder = new StringBuilder();
+        int cursor = 0;
+        for (Integer index : allIndexesOf(text, pattern)) {
+            builder.append(text, cursor, index).append(replacement);
+            cursor = index + pattern.length();
+        }
+        builder.append(text.substring(cursor));
+        return builder.toString();
+    }
+
+    private static int lineStart(String text, int index) {
+        int previousNewLine = text.lastIndexOf('\n', Math.max(0, index));
+        return previousNewLine < 0 ? 0 : previousNewLine + 1;
+    }
+
+    private static String lineIndentation(String text, int lineStart) {
+        StringBuilder indentation = new StringBuilder();
+        for (int index = lineStart; index < text.length(); index++) {
+            char ch = text.charAt(index);
+            if (ch != ' ' && ch != '\t') {
+                break;
+            }
+            indentation.append(ch);
+        }
+        return indentation.toString();
     }
 
     private static void appendRuntimeEquivalenceCases(
@@ -711,12 +1165,12 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
             fields.put(prefix + ".Name", candidate.summary());
             fields.put(prefix + ".MethodName", candidate.methodName());
             fields.put(prefix + ".NodeId", Integer.toString(candidate.nodeId()));
-            fields.put(prefix + ".RewriteKind", "safe-local-cse-reuse-existing-local");
+            fields.put(prefix + ".RewriteKind", candidate.rewriteKind());
             fields.put(prefix + ".Successful", "true");
             fields.put(prefix + ".Input.Count", "2");
             fields.put(prefix + ".Input.0.Name", "expression");
             fields.put(prefix + ".Input.0.Value", candidate.expressionText());
-            fields.put(prefix + ".Input.1.Name", "existingLocal");
+            fields.put(prefix + ".Input.1.Name", candidate.replacementInputName());
             fields.put(prefix + ".Input.1.Value", candidate.replacementText());
             fields.put(prefix + ".Output.Count", "1");
             fields.put(prefix + ".Output.0.Name", "reusedValue");
@@ -729,76 +1183,6 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
         }
     }
 
-    private record Reachability(Set<Integer> reachableNodeIds, int rootMissingCount, int missingChildReferenceCount) {
-    }
-
-    private static Reachability reachableNodeIds(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
-        LinkedHashSet<Integer> reachable = new LinkedHashSet<>();
-        ArrayDeque<Integer> pending = new ArrayDeque<>();
-        int rootMissingCount = 0;
-        int missingChildReferenceCount = 0;
-        for (Integer rootNodeId : typedBody.rootNodeIds()) {
-            if (rootNodeId == null || !nodesById.containsKey(rootNodeId)) {
-                rootMissingCount++;
-                continue;
-            }
-            pending.add(rootNodeId);
-        }
-        while (!pending.isEmpty()) {
-            int nodeId = pending.removeFirst();
-            if (!reachable.add(nodeId)) {
-                continue;
-            }
-            IrGpuTypedNode node = nodesById.get(nodeId);
-            if (node == null) {
-                continue;
-            }
-            for (List<Integer> childIds : node.children().values()) {
-                for (Integer childId : childIds) {
-                    if (childId == null || !nodesById.containsKey(childId)) {
-                        missingChildReferenceCount++;
-                        continue;
-                    }
-                    if (!reachable.contains(childId)) {
-                        pending.add(childId);
-                    }
-                }
-            }
-        }
-        return new Reachability(Set.copyOf(reachable), rootMissingCount, missingChildReferenceCount);
-    }
-
-    private record Replacement(String body, boolean replaced) {
-    }
-
-    private static Replacement replaceAfter(String body, String expressionText, String replacementText, int startIndex) {
-        int index = body.indexOf(expressionText, Math.max(0, startIndex));
-        if (index < 0) {
-            return new Replacement(body, false);
-        }
-        return new Replacement(
-                body.substring(0, index) + replacementText + body.substring(index + expressionText.length()),
-                true
-        );
-    }
-
-    private static IrGpuTypedBody rewriteTypedBody(IrGpuTypedBody typedBody, CseCandidate candidate) {
-        ArrayList<IrGpuTypedNode> nodes = new ArrayList<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            if (node.id() == candidate.nodeId()) {
-                nodes.add(new IrGpuTypedNode(
-                        node.id(),
-                        "GpuIrVariableRef",
-                        Map.of("name", candidate.replacementText()),
-                        Map.of()
-                ));
-                continue;
-            }
-            nodes.add(node);
-        }
-        return new IrGpuTypedBody(typedBody.format(), typedBody.rootNodeIds(), nodes);
-    }
-
     private static boolean hasControlFlowBoundary(IrGpuTypedBody typedBody) {
         for (IrGpuTypedNode node : typedBody.nodes()) {
             if (List.of("GpuIrIf", "GpuIrForLoop", "GpuIrWhileLoop", "GpuIrDoWhileLoop", "GpuIrSwitch")
@@ -807,14 +1191,6 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
             }
         }
         return false;
-    }
-
-    private static Map<Integer, IrGpuTypedNode> nodesById(IrGpuTypedBody typedBody) {
-        LinkedHashMap<Integer, IrGpuTypedNode> nodes = new LinkedHashMap<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            nodes.put(node.id(), node);
-        }
-        return Map.copyOf(nodes);
     }
 
     private static boolean isSimpleLocalName(String name) {
@@ -885,6 +1261,7 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
         private int methodBodyCount;
         private int typedBodyCount;
         private int localBindingCount;
+        private int introducedTemporaryCount;
         private int candidateCount;
         private int transformedNodeCount;
         private int changedMethodBodyCount;
@@ -906,9 +1283,20 @@ public final class GpuIrSafeLocalCseMaterializationProposalProvider implements G
         private String firstReplacement = "none";
         private String firstBlocker = "none";
 
+        private void recordPatchBlocker(String blocker) {
+            switch (GpuIrTypedBodyGraphPatch.blockerKind(blocker)) {
+                case BODY_TEXT_PATTERN_MISSING -> skippedBodyTextPatternMissingCount++;
+                case TYPED_BODY_MISSING -> skippedTypedBodyMissingCount++;
+                case TYPED_GRAPH_MISSING -> skippedMissingChildReferenceCount++;
+                case OTHER -> skippedImpureOperandCount++;
+            }
+            setFirstBlocker(blocker);
+        }
+
         private void add(RewriteStats other) {
             typedBodyCount += other.typedBodyCount;
             localBindingCount += other.localBindingCount;
+            introducedTemporaryCount += other.introducedTemporaryCount;
             candidateCount += other.candidateCount;
             transformedNodeCount += other.transformedNodeCount;
             changedMethodBodyCount += other.changedMethodBodyCount;

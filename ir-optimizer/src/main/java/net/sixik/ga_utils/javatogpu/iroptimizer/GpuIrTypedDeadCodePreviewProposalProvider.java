@@ -6,13 +6,10 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationProofArtifact;
 
-import java.util.ArrayDeque;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -91,8 +88,9 @@ public final class GpuIrTypedDeadCodePreviewProposalProvider implements GpuIrOpt
                 }
                 typedBodyCount++;
                 IrGpuTypedBody typedBody = methodBody.typedBody();
-                Map<Integer, IrGpuTypedNode> nodesById = nodesById(typedBody);
-                Reachability reachability = reachableNodeIds(typedBody, nodesById);
+                Map<Integer, IrGpuTypedNode> nodesById = GpuIrTypedBodyGraphPatch.nodesById(typedBody);
+                GpuIrTypedBodyGraphPatch.Reachability reachability = GpuIrTypedBodyGraphPatch
+                        .reachability(typedBody, nodesById);
                 nodeCount += typedBody.nodes().size();
                 reachableNodeCount += reachability.reachableNodeIds().size();
                 rootMissingCount += reachability.rootMissingCount();
@@ -188,45 +186,6 @@ public final class GpuIrTypedDeadCodePreviewProposalProvider implements GpuIrOpt
         }
     }
 
-    private record Reachability(Set<Integer> reachableNodeIds, int rootMissingCount, int missingChildReferenceCount) {
-    }
-
-    private static Reachability reachableNodeIds(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
-        HashSet<Integer> reachable = new HashSet<>();
-        ArrayDeque<Integer> pending = new ArrayDeque<>();
-        int rootMissingCount = 0;
-        int missingChildReferenceCount = 0;
-        for (Integer rootNodeId : typedBody.rootNodeIds()) {
-            if (rootNodeId == null || !nodesById.containsKey(rootNodeId)) {
-                rootMissingCount++;
-                continue;
-            }
-            pending.add(rootNodeId);
-        }
-        while (!pending.isEmpty()) {
-            int nodeId = pending.removeFirst();
-            if (!reachable.add(nodeId)) {
-                continue;
-            }
-            IrGpuTypedNode node = nodesById.get(nodeId);
-            if (node == null) {
-                continue;
-            }
-            for (List<Integer> childIds : node.children().values()) {
-                for (Integer childId : childIds) {
-                    if (childId == null || !nodesById.containsKey(childId)) {
-                        missingChildReferenceCount++;
-                        continue;
-                    }
-                    if (!reachable.contains(childId)) {
-                        pending.add(childId);
-                    }
-                }
-            }
-        }
-        return new Reachability(Set.copyOf(reachable), rootMissingCount, missingChildReferenceCount);
-    }
-
     private static boolean isSideEffecting(IrGpuTypedNode node) {
         return List.of(
                 "GpuIrAssignment",
@@ -239,11 +198,4 @@ public final class GpuIrTypedDeadCodePreviewProposalProvider implements GpuIrOpt
         ).contains(node.kind());
     }
 
-    private static Map<Integer, IrGpuTypedNode> nodesById(IrGpuTypedBody typedBody) {
-        LinkedHashMap<Integer, IrGpuTypedNode> nodes = new LinkedHashMap<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            nodes.put(node.id(), node);
-        }
-        return Map.copyOf(nodes);
-    }
 }

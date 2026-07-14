@@ -32,29 +32,50 @@ final class GpuIrTypedBodyGraphPatch {
     }
 
     static Set<Integer> reachableNodeIds(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
+        return reachability(typedBody, nodesById).reachableNodeIds();
+    }
+
+    static Reachability reachability(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
         LinkedHashSet<Integer> reachable = new LinkedHashSet<>();
-        if (typedBody == null || nodesById == null || nodesById.isEmpty()) {
-            return Set.of();
+        if (typedBody == null) {
+            return new Reachability(Set.of(), 0, 0);
         }
-        ArrayList<Integer> pending = new ArrayList<>(typedBody.rootNodeIds());
+        Map<Integer, IrGpuTypedNode> safeNodesById = nodesById == null ? Map.of() : nodesById;
+        ArrayList<Integer> pending = new ArrayList<>();
+        int rootMissingCount = 0;
+        int missingChildReferenceCount = 0;
+        for (Integer rootNodeId : typedBody.rootNodeIds()) {
+            if (rootNodeId == null || !safeNodesById.containsKey(rootNodeId)) {
+                rootMissingCount++;
+                continue;
+            }
+            pending.add(rootNodeId);
+        }
         while (!pending.isEmpty()) {
             int nodeId = pending.remove(pending.size() - 1);
             if (!reachable.add(nodeId)) {
                 continue;
             }
-            IrGpuTypedNode node = nodesById.get(nodeId);
+            IrGpuTypedNode node = safeNodesById.get(nodeId);
             if (node == null) {
                 continue;
             }
             for (List<Integer> childIds : node.children().values()) {
                 for (Integer childId : childIds) {
-                    if (childId != null && nodesById.containsKey(childId) && !reachable.contains(childId)) {
+                    if (childId == null || !safeNodesById.containsKey(childId)) {
+                        missingChildReferenceCount++;
+                        continue;
+                    }
+                    if (!reachable.contains(childId)) {
                         pending.add(childId);
                     }
                 }
             }
         }
-        return Set.copyOf(reachable);
+        return new Reachability(Set.copyOf(reachable), rootMissingCount, missingChildReferenceCount);
+    }
+
+    record Reachability(Set<Integer> reachableNodeIds, int rootMissingCount, int missingChildReferenceCount) {
     }
 
     static int nextNodeId(IrGpuTypedBody typedBody) {
@@ -109,7 +130,16 @@ final class GpuIrTypedBodyGraphPatch {
             String replacementText,
             IrGpuTypedNode replacementNode
     ) {
-        return new Plan(sourceText, replacementText, replacementNode, List.of());
+        return new Plan(sourceText, replacementText, replacementNode, List.of(), 0);
+    }
+
+    static Plan plan(
+            String sourceText,
+            String replacementText,
+            IrGpuTypedNode replacementNode,
+            int searchStartIndex
+    ) {
+        return new Plan(sourceText, replacementText, replacementNode, List.of(), searchStartIndex);
     }
 
     static Plan plan(
@@ -118,7 +148,17 @@ final class GpuIrTypedBodyGraphPatch {
             IrGpuTypedNode replacementNode,
             List<IrGpuTypedNode> appendedNodes
     ) {
-        return new Plan(sourceText, replacementText, replacementNode, appendedNodes);
+        return new Plan(sourceText, replacementText, replacementNode, appendedNodes, 0);
+    }
+
+    static Plan plan(
+            String sourceText,
+            String replacementText,
+            IrGpuTypedNode replacementNode,
+            List<IrGpuTypedNode> appendedNodes,
+            int searchStartIndex
+    ) {
+        return new Plan(sourceText, replacementText, replacementNode, appendedNodes, searchStartIndex);
     }
 
     static PatchBlockerKind blockerKind(String blocker) {
@@ -141,13 +181,15 @@ final class GpuIrTypedBodyGraphPatch {
             String sourceText,
             String replacementText,
             IrGpuTypedNode replacementNode,
-            List<IrGpuTypedNode> appendedNodes
+            List<IrGpuTypedNode> appendedNodes,
+            int searchStartIndex
     ) {
 
         Plan {
             sourceText = sourceText == null ? "" : sourceText;
             replacementText = replacementText == null ? "" : replacementText;
             appendedNodes = appendedNodes == null ? List.of() : List.copyOf(appendedNodes);
+            searchStartIndex = Math.max(0, searchStartIndex);
         }
 
         Applied apply(IrGpuTypedBody typedBody, String body) {
@@ -163,7 +205,7 @@ final class GpuIrTypedBodyGraphPatch {
             if (body == null || sourceText.isBlank()) {
                 return Applied.blocked(typedBody, body, BODY_TEXT_PATTERN_MISSING);
             }
-            int index = body.indexOf(sourceText);
+            int index = body.indexOf(sourceText, searchStartIndex);
             if (index < 0) {
                 return Applied.blocked(typedBody, body, BODY_TEXT_PATTERN_MISSING);
             }

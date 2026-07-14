@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.iroptimizer;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationOutcome;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPass;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
@@ -66,6 +67,7 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
         IrGpuArtifact reviewWorkingArtifact = selected;
         Optional<IrGpuArtifact> candidateArtifact = Optional.empty();
         ArrayList<GpuRuntimeIrOptimizationPassReport> passReports = new ArrayList<>();
+        boolean requestMutationAllowed = mutationAllowedFor(request);
         for (GpuIrOptimizationProposalProvider provider : providers) {
             ProviderPolicyGate policyGate = providerPolicyGate(request, provider);
             if (!policyGate.allowed()) {
@@ -80,8 +82,8 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
             GpuIrOptimizationProposalRequest proposalRequest = new GpuIrOptimizationProposalRequest(
                     reviewWorkingArtifact,
                     request.compileRequest().options().optimizationProfile(),
-                    mutationAllowed,
-                    contextFields(request, mutationAllowed)
+                    requestMutationAllowed,
+                    contextFields(request, requestMutationAllowed)
             );
             GpuIrOptimizationSandwichReport sandwichReport = sandwichRunner.run(proposalRequest, provider);
             passReports.add(toPassReport(provider, sandwichReport, proposalRequest).withStage(stage()));
@@ -90,7 +92,7 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
                 candidateArtifact = selectedCandidateArtifact;
                 reviewWorkingArtifact = selectedCandidateArtifact.orElseThrow();
             }
-            if (mutationAllowed) {
+            if (requestMutationAllowed) {
                 selected = sandwichReport.selectedArtifact();
                 reviewWorkingArtifact = selected;
             }
@@ -100,6 +102,14 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
             }
         }
         return new GpuRuntimeIrOptimizationReport(Optional.of(selected), candidateArtifact, passReports);
+    }
+
+    private boolean mutationAllowedFor(GpuRuntimeIrOptimizationRequest request) {
+        return mutationAllowed
+                || request.compileRequest()
+                .options()
+                .backendOptions()
+                .requestsRuntimeIrOptimizerExperimentalApply();
     }
 
     private static ProviderPolicyGate providerPolicyGate(
@@ -199,6 +209,7 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
                 .orElseGet(() -> proof(report.status().name().toLowerCase(java.util.Locale.ROOT), Map.of()));
         proofArtifact = withApprovalTemplateFields(proofArtifact, proposal, request, provider.getClass().getClassLoader());
         proofArtifact = withCandidateFields(proofArtifact, report);
+        proofArtifact = withRuntimeSelectionFields(proofArtifact, report, request);
 
         return switch (report.status()) {
             case OPTIMIZED_SELECTED -> new GpuRuntimeIrOptimizationPassReport(
@@ -239,6 +250,36 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
             case PROPOSAL_REJECTED -> skipped(provider, originalIdentity, originalIdentity, "proposal-rejected", proofArtifact, report.diagnostics());
             case NO_CHANGE -> skipped(provider, originalIdentity, originalIdentity, "not-mutating", proofArtifact, report.diagnostics());
         };
+    }
+
+    private static GpuRuntimeIrOptimizationProofArtifact withRuntimeSelectionFields(
+            GpuRuntimeIrOptimizationProofArtifact proofArtifact,
+            GpuIrOptimizationSandwichReport report,
+            GpuIrOptimizationProposalRequest request
+    ) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>(proofArtifact.fields());
+        boolean selectedOptimized = report.status() == GpuIrOptimizationSandwichStatus.OPTIMIZED_SELECTED;
+        fields.put("experimentalApply.selected", Boolean.toString(selectedOptimized));
+        if (selectedOptimized) {
+            fields.put("optimizedArtifactCandidate.selectionReady", "true");
+            fields.put("optimizedArtifactCandidate.selectionApplied", "true");
+            fields.put("optimizedArtifactCandidate.selectedIrReplacement", "true");
+            fields.put("optimizedArtifactCandidate.selectionFirstBlocker", "none");
+            fields.put("selectionApplied", "true");
+            fields.put("optimizedArtifactSelected", "true");
+            fields.put("selectedIrReplacement", "true");
+        } else {
+            fields.putIfAbsent("selectionApplied", "false");
+            fields.putIfAbsent("optimizedArtifactSelected", "false");
+            fields.putIfAbsent("selectedIrReplacement", "false");
+        }
+        fields.putIfAbsent("experimentalApply.requested", Boolean.toString(request.policy().mutationAllowed()));
+        fields.putIfAbsent("experimentalApply.enabled", Boolean.toString(request.policy().mutationAllowed()));
+        return GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                proofArtifact.source(),
+                proofArtifact.verdict(),
+                fields
+        );
     }
 
     private static GpuRuntimeIrOptimizationPassReport skipped(
@@ -349,6 +390,21 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
         fields.put("optimizerPolicy.vectorization", request.optimizerPolicy().vectorization());
         fields.put("optimizerPolicy.resourceShaping", Boolean.toString(request.optimizerPolicy().resourceShaping()));
         fields.put("optimizerPolicy.source", request.optimizerPolicy().source());
+        fields.put(
+                "runtimeIrOptimizerSelection",
+                request.compileRequest().options().backendOptions().properties().getOrDefault(
+                        GpuBackendCompileOptions.RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY,
+                        GpuBackendCompileOptions.RUNTIME_IR_OPTIMIZER_SELECTION_REVIEW_ONLY
+                )
+        );
+        fields.put(
+                "experimentalApply.requested",
+                Boolean.toString(request.compileRequest()
+                        .options()
+                        .backendOptions()
+                        .requestsRuntimeIrOptimizerExperimentalApply())
+        );
+        fields.put("experimentalApply.enabled", Boolean.toString(mutationAllowed));
         fields.put("mutationAllowed", Boolean.toString(mutationAllowed));
         return Map.copyOf(fields);
     }

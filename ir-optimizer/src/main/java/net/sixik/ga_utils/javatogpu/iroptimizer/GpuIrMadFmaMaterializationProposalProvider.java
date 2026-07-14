@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Review-only fast-math materialization for {@code a * b + c} into an OpenCL {@code mad(a, b, c)} intrinsic.
+ * Review-only fast-math materialization for multiply-add/subtract expressions into OpenCL {@code mad(...)} intrinsics.
  */
 public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOptimizationProposalProvider {
 
@@ -240,7 +240,7 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
         private String diagnostic() {
             if (changed()) {
                 return "mad/fma materialization rewrote " + transformedNodeCount
-                        + " multiply-add expression(s) to OpenCL mad intrinsic calls";
+                        + " multiply-add/subtract expression(s) to OpenCL mad intrinsic calls";
             }
             return "mad/fma materialization produced no review candidate: " + firstBlocker;
         }
@@ -302,7 +302,7 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
                     + ", first=" + firstReplacement);
             fields.put("runtimeEquivalencePayload.Tolerance", "mode=fast-math-mad-review, strictFloat=false");
             fields.put("runtimeEquivalencePayload.FailureFixture", "none");
-            fields.put("runtimeEquivalencePayload.ReferenceMode", "static-fast-math-multiply-add-to-mad");
+            fields.put("runtimeEquivalencePayload.ReferenceMode", "static-fast-math-multiply-add-or-subtract-to-mad");
             fields.put("runtimeEquivalencePayload.CaseIdentity", "method-name-and-node-id");
             appendRuntimeEquivalenceCases(fields, transformedCandidates);
             fields.put("reviewPackage.required", Boolean.toString(changed()));
@@ -411,10 +411,10 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
         Map<Integer, IrGpuTypedNode> nodesById = GpuIrTypedBodyGraphPatch.nodesById(typedBody);
         Set<Integer> reachableNodeIds = GpuIrTypedBodyGraphPatch.reachableNodeIds(typedBody, nodesById);
         for (IrGpuTypedNode node : typedBody.nodes()) {
-            if (!reachableNodeIds.contains(node.id()) || !isBinary(node, "+")) {
+            if (!reachableNodeIds.contains(node.id()) || !isMadRoot(node)) {
                 continue;
             }
-            Optional<MadCandidate> candidate = analyzeCandidate(methodName, node, nodesById);
+            Optional<MadCandidate> candidate = analyzeCandidate(methodName, node, typedBody, nodesById);
             if (candidate.isEmpty()) {
                 continue;
             }
@@ -437,11 +437,13 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
 
     private static Optional<MadCandidate> analyzeCandidate(
             String methodName,
-            IrGpuTypedNode addNode,
+            IrGpuTypedNode rootNode,
+            IrGpuTypedBody typedBody,
             Map<Integer, IrGpuTypedNode> nodesById
     ) {
-        Integer left = singleChild(addNode, "left");
-        Integer right = singleChild(addNode, "right");
+        String rootOperator = rootNode.attributes().getOrDefault("operator", "");
+        Integer left = singleChild(rootNode, "left");
+        Integer right = singleChild(rootNode, "right");
         if (left == null || right == null) {
             return Optional.empty();
         }
@@ -452,6 +454,9 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
         if (!leftMultiply && !rightMultiply) {
             return Optional.empty();
         }
+        if ("-".equals(rootOperator) && !leftMultiply) {
+            return Optional.empty();
+        }
         IrGpuTypedNode multiply = leftMultiply ? leftNode : rightNode;
         int addendId = leftMultiply ? right : left;
         Integer multiplyLeft = singleChild(multiply, "left");
@@ -459,25 +464,49 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
         if (multiplyLeft == null || multiplyRight == null) {
             return Optional.empty();
         }
-        Optional<String> expressionText = sourceText(addNode, nodesById);
+        Optional<String> expressionText = sourceText(rootNode, nodesById);
         Optional<String> multiplyLeftText = sourceText(nodesById.get(multiplyLeft), nodesById);
         Optional<String> multiplyRightText = sourceText(nodesById.get(multiplyRight), nodesById);
         Optional<String> addendText = sourceText(nodesById.get(addendId), nodesById);
         if (expressionText.isEmpty() || multiplyLeftText.isEmpty() || multiplyRightText.isEmpty() || addendText.isEmpty()) {
             return Optional.empty();
         }
+        List<Integer> argumentNodeIds;
+        List<IrGpuTypedNode> appendedNodes;
+        String thirdArgumentText;
+        String rewriteKind;
+        if ("-".equals(rootOperator)) {
+            int negatedAddendId = GpuIrTypedBodyGraphPatch.nextNodeId(typedBody);
+            IrGpuTypedNode negatedAddend = new IrGpuTypedNode(
+                    negatedAddendId,
+                    "GpuIrUnary",
+                    Map.of("operator", "-"),
+                    Map.of("operand", List.of(addendId))
+            );
+            argumentNodeIds = List.of(multiplyLeft, multiplyRight, negatedAddendId);
+            appendedNodes = List.of(negatedAddend);
+            thirdArgumentText = "(-" + addendText.orElseThrow() + ")";
+            rewriteKind = "multiply-subtract-to-opencl-mad";
+        } else {
+            argumentNodeIds = List.of(multiplyLeft, multiplyRight, addendId);
+            appendedNodes = List.of();
+            thirdArgumentText = addendText.orElseThrow();
+            rewriteKind = "mad-fma-to-opencl-mad";
+        }
         String replacementText = "intrinsic(" + TARGET_INTRINSIC + " template=\"\" args=["
                 + multiplyLeftText.orElseThrow() + ", "
                 + multiplyRightText.orElseThrow() + ", "
-                + addendText.orElseThrow() + "])";
+                + thirdArgumentText + "])";
         return Optional.of(new MadCandidate(
                 methodName,
-                addNode.id(),
+                rootNode.id(),
                 multiply.id(),
-                List.of(multiplyLeft, multiplyRight, addendId),
+                argumentNodeIds,
                 expressionText.orElseThrow(),
                 replacementText,
-                List.of(multiplyLeftText.orElseThrow(), multiplyRightText.orElseThrow(), addendText.orElseThrow())
+                List.of(multiplyLeftText.orElseThrow(), multiplyRightText.orElseThrow(), thirdArgumentText),
+                rewriteKind,
+                appendedNodes
         ));
     }
 
@@ -488,8 +517,17 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
             List<Integer> argumentNodeIds,
             String expressionText,
             String replacementText,
-            List<String> argumentTexts
+            List<String> argumentTexts,
+            String rewriteKind,
+            List<IrGpuTypedNode> appendedNodes
     ) {
+
+        MadCandidate {
+            argumentNodeIds = argumentNodeIds == null ? List.of() : List.copyOf(argumentNodeIds);
+            argumentTexts = argumentTexts == null ? List.of() : List.copyOf(argumentTexts);
+            rewriteKind = rewriteKind == null || rewriteKind.isBlank() ? "mad-fma-to-opencl-mad" : rewriteKind;
+            appendedNodes = appendedNodes == null ? List.of() : List.copyOf(appendedNodes);
+        }
 
         private String summary() {
             return methodName + "#" + rootNodeId + "=" + expressionText + "->" + replacementText;
@@ -507,7 +545,7 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
             fields.put(prefix + ".Name", candidate.summary());
             fields.put(prefix + ".MethodName", candidate.methodName());
             fields.put(prefix + ".NodeId", Integer.toString(candidate.rootNodeId()));
-            fields.put(prefix + ".RewriteKind", "mad-fma-to-opencl-mad");
+            fields.put(prefix + ".RewriteKind", candidate.rewriteKind());
             fields.put(prefix + ".Successful", "true");
             fields.put(prefix + ".Input.Count", "4");
             fields.put(prefix + ".Input.0.Name", "expression");
@@ -540,6 +578,14 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
         if ("GpuIrLiteral".equals(node.kind())) {
             String sourceText = node.attributes().getOrDefault("sourceText", "");
             return sourceText.isBlank() ? Optional.empty() : Optional.of(sourceText);
+        }
+        if ("GpuIrUnary".equals(node.kind())) {
+            String operator = node.attributes().getOrDefault("operator", "");
+            Optional<String> operand = childSourceText(node, "operand", nodesById);
+            if (operator.isBlank() || operand.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of("(" + operator + operand.orElseThrow() + ")");
         }
         if ("GpuIrBinary".equals(node.kind())) {
             String operator = node.attributes().getOrDefault("operator", "");
@@ -592,7 +638,8 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
                         "fast-math-review",
                         candidate.argumentNodeIds(),
                         "fast-math-review"
-                )
+                ),
+                candidate.appendedNodes()
         );
     }
 
@@ -613,6 +660,10 @@ public final class GpuIrMadFmaMaterializationProposalProvider implements GpuIrOp
         return node != null
                 && "GpuIrBinary".equals(node.kind())
                 && operator.equals(node.attributes().get("operator"));
+    }
+
+    private static boolean isMadRoot(IrGpuTypedNode node) {
+        return isBinary(node, "+") || isBinary(node, "-");
     }
 
     private static String firstAttribute(IrGpuTypedNode node, String... names) {

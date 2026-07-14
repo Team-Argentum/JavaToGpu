@@ -69,6 +69,7 @@ class GpuIrSafeLocalCseMaterializationProposalProviderTest {
         assertEquals("safe-local-cse-reuse-existing-local", fields.get("runtimeEquivalencePayload.Case.0.RewriteKind"));
         assertEquals("(a + b)", fields.get("runtimeEquivalencePayload.Case.0.Output.0.PreOptimization"));
         assertEquals("tmp", fields.get("runtimeEquivalencePayload.Case.0.Output.0.PostOptimization"));
+        assertEquals("0", fields.get("introducedTemporary.count"));
         assertEquals("true", fields.get("safety.dominanceProven"));
         assertEquals("true", fields.get("safety.sideEffectFreedomProven"));
         assertEquals("false", fields.get("safety.newTemporaryIntroduced"));
@@ -125,6 +126,84 @@ class GpuIrSafeLocalCseMaterializationProposalProviderTest {
         assertEquals("2", fields.get("fixedPoint.pass.count"));
         assertEquals("2", fields.get("runtimeEquivalencePayload.Case.Count"));
         assertEquals("safe-local-cse-reuse-existing-local", fields.get("runtimeEquivalencePayload.Case.1.RewriteKind"));
+    }
+
+    @Test
+    void introducesLocalTemporaryForRepeatedFloatExpressionWithoutExistingBinding() {
+        IrGpuArtifact original = floatArtifact(
+                "body\n"
+                        + "  var float coordX = ((value * 1.414F) + 12.0F)\n"
+                        + "  var float coordY = ((value * 1.414F) - 7.5F)\n"
+                        + "  var float coordZ = ((value * 1.414F) * staticMath)\n",
+                typedBody(
+                        List.of(0, 6, 12),
+                        declaration(0, "float", "coordX", 1),
+                        binary(1, "+", 2, 5),
+                        binary(2, "*", 3, 4),
+                        variable(3, "value"),
+                        literal(4, "1.414F"),
+                        literal(5, "12.0F"),
+                        declaration(6, "float", "coordY", 7),
+                        binary(7, "-", 8, 11),
+                        binary(8, "*", 9, 10),
+                        variable(9, "value"),
+                        literal(10, "1.414F"),
+                        literal(11, "7.5F"),
+                        declaration(12, "float", "coordZ", 13),
+                        binary(13, "*", 14, 17),
+                        binary(14, "*", 15, 16),
+                        variable(15, "value"),
+                        literal(16, "1.414F"),
+                        variable(17, "staticMath")
+                )
+        );
+
+        GpuIrOptimizationProposal proposal = new GpuIrSafeLocalCseMaterializationProposalProvider()
+                .propose(new GpuIrOptimizationProposalRequest(
+                        original,
+                        "diagnostic",
+                        false,
+                        Map.of("backendTarget", "OPENCL")
+                ));
+
+        assertEquals(GpuIrOptimizationProposalDecision.PROPOSED, proposal.decision());
+        IrGpuArtifact optimized = proposal.optimizedArtifact().orElseThrow();
+        assertEquals(
+                "body\n"
+                        + "  var float jtg_cse0 = (value * 1.414F)\n"
+                        + "  var float coordX = (jtg_cse0 + 12.0F)\n"
+                        + "  var float coordY = (jtg_cse0 - 7.5F)\n"
+                        + "  var float coordZ = (jtg_cse0 * staticMath)\n",
+                optimized.module().methodBodies().get(0).body()
+        );
+        IrGpuTypedBody optimizedTypedBody = optimized.module().methodBodies().get(0).typedBody();
+        assertEquals(List.of(18, 0, 6, 12), optimizedTypedBody.rootNodeIds());
+        IrGpuTypedNode temporaryDeclaration = optimizedTypedBody.nodes().stream()
+                .filter(node -> node.id() == 18)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("GpuIrVariableDeclaration", temporaryDeclaration.kind());
+        assertEquals("float", temporaryDeclaration.attributes().get("typeName"));
+        assertEquals("jtg_cse0", temporaryDeclaration.attributes().get("name"));
+        assertTrue(optimizedTypedBody.nodes().stream().filter(node -> List.of(2, 8, 14).contains(node.id())).allMatch(node ->
+                "GpuIrVariableRef".equals(node.kind()) && "jtg_cse0".equals(node.attributes().get("name"))
+        ));
+
+        Map<String, String> fields = proposal.proofArtifact().fields();
+        assertEquals("3", fields.get("localBinding.count"));
+        assertEquals("1", fields.get("introducedTemporary.count"));
+        assertEquals("3", fields.get("candidate.count"));
+        assertEquals("3", fields.get("transformedNode.count"));
+        assertEquals("3", fields.get("bodyTextReplacement.count"));
+        assertEquals("1", fields.get("fixedPoint.pass.count"));
+        assertEquals("true", fields.get("safety.newTemporaryIntroduced"));
+        assertEquals("static-local-expression-reuse-with-introduced-temporary", fields.get("runtimeEquivalencePayload.ReferenceMode"));
+        assertEquals("3", fields.get("runtimeEquivalencePayload.Case.Count"));
+        assertEquals("safe-local-cse-introduce-local", fields.get("runtimeEquivalencePayload.Case.0.RewriteKind"));
+        assertEquals("introducedLocal", fields.get("runtimeEquivalencePayload.Case.0.Input.1.Name"));
+        assertEquals("(value * 1.414F)", fields.get("firstExpression"));
+        assertEquals("jtg_cse0", fields.get("firstReplacement"));
+        assertTrue(optimized.regenerationMetadata().backendNeutralSourceReady());
     }
 
     @Test
@@ -204,10 +283,7 @@ class GpuIrSafeLocalCseMaterializationProposalProviderTest {
     private static IrGpuTypedBody repeatedExpressionTypedBody() {
         return typedBody(
                 List.of(0, 4),
-                new IrGpuTypedNode(0, "GpuIrVariableDeclaration", Map.of(
-                        "typeName", "int",
-                        "name", "tmp"
-                ), Map.of("initializer", List.of(1))),
+                declaration(0, "int", "tmp", 1),
                 binary(1, "+", 2, 3),
                 variable(2, "a"),
                 variable(3, "b"),
@@ -217,6 +293,13 @@ class GpuIrSafeLocalCseMaterializationProposalProviderTest {
                 variable(7, "a"),
                 variable(8, "b")
         );
+    }
+
+    private static IrGpuTypedNode declaration(int id, String typeName, String name, int initializerId) {
+        return new IrGpuTypedNode(id, "GpuIrVariableDeclaration", Map.of(
+                "typeName", typeName,
+                "name", name
+        ), Map.of("initializer", List.of(initializerId)));
     }
 
     private static IrGpuTypedNode assignment(int id, int targetId, int valueId) {
@@ -237,11 +320,30 @@ class GpuIrSafeLocalCseMaterializationProposalProviderTest {
         return new IrGpuTypedNode(id, "GpuIrVariableRef", Map.of("name", name), Map.of());
     }
 
+    private static IrGpuTypedNode literal(int id, String sourceText) {
+        return new IrGpuTypedNode(id, "GpuIrLiteral", Map.of("sourceText", sourceText), Map.of());
+    }
+
     private static IrGpuTypedBody typedBody(List<Integer> rootNodeIds, IrGpuTypedNode... nodes) {
         return new IrGpuTypedBody(IrGpuTypedBody.FORMAT, rootNodeIds, List.of(nodes));
     }
 
     private static IrGpuArtifact artifact(String body, IrGpuTypedBody typedBody) {
+        return artifact(body, typedBody, List.of(
+                new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of()),
+                new IrGpuEntryParameter("a", "int", "PRIVATE", false, List.of()),
+                new IrGpuEntryParameter("b", "int", "PRIVATE", false, List.of())
+        ));
+    }
+
+    private static IrGpuArtifact floatArtifact(String body, IrGpuTypedBody typedBody) {
+        return artifact(body, typedBody, List.of(
+                new IrGpuEntryParameter("value", "float", "PRIVATE", false, List.of()),
+                new IrGpuEntryParameter("staticMath", "float", "PRIVATE", false, List.of())
+        ));
+    }
+
+    private static IrGpuArtifact artifact(String body, IrGpuTypedBody typedBody, List<IrGpuEntryParameter> parameters) {
         IrGpuMethodBody methodBody = new IrGpuMethodBody(
                 "entry",
                 "kernel",
@@ -254,13 +356,9 @@ class GpuIrSafeLocalCseMaterializationProposalProviderTest {
                 IrGpuSourceLocation.unknown("kernel")
         );
         return new IrGpuArtifact(
-                IrGpuArtifactHeader.javaSourceV1(),
-                new IrGpuModule("kernel", "kernel", List.of(), List.of(), List.of(methodBody)),
-                List.of(
-                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of()),
-                        new IrGpuEntryParameter("a", "int", "PRIVATE", false, List.of()),
-                        new IrGpuEntryParameter("b", "int", "PRIVATE", false, List.of())
-                ),
+            IrGpuArtifactHeader.javaSourceV1(),
+            new IrGpuModule("kernel", "kernel", List.of(), List.of(), List.of(methodBody)),
+                parameters,
                 List.of(IrGpuBackendOutput.openClSource("javatogpu/test/Kernel/kernel.cl")),
                 "opencl",
                 "off"

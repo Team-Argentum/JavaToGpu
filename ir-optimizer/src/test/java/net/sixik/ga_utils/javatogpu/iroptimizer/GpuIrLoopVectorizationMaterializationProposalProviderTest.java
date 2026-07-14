@@ -72,6 +72,13 @@ class GpuIrLoopVectorizationMaterializationProposalProviderTest {
         assertEquals("1", fields.get("bodyTextReplacement.count"));
         assertEquals("1", fields.get("typedBody.materialized.count"));
         assertEquals("0", fields.get("typedBody.invalidated.count"));
+        assertEquals("1", fields.get("typedBody.rebuild.attempted.count"));
+        assertEquals("1", fields.get("typedBody.rebuild.parsed.count"));
+        assertEquals("1", fields.get("typedBody.rebuild.built.count"));
+        assertEquals("1", fields.get("typedBody.rebuild.graphValidated.count"));
+        assertEquals("0", fields.get("typedBody.rebuild.rejected.count"));
+        assertEquals("validated", fields.get("typedBody.rebuild.status"));
+        assertEquals("none", fields.get("typedBody.rebuild.firstBlocker"));
         assertEquals("true", fields.get("rewrite.materialized"));
         assertEquals("false", fields.get("provider.mutatesOriginal"));
         assertEquals("true", fields.get("runtimeEquivalencePayload.present"));
@@ -174,6 +181,41 @@ class GpuIrLoopVectorizationMaterializationProposalProviderTest {
         assertEquals("(((id * 4) + 8) + i)", proposal.proofArtifact().fields()
                 .get("runtimeEquivalencePayload.Case.0.Input.3.Value"));
         assertTrue(proposal.proofArtifact().fields().get("firstReplacement").contains("(&input[((id * 4) + 8)])"));
+    }
+
+    @Test
+    void invalidatesTypedBodyWhenReviewSourceRewriteCannotBeRebuiltAsTypedIr() {
+        IrGpuArtifact original = artifact("""
+                body
+                  var int id = intrinsic(get_global_id template="" args=[0])
+                  var float sum = 0.0F
+                  for init=(var int i = 0) cond=(i < 4) update=(set i = (i + 1))
+                    set sum = (sum + input[((id * 4) + i)])
+                  set output[id] = (flag ? sum : 0.0F)
+                """);
+
+        GpuIrOptimizationProposal proposal = new GpuIrLoopVectorizationMaterializationProposalProvider()
+                .propose(openClRequest(original));
+
+        assertEquals(GpuIrOptimizationProposalDecision.PROPOSED, proposal.decision());
+        IrGpuArtifact optimized = proposal.optimizedArtifact().orElseThrow();
+        assertTrue(optimized.module().methodBodies().get(0).body()
+                .contains("intrinsic(vload4 template=\"\" args=[0, (&input[(id * 4)])])"));
+        assertFalse(optimized.module().methodBodies().get(0).typedBody().available());
+
+        Map<String, String> fields = proposal.proofArtifact().fields();
+        assertEquals("1", fields.get("transformedLoop.count"));
+        assertEquals("0", fields.get("typedBody.materialized.count"));
+        assertEquals("1", fields.get("typedBody.invalidated.count"));
+        assertEquals("1", fields.get("typedBody.rebuild.attempted.count"));
+        assertEquals("1", fields.get("typedBody.rebuild.parsed.count"));
+        assertEquals("0", fields.get("typedBody.rebuild.built.count"));
+        assertEquals("0", fields.get("typedBody.rebuild.graphValidated.count"));
+        assertEquals("1", fields.get("typedBody.rebuild.rejected.count"));
+        assertEquals("invalidated", fields.get("typedBody.rebuild.status"));
+        assertEquals("typed-body-rebuild-statement-conversion-blocked", fields.get("typedBody.rebuild.firstBlocker"));
+        assertEquals("false", fields.get("safety.typedBodyMaterializedForReview"));
+        assertEquals("true", fields.get("safety.typedBodyInvalidatedForReview"));
     }
 
     @Test

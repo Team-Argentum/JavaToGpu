@@ -19,10 +19,13 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
     }
 
     public static void main(String[] args) throws IOException {
-        if (args.length != 1 || args[0] == null || args[0].isBlank()) {
-            throw new IllegalArgumentException("Expected runtime IR optimizer evidence file or artifact directory");
+        CliArguments cliArguments = parseArguments(args);
+        if (cliArguments.artifactPath().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Expected runtime IR optimizer evidence file or artifact directory"
+            );
         }
-        Path artifactPath = Path.of(args[0]);
+        Path artifactPath = cliArguments.artifactPath().orElseThrow();
         List<Path> artifacts = evidenceArtifacts(artifactPath);
         if (artifacts.isEmpty()) {
             throw new IllegalStateException("Missing runtime IR optimizer evidence artifact under " + artifactPath);
@@ -38,7 +41,7 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
                 throw new IllegalStateException("Runtime IR optimizer evidence must be recorded for "
                         + artifact + ": status=" + status);
             }
-            validateGuardrails(artifact, properties);
+            validateGuardrails(artifact, properties, cliArguments.allowExperimentalApply());
             String reviewPackageStatus = properties.getProperty("reviewPackage.status", "not-recorded");
             if ("not-required".equals(reviewPackageStatus)) {
                 notRequired++;
@@ -50,7 +53,30 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
 
         System.out.println("Runtime IR optimizer evidence OK: recorded=" + recorded
                 + ", reviewPackage.notRequired=" + notRequired
-                + ", reviewPackage.pendingManualReview=" + pendingManualReview);
+                + ", reviewPackage.pendingManualReview=" + pendingManualReview
+                + ", experimentalApply.allowed=" + cliArguments.allowExperimentalApply());
+    }
+
+    private static CliArguments parseArguments(String[] args) {
+        if (args == null || args.length == 0 || args.length > 2) {
+            return new CliArguments(java.util.Optional.empty(), false);
+        }
+        Path artifactPath = null;
+        boolean allowExperimentalApply = false;
+        for (String arg : args) {
+            if (arg == null || arg.isBlank()) {
+                continue;
+            }
+            if ("--allow-experimental-apply".equals(arg)) {
+                allowExperimentalApply = true;
+                continue;
+            }
+            if (artifactPath != null) {
+                return new CliArguments(java.util.Optional.empty(), allowExperimentalApply);
+            }
+            artifactPath = Path.of(arg);
+        }
+        return new CliArguments(java.util.Optional.ofNullable(artifactPath), allowExperimentalApply);
     }
 
     private static List<Path> evidenceArtifacts(Path path) throws IOException {
@@ -77,7 +103,11 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         return properties;
     }
 
-    private static void validateGuardrails(Path artifact, Properties properties) {
+    private static void validateGuardrails(
+            Path artifact,
+            Properties properties,
+            boolean allowExperimentalApply
+    ) {
         requireValue(artifact, properties, "runtimeEquivalenceReview.productionMutation", "disabled");
         requireValue(artifact, properties, "runtimeEquivalenceReview.selectedIrReplacement", "disabled");
         requireValue(artifact, properties, "runtimeEquivalenceReview.manualReviewOnly", "true");
@@ -87,7 +117,7 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         requireValue(artifact, properties, "reviewPackage.originalIrRequired", "true");
         requireValue(artifact, properties, "reviewPackage.optimizedIrRequired", "true");
         requireValue(artifact, properties, "reviewPackage.proofSummaryRequired", "true");
-        validateOptimizedArtifactCandidateGuardrails(artifact, properties);
+        validateOptimizedArtifactCandidateGuardrails(artifact, properties, allowExperimentalApply);
         validateSafeLocalCseMaterializationEvidence(artifact, properties);
         validateMadFmaMaterializationEvidence(artifact, properties);
         validateIntrinsicMaterializationEvidence(
@@ -158,6 +188,11 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
 
         int passCount = parseNonNegativeInt(artifact, properties, "safeLocalCseMaterialization.pass.count");
         int localBindingCount = parseNonNegativeInt(artifact, properties, "safeLocalCseMaterialization.localBinding.count");
+        int introducedTemporaryCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "safeLocalCseMaterialization.introducedTemporary.count"
+        );
         parseNonNegativeInt(artifact, properties, "safeLocalCseMaterialization.candidate.count");
         int transformedNodeCount = parseNonNegativeInt(
                 artifact,
@@ -237,8 +272,9 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
             throw new IllegalStateException("safe-local-CSE runtime-equivalence passed count exceeds present count for "
                     + artifact + ": passed=" + payloadPassedCount + ", present=" + payloadPresentCount);
         }
-        if (transformedNodeCount > 0 && (localBindingCount <= 0 || bodyTextReplacementCount <= 0)) {
-            throw new IllegalStateException("safe-local-CSE materialized nodes must have existing local bindings and text replacements for "
+        if (transformedNodeCount > 0
+                && (localBindingCount + introducedTemporaryCount <= 0 || bodyTextReplacementCount <= 0)) {
+            throw new IllegalStateException("safe-local-CSE materialized nodes must have existing or introduced local bindings and text replacements for "
                     + artifact);
         }
         if (transformedNodeCount > 0 && (!payloadRequired || !approvalRequired)) {
@@ -293,7 +329,11 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         }
     }
 
-    private static void validateOptimizedArtifactCandidateGuardrails(Path artifact, Properties properties) {
+    private static void validateOptimizedArtifactCandidateGuardrails(
+            Path artifact,
+            Properties properties,
+            boolean allowExperimentalApply
+    ) {
         String status = requirePresent(artifact, properties, "optimizedArtifactCandidate.status");
         int count = parseNonNegativeInt(artifact, properties, "optimizedArtifactCandidate.count");
         int readyCount = parseNonNegativeInt(artifact, properties, "optimizedArtifactCandidate.ready.count");
@@ -314,14 +354,24 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
                 "optimizedArtifactCandidate.selectedIrReplacement.count"
         );
         parseNonNegativeInt(artifact, properties, "optimizedArtifactCandidate.mutationAllowed.count");
+        int experimentalApplySelectedCount = parseOptionalNonNegativeInt(
+                artifact,
+                properties,
+                "experimentalApply.selected.count",
+                0
+        );
+        boolean experimentalApplyRequested = parseBoolean(properties.getProperty("experimentalApply.requested"));
+        boolean experimentalApplyEnabled = parseBoolean(properties.getProperty("experimentalApply.enabled"));
         String firstBlocker = requirePresent(artifact, properties, "optimizedArtifactCandidate.firstBlocker");
         String selectionFirstBlocker = requirePresent(
                 artifact,
                 properties,
                 "optimizedArtifactCandidate.selectionFirstBlocker"
         );
-        requireValue(artifact, properties, "optimizedArtifactCandidate.selectionApplied", "false");
-        requireValue(artifact, properties, "optimizedArtifactCandidate.selectedIrReplacement", "false");
+        if (!allowExperimentalApply) {
+            requireValue(artifact, properties, "optimizedArtifactCandidate.selectionApplied", "false");
+            requireValue(artifact, properties, "optimizedArtifactCandidate.selectedIrReplacement", "false");
+        }
 
         if (!List.of("not-recorded", "candidate-ready", "blocked", "mixed").contains(status)) {
             throw new IllegalStateException("Unsupported optimized artifact candidate status for " + artifact
@@ -344,15 +394,34 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
             throw new IllegalStateException("Recorded optimized artifact candidates cannot use not-recorded status for "
                     + artifact);
         }
-        if (count > 0 && ("none".equals(selectionFirstBlocker) || "no-candidates".equals(selectionFirstBlocker))) {
+        if (count > 0
+                && !allowExperimentalApply
+                && ("none".equals(selectionFirstBlocker) || "no-candidates".equals(selectionFirstBlocker))) {
             throw new IllegalStateException("Optimized artifact candidates must keep selection blocked for "
                     + artifact + ": selectionFirstBlocker=" + selectionFirstBlocker);
         }
-        if (selectionReadyCount > 0 || selectionAppliedCount > 0 || selectedIrReplacementCount > 0) {
+        if (!allowExperimentalApply
+                && (selectionReadyCount > 0 || selectionAppliedCount > 0 || selectedIrReplacementCount > 0)) {
             throw new IllegalStateException("Optimized artifact candidates must not become runtime selection for "
                     + artifact + ": selectionReady=" + selectionReadyCount
                     + ", selectionApplied=" + selectionAppliedCount
                     + ", selectedIrReplacement=" + selectedIrReplacementCount);
+        }
+        if (allowExperimentalApply
+                && (selectionReadyCount > 0 || selectionAppliedCount > 0 || selectedIrReplacementCount > 0)) {
+            if (!experimentalApplyRequested || !experimentalApplyEnabled || experimentalApplySelectedCount <= 0) {
+                throw new IllegalStateException("Experimental optimized artifact selection requires explicit apply evidence for "
+                        + artifact);
+            }
+            if (selectionAppliedCount != selectedIrReplacementCount) {
+                throw new IllegalStateException("Experimental optimized artifact selection must keep selection/replacement counts aligned for "
+                        + artifact + ": selectionApplied=" + selectionAppliedCount
+                        + ", selectedIrReplacement=" + selectedIrReplacementCount);
+            }
+            if (!"none".equals(selectionFirstBlocker)) {
+                throw new IllegalStateException("Experimental optimized artifact selection must clear selection blocker for "
+                        + artifact + ": selectionFirstBlocker=" + selectionFirstBlocker);
+            }
         }
     }
 
@@ -754,8 +823,51 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
                 "loopVectorizationMaterialization.bodyTextReplacement.count"
         );
         parseNonNegativeInt(artifact, properties, "loopVectorizationMaterialization.changedMethodBody.count");
-        parseNonNegativeInt(artifact, properties, "loopVectorizationMaterialization.typedBody.materialized.count");
-        parseNonNegativeInt(artifact, properties, "loopVectorizationMaterialization.typedBody.invalidated.count");
+        int typedBodyMaterializedCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.materialized.count"
+        );
+        int typedBodyInvalidatedCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.invalidated.count"
+        );
+        int typedBodyRebuildAttemptedCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.rebuild.attempted.count"
+        );
+        int typedBodyRebuildParsedCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.rebuild.parsed.count"
+        );
+        int typedBodyRebuildBuiltCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.rebuild.built.count"
+        );
+        int typedBodyRebuildGraphValidatedCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count"
+        );
+        int typedBodyRebuildRejectedCount = parseNonNegativeInt(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.rebuild.rejected.count"
+        );
+        String typedBodyRebuildStatus = requirePresent(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.rebuild.status"
+        );
+        String typedBodyRebuildFirstBlocker = requirePresent(
+                artifact,
+                properties,
+                "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker"
+        );
         int skippedLoopShapeCount = parseNonNegativeInt(
                 artifact,
                 properties,
@@ -826,6 +938,48 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
             throw new IllegalStateException("loop-vectorization transformed loops must have matching body text replacements for "
                     + artifact);
         }
+        if (typedBodyRebuildParsedCount > typedBodyRebuildAttemptedCount
+                || typedBodyRebuildBuiltCount > typedBodyRebuildParsedCount
+                || typedBodyRebuildGraphValidatedCount > typedBodyRebuildBuiltCount
+                || typedBodyRebuildRejectedCount > typedBodyRebuildAttemptedCount) {
+            throw new IllegalStateException("loop-vectorization typed-body rebuild counters are inconsistent for " + artifact);
+        }
+        if (transformedLoopCount > 0 && typedBodyRebuildAttemptedCount <= 0) {
+            throw new IllegalStateException("loop-vectorization transformed loops must attempt typed-body rebuild for "
+                    + artifact);
+        }
+        switch (typedBodyRebuildStatus) {
+            case "not-attempted" -> {
+                if (typedBodyRebuildAttemptedCount > 0 || !"not-attempted".equals(typedBodyRebuildFirstBlocker)) {
+                    throw new IllegalStateException("loop-vectorization typed-body rebuild not-attempted evidence is inconsistent for "
+                            + artifact);
+                }
+            }
+            case "validated" -> {
+                if (typedBodyRebuildAttemptedCount <= 0 || typedBodyRebuildRejectedCount > 0
+                        || typedBodyMaterializedCount <= 0 || !"none".equals(typedBodyRebuildFirstBlocker)) {
+                    throw new IllegalStateException("loop-vectorization typed-body rebuild validated evidence is inconsistent for "
+                            + artifact);
+                }
+            }
+            case "partially-validated", "invalidated" -> {
+                if (typedBodyRebuildRejectedCount <= 0 || typedBodyInvalidatedCount <= 0
+                        || "none".equals(typedBodyRebuildFirstBlocker)
+                        || "not-attempted".equals(typedBodyRebuildFirstBlocker)) {
+                    throw new IllegalStateException("loop-vectorization typed-body rebuild rejection evidence is inconsistent for "
+                            + artifact);
+                }
+            }
+            default -> throw new IllegalStateException("Unsupported loop-vectorization typed-body rebuild status for "
+                    + artifact + ": " + typedBodyRebuildStatus);
+        }
+        boolean typedBodyRebuildClean = "validated".equals(typedBodyRebuildStatus);
+        if (transformedLoopCount > 0
+                && (typedBodyRebuildRejectedCount > 0 || typedBodyInvalidatedCount > 0)
+                && !"blocked".equals(status)) {
+            throw new IllegalStateException("loop-vectorization rejected typed-body rebuild evidence must block review readiness for "
+                    + artifact);
+        }
         if (transformedLoopCount > 0 && (!payloadRequired || !approvalRequired)) {
             throw new IllegalStateException("loop-vectorization transformed loops must require runtime-equivalence and approval for "
                     + artifact);
@@ -848,7 +1002,7 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
                 }
             }
             case "pending-runtime-equivalence" -> {
-                if (transformedLoopCount <= 0 || payloadPresentCount > 0 || !proofClean
+                if (transformedLoopCount <= 0 || payloadPresentCount > 0 || !proofClean || !typedBodyRebuildClean
                         || !"runtime-equivalence-payload-not-recorded".equals(firstBlocker)) {
                     throw new IllegalStateException("loop-vectorization pending runtime-equivalence evidence is inconsistent for "
                             + artifact);
@@ -856,7 +1010,7 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
             }
             case "runtime-equivalence-not-passed" -> {
                 if (transformedLoopCount <= 0 || payloadPresentCount <= 0
-                        || payloadPassedCount >= payloadPresentCount || !proofClean
+                        || payloadPassedCount >= payloadPresentCount || !proofClean || !typedBodyRebuildClean
                         || !"runtime-equivalence-not-passed".equals(firstBlocker)) {
                     throw new IllegalStateException("loop-vectorization failed runtime-equivalence evidence is inconsistent for "
                             + artifact);
@@ -864,7 +1018,7 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
             }
             case "review-ready" -> {
                 if (transformedLoopCount <= 0 || payloadPresentCount <= 0
-                        || payloadPassedCount < payloadPresentCount || !proofClean
+                        || payloadPassedCount < payloadPresentCount || !proofClean || !typedBodyRebuildClean
                         || !"none".equals(firstBlocker)) {
                     throw new IllegalStateException("loop-vectorization review-ready evidence must include proofs and passed payloads for "
                             + artifact);
@@ -1025,6 +1179,9 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         MIX
     }
 
+    private record CliArguments(java.util.Optional<Path> artifactPath, boolean allowExperimentalApply) {
+    }
+
     private static String requirePresent(Path artifact, Properties properties, String key) {
         String value = properties.getProperty(key);
         if (value == null || value.isBlank()) {
@@ -1047,6 +1204,23 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
 
     private static int parseNonNegativeInt(Path artifact, Properties properties, String key) {
         String value = requirePresent(artifact, properties, key);
+        return parseNonNegativeInt(artifact, key, value);
+    }
+
+    private static int parseOptionalNonNegativeInt(
+            Path artifact,
+            Properties properties,
+            String key,
+            int fallback
+    ) {
+        String value = properties.getProperty(key);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return parseNonNegativeInt(artifact, key, value);
+    }
+
+    private static int parseNonNegativeInt(Path artifact, String key, String value) {
         try {
             int parsed = Integer.parseInt(value);
             if (parsed < 0) {

@@ -42,6 +42,7 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -394,6 +396,35 @@ class GpuIrProposalRuntimeBridgePassTest {
     }
 
     @Test
+    void bridgeSelectsMaterializedCandidateWhenExperimentalApplyCompileOptionIsSet() {
+        IrGpuArtifact original = constantFoldingArtifact();
+        GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass(
+                List.of(new GpuIrConstantFoldingMaterializationProposalProvider()),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        );
+
+        GpuRuntimeIrOptimizationReport report = bridge.run(new GpuRuntimeIrOptimizationRequest(
+                request(original, GpuRuntimeCompileOptions.openClIrOptimizerExperimentalApply(List.of(), "diagnostic")),
+                Optional.of(original)
+        ));
+
+        IrGpuArtifact selected = report.artifact().orElseThrow();
+        assertNotSame(original, selected);
+        assertEquals("body\n  set output[0] = 5\n", selected.module().methodBodies().get(0).body());
+        assertEquals(selected, report.candidateArtifact().orElseThrow());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.APPLIED, report.passReports().get(0).outcome());
+        assertEquals("optimized-selected", report.passReports().get(0).proofStatus());
+        Map<String, String> fields = report.passReports().get(0).proofArtifact().fields();
+        assertEquals("true", fields.get("experimentalApply.requested"));
+        assertEquals("true", fields.get("experimentalApply.enabled"));
+        assertEquals("true", fields.get("experimentalApply.selected"));
+        assertEquals("true", fields.get("optimizedArtifactCandidate.selectionApplied"));
+        assertEquals("true", fields.get("optimizedArtifactCandidate.selectedIrReplacement"));
+        assertEquals("none", fields.get("optimizedArtifactCandidate.selectionFirstBlocker"));
+    }
+
+    @Test
     void bridgeChainsReviewOnlyMaterializationsWithoutSelectingOptimizedIr() {
         IrGpuArtifact original = chainedMaterializationArtifact();
         GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass(
@@ -588,6 +619,128 @@ class GpuIrProposalRuntimeBridgePassTest {
     }
 
     @Test
+    void bridgeDumpsLoopVectorizationValidatedTypedBodyRebuildAsReviewReadyEvidence() throws Exception {
+        IrGpuArtifact original = loopVectorizationValidatedArtifact();
+        GpuRuntimeCompileRequest compileRequest = request(original);
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuIrProposalRuntimeBridgePass(
+                List.of(new GpuIrLoopVectorizationMaterializationProposalProvider()),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        ).run(new GpuRuntimeIrOptimizationRequest(compileRequest, Optional.of(original)));
+
+        assertSame(original, optimizationReport.artifact().orElseThrow());
+        IrGpuArtifact optimized = optimizationReport.candidateArtifact().orElseThrow();
+        assertTrue(optimized.module().methodBodies().get(0).body()
+                .contains("intrinsic(vload4 template=\"\" args=[0, (&input[(id * 4)])])"));
+        assertTrue(optimized.module().methodBodies().get(0).typedBody().available());
+        assertTrue(optimized.module().methodBodies().get(0).typedBody().nodes().stream().anyMatch(node ->
+                "GpuIrIntrinsicCall".equals(node.kind()) && "vload4".equals(node.attributes().get("backendName"))
+        ));
+        Map<String, String> fields = optimizationReport.passReports().get(0).proofArtifact().fields();
+        assertEquals("validated", fields.get("typedBody.rebuild.status"));
+        assertEquals("none", fields.get("typedBody.rebuild.firstBlocker"));
+
+        GpuRuntimeCompileArtifactDump dump = runtimeOptimizerDump(original, optimizationReport);
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+
+        assertTrue(dump.artifact("backend.opencl-c").contains("out[0] = 1"));
+        assertFalse(dump.artifact("backend.opencl-c").contains("vload4"));
+        assertTrue(dump.artifact("optimized.backend.opencl-c").contains("vload4"));
+        String optimizedIrGpu = dump.artifact("optimized.irgpu.properties");
+        assertTrue(optimizedIrGpu.contains("GpuIrIntrinsicCall"));
+        assertTrue(serializedNamedValuePresent(optimizedIrGpu, ".typed.node.", "backendName", "vload4"));
+        assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("selectedStage=original"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=original"));
+
+        assertTrue(evidence.contains("loopVectorizationMaterialization.transformedLoop.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.bodyTextReplacement.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.materialized.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.invalidated.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.attempted.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.parsed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.built.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.rejected.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.status=validated"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.firstBlocker=none"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.firstBlocker=none"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=review-ready"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=none"));
+        assertTrue(evidence.contains("loop-vectorization-materialization=review-ready"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement=false"));
+
+        Path evidenceFile = temporaryDirectory.resolve(
+                GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT
+        );
+        Files.writeString(evidenceFile, evidence, StandardCharsets.UTF_8);
+        assertDoesNotThrow(() -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(
+                new String[]{evidenceFile.toString()}
+        ));
+    }
+
+    @Test
+    void bridgeDumpsLoopVectorizationInvalidatedTypedBodyRebuildAsBlockedEvidence() throws Exception {
+        IrGpuArtifact original = loopVectorizationInvalidatedArtifact();
+        GpuRuntimeCompileRequest compileRequest = request(original);
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuIrProposalRuntimeBridgePass(
+                List.of(new GpuIrLoopVectorizationMaterializationProposalProvider()),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        ).run(new GpuRuntimeIrOptimizationRequest(compileRequest, Optional.of(original)));
+
+        assertSame(original, optimizationReport.artifact().orElseThrow());
+        IrGpuArtifact optimized = optimizationReport.candidateArtifact().orElseThrow();
+        assertTrue(optimized.module().methodBodies().get(0).body()
+                .contains("intrinsic(vload4 template=\"\" args=[0, (&input[(id * 4)])])"));
+        assertFalse(optimized.module().methodBodies().get(0).typedBody().available());
+        Map<String, String> fields = optimizationReport.passReports().get(0).proofArtifact().fields();
+        assertEquals("invalidated", fields.get("typedBody.rebuild.status"));
+        assertEquals("typed-body-rebuild-statement-conversion-blocked", fields.get("typedBody.rebuild.firstBlocker"));
+
+        String evidence = runtimeOptimizerEvidence(original, optimizationReport);
+
+        assertTrue(evidence.contains("loopVectorizationMaterialization.transformedLoop.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.bodyTextReplacement.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.materialized.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.invalidated.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.attempted.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.parsed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.built.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.rejected.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.status=invalidated"));
+        assertTrue(evidence.contains(
+                "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker="
+                        + "typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.status=blocked"));
+        assertTrue(evidence.contains(
+                "loopVectorizationMaterialization.firstBlocker=typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=blocked"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.firstBlocker=typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("loop-vectorization-materialization=blocked"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement=false"));
+
+        Path evidenceFile = temporaryDirectory.resolve(
+                GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT
+        );
+        Files.writeString(evidenceFile, evidence, StandardCharsets.UTF_8);
+        assertDoesNotThrow(() -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(
+                new String[]{evidenceFile.toString()}
+        ));
+    }
+
+    @Test
     void bridgeCanSelectOptimizedArtifactWhenExplicitlyAllowed() {
         IrGpuArtifact original = artifact("body  \r\n  return original\t\r\n");
         GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass(
@@ -604,12 +757,16 @@ class GpuIrProposalRuntimeBridgePassTest {
         assertEquals(GpuRuntimeIrOptimizationOutcome.APPLIED, report.passReports().get(0).outcome());
         assertEquals("optimized-selected", report.passReports().get(0).proofStatus());
         assertEquals(
-                "selection-gate-not-bound",
+                "none",
                 report.passReports().get(0).proofArtifact().fields().get("optimizedArtifactCandidate.selectionFirstBlocker")
         );
         assertEquals(
-                "false",
+                "true",
                 report.passReports().get(0).proofArtifact().fields().get("optimizedArtifactCandidate.selectionApplied")
+        );
+        assertEquals(
+                "true",
+                report.passReports().get(0).proofArtifact().fields().get("optimizedArtifactCandidate.selectedIrReplacement")
         );
         assertFalse(report.requiresRollback());
     }
@@ -659,10 +816,17 @@ class GpuIrProposalRuntimeBridgePassTest {
     }
 
     private static GpuRuntimeCompileRequest request(IrGpuArtifact artifact) {
+        return request(artifact, GpuRuntimeCompileOptions.openCl(List.of(), "diagnostic"));
+    }
+
+    private static GpuRuntimeCompileRequest request(
+            IrGpuArtifact artifact,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
         GpuRuntimeDeviceProfile profile = GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "test-device");
         return new GpuRuntimeCompileRequest(
                 new GpuKernelDescriptor("run", "test.Kernel.run", "", "test.Kernel.run.irgpu", List.of()),
-                GpuRuntimeCompileOptions.openCl(List.of(), "diagnostic"),
+                compileOptions,
                 profile,
                 Optional.of(artifact)
         );
@@ -672,23 +836,67 @@ class GpuIrProposalRuntimeBridgePassTest {
             IrGpuArtifact original,
             GpuRuntimeIrOptimizationReport optimizationReport
     ) {
+        return runtimeOptimizerDump(original, optimizationReport)
+                .artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+    }
+
+    private static boolean serializedNamedValuePresent(
+            String propertiesText,
+            String keyScope,
+            String name,
+            String value
+    ) {
+        Map<String, String> namesByPrefix = new HashMap<>();
+        Map<String, String> valuesByPrefix = new HashMap<>();
+        for (String line : propertiesText.split("\\R")) {
+            int separator = line.indexOf('=');
+            if (separator < 0) {
+                continue;
+            }
+            String key = line.substring(0, separator);
+            if (!key.contains(keyScope)) {
+                continue;
+            }
+            String serializedValue = line.substring(separator + 1);
+            if (key.endsWith(".name")) {
+                namesByPrefix.put(key.substring(0, key.length() - ".name".length()), serializedValue);
+            } else if (key.endsWith(".value")) {
+                valuesByPrefix.put(key.substring(0, key.length() - ".value".length()), serializedValue);
+            }
+        }
+        return namesByPrefix.entrySet().stream().anyMatch(entry ->
+                name.equals(entry.getValue()) && value.equals(valuesByPrefix.get(entry.getKey()))
+        );
+    }
+
+    private static GpuRuntimeCompileArtifactDump runtimeOptimizerDump(
+            IrGpuArtifact original,
+            GpuRuntimeIrOptimizationReport optimizationReport
+    ) {
         GpuRuntimeCompileRequest compileRequest = request(original);
+        GpuRuntimeCompileRequest optimizedRequest = optimizationReport.candidateArtifact()
+                .map(GpuIrProposalRuntimeBridgePassTest::request)
+                .orElse(compileRequest);
         GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
                 "__kernel void run(__global int* out) { out[0] = 1; }",
                 "runtime/lowered/run.cl",
                 "test-lowerer-v1"
         );
-        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+        GpuBackendModuleArtifact optimizedBackendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void run(__global const float* input, __global float* output) { vload4(0, input); }",
+                "runtime/lowered/run.optimized.cl",
+                "test-lowerer-v1"
+        );
+        return GpuRuntimeCompileArtifactDumper.dump(
                 GpuRuntimeCompileArtifactSnapshot.from(
                         compileRequest,
-                        compileRequest,
+                        optimizedRequest,
                         backendArtifact,
                         GpuRuntimeCompileInvalidationStamp.from(compileRequest, backendArtifact, "policy-gate"),
                         GpuRuntimeCompileProvenance.from(compileRequest),
                         optimizationReport
-                )
+                ).withBackendStageModuleArtifacts(backendArtifact, optimizedBackendArtifact)
         );
-        return dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
     }
 
     private static GpuIrOptimizationProposalRequest proposalRequest(
@@ -905,6 +1113,63 @@ class GpuIrProposalRuntimeBridgePassTest {
                         new IrGpuEntryParameter("b", "int", "PRIVATE", false, List.of())
                 ),
                 List.of(IrGpuBackendOutput.openClSource("test.Kernel.run.irgpu")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact loopVectorizationValidatedArtifact() {
+        return loopVectorizationArtifact("""
+                body
+                  var int id = intrinsic(get_global_id template="" args=[0])
+                  var float sum = 0.0F
+                  for init=(var int i = 0) cond=(i < 4) update=(set i = (i + 1))
+                    set sum = (sum + input[((id * 4) + i)])
+                  set output[id] = sum
+                """);
+    }
+
+    private static IrGpuArtifact loopVectorizationInvalidatedArtifact() {
+        return loopVectorizationArtifact("""
+                body
+                  var int id = intrinsic(get_global_id template="" args=[0])
+                  var float sum = 0.0F
+                  for init=(var int i = 0) cond=(i < 4) update=(set i = (i + 1))
+                    set sum = (sum + input[((id * 4) + i)])
+                  set output[id] = (flag ? sum : 0.0F)
+                """);
+    }
+
+    private static IrGpuArtifact loopVectorizationArtifact(String body) {
+        IrGpuMethodBody methodBody = new IrGpuMethodBody(
+                "entry",
+                "kernel",
+                "kernel",
+                "ir-text-v1",
+                body,
+                new IrGpuTypedBody(
+                        IrGpuTypedBody.FORMAT,
+                        List.of(0),
+                        List.of(new IrGpuTypedNode(0, "GpuIrVariableRef", Map.of("name", "sum"), Map.of()))
+                ),
+                IrGpuBodyIndex.empty(),
+                List.of(),
+                IrGpuSourceLocation.unknown("kernel")
+        );
+        IrGpuModule module = new IrGpuModule("kernel", "kernel", List.of(), List.of(), List.of(methodBody));
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                module,
+                List.of(
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("input", "float[]", "GLOBAL", false, List.of())
+                ),
+                IrGpuLaunchMetadata.defaultOneDimensional(),
+                IrGpuValidationMetadata.frontendSubset(),
+                IrGpuFeatureMetadata.none(),
+                IrGpuOptimizerPolicyMetadata.defaultStrict(),
+                IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/test/Kernel/kernel.cl")),
                 "opencl",
                 "off"
         );

@@ -398,6 +398,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 ? lowerBackendModule(compileRequest)
                 : null;
         GpuBackendModuleArtifact optimizedModuleArtifact = runtimeCompileArtifactsConfigured()
+                || runtimeIrOptimizerExperimentalApplyRequested(optimizedCompileRequest)
                 ? lowerOptimizedReviewModule(optimizedCompileRequest, optimizationResult.report())
                 : lowerBackendModule(optimizedCompileRequest);
         GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence = executeRuntimeEquivalence(new GpuRuntimeEquivalenceRequest(
@@ -1131,9 +1132,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuRuntimeCompileRequest optimizedCompileRequest,
             GpuRuntimeIrOptimizationReport optimizationReport
     ) {
-        if (optimizationReport == null
-                || optimizationReport.candidateArtifact().isEmpty()
-                || sameIr(optimizationReport.artifact(), optimizationReport.candidateArtifact())) {
+        if (optimizationReport == null || optimizationReport.candidateArtifact().isEmpty()) {
             return lowerBackendModule(optimizedCompileRequest);
         }
         GpuBackendSourceReconstructionResult reconstruction = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
@@ -1150,6 +1149,15 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 "irgpu-review-candidate",
                 "opencl-irgpu-review-candidate"
         );
+    }
+
+    private static boolean runtimeIrOptimizerExperimentalApplyRequested(
+            GpuRuntimeCompileRequest optimizedCompileRequest
+    ) {
+        return optimizedCompileRequest != null
+                && optimizedCompileRequest.options()
+                .backendOptions()
+                .requestsRuntimeIrOptimizerExperimentalApply();
     }
 
     private static boolean sameIr(Optional<IrGpuArtifact> first, Optional<IrGpuArtifact> second) {
@@ -2803,6 +2811,22 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED
                             + "' and '"
                             + GpuBackendCompileOptions.OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED
+                            + "'"
+            );
+        }
+        String optimizerSelection = compileOptions.backendOptions()
+                .properties()
+                .get(GpuBackendCompileOptions.RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY);
+        if (optimizerSelection != null
+                && !GpuBackendCompileOptions.RUNTIME_IR_OPTIMIZER_SELECTION_REVIEW_ONLY.equals(optimizerSelection)
+                && !GpuBackendCompileOptions.RUNTIME_IR_OPTIMIZER_SELECTION_EXPERIMENTAL_APPLY.equals(optimizerSelection)) {
+            throw new IllegalArgumentException(
+                    "Unsupported runtime IR optimizer selection compile option '"
+                            + optimizerSelection
+                            + "'; supported values are '"
+                            + GpuBackendCompileOptions.RUNTIME_IR_OPTIMIZER_SELECTION_REVIEW_ONLY
+                            + "' and '"
+                            + GpuBackendCompileOptions.RUNTIME_IR_OPTIMIZER_SELECTION_EXPERIMENTAL_APPLY
                             + "'"
             );
         }

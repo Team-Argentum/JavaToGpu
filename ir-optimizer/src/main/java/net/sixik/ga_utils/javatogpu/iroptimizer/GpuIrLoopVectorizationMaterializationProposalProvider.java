@@ -133,6 +133,11 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
             int bodyTextReplacementCount,
             int typedBodyMaterializedCount,
             int typedBodyInvalidatedCount,
+            int typedBodyRebuildAttemptedCount,
+            int typedBodyRebuildParsedCount,
+            int typedBodyRebuildBuiltCount,
+            int typedBodyRebuildGraphValidatedCount,
+            int typedBodyRebuildRejectedCount,
             int skippedBackendTargetCount,
             int skippedUnsupportedFormatCount,
             int skippedParseFailedCount,
@@ -144,6 +149,7 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
             String firstTransformedLoop,
             String firstExpression,
             String firstReplacement,
+            String typedBodyRebuildFirstBlocker,
             String firstBlocker,
             boolean openClReviewSourceReady,
             String openClReviewSourceLength,
@@ -204,6 +210,11 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
                     stats.bodyTextReplacementCount,
                     stats.typedBodyMaterializedCount,
                     stats.typedBodyInvalidatedCount,
+                    stats.typedBodyRebuildAttemptedCount,
+                    stats.typedBodyRebuildParsedCount,
+                    stats.typedBodyRebuildBuiltCount,
+                    stats.typedBodyRebuildGraphValidatedCount,
+                    stats.typedBodyRebuildRejectedCount,
                     stats.skippedBackendTargetCount,
                     stats.skippedUnsupportedFormatCount,
                     stats.skippedParseFailedCount,
@@ -215,6 +226,7 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
                     stats.firstTransformedLoop,
                     stats.firstExpression,
                     stats.firstReplacement,
+                    stats.typedBodyRebuildFirstBlocker,
                     "none",
                     openClReviewSourceReady,
                     openClReviewSourceLength,
@@ -234,6 +246,11 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
                     stats.bodyTextReplacementCount,
                     stats.typedBodyMaterializedCount,
                     stats.typedBodyInvalidatedCount,
+                    stats.typedBodyRebuildAttemptedCount,
+                    stats.typedBodyRebuildParsedCount,
+                    stats.typedBodyRebuildBuiltCount,
+                    stats.typedBodyRebuildGraphValidatedCount,
+                    stats.typedBodyRebuildRejectedCount,
                     stats.skippedBackendTargetCount,
                     stats.skippedUnsupportedFormatCount,
                     stats.skippedParseFailedCount,
@@ -245,6 +262,7 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
                     stats.firstTransformedLoop,
                     stats.firstExpression,
                     stats.firstReplacement,
+                    stats.typedBodyRebuildFirstBlocker,
                     firstBlocker,
                     false,
                     "not-ready",
@@ -286,6 +304,13 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
             fields.put("bodyTextReplacement.count", Integer.toString(bodyTextReplacementCount));
             fields.put("typedBody.materialized.count", Integer.toString(typedBodyMaterializedCount));
             fields.put("typedBody.invalidated.count", Integer.toString(typedBodyInvalidatedCount));
+            fields.put("typedBody.rebuild.attempted.count", Integer.toString(typedBodyRebuildAttemptedCount));
+            fields.put("typedBody.rebuild.parsed.count", Integer.toString(typedBodyRebuildParsedCount));
+            fields.put("typedBody.rebuild.built.count", Integer.toString(typedBodyRebuildBuiltCount));
+            fields.put("typedBody.rebuild.graphValidated.count", Integer.toString(typedBodyRebuildGraphValidatedCount));
+            fields.put("typedBody.rebuild.rejected.count", Integer.toString(typedBodyRebuildRejectedCount));
+            fields.put("typedBody.rebuild.status", typedBodyRebuildStatus());
+            fields.put("typedBody.rebuild.firstBlocker", typedBodyRebuildFirstBlocker);
             fields.put("skipped.backendTarget.count", Integer.toString(skippedBackendTargetCount));
             fields.put("skipped.unsupportedFormat.count", Integer.toString(skippedUnsupportedFormatCount));
             fields.put("skipped.parseFailed.count", Integer.toString(skippedParseFailedCount));
@@ -361,6 +386,19 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
             return Map.copyOf(fields);
         }
 
+        private String typedBodyRebuildStatus() {
+            if (typedBodyRebuildAttemptedCount <= 0) {
+                return "not-attempted";
+            }
+            if (typedBodyRebuildRejectedCount <= 0) {
+                return "validated";
+            }
+            if (typedBodyRebuildGraphValidatedCount > 0) {
+                return "partially-validated";
+            }
+            return "invalidated";
+        }
+
         private static String firstBlocker(RewriteStats stats) {
             if (!"none".equals(stats.firstBlocker)) {
                 return stats.firstBlocker;
@@ -404,12 +442,13 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
         }
 
         String rewrittenBody = rewriteBody(methodBody.body(), candidates);
-        Optional<IrGpuTypedBody> rewrittenTypedBody = typedBodyFromRewrittenBody(rewrittenBody);
+        TypedBodyRebuild rewrittenTypedBody = typedBodyFromRewrittenBody(rewrittenBody);
         stats.transformedLoopCount += candidates.size();
         stats.changedMethodBodyCount = 1;
         stats.bodyTextReplacementCount += candidates.size();
         stats.transformedCandidates.addAll(candidates);
-        if (rewrittenTypedBody.isPresent()) {
+        stats.recordTypedBodyRebuild(rewrittenTypedBody);
+        if (rewrittenTypedBody.typedBody().isPresent()) {
             stats.typedBodyMaterializedCount++;
         } else {
             stats.typedBodyInvalidatedCount += methodBody.typedBody().available() ? 1 : 0;
@@ -419,22 +458,76 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
         stats.firstExpression = first.originalSummary();
         stats.firstReplacement = first.replacementSummary();
         return new MethodRewrite(
-                copyWithBodyAndTypedBody(methodBody, rewrittenBody, rewrittenTypedBody.orElseGet(IrGpuTypedBody::none)),
+                copyWithBodyAndTypedBody(methodBody, rewrittenBody, rewrittenTypedBody.typedBody().orElseGet(IrGpuTypedBody::none)),
                 stats
         );
     }
 
-    private static Optional<IrGpuTypedBody> typedBodyFromRewrittenBody(String body) {
+    private record TypedBodyRebuild(
+            Optional<IrGpuTypedBody> typedBody,
+            boolean parsed,
+            boolean built,
+            boolean graphValidated,
+            String firstBlocker
+    ) {
+
+        private static TypedBodyRebuild accepted(IrGpuTypedBody typedBody) {
+            return new TypedBodyRebuild(Optional.of(typedBody), true, true, true, "none");
+        }
+
+        private static TypedBodyRebuild rejected(
+                boolean parsed,
+                boolean built,
+                boolean graphValidated,
+                String firstBlocker
+        ) {
+            return new TypedBodyRebuild(
+                    Optional.empty(),
+                    parsed,
+                    built,
+                    graphValidated,
+                    firstBlocker == null || firstBlocker.isBlank() ? "typed-body-rebuild-blocked" : firstBlocker
+            );
+        }
+    }
+
+    private static TypedBodyRebuild typedBodyFromRewrittenBody(String body) {
         OpenClIrTextBodyParseResult parseResult = OpenClIrTextBodyParser.INSTANCE.parse(body);
         if (!parseResult.parsed()) {
-            return Optional.empty();
+            return TypedBodyRebuild.rejected(
+                    false,
+                    false,
+                    false,
+                    parseResult.blockers().isEmpty() ? "typed-body-rebuild-parse-failed" : parseResult.blockers().get(0)
+            );
         }
         Optional<List<GpuIrStatement>> statements = typedStatements(parseResult.statements());
         if (statements.isEmpty()) {
-            return Optional.empty();
+            return TypedBodyRebuild.rejected(true, false, false, "typed-body-rebuild-statement-conversion-blocked");
         }
         IrGpuTypedBody typedBody = IrGpuTypedBodyBuilder.fromStatements(statements.orElseThrow());
-        return typedBody.available() ? Optional.of(typedBody) : Optional.empty();
+        if (!typedBody.available()) {
+            return TypedBodyRebuild.rejected(true, false, false, "typed-body-rebuild-builder-unavailable");
+        }
+        TypedBodyGraphValidation graphValidation = typedBodyGraphValidation(typedBody);
+        return graphValidation.valid()
+                ? TypedBodyRebuild.accepted(typedBody)
+                : TypedBodyRebuild.rejected(true, true, false, graphValidation.firstBlocker());
+    }
+
+    private record TypedBodyGraphValidation(boolean valid, String firstBlocker) {
+    }
+
+    private static TypedBodyGraphValidation typedBodyGraphValidation(IrGpuTypedBody typedBody) {
+        GpuIrTypedBodyGraphPatch.Reachability reachability = GpuIrTypedBodyGraphPatch
+                .reachability(typedBody, GpuIrTypedBodyGraphPatch.nodesById(typedBody));
+        if (reachability.rootMissingCount() > 0) {
+            return new TypedBodyGraphValidation(false, "typed-body-rebuild-missing-root");
+        }
+        if (reachability.missingChildReferenceCount() > 0) {
+            return new TypedBodyGraphValidation(false, "typed-body-rebuild-missing-child-reference");
+        }
+        return new TypedBodyGraphValidation(true, "none");
     }
 
     private static Optional<List<GpuIrStatement>> typedStatements(List<OpenClIrTextStatement> statements) {
@@ -1497,6 +1590,11 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
         private int bodyTextReplacementCount;
         private int typedBodyMaterializedCount;
         private int typedBodyInvalidatedCount;
+        private int typedBodyRebuildAttemptedCount;
+        private int typedBodyRebuildParsedCount;
+        private int typedBodyRebuildBuiltCount;
+        private int typedBodyRebuildGraphValidatedCount;
+        private int typedBodyRebuildRejectedCount;
         private int skippedBackendTargetCount;
         private int skippedUnsupportedFormatCount;
         private int skippedParseFailedCount;
@@ -1508,7 +1606,25 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
         private String firstTransformedLoop = "none";
         private String firstExpression = "none";
         private String firstReplacement = "none";
+        private String typedBodyRebuildFirstBlocker = "none";
         private String firstBlocker = "none";
+
+        private void recordTypedBodyRebuild(TypedBodyRebuild rebuild) {
+            typedBodyRebuildAttemptedCount++;
+            if (rebuild.parsed()) {
+                typedBodyRebuildParsedCount++;
+            }
+            if (rebuild.built()) {
+                typedBodyRebuildBuiltCount++;
+            }
+            if (rebuild.graphValidated()) {
+                typedBodyRebuildGraphValidatedCount++;
+            }
+            if (rebuild.typedBody().isEmpty()) {
+                typedBodyRebuildRejectedCount++;
+                setTypedBodyRebuildFirstBlocker(rebuild.firstBlocker());
+            }
+        }
 
         private void add(RewriteStats other) {
             parsedBodyCount += other.parsedBodyCount;
@@ -1519,6 +1635,11 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
             bodyTextReplacementCount += other.bodyTextReplacementCount;
             typedBodyMaterializedCount += other.typedBodyMaterializedCount;
             typedBodyInvalidatedCount += other.typedBodyInvalidatedCount;
+            typedBodyRebuildAttemptedCount += other.typedBodyRebuildAttemptedCount;
+            typedBodyRebuildParsedCount += other.typedBodyRebuildParsedCount;
+            typedBodyRebuildBuiltCount += other.typedBodyRebuildBuiltCount;
+            typedBodyRebuildGraphValidatedCount += other.typedBodyRebuildGraphValidatedCount;
+            typedBodyRebuildRejectedCount += other.typedBodyRebuildRejectedCount;
             skippedBackendTargetCount += other.skippedBackendTargetCount;
             skippedUnsupportedFormatCount += other.skippedUnsupportedFormatCount;
             skippedParseFailedCount += other.skippedParseFailedCount;
@@ -1532,8 +1653,20 @@ public final class GpuIrLoopVectorizationMaterializationProposalProvider impleme
                 firstExpression = other.firstExpression;
                 firstReplacement = other.firstReplacement;
             }
+            if ("none".equals(typedBodyRebuildFirstBlocker) && !"none".equals(other.typedBodyRebuildFirstBlocker)) {
+                typedBodyRebuildFirstBlocker = other.typedBodyRebuildFirstBlocker;
+            }
             if ("none".equals(firstBlocker) && !"none".equals(other.firstBlocker)) {
                 firstBlocker = other.firstBlocker;
+            }
+        }
+
+        private void setTypedBodyRebuildFirstBlocker(String blocker) {
+            if ("none".equals(typedBodyRebuildFirstBlocker)
+                    && blocker != null
+                    && !blocker.isBlank()
+                    && !"none".equals(blocker)) {
+                typedBodyRebuildFirstBlocker = blocker;
             }
         }
 

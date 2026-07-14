@@ -698,6 +698,53 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
         return entries.stream().mapToInt(Entry::loopVectorizationMaterializationTypedBodyInvalidatedCount).sum();
     }
 
+    int totalLoopVectorizationMaterializationTypedBodyRebuildAttemptedCount() {
+        return entries.stream().mapToInt(Entry::loopVectorizationMaterializationTypedBodyRebuildAttemptedCount).sum();
+    }
+
+    int totalLoopVectorizationMaterializationTypedBodyRebuildGraphValidatedCount() {
+        return entries.stream()
+                .mapToInt(Entry::loopVectorizationMaterializationTypedBodyRebuildGraphValidatedCount)
+                .sum();
+    }
+
+    int totalLoopVectorizationMaterializationTypedBodyRebuildRejectedCount() {
+        return entries.stream().mapToInt(Entry::loopVectorizationMaterializationTypedBodyRebuildRejectedCount).sum();
+    }
+
+    String loopVectorizationMaterializationTypedBodyRebuildStatus() {
+        if (totalLoopVectorizationMaterializationTypedBodyRebuildAttemptedCount() <= 0) {
+            return "not-attempted";
+        }
+        if (entries.stream().anyMatch(entry -> "invalidated".equals(
+                entry.loopVectorizationMaterializationTypedBodyRebuildStatus()
+        ))) {
+            return "invalidated";
+        }
+        if (entries.stream().anyMatch(entry -> "partially-validated".equals(
+                entry.loopVectorizationMaterializationTypedBodyRebuildStatus()
+        ))) {
+            return "partially-validated";
+        }
+        return totalLoopVectorizationMaterializationTypedBodyRebuildRejectedCount() > 0
+                ? "partially-validated"
+                : "validated";
+    }
+
+    String loopVectorizationMaterializationTypedBodyRebuildFirstBlocker() {
+        for (Entry entry : entries) {
+            if (entry.loopVectorizationMaterializationTypedBodyRebuildRejectedCount() > 0
+                    && !"none".equals(entry.loopVectorizationMaterializationTypedBodyRebuildFirstBlocker())) {
+                return entry.loopVectorizationMaterializationTypedBodyRebuildFirstBlocker();
+            }
+        }
+        return switch (loopVectorizationMaterializationTypedBodyRebuildStatus()) {
+            case "not-attempted" -> "not-attempted";
+            case "validated" -> "none";
+            default -> "typed-body-rebuild-blocked";
+        };
+    }
+
     int totalLoopVectorizationMaterializationSkippedCount() {
         return entries.stream().mapToInt(Entry::loopVectorizationMaterializationSkippedCount).sum();
     }
@@ -1371,6 +1418,16 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                 .append(totalLoopVectorizationMaterializationTypedBodyMaterializedCount()).append("`\n");
         markdown.append("- Loop vectorization materialization typed bodies invalidated: `")
                 .append(totalLoopVectorizationMaterializationTypedBodyInvalidatedCount()).append("`\n");
+        markdown.append("- Loop vectorization typed-body rebuild status: `")
+                .append(loopVectorizationMaterializationTypedBodyRebuildStatus()).append("`\n");
+        markdown.append("- Loop vectorization typed-body rebuild attempts: `")
+                .append(totalLoopVectorizationMaterializationTypedBodyRebuildAttemptedCount()).append("`\n");
+        markdown.append("- Loop vectorization typed-body rebuild graph validations: `")
+                .append(totalLoopVectorizationMaterializationTypedBodyRebuildGraphValidatedCount()).append("`\n");
+        markdown.append("- Loop vectorization typed-body rebuild rejections: `")
+                .append(totalLoopVectorizationMaterializationTypedBodyRebuildRejectedCount()).append("`\n");
+        markdown.append("- Loop vectorization typed-body rebuild first blocker: `")
+                .append(inline(loopVectorizationMaterializationTypedBodyRebuildFirstBlocker())).append("`\n");
         markdown.append("- Loop vectorization materialization skipped blockers: `")
                 .append(totalLoopVectorizationMaterializationSkippedCount()).append("`\n");
         markdown.append("- Loop vectorization materialization runtime-equivalence payloads: `")
@@ -1694,6 +1751,13 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             int loopVectorizationMaterializationBodyTextReplacementCount,
             int loopVectorizationMaterializationTypedBodyMaterializedCount,
             int loopVectorizationMaterializationTypedBodyInvalidatedCount,
+            int loopVectorizationMaterializationTypedBodyRebuildAttemptedCount,
+            int loopVectorizationMaterializationTypedBodyRebuildParsedCount,
+            int loopVectorizationMaterializationTypedBodyRebuildBuiltCount,
+            int loopVectorizationMaterializationTypedBodyRebuildGraphValidatedCount,
+            int loopVectorizationMaterializationTypedBodyRebuildRejectedCount,
+            String loopVectorizationMaterializationTypedBodyRebuildStatus,
+            String loopVectorizationMaterializationTypedBodyRebuildFirstBlocker,
             int loopVectorizationMaterializationSkippedLoopShapeCount,
             int loopVectorizationMaterializationSkippedUnsupportedWidthCount,
             int loopVectorizationMaterializationSkippedUnsafeLoadPatternCount,
@@ -1961,6 +2025,34 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     0,
                     loopVectorizationMaterializationTypedBodyInvalidatedCount
             );
+            loopVectorizationMaterializationTypedBodyRebuildAttemptedCount = Math.max(
+                    0,
+                    loopVectorizationMaterializationTypedBodyRebuildAttemptedCount
+            );
+            loopVectorizationMaterializationTypedBodyRebuildParsedCount = Math.max(
+                    0,
+                    loopVectorizationMaterializationTypedBodyRebuildParsedCount
+            );
+            loopVectorizationMaterializationTypedBodyRebuildBuiltCount = Math.max(
+                    0,
+                    loopVectorizationMaterializationTypedBodyRebuildBuiltCount
+            );
+            loopVectorizationMaterializationTypedBodyRebuildGraphValidatedCount = Math.max(
+                    0,
+                    loopVectorizationMaterializationTypedBodyRebuildGraphValidatedCount
+            );
+            loopVectorizationMaterializationTypedBodyRebuildRejectedCount = Math.max(
+                    0,
+                    loopVectorizationMaterializationTypedBodyRebuildRejectedCount
+            );
+            loopVectorizationMaterializationTypedBodyRebuildStatus = normalize(
+                    loopVectorizationMaterializationTypedBodyRebuildStatus,
+                    "not-attempted"
+            );
+            loopVectorizationMaterializationTypedBodyRebuildFirstBlocker = normalize(
+                    loopVectorizationMaterializationTypedBodyRebuildFirstBlocker,
+                    "not-attempted"
+            );
             loopVectorizationMaterializationSkippedLoopShapeCount = Math.max(
                     0,
                     loopVectorizationMaterializationSkippedLoopShapeCount
@@ -2208,7 +2300,9 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                         0, 0, 0, 0, 0, 0, "not-recorded", "not-recorded",
                         0, 0, 0, 0, 0, 0, 0, 0, false, false, 0, 0, false, false,
                         "not-recorded", "not-recorded",
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "not-recorded", "not-recorded",
+                        0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, "not-attempted", "not-attempted",
+                        0, 0, 0, 0, 0, "not-recorded", "not-recorded",
                         0, 0, 0, 0, 0, 0, 0, 0, false, false, 0, 0, false, false,
                         "not-recorded", "not-recorded",
                         0, 0, 0, 0, 0, 0, 0, 0, false, false, false, false,
@@ -2331,6 +2425,29 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                     parseInt(properties.getProperty("loopVectorizationMaterialization.bodyTextReplacement.count"), 0),
                     parseInt(properties.getProperty("loopVectorizationMaterialization.typedBody.materialized.count"), 0),
                     parseInt(properties.getProperty("loopVectorizationMaterialization.typedBody.invalidated.count"), 0),
+                    parseInt(properties.getProperty(
+                            "loopVectorizationMaterialization.typedBody.rebuild.attempted.count"
+                    ), 0),
+                    parseInt(properties.getProperty(
+                            "loopVectorizationMaterialization.typedBody.rebuild.parsed.count"
+                    ), 0),
+                    parseInt(properties.getProperty(
+                            "loopVectorizationMaterialization.typedBody.rebuild.built.count"
+                    ), 0),
+                    parseInt(properties.getProperty(
+                            "loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count"
+                    ), 0),
+                    parseInt(properties.getProperty(
+                            "loopVectorizationMaterialization.typedBody.rebuild.rejected.count"
+                    ), 0),
+                    properties.getProperty(
+                            "loopVectorizationMaterialization.typedBody.rebuild.status",
+                            "not-attempted"
+                    ),
+                    properties.getProperty(
+                            "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker",
+                            "not-attempted"
+                    ),
                     parseInt(properties.getProperty("loopVectorizationMaterialization.skipped.loopShape.count"), 0),
                     parseInt(properties.getProperty("loopVectorizationMaterialization.skipped.unsupportedWidth.count"), 0),
                     parseInt(properties.getProperty("loopVectorizationMaterialization.skipped.unsafeLoadPattern.count"), 0),

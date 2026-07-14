@@ -744,6 +744,12 @@ public final class GpuRuntimeCompileArtifactDumper {
         builder.append("failed.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.FAILED)).append('\n');
         builder.append("proposalOnly.count=").append(countProofStatus(irOptimizerReports, "proposal-only")).append('\n');
         builder.append("selectedOptimized.count=").append(countProofStatus(irOptimizerReports, "optimized-selected")).append('\n');
+        ExperimentalApplyEvidence experimentalApply = experimentalApplyEvidence(irOptimizerReports);
+        builder.append("experimentalApply.requested=").append(experimentalApply.requested()).append('\n');
+        builder.append("experimentalApply.enabled=").append(experimentalApply.enabled()).append('\n');
+        builder.append("experimentalApply.requested.count=").append(experimentalApply.requestedCount()).append('\n');
+        builder.append("experimentalApply.enabled.count=").append(experimentalApply.enabledCount()).append('\n');
+        builder.append("experimentalApply.selected.count=").append(experimentalApply.selectedCount()).append('\n');
         builder.append("approvalTemplate.pending.count=")
                 .append(countApprovalTemplateStatus(irOptimizerReports, "pending"))
                 .append('\n');
@@ -903,6 +909,8 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .append(safeLocalCseMaterialization.passCount()).append('\n');
         builder.append("safeLocalCseMaterialization.localBinding.count=")
                 .append(safeLocalCseMaterialization.localBindingCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.introducedTemporary.count=")
+                .append(safeLocalCseMaterialization.introducedTemporaryCount()).append('\n');
         builder.append("safeLocalCseMaterialization.candidate.count=")
                 .append(safeLocalCseMaterialization.candidateCount()).append('\n');
         builder.append("safeLocalCseMaterialization.transformedNode.count=")
@@ -1039,6 +1047,20 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .append(loopVectorizationMaterialization.typedBodyMaterializedCount()).append('\n');
         builder.append("loopVectorizationMaterialization.typedBody.invalidated.count=")
                 .append(loopVectorizationMaterialization.typedBodyInvalidatedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.attempted.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildAttemptedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.parsed.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildParsedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.built.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildBuiltCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildGraphValidatedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.rejected.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildRejectedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.status=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildStatus()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.firstBlocker=")
+                .append(safePropertyValue(loopVectorizationMaterialization.typedBodyRebuildFirstBlocker())).append('\n');
         builder.append("loopVectorizationMaterialization.skipped.loopShape.count=")
                 .append(loopVectorizationMaterialization.skippedLoopShapeCount()).append('\n');
         builder.append("loopVectorizationMaterialization.skipped.unsupportedWidth.count=")
@@ -1451,6 +1473,37 @@ public final class GpuRuntimeCompileArtifactDumper {
         );
     }
 
+    private static ExperimentalApplyEvidence experimentalApplyEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int requestedCount = 0;
+        int enabledCount = 0;
+        int selectedCount = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (parseBoolean(fields.get("experimentalApply.requested"))) {
+                requestedCount++;
+            }
+            if (parseBoolean(fields.get("experimentalApply.enabled"))) {
+                enabledCount++;
+            }
+            if (parseBoolean(fields.get("experimentalApply.selected"))
+                    || "optimized-selected".equals(passReport.proofStatus())) {
+                selectedCount++;
+            }
+        }
+        return new ExperimentalApplyEvidence(
+                requestedCount > 0,
+                enabledCount > 0,
+                requestedCount,
+                enabledCount,
+                selectedCount
+        );
+    }
+
     private static boolean hasOptimizedArtifactCandidate(Map<String, String> fields) {
         return fields != null && fields.keySet().stream()
                 .anyMatch(key -> key.startsWith("optimizedArtifactCandidate."));
@@ -1828,6 +1881,7 @@ public final class GpuRuntimeCompileArtifactDumper {
     ) {
         int passCount = 0;
         int localBindingCount = 0;
+        int introducedTemporaryCount = 0;
         int candidateCount = 0;
         int transformedNodeCount = 0;
         int changedMethodBodyCount = 0;
@@ -1858,6 +1912,7 @@ public final class GpuRuntimeCompileArtifactDumper {
             }
             passCount++;
             localBindingCount += parseNonNegativeInt(fields.get("localBinding.count"));
+            introducedTemporaryCount += parseNonNegativeInt(fields.get("introducedTemporary.count"));
             candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
             transformedNodeCount += parseNonNegativeInt(fields.get("transformedNode.count"));
             changedMethodBodyCount += parseNonNegativeInt(fields.get("changedMethodBody.count"));
@@ -1927,6 +1982,7 @@ public final class GpuRuntimeCompileArtifactDumper {
         return new SafeLocalCseMaterializationEvidence(
                 passCount,
                 localBindingCount,
+                introducedTemporaryCount,
                 candidateCount,
                 transformedNodeCount,
                 changedMethodBodyCount,
@@ -2451,6 +2507,11 @@ public final class GpuRuntimeCompileArtifactDumper {
         int bodyTextReplacementCount = 0;
         int typedBodyMaterializedCount = 0;
         int typedBodyInvalidatedCount = 0;
+        int typedBodyRebuildAttemptedCount = 0;
+        int typedBodyRebuildParsedCount = 0;
+        int typedBodyRebuildBuiltCount = 0;
+        int typedBodyRebuildGraphValidatedCount = 0;
+        int typedBodyRebuildRejectedCount = 0;
         int skippedLoopShapeCount = 0;
         int skippedUnsupportedWidthCount = 0;
         int skippedUnsafeLoadPatternCount = 0;
@@ -2481,6 +2542,13 @@ public final class GpuRuntimeCompileArtifactDumper {
             bodyTextReplacementCount += parseNonNegativeInt(fields.get("bodyTextReplacement.count"));
             typedBodyMaterializedCount += parseNonNegativeInt(fields.get("typedBody.materialized.count"));
             typedBodyInvalidatedCount += parseNonNegativeInt(fields.get("typedBody.invalidated.count"));
+            typedBodyRebuildAttemptedCount += parseNonNegativeInt(fields.get("typedBody.rebuild.attempted.count"));
+            typedBodyRebuildParsedCount += parseNonNegativeInt(fields.get("typedBody.rebuild.parsed.count"));
+            typedBodyRebuildBuiltCount += parseNonNegativeInt(fields.get("typedBody.rebuild.built.count"));
+            typedBodyRebuildGraphValidatedCount += parseNonNegativeInt(
+                    fields.get("typedBody.rebuild.graphValidated.count")
+            );
+            typedBodyRebuildRejectedCount += parseNonNegativeInt(fields.get("typedBody.rebuild.rejected.count"));
             skippedLoopShapeCount += parseNonNegativeInt(fields.get("skipped.loopShape.count"));
             skippedUnsupportedWidthCount += parseNonNegativeInt(fields.get("skipped.unsupportedWidth.count"));
             skippedUnsafeLoadPatternCount += parseNonNegativeInt(fields.get("skipped.unsafeLoadPattern.count"));
@@ -2510,6 +2578,22 @@ public final class GpuRuntimeCompileArtifactDumper {
             }
         }
 
+        String typedBodyRebuildStatus;
+        String typedBodyRebuildFirstBlocker;
+        if (typedBodyRebuildAttemptedCount <= 0) {
+            typedBodyRebuildStatus = "not-attempted";
+            typedBodyRebuildFirstBlocker = "not-attempted";
+        } else if (typedBodyRebuildRejectedCount <= 0) {
+            typedBodyRebuildStatus = "validated";
+            typedBodyRebuildFirstBlocker = "none";
+        } else if (typedBodyRebuildGraphValidatedCount > 0) {
+            typedBodyRebuildStatus = "partially-validated";
+            typedBodyRebuildFirstBlocker = firstLoopVectorizationTypedBodyRebuildBlocker(passReports);
+        } else {
+            typedBodyRebuildStatus = "invalidated";
+            typedBodyRebuildFirstBlocker = firstLoopVectorizationTypedBodyRebuildBlocker(passReports);
+        }
+
         int blockerCount = skippedLoopShapeCount + skippedUnsupportedWidthCount + skippedUnsafeLoadPatternCount;
         String status;
         if (passCount <= 0) {
@@ -2527,6 +2611,13 @@ public final class GpuRuntimeCompileArtifactDumper {
         } else if (transformedLoopCount <= 0) {
             status = "no-candidates";
             firstBlocker = "no-materialized-candidates";
+        } else if (typedBodyRebuildRejectedCount > 0 || typedBodyInvalidatedCount > 0) {
+            status = "blocked";
+            firstBlocker = typedBodyRebuildFirstBlocker == null
+                    || typedBodyRebuildFirstBlocker.isBlank()
+                    || "none".equals(typedBodyRebuildFirstBlocker)
+                    ? "typed-body-rebuild-blocked"
+                    : typedBodyRebuildFirstBlocker;
         } else if (!loopTripCountProven || !contiguousLoadProven || !orderedReductionPreserved) {
             status = "blocked";
             firstBlocker = "loop-vectorization-proof-incomplete";
@@ -2548,6 +2639,13 @@ public final class GpuRuntimeCompileArtifactDumper {
                 bodyTextReplacementCount,
                 typedBodyMaterializedCount,
                 typedBodyInvalidatedCount,
+                typedBodyRebuildAttemptedCount,
+                typedBodyRebuildParsedCount,
+                typedBodyRebuildBuiltCount,
+                typedBodyRebuildGraphValidatedCount,
+                typedBodyRebuildRejectedCount,
+                typedBodyRebuildStatus,
+                typedBodyRebuildFirstBlocker,
                 skippedLoopShapeCount,
                 skippedUnsupportedWidthCount,
                 skippedUnsafeLoadPatternCount,
@@ -2579,6 +2677,28 @@ public final class GpuRuntimeCompileArtifactDumper {
             return "loop-shape-unsupported";
         }
         return "loop-vectorization-materialization-blocked";
+    }
+
+    private static String firstLoopVectorizationTypedBodyRebuildBlocker(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("loop-vectorization-materialization")
+                    && !optimizerVersion.contains("loop-vectorization-materialization")) {
+                continue;
+            }
+            String blocker = fields.getOrDefault("typedBody.rebuild.firstBlocker", "");
+            if (blocker != null && !blocker.isBlank() && !"none".equals(blocker)) {
+                return blocker;
+            }
+        }
+        return "typed-body-rebuild-blocked";
     }
 
     private static SafeLocalCsePreviewEvidence safeLocalCsePreviewEvidence(
@@ -3098,6 +3218,7 @@ public final class GpuRuntimeCompileArtifactDumper {
     private record SafeLocalCseMaterializationEvidence(
             int passCount,
             int localBindingCount,
+            int introducedTemporaryCount,
             int candidateCount,
             int transformedNodeCount,
             int changedMethodBodyCount,
@@ -3184,6 +3305,13 @@ public final class GpuRuntimeCompileArtifactDumper {
             int bodyTextReplacementCount,
             int typedBodyMaterializedCount,
             int typedBodyInvalidatedCount,
+            int typedBodyRebuildAttemptedCount,
+            int typedBodyRebuildParsedCount,
+            int typedBodyRebuildBuiltCount,
+            int typedBodyRebuildGraphValidatedCount,
+            int typedBodyRebuildRejectedCount,
+            String typedBodyRebuildStatus,
+            String typedBodyRebuildFirstBlocker,
             int skippedLoopShapeCount,
             int skippedUnsupportedWidthCount,
             int skippedUnsafeLoadPatternCount,
@@ -3344,6 +3472,15 @@ public final class GpuRuntimeCompileArtifactDumper {
         private boolean selectedIrReplacement() {
             return selectedIrReplacementCount > 0;
         }
+    }
+
+    private record ExperimentalApplyEvidence(
+            boolean requested,
+            boolean enabled,
+            int requestedCount,
+            int enabledCount,
+            int selectedCount
+    ) {
     }
 
     private static ApprovalTemplateEvidence approvalTemplateEvidence(GpuRuntimeIrOptimizationPassReport passReport) {

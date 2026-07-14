@@ -12,7 +12,6 @@ import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuSourceEmission;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -384,7 +383,7 @@ public final class GpuIrConstantFoldingMaterializationProposalProvider implement
             changed = true;
             stats.fixedPointPassCount++;
             rewrittenBody = scan.body();
-            currentTypedBody = rewriteTypedBody(currentTypedBody, scan.transformedNodes());
+            currentTypedBody = scan.typedBody();
         }
 
         if (!changed) {
@@ -399,7 +398,11 @@ public final class GpuIrConstantFoldingMaterializationProposalProvider implement
         return new MethodRewrite(copyWithBodyAndTypedBody(methodBody, rewrittenBody, currentTypedBody), stats);
     }
 
-    private record BodyScan(String body, LinkedHashMap<Integer, FoldCandidate> transformedNodes) {
+    private record BodyScan(
+            String body,
+            IrGpuTypedBody typedBody,
+            LinkedHashMap<Integer, FoldCandidate> transformedNodes
+    ) {
     }
 
     private static BodyScan scanFoldCandidates(
@@ -409,8 +412,8 @@ public final class GpuIrConstantFoldingMaterializationProposalProvider implement
             RewriteStats stats,
             boolean recordSkips
     ) {
-        Map<Integer, IrGpuTypedNode> nodesById = nodesById(typedBody);
-        Set<Integer> reachableNodeIds = reachableNodeIds(typedBody, nodesById);
+        Map<Integer, IrGpuTypedNode> nodesById = GpuIrTypedBodyGraphPatch.nodesById(typedBody);
+        Set<Integer> reachableNodeIds = GpuIrTypedBodyGraphPatch.reachableNodeIds(typedBody, nodesById);
         LinkedHashMap<Integer, FoldCandidate> transformedNodes = new LinkedHashMap<>();
         String rewrittenBody = body;
 
@@ -421,17 +424,16 @@ public final class GpuIrConstantFoldingMaterializationProposalProvider implement
             FoldAnalysis analysis = analyzeFoldCandidate(methodName, node, nodesById);
             if (analysis.candidate().isPresent()) {
                 FoldCandidate candidate = analysis.candidate().orElseThrow();
-                Replacement replacement = replaceFirst(rewrittenBody, candidate.expressionText(), candidate.foldedValue());
-                if (!replacement.replaced()) {
+                GpuIrTypedBodyGraphPatch.Applied patch = graphPatch(candidate).apply(typedBody, rewrittenBody);
+                if (!patch.applied()) {
                     if (recordSkips) {
                         stats.candidateCount++;
-                        stats.skippedBodyTextPatternMissingCount++;
-                        stats.setFirstBlocker("body-text-pattern-missing");
+                        stats.recordPatchBlocker(patch.blocker());
                     }
                     continue;
                 }
                 stats.candidateCount++;
-                rewrittenBody = replacement.body();
+                rewrittenBody = patch.body();
                 transformedNodes.put(node.id(), candidate);
                 stats.transformedCandidates.add(candidate);
                 stats.transformedNodeCount++;
@@ -447,37 +449,14 @@ public final class GpuIrConstantFoldingMaterializationProposalProvider implement
                     stats.firstFoldedValue = candidate.foldedValue();
                 }
                 // Recompute nested candidates against the updated typed body on the next fixed-point pass.
-                return new BodyScan(rewrittenBody, transformedNodes);
+                return new BodyScan(rewrittenBody, patch.typedBody(), transformedNodes);
             }
             if (recordSkips) {
                 recordSkippedFold(stats, analysis.skippedReason());
             }
         }
 
-        return new BodyScan(rewrittenBody, transformedNodes);
-    }
-
-    private static Set<Integer> reachableNodeIds(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
-        LinkedHashSet<Integer> reachable = new LinkedHashSet<>();
-        ArrayList<Integer> pending = new ArrayList<>(typedBody.rootNodeIds());
-        for (int index = 0; index < pending.size(); index++) {
-            Integer nodeId = pending.get(index);
-            if (!reachable.add(nodeId)) {
-                continue;
-            }
-            IrGpuTypedNode node = nodesById.get(nodeId);
-            if (node == null) {
-                continue;
-            }
-            for (List<Integer> childIds : node.children().values()) {
-                for (Integer childId : childIds) {
-                    if (!reachable.contains(childId)) {
-                        pending.add(childId);
-                    }
-                }
-            }
-        }
-        return reachable;
+        return new BodyScan(rewrittenBody, typedBody, transformedNodes);
     }
 
     private static void recordSkippedFold(RewriteStats stats, String skippedReason) {
@@ -907,44 +886,18 @@ public final class GpuIrConstantFoldingMaterializationProposalProvider implement
         return Optional.of(result[0]);
     }
 
-    private record Replacement(String body, boolean replaced) {
-    }
-
-    private static Replacement replaceFirst(String body, String expressionText, String foldedValue) {
-        String rewritten = Pattern.compile(Pattern.quote(expressionText))
-                .matcher(body)
-                .replaceFirst(Matcher.quoteReplacement(foldedValue));
-        return new Replacement(rewritten, !rewritten.equals(body));
-    }
-
-    private static IrGpuTypedBody rewriteTypedBody(
-            IrGpuTypedBody typedBody,
-            Map<Integer, FoldCandidate> transformedNodes
-    ) {
-        ArrayList<IrGpuTypedNode> nodes = new ArrayList<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            FoldCandidate candidate = transformedNodes.get(node.id());
-            if (candidate == null) {
-                nodes.add(node);
-                continue;
-            }
-            nodes.add(candidate.replacementNode(node.id()));
-        }
-        return new IrGpuTypedBody(typedBody.format(), typedBody.rootNodeIds(), nodes);
+    private static GpuIrTypedBodyGraphPatch.Plan graphPatch(FoldCandidate candidate) {
+        return GpuIrTypedBodyGraphPatch.plan(
+                candidate.expressionText(),
+                candidate.foldedValue(),
+                candidate.replacementNode(candidate.nodeId())
+        );
     }
 
     private static Map<String, List<Integer>> copyChildren(Map<String, List<Integer>> children) {
         LinkedHashMap<String, List<Integer>> copy = new LinkedHashMap<>();
         children.forEach((key, value) -> copy.put(key, List.copyOf(value)));
         return Map.copyOf(copy);
-    }
-
-    private static Map<Integer, IrGpuTypedNode> nodesById(IrGpuTypedBody typedBody) {
-        LinkedHashMap<Integer, IrGpuTypedNode> nodes = new LinkedHashMap<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            nodes.put(node.id(), node);
-        }
-        return Map.copyOf(nodes);
     }
 
     private static boolean fitsInt(BigInteger value) {
@@ -1034,6 +987,14 @@ public final class GpuIrConstantFoldingMaterializationProposalProvider implement
         private String firstFoldedValue = "none";
         private final ArrayList<FoldCandidate> transformedCandidates = new ArrayList<>();
         private String firstBlocker = "none";
+
+        private void recordPatchBlocker(String blocker) {
+            switch (GpuIrTypedBodyGraphPatch.blockerKind(blocker)) {
+                case BODY_TEXT_PATTERN_MISSING -> skippedBodyTextPatternMissingCount++;
+                case TYPED_BODY_MISSING, TYPED_GRAPH_MISSING, OTHER -> skippedNonLiteralOperandCount++;
+            }
+            setFirstBlocker(blocker);
+        }
 
         private void add(RewriteStats other) {
             typedBodyCount += other.typedBodyCount;

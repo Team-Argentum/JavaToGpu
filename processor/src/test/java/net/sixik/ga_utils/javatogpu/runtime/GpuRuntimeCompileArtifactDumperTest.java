@@ -3268,6 +3268,7 @@ class GpuRuntimeCompileArtifactDumperTest {
 
         assertTrue(evidence.contains("safeLocalCseMaterialization.pass.count=1"));
         assertTrue(evidence.contains("safeLocalCseMaterialization.localBinding.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.introducedTemporary.count=0"));
         assertTrue(evidence.contains("safeLocalCseMaterialization.transformedNode.count=1"));
         assertTrue(evidence.contains("safeLocalCseMaterialization.bodyTextReplacement.count=1"));
         assertTrue(evidence.contains("safeLocalCseMaterialization.fixedPoint.pass.count=1"));
@@ -3671,6 +3672,114 @@ class GpuRuntimeCompileArtifactDumperTest {
                         + "loop-vectorization-materialization=not-recorded, "
                         + "typed-dead-code-materialization=not-recorded"
         ));
+    }
+
+    @Test
+    void dumpsLoopVectorizationInvalidatedTypedBodyRebuildAsBlockedEvidence() {
+        IrGpuArtifact original = artifact("body\n  return loop vectorization candidates\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global const float* input, __global float* out) { out[0] = input[0]; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.loop-vectorization-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:loop-vectorized-source-only",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.loop-vectorization-materialization",
+                        "materialized-review-candidate",
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("transformedLoop.count", "1"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("bodyTextReplacement.count", "1"),
+                                Map.entry("typedBody.materialized.count", "0"),
+                                Map.entry("typedBody.invalidated.count", "1"),
+                                Map.entry("typedBody.rebuild.attempted.count", "1"),
+                                Map.entry("typedBody.rebuild.parsed.count", "1"),
+                                Map.entry("typedBody.rebuild.built.count", "0"),
+                                Map.entry("typedBody.rebuild.graphValidated.count", "0"),
+                                Map.entry("typedBody.rebuild.rejected.count", "1"),
+                                Map.entry(
+                                        "typedBody.rebuild.firstBlocker",
+                                        "typed-body-rebuild-statement-conversion-blocked"
+                                ),
+                                Map.entry("skipped.loopShape.count", "0"),
+                                Map.entry("skipped.unsupportedWidth.count", "0"),
+                                Map.entry("skipped.unsafeLoadPattern.count", "0"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "loop-vectorization-materialization"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.status", "recorded"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                                Map.entry("runtimeEquivalencePayload.firstBlocker", "none"),
+                                Map.entry("safety.loopTripCountProven", "true"),
+                                Map.entry("safety.contiguousLoadProven", "true"),
+                                Map.entry("safety.orderedReductionPreserved", "true"),
+                                Map.entry("firstBlocker", "typed-body-rebuild-statement-conversion-blocked")
+                        )
+                ),
+                List.of("loop vectorization source rewrite succeeded but typed body rebuild was invalidated")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:loop-vectorization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport,
+                GpuRuntimeEquivalenceEvidence.passed(request, 1, 1, List.of("source rewrite payload matched"))
+        );
+
+        String evidence = GpuRuntimeCompileArtifactDumper.dump(snapshot)
+                .artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+
+        assertTrue(evidence.contains("loopVectorizationMaterialization.transformedLoop.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.bodyTextReplacement.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.materialized.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.invalidated.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.attempted.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.parsed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.built.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.rejected.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.status=invalidated"));
+        assertTrue(evidence.contains(
+                "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker="
+                        + "typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.status=blocked"));
+        assertTrue(evidence.contains(
+                "loopVectorizationMaterialization.firstBlocker=typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=blocked"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.firstBlocker=typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("loop-vectorization-materialization=blocked"));
     }
 
     @Test
