@@ -75,6 +75,16 @@ public final class GpuRuntimeIrPeepholePass implements GpuRuntimeIrOptimizationP
         fields.put("mode", "diagnostic-only");
         fields.put("mutationEnabled", "false");
         fields.put("fastMath", Boolean.toString(request.fastMathEnabled()));
+        fields.put("policyEnabled", Boolean.toString(request.optimizerPolicyEnabled()));
+        fields.put("policyProfile", request.optimizerPolicy().profile());
+        fields.put("policyEnabledFamilies", String.join(",", request.optimizerPolicy().enabledFamilies()));
+        fields.put("policyDisabledFamilies", String.join(",", request.optimizerPolicy().disabledFamilies()));
+        fields.put("policyJournal", Boolean.toString(request.optimizerJournalRequested()));
+        fields.put("policyDumpArtifacts", Boolean.toString(request.optimizerArtifactDumpRequested()));
+        fields.put("policyProductionIntent", Boolean.toString(request.optimizerPolicy().productionIntent()));
+        fields.put("policyVendorAdaptation", Boolean.toString(request.optimizerPolicy().vendorAdaptation()));
+        fields.put("policyVectorization", request.optimizerPolicy().vectorization());
+        fields.put("policyResourceShaping", Boolean.toString(request.optimizerPolicy().resourceShaping()));
         fields.put("policySource", request.optimizerPolicy().source());
         int methodBodyCount = artifact.map(value -> value.module().methodBodies().size()).orElse(0);
         long typedBodyCount = artifact.stream()

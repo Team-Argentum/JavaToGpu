@@ -18,7 +18,7 @@ Use these in source code that should compile to GPU code.
 - `@GPUWorkGroupSizeHint` declares a portable preferred work-group size hint for backends that support it.
 - `@GPUVectorTypeHint` declares a portable preferred vector type hint for backend lowerers that use it.
 - `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` cover common layout and helper emission metadata without raw backend strings.
-- `@GPUOptimize` records method-level optimizer policy such as `fastMath`; the default remains strict.
+- `@GPUOptimize` records method-level optimizer policy such as enablement/profile hints, `fastMath`, family toggles, journal/dump hints, production intent, vendor adaptation, vectorization preference, and resource-shaping intent; the default remains strict and fail-closed.
 - `@GPUDeviceConstraint` restricts a method to supported backends, vendors, device classes, and required runtime features.
 - `@GPUFallbackVariant` groups ABI-compatible implementations that runtime may choose for different devices.
 - `@GPUStruct` marks a Java class as a value type that can be marshalled to OpenCL struct layout.
@@ -34,11 +34,13 @@ Prefer portable annotations first. Use raw attributes only for backend-specific 
 @GPU
 @GPUWorkGroupSize(x = 8, y = 8, z = 1)
 @GPUWorkGroupSizeHint(x = 8, y = 8, z = 1)
-@GPUOptimize(fastMath = false)
+@GPUOptimize(fastMath = false, enabledFamilies = {"clamp", "step", "mix"})
 static void kernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
+
+`@GPUOptimize` records intent in the generated `IrGpu` manifest. It does not by itself enable production mutation, selected IR replacement, or optimized backend source selection.
 
 Use a device constraint when a method requires specific hardware capabilities:
 

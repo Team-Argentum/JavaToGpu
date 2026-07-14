@@ -46,6 +46,17 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
                 approvalTemplate.runtimeEquivalencePayloadPresent.count=0
                 approvalTemplate.runtimeEquivalencePayloadPassed.count=0
                 approvalTemplate.runtimeEquivalencePayloadComplete.count=0
+                policyGate.skipped.count=2
+                policyGate.optimizerPolicyDisabled.count=0
+                policyGate.familyDisabled.count=1
+                policyGate.familyNotEnabled.count=1
+                policyGate.providerInvoked.count=0
+                policyGate.firstBlocker=optimizer-family-disabled
+                policyGate.family.summary=mix=1, clamp=1
+                policyGate.mutationAllowed=false
+                policyGate.selectionApplied=false
+                policyGate.optimizedArtifactSelected=false
+                policyGate.selectedIrReplacement=false
                 optimizedArtifactCandidate.status=candidate-ready
                 optimizedArtifactCandidate.count=1
                 optimizedArtifactCandidate.ready.count=1
@@ -241,6 +252,13 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertEquals(0, summary.entries().get(0).approvalTemplateRuntimeEquivalencePayloadPresentCount());
         assertEquals(0, summary.entries().get(0).approvalTemplateRuntimeEquivalencePayloadPassedCount());
         assertEquals(0, summary.entries().get(0).approvalTemplateRuntimeEquivalencePayloadCompleteCount());
+        assertEquals(2, summary.entries().get(0).policyGateSkippedCount());
+        assertEquals(0, summary.entries().get(0).policyGateOptimizerPolicyDisabledCount());
+        assertEquals(1, summary.entries().get(0).policyGateFamilyDisabledCount());
+        assertEquals(1, summary.entries().get(0).policyGateFamilyNotEnabledCount());
+        assertEquals(0, summary.entries().get(0).policyGateProviderInvokedCount());
+        assertEquals("optimizer-family-disabled", summary.entries().get(0).policyGateFirstBlocker());
+        assertEquals("mix=1, clamp=1", summary.entries().get(0).policyGateFamilySummary());
         assertEquals("candidate-ready", summary.entries().get(0).optimizedArtifactCandidateStatus());
         assertEquals(1, summary.entries().get(0).optimizedArtifactCandidateCount());
         assertEquals(1, summary.entries().get(0).optimizedArtifactCandidateReadyCount());
@@ -352,6 +370,15 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertEquals(0, summary.totalApprovalTemplateRuntimeEquivalencePayloadPresentCount());
         assertEquals(0, summary.totalApprovalTemplateRuntimeEquivalencePayloadPassedCount());
         assertEquals(0, summary.totalApprovalTemplateRuntimeEquivalencePayloadCompleteCount());
+        assertEquals(2, summary.totalPolicyGateSkippedCount());
+        assertEquals(0, summary.totalPolicyGateOptimizerPolicyDisabledCount());
+        assertEquals(1, summary.totalPolicyGateFamilyDisabledCount());
+        assertEquals(1, summary.totalPolicyGateFamilyNotEnabledCount());
+        assertEquals(0, summary.totalPolicyGateProviderInvokedCount());
+        assertEquals("optimizer-family-disabled", summary.policyGateFirstBlocker());
+        String policyGateFamilySummary = summary.policyGateFamilySummary();
+        assertTrue(policyGateFamilySummary.contains("mix=1"));
+        assertTrue(policyGateFamilySummary.contains("clamp=1"));
         assertEquals("none", summary.optimizedArtifactCandidateFirstBlocker());
         assertEquals("mutation-disabled", summary.optimizedArtifactCandidateSelectionFirstBlocker());
         assertEquals(1, summary.totalBackendNeutralSourceMaterializationPassCount());
@@ -431,6 +458,13 @@ class OpenClRuntimeIrOptimizerEvidenceSummaryTest {
         assertTrue(summary.toMarkdown().contains(
                 "- Approval templates runtime-equivalence payload complete: `0`"
         ));
+        assertTrue(summary.toMarkdown().contains("- Policy-gated optimizer skips: `2`"));
+        assertTrue(summary.toMarkdown().contains("- Policy-gated optimizer disabled skips: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Policy-gated family disabled skips: `1`"));
+        assertTrue(summary.toMarkdown().contains("- Policy-gated family not-enabled skips: `1`"));
+        assertTrue(summary.toMarkdown().contains("- Policy-gated provider invoked count: `0`"));
+        assertTrue(summary.toMarkdown().contains("- Policy-gate first blocker: `optimizer-family-disabled`"));
+        assertTrue(summary.toMarkdown().contains("- Policy-gate family summary: `" + policyGateFamilySummary + "`"));
         assertTrue(summary.toMarkdown().contains("- Optimized artifact candidate status: `candidate-ready`"));
         assertTrue(summary.toMarkdown().contains("- Optimized artifact candidates: `1`"));
         assertTrue(summary.toMarkdown().contains("- Optimized artifact candidates ready: `1`"));

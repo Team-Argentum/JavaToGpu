@@ -8,6 +8,8 @@ The current module is intentionally proposal-first. It contributes ServiceLoader
 
 The first alpha is an evidence and contract boundary, not a production rewrite release. It includes the optional `ir-optimizer` / `ir-vendor-optimizer` module split, immutable proposal contracts, the validation sandwich, preview-only optimizer families, backend-neutral source materialization, constrained review-only constant-folding materialization, review-only safe-local-CSE materialization that reuses an existing local value, review-only fast-math `mad/fma` materialization, review-only `clamp` materialization for generated `min(max(x, lo), hi)` shapes, review-only `step` materialization for ternary masks, review-only `mix` materialization for interpolation shapes, review-only fixed-width loop-vectorization materialization, typed dead-code materialization for unreachable pure typed nodes, approval-template metadata, optimized-artifact candidate envelopes, and OpenCL evidence/report/validator guardrails.
 
+The first shared typed-body patch scaffold is `GpuIrTypedBodyGraphPatch`. It owns deterministic typed-node lookup, reachable-node scanning, next-node allocation, root replacement, append-only auxiliary node insertion, intrinsic-call node construction, fail-closed `Plan.apply(...)` validation for text + typed-body patches, and shared patch-blocker taxonomy for provider counters. `clamp`, `step`, `mix`, and `mad/fma` use it for transactional patch mechanics while their matcher logic, runtime-equivalence evidence, and fail-closed selected-IR behavior remain provider-owned.
+
 It intentionally excludes runtime IR selection, selected-IR replacement, production mutation, real vendor rewrites, and any automatic choice of optimized artifacts. Those remain future gates above runtime-equivalence, rollback, approval, and production-promotion evidence.
 
 ## Contract
@@ -18,6 +20,7 @@ It intentionally excludes runtime IR selection, selected-IR replacement, product
 - Optimizer passes must not mutate the input artifact in place.
 - Real rewrites must return a distinct optimized artifact, diagnostics, proof links, and rollback evidence.
 - Missing optimizer modules, missing approval, failed proof, or disabled optimization must leave the original IR selected.
+- `@GPUOptimize` policy metadata is available to proposal providers through the runtime bridge context, including profile hints, fast-math permission, enabled/disabled family lists, journal/dump hints, production intent, vendor adaptation, vectorization preference, and resource-shaping intent. The runtime bridge now uses `enabledFamilies` / `disabledFamilies` and explicit `enabled = false` to gate provider invocation. Policy skips emit `ir-optimizer.policy-gate` proof fields, are aggregated into `runtime-ir-optimizer-evidence.properties` / markdown `policyGate.*` counters, and keep mutation, optimized-artifact selection, and selected-IR replacement disabled.
 
 ## Current Skeleton
 

@@ -67,6 +67,16 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
         Optional<IrGpuArtifact> candidateArtifact = Optional.empty();
         ArrayList<GpuRuntimeIrOptimizationPassReport> passReports = new ArrayList<>();
         for (GpuIrOptimizationProposalProvider provider : providers) {
+            ProviderPolicyGate policyGate = providerPolicyGate(request, provider);
+            if (!policyGate.allowed()) {
+                passReports.add(policySkippedReport(
+                        provider,
+                        reviewWorkingArtifact,
+                        request,
+                        policyGate
+                ).withStage(stage()));
+                continue;
+            }
             GpuIrOptimizationProposalRequest proposalRequest = new GpuIrOptimizationProposalRequest(
                     reviewWorkingArtifact,
                     request.compileRequest().options().optimizationProfile(),
@@ -90,6 +100,65 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
             }
         }
         return new GpuRuntimeIrOptimizationReport(Optional.of(selected), candidateArtifact, passReports);
+    }
+
+    private static ProviderPolicyGate providerPolicyGate(
+            GpuRuntimeIrOptimizationRequest request,
+            GpuIrOptimizationProposalProvider provider
+    ) {
+        net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata policy =
+                request.optimizerPolicy();
+        String family = provider.optimizerFamily();
+        if ("GPUOptimize".equals(policy.source()) && !policy.enabled()) {
+            return new ProviderPolicyGate(false, family, "optimizer-policy-disabled");
+        }
+        if (policy.disabledFamilies().contains(family)) {
+            return new ProviderPolicyGate(false, family, "optimizer-family-disabled");
+        }
+        if (!policy.enabledFamilies().isEmpty() && !policy.enabledFamilies().contains(family)) {
+            return new ProviderPolicyGate(false, family, "optimizer-family-not-enabled");
+        }
+        return new ProviderPolicyGate(true, family, "none");
+    }
+
+    private static GpuRuntimeIrOptimizationPassReport policySkippedReport(
+            GpuIrOptimizationProposalProvider provider,
+            IrGpuArtifact currentArtifact,
+            GpuRuntimeIrOptimizationRequest request,
+            ProviderPolicyGate policyGate
+    ) {
+        String identity = IrGpuArtifactIdentity.stableIdentity(currentArtifact);
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>(contextFields(request, false));
+        fields.put("optimizerFamily", policyGate.family());
+        fields.put("provider.extensionId", provider.extensionId());
+        fields.put("provider.extensionVersion", provider.extensionVersion());
+        fields.put("policyGate.status", "skipped");
+        fields.put("policyGate.allowed", "false");
+        fields.put("policyGate.reason", policyGate.reason());
+        fields.put("policyGate.family", policyGate.family());
+        fields.put("policyGate.providerInvoked", "false");
+        fields.put("analysisOnly", "true");
+        fields.put("mutationAllowed", "false");
+        fields.put("selectionApplied", "false");
+        fields.put("optimizedArtifactSelected", "false");
+        fields.put("selectedIrReplacement", "false");
+        GpuRuntimeIrOptimizationProofArtifact proofArtifact = GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                "ir-optimizer.policy-gate",
+                policyGate.reason(),
+                fields
+        );
+        return new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                provider.extensionVersion(),
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                identity,
+                identity,
+                policyGate.reason(),
+                "",
+                proofArtifact,
+                List.of("optimizer provider family '" + policyGate.family()
+                        + "' skipped by @GPUOptimize policy: " + policyGate.reason())
+        );
     }
 
     @Override
@@ -264,7 +333,21 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
         fields.put("deviceProfile.deviceClass", request.compileRequest().deviceProfile().deviceClass().name());
         fields.put("fastMathAllowed", Boolean.toString(request.fastMathEnabled()));
         fields.put(GpuIrOptimizationPolicy.FAST_MATH_ALLOWED_FIELD, Boolean.toString(request.fastMathEnabled()));
+        fields.put(
+                GpuIrOptimizationPolicy.VENDOR_ADAPTATION_ALLOWED_FIELD,
+                Boolean.toString(request.optimizerPolicy().vendorAdaptation())
+        );
         fields.put("optimizerPolicy.fastMath", Boolean.toString(request.fastMathEnabled()));
+        fields.put("optimizerPolicy.enabled", Boolean.toString(request.optimizerPolicyEnabled()));
+        fields.put("optimizerPolicy.profile", request.optimizerPolicy().profile());
+        fields.put("optimizerPolicy.enabledFamilies", String.join(",", request.optimizerPolicy().enabledFamilies()));
+        fields.put("optimizerPolicy.disabledFamilies", String.join(",", request.optimizerPolicy().disabledFamilies()));
+        fields.put("optimizerPolicy.journal", Boolean.toString(request.optimizerJournalRequested()));
+        fields.put("optimizerPolicy.dumpArtifacts", Boolean.toString(request.optimizerArtifactDumpRequested()));
+        fields.put("optimizerPolicy.productionIntent", Boolean.toString(request.optimizerPolicy().productionIntent()));
+        fields.put("optimizerPolicy.vendorAdaptation", Boolean.toString(request.optimizerPolicy().vendorAdaptation()));
+        fields.put("optimizerPolicy.vectorization", request.optimizerPolicy().vectorization());
+        fields.put("optimizerPolicy.resourceShaping", Boolean.toString(request.optimizerPolicy().resourceShaping()));
         fields.put("optimizerPolicy.source", request.optimizerPolicy().source());
         fields.put("mutationAllowed", Boolean.toString(mutationAllowed));
         return Map.copyOf(fields);
@@ -272,5 +355,8 @@ public final class GpuIrProposalRuntimeBridgePass implements GpuRuntimeIrOptimiz
 
     private static List<GpuIrOptimizationProposalProvider> loadProviders() {
         return GpuIrOptimizationProposalRegistry.loadFromServiceLoader().providers();
+    }
+
+    private record ProviderPolicyGate(boolean allowed, String family, String reason) {
     }
 }

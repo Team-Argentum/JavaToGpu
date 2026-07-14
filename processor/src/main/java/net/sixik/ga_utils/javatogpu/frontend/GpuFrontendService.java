@@ -398,12 +398,20 @@ public final class GpuFrontendService {
             AnnotationExpr annotation,
             String propertyName
     ) {
+        return parseStringAnnotationValues(annotation, propertyName, "GPUDeviceConstraint");
+    }
+
+    private static List<String> parseStringAnnotationValues(
+            AnnotationExpr annotation,
+            String propertyName,
+            String annotationName
+    ) {
         return annotationValue(annotation, propertyName).stream()
                 .flatMap(GpuFrontendService::annotationValues)
                 .map(expression -> {
                     if (!expression.isStringLiteralExpr()) {
                         throw new IllegalArgumentException(
-                                "GPUDeviceConstraint." + propertyName + " must contain string literals: " + expression
+                                annotationName + "." + propertyName + " must contain string literals: " + expression
                         );
                     }
                     return expression.asStringLiteralExpr().asString();
@@ -456,6 +464,26 @@ public final class GpuFrontendService {
                                 exception
                         );
                     }
+                })
+                .orElse(defaultValue);
+    }
+
+    private static boolean parseBooleanAnnotationValue(
+            AnnotationExpr annotation,
+            String propertyName,
+            boolean defaultValue,
+            String annotationName
+    ) {
+        return annotationValue(annotation, propertyName)
+                .map(expression -> {
+                    if (expression.isBooleanLiteralExpr()) {
+                        return expression.asBooleanLiteralExpr().getValue();
+                    }
+                    String value = expression.toString().trim();
+                    if ("true".equals(value) || "false".equals(value)) {
+                        return Boolean.parseBoolean(value);
+                    }
+                    return defaultValue;
                 })
                 .orElse(defaultValue);
     }
@@ -543,16 +571,25 @@ public final class GpuFrontendService {
         }
 
         return declaration.getAnnotationByName("GPUOptimize")
-                .map(annotation -> {
-                    boolean fastMath = annotation.isNormalAnnotationExpr()
-                            && annotation.asNormalAnnotationExpr().getPairs().stream()
-                            .filter(pair -> pair.getNameAsString().equals("fastMath"))
-                            .findFirst()
-                            .map(pair -> Boolean.parseBoolean(pair.getValue().toString()))
-                            .orElse(false);
-                    return IrGpuOptimizerPolicyMetadata.fromGpuOptimize(fastMath);
-                })
+                .map(GpuFrontendService::parseGpuOptimizePolicy)
                 .orElseGet(IrGpuOptimizerPolicyMetadata::defaultStrict);
+    }
+
+    private static IrGpuOptimizerPolicyMetadata parseGpuOptimizePolicy(AnnotationExpr annotation) {
+        String profile = parseOptionalStringAnnotationValue(annotation, "profile", "GPUOptimize");
+        return IrGpuOptimizerPolicyMetadata.fromGpuOptimize(
+                parseBooleanAnnotationValue(annotation, "fastMath", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "enabled", true, "GPUOptimize"),
+                profile.isBlank() ? "default" : profile,
+                parseStringAnnotationValues(annotation, "enabledFamilies", "GPUOptimize"),
+                parseStringAnnotationValues(annotation, "disabledFamilies", "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "journal", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "dumpArtifacts", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "productionIntent", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "vendorAdaptation", false, "GPUOptimize"),
+                parseOptionalStringAnnotationValue(annotation, "vectorization", "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "resourceShaping", false, "GPUOptimize")
+        );
     }
 
     private static List<IrGpuStructMetadata> buildStructMetadata(List<ParsedGpuStruct> structs) {

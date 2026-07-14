@@ -332,6 +332,16 @@ public final class IrGpuArtifactParser {
     private static IrGpuOptimizerPolicyMetadata parseOptimizerPolicyMetadata(Properties properties) {
         return new IrGpuOptimizerPolicyMetadata(
                 Boolean.parseBoolean(properties.getProperty("optimizerPolicy.fastMath", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.enabled", "false")),
+                properties.getProperty("optimizerPolicy.profile", "off"),
+                parseIndexedValues(properties, "optimizerPolicy.enabledFamily"),
+                parseIndexedValues(properties, "optimizerPolicy.disabledFamily"),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.journal", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.dumpArtifacts", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.productionIntent", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.vendorAdaptation", "false")),
+                properties.getProperty("optimizerPolicy.vectorization", "auto"),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.resourceShaping", "false")),
                 properties.getProperty("optimizerPolicy.source", "default-strict")
         );
     }

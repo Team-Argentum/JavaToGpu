@@ -1482,8 +1482,10 @@ class GpuRuntimeIrOptimizerRegistryTest {
         );
 
         assertTrue(request.fastMathEnabled());
+        assertTrue(request.optimizerPolicyEnabled());
         assertEquals("GPUOptimize", request.optimizerPolicy().source());
         assertFalse(missingArtifactRequest.fastMathEnabled());
+        assertFalse(missingArtifactRequest.optimizerPolicyEnabled());
         assertEquals("default-strict", missingArtifactRequest.optimizerPolicy().source());
     }
 

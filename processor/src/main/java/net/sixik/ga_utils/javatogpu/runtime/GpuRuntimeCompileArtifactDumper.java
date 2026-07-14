@@ -759,6 +759,24 @@ public final class GpuRuntimeCompileArtifactDumper {
                 .append(approvalTemplatePayload.passedCount()).append('\n');
         builder.append("approvalTemplate.runtimeEquivalencePayloadComplete.count=")
                 .append(approvalTemplatePayload.completeCount()).append('\n');
+        PolicyGateEvidence policyGate = policyGateEvidence(irOptimizerReports);
+        builder.append("policyGate.skipped.count=").append(policyGate.skippedCount()).append('\n');
+        builder.append("policyGate.optimizerPolicyDisabled.count=")
+                .append(policyGate.optimizerPolicyDisabledCount()).append('\n');
+        builder.append("policyGate.familyDisabled.count=")
+                .append(policyGate.familyDisabledCount()).append('\n');
+        builder.append("policyGate.familyNotEnabled.count=")
+                .append(policyGate.familyNotEnabledCount()).append('\n');
+        builder.append("policyGate.providerInvoked.count=")
+                .append(policyGate.providerInvokedCount()).append('\n');
+        builder.append("policyGate.firstBlocker=")
+                .append(safePropertyValue(policyGate.firstBlocker())).append('\n');
+        builder.append("policyGate.family.summary=")
+                .append(safePropertyValue(policyGate.familySummary())).append('\n');
+        builder.append("policyGate.mutationAllowed=false\n");
+        builder.append("policyGate.selectionApplied=false\n");
+        builder.append("policyGate.optimizedArtifactSelected=false\n");
+        builder.append("policyGate.selectedIrReplacement=false\n");
         OptimizedArtifactCandidateEvidence optimizedArtifactCandidate = optimizedArtifactCandidateEvidence(irOptimizerReports);
         builder.append("optimizedArtifactCandidate.status=").append(optimizedArtifactCandidate.status()).append('\n');
         builder.append("optimizedArtifactCandidate.count=").append(optimizedArtifactCandidate.count()).append('\n');
@@ -1297,6 +1315,68 @@ public final class GpuRuntimeCompileArtifactDumper {
             int passedCount,
             int completeCount
     ) {
+    }
+
+    private static PolicyGateEvidence policyGateEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int skippedCount = 0;
+        int optimizerPolicyDisabledCount = 0;
+        int familyDisabledCount = 0;
+        int familyNotEnabledCount = 0;
+        int providerInvokedCount = 0;
+        String firstBlocker = "none";
+        LinkedHashMap<String, Integer> familyCounts = new LinkedHashMap<>();
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (!"skipped".equals(fields.get("policyGate.status"))) {
+                continue;
+            }
+            skippedCount++;
+            String reason = fields.getOrDefault("policyGate.reason", "unknown");
+            String family = fields.getOrDefault("policyGate.family", fields.getOrDefault("optimizerFamily", "unknown"));
+            if (!family.isBlank()) {
+                familyCounts.merge(family, 1, Integer::sum);
+            }
+            if (parseBoolean(fields.get("policyGate.providerInvoked"))) {
+                providerInvokedCount++;
+            }
+            switch (reason) {
+                case "optimizer-policy-disabled" -> optimizerPolicyDisabledCount++;
+                case "optimizer-family-disabled" -> familyDisabledCount++;
+                case "optimizer-family-not-enabled" -> familyNotEnabledCount++;
+                default -> { }
+            }
+            if ("none".equals(firstBlocker) && !reason.isBlank() && !"none".equals(reason)) {
+                firstBlocker = reason;
+            }
+        }
+        return new PolicyGateEvidence(
+                skippedCount,
+                optimizerPolicyDisabledCount,
+                familyDisabledCount,
+                familyNotEnabledCount,
+                providerInvokedCount,
+                skippedCount == 0 ? "none" : firstBlocker,
+                formatCountSummary(familyCounts)
+        );
+    }
+
+    private static String formatCountSummary(Map<String, Integer> counts) {
+        if (counts == null || counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder summary = new StringBuilder();
+        counts.forEach((key, count) -> {
+            if (!summary.isEmpty()) {
+                summary.append(", ");
+            }
+            summary.append(key).append('=').append(Math.max(0, count));
+        });
+        return summary.toString();
     }
 
     private static OptimizedArtifactCandidateEvidence optimizedArtifactCandidateEvidence(
@@ -3231,6 +3311,17 @@ public final class GpuRuntimeCompileArtifactDumper {
             int acceptedCount,
             String resourcePathSummary,
             String firstBlocker
+    ) {
+    }
+
+    private record PolicyGateEvidence(
+            int skippedCount,
+            int optimizerPolicyDisabledCount,
+            int familyDisabledCount,
+            int familyNotEnabledCount,
+            int providerInvokedCount,
+            String firstBlocker,
+            String familySummary
     ) {
     }
 

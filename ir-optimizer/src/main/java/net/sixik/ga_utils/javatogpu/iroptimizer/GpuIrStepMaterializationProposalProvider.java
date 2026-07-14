@@ -343,10 +343,9 @@ public final class GpuIrStepMaterializationProposalProvider implements GpuIrOpti
                 break;
             }
             StepCandidate value = candidate.orElseThrow();
-            Replacement replacement = replaceFirst(currentBody, value.expressionText(), value.replacementText());
-            if (!replacement.replaced()) {
-                stats.skippedBodyTextPatternMissingCount++;
-                stats.setFirstBlocker("body-text-pattern-missing");
+            GpuIrTypedBodyGraphPatch.Applied patch = graphPatch(value).apply(currentTypedBody, currentBody);
+            if (!patch.applied()) {
+                stats.recordPatchBlocker(patch.blocker());
                 break;
             }
             changed = true;
@@ -364,8 +363,8 @@ public final class GpuIrStepMaterializationProposalProvider implements GpuIrOpti
                 stats.firstExpression = value.expressionText();
                 stats.firstReplacement = value.replacementText();
             }
-            currentBody = replacement.body();
-            currentTypedBody = rewriteTypedBody(currentTypedBody, value);
+            currentBody = patch.body();
+            currentTypedBody = patch.typedBody();
         }
 
         if (!changed) {
@@ -384,9 +383,9 @@ public final class GpuIrStepMaterializationProposalProvider implements GpuIrOpti
             String body,
             RewriteStats stats
     ) {
-        Map<Integer, IrGpuTypedNode> nodesById = nodesById(typedBody);
-        Set<Integer> reachableNodeIds = reachableNodeIds(typedBody, nodesById);
-        int nextNodeId = nodesById.keySet().stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+        Map<Integer, IrGpuTypedNode> nodesById = GpuIrTypedBodyGraphPatch.nodesById(typedBody);
+        Set<Integer> reachableNodeIds = GpuIrTypedBodyGraphPatch.reachableNodeIds(typedBody, nodesById);
+        int nextNodeId = GpuIrTypedBodyGraphPatch.nextNodeId(typedBody);
         for (IrGpuTypedNode node : typedBody.nodes()) {
             if (!reachableNodeIds.contains(node.id()) || !isConditional(node)) {
                 continue;
@@ -627,40 +626,18 @@ public final class GpuIrStepMaterializationProposalProvider implements GpuIrOpti
         return sourceText(nodesById.get(childId), nodesById);
     }
 
-    private record Replacement(String body, boolean replaced) {
-    }
-
-    private static Replacement replaceFirst(String body, String expressionText, String replacementText) {
-        int index = body.indexOf(expressionText);
-        if (index < 0) {
-            return new Replacement(body, false);
-        }
-        return new Replacement(
-                body.substring(0, index) + replacementText + body.substring(index + expressionText.length()),
-                true
-        );
-    }
-
-    private static IrGpuTypedBody rewriteTypedBody(IrGpuTypedBody typedBody, StepCandidate candidate) {
-        ArrayList<IrGpuTypedNode> nodes = new ArrayList<>();
-        boolean addedStepNode = false;
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            if (node.id() == candidate.rootNodeId()) {
-                nodes.add(candidate.inverted()
-                        ? invertedRootNode(node.id(), candidate)
-                        : stepNode(node.id(), candidate));
-                continue;
-            }
-            nodes.add(node);
-        }
-        if (candidate.inverted()) {
-            nodes.add(stepNode(candidate.stepNodeId(), candidate));
-            addedStepNode = true;
-        }
-        if (!candidate.inverted() || addedStepNode) {
-            return new IrGpuTypedBody(typedBody.format(), typedBody.rootNodeIds(), nodes);
-        }
-        return typedBody;
+    private static GpuIrTypedBodyGraphPatch.Plan graphPatch(StepCandidate candidate) {
+        IrGpuTypedNode replacement = candidate.inverted()
+                ? invertedRootNode(candidate.rootNodeId(), candidate)
+                : stepNode(candidate.rootNodeId(), candidate);
+        return candidate.inverted()
+                ? GpuIrTypedBodyGraphPatch.plan(
+                        candidate.expressionText(),
+                        candidate.replacementText(),
+                        replacement,
+                        List.of(stepNode(candidate.stepNodeId(), candidate))
+                )
+                : GpuIrTypedBodyGraphPatch.plan(candidate.expressionText(), candidate.replacementText(), replacement);
     }
 
     private static IrGpuTypedNode invertedRootNode(int nodeId, StepCandidate candidate) {
@@ -676,44 +653,13 @@ public final class GpuIrStepMaterializationProposalProvider implements GpuIrOpti
     }
 
     private static IrGpuTypedNode stepNode(int nodeId, StepCandidate candidate) {
-        LinkedHashMap<String, String> attributes = new LinkedHashMap<>();
-        attributes.put("name", TARGET_INTRINSIC);
-        attributes.put("backendName", TARGET_INTRINSIC);
-        attributes.put("codeTemplate", "");
-        attributes.put("receiver.null", "true");
-        attributes.put("resultType", "step-review");
-        attributes.put("argumentTypes.count", "2");
-        attributes.put("argumentTypes.0", "step-review");
-        attributes.put("argumentTypes.1", "step-review");
-        return new IrGpuTypedNode(
+        return GpuIrTypedBodyGraphPatch.intrinsicCall(
                 nodeId,
-                "GpuIrIntrinsicCall",
-                attributes,
-                Map.of("arguments", candidate.argumentNodeIds())
+                TARGET_INTRINSIC,
+                "step-review",
+                candidate.argumentNodeIds(),
+                "step-review"
         );
-    }
-
-    private static Set<Integer> reachableNodeIds(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
-        LinkedHashSet<Integer> reachable = new LinkedHashSet<>();
-        ArrayList<Integer> pending = new ArrayList<>(typedBody.rootNodeIds());
-        while (!pending.isEmpty()) {
-            int nodeId = pending.remove(pending.size() - 1);
-            if (!reachable.add(nodeId)) {
-                continue;
-            }
-            IrGpuTypedNode node = nodesById.get(nodeId);
-            if (node == null) {
-                continue;
-            }
-            for (List<Integer> childIds : node.children().values()) {
-                for (Integer childId : childIds) {
-                    if (childId != null && nodesById.containsKey(childId) && !reachable.contains(childId)) {
-                        pending.add(childId);
-                    }
-                }
-            }
-        }
-        return Set.copyOf(reachable);
     }
 
     private static Integer singleChild(IrGpuTypedNode node, String... names) {
@@ -769,14 +715,6 @@ public final class GpuIrStepMaterializationProposalProvider implements GpuIrOpti
             }
         }
         return "";
-    }
-
-    private static Map<Integer, IrGpuTypedNode> nodesById(IrGpuTypedBody typedBody) {
-        LinkedHashMap<Integer, IrGpuTypedNode> nodes = new LinkedHashMap<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            nodes.put(node.id(), node);
-        }
-        return Map.copyOf(nodes);
     }
 
     private static boolean isOpenClReview(GpuIrOptimizationProposalRequest request) {
@@ -866,6 +804,16 @@ public final class GpuIrStepMaterializationProposalProvider implements GpuIrOpti
 
         private void recordCandidate(StepCandidate candidate) {
             candidateKeys.add(candidate.methodName() + "#" + candidate.rootNodeId());
+        }
+
+        private void recordPatchBlocker(String blocker) {
+            switch (GpuIrTypedBodyGraphPatch.blockerKind(blocker)) {
+                case BODY_TEXT_PATTERN_MISSING -> skippedBodyTextPatternMissingCount++;
+                case TYPED_BODY_MISSING -> skippedTypedBodyMissingCount++;
+                case TYPED_GRAPH_MISSING -> skippedMissingChildReferenceCount++;
+                case OTHER -> skippedUnsupportedShapeCount++;
+            }
+            setFirstBlocker(blocker);
         }
 
         private void add(RewriteStats other) {

@@ -386,10 +386,9 @@ public final class GpuIrMixMaterializationProposalProvider implements GpuIrOptim
                 break;
             }
             MixCandidate value = candidate.orElseThrow();
-            Replacement replacement = replaceFirst(currentBody, value.expressionText(), value.replacementText());
-            if (!replacement.replaced()) {
-                stats.skippedBodyTextPatternMissingCount++;
-                stats.setFirstBlocker("body-text-pattern-missing");
+            GpuIrTypedBodyGraphPatch.Applied patch = graphPatch(value).apply(currentTypedBody, currentBody);
+            if (!patch.applied()) {
+                stats.recordPatchBlocker(patch.blocker());
                 break;
             }
             changed = true;
@@ -409,8 +408,8 @@ public final class GpuIrMixMaterializationProposalProvider implements GpuIrOptim
                 stats.firstExpression = value.expressionText();
                 stats.firstReplacement = value.replacementText();
             }
-            currentBody = replacement.body();
-            currentTypedBody = rewriteTypedBody(currentTypedBody, value);
+            currentBody = patch.body();
+            currentTypedBody = patch.typedBody();
         }
 
         if (!changed) {
@@ -430,8 +429,8 @@ public final class GpuIrMixMaterializationProposalProvider implements GpuIrOptim
             boolean fastMathAllowed,
             RewriteStats stats
     ) {
-        Map<Integer, IrGpuTypedNode> nodesById = nodesById(typedBody);
-        Set<Integer> reachableNodeIds = reachableNodeIds(typedBody, nodesById);
+        Map<Integer, IrGpuTypedNode> nodesById = GpuIrTypedBodyGraphPatch.nodesById(typedBody);
+        Set<Integer> reachableNodeIds = GpuIrTypedBodyGraphPatch.reachableNodeIds(typedBody, nodesById);
         for (IrGpuTypedNode node : typedBody.nodes()) {
             if (!reachableNodeIds.contains(node.id())) {
                 continue;
@@ -840,72 +839,18 @@ public final class GpuIrMixMaterializationProposalProvider implements GpuIrOptim
         return sourceText(nodesById.get(childId), nodesById);
     }
 
-    private record Replacement(String body, boolean replaced) {
-    }
-
-    private static Replacement replaceFirst(String body, String expressionText, String replacementText) {
-        int index = body.indexOf(expressionText);
-        if (index < 0) {
-            return new Replacement(body, false);
-        }
-        return new Replacement(
-                body.substring(0, index) + replacementText + body.substring(index + expressionText.length()),
-                true
+    private static GpuIrTypedBodyGraphPatch.Plan graphPatch(MixCandidate candidate) {
+        return GpuIrTypedBodyGraphPatch.plan(
+                candidate.expressionText(),
+                candidate.replacementText(),
+                GpuIrTypedBodyGraphPatch.intrinsicCall(
+                        candidate.rootNodeId(),
+                        TARGET_INTRINSIC,
+                        "mix-review",
+                        candidate.argumentNodeIds(),
+                        "mix-review"
+                )
         );
-    }
-
-    private static IrGpuTypedBody rewriteTypedBody(IrGpuTypedBody typedBody, MixCandidate candidate) {
-        ArrayList<IrGpuTypedNode> nodes = new ArrayList<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            if (node.id() == candidate.rootNodeId()) {
-                nodes.add(replacementNode(node.id(), candidate));
-                continue;
-            }
-            nodes.add(node);
-        }
-        return new IrGpuTypedBody(typedBody.format(), typedBody.rootNodeIds(), nodes);
-    }
-
-    private static IrGpuTypedNode replacementNode(int nodeId, MixCandidate candidate) {
-        LinkedHashMap<String, String> attributes = new LinkedHashMap<>();
-        attributes.put("name", TARGET_INTRINSIC);
-        attributes.put("backendName", TARGET_INTRINSIC);
-        attributes.put("codeTemplate", "");
-        attributes.put("receiver.null", "true");
-        attributes.put("resultType", "mix-review");
-        attributes.put("argumentTypes.count", "3");
-        attributes.put("argumentTypes.0", "mix-review");
-        attributes.put("argumentTypes.1", "mix-review");
-        attributes.put("argumentTypes.2", "mix-review");
-        return new IrGpuTypedNode(
-                nodeId,
-                "GpuIrIntrinsicCall",
-                attributes,
-                Map.of("arguments", candidate.argumentNodeIds())
-        );
-    }
-
-    private static Set<Integer> reachableNodeIds(IrGpuTypedBody typedBody, Map<Integer, IrGpuTypedNode> nodesById) {
-        LinkedHashSet<Integer> reachable = new LinkedHashSet<>();
-        ArrayList<Integer> pending = new ArrayList<>(typedBody.rootNodeIds());
-        while (!pending.isEmpty()) {
-            int nodeId = pending.remove(pending.size() - 1);
-            if (!reachable.add(nodeId)) {
-                continue;
-            }
-            IrGpuTypedNode node = nodesById.get(nodeId);
-            if (node == null) {
-                continue;
-            }
-            for (List<Integer> childIds : node.children().values()) {
-                for (Integer childId : childIds) {
-                    if (childId != null && nodesById.containsKey(childId) && !reachable.contains(childId)) {
-                        pending.add(childId);
-                    }
-                }
-            }
-        }
-        return Set.copyOf(reachable);
     }
 
     private static Integer singleChild(IrGpuTypedNode node, String name) {
@@ -994,14 +939,6 @@ public final class GpuIrMixMaterializationProposalProvider implements GpuIrOptim
             }
         }
         return "";
-    }
-
-    private static Map<Integer, IrGpuTypedNode> nodesById(IrGpuTypedBody typedBody) {
-        LinkedHashMap<Integer, IrGpuTypedNode> nodes = new LinkedHashMap<>();
-        for (IrGpuTypedNode node : typedBody.nodes()) {
-            nodes.put(node.id(), node);
-        }
-        return Map.copyOf(nodes);
     }
 
     private static boolean isOpenClReview(GpuIrOptimizationProposalRequest request) {
@@ -1093,6 +1030,16 @@ public final class GpuIrMixMaterializationProposalProvider implements GpuIrOptim
 
         private void recordCandidate(MixCandidate candidate) {
             candidateKeys.add(candidate.methodName() + "#" + candidate.rootNodeId());
+        }
+
+        private void recordPatchBlocker(String blocker) {
+            switch (GpuIrTypedBodyGraphPatch.blockerKind(blocker)) {
+                case BODY_TEXT_PATTERN_MISSING -> skippedBodyTextPatternMissingCount++;
+                case TYPED_BODY_MISSING -> skippedTypedBodyMissingCount++;
+                case TYPED_GRAPH_MISSING -> skippedMissingChildReferenceCount++;
+                case OTHER -> skippedUnsupportedShapeCount++;
+            }
+            setFirstBlocker(blocker);
         }
 
         private void add(RewriteStats other) {

@@ -343,6 +343,16 @@ public final class IrGpuArtifactSerializer {
                 ? IrGpuOptimizerPolicyMetadata.defaultStrict()
                 : optimizerPolicyMetadata;
         properties.put("optimizerPolicy.fastMath", Boolean.toString(metadata.fastMath()));
+        properties.put("optimizerPolicy.enabled", Boolean.toString(metadata.enabled()));
+        properties.put("optimizerPolicy.profile", metadata.profile());
+        writeStringList(properties, "optimizerPolicy.enabledFamily", metadata.enabledFamilies());
+        writeStringList(properties, "optimizerPolicy.disabledFamily", metadata.disabledFamilies());
+        properties.put("optimizerPolicy.journal", Boolean.toString(metadata.journal()));
+        properties.put("optimizerPolicy.dumpArtifacts", Boolean.toString(metadata.dumpArtifacts()));
+        properties.put("optimizerPolicy.productionIntent", Boolean.toString(metadata.productionIntent()));
+        properties.put("optimizerPolicy.vendorAdaptation", Boolean.toString(metadata.vendorAdaptation()));
+        properties.put("optimizerPolicy.vectorization", metadata.vectorization());
+        properties.put("optimizerPolicy.resourceShaping", Boolean.toString(metadata.resourceShaping()));
         properties.put("optimizerPolicy.source", metadata.source());
     }
 

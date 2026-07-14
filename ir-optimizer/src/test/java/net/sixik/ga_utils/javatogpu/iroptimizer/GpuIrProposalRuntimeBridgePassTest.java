@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -152,6 +153,172 @@ class GpuIrProposalRuntimeBridgePassTest {
         assertTrue(report.passReports().get(1).diagnostics().contains(
                 "optimized artifact validated but mutation is disabled; original IR remains selected"
         ));
+    }
+
+    @Test
+    void bridgeSkipsProviderWhenFamilyIsDisabledByMethodPolicy() {
+        AtomicBoolean invoked = new AtomicBoolean(false);
+        IrGpuArtifact original = artifactWithPolicy(
+                "body\n  return original\n",
+                IrGpuOptimizerPolicyMetadata.fromGpuOptimize(
+                        false,
+                        true,
+                        "review",
+                        List.of(),
+                        List.of("mix"),
+                        false,
+                        false,
+                        false,
+                        false,
+                        "auto",
+                        false
+                )
+        );
+        GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass(
+                List.of(new CountingProposalProvider("mix", invoked)),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        );
+
+        GpuRuntimeIrOptimizationReport report = bridge
+                .run(new GpuRuntimeIrOptimizationRequest(request(original), Optional.of(original)));
+
+        assertFalse(invoked.get());
+        assertSame(original, report.artifact().orElseThrow());
+        assertTrue(report.candidateArtifact().isEmpty());
+        assertEquals(1, report.passReports().size());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, report.passReports().get(0).outcome());
+        assertEquals("optimizer-family-disabled", report.passReports().get(0).proofStatus());
+        Map<String, String> fields = report.passReports().get(0).proofArtifact().fields();
+        assertEquals("mix", fields.get("optimizerFamily"));
+        assertEquals("skipped", fields.get("policyGate.status"));
+        assertEquals("false", fields.get("policyGate.allowed"));
+        assertEquals("optimizer-family-disabled", fields.get("policyGate.reason"));
+        assertEquals("false", fields.get("policyGate.providerInvoked"));
+        assertEquals("false", fields.get("selectionApplied"));
+        assertEquals("false", fields.get("optimizedArtifactSelected"));
+        assertEquals("false", fields.get("selectedIrReplacement"));
+
+        String evidence = runtimeOptimizerEvidence(original, report);
+        assertTrue(evidence.contains("policyGate.skipped.count=1"));
+        assertTrue(evidence.contains("policyGate.optimizerPolicyDisabled.count=0"));
+        assertTrue(evidence.contains("policyGate.familyDisabled.count=1"));
+        assertTrue(evidence.contains("policyGate.familyNotEnabled.count=0"));
+        assertTrue(evidence.contains("policyGate.providerInvoked.count=0"));
+        assertTrue(evidence.contains("policyGate.firstBlocker=optimizer-family-disabled"));
+        assertTrue(evidence.contains("policyGate.family.summary=mix=1"));
+        assertTrue(evidence.contains("policyGate.selectionApplied=false"));
+        assertTrue(evidence.contains("policyGate.optimizedArtifactSelected=false"));
+        assertTrue(evidence.contains("policyGate.selectedIrReplacement=false"));
+    }
+
+    @Test
+    void bridgeSkipsProviderWhenFamilyIsNotInMethodAllowList() {
+        AtomicBoolean invoked = new AtomicBoolean(false);
+        IrGpuArtifact original = artifactWithPolicy(
+                "body\n  return original\n",
+                IrGpuOptimizerPolicyMetadata.fromGpuOptimize(
+                        false,
+                        true,
+                        "review",
+                        List.of("clamp"),
+                        List.of(),
+                        false,
+                        false,
+                        false,
+                        false,
+                        "auto",
+                        false
+                )
+        );
+        GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass(
+                List.of(new CountingProposalProvider("mix", invoked)),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        );
+
+        GpuRuntimeIrOptimizationReport report = bridge
+                .run(new GpuRuntimeIrOptimizationRequest(request(original), Optional.of(original)));
+
+        assertFalse(invoked.get());
+        assertSame(original, report.artifact().orElseThrow());
+        assertEquals("optimizer-family-not-enabled", report.passReports().get(0).proofStatus());
+        Map<String, String> fields = report.passReports().get(0).proofArtifact().fields();
+        assertEquals("clamp", fields.get("optimizerPolicy.enabledFamilies"));
+        assertEquals("optimizer-family-not-enabled", fields.get("policyGate.reason"));
+        assertEquals("mix", fields.get("policyGate.family"));
+    }
+
+    @Test
+    void bridgeRunsProviderWhenFamilyIsAllowedByMethodAllowList() {
+        AtomicBoolean invoked = new AtomicBoolean(false);
+        IrGpuArtifact original = artifactWithPolicy(
+                "body\n  return original\n",
+                IrGpuOptimizerPolicyMetadata.fromGpuOptimize(
+                        false,
+                        true,
+                        "review",
+                        List.of("mix-materialization"),
+                        List.of(),
+                        false,
+                        false,
+                        false,
+                        false,
+                        "auto",
+                        false
+                )
+        );
+        GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass(
+                List.of(new CountingProposalProvider("mix", invoked)),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        );
+
+        GpuRuntimeIrOptimizationReport report = bridge
+                .run(new GpuRuntimeIrOptimizationRequest(request(original), Optional.of(original)));
+
+        assertTrue(invoked.get());
+        assertSame(original, report.artifact().orElseThrow());
+        assertEquals(1, report.passReports().size());
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, report.passReports().get(0).outcome());
+        assertEquals("not-mutating", report.passReports().get(0).proofStatus());
+    }
+
+    @Test
+    void bridgeSkipsAllProvidersWhenExplicitMethodPolicyDisablesOptimizer() {
+        AtomicBoolean invoked = new AtomicBoolean(false);
+        IrGpuArtifact original = artifactWithPolicy(
+                "body\n  return original\n",
+                IrGpuOptimizerPolicyMetadata.fromGpuOptimize(
+                        false,
+                        false,
+                        "review",
+                        List.of(),
+                        List.of(),
+                        false,
+                        false,
+                        false,
+                        false,
+                        "auto",
+                        false
+                )
+        );
+        GpuIrProposalRuntimeBridgePass bridge = new GpuIrProposalRuntimeBridgePass(
+                List.of(new CountingProposalProvider("clamp", invoked)),
+                GpuIrOptimizationSandwichRunner.alwaysValid(),
+                false
+        );
+
+        GpuRuntimeIrOptimizationReport report = bridge
+                .run(new GpuRuntimeIrOptimizationRequest(request(original), Optional.of(original)));
+
+        assertFalse(invoked.get());
+        assertSame(original, report.artifact().orElseThrow());
+        assertEquals("optimizer-policy-disabled", report.passReports().get(0).proofStatus());
+        assertEquals(
+                "optimizer-policy-disabled",
+                report.passReports().get(0).proofArtifact().fields().get("policyGate.reason")
+        );
     }
 
     @Test
@@ -501,6 +668,29 @@ class GpuIrProposalRuntimeBridgePassTest {
         );
     }
 
+    private static String runtimeOptimizerEvidence(
+            IrGpuArtifact original,
+            GpuRuntimeIrOptimizationReport optimizationReport
+    ) {
+        GpuRuntimeCompileRequest compileRequest = request(original);
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void run(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/run.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                GpuRuntimeCompileArtifactSnapshot.from(
+                        compileRequest,
+                        compileRequest,
+                        backendArtifact,
+                        GpuRuntimeCompileInvalidationStamp.from(compileRequest, backendArtifact, "policy-gate"),
+                        GpuRuntimeCompileProvenance.from(compileRequest),
+                        optimizationReport
+                )
+        );
+        return dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+    }
+
     private static GpuIrOptimizationProposalRequest proposalRequest(
             GpuRuntimeCompileRequest compileRequest,
             IrGpuArtifact artifact,
@@ -562,6 +752,61 @@ class GpuIrProposalRuntimeBridgePassTest {
                 "opencl",
                 "off"
         );
+    }
+
+    private static IrGpuArtifact artifactWithPolicy(String body, IrGpuOptimizerPolicyMetadata policy) {
+        IrGpuArtifact artifact = artifact(body);
+        return new IrGpuArtifact(
+                artifact.header(),
+                artifact.module(),
+                artifact.entryParameters(),
+                artifact.launchMetadata(),
+                artifact.validationMetadata(),
+                artifact.featureMetadata(),
+                policy,
+                artifact.regenerationMetadata(),
+                artifact.structMetadata(),
+                artifact.constants(),
+                artifact.constantData(),
+                artifact.backendOutputs(),
+                artifact.runtimeDefaultBackend(),
+                artifact.runtimeOptimizationProfile(),
+                artifact.methodDeviceConstraints(),
+                artifact.methodFallbackVariants(),
+                artifact.extensionParticipationMetadata()
+        );
+    }
+
+    private record CountingProposalProvider(
+            String optimizerFamily,
+            AtomicBoolean invoked
+    ) implements GpuIrOptimizationProposalProvider {
+
+        @Override
+        public GpuIrOptimizationProposal propose(GpuIrOptimizationProposalRequest request) {
+            invoked.set(true);
+            return GpuIrOptimizationProposal.noChange(
+                    extensionId(),
+                    extensionVersion(),
+                    request.originalArtifact(),
+                    "counting provider invoked"
+            );
+        }
+
+        @Override
+        public String optimizerFamily() {
+            return optimizerFamily;
+        }
+
+        @Override
+        public String extensionId() {
+            return "test." + optimizerFamily;
+        }
+
+        @Override
+        public String extensionVersion() {
+            return extensionId() + ":1";
+        }
     }
 
     private static IrGpuArtifact constantFoldingArtifact() {

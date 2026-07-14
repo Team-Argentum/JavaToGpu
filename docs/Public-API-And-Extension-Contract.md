@@ -183,14 +183,19 @@ Method-level optimizer intent should be declared with `@GPUOptimize`. The defaul
 
 ```java
 @GPU
-@GPUOptimize(fastMath = false)
+@GPUOptimize(fastMath = false, enabledFamilies = {"clamp", "step", "mix"})
 static void strictKernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
 
-`fastMath = true` only records permission for future proof-backed rewrites. It does not bypass runtime-equivalence,
-rollback, or production-promotion gates.
+`@GPUOptimize` persists method-level optimizer metadata into the generated `IrGpu` manifest: enablement/profile hints,
+`fastMath`, enabled/disabled optimizer families, optional journal and artifact-dump hints, production intent, vendor
+adaptation, vectorization preference, and resource/register-pressure shaping intent. The optional optimizer bridge uses
+`enabledFamilies` / `disabledFamilies` and explicit `enabled = false` to decide provider participation, with policy-skip
+evidence recorded in optimizer reports and aggregated under `policyGate.*` in runtime optimizer evidence summaries.
+`fastMath = true` only records permission for proof-backed non-strict rewrites, and `productionIntent = true` only records intent. Neither bypasses runtime-equivalence, approval, rollback, or
+production-promotion gates.
 
 Any mutating runtime optimizer, peephole pass, vendor rewrite, or third-party optimization hook must produce evidence before it can affect production code:
 

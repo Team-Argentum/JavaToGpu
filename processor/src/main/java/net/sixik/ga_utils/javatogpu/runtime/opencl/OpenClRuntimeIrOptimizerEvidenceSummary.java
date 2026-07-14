@@ -120,6 +120,44 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                 .sum();
     }
 
+    int totalPolicyGateSkippedCount() {
+        return entries.stream().mapToInt(Entry::policyGateSkippedCount).sum();
+    }
+
+    int totalPolicyGateOptimizerPolicyDisabledCount() {
+        return entries.stream().mapToInt(Entry::policyGateOptimizerPolicyDisabledCount).sum();
+    }
+
+    int totalPolicyGateFamilyDisabledCount() {
+        return entries.stream().mapToInt(Entry::policyGateFamilyDisabledCount).sum();
+    }
+
+    int totalPolicyGateFamilyNotEnabledCount() {
+        return entries.stream().mapToInt(Entry::policyGateFamilyNotEnabledCount).sum();
+    }
+
+    int totalPolicyGateProviderInvokedCount() {
+        return entries.stream().mapToInt(Entry::policyGateProviderInvokedCount).sum();
+    }
+
+    String policyGateFirstBlocker() {
+        for (Entry entry : entries) {
+            if (entry.policyGateSkippedCount() > 0 && !"none".equals(entry.policyGateFirstBlocker())) {
+                return entry.policyGateFirstBlocker();
+            }
+        }
+        return totalPolicyGateSkippedCount() > 0 ? "unknown" : "none";
+    }
+
+    String policyGateFamilySummary() {
+        LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+        for (Entry entry : entries) {
+            parseCountSummary(entry.policyGateFamilySummary()).forEach((family, count) ->
+                    counts.merge(family, count, Integer::sum));
+        }
+        return formatProviderCounts(counts);
+    }
+
     int totalOptimizedArtifactCandidateCount() {
         return entries.stream().mapToInt(Entry::optimizedArtifactCandidateCount).sum();
     }
@@ -1144,6 +1182,20 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
                 .append(totalApprovalTemplateRuntimeEquivalencePayloadPassedCount()).append("`\n");
         markdown.append("- Approval templates runtime-equivalence payload complete: `")
                 .append(totalApprovalTemplateRuntimeEquivalencePayloadCompleteCount()).append("`\n");
+        markdown.append("- Policy-gated optimizer skips: `")
+                .append(totalPolicyGateSkippedCount()).append("`\n");
+        markdown.append("- Policy-gated optimizer disabled skips: `")
+                .append(totalPolicyGateOptimizerPolicyDisabledCount()).append("`\n");
+        markdown.append("- Policy-gated family disabled skips: `")
+                .append(totalPolicyGateFamilyDisabledCount()).append("`\n");
+        markdown.append("- Policy-gated family not-enabled skips: `")
+                .append(totalPolicyGateFamilyNotEnabledCount()).append("`\n");
+        markdown.append("- Policy-gated provider invoked count: `")
+                .append(totalPolicyGateProviderInvokedCount()).append("`\n");
+        markdown.append("- Policy-gate first blocker: `")
+                .append(inline(policyGateFirstBlocker())).append("`\n");
+        markdown.append("- Policy-gate family summary: `")
+                .append(inline(policyGateFamilySummary())).append("`\n");
         markdown.append("- Optimized artifact candidate status: `")
                 .append(optimizedArtifactCandidateStatus()).append("`\n");
         markdown.append("- Optimized artifact candidates: `")
@@ -1528,6 +1580,26 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             summary.append(provider).append('=').append(count);
         });
         return summary.toString();
+    }
+
+    private static Map<String, Integer> parseCountSummary(String summary) {
+        if (summary == null || summary.isBlank() || "none".equals(summary)) {
+            return Map.of();
+        }
+        LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+        for (String part : summary.split(",")) {
+            String trimmed = part.trim();
+            int separator = trimmed.lastIndexOf('=');
+            if (separator <= 0 || separator >= trimmed.length() - 1) {
+                continue;
+            }
+            String key = trimmed.substring(0, separator).trim();
+            int count = parseInt(trimmed.substring(separator + 1).trim(), 0);
+            if (!key.isBlank() && count > 0) {
+                counts.merge(key, count, Integer::sum);
+            }
+        }
+        return Map.copyOf(counts);
     }
 
     private record PreviewFamilyReadiness(String family, String status, int candidateCount, int blockerCount) {
@@ -2059,6 +2131,34 @@ record OpenClRuntimeIrOptimizerEvidenceSummary(String status, List<Entry> entrie
             return typedDeadCodeMaterializationBlockedMissingRootCount
                     + typedDeadCodeMaterializationBlockedMissingChildReferenceCount
                     + typedDeadCodeMaterializationBlockedSideEffectingUnreachableNodeCount;
+        }
+
+        int policyGateSkippedCount() {
+            return parseInt(evidenceProperties.get("policyGate.skipped.count"), 0);
+        }
+
+        int policyGateOptimizerPolicyDisabledCount() {
+            return parseInt(evidenceProperties.get("policyGate.optimizerPolicyDisabled.count"), 0);
+        }
+
+        int policyGateFamilyDisabledCount() {
+            return parseInt(evidenceProperties.get("policyGate.familyDisabled.count"), 0);
+        }
+
+        int policyGateFamilyNotEnabledCount() {
+            return parseInt(evidenceProperties.get("policyGate.familyNotEnabled.count"), 0);
+        }
+
+        int policyGateProviderInvokedCount() {
+            return parseInt(evidenceProperties.get("policyGate.providerInvoked.count"), 0);
+        }
+
+        String policyGateFirstBlocker() {
+            return evidenceProperties.getOrDefault("policyGate.firstBlocker", "none");
+        }
+
+        String policyGateFamilySummary() {
+            return evidenceProperties.getOrDefault("policyGate.family.summary", "none");
         }
 
         int constantFoldingPreviewProofBlockerCount() {
