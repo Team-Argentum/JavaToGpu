@@ -22,6 +22,9 @@ import java.util.Set;
 public final class OptimizationJournalExample {
 
     private static final String ARTIFACT_DIRECTORY_PROPERTY = "javatogpu.opencl.runtimeCompileArtifactDirectory";
+    private static final String LIFECYCLE_JOURNAL_FILE_PROPERTY = "javatogpu.runtime.lifecycleJournalFile";
+    private static final String LIFECYCLE_JOURNAL_FORMAT_PROPERTY = "javatogpu.runtime.lifecycleJournalFormat";
+    private static final String EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY = ExampleLifecycleTraceService.TRACE_FILE_PROPERTY;
     private static final Path DEFAULT_JOURNAL_ROOT = Path.of(
             "build",
             "reports",
@@ -35,7 +38,10 @@ public final class OptimizationJournalExample {
             "optimized.irgpu.properties",
             "runtime-ir-handoff.properties",
             "optimizer-report.txt",
-            "runtime-ir-optimizer-evidence.properties"
+            "runtime-ir-optimizer-evidence.properties",
+            "runtime-lifecycle.jsonl",
+            "runtime-lifecycle.properties",
+            "example-lifecycle-service.trace"
     );
     private static final List<String> EXPECTED_OPTIMIZED_SOURCE_MARKERS = List.of(
             "mad(",
@@ -59,7 +65,19 @@ public final class OptimizationJournalExample {
     public static void main(String[] args) {
         Path journalRoot = resolveJournalRoot(args);
         String previousArtifactDirectory = System.getProperty(ARTIFACT_DIRECTORY_PROPERTY);
+        String previousLifecycleJournalFile = System.getProperty(LIFECYCLE_JOURNAL_FILE_PROPERTY);
+        String previousLifecycleJournalFormat = System.getProperty(LIFECYCLE_JOURNAL_FORMAT_PROPERTY);
+        String previousExampleLifecycleTraceFile = System.getProperty(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY);
         System.setProperty(ARTIFACT_DIRECTORY_PROPERTY, journalRoot.toString());
+        if (previousLifecycleJournalFile == null || previousLifecycleJournalFile.isBlank()) {
+            System.setProperty(LIFECYCLE_JOURNAL_FILE_PROPERTY, resolveLifecycleJournalFile(journalRoot).toString());
+        }
+        if (previousLifecycleJournalFormat == null || previousLifecycleJournalFormat.isBlank()) {
+            System.setProperty(LIFECYCLE_JOURNAL_FORMAT_PROPERTY, "jsonl");
+        }
+        if (previousExampleLifecycleTraceFile == null || previousExampleLifecycleTraceFile.isBlank()) {
+            System.setProperty(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY, resolveExampleLifecycleTraceFile(journalRoot).toString());
+        }
 
         int vectorRows = 4;
         float[] input = new float[vectorRows * 4];
@@ -76,6 +94,10 @@ public final class OptimizationJournalExample {
         System.out.println("Optimization profile: " + compileOptions.optimizationProfile());
         System.out.println("Artifact journal root: " + journalRoot.toAbsolutePath().normalize());
         System.out.println("Runtime artifact property: -D" + ARTIFACT_DIRECTORY_PROPERTY + "=" + journalRoot);
+        System.out.println("Lifecycle journal property: -D" + LIFECYCLE_JOURNAL_FILE_PROPERTY
+                + "=" + System.getProperty(LIFECYCLE_JOURNAL_FILE_PROPERTY));
+        System.out.println("Example lifecycle service property: -D" + EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY
+                + "=" + System.getProperty(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY));
 
 
         int sizeX = 16;
@@ -114,7 +136,10 @@ public final class OptimizationJournalExample {
             System.out.println("OpenCL execution failed: " + exception.getMessage());
             System.out.println("The example still shows the switches to use; run it on a machine with OpenCL to write artifacts.");
         } finally {
-            restoreProperty(previousArtifactDirectory);
+            restoreProperty(ARTIFACT_DIRECTORY_PROPERTY, previousArtifactDirectory);
+            restoreProperty(LIFECYCLE_JOURNAL_FILE_PROPERTY, previousLifecycleJournalFile);
+            restoreProperty(LIFECYCLE_JOURNAL_FORMAT_PROPERTY, previousLifecycleJournalFormat);
+            restoreProperty(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY, previousExampleLifecycleTraceFile);
             GpuRuntime.shutdownOpenClSharedCache();
         }
     }
@@ -206,6 +231,16 @@ public final class OptimizationJournalExample {
         return DEFAULT_JOURNAL_ROOT;
     }
 
+    static Path resolveLifecycleJournalFile(Path journalRoot) {
+        Path root = journalRoot == null ? DEFAULT_JOURNAL_ROOT : journalRoot;
+        return root.resolve("runtime-lifecycle.jsonl");
+    }
+
+    static Path resolveExampleLifecycleTraceFile(Path journalRoot) {
+        Path root = journalRoot == null ? DEFAULT_JOURNAL_ROOT : journalRoot;
+        return root.resolve("example-lifecycle-service.trace");
+    }
+
     static List<String> expectedOptimizedSourceMarkers() {
         return EXPECTED_OPTIMIZED_SOURCE_MARKERS;
     }
@@ -251,11 +286,11 @@ public final class OptimizationJournalExample {
         }
     }
 
-    private static void restoreProperty(String previousArtifactDirectory) {
-        if (previousArtifactDirectory == null) {
-            System.clearProperty(ARTIFACT_DIRECTORY_PROPERTY);
+    private static void restoreProperty(String property, String previousValue) {
+        if (previousValue == null) {
+            System.clearProperty(property);
         } else {
-            System.setProperty(ARTIFACT_DIRECTORY_PROPERTY, previousArtifactDirectory);
+            System.setProperty(property, previousValue);
         }
     }
 }

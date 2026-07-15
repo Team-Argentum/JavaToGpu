@@ -29,7 +29,8 @@ application {
 tasks.register('rewriteGpuMethods', JavaExec) {
     dependsOn project(':processor').tasks.named('classes')
     dependsOn tasks.named('compileJava')
-    classpath = project(':processor').sourceSets.main.runtimeClasspath
+    dependsOn tasks.named('processResources')
+    classpath = project(':processor').sourceSets.main.runtimeClasspath + configurations.runtimeClasspath
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuMethodBodyRewriter'
     args layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
 }
@@ -41,6 +42,18 @@ tasks.register('runOptimizationJournalExample', JavaExec) {
     def journalDir = providers.gradleProperty('javatogpu.optimizerJournalDir')
     if (journalDir.isPresent()) {
         args journalDir.get()
+    }
+    def lifecycleJournalFile = providers.gradleProperty('javatogpu.lifecycleJournalFile')
+    if (lifecycleJournalFile.isPresent()) {
+        systemProperty 'javatogpu.runtime.lifecycleJournalFile', lifecycleJournalFile.get()
+    }
+    def lifecycleJournalFormat = providers.gradleProperty('javatogpu.lifecycleJournalFormat')
+    if (lifecycleJournalFormat.isPresent()) {
+        systemProperty 'javatogpu.runtime.lifecycleJournalFormat', lifecycleJournalFormat.get()
+    }
+    def exampleLifecycleTraceFile = providers.gradleProperty('javatogpu.exampleLifecycleTraceFile')
+    if (exampleLifecycleTraceFile.isPresent()) {
+        systemProperty 'javatogpu.examples.lifecycleTraceFile', exampleLifecycleTraceFile.get()
     }
 }
 

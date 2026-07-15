@@ -142,7 +142,7 @@ Run the optional IR optimizer journal example:
 .\gradlew.bat :examples-app:runOptimizationJournalExample --console=plain
 ```
 
-The example is documented in [examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md](examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md) and shows how to opt into the optimizer module while dumping original and optimized IR artifacts for review.
+The example is documented in [examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md](examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md) and shows how to opt into the optimizer module while dumping original and optimized IR artifacts plus the optional ServiceLoader-backed runtime lifecycle event journal for review. It also includes a small custom `GpuRuntimeLifecycleService` example so downstream modules can add tracing or metrics without manual callback registration.
 
 ## Project Layout
 

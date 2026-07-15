@@ -57,6 +57,10 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptionsException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceCaseEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEvent;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventBus;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventKind;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventListener;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPassReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationProofArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
@@ -755,6 +759,116 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals("Mock GPU", request.deviceProfile().deviceLabel());
         assertEquals("Mock Vendor", request.deviceProfile().vendor());
         assertEquals("OpenCL 3.0 Mock", request.deviceProfile().apiVersionText());
+    }
+
+    @Test
+    void publishesLifecycleEventsAroundCompileArtifactDumpInvocationAndClose() throws java.io.IOException {
+        String property = "javatogpu.opencl.runtimeCompileArtifactDirectory";
+        String previousArtifactRoot = System.getProperty(property);
+        Path artifactRoot = Files.createTempDirectory("opencl-lifecycle-events");
+        ArrayList<GpuRuntimeLifecycleEvent> events = new ArrayList<>();
+        GpuRuntimeLifecycleEventListener listener = new GpuRuntimeLifecycleEventListener() {
+            @Override
+            public void onRuntimeLifecycleEvent(GpuRuntimeLifecycleEvent event) {
+                events.add(event);
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.opencl.lifecycle-listener";
+            }
+
+            @Override
+            public String extensionVersion() {
+                return "1";
+            }
+        };
+        GpuKernelDescriptor descriptor = intOutputDescriptor();
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend(
+                OpenClGpuRuntimeBackend.CacheMode.INSTANCE,
+                GpuRuntimeLifecycleEventBus.of(List.of(listener))
+        ) {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
+                return GpuBackendModuleArtifact.openClSource(
+                        compileRequest.descriptor().kernelSource(),
+                        compileRequest.descriptor().kernelResource(),
+                        "test-lifecycle-lowerer"
+                );
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:lifecycle");
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                // no-op: this test covers lifecycle dispatch, not native OpenCL execution.
+            }
+        };
+
+        try {
+            System.setProperty(property, artifactRoot.toString());
+            backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{new int[4]}));
+            backend.close();
+        } finally {
+            if (previousArtifactRoot == null) {
+                System.clearProperty(property);
+            } else {
+                System.setProperty(property, previousArtifactRoot);
+            }
+        }
+
+        List<GpuRuntimeLifecycleEventKind> kinds = events.stream().map(GpuRuntimeLifecycleEvent::kind).toList();
+        assertEquals(List.of(
+                GpuRuntimeLifecycleEventKind.IRGPU_LOAD_STARTED,
+                GpuRuntimeLifecycleEventKind.IRGPU_LOAD_COMPLETED,
+                GpuRuntimeLifecycleEventKind.VALIDATION_STARTED,
+                GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.DESCRIPTOR_DISCOVERY_STARTED,
+                GpuRuntimeLifecycleEventKind.DESCRIPTOR_DISCOVERY_COMPLETED,
+                GpuRuntimeLifecycleEventKind.VALIDATION_STARTED,
+                GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.VALIDATION_STARTED,
+                GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.OPTIMIZER_DISCOVERY_STARTED,
+                GpuRuntimeLifecycleEventKind.OPTIMIZER_DISCOVERY_COMPLETED,
+                GpuRuntimeLifecycleEventKind.OPTIMIZER_PASS_STARTED,
+                GpuRuntimeLifecycleEventKind.OPTIMIZER_PASS_COMPLETED,
+                GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_STARTED,
+                GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_STARTED,
+                GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.SOURCE_SELECTION_DECIDED,
+                GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_STARTED,
+                GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.ARTIFACT_DUMP_STARTED,
+                GpuRuntimeLifecycleEventKind.ARTIFACT_DUMP_COMPLETED,
+                GpuRuntimeLifecycleEventKind.INVOCATION_STARTED,
+                GpuRuntimeLifecycleEventKind.INVOCATION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.RUNTIME_SHUTDOWN_STARTED,
+                GpuRuntimeLifecycleEventKind.RUNTIME_SHUTDOWN_COMPLETED
+        ), kinds);
+        assertEquals("javatogpu/sample/Demo/kernel.cl", events.get(0).kernelResource());
+        assertEquals("primary", events.get(1).fields().get("loadRole"));
+        assertEquals("runtime-capabilities", events.get(8).fields().get("validation.stage"));
+        assertEquals("succeeded", events.get(13).fields().get("status"));
+        assertEquals("test-lifecycle-lowerer", events.get(15).fields().get("module.lowererVersion"));
+        assertEquals("descriptor-default", events.get(18).fields().get("status"));
+        assertEquals("succeeded", events.get(20).fields().get("status"));
+        assertEquals("compiled:lifecycle", events.get(20).fields().get("cacheKey"));
+        assertEquals("4", events.get(23).fields().get("work.globalX"));
+        assertEquals("succeeded", events.get(24).fields().get("status"));
+        assertEquals("INSTANCE", events.get(26).fields().get("cacheMode"));
     }
 
     @Test

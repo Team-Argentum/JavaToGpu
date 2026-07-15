@@ -44,6 +44,20 @@ class OptimizationJournalExampleTest {
     }
 
     @Test
+    void resolvesLifecycleJournalFileUnderJournalRoot() {
+        Path custom = temporaryDirectory.resolve("custom-journal");
+
+        assertEquals(custom.resolve("runtime-lifecycle.jsonl"), OptimizationJournalExample.resolveLifecycleJournalFile(custom));
+    }
+
+    @Test
+    void resolvesExampleLifecycleTraceFileUnderJournalRoot() {
+        Path custom = temporaryDirectory.resolve("custom-journal");
+
+        assertEquals(custom.resolve("example-lifecycle-service.trace"), OptimizationJournalExample.resolveExampleLifecycleTraceFile(custom));
+    }
+
+    @Test
     void listsOnlyRelevantJournalArtifacts() throws Exception {
         Path kernelDirectory = temporaryDirectory.resolve("kernel-a");
         Files.createDirectories(kernelDirectory);
@@ -55,11 +69,13 @@ class OptimizationJournalExampleTest {
         Files.writeString(kernelDirectory.resolve("runtime-ir-handoff.properties"), "handoff\n");
         Files.writeString(kernelDirectory.resolve("optimizer-report.txt"), "report\n");
         Files.writeString(kernelDirectory.resolve("runtime-ir-optimizer-evidence.properties"), "evidence\n");
+        Files.writeString(temporaryDirectory.resolve("runtime-lifecycle.jsonl"), "{}\n");
+        Files.writeString(temporaryDirectory.resolve("example-lifecycle-service.trace"), "trace\n");
         Files.writeString(kernelDirectory.resolve("unrelated.properties"), "ignored\n");
 
         List<Path> files = OptimizationJournalExample.interestingJournalFiles(temporaryDirectory);
 
-        assertEquals(8, files.size());
+        assertEquals(10, files.size());
         assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("backend.opencl-c")));
         assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("original.backend.opencl-c")));
         assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("optimized.backend.opencl-c")));
@@ -68,6 +84,8 @@ class OptimizationJournalExampleTest {
         assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("runtime-ir-handoff.properties")));
         assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("optimizer-report.txt")));
         assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("runtime-ir-optimizer-evidence.properties")));
+        assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("runtime-lifecycle.jsonl")));
+        assertTrue(files.stream().anyMatch(path -> path.getFileName().toString().equals("example-lifecycle-service.trace")));
     }
 
     @Test
