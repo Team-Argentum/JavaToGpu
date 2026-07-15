@@ -51,6 +51,13 @@ class OpenClRuntimeIrOptimizerEvidenceValidatorCliTest {
     }
 
     @Test
+    void acceptsMissingArtifactWhenExplicitlyAllowed() {
+        assertDoesNotThrow(() -> OpenClRuntimeIrOptimizerEvidenceValidatorCli.main(
+                new String[]{"--allow-missing", temporaryDirectory.resolve("missing").toString()}
+        ));
+    }
+
+    @Test
     void rejectsProductionMutationGuardrailRegression() throws Exception {
         Path artifact = temporaryDirectory.resolve(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
         Files.writeString(artifact, failClosedEvidence("pending-manual-review", "true",

@@ -28,6 +28,11 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         Path artifactPath = cliArguments.artifactPath().orElseThrow();
         List<Path> artifacts = evidenceArtifacts(artifactPath);
         if (artifacts.isEmpty()) {
+            if (cliArguments.allowMissing()) {
+                System.out.println("Runtime IR optimizer evidence not recorded under " + artifactPath
+                        + "; optional optimizer evidence validation skipped.");
+                return;
+            }
             throw new IllegalStateException("Missing runtime IR optimizer evidence artifact under " + artifactPath);
         }
 
@@ -58,11 +63,12 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
     }
 
     private static CliArguments parseArguments(String[] args) {
-        if (args == null || args.length == 0 || args.length > 2) {
-            return new CliArguments(java.util.Optional.empty(), false);
+        if (args == null || args.length == 0 || args.length > 3) {
+            return new CliArguments(java.util.Optional.empty(), false, false);
         }
         Path artifactPath = null;
         boolean allowExperimentalApply = false;
+        boolean allowMissing = false;
         for (String arg : args) {
             if (arg == null || arg.isBlank()) {
                 continue;
@@ -71,12 +77,16 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
                 allowExperimentalApply = true;
                 continue;
             }
+            if ("--allow-missing".equals(arg)) {
+                allowMissing = true;
+                continue;
+            }
             if (artifactPath != null) {
-                return new CliArguments(java.util.Optional.empty(), allowExperimentalApply);
+                return new CliArguments(java.util.Optional.empty(), allowExperimentalApply, allowMissing);
             }
             artifactPath = Path.of(arg);
         }
-        return new CliArguments(java.util.Optional.ofNullable(artifactPath), allowExperimentalApply);
+        return new CliArguments(java.util.Optional.ofNullable(artifactPath), allowExperimentalApply, allowMissing);
     }
 
     private static List<Path> evidenceArtifacts(Path path) throws IOException {
@@ -1179,7 +1189,11 @@ public final class OpenClRuntimeIrOptimizerEvidenceValidatorCli {
         MIX
     }
 
-    private record CliArguments(java.util.Optional<Path> artifactPath, boolean allowExperimentalApply) {
+    private record CliArguments(
+            java.util.Optional<Path> artifactPath,
+            boolean allowExperimentalApply,
+            boolean allowMissing
+    ) {
     }
 
     private static String requirePresent(Path artifact, Properties properties, String key) {

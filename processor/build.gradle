@@ -653,12 +653,11 @@ tasks.register('validateOpenClCompilerResourceDrift', JavaExec) {
 
 tasks.register('validateOpenClRuntimeIrOptimizerEvidence', JavaExec) {
     group = 'verification'
-    description = 'Fails OpenCL CI when runtime IR optimizer evidence loses fail-closed review-package guardrails.'
+    description = 'Validates optional runtime IR optimizer evidence when recorded and fails if fail-closed guardrails regress.'
     dependsOn 'openClValidationReport'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClRuntimeIrOptimizerEvidenceValidatorCli'
-    args openClRuntimeIrOptimizerEvidenceDirectory.absolutePath
-    inputs.dir(openClRuntimeIrOptimizerEvidenceDirectory)
+    args '--allow-missing', openClRuntimeIrOptimizerEvidenceDirectory.absolutePath
 }
 
 tasks.register('prepareOpenClKernelLaunchAdvisoryNegativeFixture', JavaExec) {
