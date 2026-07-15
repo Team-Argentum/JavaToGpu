@@ -22,10 +22,10 @@ Use the same version as the main JavaToGpu artifact:
 
 ```groovy
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
 
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
 }
 ```
 
@@ -100,11 +100,11 @@ Use this flow when you are developing kernels and want actionable feedback witho
 
 ```groovy
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
 
     // Optional: adds read-only IR validation providers.
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
 }
 ```
 

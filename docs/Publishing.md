@@ -1,51 +1,38 @@
 # Publishing Guide
 
-This guide describes how to publish the JavaToGpu Maven artifacts: the main `processor` module and
-the optional `ir-validation` strict-build add-on.
+This guide describes how to publish JavaToGpu Maven artifacts to Maven Central.
 
 ## Artifact Coordinates
 
+All published artifacts share the same release version:
+
 ```text
 groupId: io.github.deussixik
-artifactId: javatogpu
-version: 0.1.0-alpha.1
+version: 0.1.0-alpha.2
 ```
 
-The Gradle project that owns the main publication is:
+Published modules:
 
 ```text
-:processor
+:processor            -> io.github.deussixik:javatogpu
+:ir-validation        -> io.github.deussixik:javatogpu-ir-validation
+:ir-optimizer         -> io.github.deussixik:javatogpu-ir-optimizer
+:ir-vendor-optimizer  -> io.github.deussixik:javatogpu-ir-vendor-optimizer
 ```
+
+`examples-app` and `test-app` are consumer/demo applications and are not published.
 
 ## What Is Published
 
-The `mavenJava` publication includes:
+Each published module uses the `mavenJava` publication and includes:
 
 - compiled jar
 - sources jar
 - javadoc jar
-- generated POM metadata
-- PGP signatures for release publishing
+- generated Maven POM metadata
+- PGP signatures for release publishing when signing credentials are present
 
-Gradle module metadata is disabled for publication so a build-host-specific LWJGL native classifier is not published as universal metadata. Consumers should add their own LWJGL native classifier for their operating system when they need runtime OpenCL execution.
-
-## Optional IR Validation Artifact
-
-The `ir-validation` module is a separate strict-build add-on:
-
-```text
-groupId: io.github.deussixik
-artifactId: javatogpu-ir-validation
-version: 0.1.0-alpha.1
-```
-
-It contributes an optional compiler IR validation provider through Java `ServiceLoader`. Users add it to the annotation-processor path and enable `-Ajavatogpu.irValidation=diagnostic`, `strictSafety`, or `strictOptimizer` when they want extra lowered-IR checks before OpenCL emission.
-
-The Gradle project that owns the optional publication is:
-
-```text
-:ir-validation
-```
+Gradle module metadata is disabled for publication so build-host-specific LWJGL native classifiers are not published as universal metadata. Consumers should add their own LWJGL native classifier for their operating system when they need runtime OpenCL execution.
 
 ## Release Dependency Baseline
 
@@ -55,7 +42,7 @@ The OpenCL runtime depends on the published Packager release:
 io.github.deussixik:packager:1.0.0-alpha.1
 ```
 
-Release publishing is guarded by `validateMavenCentralReleaseReadiness`, which fails if the generated POM contains snapshot dependencies or JitPack branch dependencies.
+Release publishing is guarded by `validateMavenCentralReleaseReadiness`, which fails if a generated POM contains snapshot dependencies or JitPack branch dependencies.
 
 ## Secrets
 
@@ -87,20 +74,52 @@ SIGNING_IN_MEMORY_KEY_PASSWORD
 
 The local `gradle.properties` file in this repository root is ignored by Git as an extra safety net, but the preferred location is still `~/.gradle/gradle.properties`.
 
-## Local Staging Check
+## Aggregate Gradle Tasks
 
-Before publishing remotely, build the local staging repository:
+The root build exposes convenience tasks for the full artifact set:
+
+```powershell
+.\gradlew.bat printJavaToGpuPublicationCoordinates --console=plain
+.\gradlew.bat validateJavaToGpuMavenCentralReleaseReadiness --console=plain
+.\gradlew.bat publishJavaToGpuToLocalStaging --console=plain
+.\gradlew.bat publishJavaToGpuSnapshotsToCentral -Pjavatogpu.version=0.1.0-SNAPSHOT --console=plain
+.\gradlew.bat publishJavaToGpuReleasesToCentral -Pjavatogpu.version=0.1.0-alpha.2 --console=plain
+```
+
+PowerShell users can quote the Gradle property if the shell splits `-P` incorrectly:
+
+```powershell
+.\gradlew.bat "publishJavaToGpuReleasesToCentral" "-Pjavatogpu.version=0.1.0-alpha.2" --console=plain
+```
+
+## Per-Module Commands
+
+Use per-module tasks when publishing or inspecting a single artifact:
 
 ```powershell
 .\gradlew.bat :processor:publishMavenJavaPublicationToLocalStagingRepository --console=plain
 .\gradlew.bat :ir-validation:publishMavenJavaPublicationToLocalStagingRepository --console=plain
+.\gradlew.bat :ir-optimizer:publishMavenJavaPublicationToLocalStagingRepository --console=plain
+.\gradlew.bat :ir-vendor-optimizer:publishMavenJavaPublicationToLocalStagingRepository --console=plain
 ```
 
-Output is written under:
+Remote release publishing uses the matching `CentralReleasesRepository` task in each module. Snapshot publishing uses the matching `CentralSnapshotsRepository` task.
+
+## Local Staging Check
+
+Before publishing remotely, build the local staging repositories:
+
+```powershell
+.\gradlew.bat publishJavaToGpuToLocalStaging --console=plain
+```
+
+Output is written under each module's build directory:
 
 ```text
 processor/build/maven-staging/
 ir-validation/build/maven-staging/
+ir-optimizer/build/maven-staging/
+ir-vendor-optimizer/build/maven-staging/
 ```
 
 Inspect the generated POMs before release:
@@ -108,48 +127,16 @@ Inspect the generated POMs before release:
 ```text
 processor/build/publications/mavenJava/pom-default.xml
 ir-validation/build/publications/mavenJava/pom-default.xml
+ir-optimizer/build/publications/mavenJava/pom-default.xml
+ir-vendor-optimizer/build/publications/mavenJava/pom-default.xml
 ```
-
-## Snapshot Publishing
-
-Use a snapshot version when publishing to the Central snapshot repository:
-
-```powershell
-.\gradlew.bat :processor:publishMavenJavaPublicationToCentralSnapshotsRepository -Pjavatogpu.version=0.1.0-SNAPSHOT --console=plain
-.\gradlew.bat :ir-validation:publishMavenJavaPublicationToCentralSnapshotsRepository -Pjavatogpu.version=0.1.0-SNAPSHOT --console=plain
-```
-
-PowerShell users can quote the Gradle property if the shell splits `-P` incorrectly:
-
-```powershell
-.\gradlew.bat ":processor:publishMavenJavaPublicationToCentralSnapshotsRepository" "-Pjavatogpu.version=0.1.0-SNAPSHOT" --console=plain
-.\gradlew.bat ":ir-validation:publishMavenJavaPublicationToCentralSnapshotsRepository" "-Pjavatogpu.version=0.1.0-SNAPSHOT" --console=plain
-```
-
-## Release Publishing
-
-For the first public alpha:
-
-```powershell
-.\gradlew.bat :processor:publishMavenJavaPublicationToCentralReleasesRepository -Pjavatogpu.version=0.1.0-alpha.1 --console=plain
-.\gradlew.bat :ir-validation:publishMavenJavaPublicationToCentralReleasesRepository -Pjavatogpu.version=0.1.0-alpha.1 --console=plain
-```
-
-PowerShell-safe form:
-
-```powershell
-.\gradlew.bat ":processor:publishMavenJavaPublicationToCentralReleasesRepository" "-Pjavatogpu.version=0.1.0-alpha.1" --console=plain
-.\gradlew.bat ":ir-validation:publishMavenJavaPublicationToCentralReleasesRepository" "-Pjavatogpu.version=0.1.0-alpha.1" --console=plain
-```
-
-After upload, complete the release from the Maven Central / Sonatype portal if the deployment lands in a staging flow that requires manual close/release. Release the main artifact and the optional IR validation artifact with the same version.
 
 ## Recommended Release Flow
 
-1. Run the normal tests for both published modules:
+1. Run normal tests for published modules:
 
 ```powershell
-.\gradlew.bat :processor:test :ir-validation:test --console=plain
+.\gradlew.bat :processor:test :ir-validation:test :ir-optimizer:test :ir-vendor-optimizer:test --console=plain
 ```
 
 2. Run the OpenCL operational routine on the validated GPU machine:
@@ -158,35 +145,40 @@ After upload, complete the release from the Maven Central / Sonatype portal if t
 .\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
 ```
 
-3. Run Maven Central release-readiness guards for both publications:
+3. Run Maven Central release-readiness guards:
 
 ```powershell
-.\gradlew.bat :processor:validateMavenCentralReleaseReadiness :ir-validation:validateMavenCentralReleaseReadiness --console=plain
+.\gradlew.bat validateJavaToGpuMavenCentralReleaseReadiness --console=plain
 ```
 
 4. Build local Maven staging:
 
 ```powershell
-.\gradlew.bat :processor:publishMavenJavaPublicationToLocalStagingRepository --console=plain
-.\gradlew.bat :ir-validation:publishMavenJavaPublicationToLocalStagingRepository --console=plain
+.\gradlew.bat publishJavaToGpuToLocalStaging --console=plain
 ```
 
-5. Inspect both generated POM files:
+5. Inspect generated POM files and staged artifacts.
 
-```text
-processor/build/publications/mavenJava/pom-default.xml
-ir-validation/build/publications/mavenJava/pom-default.xml
+6. Publish the release:
+
+```powershell
+.\gradlew.bat publishJavaToGpuReleasesToCentral -Pjavatogpu.version=0.1.0-alpha.2 --console=plain
 ```
 
-6. Publish snapshot or release for both modules with the commands above.
+After upload, complete the release from the Maven Central / Sonatype portal if the deployment lands in a staging flow that requires manual close/release. Release all JavaToGpu artifacts with the same version.
 
 ## Consumer Example
 
 ```groovy
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1' // optional strict IR checks
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2' // optional strict IR checks
+
+    // Optional optimizer proposal providers.
+    implementation 'io.github.deussixik:javatogpu-ir-optimizer:0.1.0-alpha.2'
+    implementation 'io.github.deussixik:javatogpu-ir-vendor-optimizer:0.1.0-alpha.2'
 
     runtimeOnly 'org.lwjgl:lwjgl::natives-windows'
 }

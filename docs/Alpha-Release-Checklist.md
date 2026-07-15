@@ -4,10 +4,10 @@ Use this checklist before publishing a public alpha build.
 
 ## Release Label
 
-Recommended first public version:
+Recommended current public alpha version:
 
 ```text
-v0.1.0-alpha.1
+v0.1.0-alpha.2
 ```
 
 Recommended positioning:
@@ -27,7 +27,7 @@ Avoid calling the project stable or production-ready. NVIDIA and AMD OpenCL vali
 - The OpenCL operational routine is green on the currently available hardware.
 - The latest OpenCL validation report is generated and can be referenced in release notes.
 - `validateMavenCentralReleaseReadiness` passes for every artifact being published.
-- Maven local staging has been generated for both `javatogpu` and `javatogpu-ir-validation` when releasing both artifacts.
+- Maven local staging has been generated for every published artifact: `javatogpu`, `javatogpu-ir-validation`, `javatogpu-ir-optimizer`, and `javatogpu-ir-vendor-optimizer`.
 - Known unsupported features are documented instead of implied to work.
 - Public docs do not include private planning-only notes as user-facing promises.
 
@@ -54,9 +54,9 @@ Key files:
 ## Release Notes Template
 
 ```markdown
-# JavaToGpu v0.1.0-alpha.1
+# JavaToGpu v0.1.0-alpha.2
 
-This is the first public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and runtime for GPU-safe Java kernels.
+This is a public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and runtime for GPU-safe Java kernels.
 
 ## Validated Environment
 
