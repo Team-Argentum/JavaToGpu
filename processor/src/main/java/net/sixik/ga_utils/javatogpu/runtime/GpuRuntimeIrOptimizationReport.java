@@ -13,14 +13,15 @@ public record GpuRuntimeIrOptimizationReport(
         Optional<IrGpuArtifact> artifact,
         List<GpuRuntimeIrOptimizationPassReport> passReports,
         GpuOptimizationStrategyDecision strategyDecision,
-        List<GpuExtensionExecutionReport> extensionExecutionReports
+        List<GpuExtensionExecutionReport> extensionExecutionReports,
+        Optional<IrGpuArtifact> candidateArtifact
 ) {
 
     public GpuRuntimeIrOptimizationReport(
             Optional<IrGpuArtifact> artifact,
             List<GpuRuntimeIrOptimizationPassReport> passReports
     ) {
-        this(artifact, passReports, null, List.of());
+        this(artifact, passReports, null, List.of(), Optional.empty());
     }
 
     public GpuRuntimeIrOptimizationReport(
@@ -28,7 +29,24 @@ public record GpuRuntimeIrOptimizationReport(
             List<GpuRuntimeIrOptimizationPassReport> passReports,
             GpuOptimizationStrategyDecision strategyDecision
     ) {
-        this(artifact, passReports, strategyDecision, List.of());
+        this(artifact, passReports, strategyDecision, List.of(), Optional.empty());
+    }
+
+    public GpuRuntimeIrOptimizationReport(
+            Optional<IrGpuArtifact> artifact,
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            GpuOptimizationStrategyDecision strategyDecision,
+            List<GpuExtensionExecutionReport> extensionExecutionReports
+    ) {
+        this(artifact, passReports, strategyDecision, extensionExecutionReports, Optional.empty());
+    }
+
+    public GpuRuntimeIrOptimizationReport(
+            Optional<IrGpuArtifact> artifact,
+            Optional<IrGpuArtifact> candidateArtifact,
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        this(artifact, passReports, null, List.of(), candidateArtifact);
     }
 
     public GpuRuntimeIrOptimizationReport {
@@ -38,6 +56,7 @@ public record GpuRuntimeIrOptimizationReport(
                 ? GpuOptimizationStrategyDecision.none(null)
                 : strategyDecision;
         extensionExecutionReports = extensionExecutionReports == null ? List.of() : List.copyOf(extensionExecutionReports);
+        candidateArtifact = candidateArtifact == null ? Optional.empty() : candidateArtifact;
     }
 
     public static GpuRuntimeIrOptimizationReport empty(Optional<IrGpuArtifact> artifact) {
@@ -50,7 +69,30 @@ public record GpuRuntimeIrOptimizationReport(
         }
         java.util.ArrayList<GpuRuntimeIrOptimizationPassReport> reports = new java.util.ArrayList<>(passReports);
         reports.add(passReport);
-        return new GpuRuntimeIrOptimizationReport(artifact, reports, strategyDecision, extensionExecutionReports);
+        return new GpuRuntimeIrOptimizationReport(
+                artifact,
+                reports,
+                strategyDecision,
+                extensionExecutionReports,
+                candidateArtifact
+        );
+    }
+
+    public GpuRuntimeIrOptimizationReport withCandidateArtifact(Optional<IrGpuArtifact> candidateArtifact) {
+        return new GpuRuntimeIrOptimizationReport(
+                artifact,
+                passReports,
+                strategyDecision,
+                extensionExecutionReports,
+                candidateArtifact
+        );
+    }
+
+    public Optional<IrGpuArtifact> artifactForOptimizedReview() {
+        if (requiresRollback()) {
+            return artifact;
+        }
+        return candidateArtifact.or(() -> artifact);
     }
 
     public boolean hasReports() {

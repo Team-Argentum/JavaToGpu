@@ -184,6 +184,57 @@ class GpuMethodParserTest {
     }
 
     @Test
+    void parsesPortableWorkGroupSizeHintAsOpenClAttribute() {
+        String methodSource = """
+                @GPUWorkGroupSizeHint(x = 4, y = 2, z = 1)
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(1, method.openClAttributes().size());
+        assertEquals("work_group_size_hint(4, 2, 1)", method.openClAttributes().get(0));
+    }
+
+    @Test
+    void parsesPortableVectorTypeHintAsOpenClAttribute() {
+        String methodSource = """
+                @GPUVectorTypeHint("float4")
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(1, method.openClAttributes().size());
+        assertEquals("vec_type_hint(float4)", method.openClAttributes().get(0));
+    }
+
+    @Test
+    void parsesPortableAlwaysInlineAsOpenClAttribute() {
+        String methodSource = """
+                @GPUAlwaysInline
+                @CCode(inline = true)
+                float helper(float value) {
+                    return value * value;
+                }
+                """;
+
+        GpuMethodParser parser = new GpuMethodParser();
+        ParsedGpuMethod method = parser.parseMethod(methodSource);
+
+        assertEquals(1, method.openClAttributes().size());
+        assertEquals("always_inline", method.openClAttributes().get(0));
+    }
+
+    @Test
     void parsesConstantAndLocalAddressSpaces() {
         String methodSource = """
                 @GPU

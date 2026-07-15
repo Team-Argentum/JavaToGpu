@@ -8,8 +8,8 @@ Add JavaToGpu as both a dependency and an annotation processor:
 
 ```groovy
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
 }
 ```
 
@@ -24,11 +24,13 @@ import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUOptimize;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSize;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSizeHint;
 
 public final class DemoKernel {
 
     @net.sixik.ga_utils.javatogpu.api.annotations.GPU
     @GPUWorkGroupSize(x = 64)
+    @GPUWorkGroupSizeHint(x = 64)
     @GPUOptimize(fastMath = false)
     public static void transform(
             @GPUGlobal float[] input,
@@ -45,10 +47,10 @@ Keep first kernels simple:
 - `@GPU` entry methods return `void`.
 - Use output arrays or supported output parameters for results.
 - Use `GPU.*` for GPU builtins instead of arbitrary Java library calls.
-- Use portable annotations such as `@GPUWorkGroupSize` and `@GPUOptimize` before raw backend attributes.
+- Use portable annotations such as `@GPUWorkGroupSize`, `@GPUWorkGroupSizeHint`, `@GPUVectorTypeHint`, `@GPUPacked`, `@GPUAligned`, `@GPUAlwaysInline`, and `@GPUOptimize` before raw backend attributes.
 - Avoid object allocation, exceptions, recursion, virtual dispatch, and heap-heavy Java patterns inside kernels.
 
-`@GPUOptimize(fastMath = false)` is the safe default. Use `fastMath = true` only when you explicitly allow future proof-backed optimizer passes to use non-strict floating-point rewrites.
+`@GPUOptimize(fastMath = false)` is the safe default. Use `fastMath = true` only when you explicitly allow proof-backed optimizer passes to use non-strict floating-point rewrites. The annotation can also record optional optimizer intent such as `profile`, `enabledFamilies`, `disabledFamilies`, `journal`, `dumpArtifacts`, `vendorAdaptation`, `vectorization`, and `resourceShaping`; family toggles gate optional optimizer-provider participation, while mutation and optimized-source selection remain fail-closed unless runtime evidence and selection gates allow more.
 
 ## 3. Run The Kernel
 
@@ -100,7 +102,7 @@ The optional IR validation module gives stricter compiler diagnostics and CI-fri
 
 ```groovy
 dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
 }
 
 tasks.withType(JavaCompile).configureEach {

@@ -24,11 +24,38 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         int optimizerProofArtifactCount,
         int optimizerAcceptedProofArtifactCount,
         int optimizerBlockingProofArtifactCount,
+        int optimizerReplacementPlanCompleteCount,
+        int optimizerReplacementPlanPartialCount,
+        String optimizerReplacementPlanFirstBlockers,
+        int optimizerReplacementPlanValidationCount,
+        int optimizerReplacementPlanValidationValidCount,
+        int optimizerReplacementPlanValidationInvalidCount,
+        String optimizerReplacementPlanValidationFirstBlockers,
+        int optimizerRewriteSketchCount,
+        int optimizerRewriteSketchReadyCount,
+        int optimizerRewriteSketchBlockedCount,
+        String optimizerRewriteSketchFirstBlockers,
+        int optimizerRewriteSketchConflictCount,
+        String optimizerRewriteSketchConflictFirstBlockers,
+        String optimizerRewriteSelectionStatuses,
+        String optimizerRewriteSelectionFirstBlockers,
+        String optimizerRewriteProofStatuses,
+        String optimizerRewriteProofFirstBlockers,
+        String optimizerRewriteReviewPackageStatuses,
+        String optimizerRewriteReviewPackageFirstBlockers,
+        int optimizerRuleCount,
+        String optimizerRuleSummary,
+        String optimizerRuleDetails,
         int optimizerFamilyCount,
         int optimizerFamilyPromotionReadyCount,
         String optimizerFamilySummary,
         int optimizerFamilyPayloadCompleteCount,
         String optimizerFamilyPayloadCompleteAll,
+        int runtimeExtensionParticipationRecordedKernelCount,
+        int runtimeExtensionParticipationEntryCount,
+        int runtimeExtensionParticipationFailedContinuedCount,
+        int runtimeExtensionParticipationFailedClosedCount,
+        String runtimeExtensionParticipationSources,
         String sourceSwitchingDecisions,
         String sourcePromotionFirstBlockers,
         String sourcePromotionFirstBlockerFamilies,
@@ -52,9 +79,36 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 0,
                 0,
                 0,
+                "",
+                0,
+                0,
+                0,
+                "",
+                0,
+                0,
+                0,
+                "",
+                0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                0,
+                "none",
+                "none",
+                0,
+                0,
                 "none",
                 0,
                 "false",
+                0,
+                0,
+                0,
+                0,
+                "",
                 "",
                 "",
                 "",
@@ -92,6 +146,28 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.proofArtifact.count"),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.proofArtifact.accepted.count"),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.proofArtifact.blocking.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.complete.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.partial.count"),
+                summarizeReplacementPlanFirstBlockers(properties, kernelCount),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.valid.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.invalid.count"),
+                summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.ready.count"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.blocked.count"),
+                summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.firstBlocker"),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.conflict.count"),
+                summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker"),
+                summarizeRewriteSelectionStatuses(properties, kernelCount),
+                summarizeRewriteSelectionFirstBlockers(properties, kernelCount),
+                summarizeRewriteProofStatuses(properties, kernelCount),
+                summarizeRewriteProofFirstBlockers(properties, kernelCount),
+                summarizeRewriteReviewPackageStatuses(properties, kernelCount),
+                summarizeRewriteReviewPackageFirstBlockers(properties, kernelCount),
+                sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerRule.count"),
+                summarizeKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerRule.summary"),
+                summarizeOptimizerRules(properties, kernelCount),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerFamily.count"),
                 sumKernelProperty(properties, kernelCount, "runtimeOptimizerDrift.optimizerFamily.promotionReady.count"),
                 summarizeOptimizerFamilies(properties, kernelCount),
@@ -103,6 +179,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                         "optimizerFamilyPayload.family.complete.count",
                         "optimizerFamilyPayload.family.complete.all"
                 ),
+                runtimeExtensionParticipationRecordedKernelCount(properties, kernelCount),
+                runtimeExtensionParticipationEntryCount(properties, kernelCount),
+                runtimeExtensionParticipationFailedContinuedCount(properties, kernelCount),
+                runtimeExtensionParticipationFailedClosedCount(properties, kernelCount),
+                summarizeRuntimeExtensionParticipationSources(properties, kernelCount),
                 summarizeSourceSwitchingDecisions(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockers(properties, kernelCount),
                 summarizeSourcePromotionFirstBlockerFamilies(properties, kernelCount),
@@ -134,7 +215,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     + optimizerFamilyPayloadCompleteCount
                     + ", optimizerPayloadCompleteAll="
                     + optimizerFamilyPayloadCompleteAll
+                    + optimizerReplacementPlanEvidenceText()
+                    + optimizerRewriteSketchEvidenceText()
+                    + optimizerRuleSummaryText()
                     + optimizerFamilySummaryText()
+                    + runtimeExtensionParticipationEvidenceText()
                     + sourceSwitchingEvidenceText()
                     + kernelEvidence
                     + sourceKernelResourceText()
@@ -160,7 +245,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 + optimizerFamilyPayloadCompleteCount
                 + ", optimizerPayloadCompleteAll="
                 + optimizerFamilyPayloadCompleteAll
+                + optimizerReplacementPlanEvidenceText()
+                + optimizerRewriteSketchEvidenceText()
+                + optimizerRuleSummaryText()
                 + optimizerFamilySummaryText()
+                + runtimeExtensionParticipationEvidenceText()
                 + sourceSwitchingEvidenceText()
                 + kernelEvidence
                 + sourceKernelResourceText()
@@ -181,6 +270,26 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return builder.toString();
     }
 
+    public String runtimeExtensionParticipationEvidenceText() {
+        if (runtimeExtensionParticipationEntryCount == 0
+                && runtimeExtensionParticipationRecordedKernelCount == 0
+                && runtimeExtensionParticipationSources.isBlank()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", runtimeExtensionParticipation=recordedKernels=")
+                .append(runtimeExtensionParticipationRecordedKernelCount)
+                .append("/executions=")
+                .append(runtimeExtensionParticipationEntryCount)
+                .append("/failedContinued=")
+                .append(runtimeExtensionParticipationFailedContinuedCount)
+                .append("/failedClosed=")
+                .append(runtimeExtensionParticipationFailedClosedCount);
+        if (!runtimeExtensionParticipationSources.isBlank()) {
+            builder.append("/sources=").append(runtimeExtensionParticipationSources);
+        }
+        return builder.toString();
+    }
+
     private String sourceKernelResourceText() {
         return sourceKernelResource.isBlank() ? "" : ", sourceKernelResource=" + sourceKernelResource;
     }
@@ -189,6 +298,232 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return optimizerFamilySummary == null || optimizerFamilySummary.isBlank() || "none".equals(optimizerFamilySummary)
                 ? ""
                 : ", optimizerFamilySummary=" + optimizerFamilySummary;
+    }
+
+    private String optimizerRuleSummaryText() {
+        if (optimizerRuleCount == 0
+                && (optimizerRuleSummary == null || optimizerRuleSummary.isBlank() || "none".equals(optimizerRuleSummary))
+                && (optimizerRuleDetails == null || optimizerRuleDetails.isBlank() || "none".equals(optimizerRuleDetails))) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", optimizerRules=").append(optimizerRuleCount);
+        if (optimizerRuleSummary != null && !optimizerRuleSummary.isBlank() && !"none".equals(optimizerRuleSummary)) {
+            builder.append(", optimizerRuleSummary=").append(optimizerRuleSummary);
+        }
+        if (optimizerRuleDetails != null && !optimizerRuleDetails.isBlank() && !"none".equals(optimizerRuleDetails)) {
+            builder.append(", optimizerRuleDetails=").append(optimizerRuleDetails);
+        }
+        return builder.toString();
+    }
+
+    private String optimizerReplacementPlanEvidenceText() {
+        if (optimizerReplacementPlanCompleteCount == 0
+                && optimizerReplacementPlanPartialCount == 0
+                && optimizerReplacementPlanValidationCount == 0
+                && optimizerReplacementPlanValidationValidCount == 0
+                && optimizerReplacementPlanValidationInvalidCount == 0
+                && optimizerReplacementPlanFirstBlockers.isBlank()
+                && optimizerReplacementPlanValidationFirstBlockers.isBlank()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", optimizerReplacementPlans=complete=")
+                .append(optimizerReplacementPlanCompleteCount)
+                .append("/partial=")
+                .append(optimizerReplacementPlanPartialCount);
+        if (optimizerReplacementPlanValidationCount > 0
+                || optimizerReplacementPlanValidationValidCount > 0
+                || optimizerReplacementPlanValidationInvalidCount > 0
+                || !optimizerReplacementPlanValidationFirstBlockers.isBlank()) {
+            builder.append("/validation=valid=")
+                    .append(optimizerReplacementPlanValidationValidCount)
+                    .append("/total=")
+                    .append(optimizerReplacementPlanValidationCount)
+                    .append("/invalid=")
+                    .append(optimizerReplacementPlanValidationInvalidCount);
+        }
+        if (!optimizerReplacementPlanValidationFirstBlockers.isBlank()) {
+            builder.append("/validationFirstBlockers=").append(optimizerReplacementPlanValidationFirstBlockers);
+        }
+        if (!optimizerReplacementPlanFirstBlockers.isBlank()) {
+            builder.append("/firstBlockers=").append(optimizerReplacementPlanFirstBlockers);
+        }
+        return builder.toString();
+    }
+
+    private String optimizerRewriteSketchEvidenceText() {
+        if (optimizerRewriteSketchCount == 0
+                && optimizerRewriteSketchReadyCount == 0
+                && optimizerRewriteSketchBlockedCount == 0
+                && optimizerRewriteSketchConflictCount == 0
+                && optimizerRewriteSketchFirstBlockers.isBlank()
+                && optimizerRewriteSketchConflictFirstBlockers.isBlank()
+                && optimizerRewriteSelectionStatuses.isBlank()
+                && optimizerRewriteSelectionFirstBlockers.isBlank()
+                && optimizerRewriteProofStatuses.isBlank()
+                && optimizerRewriteProofFirstBlockers.isBlank()
+                && optimizerRewriteReviewPackageStatuses.isBlank()
+                && optimizerRewriteReviewPackageFirstBlockers.isBlank()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(", optimizerRewriteSketches=ready=")
+                .append(optimizerRewriteSketchReadyCount)
+                .append("/total=")
+                .append(optimizerRewriteSketchCount)
+                .append("/blocked=")
+                .append(optimizerRewriteSketchBlockedCount)
+                .append("/conflicts=")
+                .append(optimizerRewriteSketchConflictCount)
+                .append("/rewriteBuilderImplemented=false")
+                .append("/mutationAllowed=false")
+                .append("/selectedIrReplacement=false");
+        if (!optimizerRewriteSketchFirstBlockers.isBlank()) {
+            builder.append("/firstBlockers=").append(optimizerRewriteSketchFirstBlockers);
+        }
+        if (!optimizerRewriteSketchConflictFirstBlockers.isBlank()) {
+            builder.append("/conflictFirstBlockers=").append(optimizerRewriteSketchConflictFirstBlockers);
+        }
+        if (!optimizerRewriteSelectionStatuses.isBlank()) {
+            builder.append("/selectionStatus=").append(optimizerRewriteSelectionStatuses);
+        }
+        if (!optimizerRewriteSelectionFirstBlockers.isBlank()) {
+            builder.append("/selectionFirstBlockers=").append(optimizerRewriteSelectionFirstBlockers);
+        }
+        builder.append("/selectionApplied=false");
+        if (!optimizerRewriteProofStatuses.isBlank()) {
+            builder.append("/proofStatus=").append(optimizerRewriteProofStatuses);
+        }
+        if (!optimizerRewriteProofFirstBlockers.isBlank()) {
+            builder.append("/proofFirstBlockers=").append(optimizerRewriteProofFirstBlockers);
+        }
+        builder.append("/proofAccepted=false")
+                .append("/runtimeEquivalencePayloadComplete=false")
+                .append("/rollbackClean=false");
+        if (!optimizerRewriteReviewPackageStatuses.isBlank()) {
+            builder.append("/reviewPackageStatus=").append(optimizerRewriteReviewPackageStatuses);
+        }
+        if (!optimizerRewriteReviewPackageFirstBlockers.isBlank()) {
+            builder.append("/reviewPackageFirstBlockers=").append(optimizerRewriteReviewPackageFirstBlockers);
+        }
+        builder.append("/reviewPackageComplete=false")
+                .append("/reviewPackageManualReviewOnly=true");
+        return builder.toString();
+    }
+
+    private static String summarizeReplacementPlanFirstBlockers(Properties properties, int kernelCount) {
+        Map<String, Integer> blockerCounts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String blocker = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.firstBlocker",
+                    ""
+            );
+            if (blocker.isBlank() || "none".equals(blocker) || "unknown".equals(blocker)) {
+                continue;
+            }
+            blockerCounts.merge(blocker, 1, Integer::sum);
+        }
+        return summarizeCounts(blockerCounts);
+    }
+
+    private static String summarizeKernelProperty(Properties properties, int kernelCount, String propertyName) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty("kernel." + index + "." + propertyName, "");
+            if (value.isBlank() || "none".equals(value) || "unknown".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteSelectionStatuses(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.status",
+                    ""
+            );
+            if (value.isBlank() || "unknown".equals(value) || "not-required".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteSelectionFirstBlockers(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.firstBlocker",
+                    ""
+            );
+            if (value.isBlank() || "none".equals(value) || "unknown".equals(value) || "no-rewrite-sketches".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteProofStatuses(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteProof.status",
+                    ""
+            );
+            if (value.isBlank() || "unknown".equals(value) || "not-required".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteProofFirstBlockers(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteProof.firstBlocker",
+                    ""
+            );
+            if (value.isBlank() || "none".equals(value) || "unknown".equals(value) || "no-proof-candidates".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteReviewPackageStatuses(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteReviewPackage.status",
+                    ""
+            );
+            if (value.isBlank() || "unknown".equals(value) || "not-required".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
+    }
+
+    private static String summarizeRewriteReviewPackageFirstBlockers(Properties properties, int kernelCount) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < kernelCount; index++) {
+            String value = properties.getProperty(
+                    "kernel." + index + ".runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker",
+                    ""
+            );
+            if (value.isBlank() || "none".equals(value) || "unknown".equals(value) || "no-review-candidates".equals(value)) {
+                continue;
+            }
+            counts.merge(value, 1, Integer::sum);
+        }
+        return summarizeCounts(counts);
     }
 
     private static String summarizeOptimizerFamilies(Properties properties, int kernelCount) {
@@ -313,6 +648,69 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return summarizeCounts(decisionCounts);
     }
 
+    private static int runtimeExtensionParticipationRecordedKernelCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.recordedKernel.count");
+        if (aggregate != null) {
+            return parsePositiveInt(aggregate);
+        }
+        int count = 0;
+        for (int index = 0; index < kernelCount; index++) {
+            if ("recorded".equals(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.status"))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int runtimeExtensionParticipationEntryCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.entry.count");
+        return aggregate == null
+                ? sumKernelProperty(properties, kernelCount, "runtimeExtensionParticipation.entry.count")
+                : parsePositiveInt(aggregate);
+    }
+
+    private static int runtimeExtensionParticipationFailedContinuedCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.failedContinued.count");
+        return aggregate == null
+                ? sumKernelProperty(properties, kernelCount, "runtimeExtensionParticipation.failedContinued.count")
+                : parsePositiveInt(aggregate);
+    }
+
+    private static int runtimeExtensionParticipationFailedClosedCount(Properties properties, int kernelCount) {
+        String aggregate = properties.getProperty("runtimeExtensionParticipation.failedClosed.count");
+        return aggregate == null
+                ? sumKernelProperty(properties, kernelCount, "runtimeExtensionParticipation.failedClosed.count")
+                : parsePositiveInt(aggregate);
+    }
+
+    private static String summarizeRuntimeExtensionParticipationSources(Properties properties, int kernelCount) {
+        int aggregateSourceCount = parsePositiveInt(properties.getProperty("runtimeExtensionParticipation.source.count", "0"));
+        if (aggregateSourceCount > 0) {
+            return summarizeIndexed(properties, "runtimeExtensionParticipation.source", aggregateSourceCount);
+        }
+        Map<String, Integer> sourceCounts = new LinkedHashMap<>();
+        for (int kernelIndex = 0; kernelIndex < kernelCount; kernelIndex++) {
+            int sourceCount = parsePositiveInt(properties.getProperty(
+                    "kernel." + kernelIndex + ".runtimeExtensionParticipation.source.count",
+                    "0"
+            ));
+            for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++) {
+                String source = properties.getProperty(
+                        "kernel." + kernelIndex + ".runtimeExtensionParticipation.source." + sourceIndex + ".name",
+                        ""
+                );
+                int count = parsePositiveInt(properties.getProperty(
+                        "kernel." + kernelIndex + ".runtimeExtensionParticipation.source." + sourceIndex + ".count",
+                        "0"
+                ));
+                if (!source.isBlank()) {
+                    sourceCounts.merge(source, count, Integer::sum);
+                }
+            }
+        }
+        return summarizeCounts(sourceCounts);
+    }
+
     private static String summarizeKernelEvidence(Properties properties, int kernelCount) {
         if (kernelCount == 0) {
             return "";
@@ -349,6 +747,140 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.proofArtifact.accepted.count", "0"))
                     .append("/blockingProof=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.proofArtifact.blocking.count", "0"))
+                    .append("/replacementPlanComplete=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.complete.count",
+                            "0"
+                    ))
+                    .append("/replacementPlanPartial=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.partial.count",
+                            "0"
+                    ))
+                    .append("/replacementPlanFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.firstBlocker",
+                            "none"
+                    ))
+                    .append("/replacementPlanValidationValid=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.validation.valid.count",
+                            "0"
+                    ))
+                    .append("/replacementPlanValidationTotal=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.validation.count",
+                            "0"
+                    ))
+                    .append("/replacementPlanValidationInvalid=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.validation.invalid.count",
+                            "0"
+                    ))
+                    .append("/replacementPlanValidationFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.replacementPlan.validation.firstBlocker",
+                            "none"
+                    ))
+                    .append("/rewriteSketchReady=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.ready.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchTotal=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchBlocked=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.blocked.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.firstBlocker",
+                            "none"
+                    ))
+                    .append("/rewriteSketchConflicts=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.count",
+                            "0"
+                    ))
+                    .append("/rewriteSketchConflictFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker",
+                            "none"
+                    ))
+                    .append("/rewriteSketchConflictResolutionImplemented=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented",
+                            "false"
+                    ))
+                    .append("/rewriteSketchSelectionApplied=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied",
+                            "false"
+                    ))
+                    .append("/rewriteSelectionStatus=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.status",
+                            "not-required"
+                    ))
+                    .append("/rewriteSelectionFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.firstBlocker",
+                            "no-rewrite-sketches"
+                    ))
+                    .append("/rewriteSelectionApplied=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSelection.selectionApplied",
+                            "false"
+                    ))
+                    .append("/rewriteProofStatus=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteProof.status",
+                            "not-required"
+                    ))
+                    .append("/rewriteProofFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteProof.firstBlocker",
+                            "no-proof-candidates"
+                    ))
+                    .append("/rewriteProofAccepted=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteProof.proofAccepted",
+                            "false"
+                    ))
+                    .append("/rewriteBuilderImplemented=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented",
+                            "false"
+                    ))
+                    .append("/selectedIrReplacement=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement",
+                            "false"
+                    ))
+                    .append("/rewriteReviewPackageStatus=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteReviewPackage.status",
+                            "not-required"
+                    ))
+                    .append("/rewriteReviewPackageFirstBlocker=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker",
+                            "no-review-candidates"
+                    ))
+                    .append("/rewriteReviewPackageComplete=")
+                    .append(properties.getProperty(
+                            "kernel." + index + ".runtimeOptimizerDrift.rewriteReviewPackage.complete",
+                            "false"
+                    ))
+                    .append("/optimizerRules=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.optimizerRule.count", "0"))
+                    .append("/optimizerRuleDetails=")
+                    .append(summarizeKernelOptimizerRules(properties, index))
                     .append("/optimizerFamilies=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.optimizerFamily.count", "0"))
                     .append("/promotionReadyFamilies=")
@@ -360,6 +892,15 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append(properties.getProperty("kernel." + index + ".optimizerFamilyPayload.family.complete.count", "0"))
                     .append("/payloadCompleteAll=")
                     .append(properties.getProperty("kernel." + index + ".optimizerFamilyPayload.family.complete.all", "false"))
+                    .append(", extensionParticipation=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.status", "not-recorded"))
+                    .append('/')
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.entry.count", "0"))
+                    .append("executions")
+                    .append("/failedContinued=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.failedContinued.count", "0"))
+                    .append("/failedClosed=")
+                    .append(properties.getProperty("kernel." + index + ".runtimeExtensionParticipation.failedClosed.count", "0"))
                     .append("/fallback=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.fallbackDecision", "unknown"))
                     .append(", productionMutation=")
@@ -452,6 +993,116 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return Boolean.toString(kernelCount > 0 && countKernelBooleanProperty(properties, kernelCount, propertyName) == kernelCount);
     }
 
+    private static String summarizeOptimizerRules(Properties properties, int kernelCount) {
+        Map<String, OptimizerRuleAggregate> rules = new LinkedHashMap<>();
+        for (int kernelIndex = 0; kernelIndex < kernelCount; kernelIndex++) {
+            collectKernelOptimizerRules(properties, kernelIndex, rules);
+        }
+        return formatOptimizerRules(rules);
+    }
+
+    private static String summarizeKernelOptimizerRules(Properties properties, int kernelIndex) {
+        Map<String, OptimizerRuleAggregate> rules = new LinkedHashMap<>();
+        collectKernelOptimizerRules(properties, kernelIndex, rules);
+        String summary = formatOptimizerRules(rules);
+        return summary.isBlank() ? "none" : summary;
+    }
+
+    private static void collectKernelOptimizerRules(
+            Properties properties,
+            int kernelIndex,
+            Map<String, OptimizerRuleAggregate> rules
+    ) {
+        String basePrefix = "kernel." + kernelIndex + ".runtimeOptimizerDrift.optimizerRule.";
+        int ruleCount = parsePositiveInt(properties.getProperty(basePrefix + "count", "0"));
+        for (int ruleIndex = 0; ruleIndex < ruleCount; ruleIndex++) {
+            String prefix = basePrefix + ruleIndex + ".";
+            String id = properties.getProperty(prefix + "id", "");
+            if (id.isBlank()) {
+                continue;
+            }
+            OptimizerRuleAggregate existing = rules.getOrDefault(id, OptimizerRuleAggregate.empty(id));
+            rules.put(id, existing.add(
+                    parsePositiveInt(properties.getProperty(prefix + "candidate.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "proposal.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "applied.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "skipped.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "blocked.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "replacementPlan.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "replacementPlan.complete.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "replacementPlan.partial.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.valid.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "replacementPlan.validation.invalid.count", "0")),
+                    properties.getProperty(prefix + "replacementPlan.validation.firstBlocker", "none"),
+                    parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.ready.count", "0")),
+                    parsePositiveInt(properties.getProperty(prefix + "rewriteSketch.blocked.count", "0")),
+                    properties.getProperty(prefix + "rewriteSketch.firstBlocker", "none"),
+                    properties.getProperty(prefix + "rewriteSelection.status", "not-required"),
+                    properties.getProperty(prefix + "rewriteSelection.firstBlocker", "no-rewrite-sketches"),
+                    properties.getProperty(prefix + "rewriteProof.status", "not-required"),
+                    properties.getProperty(prefix + "rewriteProof.firstBlocker", "no-proof-candidates"),
+                    properties.getProperty(prefix + "firstBlocker", properties.getProperty(prefix + "replacementPlan.firstBlocker", "none"))
+            ));
+        }
+    }
+
+    private static String formatOptimizerRules(Map<String, OptimizerRuleAggregate> rules) {
+        if (rules.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (OptimizerRuleAggregate rule : rules.values()) {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(rule.id())
+                    .append("[candidates=")
+                    .append(rule.candidateCount())
+                    .append(", proposals=")
+                    .append(rule.proposalCount())
+                    .append(", applied=")
+                    .append(rule.appliedCount())
+                    .append(", skipped=")
+                    .append(rule.skippedCount())
+                    .append(", blocked=")
+                    .append(rule.blockedCount())
+                    .append(", replacementPlans=")
+                    .append(rule.replacementPlanCount())
+                    .append(", completePlans=")
+                    .append(rule.replacementPlanCompleteCount())
+                    .append(", partialPlans=")
+                    .append(rule.replacementPlanPartialCount())
+                    .append(", planValidations=")
+                    .append(rule.replacementPlanValidationCount())
+                    .append(", invalidPlanValidations=")
+                    .append(rule.replacementPlanValidationInvalidCount())
+                    .append(", planValidationFirstBlocker=")
+                    .append(rule.replacementPlanValidationFirstBlocker())
+                    .append(", rewriteSketches=")
+                    .append(rule.rewriteSketchCount())
+                    .append(", readySketches=")
+                    .append(rule.rewriteSketchReadyCount())
+                    .append(", blockedSketches=")
+                    .append(rule.rewriteSketchBlockedCount())
+                    .append(", rewriteSketchFirstBlocker=")
+                    .append(rule.rewriteSketchFirstBlocker())
+                    .append(", rewriteSelectionStatus=")
+                    .append(rule.rewriteSelectionStatus())
+                    .append(", rewriteSelectionFirstBlocker=")
+                    .append(rule.rewriteSelectionFirstBlocker())
+                    .append(", rewriteProofStatus=")
+                    .append(rule.rewriteProofStatus())
+                    .append(", rewriteProofFirstBlocker=")
+                    .append(rule.rewriteProofFirstBlocker())
+                    .append(", firstBlocker=")
+                    .append(rule.firstBlocker())
+                    .append(']');
+        }
+        return builder.toString();
+    }
+
     private static String allKernelBooleanPropertyWhenCountPresent(
             Properties properties,
             int kernelCount,
@@ -514,6 +1165,120 @@ public record GpuBackendSourcePromotionWorkloadSummary(
 
         private boolean promotionReady() {
             return acceptedProofCount > 0 && blockingProofCount == 0 && rolledBackCount == 0 && failedCount == 0;
+        }
+    }
+
+    private record OptimizerRuleAggregate(
+            String id,
+            int candidateCount,
+            int proposalCount,
+            int appliedCount,
+            int skippedCount,
+            int blockedCount,
+            int replacementPlanCount,
+            int replacementPlanCompleteCount,
+            int replacementPlanPartialCount,
+            int replacementPlanValidationCount,
+            int replacementPlanValidationValidCount,
+            int replacementPlanValidationInvalidCount,
+            String replacementPlanValidationFirstBlocker,
+            int rewriteSketchCount,
+            int rewriteSketchReadyCount,
+            int rewriteSketchBlockedCount,
+            String rewriteSketchFirstBlocker,
+            String rewriteSelectionStatus,
+            String rewriteSelectionFirstBlocker,
+            String rewriteProofStatus,
+            String rewriteProofFirstBlocker,
+            String firstBlocker
+    ) {
+
+        private static OptimizerRuleAggregate empty(String id) {
+            return new OptimizerRuleAggregate(id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none", 0, 0, 0, "none", "not-required", "no-rewrite-sketches", "not-required", "no-proof-candidates", "none");
+        }
+
+        private OptimizerRuleAggregate add(
+                int candidateCount,
+                int proposalCount,
+                int appliedCount,
+                int skippedCount,
+                int blockedCount,
+                int replacementPlanCount,
+                int replacementPlanCompleteCount,
+                int replacementPlanPartialCount,
+                int replacementPlanValidationCount,
+                int replacementPlanValidationValidCount,
+                int replacementPlanValidationInvalidCount,
+                String nextValidationBlocker,
+                int rewriteSketchCount,
+                int rewriteSketchReadyCount,
+                int rewriteSketchBlockedCount,
+                String nextRewriteSketchBlocker,
+                String nextRewriteSelectionStatus,
+                String nextRewriteSelectionBlocker,
+                String nextRewriteProofStatus,
+                String nextRewriteProofBlocker,
+                String nextBlocker
+        ) {
+            String blocker = firstBlocker;
+            String validationBlocker = replacementPlanValidationFirstBlocker;
+            if ("none".equals(validationBlocker)
+                    && nextValidationBlocker != null
+                    && !nextValidationBlocker.isBlank()
+                    && !"none".equals(nextValidationBlocker)) {
+                validationBlocker = nextValidationBlocker;
+            }
+            String sketchBlocker = rewriteSketchFirstBlocker;
+            if ("none".equals(sketchBlocker)
+                    && nextRewriteSketchBlocker != null
+                    && !nextRewriteSketchBlocker.isBlank()
+                    && !"none".equals(nextRewriteSketchBlocker)) {
+                sketchBlocker = nextRewriteSketchBlocker;
+            }
+            String selectionStatus = firstNonDefault(rewriteSelectionStatus, nextRewriteSelectionStatus, "not-required");
+            String selectionBlocker = firstNonDefault(rewriteSelectionFirstBlocker, nextRewriteSelectionBlocker, "no-rewrite-sketches");
+            String proofStatus = firstNonDefault(rewriteProofStatus, nextRewriteProofStatus, "not-required");
+            String proofBlocker = firstNonDefault(rewriteProofFirstBlocker, nextRewriteProofBlocker, "no-proof-candidates");
+            if ("none".equals(blocker)
+                    && nextBlocker != null
+                    && !nextBlocker.isBlank()
+                    && !"none".equals(nextBlocker)) {
+                blocker = nextBlocker;
+            }
+            return new OptimizerRuleAggregate(
+                    id,
+                    this.candidateCount + candidateCount,
+                    this.proposalCount + proposalCount,
+                    this.appliedCount + appliedCount,
+                    this.skippedCount + skippedCount,
+                    this.blockedCount + blockedCount,
+                    this.replacementPlanCount + replacementPlanCount,
+                    this.replacementPlanCompleteCount + replacementPlanCompleteCount,
+                    this.replacementPlanPartialCount + replacementPlanPartialCount,
+                    this.replacementPlanValidationCount + replacementPlanValidationCount,
+                    this.replacementPlanValidationValidCount + replacementPlanValidationValidCount,
+                    this.replacementPlanValidationInvalidCount + replacementPlanValidationInvalidCount,
+                    validationBlocker,
+                    this.rewriteSketchCount + rewriteSketchCount,
+                    this.rewriteSketchReadyCount + rewriteSketchReadyCount,
+                    this.rewriteSketchBlockedCount + rewriteSketchBlockedCount,
+                    sketchBlocker,
+                    selectionStatus,
+                    selectionBlocker,
+                    proofStatus,
+                    proofBlocker,
+                    blocker
+            );
+        }
+
+        private static String firstNonDefault(String current, String next, String defaultValue) {
+            if (current != null && !current.isBlank() && !defaultValue.equals(current) && !"unknown".equals(current)) {
+                return current;
+            }
+            if (next != null && !next.isBlank() && !defaultValue.equals(next) && !"unknown".equals(next)) {
+                return next;
+            }
+            return defaultValue;
         }
     }
 }

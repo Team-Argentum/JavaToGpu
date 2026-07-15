@@ -5,15 +5,24 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactParser;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactSerializer;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationMode;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider;
+import net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRunner;
 import net.sixik.ga_utils.javatogpu.frontend.ir.model.GpuIrMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
+import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
+import net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPassRunner;
+import net.sixik.ga_utils.javatogpu.frontend.lowering.GpuIrLowerer;
+import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelEmitter;
+import net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.frontend.validation.GpuValidationException;
+import net.sixik.ga_utils.javatogpu.frontend.validation.GpuSubsetValidator;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -351,6 +360,147 @@ class GpuFrontendServiceTest {
         assertTrue(manifest.contains("methodFallbackVariant.0.groupId=noise-sample"));
         assertTrue(manifest.contains("methodFallbackVariant.0.variantId=dgpu-fast"));
         assertTrue(manifest.contains("methodFallbackVariant.0.priority=120"));
+    }
+
+    @Test
+    void persistsIrValidationParticipationThroughIrGpuRoundTrip() {
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+        GpuIrValidationProvider provider = new GpuIrValidationProvider() {
+            @Override
+            public void validate(net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationRequest request) {
+                request.reportDiagnostic("validator observed " + request.method().irMethod().name());
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.ir-validator";
+            }
+
+            @Override
+            public String extensionVersion() {
+                return "7";
+            }
+        };
+        GpuIntrinsicDatabase intrinsicDatabase = GpuIntrinsicDatabase.createDefault();
+        GpuFrontendService service = new GpuFrontendService(
+                new GpuMethodParser(),
+                new GpuSubsetValidator(intrinsicDatabase),
+                new GpuIrLowerer(intrinsicDatabase),
+                new OpenClKernelEmitter(),
+                GpuIrPassRunner.loadFromServiceLoader(),
+                new GpuIrValidationRunner(List.of(provider), GpuIrValidationMode.DIAGNOSTIC)
+        );
+        ParsedGpuMethod kernelMethod = new GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertEquals(1, result.irGpuArtifact().extensionParticipationMetadata().size());
+        var metadata = result.irGpuArtifact().extensionParticipationMetadata().get(0);
+        assertEquals("ir-validation", metadata.source());
+        assertEquals("test.ir-validator", metadata.extensionId());
+        assertEquals("7", metadata.extensionVersion());
+        assertEquals("IR_VALIDATION", metadata.phase().name());
+        assertEquals("READ_ONLY", metadata.permission().name());
+        assertEquals("SUCCEEDED", metadata.outcome().name());
+        assertEquals("CONTINUE", metadata.failurePolicy().name());
+        assertTrue(metadata.pipelineContinued());
+
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        var reparsed = IrGpuArtifactParser.parse(manifest);
+
+        assertEquals(result.irGpuArtifact().extensionParticipationMetadata(), reparsed.extensionParticipationMetadata());
+        assertTrue(manifest.contains("extensionParticipation.count=1"));
+        assertTrue(manifest.contains("extensionParticipation.0.source=ir-validation"));
+        assertTrue(manifest.contains("extensionParticipation.0.extensionId=test.ir-validator"));
+        assertTrue(manifest.contains("extensionParticipation.0.extensionVersion=7"));
+        assertTrue(manifest.contains("extensionParticipation.0.phase=IR_VALIDATION"));
+        assertTrue(manifest.contains("extensionParticipation.0.outcome=SUCCEEDED"));
+    }
+
+    @Test
+    void persistsPortableAttributeMetadataThroughIrGpuRoundTrip() {
+        String methodSource = """
+                @GPUWorkGroupSize(x = 8, y = 4, z = 2)
+                @GPUWorkGroupSizeHint(x = 4, y = 2, z = 1)
+                @GPUVectorTypeHint("float4")
+                @GPU
+                void kernel(@GPUGlobal Pair[] pairs, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = scale(pairs[id].x);
+                }
+                """;
+        String helperSource = """
+                @GPUAlwaysInline
+                @CCode(inline = true)
+                float scale(float value) {
+                    return value * 2.0f;
+                }
+                """;
+        String structSource = """
+                @GPUPacked
+                @GPUAligned(16)
+                @GPUStruct
+                class Pair {
+                    @GPUAligned(8)
+                    float x;
+                    float y;
+                }
+                """;
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        ParsedGpuMethod kernelMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+        ParsedGpuMethod helperMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(helperSource, "Demo", "sample.Demo");
+        ParsedGpuStruct struct = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuStructParser()
+                .parseStruct(structSource, "Pair", "sample.Demo.Pair");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(helperMethod),
+                List.of(struct),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        assertEquals(3, result.irGpuArtifact().module().entryAttributeMetadata().size());
+        assertEquals("required-work-group-size", result.irGpuArtifact().module().entryAttributeMetadata().get(0).kind());
+        assertEquals("8,4,2", result.irGpuArtifact().module().entryAttributeMetadata().get(0).value());
+        assertEquals("work-group-size-hint", result.irGpuArtifact().module().entryAttributeMetadata().get(1).kind());
+        assertEquals("vector-type-hint", result.irGpuArtifact().module().entryAttributeMetadata().get(2).kind());
+        assertEquals("always-inline", result.irGpuArtifact().module().helperMethods().get(0).attributeMetadata().get(0).kind());
+        assertEquals("packed", result.irGpuArtifact().structMetadata().get(0).attributeMetadata().get(0).kind());
+        assertEquals("aligned", result.irGpuArtifact().structMetadata().get(0).attributeMetadata().get(1).kind());
+        assertEquals("16", result.irGpuArtifact().structMetadata().get(0).attributeMetadata().get(1).value());
+        assertEquals("aligned", result.irGpuArtifact().structMetadata().get(0).fields().get(0).attributeMetadata().get(0).kind());
+        assertEquals("8", result.irGpuArtifact().structMetadata().get(0).fields().get(0).attributeMetadata().get(0).value());
+
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        var reparsed = IrGpuArtifactParser.parse(manifest);
+
+        assertEquals(result.irGpuArtifact().module().entryAttributeMetadata(), reparsed.module().entryAttributeMetadata());
+        assertEquals(
+                result.irGpuArtifact().module().helperMethods().get(0).attributeMetadata(),
+                reparsed.module().helperMethods().get(0).attributeMetadata()
+        );
+        assertEquals(result.irGpuArtifact().structMetadata().get(0).attributeMetadata(), reparsed.structMetadata().get(0).attributeMetadata());
+        assertEquals(
+                result.irGpuArtifact().structMetadata().get(0).fields().get(0).attributeMetadata(),
+                reparsed.structMetadata().get(0).fields().get(0).attributeMetadata()
+        );
+        assertTrue(manifest.contains("entry.attributeMetadata.0.kind=required-work-group-size"));
+        assertTrue(manifest.contains("helper.0.attributeMetadata.0.kind=always-inline"));
+        assertTrue(manifest.contains("structMetadata.0.attributeMetadata.0.kind=packed"));
+        assertTrue(manifest.contains("structMetadata.0.field.0.attributeMetadata.0.value=8"));
     }
 
     @Test

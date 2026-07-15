@@ -19,6 +19,7 @@ public final class IrGpuArtifactSerializer {
         writeOptimizerPolicyMetadata(properties, artifact.optimizerPolicyMetadata());
         writeMethodDeviceConstraints(properties, artifact.methodDeviceConstraints());
         writeMethodFallbackVariants(properties, artifact.methodFallbackVariants());
+        writeExtensionParticipationMetadata(properties, artifact.extensionParticipationMetadata());
         writeRegenerationMetadata(properties, artifact.regenerationMetadata());
         writeStructMetadata(properties, artifact.structMetadata());
         writeConstants(properties, artifact.constants());
@@ -50,6 +51,7 @@ public final class IrGpuArtifactSerializer {
         properties.put("entryMethod", module.entryMethod());
         properties.put("entryEmittedName", module.entryEmittedName());
         writeStringList(properties, "entry.openClAttribute", module.entryOpenClAttributes());
+        writeAttributeMetadata(properties, "entry.attributeMetadata", module.entryAttributeMetadata());
         properties.put("helper.count", Integer.toString(module.helperMethods().size()));
         for (int index = 0; index < module.helperMethods().size(); index++) {
             IrGpuModuleMethod helper = module.helperMethods().get(index);
@@ -58,6 +60,7 @@ public final class IrGpuArtifactSerializer {
             properties.put("helper." + index + ".returnType", helper.returnType());
             properties.put("helper." + index + ".inline", Boolean.toString(helper.inline()));
             writeStringList(properties, "helper." + index + ".openClAttribute", helper.openClAttributes());
+            writeAttributeMetadata(properties, "helper." + index + ".attributeMetadata", helper.attributeMetadata());
             writeMethodParameters(properties, "helper." + index + ".parameter", helper.parameters());
         }
         properties.put("struct.count", Integer.toString(module.structs().size()));
@@ -133,6 +136,32 @@ public final class IrGpuArtifactSerializer {
             properties.put(prefix + "priority", Integer.toString(variant.priority()));
             properties.put(prefix + "compatibilityNote", variant.compatibilityNote());
             properties.put(prefix + "source", variant.source());
+        }
+    }
+
+    private static void writeExtensionParticipationMetadata(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuExtensionParticipationMetadata> metadata
+    ) {
+        java.util.List<IrGpuExtensionParticipationMetadata> values = metadata == null
+                ? java.util.List.of()
+                : metadata;
+        properties.put("extensionParticipation.count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuExtensionParticipationMetadata value = values.get(index);
+            String prefix = "extensionParticipation." + index + ".";
+            properties.put(prefix + "source", value.source());
+            properties.put(prefix + "extensionId", value.extensionId());
+            properties.put(prefix + "extensionVersion", value.extensionVersion());
+            properties.put(prefix + "phase", value.phase().name());
+            properties.put(prefix + "permission", value.permission().name());
+            properties.put(prefix + "operation", value.operation());
+            properties.put(prefix + "outcome", value.outcome().name());
+            properties.put(prefix + "failurePolicy", value.failurePolicy().name());
+            properties.put(prefix + "pipelineContinued", Boolean.toString(value.pipelineContinued()));
+            properties.put(prefix + "failureType", value.failureType());
+            properties.put(prefix + "message", value.message());
+            writeStringList(properties, prefix + "diagnostic", value.diagnostics());
         }
     }
 
@@ -314,6 +343,16 @@ public final class IrGpuArtifactSerializer {
                 ? IrGpuOptimizerPolicyMetadata.defaultStrict()
                 : optimizerPolicyMetadata;
         properties.put("optimizerPolicy.fastMath", Boolean.toString(metadata.fastMath()));
+        properties.put("optimizerPolicy.enabled", Boolean.toString(metadata.enabled()));
+        properties.put("optimizerPolicy.profile", metadata.profile());
+        writeStringList(properties, "optimizerPolicy.enabledFamily", metadata.enabledFamilies());
+        writeStringList(properties, "optimizerPolicy.disabledFamily", metadata.disabledFamilies());
+        properties.put("optimizerPolicy.journal", Boolean.toString(metadata.journal()));
+        properties.put("optimizerPolicy.dumpArtifacts", Boolean.toString(metadata.dumpArtifacts()));
+        properties.put("optimizerPolicy.productionIntent", Boolean.toString(metadata.productionIntent()));
+        properties.put("optimizerPolicy.vendorAdaptation", Boolean.toString(metadata.vendorAdaptation()));
+        properties.put("optimizerPolicy.vectorization", metadata.vectorization());
+        properties.put("optimizerPolicy.resourceShaping", Boolean.toString(metadata.resourceShaping()));
         properties.put("optimizerPolicy.source", metadata.source());
     }
 
@@ -349,6 +388,7 @@ public final class IrGpuArtifactSerializer {
             properties.put(prefix + "ownerQualifiedName", struct.ownerQualifiedName());
             properties.put(prefix + "ownerSimpleName", struct.ownerSimpleName());
             writeStringList(properties, prefix + "openClAttribute", struct.openClAttributes());
+            writeAttributeMetadata(properties, prefix + "attributeMetadata", struct.attributeMetadata());
             properties.put(prefix + "field.count", Integer.toString(struct.fields().size()));
             for (int fieldIndex = 0; fieldIndex < struct.fields().size(); fieldIndex++) {
                 IrGpuStructFieldMetadata field = struct.fields().get(fieldIndex);
@@ -356,7 +396,24 @@ public final class IrGpuArtifactSerializer {
                 properties.put(fieldPrefix + "name", field.name());
                 properties.put(fieldPrefix + "javaType", field.javaType());
                 writeStringList(properties, fieldPrefix + "openClAttribute", field.openClAttributes());
+                writeAttributeMetadata(properties, fieldPrefix + "attributeMetadata", field.attributeMetadata());
             }
+        }
+    }
+
+    private static void writeAttributeMetadata(
+            TreeMap<String, String> properties,
+            String prefix,
+            java.util.List<IrGpuAttributeMetadata> metadata
+    ) {
+        java.util.List<IrGpuAttributeMetadata> values = metadata == null ? java.util.List.of() : metadata;
+        properties.put(prefix + ".count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuAttributeMetadata attribute = values.get(index);
+            String itemPrefix = prefix + "." + index + ".";
+            properties.put(itemPrefix + "kind", attribute.kind());
+            properties.put(itemPrefix + "value", attribute.value());
+            properties.put(itemPrefix + "source", attribute.source());
         }
     }
 

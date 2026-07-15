@@ -3,6 +3,10 @@ package net.sixik.ga_utils.javatogpu.frontend.ir.artifact;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionFailurePolicy;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -33,6 +37,7 @@ public final class IrGpuArtifactParser {
                 require(properties, "entryMethod"),
                 require(properties, "entryEmittedName"),
                 parseIndexedValues(properties, "entry.openClAttribute"),
+                parseAttributeMetadata(properties, "entry.attributeMetadata"),
                 parseHelpers(properties),
                 parseStructs(properties),
                 parseMethodBodies(properties)
@@ -58,8 +63,32 @@ public final class IrGpuArtifactParser {
                 properties.getProperty("runtime.defaultBackend", "opencl"),
                 properties.getProperty("runtime.optimizationProfile", "off"),
                 parseMethodDeviceConstraints(properties),
-                parseMethodFallbackVariants(properties)
+                parseMethodFallbackVariants(properties),
+                parseExtensionParticipationMetadata(properties)
         );
+    }
+
+    private static List<IrGpuExtensionParticipationMetadata> parseExtensionParticipationMetadata(Properties properties) {
+        int count = parseInt(properties, "extensionParticipation.count", 0);
+        ArrayList<IrGpuExtensionParticipationMetadata> metadata = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "extensionParticipation." + index + ".";
+            metadata.add(new IrGpuExtensionParticipationMetadata(
+                    properties.getProperty(prefix + "source", "unknown"),
+                    properties.getProperty(prefix + "extensionId", "extension:unknown"),
+                    properties.getProperty(prefix + "extensionVersion", "unknown"),
+                    GpuExtensionPhase.valueOf(properties.getProperty(prefix + "phase", "IR_VALIDATION")),
+                    GpuExtensionPermission.valueOf(properties.getProperty(prefix + "permission", "READ_ONLY")),
+                    properties.getProperty(prefix + "operation", "extension invocation"),
+                    GpuExtensionExecutionOutcome.valueOf(properties.getProperty(prefix + "outcome", "SKIPPED")),
+                    GpuExtensionFailurePolicy.valueOf(properties.getProperty(prefix + "failurePolicy", "CONTINUE")),
+                    Boolean.parseBoolean(properties.getProperty(prefix + "pipelineContinued", "true")),
+                    properties.getProperty(prefix + "failureType", "none"),
+                    properties.getProperty(prefix + "message", ""),
+                    parseIndexedValues(properties, prefix + "diagnostic")
+            ));
+        }
+        return List.copyOf(metadata);
     }
 
     private static List<IrGpuMethodFallbackVariant> parseMethodFallbackVariants(Properties properties) {
@@ -114,6 +143,7 @@ public final class IrGpuArtifactParser {
                     properties.getProperty("helper." + index + ".returnType", "unknown"),
                     parseMethodParameters(properties, "helper." + index + ".parameter"),
                     parseIndexedValues(properties, "helper." + index + ".openClAttribute"),
+                    parseAttributeMetadata(properties, "helper." + index + ".attributeMetadata"),
                     Boolean.parseBoolean(properties.getProperty("helper." + index + ".inline", "false"))
             ));
         }
@@ -302,6 +332,16 @@ public final class IrGpuArtifactParser {
     private static IrGpuOptimizerPolicyMetadata parseOptimizerPolicyMetadata(Properties properties) {
         return new IrGpuOptimizerPolicyMetadata(
                 Boolean.parseBoolean(properties.getProperty("optimizerPolicy.fastMath", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.enabled", "false")),
+                properties.getProperty("optimizerPolicy.profile", "off"),
+                parseIndexedValues(properties, "optimizerPolicy.enabledFamily"),
+                parseIndexedValues(properties, "optimizerPolicy.disabledFamily"),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.journal", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.dumpArtifacts", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.productionIntent", "false")),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.vendorAdaptation", "false")),
+                properties.getProperty("optimizerPolicy.vectorization", "auto"),
+                Boolean.parseBoolean(properties.getProperty("optimizerPolicy.resourceShaping", "false")),
                 properties.getProperty("optimizerPolicy.source", "default-strict")
         );
     }
@@ -347,7 +387,8 @@ public final class IrGpuArtifactParser {
                     require(properties, prefix + "ownerQualifiedName"),
                     properties.getProperty(prefix + "ownerSimpleName", ""),
                     parseStructFields(properties, prefix),
-                    parseIndexedValues(properties, prefix + "openClAttribute")
+                    parseIndexedValues(properties, prefix + "openClAttribute"),
+                    parseAttributeMetadata(properties, prefix + "attributeMetadata")
             ));
         }
         return List.copyOf(structs);
@@ -361,10 +402,25 @@ public final class IrGpuArtifactParser {
             fields.add(new IrGpuStructFieldMetadata(
                     require(properties, prefix + "name"),
                     require(properties, prefix + "javaType"),
-                    parseIndexedValues(properties, prefix + "openClAttribute")
+                    parseIndexedValues(properties, prefix + "openClAttribute"),
+                    parseAttributeMetadata(properties, prefix + "attributeMetadata")
             ));
         }
         return List.copyOf(fields);
+    }
+
+    private static List<IrGpuAttributeMetadata> parseAttributeMetadata(Properties properties, String prefix) {
+        int count = parseInt(properties, prefix + ".count", 0);
+        ArrayList<IrGpuAttributeMetadata> metadata = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String itemPrefix = prefix + "." + index + ".";
+            metadata.add(new IrGpuAttributeMetadata(
+                    require(properties, itemPrefix + "kind"),
+                    properties.getProperty(itemPrefix + "value", ""),
+                    properties.getProperty(itemPrefix + "source", "unknown")
+            ));
+        }
+        return List.copyOf(metadata);
     }
 
     private static List<IrGpuConstantMetadata> parseConstants(Properties properties) {

@@ -222,7 +222,7 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
-    void rejectsMissingEntryPointParameterMetadataList() {
+    void acceptsMissingEntryPointParameterMetadataListAsEmpty() {
         GpuIrCompiledMethod method = method(
                 new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
                 "jtg_kernel",
@@ -231,21 +231,19 @@ class GpuIrSafetyValidatorTest {
                 null
         );
 
-        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
-
-        assertTrue(exception.getMessage().contains("missing parameter metadata list"));
+        assertDoesNotThrow(() -> validator.run(context(method)));
+        assertTrue(method.parsedMethod().parameters().isEmpty());
     }
 
     @Test
-    void rejectsNullEntryPointParameterMetadata() {
-        GpuIrCompiledMethod method = method(
-                new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
-                Arrays.asList((ParsedGpuParameter) null)
+    void rejectsNullEntryPointParameterMetadataAtParsedMethodBoundary() {
+        assertThrows(
+                NullPointerException.class,
+                () -> method(
+                        new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))),
+                        Arrays.asList((ParsedGpuParameter) null)
+                )
         );
-
-        GpuIrPassException exception = assertThrows(GpuIrPassException.class, () -> validator.run(context(method)));
-
-        assertTrue(exception.getMessage().contains("null parameter metadata"));
     }
 
     @Test
@@ -429,24 +427,21 @@ class GpuIrSafetyValidatorTest {
     }
 
     @Test
-    void rejectsNullHelperParameterMetadata() {
-        GpuIrCompiledMethod nullParameterHelper = method(
-                new GpuIrMethod("nullParameterHelper", List.of(new GpuIrReturn(null))),
-                "jtg_null_parameter_helper",
-                List.of(),
-                "void",
-                Arrays.asList((ParsedGpuParameter) null)
+    void rejectsNullHelperParameterMetadataAtParsedMethodBoundary() {
+        assertThrows(
+                NullPointerException.class,
+                () -> method(
+                        new GpuIrMethod("nullParameterHelper", List.of(new GpuIrReturn(null))),
+                        "jtg_null_parameter_helper",
+                        List.of(),
+                        "void",
+                        Arrays.asList((ParsedGpuParameter) null)
+                )
         );
-        GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
-
-        assertTrue(assertThrows(
-                GpuIrPassException.class,
-                () -> validator.run(new GpuIrPassContext(method, List.of(nullParameterHelper), List.of(), true))
-        ).getMessage().contains("null helper parameter metadata for jtg_null_parameter_helper"));
     }
 
     @Test
-    void rejectsMissingHelperParameterMetadataList() {
+    void acceptsMissingHelperParameterMetadataListAsEmpty() {
         GpuIrCompiledMethod missingParameterListHelper = method(
                 new GpuIrMethod("missingParameterListHelper", List.of(new GpuIrReturn(null))),
                 "jtg_missing_parameter_list_helper",
@@ -456,10 +451,8 @@ class GpuIrSafetyValidatorTest {
         );
         GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(new GpuIrReturn(null))));
 
-        assertTrue(assertThrows(
-                GpuIrPassException.class,
-                () -> validator.run(new GpuIrPassContext(method, List.of(missingParameterListHelper), List.of(), true))
-        ).getMessage().contains("missing helper parameter metadata list for jtg_missing_parameter_list_helper"));
+        assertDoesNotThrow(() -> validator.run(new GpuIrPassContext(method, List.of(missingParameterListHelper), List.of(), true)));
+        assertTrue(missingParameterListHelper.parsedMethod().parameters().isEmpty());
     }
 
     @Test

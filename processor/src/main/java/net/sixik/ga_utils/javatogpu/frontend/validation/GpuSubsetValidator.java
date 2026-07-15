@@ -44,6 +44,7 @@ import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStructField;
+import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClAttributeProjection;
 import net.sixik.ga_utils.javatogpu.frontend.opencl.OpenClKernelNaming;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
@@ -380,13 +381,13 @@ public final class GpuSubsetValidator {
 
     private void validateMethodAttributes(ParsedGpuMethod method, boolean kernelEntry, List<GpuValidationIssue> issues) {
         Set<String> seenUniqueAttributes = new HashSet<>();
-        for (String rawAttribute : method.openClAttributes()) {
+        for (String rawAttribute : OpenClAttributeProjection.project(method.openClAttributes(), method.attributeMetadata())) {
             AttributeSpec attribute = parseAttribute(rawAttribute);
             if (!kernelEntry) {
                 if (!HELPER_METHOD_ATTRIBUTES.contains(attribute.name())) {
                     issues.add(issue(
                             method.declaration(),
-                            "OpenCL attribute '" + attribute.name() + "' is not valid on @CCode helpers"
+                            openClAttributeInvalidHereMessage(attribute, "@CCode helpers")
                     ));
                     continue;
                 }
@@ -396,7 +397,7 @@ public final class GpuSubsetValidator {
             }
             if (!KERNEL_METHOD_ATTRIBUTES.contains(attribute.name())) {
                 if (STRUCT_ATTRIBUTES.contains(attribute.name()) || FIELD_ATTRIBUTES.contains(attribute.name())) {
-                    issues.add(issue(method.declaration(), "OpenCL attribute '" + attribute.name() + "' is not valid on @GPU methods"));
+                    issues.add(issue(method.declaration(), openClAttributeInvalidHereMessage(attribute, "@GPU methods")));
                 }
                 continue;
             }
@@ -413,11 +414,11 @@ public final class GpuSubsetValidator {
 
     private void validateStructAttributes(ParsedGpuStruct struct, List<GpuValidationIssue> issues) {
         Set<String> seenUniqueAttributes = new HashSet<>();
-        for (String rawAttribute : struct.openClAttributes()) {
+        for (String rawAttribute : OpenClAttributeProjection.project(struct.openClAttributes(), struct.attributeMetadata())) {
             AttributeSpec attribute = parseAttribute(rawAttribute);
             if (!STRUCT_ATTRIBUTES.contains(attribute.name())) {
                 if (KERNEL_METHOD_ATTRIBUTES.contains(attribute.name())) {
-                    issues.add(new GpuValidationIssue(1, 1, "OpenCL attribute '" + attribute.name() + "' is not valid on @GPUStruct types"));
+                    issues.add(new GpuValidationIssue(1, 1, openClAttributeInvalidHereMessage(attribute, "@GPUStruct types")));
                 }
                 continue;
             }
@@ -429,13 +430,13 @@ public final class GpuSubsetValidator {
 
         for (ParsedGpuStructField field : struct.fields()) {
             Set<String> seenFieldAttributes = new HashSet<>();
-            for (String rawAttribute : field.openClAttributes()) {
+            for (String rawAttribute : OpenClAttributeProjection.project(field.openClAttributes(), field.attributeMetadata())) {
                 AttributeSpec attribute = parseAttribute(rawAttribute);
                 if (!FIELD_ATTRIBUTES.contains(attribute.name())) {
                     issues.add(new GpuValidationIssue(
                             1,
                             1,
-                            "OpenCL attribute '" + attribute.name() + "' is not valid on @GPUStruct fields"
+                            openClAttributeInvalidHereMessage(attribute, "@GPUStruct fields")
                     ));
                     continue;
                 }
@@ -443,6 +444,23 @@ public final class GpuSubsetValidator {
                 validateSinglePositiveIntegerAttribute(null, attribute, issues, "@GPUStruct field aligned(...) requires a single positive integer");
             }
         }
+    }
+
+    private String openClAttributeInvalidHereMessage(AttributeSpec attribute, String location) {
+        return "OpenCL attribute '" + attribute.name() + "' is not valid on " + location
+                + portableAttributeReplacementHint(attribute.name());
+    }
+
+    private String portableAttributeReplacementHint(String attributeName) {
+        return switch (attributeName) {
+            case "reqd_work_group_size" -> "; use @GPUWorkGroupSize for portable required work-group size metadata";
+            case "work_group_size_hint" -> "; use @GPUWorkGroupSizeHint for portable preferred work-group size metadata";
+            case "vec_type_hint" -> "; use @GPUVectorTypeHint for portable vector type hint metadata";
+            case "packed" -> "; use @GPUPacked on @GPUStruct types for portable packed layout metadata";
+            case "aligned" -> "; use @GPUAligned on @GPUStruct types or fields for portable alignment metadata";
+            case "always_inline" -> "; use @GPUAlwaysInline on @CCode helpers for portable helper inline metadata";
+            default -> "";
+        };
     }
 
     private void validateStructFieldTypes(

@@ -3,7 +3,14 @@ plugins {
 }
 
 group = 'io.github.deussixik'
-version = findProperty('javatogpu.version') ?: '0.1.0-alpha.1'
+version = findProperty('javatogpu.version') ?: '0.1.0-alpha.2'
+
+ext.javatogpuPublishedArtifacts = [
+        ':processor'           : 'javatogpu',
+        ':ir-validation'       : 'javatogpu-ir-validation',
+        ':ir-optimizer'        : 'javatogpu-ir-optimizer',
+        ':ir-vendor-optimizer' : 'javatogpu-ir-vendor-optimizer'
+]
 
 allprojects {
     group = rootProject.group
@@ -16,6 +23,58 @@ allprojects {
 
 test {
     useJUnitPlatform()
+}
+
+tasks.register('printJavaToGpuPublicationCoordinates') {
+    group = 'publishing'
+    description = 'Prints the JavaToGpu Maven coordinates prepared for publication.'
+    doLast {
+        javatogpuPublishedArtifacts.each { projectPath, artifactId ->
+            println "${projectPath} -> ${rootProject.group}:${artifactId}:${rootProject.version}"
+        }
+    }
+}
+
+tasks.register('validateJavaToGpuMavenCentralReleaseReadiness') {
+    group = 'publishing'
+    description = 'Runs Maven Central release-readiness guards for all published JavaToGpu artifacts.'
+    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
+        "${projectPath}:validateMavenCentralReleaseReadiness"
+    }
+}
+
+tasks.register('publishJavaToGpuToLocalStaging') {
+    group = 'publishing'
+    description = 'Publishes all JavaToGpu Maven artifacts to their local staging repositories.'
+    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
+        "${projectPath}:publishMavenJavaPublicationToLocalStagingRepository"
+    }
+}
+
+tasks.register('publishJavaToGpuSnapshotsToCentral') {
+    group = 'publishing'
+    description = 'Publishes all JavaToGpu Maven artifacts to the Maven Central snapshot repository.'
+    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
+        "${projectPath}:publishMavenJavaPublicationToCentralSnapshotsRepository"
+    }
+    doFirst {
+        if (!rootProject.version.toString().endsWith('-SNAPSHOT')) {
+            throw new GradleException('Snapshot publishing requires -Pjavatogpu.version=<version>-SNAPSHOT')
+        }
+    }
+}
+
+tasks.register('publishJavaToGpuReleasesToCentral') {
+    group = 'publishing'
+    description = 'Publishes all JavaToGpu Maven artifacts to the Maven Central release staging endpoint.'
+    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
+        "${projectPath}:publishMavenJavaPublicationToCentralReleasesRepository"
+    }
+    doFirst {
+        if (rootProject.version.toString().endsWith('-SNAPSHOT')) {
+            throw new GradleException('Release publishing requires a non-SNAPSHOT javatogpu.version')
+        }
+    }
 }
 
 apply from: 'gradle/ir-validation-dogfooding.gradle'

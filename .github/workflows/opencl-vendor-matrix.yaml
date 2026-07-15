@@ -26,6 +26,8 @@ on:
         options:
           - all
           - nvidia
+          - nvidia-rtx5070
+          - nvidia-rtx3060
           - amd
       production_promotion_manifest_mode:
         description: 'Manual production-promotion mode: skip, template, validate, or activate.'
@@ -67,12 +69,17 @@ jobs:
       fail-fast: false
       matrix: >-
         ${{ fromJSON(
-          github.event.inputs.validation_lane == 'nvidia' &&
+          github.event_name == 'workflow_dispatch' && github.event.inputs.validation_lane == 'nvidia-rtx5070' &&
           '{"include":[{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"}]}'
-          || github.event.inputs.validation_lane == 'amd' &&
+          || github.event_name == 'workflow_dispatch' && github.event.inputs.validation_lane == 'nvidia-rtx3060' &&
+          '{"include":[{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 3060","artifact_suffix":"nvidia-rtx3060","runner_labels":["self-hosted","Windows","X64","nvidia","rtx3060"],"routine_task":":processor:openClNvidiaRoutine"}]}'
+          ||
+          github.event_name == 'workflow_dispatch' && github.event.inputs.validation_lane == 'nvidia' &&
+          '{"include":[{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"},{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 3060","artifact_suffix":"nvidia-rtx3060","runner_labels":["self-hosted","Windows","X64","nvidia","rtx3060"],"routine_task":":processor:openClNvidiaRoutine"}]}'
+          || github.event_name == 'workflow_dispatch' && github.event.inputs.validation_lane == 'amd' &&
           '{"include":[{"vendor":"amd","vendor_name":"AMD","device_name":"RX 7800 XT","artifact_suffix":"amd-rx7800xt","runner_labels":["self-hosted","Windows","X64","amd","rx7800xt"],"routine_task":":processor:openClOperationalRoutine"}]}'
           ||
-          '{"include":[{"vendor":"amd","vendor_name":"AMD","device_name":"RX 7800 XT","artifact_suffix":"amd-rx7800xt","runner_labels":["self-hosted","Windows","X64","amd","rx7800xt"],"routine_task":":processor:openClOperationalRoutine"},{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"}]}'
+          '{"include":[{"vendor":"amd","vendor_name":"AMD","device_name":"RX 7800 XT","artifact_suffix":"amd-rx7800xt","runner_labels":["self-hosted","Windows","X64","amd","rx7800xt"],"routine_task":":processor:openClOperationalRoutine"},{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 5070","artifact_suffix":"nvidia-rtx5070","runner_labels":["self-hosted","Windows","X64","nvidia","rtx5070"],"routine_task":":processor:openClNvidiaRoutine"},{"vendor":"nvidia","vendor_name":"NVIDIA","device_name":"RTX 3060","artifact_suffix":"nvidia-rtx3060","runner_labels":["self-hosted","Windows","X64","nvidia","rtx3060"],"routine_task":":processor:openClNvidiaRoutine"}]}'
         ) }}
 
     runs-on: ${{ matrix.runner_labels }}
@@ -82,11 +89,12 @@ jobs:
       JTG_VALIDATION_VENDOR: ${{ matrix.vendor }}
       JTG_VALIDATION_DEVICE: ${{ matrix.device_name }}
       JTG_OPENCL_CI: 'true'
-      JTG_SOURCE_PROMOTION_BASELINE_MODE: ${{ github.event.inputs.source_promotion_baseline_mode || 'advisory' }}
-      JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE: ${{ github.event.inputs.launch_advisory_negative_fixture || 'false' }}
-      JTG_PRODUCTION_PROMOTION_MANIFEST_MODE: ${{ github.event.inputs.production_promotion_manifest_mode || 'skip' }}
-      JTG_PRODUCTION_PROMOTION_MANIFEST_FILE: ${{ github.event.inputs.production_promotion_manifest_file || 'promotion/opencl/backend-source-promotion-manifest.properties' }}
-      JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA: ${{ github.event.inputs.production_promotion_candidate_git_sha || '' }}
+      JTG_WORKFLOW_EVENT: ${{ github.event_name }}
+      JTG_SOURCE_PROMOTION_BASELINE_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.source_promotion_baseline_mode || 'advisory' }}
+      JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.launch_advisory_negative_fixture || 'false' }}
+      JTG_PRODUCTION_PROMOTION_MANIFEST_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_manifest_mode || 'skip' }}
+      JTG_PRODUCTION_PROMOTION_MANIFEST_FILE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_manifest_file || 'promotion/opencl/backend-source-promotion-manifest.properties' }}
+      JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_candidate_git_sha || '' }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
 
     steps:
@@ -143,15 +151,31 @@ jobs:
         run: .\gradlew.bat ${{ matrix.routine_task }} --console=plain --no-daemon
 
       - name: Generate production-promotion manifest template
-        if: steps.opencl_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template'
+        if: github.event_name == 'workflow_dispatch' && steps.opencl_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template'
         id: production_promotion_manifest_template
         continue-on-error: true
         shell: cmd
         run: .\gradlew.bat :processor:writeOpenClBackendSourcePromotionManifestTemplate "-PopenClPromotionGitSha=%GITHUB_SHA%" --console=plain --no-daemon
 
+      - name: Validate manual production-promotion inputs
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          steps.opencl_validation.outcome == 'success' &&
+          (env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' || env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate')
+        id: production_promotion_inputs
+        continue-on-error: true
+        shell: cmd
+        run: |
+          if "%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%"=="" (
+            echo production_promotion_candidate_git_sha is required for manual validate/activate modes.
+            exit /b 1
+          )
+          echo Manual production-promotion inputs look complete.
+
       - name: Validate production-promotion manifest
         if: >-
-          steps.opencl_validation.outcome == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          steps.production_promotion_inputs.outcome == 'success' &&
           (env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' || env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate')
         id: production_promotion_manifest_validation
         continue-on-error: true
@@ -159,21 +183,21 @@ jobs:
         run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionManifest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
 
       - name: Validate controlled production activation gate
-        if: steps.production_promotion_manifest_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        if: github.event_name == 'workflow_dispatch' && steps.production_promotion_manifest_validation.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
         id: production_promotion_activation_gate
         continue-on-error: true
         shell: cmd
         run: .\gradlew.bat :processor:validateOpenClBackendSourcePromotionActivationGate "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
 
       - name: Run controlled production activation-token smoke
-        if: steps.production_promotion_activation_gate.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        if: github.event_name == 'workflow_dispatch' && steps.production_promotion_activation_gate.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
         id: production_promotion_activation_token_smoke
         continue-on-error: true
         shell: cmd
         run: .\gradlew.bat :processor:openClProductionActivationTokenSmokeTest "-PopenClPromotionManifestFile=%JTG_PRODUCTION_PROMOTION_MANIFEST_FILE%" "-PopenClPromotionGitSha=%JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA%" --console=plain --no-daemon
 
       - name: Run production activation-token negative controls
-        if: steps.production_promotion_activation_token_smoke.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
+        if: github.event_name == 'workflow_dispatch' && steps.production_promotion_activation_token_smoke.outcome == 'success' && env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate'
         id: production_promotion_activation_token_negative
         continue-on-error: true
         shell: cmd
@@ -334,6 +358,7 @@ jobs:
           PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
           SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
           SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
+          PRODUCTION_PROMOTION_INPUTS_OUTCOME: ${{ steps.production_promotion_inputs.outcome }}
           PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME: ${{ steps.production_promotion_manifest_template.outcome }}
           PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME: ${{ steps.production_promotion_manifest_validation.outcome }}
           PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME: ${{ steps.production_promotion_activation_gate.outcome }}
@@ -358,6 +383,7 @@ jobs:
           echo ^| Production explainability summary ^| %PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Source-promotion baseline ^| %SOURCE_PROMOTION_BASELINE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Source-promotion summary ^| %SOURCE_PROMOTION_SUMMARY_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Promotion input guard ^| %PRODUCTION_PROMOTION_INPUTS_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Promotion manifest template ^| %PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Promotion manifest validation ^| %PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Controlled activation gate ^| %PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
@@ -399,16 +425,23 @@ jobs:
               steps.launch_advisory_negative_fixture_check.outcome != 'success'
             ) ||
             (
+              github.event_name == 'workflow_dispatch' &&
               env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template' &&
               steps.production_promotion_manifest_template.outcome != 'success'
             ) ||
             (
+              github.event_name == 'workflow_dispatch' &&
               env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' &&
-              steps.production_promotion_manifest_validation.outcome != 'success'
+              (
+                steps.production_promotion_inputs.outcome != 'success' ||
+                steps.production_promotion_manifest_validation.outcome != 'success'
+              )
             ) ||
             (
+              github.event_name == 'workflow_dispatch' &&
               env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate' &&
               (
+                steps.production_promotion_inputs.outcome != 'success' ||
                 steps.production_promotion_manifest_validation.outcome != 'success' ||
                 steps.production_promotion_activation_gate.outcome != 'success' ||
                 steps.production_promotion_activation_token_smoke.outcome != 'success' ||

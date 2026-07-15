@@ -21,8 +21,8 @@ Add JavaToGpu as both a dependency and an annotation processor:
 
 ```groovy
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.1'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
 }
 ```
 
@@ -30,7 +30,7 @@ Optional stricter IR validation:
 
 ```groovy
 dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.1'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -103,6 +103,8 @@ Advanced topics:
 - [Language Contract](docs/Language-Contract.md)
 - [OpenCL Data Model](docs/OpenCL-Data-Model.md)
 - [IR Validation](docs/IR-Validation.md)
+- [IR Optimizer](docs/IR-Optimizer.md)
+- IR Vendor Optimizer is documented in the IR Optimizer guide as a separate optional provider artifact.
 - [Validation and Operations](docs/Validation-and-Operations.md)
 - [Diagnostics Reference](docs/Diagnostics-Reference.md)
 - [ASM Contract](docs/ASM-Contract.md)
@@ -134,10 +136,20 @@ processor/build/reports/opencl/
 
 Start with `validation-report.md` when checking a run.
 
+Run the optional IR optimizer journal example:
+
+```powershell
+.\gradlew.bat :examples-app:runOptimizationJournalExample --console=plain
+```
+
+The example is documented in [examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md](examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md) and shows how to opt into the optimizer module while dumping original and optimized IR artifacts plus the optional ServiceLoader-backed runtime lifecycle event journal for review. It also includes a small custom `GpuRuntimeLifecycleService` example so downstream modules can add tracing or metrics without manual callback registration.
+
 ## Project Layout
 
 - `processor` - annotation processor, compiler, OpenCL emitter, runtime, launchers, tests, and validation buckets.
 - `ir-validation` - optional stricter IR validation module.
+- `ir-optimizer` - optional backend-neutral IR optimizer skeleton and future transform module.
+- `ir-vendor-optimizer` - optional vendor-specific IR optimizer provider skeleton; it plugs into the vendor proposal SPI and is not loaded by the default runtime optimizer bridge.
 - `examples-app` - example kernels and usage patterns.
 - `test-app` - consumer-style sample application.
 - `docs` - public documentation.
@@ -149,9 +161,11 @@ Published artifacts:
 ```text
 io.github.deussixik:javatogpu
 io.github.deussixik:javatogpu-ir-validation
+io.github.deussixik:javatogpu-ir-optimizer
+io.github.deussixik:javatogpu-ir-vendor-optimizer
 ```
 
-Publishing is configured for the main processor artifact and the optional IR validation artifact. Keep Maven Central credentials and signing keys outside the repository. See [Publishing Guide](docs/Publishing.md).
+Publishing is configured for the main processor artifact, optional IR validation artifact, optional backend-neutral IR optimizer artifact, and optional vendor optimizer provider artifact. Keep Maven Central credentials and signing keys outside the repository. See [Publishing Guide](docs/Publishing.md).
 
 ## License
 

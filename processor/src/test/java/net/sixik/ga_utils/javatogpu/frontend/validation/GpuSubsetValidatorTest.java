@@ -534,7 +534,7 @@ class GpuSubsetValidatorTest {
         );
 
         assertEquals(
-                "OpenCL attribute 'packed' is not valid on @GPUStruct fields",
+                "OpenCL attribute 'packed' is not valid on @GPUStruct fields; use @GPUPacked on @GPUStruct types for portable packed layout metadata",
                 exception.getMessage()
         );
     }
@@ -698,7 +698,7 @@ class GpuSubsetValidatorTest {
         );
 
         assertEquals(
-                "OpenCL attribute 'reqd_work_group_size' is not valid on @CCode helpers",
+                "OpenCL attribute 'reqd_work_group_size' is not valid on @CCode helpers; use @GPUWorkGroupSize for portable required work-group size metadata",
                 exception.getMessage()
         );
     }
@@ -714,6 +714,30 @@ class GpuSubsetValidatorTest {
                 """;
         String helperSource = """
                 @OpenCLAttributes({"always_inline"})
+                @CCode
+                float helper(float value) {
+                    return value * 2.0f;
+                }
+                """;
+
+        assertDoesNotThrow(() -> validator.validateKernel(
+                parser.parseMethod(kernelSource, "Demo", "sample.Demo"),
+                java.util.List.of(parser.parseMethod(helperSource, "Helpers", "sample.Helpers")),
+                java.util.List.of()
+        ));
+    }
+
+    @Test
+    void acceptsPortableAlwaysInlineAttributeOnHelperMethod() {
+        String kernelSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = helper(input[id]);
+                }
+                """;
+        String helperSource = """
+                @GPUAlwaysInline
                 @CCode
                 float helper(float value) {
                     return value * 2.0f;
@@ -1037,7 +1061,7 @@ class GpuSubsetValidatorTest {
         );
 
         assertEquals(
-                "OpenCL attribute 'packed' is not valid on @GPU methods",
+                "OpenCL attribute 'packed' is not valid on @GPU methods; use @GPUPacked on @GPUStruct types for portable packed layout metadata",
                 exception.getMessage()
         );
     }
@@ -1080,6 +1104,80 @@ class GpuSubsetValidatorTest {
 
         assertEquals(
                 "Duplicate OpenCL attribute: vec_type_hint",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsDuplicateKernelMethodAttributesAcrossPortableMetadataAndRawOpenCl() {
+        String methodSource = """
+                @GPUVectorTypeHint("float4")
+                @OpenCLAttributes({"vec_type_hint(int4)"})
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "Duplicate OpenCL attribute: vec_type_hint",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void rejectsPortableStructAttributeOnKernelMethodThroughMetadataProjection() {
+        String methodSource = """
+                @GPUPacked
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validate(parser.parseMethod(methodSource))
+        );
+
+        assertEquals(
+                "OpenCL attribute 'packed' is not valid on @GPU methods; use @GPUPacked on @GPUStruct types for portable packed layout metadata",
+                exception.getMessage()
+        );
+    }
+
+    @Test
+    void suggestsPortableReplacementForRawVectorTypeHintOnStruct() {
+        String structSource = """
+                @OpenCLAttributes({"vec_type_hint(float4)"})
+                @GPUStruct
+                class Sample {
+                    float x;
+                }
+                """;
+        String methodSource = """
+                @GPU
+                void kernel(@GPUGlobal float[] output) {
+                    output[0] = 1.0f;
+                }
+                """;
+
+        GpuValidationException exception = assertThrows(
+                GpuValidationException.class,
+                () -> validator.validateKernel(
+                        parser.parseMethod(methodSource, "Demo", "sample.Demo"),
+                        java.util.List.of(),
+                        java.util.List.of(structParser.parseStruct(structSource, "Sample", "sample.Sample"))
+                )
+        );
+
+        assertEquals(
+                "OpenCL attribute 'vec_type_hint' is not valid on @GPUStruct types; use @GPUVectorTypeHint for portable vector type hint metadata",
                 exception.getMessage()
         );
     }

@@ -40,4 +40,16 @@ public record GpuRuntimeIrOptimizationRequest(
     public boolean fastMathEnabled() {
         return optimizerPolicy().fastMath();
     }
+
+    public boolean optimizerPolicyEnabled() {
+        return optimizerPolicy().enabled();
+    }
+
+    public boolean optimizerJournalRequested() {
+        return optimizerPolicy().journal();
+    }
+
+    public boolean optimizerArtifactDumpRequested() {
+        return optimizerPolicy().dumpArtifacts();
+    }
 }

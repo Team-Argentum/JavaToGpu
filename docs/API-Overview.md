@@ -15,7 +15,10 @@ Use these in source code that should compile to GPU code.
 - `@GPU` marks a static Java method as a GPU kernel entry point.
 - `@GPUGlobal`, `@GPUConstant`, and `@GPULocal` choose the OpenCL address space for array or pointer-like parameters.
 - `@GPUWorkGroupSize` declares a portable required work-group size for the kernel.
-- `@GPUOptimize` records method-level optimizer policy such as `fastMath`; the default remains strict.
+- `@GPUWorkGroupSizeHint` declares a portable preferred work-group size hint for backends that support it.
+- `@GPUVectorTypeHint` declares a portable preferred vector type hint for backend lowerers that use it.
+- `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` cover common layout and helper emission metadata without raw backend strings.
+- `@GPUOptimize` records method-level optimizer policy such as enablement/profile hints, `fastMath`, family toggles, journal/dump hints, production intent, vendor adaptation, vectorization preference, and resource-shaping intent; the default remains strict and fail-closed.
 - `@GPUDeviceConstraint` restricts a method to supported backends, vendors, device classes, and required runtime features.
 - `@GPUFallbackVariant` groups ABI-compatible implementations that runtime may choose for different devices.
 - `@GPUStruct` marks a Java class as a value type that can be marshalled to OpenCL struct layout.
@@ -25,16 +28,19 @@ Use these in source code that should compile to GPU code.
 - `@GPUAttribute` is the backend-aware raw escape hatch for metadata JavaToGpu does not model portably yet.
 - `@OpenCLAttributes` and `@OpenCLQualifiers` remain OpenCL-only compatibility annotations for existing code.
 
-Prefer portable annotations first. Use raw attributes only for backend-specific code that cannot be expressed through the normal API.
+Prefer portable annotations first. Use raw attributes only for backend-specific code that cannot be expressed through the normal API. When a raw OpenCL attribute maps to a modeled concept but is placed in an invalid context, validator diagnostics point to the portable annotation replacement instead of making users decode backend-specific attribute rules.
 
 ```java
 @GPU
 @GPUWorkGroupSize(x = 8, y = 8, z = 1)
-@GPUOptimize(fastMath = false)
+@GPUWorkGroupSizeHint(x = 8, y = 8, z = 1)
+@GPUOptimize(fastMath = false, enabledFamilies = {"clamp", "step", "mix"})
 static void kernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
+
+`@GPUOptimize` records intent in the generated `IrGpu` manifest. It does not by itself enable production mutation, selected IR replacement, or optimized backend source selection.
 
 Use a device constraint when a method requires specific hardware capabilities:
 
@@ -116,7 +122,7 @@ The reporter compares current counts and kernel snapshots with the latest compat
 
 The vendor workflow exposes an opt-in `launch_advisory_negative_fixture` dispatch input. It mutates only the restored validation-history baseline, verifies the real per-kernel validator rejects the synthetic kernel-maximum regression, and prevents cache staging or save for the fixture run.
 
-Manual dispatch also accepts `validation_lane=all|nvidia|amd` to construct only the requested self-hosted vendor matrix entries.
+Manual dispatch also accepts `validation_lane=all|nvidia|nvidia-rtx5070|nvidia-rtx3060|amd`; `nvidia` runs both NVIDIA devices, while the device-specific selectors construct only the requested self-hosted runner entry.
 
 The vendor workflow persists validation history through a per-lane cache and keeps the restored baseline immutable for the duration of the run, preventing same-run report regeneration from masking cross-run drift.
 
@@ -129,6 +135,8 @@ static void openClOnlyKernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
+
+For OpenCL-only legacy code, `@OpenCLAttributes` and `@OpenCLQualifiers` remain valid compatibility annotations. For new code, prefer portable annotations for modeled concepts and `@GPUAttribute` for deliberate backend-specific metadata.
 
 ## `GPU.*` Builtins
 

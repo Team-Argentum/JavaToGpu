@@ -17,6 +17,191 @@ import java.util.Properties;
  */
 public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
+    private static final String RUNTIME_OPTIMIZER_DRIFT_PREFIX = "runtimeOptimizerDrift.";
+
+    private static final DriftProperty[] RUNTIME_OPTIMIZER_DRIFT_PROPERTIES = {
+            driftProperty("pass.count", "0", "unknown"),
+            driftProperty("pass.applied.count", "0", "unknown"),
+            driftProperty("pass.skipped.count", "0", "unknown"),
+            driftProperty("pass.rolledBack.count", "0", "unknown"),
+            driftProperty("pass.failed.count", "0", "unknown"),
+            driftProperty("proofArtifact.count", "0", "unknown"),
+            driftProperty("proofArtifact.accepted.count", "0", "unknown"),
+            driftProperty("proofArtifact.blocking.count", "0", "unknown"),
+            driftProperty("replacementPlan.complete.count", "0"),
+            driftProperty("replacementPlan.partial.count", "0"),
+            driftProperty("replacementPlan.firstBlocker", "none"),
+            driftProperty("replacementPlan.validation.count", "0"),
+            driftProperty("replacementPlan.validation.valid.count", "0"),
+            driftProperty("replacementPlan.validation.invalid.count", "0"),
+            driftProperty("replacementPlan.validation.firstBlocker", "none"),
+            driftProperty("rewriteVisitor.count", "0"),
+            driftProperty("rewriteVisitor.ready.count", "0"),
+            driftProperty("rewriteVisitor.blocked.count", "0"),
+            driftProperty("rewriteVisitor.firstBlocker", "none"),
+            driftProperty("rewriteVisitor.visitorImplemented", "true"),
+            driftProperty("rewriteVisitor.replacementBuilderImplemented", "false"),
+            driftProperty("rewriteVisitor.transformedIrBuilt", "false"),
+            driftProperty("rewriteVisitor.mutationAllowed", "false"),
+            driftProperty("rewriteVisitor.selectedIrReplacement", "false"),
+            driftProperty("replacementBlueprint.count", "0"),
+            driftProperty("replacementBlueprint.ready.count", "0"),
+            driftProperty("replacementBlueprint.blocked.count", "0"),
+            driftProperty("replacementBlueprint.firstBlocker", "none"),
+            driftProperty("replacementBlueprint.blueprintImplemented", "true"),
+            driftProperty("replacementBlueprint.replacementBuilderImplemented", "false"),
+            driftProperty("replacementBlueprint.transformedIrBuilt", "false"),
+            driftProperty("replacementBlueprint.mutationAllowed", "false"),
+            driftProperty("replacementBlueprint.selectedIrReplacement", "false"),
+            driftProperty("rewriteTransaction.count", "0"),
+            driftProperty("rewriteTransaction.ready.count", "0"),
+            driftProperty("rewriteTransaction.blocked.count", "0"),
+            driftProperty("rewriteTransaction.firstBlocker", "none"),
+            driftProperty("rewriteTransaction.transactionPreflightImplemented", "true"),
+            driftProperty("rewriteTransaction.nodeIdAllocatorImplemented", "false"),
+            driftProperty("rewriteTransaction.graphRewriteImplemented", "false"),
+            driftProperty("rewriteTransaction.transformedIrBuilt", "false"),
+            driftProperty("rewriteTransaction.mutationAllowed", "false"),
+            driftProperty("rewriteTransaction.selectedIrReplacement", "false"),
+            driftProperty("nodeIdAllocation.count", "0"),
+            driftProperty("nodeIdAllocation.ready.count", "0"),
+            driftProperty("nodeIdAllocation.blocked.count", "0"),
+            driftProperty("nodeIdAllocation.firstBlocker", "none"),
+            driftProperty("nodeIdAllocation.allocationPreflightImplemented", "true"),
+            driftProperty("nodeIdAllocation.nodeIdsReserved", "false"),
+            driftProperty("nodeIdAllocation.nodeIdAllocatorApplied", "false"),
+            driftProperty("nodeIdAllocation.graphRewriteImplemented", "false"),
+            driftProperty("nodeIdAllocation.transformedIrBuilt", "false"),
+            driftProperty("nodeIdAllocation.mutationAllowed", "false"),
+            driftProperty("nodeIdAllocation.selectedIrReplacement", "false"),
+            driftProperty("replacementNode.count", "0"),
+            driftProperty("replacementNode.ready.count", "0"),
+            driftProperty("replacementNode.blocked.count", "0"),
+            driftProperty("replacementNode.firstBlocker", "none"),
+            driftProperty("replacementNode.replacementNodePreflightImplemented", "true"),
+            driftProperty("replacementNode.replacementNodeBuilt", "false"),
+            driftProperty("replacementNode.replacementBuilderImplemented", "false"),
+            driftProperty("replacementNode.graphRewriteImplemented", "false"),
+            driftProperty("replacementNode.transformedIrBuilt", "false"),
+            driftProperty("replacementNode.mutationAllowed", "false"),
+            driftProperty("replacementNode.selectedIrReplacement", "false"),
+            driftProperty("graphPatch.count", "0"),
+            driftProperty("graphPatch.ready.count", "0"),
+            driftProperty("graphPatch.blocked.count", "0"),
+            driftProperty("graphPatch.firstBlocker", "none"),
+            driftProperty("graphPatch.graphPatchPreflightImplemented", "true"),
+            driftProperty("graphPatch.graphPatchApplied", "false"),
+            driftProperty("graphPatch.graphRewriteImplemented", "false"),
+            driftProperty("graphPatch.transformedIrBuilt", "false"),
+            driftProperty("graphPatch.mutationAllowed", "false"),
+            driftProperty("graphPatch.selectedIrReplacement", "false"),
+            driftProperty("transformedGraph.count", "0"),
+            driftProperty("transformedGraph.ready.count", "0"),
+            driftProperty("transformedGraph.blocked.count", "0"),
+            driftProperty("transformedGraph.firstBlocker", "none"),
+            driftProperty("transformedGraph.materializationPreflightImplemented", "true"),
+            driftProperty("transformedGraph.transformedGraphBuilt", "false"),
+            driftProperty("transformedGraph.transformedIrBuilt", "false"),
+            driftProperty("transformedGraph.graphPatchApplied", "false"),
+            driftProperty("transformedGraph.graphRewriteImplemented", "false"),
+            driftProperty("transformedGraph.mutationAllowed", "false"),
+            driftProperty("transformedGraph.selectedIrReplacement", "false"),
+            driftProperty("irArtifactEnvelope.count", "0"),
+            driftProperty("irArtifactEnvelope.ready.count", "0"),
+            driftProperty("irArtifactEnvelope.blocked.count", "0"),
+            driftProperty("irArtifactEnvelope.firstBlocker", "none"),
+            driftProperty("irArtifactEnvelope.artifactEnvelopePreflightImplemented", "true"),
+            driftProperty("irArtifactEnvelope.artifactEnvelopeBuilt", "false"),
+            driftProperty("irArtifactEnvelope.optimizedArtifactBuilt", "false"),
+            driftProperty("irArtifactEnvelope.transformedGraphBuilt", "false"),
+            driftProperty("irArtifactEnvelope.transformedIrBuilt", "false"),
+            driftProperty("irArtifactEnvelope.graphPatchApplied", "false"),
+            driftProperty("irArtifactEnvelope.graphRewriteImplemented", "false"),
+            driftProperty("irArtifactEnvelope.mutationAllowed", "false"),
+            driftProperty("irArtifactEnvelope.selectedIrReplacement", "false"),
+            driftProperty("artifactProofBinding.count", "0"),
+            driftProperty("artifactProofBinding.ready.count", "0"),
+            driftProperty("artifactProofBinding.blocked.count", "0"),
+            driftProperty("artifactProofBinding.firstBlocker", "none"),
+            driftProperty("artifactProofBinding.bindingPreflightImplemented", "true"),
+            driftProperty("artifactProofBinding.proofBound", "false"),
+            driftProperty("artifactProofBinding.rollbackBound", "false"),
+            driftProperty("artifactProofBinding.approvalBound", "false"),
+            driftProperty("artifactProofBinding.optimizedArtifactBuilt", "false"),
+            driftProperty("artifactProofBinding.transformedIrBuilt", "false"),
+            driftProperty("artifactProofBinding.mutationAllowed", "false"),
+            driftProperty("artifactProofBinding.selectedIrReplacement", "false"),
+            driftProperty("artifactSelection.count", "0"),
+            driftProperty("artifactSelection.ready.count", "0"),
+            driftProperty("artifactSelection.blocked.count", "0"),
+            driftProperty("artifactSelection.firstBlocker", "none"),
+            driftProperty("artifactSelection.selectionPreflightImplemented", "true"),
+            driftProperty("artifactSelection.productionGateRequired", "false"),
+            driftProperty("artifactSelection.productionGateAccepted", "false"),
+            driftProperty("artifactSelection.mutationPolicyAllowed", "false"),
+            driftProperty("artifactSelection.selectionApplied", "false"),
+            driftProperty("artifactSelection.optimizedArtifactSelected", "false"),
+            driftProperty("artifactSelection.optimizedArtifactBuilt", "false"),
+            driftProperty("artifactSelection.transformedIrBuilt", "false"),
+            driftProperty("artifactSelection.mutationAllowed", "false"),
+            driftProperty("artifactSelection.selectedIrReplacement", "false"),
+            driftProperty("rewriteSketch.count", "0"),
+            driftProperty("rewriteSketch.ready.count", "0"),
+            driftProperty("rewriteSketch.blocked.count", "0"),
+            driftProperty("rewriteSketch.firstBlocker", "none"),
+            driftProperty("rewriteSketch.rewriteBuilderImplemented", "false"),
+            driftProperty("rewriteSketch.mutationAllowed", "false"),
+            driftProperty("rewriteSketch.selectedIrReplacement", "false"),
+            driftProperty("rewriteSketch.conflict.count", "0"),
+            driftProperty("rewriteSketch.conflict.firstBlocker", "none"),
+            driftProperty("rewriteSketch.conflict.conflictResolutionImplemented", "false"),
+            driftProperty("rewriteSketch.conflict.selectionApplied", "false"),
+            driftProperty("rewriteSketch.conflict.mutationAllowed", "false"),
+            driftProperty("rewriteSketch.conflict.selectedIrReplacement", "false"),
+            driftProperty("rewriteSelection.sketch.count", "0"),
+            driftProperty("rewriteSelection.sketch.ready.count", "0"),
+            driftProperty("rewriteSelection.sketch.blocked.count", "0"),
+            driftProperty("rewriteSelection.conflict.count", "0"),
+            driftProperty("rewriteSelection.status", "not-required"),
+            driftProperty("rewriteSelection.firstBlocker", "no-rewrite-sketches"),
+            driftProperty("rewriteSelection.rewriteBuilderImplemented", "false"),
+            driftProperty("rewriteSelection.conflictResolutionImplemented", "false"),
+            driftProperty("rewriteSelection.runtimeEquivalenceRequired", "false"),
+            driftProperty("rewriteSelection.runtimeEquivalenceProven", "false"),
+            driftProperty("rewriteSelection.approvalRequired", "false"),
+            driftProperty("rewriteSelection.approvalAccepted", "false"),
+            driftProperty("rewriteSelection.mutationAllowed", "false"),
+            driftProperty("rewriteSelection.selectionApplied", "false"),
+            driftProperty("rewriteSelection.selectedIrReplacement", "false"),
+            driftProperty("rewriteProof.status", "not-required"),
+            driftProperty("rewriteProof.firstBlocker", "no-proof-candidates"),
+            driftProperty("rewriteProof.proofAccepted", "false"),
+            driftProperty("rewriteProof.runtimeEquivalencePayload.present", "false"),
+            driftProperty("rewriteProof.runtimeEquivalencePayload.complete", "false"),
+            driftProperty("rewriteProof.rollbackEvidence.present", "false"),
+            driftProperty("rewriteProof.rollbackClean", "false"),
+            driftProperty("rewriteProof.approvalAccepted", "false"),
+            driftProperty("rewriteProof.mutationAllowed", "false"),
+            driftProperty("rewriteProof.selectedIrReplacement", "false"),
+            driftProperty("rewriteReviewPackage.status", "not-required"),
+            driftProperty("rewriteReviewPackage.firstBlocker", "no-review-candidates"),
+            driftProperty("rewriteReviewPackage.required", "false"),
+            driftProperty("rewriteReviewPackage.complete", "false"),
+            driftProperty("rewriteReviewPackage.conflict.count", "0"),
+            driftProperty("rewriteReviewPackage.proofAccepted", "false"),
+            driftProperty("rewriteReviewPackage.runtimeEquivalencePayload.present", "false"),
+            driftProperty("rewriteReviewPackage.runtimeEquivalencePayload.complete", "false"),
+            driftProperty("rewriteReviewPackage.rollbackEvidence.present", "false"),
+            driftProperty("rewriteReviewPackage.rollbackClean", "false"),
+            driftProperty("rewriteReviewPackage.approvalAccepted", "false"),
+            driftProperty("rewriteReviewPackage.mutationAllowed", "false"),
+            driftProperty("rewriteReviewPackage.selectionApplied", "false"),
+            driftProperty("rewriteReviewPackage.selectedIrReplacement", "false"),
+            driftProperty("rewriteReviewPackage.manualReviewOnly", "true"),
+            driftProperty("optimizerRule.count", "0"),
+            driftProperty("optimizerRule.summary", "none"),
+    };
+
     private GpuBackendSourcePromotionWorkloadGateFormatter() {
     }
 
@@ -124,6 +309,32 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             String latestRuntimeOptimizerDriftProperties,
             String latestOptimizerFamilyEquivalencePayloadProperties
     ) throws IOException {
+        return merge(
+                path,
+                sourceKernelResource,
+                latestGateProperties,
+                latestSourceSwitchingDecisionProperties,
+                latestRuntimeIrHandoffProperties,
+                latestRuntimeProductionMutationSafetyProperties,
+                latestI3ReadinessSummaryProperties,
+                latestRuntimeOptimizerDriftProperties,
+                latestOptimizerFamilyEquivalencePayloadProperties,
+                ""
+        );
+    }
+
+    public static String merge(
+            Path path,
+            String sourceKernelResource,
+            String latestGateProperties,
+            String latestSourceSwitchingDecisionProperties,
+            String latestRuntimeIrHandoffProperties,
+            String latestRuntimeProductionMutationSafetyProperties,
+            String latestI3ReadinessSummaryProperties,
+            String latestRuntimeOptimizerDriftProperties,
+            String latestOptimizerFamilyEquivalencePayloadProperties,
+            String latestRuntimeExtensionParticipationProperties
+    ) throws IOException {
         Properties latest = loadProperties(latestGateProperties);
         Properties latestSourceSwitchingDecision = loadProperties(latestSourceSwitchingDecisionProperties);
         Properties latestRuntimeIrHandoff = loadProperties(latestRuntimeIrHandoffProperties);
@@ -131,6 +342,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         Properties latestI3ReadinessSummary = loadProperties(latestI3ReadinessSummaryProperties);
         Properties latestRuntimeOptimizerDrift = loadProperties(latestRuntimeOptimizerDriftProperties);
         Properties latestOptimizerFamilyEquivalencePayload = loadProperties(latestOptimizerFamilyEquivalencePayloadProperties);
+        Properties latestRuntimeExtensionParticipation = loadProperties(latestRuntimeExtensionParticipationProperties);
         Properties existing = new Properties();
         if (Files.exists(path)) {
             try (InputStream inputStream = Files.newInputStream(path)) {
@@ -172,6 +384,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyI3ReadinessSummaryProperties(latestI3ReadinessSummary, latestEntry);
         copyRuntimeOptimizerDriftProperties(latestRuntimeOptimizerDrift, latestEntry);
         copyOptimizerFamilyEquivalencePayloadProperties(latestOptimizerFamilyEquivalencePayload, latestEntry);
+        copyRuntimeExtensionParticipationProperties(latestRuntimeExtensionParticipation, latestEntry);
         copyIndexedProperties(latest, latestEntry, "runtimeEquivalence.diagnostic");
         copyIndexedProperties(latest, latestEntry, "reconstruction.blocker");
         copyIndexedProperties(latest, latestEntry, "reconstruction.diagnostic");
@@ -418,14 +631,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     private static void copyRuntimeOptimizerDriftProperties(Properties source, Properties target) {
         if (source == null || source.isEmpty()) {
             target.setProperty("runtimeOptimizerDrift.status", "not-recorded");
-            target.setProperty("runtimeOptimizerDrift.pass.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.applied.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.skipped.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.rolledBack.count", "0");
-            target.setProperty("runtimeOptimizerDrift.pass.failed.count", "0");
-            target.setProperty("runtimeOptimizerDrift.proofArtifact.count", "0");
-            target.setProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0");
-            target.setProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0");
+            copyDefaultRuntimeOptimizerDriftProperties(target);
             target.setProperty("runtimeOptimizerDrift.fallbackDecision", target.getProperty("runtimeIrHandoff.fallbackDecision", "none"));
             target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrStage", target.getProperty("runtimeIrHandoff.selectedStage", "original"));
             target.setProperty("runtimeOptimizerDrift.selectedRuntimeIrIdentity", target.getProperty("runtimeIrHandoff.selected.identity", "unknown"));
@@ -438,14 +644,8 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             target.setProperty("runtimeOptimizerDrift.productionProfileRequested", target.getProperty("runtimeProductionMutationSafety.productionProfileRequested", "unknown"));
             return;
         }
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.applied.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.skipped.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.rolledBack.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "pass.failed.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.accepted.count");
-        copyRuntimeOptimizerDriftProperty(source, target, "proofArtifact.blocking.count");
+        copyRuntimeOptimizerDriftPropertiesFromSource(source, target);
+        copyIndexedPropertyGroup(source, target, "runtimeOptimizerDrift.optimizerRule", "optimizerRule");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.count");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.promotionReady.count");
         copyRuntimeOptimizerDriftProperty(source, target, "optimizerFamily.summary");
@@ -462,8 +662,63 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         target.setProperty("runtimeOptimizerDrift.status", "recorded");
     }
 
+    private static void copyDefaultRuntimeOptimizerDriftProperties(Properties target) {
+        for (DriftProperty property : RUNTIME_OPTIMIZER_DRIFT_PROPERTIES) {
+            target.setProperty(RUNTIME_OPTIMIZER_DRIFT_PREFIX + property.key(), property.emptySourceDefault());
+        }
+    }
+
+    private static void copyRuntimeOptimizerDriftPropertiesFromSource(Properties source, Properties target) {
+        for (DriftProperty property : RUNTIME_OPTIMIZER_DRIFT_PROPERTIES) {
+            copyRuntimeOptimizerDriftProperty(source, target, property.key(), property.recordedSourceDefault());
+        }
+    }
+
     private static void copyRuntimeOptimizerDriftProperty(Properties source, Properties target, String key) {
-        target.setProperty("runtimeOptimizerDrift." + key, source.getProperty(key, "unknown"));
+        target.setProperty(RUNTIME_OPTIMIZER_DRIFT_PREFIX + key, source.getProperty(key, "unknown"));
+    }
+
+    private static void copyRuntimeOptimizerDriftProperty(
+            Properties source,
+            Properties target,
+            String key,
+            String defaultValue
+    ) {
+        target.setProperty(RUNTIME_OPTIMIZER_DRIFT_PREFIX + key, source.getProperty(key, defaultValue));
+    }
+
+    private static DriftProperty driftProperty(String key, String defaultValue) {
+        return driftProperty(key, defaultValue, defaultValue);
+    }
+
+    private static DriftProperty driftProperty(String key, String emptySourceDefault, String recordedSourceDefault) {
+        return new DriftProperty(key, emptySourceDefault, recordedSourceDefault);
+    }
+
+    private record DriftProperty(String key, String emptySourceDefault, String recordedSourceDefault) {
+    }
+
+    private static void copyIndexedPropertyGroup(
+            Properties source,
+            Properties target,
+            String targetKeyPrefix,
+            String sourceKeyPrefix
+    ) {
+        int count = parsePositiveInt(source.getProperty(sourceKeyPrefix + ".count", "0"));
+        target.setProperty(targetKeyPrefix + ".count", Integer.toString(count));
+        String sourceIndexedPrefix = sourceKeyPrefix + ".";
+        String targetIndexedPrefix = targetKeyPrefix + ".";
+        for (String key : source.stringPropertyNames().stream().sorted().toList()) {
+            if (!key.startsWith(sourceIndexedPrefix)) {
+                continue;
+            }
+            String suffix = key.substring(sourceIndexedPrefix.length());
+            int index = indexedPropertyIndex(suffix);
+            if (index < 0 || index >= count) {
+                continue;
+            }
+            target.setProperty(targetIndexedPrefix + suffix, source.getProperty(key, "unknown"));
+        }
     }
 
     private static void copyOptimizerFamilyEquivalencePayloadProperties(Properties source, Properties target) {
@@ -556,6 +811,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append("productionPromotionOperatorAccepted.all=").append(allProductionPromotionOperatorAccepted).append('\n');
         builder.append("sourceSwitching.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
         builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
+        appendAggregateRuntimeExtensionParticipation(builder, kernels);
         builder.append("sourceSwitching.count=").append(kernels.size()).append('\n');
         builder.append("sourceSwitching.sourcePromotionFirstBlocker.count=").append(aggregateSourcePromotionFirstBlockers.size()).append('\n');
         int sourcePromotionBlockerIndex = 0;
@@ -620,6 +876,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         appendRuntimeProductionMutationSafety(builder, prefix, entry);
         appendI3ReadinessSummary(builder, prefix, entry);
         appendRuntimeOptimizerDrift(builder, prefix, entry);
+        appendRuntimeExtensionParticipation(builder, prefix, entry);
         appendIndexedProperties(builder, prefix, entry, "runtimeEquivalence.diagnostic");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.blocker");
         appendIndexedProperties(builder, prefix, entry, "reconstruction.diagnostic");
@@ -731,14 +988,8 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
     private static void appendRuntimeOptimizerDrift(StringBuilder builder, String prefix, Properties entry) {
         builder.append(prefix).append("runtimeOptimizerDrift.status=").append(entry.getProperty("runtimeOptimizerDrift.status", "not-recorded")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.applied.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.applied.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.skipped.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.skipped.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.rolledBack.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.pass.failed.count=").append(entry.getProperty("runtimeOptimizerDrift.pass.failed.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.accepted.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.accepted.count", "0")).append('\n');
-        builder.append(prefix).append("runtimeOptimizerDrift.proofArtifact.blocking.count=").append(entry.getProperty("runtimeOptimizerDrift.proofArtifact.blocking.count", "0")).append('\n');
+        appendRuntimeOptimizerDriftProperties(builder, prefix, entry);
+        appendIndexedPropertyGroup(builder, prefix, entry, "runtimeOptimizerDrift.optimizerRule");
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.promotionReady.count=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0")).append('\n');
         builder.append(prefix).append("runtimeOptimizerDrift.optimizerFamily.summary=").append(entry.getProperty("runtimeOptimizerDrift.optimizerFamily.summary", "none")).append('\n');
@@ -757,6 +1008,146 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("optimizerFamilyPayload.family.count=").append(entry.getProperty("optimizerFamilyPayload.family.count", "0")).append('\n');
         builder.append(prefix).append("optimizerFamilyPayload.family.complete.count=").append(entry.getProperty("optimizerFamilyPayload.family.complete.count", "0")).append('\n');
         builder.append(prefix).append("optimizerFamilyPayload.family.complete.all=").append(entry.getProperty("optimizerFamilyPayload.family.complete.all", "false")).append('\n');
+    }
+
+    private static void appendRuntimeOptimizerDriftProperties(StringBuilder builder, String prefix, Properties entry) {
+        for (DriftProperty property : RUNTIME_OPTIMIZER_DRIFT_PROPERTIES) {
+            String key = RUNTIME_OPTIMIZER_DRIFT_PREFIX + property.key();
+            builder.append(prefix).append(key).append('=').append(entry.getProperty(key, property.emptySourceDefault())).append('\n');
+        }
+    }
+
+    private static void copyRuntimeExtensionParticipationProperties(Properties source, Properties target) {
+        if (source == null || source.isEmpty()) {
+            target.setProperty("runtimeExtensionParticipation.status", "not-recorded");
+            target.setProperty("runtimeExtensionParticipation.entry.count", "0");
+            target.setProperty("runtimeExtensionParticipation.succeeded.count", "0");
+            target.setProperty("runtimeExtensionParticipation.skipped.count", "0");
+            target.setProperty("runtimeExtensionParticipation.failedContinued.count", "0");
+            target.setProperty("runtimeExtensionParticipation.failedClosed.count", "0");
+            target.setProperty("runtimeExtensionParticipation.pipelineContinued.all", "unknown");
+            target.setProperty("runtimeExtensionParticipation.firstFailure", "none");
+            target.setProperty("runtimeExtensionParticipation.source.count", "0");
+            return;
+        }
+        target.setProperty("runtimeExtensionParticipation.status", source.getProperty("status", "unknown"));
+        target.setProperty("runtimeExtensionParticipation.entry.count", source.getProperty("entry.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.succeeded.count", source.getProperty("succeeded.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.skipped.count", source.getProperty("skipped.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.failedContinued.count", source.getProperty("failedContinued.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.failedClosed.count", source.getProperty("failedClosed.count", "0"));
+        target.setProperty("runtimeExtensionParticipation.pipelineContinued.all", source.getProperty("pipelineContinued.all", "unknown"));
+        target.setProperty("runtimeExtensionParticipation.firstFailure", source.getProperty("firstFailure", "none"));
+        LinkedHashMap<String, Integer> sourceCounts = runtimeExtensionParticipationSourceCounts(source);
+        target.setProperty("runtimeExtensionParticipation.source.count", Integer.toString(sourceCounts.size()));
+        int sourceIndex = 0;
+        for (Map.Entry<String, Integer> sourceCount : sourceCounts.entrySet()) {
+            target.setProperty("runtimeExtensionParticipation.source." + sourceIndex + ".name", sourceCount.getKey());
+            target.setProperty("runtimeExtensionParticipation.source." + sourceIndex + ".count", Integer.toString(sourceCount.getValue()));
+            sourceIndex++;
+        }
+    }
+
+    private static LinkedHashMap<String, Integer> runtimeExtensionParticipationSourceCounts(Properties properties) {
+        LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+        int entryCount = parsePositiveInt(properties.getProperty("entry.count", "0"));
+        for (int index = 0; index < entryCount; index++) {
+            String source = properties.getProperty("entry." + index + ".source", "");
+            if (!source.isBlank()) {
+                counts.merge(source, 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
+    private static void appendAggregateRuntimeExtensionParticipation(
+            StringBuilder builder,
+            LinkedHashMap<String, Properties> kernels
+    ) {
+        int recordedKernelCount = 0;
+        int entryCount = 0;
+        int failedContinuedCount = 0;
+        int failedClosedCount = 0;
+        LinkedHashMap<String, Integer> sourceCounts = new LinkedHashMap<>();
+        for (Properties entry : kernels.values()) {
+            if ("recorded".equals(entry.getProperty("runtimeExtensionParticipation.status"))) {
+                recordedKernelCount++;
+            }
+            entryCount += parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.entry.count", "0"));
+            failedContinuedCount += parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.failedContinued.count", "0"));
+            failedClosedCount += parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.failedClosed.count", "0"));
+            int sourceCount = parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.source.count", "0"));
+            for (int index = 0; index < sourceCount; index++) {
+                String source = entry.getProperty("runtimeExtensionParticipation.source." + index + ".name", "");
+                int count = parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.source." + index + ".count", "0"));
+                if (!source.isBlank()) {
+                    sourceCounts.merge(source, count, Integer::sum);
+                }
+            }
+        }
+        builder.append("runtimeExtensionParticipation.recordedKernel.count=").append(recordedKernelCount).append('\n');
+        builder.append("runtimeExtensionParticipation.entry.count=").append(entryCount).append('\n');
+        builder.append("runtimeExtensionParticipation.failedContinued.count=").append(failedContinuedCount).append('\n');
+        builder.append("runtimeExtensionParticipation.failedClosed.count=").append(failedClosedCount).append('\n');
+        builder.append("runtimeExtensionParticipation.source.count=").append(sourceCounts.size()).append('\n');
+        int sourceIndex = 0;
+        for (Map.Entry<String, Integer> source : sourceCounts.entrySet()) {
+            builder.append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".name=").append(source.getKey()).append('\n');
+            builder.append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".count=").append(source.getValue()).append('\n');
+            sourceIndex++;
+        }
+    }
+
+    private static void appendRuntimeExtensionParticipation(StringBuilder builder, String prefix, Properties entry) {
+        builder.append(prefix).append("runtimeExtensionParticipation.status=").append(entry.getProperty("runtimeExtensionParticipation.status", "not-recorded")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.entry.count=").append(entry.getProperty("runtimeExtensionParticipation.entry.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.succeeded.count=").append(entry.getProperty("runtimeExtensionParticipation.succeeded.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.skipped.count=").append(entry.getProperty("runtimeExtensionParticipation.skipped.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.failedContinued.count=").append(entry.getProperty("runtimeExtensionParticipation.failedContinued.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.failedClosed.count=").append(entry.getProperty("runtimeExtensionParticipation.failedClosed.count", "0")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.pipelineContinued.all=").append(entry.getProperty("runtimeExtensionParticipation.pipelineContinued.all", "unknown")).append('\n');
+        builder.append(prefix).append("runtimeExtensionParticipation.firstFailure=").append(entry.getProperty("runtimeExtensionParticipation.firstFailure", "none")).append('\n');
+        int sourceCount = parsePositiveInt(entry.getProperty("runtimeExtensionParticipation.source.count", "0"));
+        builder.append(prefix).append("runtimeExtensionParticipation.source.count=").append(sourceCount).append('\n');
+        for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++) {
+            builder.append(prefix).append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".name=").append(entry.getProperty("runtimeExtensionParticipation.source." + sourceIndex + ".name", "unknown")).append('\n');
+            builder.append(prefix).append("runtimeExtensionParticipation.source.").append(sourceIndex).append(".count=").append(entry.getProperty("runtimeExtensionParticipation.source." + sourceIndex + ".count", "0")).append('\n');
+        }
+    }
+
+    private static void appendIndexedPropertyGroup(
+            StringBuilder builder,
+            String kernelPrefix,
+            Properties entry,
+            String keyPrefix
+    ) {
+        String indexedPrefix = keyPrefix + ".";
+        int count = parsePositiveInt(entry.getProperty(keyPrefix + ".count", "0"));
+        for (String key : entry.stringPropertyNames().stream().sorted().toList()) {
+            if (!key.startsWith(indexedPrefix)) {
+                continue;
+            }
+            String suffix = key.substring(indexedPrefix.length());
+            int index = indexedPropertyIndex(suffix);
+            if (index < 0 || index >= count) {
+                continue;
+            }
+            builder.append(kernelPrefix).append(key).append('=').append(entry.getProperty(key, "unknown")).append('\n');
+        }
+    }
+
+    private static int indexedPropertyIndex(String suffix) {
+        if (suffix == null || suffix.isBlank() || !Character.isDigit(suffix.charAt(0))) {
+            return -1;
+        }
+        int end = 0;
+        while (end < suffix.length() && Character.isDigit(suffix.charAt(end))) {
+            end++;
+        }
+        if (end == suffix.length() || suffix.charAt(end) != '.') {
+            return -1;
+        }
+        return parsePositiveInt(suffix.substring(0, end));
     }
 
     private static void appendIndexedProperties(

@@ -11,11 +11,12 @@ public record IrGpuModuleMethod(
         String returnType,
         List<IrGpuEntryParameter> parameters,
         List<String> openClAttributes,
+        List<IrGpuAttributeMetadata> attributeMetadata,
         boolean inline
 ) {
 
     public IrGpuModuleMethod(String name, String emittedName) {
-        this(name, emittedName, "unknown", List.of(), List.of(), false);
+        this(name, emittedName, "unknown", List.of(), List.of(), List.of(), false);
     }
 
     public IrGpuModuleMethod(
@@ -24,7 +25,7 @@ public record IrGpuModuleMethod(
             String returnType,
             List<IrGpuEntryParameter> parameters
     ) {
-        this(name, emittedName, returnType, parameters, List.of(), false);
+        this(name, emittedName, returnType, parameters, List.of(), List.of(), false);
     }
 
     public IrGpuModuleMethod(
@@ -34,7 +35,18 @@ public record IrGpuModuleMethod(
             List<IrGpuEntryParameter> parameters,
             List<String> openClAttributes
     ) {
-        this(name, emittedName, returnType, parameters, openClAttributes, false);
+        this(name, emittedName, returnType, parameters, openClAttributes, List.of(), false);
+    }
+
+    public IrGpuModuleMethod(
+            String name,
+            String emittedName,
+            String returnType,
+            List<IrGpuEntryParameter> parameters,
+            List<String> openClAttributes,
+            boolean inline
+    ) {
+        this(name, emittedName, returnType, parameters, openClAttributes, List.of(), inline);
     }
 
     public IrGpuModuleMethod {
@@ -43,6 +55,7 @@ public record IrGpuModuleMethod(
         returnType = normalize(returnType, "unknown");
         parameters = parameters == null ? List.of() : List.copyOf(parameters);
         openClAttributes = openClAttributes == null ? List.of() : List.copyOf(openClAttributes);
+        attributeMetadata = attributeMetadata == null ? List.of() : List.copyOf(attributeMetadata);
     }
 
     private static String normalize(String value, String fallback) {

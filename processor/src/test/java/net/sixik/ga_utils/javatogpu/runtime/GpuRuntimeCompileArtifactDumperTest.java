@@ -2,10 +2,16 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionFailurePolicy;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
@@ -16,6 +22,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +32,222 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GpuRuntimeCompileArtifactDumperTest {
 
     private static final String SIMPLE_IRGPU_SOURCE_RESOURCE = "javatogpu/runtime/opencl/integration/simple-irgpu-source-kernel.irgpu.properties";
+
+    @Test
+    void dumpsRuntimeExtensionParticipationArtifact() {
+        GpuExtensionExecutionReport optimizerExecution = execution(
+                "optimizer:cse",
+                GpuExtensionPhase.RUNTIME_IR_OPTIMIZATION,
+                GpuExtensionPermission.MUTATION_PROPOSAL,
+                GpuExtensionExecutionOutcome.SUCCEEDED,
+                true
+        );
+        GpuExtensionExecutionReport deviceSelectionExecution = execution(
+                "device-policy:test",
+                GpuExtensionPhase.DEVICE_SELECTION,
+                GpuExtensionPermission.READ_ONLY,
+                GpuExtensionExecutionOutcome.SUCCEEDED,
+                true
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.legacy(descriptor())
+                .withDeviceSelection(syntheticDeviceSelection(deviceSelectionExecution))
+                .withOptimizationReport(new GpuRuntimeIrOptimizationReport(
+                        Optional.empty(),
+                        List.of(),
+                        GpuOptimizationStrategyDecision.none(null),
+                        List.of(optimizerExecution)
+                ))
+                .withCompileLog("mock compiler resource log");
+        GpuBackendCompilerFeedbackRegistry compilerFeedbackRegistry = GpuBackendCompilerFeedbackRegistry.of(List.of(
+                new GpuBackendCompilerFeedbackProvider() {
+                    @Override
+                    public String extensionId() {
+                        return "compiler-feedback:mock";
+                    }
+
+                    @Override
+                    public Optional<GpuBackendCompilerFeedback> inspect(GpuBackendCompilerFeedbackRequest request) {
+                        throw new IllegalStateException("mock feedback unavailable");
+                    }
+                }
+        ));
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot, compilerFeedbackRegistry);
+
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT));
+        String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
+        assertTrue(participation.contains("status=recorded"));
+        assertTrue(participation.contains("backendTarget=OPENCL"));
+        assertTrue(participation.contains("backendFormat=opencl-c"));
+        assertTrue(participation.contains("backendResource=javatogpu/sample/Demo/kernel.cl"));
+        assertTrue(participation.contains("entry.count=5"));
+        assertTrue(participation.contains("succeeded.count=3"));
+        assertTrue(participation.contains("skipped.count=1"));
+        assertTrue(participation.contains("failedContinued.count=1"));
+        assertTrue(participation.contains("failedClosed.count=0"));
+        assertTrue(participation.contains("pipelineContinued.all=true"));
+        assertTrue(participation.contains("firstFailure=compiler-feedback:mock:FAILED_CONTINUED"));
+        assertTrue(participation.contains("entry.0.source=device-selection"));
+        assertTrue(participation.contains("entry.0.extensionId=device-policy:test"));
+        assertTrue(participation.contains("entry.1.source=runtime-ir-optimization"));
+        assertTrue(participation.contains("entry.1.extensionId=optimizer:cse"));
+        assertTrue(participation.contains("entry.2.source=runtime-equivalence"));
+        assertTrue(participation.contains("entry.2.extensionId=runtime-equivalence:unknown"));
+        assertTrue(participation.contains("entry.2.phase=RUNTIME_EQUIVALENCE"));
+        assertTrue(participation.contains("entry.2.permission=READ_ONLY"));
+        assertTrue(participation.contains("entry.2.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.3.source=backend-lowerer"));
+        assertTrue(participation.contains("entry.3.extensionId=backend-lowerer:opencl"));
+        assertTrue(participation.contains("entry.3.phase=BACKEND_LOWERING"));
+        assertTrue(participation.contains("entry.3.permission=PRODUCTION_AFFECTING"));
+        assertTrue(participation.contains("entry.3.outcome=SUCCEEDED"));
+        assertTrue(participation.contains("entry.4.source=backend-compiler-feedback"));
+        assertTrue(participation.contains("entry.4.extensionId=compiler-feedback:mock"));
+        assertTrue(participation.contains("entry.4.outcome=FAILED_CONTINUED"));
+    }
+
+    @Test
+    void dumpsIrGpuExtensionParticipationIntoRuntimeParticipationArtifact() {
+        IrGpuArtifact irGpuArtifact = artifact("body\n  return original\n")
+                .withExtensionParticipationMetadata(List.of(new IrGpuExtensionParticipationMetadata(
+                        "ir-validation",
+                        "validator:shape-contract",
+                        "3",
+                        GpuExtensionPhase.IR_VALIDATION,
+                        GpuExtensionPermission.READ_ONLY,
+                        "IR validation",
+                        GpuExtensionExecutionOutcome.SUCCEEDED,
+                        GpuExtensionFailurePolicy.CONTINUE,
+                        true,
+                        "none",
+                        "validator accepted IR shape",
+                        List.of("validator diagnostic")
+                )));
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(irGpuArtifact)
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(irGpuArtifact))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                snapshot,
+                GpuBackendCompilerFeedbackRegistry.of(List.of())
+        );
+
+        String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
+        assertTrue(participation.contains("status=recorded"));
+        assertTrue(participation.contains("entry.count=3"));
+        assertTrue(participation.contains("succeeded.count=2"));
+        assertTrue(participation.contains("skipped.count=1"));
+        assertTrue(participation.contains("entry.0.source=original-irgpu:ir-validation"));
+        assertTrue(participation.contains("entry.0.extensionId=validator:shape-contract"));
+        assertTrue(participation.contains("entry.0.extensionVersion=3"));
+        assertTrue(participation.contains("entry.0.phase=IR_VALIDATION"));
+        assertTrue(participation.contains("entry.0.permission=READ_ONLY"));
+        assertTrue(participation.contains("entry.0.outcome=SUCCEEDED"));
+        assertTrue(participation.contains("entry.1.source=runtime-equivalence"));
+        assertTrue(participation.contains("entry.1.extensionId=runtime-equivalence:opencl"));
+        assertTrue(participation.contains("entry.1.phase=RUNTIME_EQUIVALENCE"));
+        assertTrue(participation.contains("entry.1.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.2.source=backend-lowerer"));
+        assertTrue(participation.contains("entry.2.extensionId=backend-lowerer:opencl"));
+        assertTrue(participation.contains("entry.2.extensionVersion=test-lowerer-v1"));
+        assertTrue(participation.contains("entry.2.phase=BACKEND_LOWERING"));
+    }
+
+    @Test
+    void dumpsOptimizedIrGpuExtensionParticipationWhenArtifactDiffers() {
+        IrGpuArtifact originalIrGpuArtifact = artifact("body\n  return original\n")
+                .withExtensionParticipationMetadata(List.of(new IrGpuExtensionParticipationMetadata(
+                        "ir-validation",
+                        "validator:shape-contract",
+                        "3",
+                        GpuExtensionPhase.IR_VALIDATION,
+                        GpuExtensionPermission.READ_ONLY,
+                        "IR validation",
+                        GpuExtensionExecutionOutcome.SUCCEEDED,
+                        GpuExtensionFailurePolicy.CONTINUE,
+                        true,
+                        "none",
+                        "validator accepted IR shape",
+                        List.of()
+                )));
+        IrGpuArtifact optimizedIrGpuArtifact = artifact("body\n  return optimized\n")
+                .withExtensionParticipationMetadata(List.of(new IrGpuExtensionParticipationMetadata(
+                        "runtime-ir-optimization",
+                        "optimizer:review-pass",
+                        "2",
+                        GpuExtensionPhase.RUNTIME_IR_OPTIMIZATION,
+                        GpuExtensionPermission.MUTATION_PROPOSAL,
+                        "Runtime IR optimization",
+                        GpuExtensionExecutionOutcome.SKIPPED,
+                        GpuExtensionFailurePolicy.CONTINUE,
+                        true,
+                        "none",
+                        "optimizer proposed no production mutation",
+                        List.of()
+                )));
+        GpuRuntimeCompileRequest originalRequest = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(originalIrGpuArtifact)
+        );
+        GpuRuntimeCompileRequest optimizedRequest = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(optimizedIrGpuArtifact)
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                originalRequest,
+                optimizedRequest,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(optimizedRequest, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(optimizedRequest),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimizedIrGpuArtifact))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                snapshot,
+                GpuBackendCompilerFeedbackRegistry.of(List.of())
+        );
+
+        String participation = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT);
+        assertTrue(participation.contains("entry.count=4"));
+        assertTrue(participation.contains("succeeded.count=2"));
+        assertTrue(participation.contains("skipped.count=2"));
+        assertTrue(participation.contains("entry.0.source=original-irgpu:ir-validation"));
+        assertTrue(participation.contains("entry.0.extensionId=validator:shape-contract"));
+        assertTrue(participation.contains("entry.1.source=optimized-irgpu:runtime-ir-optimization"));
+        assertTrue(participation.contains("entry.1.extensionId=optimizer:review-pass"));
+        assertTrue(participation.contains("entry.1.permission=MUTATION_PROPOSAL"));
+        assertTrue(participation.contains("entry.1.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.2.source=runtime-equivalence"));
+        assertTrue(participation.contains("entry.2.extensionId=runtime-equivalence:opencl"));
+        assertTrue(participation.contains("entry.2.outcome=SKIPPED"));
+        assertTrue(participation.contains("entry.3.source=backend-lowerer"));
+        assertTrue(participation.contains("entry.3.extensionId=backend-lowerer:opencl"));
+    }
 
     @Test
     void dumpsStructuredRuntimeEquivalenceComparisonCases() {
@@ -98,6 +321,11 @@ class GpuRuntimeCompileArtifactDumperTest {
     void dumpsOriginalOptimizedAndBackendArtifacts() {
         IrGpuArtifact original = artifact("body\n  return original\n");
         IrGpuArtifact optimized = artifact("body\n  return optimized\n");
+        GpuBackendModuleArtifact originalBackendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/original/kernel.cl",
+                "test-lowerer-v1"
+        );
         GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
                 "__kernel void kernel(__global int* out) { out[0] = 2; }",
                 "runtime/lowered/kernel.cl",
@@ -189,7 +417,8 @@ class GpuRuntimeCompileArtifactDumperTest {
                 List.of(location()),
                 "build ok",
                 List.of("equivalence:skipped")
-        ).withDeviceSelection(deviceSelection());
+        ).withBackendStageModuleArtifacts(originalBackendArtifact, backendArtifact)
+                .withDeviceSelection(deviceSelection());
 
         GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
 
@@ -287,6 +516,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-map.properties").contains("methodBody.0.emittedName=jtg_kernel"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("methodBody.0.format=ir-text-v1"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("methodBody.0.sourceKind=java-source"));
+        assertEquals(originalBackendArtifact.source(), dump.artifact("original.backend.opencl-c"));
+        assertEquals(backendArtifact.source(), dump.artifact("optimized.backend.opencl-c"));
         assertEquals(backendArtifact.source(), dump.artifact("backend.opencl-c"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendTarget=OPENCL"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("deviceLabel=Mock GPU"));
@@ -1767,12 +1998,2025 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("fallbackDecision=optimizer-rollback"));
     }
 
+    @Test
+    void optimizerDriftArtifactCapturesReadOnlyReplacementPlanTelemetry() {
+        IrGpuArtifact original = artifact("body\n  return original\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport peepholeReport = GpuRuntimeIrOptimizationPassReport.skipped(
+                "optimizer:peephole-diagnostic-v1",
+                "irgpu:sha256:original",
+                "typed peephole replacement plans recorded without mutation"
+        ).withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                "runtime.peephole.preflight",
+                "blocked",
+                Map.ofEntries(
+                        Map.entry("optimizerFamily", "peephole"),
+                        Map.entry("replacementPlan.partial.count", "1"),
+                        Map.entry("replacementPlan.firstBlocker", "multiply-operands-incomplete"),
+                        Map.entry("replacementPlan.validation.invalid.count", "1"),
+                        Map.entry("replacementPlan.validation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteSketch.count", "6"),
+                        Map.entry("rewriteSketch.ready.count", "5"),
+                        Map.entry("rewriteSketch.blocked.count", "1"),
+                        Map.entry("rewriteSketch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteVisitor.count", "6"),
+                        Map.entry("rewriteVisitor.ready.count", "5"),
+                        Map.entry("rewriteVisitor.blocked.count", "1"),
+                        Map.entry("rewriteVisitor.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("replacementBlueprint.count", "6"),
+                        Map.entry("replacementBlueprint.ready.count", "5"),
+                        Map.entry("replacementBlueprint.blocked.count", "1"),
+                        Map.entry("replacementBlueprint.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteTransaction.count", "6"),
+                        Map.entry("rewriteTransaction.ready.count", "5"),
+                        Map.entry("rewriteTransaction.blocked.count", "1"),
+                        Map.entry("rewriteTransaction.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("nodeIdAllocation.count", "6"),
+                        Map.entry("nodeIdAllocation.ready.count", "5"),
+                        Map.entry("nodeIdAllocation.blocked.count", "1"),
+                        Map.entry("nodeIdAllocation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("replacementNode.count", "6"),
+                        Map.entry("replacementNode.ready.count", "5"),
+                        Map.entry("replacementNode.blocked.count", "1"),
+                        Map.entry("replacementNode.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("graphPatch.count", "6"),
+                        Map.entry("graphPatch.ready.count", "5"),
+                        Map.entry("graphPatch.blocked.count", "1"),
+                        Map.entry("graphPatch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("transformedGraph.count", "6"),
+                        Map.entry("transformedGraph.ready.count", "5"),
+                        Map.entry("transformedGraph.blocked.count", "1"),
+                        Map.entry("transformedGraph.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("irArtifactEnvelope.count", "6"),
+                        Map.entry("irArtifactEnvelope.ready.count", "5"),
+                        Map.entry("irArtifactEnvelope.blocked.count", "1"),
+                        Map.entry("irArtifactEnvelope.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("artifactProofBinding.count", "6"),
+                        Map.entry("artifactProofBinding.ready.count", "0"),
+                        Map.entry("artifactProofBinding.blocked.count", "6"),
+                        Map.entry("artifactProofBinding.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("artifactSelection.count", "6"),
+                        Map.entry("artifactSelection.ready.count", "0"),
+                        Map.entry("artifactSelection.blocked.count", "6"),
+                        Map.entry("artifactSelection.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rewriteSketch.conflict.count", "1"),
+                        Map.entry("rewriteSketch.conflict.firstBlocker", "rewrite-sketch-covered-node-overlap"),
+                        Map.entry("rewriteSelection.status", "blocked"),
+                        Map.entry("rewriteSelection.firstBlocker", "rewrite-sketch-conflict-resolution-required"),
+                        Map.entry("rewriteProof.status", "blocked"),
+                        Map.entry("rewriteProof.firstBlocker", "rewrite-sketch-conflict-resolution-required"),
+                        Map.entry("rewriteReviewPackage.status", "blocked"),
+                        Map.entry("rewriteReviewPackage.firstBlocker", "rewrite-sketch-conflict-resolution-required"),
+                        Map.entry("rewriteReviewPackage.complete", "false"),
+                        Map.entry("rewriteReviewPackage.selectedIrReplacement", "false"),
+                        Map.entry("rule.count", "2"),
+                        Map.entry("rule.0.id", "madFma"),
+                        Map.entry("rule.0.version", "peephole-rule:mad-fma-v1"),
+                        Map.entry("rule.0.extensionId", "javatogpu.peephole.mad-fma"),
+                        Map.entry("rule.0.extensionVersion", "peephole-rule:mad-fma-v1"),
+                        Map.entry("rule.0.proofStatus", "candidate-detected"),
+                        Map.entry("rule.0.candidate.count", "2"),
+                        Map.entry("rule.0.proposal.count", "0"),
+                        Map.entry("rule.0.applied.count", "0"),
+                        Map.entry("rule.0.skipped.count", "0"),
+                        Map.entry("rule.0.blocked.count", "1"),
+                        Map.entry("rule.0.mutationProposed", "false"),
+                        Map.entry("rule.0.replacementPlan.count", "3"),
+                        Map.entry("rule.0.replacementPlan.complete.count", "2"),
+                        Map.entry("rule.0.replacementPlan.partial.count", "1"),
+                        Map.entry("rule.0.replacementPlan.firstBlocker", "multiply-operands-incomplete"),
+                        Map.entry("rule.0.replacementPlan.validation.count", "3"),
+                        Map.entry("rule.0.replacementPlan.validation.valid.count", "2"),
+                        Map.entry("rule.0.replacementPlan.validation.invalid.count", "1"),
+                        Map.entry("rule.0.replacementPlan.validation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteSketch.count", "3"),
+                        Map.entry("rule.0.rewriteSketch.ready.count", "2"),
+                        Map.entry("rule.0.rewriteSketch.blocked.count", "1"),
+                        Map.entry("rule.0.rewriteSketch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteVisitor.count", "3"),
+                        Map.entry("rule.0.rewriteVisitor.ready.count", "2"),
+                        Map.entry("rule.0.rewriteVisitor.blocked.count", "1"),
+                        Map.entry("rule.0.rewriteVisitor.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.replacementBlueprint.count", "3"),
+                        Map.entry("rule.0.replacementBlueprint.ready.count", "2"),
+                        Map.entry("rule.0.replacementBlueprint.blocked.count", "1"),
+                        Map.entry("rule.0.replacementBlueprint.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteTransaction.count", "3"),
+                        Map.entry("rule.0.rewriteTransaction.ready.count", "2"),
+                        Map.entry("rule.0.rewriteTransaction.blocked.count", "1"),
+                        Map.entry("rule.0.rewriteTransaction.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.nodeIdAllocation.count", "3"),
+                        Map.entry("rule.0.nodeIdAllocation.ready.count", "2"),
+                        Map.entry("rule.0.nodeIdAllocation.blocked.count", "1"),
+                        Map.entry("rule.0.nodeIdAllocation.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.replacementNode.count", "3"),
+                        Map.entry("rule.0.replacementNode.ready.count", "2"),
+                        Map.entry("rule.0.replacementNode.blocked.count", "1"),
+                        Map.entry("rule.0.replacementNode.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.graphPatch.count", "3"),
+                        Map.entry("rule.0.graphPatch.ready.count", "2"),
+                        Map.entry("rule.0.graphPatch.blocked.count", "1"),
+                        Map.entry("rule.0.graphPatch.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.transformedGraph.count", "3"),
+                        Map.entry("rule.0.transformedGraph.ready.count", "2"),
+                        Map.entry("rule.0.transformedGraph.blocked.count", "1"),
+                        Map.entry("rule.0.transformedGraph.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.irArtifactEnvelope.count", "3"),
+                        Map.entry("rule.0.irArtifactEnvelope.ready.count", "2"),
+                        Map.entry("rule.0.irArtifactEnvelope.blocked.count", "1"),
+                        Map.entry("rule.0.irArtifactEnvelope.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.artifactProofBinding.count", "3"),
+                        Map.entry("rule.0.artifactProofBinding.ready.count", "0"),
+                        Map.entry("rule.0.artifactProofBinding.blocked.count", "3"),
+                        Map.entry("rule.0.artifactProofBinding.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.artifactSelection.count", "3"),
+                        Map.entry("rule.0.artifactSelection.ready.count", "0"),
+                        Map.entry("rule.0.artifactSelection.blocked.count", "3"),
+                        Map.entry("rule.0.artifactSelection.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteSelection.status", "blocked"),
+                        Map.entry("rule.0.rewriteSelection.firstBlocker", "replacement-plan-root-missing"),
+                        Map.entry("rule.0.rewriteProof.status", "blocked"),
+                        Map.entry("rule.0.rewriteProof.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.0.rewriteReviewPackage.status", "blocked"),
+                        Map.entry("rule.0.rewriteReviewPackage.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.0.rewriteReviewPackage.complete", "false"),
+                        Map.entry("rule.0.rewriteReviewPackage.selectedIrReplacement", "false"),
+                        Map.entry("rule.0.firstBlocker", "multiply-operands-incomplete"),
+                        Map.entry("rule.1.id", "clamp"),
+                        Map.entry("rule.1.version", "peephole-rule:clamp-v1"),
+                        Map.entry("rule.1.extensionId", "javatogpu.peephole.clamp"),
+                        Map.entry("rule.1.extensionVersion", "peephole-rule:clamp-v1"),
+                        Map.entry("rule.1.proofStatus", "no-candidate"),
+                        Map.entry("rule.1.candidate.count", "0"),
+                        Map.entry("rule.1.proposal.count", "0"),
+                        Map.entry("rule.1.applied.count", "0"),
+                        Map.entry("rule.1.skipped.count", "1"),
+                        Map.entry("rule.1.blocked.count", "0"),
+                        Map.entry("rule.1.mutationProposed", "false"),
+                        Map.entry("rule.1.replacementPlan.count", "3"),
+                        Map.entry("rule.1.replacementPlan.complete.count", "3"),
+                        Map.entry("rule.1.replacementPlan.partial.count", "0"),
+                        Map.entry("rule.1.replacementPlan.firstBlocker", "none"),
+                        Map.entry("rule.1.replacementPlan.validation.count", "3"),
+                        Map.entry("rule.1.replacementPlan.validation.valid.count", "3"),
+                        Map.entry("rule.1.replacementPlan.validation.invalid.count", "0"),
+                        Map.entry("rule.1.replacementPlan.validation.firstBlocker", "none"),
+                        Map.entry("rule.1.rewriteSketch.count", "3"),
+                        Map.entry("rule.1.rewriteSketch.ready.count", "3"),
+                        Map.entry("rule.1.rewriteSketch.blocked.count", "0"),
+                        Map.entry("rule.1.rewriteSketch.firstBlocker", "none"),
+                        Map.entry("rule.1.rewriteVisitor.count", "3"),
+                        Map.entry("rule.1.rewriteVisitor.ready.count", "3"),
+                        Map.entry("rule.1.rewriteVisitor.blocked.count", "0"),
+                        Map.entry("rule.1.rewriteVisitor.firstBlocker", "none"),
+                        Map.entry("rule.1.replacementBlueprint.count", "3"),
+                        Map.entry("rule.1.replacementBlueprint.ready.count", "3"),
+                        Map.entry("rule.1.replacementBlueprint.blocked.count", "0"),
+                        Map.entry("rule.1.replacementBlueprint.firstBlocker", "none"),
+                        Map.entry("rule.1.rewriteTransaction.count", "3"),
+                        Map.entry("rule.1.rewriteTransaction.ready.count", "3"),
+                        Map.entry("rule.1.rewriteTransaction.blocked.count", "0"),
+                        Map.entry("rule.1.rewriteTransaction.firstBlocker", "none"),
+                        Map.entry("rule.1.nodeIdAllocation.count", "3"),
+                        Map.entry("rule.1.nodeIdAllocation.ready.count", "3"),
+                        Map.entry("rule.1.nodeIdAllocation.blocked.count", "0"),
+                        Map.entry("rule.1.nodeIdAllocation.firstBlocker", "none"),
+                        Map.entry("rule.1.replacementNode.count", "3"),
+                        Map.entry("rule.1.replacementNode.ready.count", "3"),
+                        Map.entry("rule.1.replacementNode.blocked.count", "0"),
+                        Map.entry("rule.1.replacementNode.firstBlocker", "none"),
+                        Map.entry("rule.1.graphPatch.count", "3"),
+                        Map.entry("rule.1.graphPatch.ready.count", "3"),
+                        Map.entry("rule.1.graphPatch.blocked.count", "0"),
+                        Map.entry("rule.1.graphPatch.firstBlocker", "none"),
+                        Map.entry("rule.1.transformedGraph.count", "3"),
+                        Map.entry("rule.1.transformedGraph.ready.count", "3"),
+                        Map.entry("rule.1.transformedGraph.blocked.count", "0"),
+                        Map.entry("rule.1.transformedGraph.firstBlocker", "none"),
+                        Map.entry("rule.1.irArtifactEnvelope.count", "3"),
+                        Map.entry("rule.1.irArtifactEnvelope.ready.count", "3"),
+                        Map.entry("rule.1.irArtifactEnvelope.blocked.count", "0"),
+                        Map.entry("rule.1.irArtifactEnvelope.firstBlocker", "none"),
+                        Map.entry("rule.1.artifactProofBinding.count", "3"),
+                        Map.entry("rule.1.artifactProofBinding.ready.count", "0"),
+                        Map.entry("rule.1.artifactProofBinding.blocked.count", "3"),
+                        Map.entry("rule.1.artifactProofBinding.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.1.artifactSelection.count", "3"),
+                        Map.entry("rule.1.artifactSelection.ready.count", "0"),
+                        Map.entry("rule.1.artifactSelection.blocked.count", "3"),
+                        Map.entry("rule.1.artifactSelection.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.1.rewriteSelection.status", "blocked"),
+                        Map.entry("rule.1.rewriteSelection.firstBlocker", "rewrite-builder-not-implemented"),
+                        Map.entry("rule.1.rewriteProof.status", "blocked"),
+                        Map.entry("rule.1.rewriteProof.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.1.rewriteReviewPackage.status", "blocked"),
+                        Map.entry("rule.1.rewriteReviewPackage.firstBlocker", "runtime-equivalence-payload-missing"),
+                        Map.entry("rule.1.rewriteReviewPackage.complete", "false"),
+                        Map.entry("rule.1.rewriteReviewPackage.selectedIrReplacement", "false"),
+                        Map.entry("rule.1.firstBlocker", "none")
+                )
+        ));
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(peepholeReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String drift = dump.artifact("runtime-optimizer-drift.properties");
+
+        assertTrue(drift.contains("pass.count=1"));
+        assertTrue(drift.contains("pass.skipped.count=1"));
+        assertTrue(drift.contains("proofArtifact.count=1"));
+        assertTrue(drift.contains("replacementPlan.complete.count=5"));
+        assertTrue(drift.contains("replacementPlan.partial.count=1"));
+        assertTrue(drift.contains("replacementPlan.firstBlocker=multiply-operands-incomplete"));
+        assertTrue(drift.contains("replacementPlan.validation.count=6"));
+        assertTrue(drift.contains("replacementPlan.validation.valid.count=5"));
+        assertTrue(drift.contains("replacementPlan.validation.invalid.count=1"));
+        assertTrue(drift.contains("replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteVisitor.count=6"));
+        assertTrue(drift.contains("rewriteVisitor.ready.count=5"));
+        assertTrue(drift.contains("rewriteVisitor.blocked.count=1"));
+        assertTrue(drift.contains("rewriteVisitor.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteVisitor.visitorImplemented=true"));
+        assertTrue(drift.contains("rewriteVisitor.replacementBuilderImplemented=false"));
+        assertTrue(drift.contains("rewriteVisitor.transformedIrBuilt=false"));
+        assertTrue(drift.contains("rewriteVisitor.selectedIrReplacement=false"));
+        assertTrue(drift.contains("replacementBlueprint.count=6"));
+        assertTrue(drift.contains("replacementBlueprint.ready.count=5"));
+        assertTrue(drift.contains("replacementBlueprint.blocked.count=1"));
+        assertTrue(drift.contains("replacementBlueprint.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("replacementBlueprint.blueprintImplemented=true"));
+        assertTrue(drift.contains("replacementBlueprint.replacementBuilderImplemented=false"));
+        assertTrue(drift.contains("replacementBlueprint.transformedIrBuilt=false"));
+        assertTrue(drift.contains("replacementBlueprint.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteTransaction.count=6"));
+        assertTrue(drift.contains("rewriteTransaction.ready.count=5"));
+        assertTrue(drift.contains("rewriteTransaction.blocked.count=1"));
+        assertTrue(drift.contains("rewriteTransaction.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteTransaction.transactionPreflightImplemented=true"));
+        assertTrue(drift.contains("rewriteTransaction.nodeIdAllocatorImplemented=false"));
+        assertTrue(drift.contains("rewriteTransaction.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("rewriteTransaction.transformedIrBuilt=false"));
+        assertTrue(drift.contains("rewriteTransaction.selectedIrReplacement=false"));
+        assertTrue(drift.contains("nodeIdAllocation.count=6"));
+        assertTrue(drift.contains("nodeIdAllocation.ready.count=5"));
+        assertTrue(drift.contains("nodeIdAllocation.blocked.count=1"));
+        assertTrue(drift.contains("nodeIdAllocation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("nodeIdAllocation.allocationPreflightImplemented=true"));
+        assertTrue(drift.contains("nodeIdAllocation.nodeIdsReserved=false"));
+        assertTrue(drift.contains("nodeIdAllocation.nodeIdAllocatorApplied=false"));
+        assertTrue(drift.contains("nodeIdAllocation.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("nodeIdAllocation.transformedIrBuilt=false"));
+        assertTrue(drift.contains("nodeIdAllocation.selectedIrReplacement=false"));
+        assertTrue(drift.contains("replacementNode.count=6"));
+        assertTrue(drift.contains("replacementNode.ready.count=5"));
+        assertTrue(drift.contains("replacementNode.blocked.count=1"));
+        assertTrue(drift.contains("replacementNode.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("replacementNode.replacementNodePreflightImplemented=true"));
+        assertTrue(drift.contains("replacementNode.replacementNodeBuilt=false"));
+        assertTrue(drift.contains("replacementNode.replacementBuilderImplemented=false"));
+        assertTrue(drift.contains("replacementNode.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("replacementNode.transformedIrBuilt=false"));
+        assertTrue(drift.contains("replacementNode.selectedIrReplacement=false"));
+        assertTrue(drift.contains("graphPatch.count=6"));
+        assertTrue(drift.contains("graphPatch.ready.count=5"));
+        assertTrue(drift.contains("graphPatch.blocked.count=1"));
+        assertTrue(drift.contains("graphPatch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("graphPatch.graphPatchPreflightImplemented=true"));
+        assertTrue(drift.contains("graphPatch.graphPatchApplied=false"));
+        assertTrue(drift.contains("graphPatch.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("graphPatch.transformedIrBuilt=false"));
+        assertTrue(drift.contains("graphPatch.selectedIrReplacement=false"));
+        assertTrue(drift.contains("transformedGraph.count=6"));
+        assertTrue(drift.contains("transformedGraph.ready.count=5"));
+        assertTrue(drift.contains("transformedGraph.blocked.count=1"));
+        assertTrue(drift.contains("transformedGraph.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("transformedGraph.materializationPreflightImplemented=true"));
+        assertTrue(drift.contains("transformedGraph.transformedGraphBuilt=false"));
+        assertTrue(drift.contains("transformedGraph.transformedIrBuilt=false"));
+        assertTrue(drift.contains("transformedGraph.graphPatchApplied=false"));
+        assertTrue(drift.contains("transformedGraph.graphRewriteImplemented=false"));
+        assertTrue(drift.contains("transformedGraph.selectedIrReplacement=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.count=6"));
+        assertTrue(drift.contains("irArtifactEnvelope.ready.count=5"));
+        assertTrue(drift.contains("irArtifactEnvelope.blocked.count=1"));
+        assertTrue(drift.contains("irArtifactEnvelope.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("irArtifactEnvelope.artifactEnvelopePreflightImplemented=true"));
+        assertTrue(drift.contains("irArtifactEnvelope.artifactEnvelopeBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.optimizedArtifactBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.transformedGraphBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.transformedIrBuilt=false"));
+        assertTrue(drift.contains("irArtifactEnvelope.selectedIrReplacement=false"));
+        assertTrue(drift.contains("artifactProofBinding.count=6"));
+        assertTrue(drift.contains("artifactProofBinding.ready.count=0"));
+        assertTrue(drift.contains("artifactProofBinding.blocked.count=6"));
+        assertTrue(drift.contains("artifactProofBinding.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactProofBinding.bindingPreflightImplemented=true"));
+        assertTrue(drift.contains("artifactProofBinding.proofBound=false"));
+        assertTrue(drift.contains("artifactProofBinding.rollbackBound=false"));
+        assertTrue(drift.contains("artifactProofBinding.approvalBound=false"));
+        assertTrue(drift.contains("artifactProofBinding.optimizedArtifactBuilt=false"));
+        assertTrue(drift.contains("artifactProofBinding.selectedIrReplacement=false"));
+        assertTrue(drift.contains("artifactSelection.count=6"));
+        assertTrue(drift.contains("artifactSelection.ready.count=0"));
+        assertTrue(drift.contains("artifactSelection.blocked.count=6"));
+        assertTrue(drift.contains("artifactSelection.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactSelection.selectionPreflightImplemented=true"));
+        assertTrue(drift.contains("artifactSelection.productionGateRequired=true"));
+        assertTrue(drift.contains("artifactSelection.productionGateAccepted=false"));
+        assertTrue(drift.contains("artifactSelection.selectionApplied=false"));
+        assertTrue(drift.contains("artifactSelection.optimizedArtifactSelected=false"));
+        assertTrue(drift.contains("artifactSelection.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteSketch.count=6"));
+        assertTrue(drift.contains("rewriteSketch.ready.count=5"));
+        assertTrue(drift.contains("rewriteSketch.blocked.count=1"));
+        assertTrue(drift.contains("rewriteSketch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteSketch.rewriteBuilderImplemented=false"));
+        assertTrue(drift.contains("rewriteSketch.mutationAllowed=false"));
+        assertTrue(drift.contains("rewriteSketch.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteSketch.conflict.count=1"));
+        assertTrue(drift.contains("rewriteSketch.conflict.firstBlocker=rewrite-sketch-covered-node-overlap"));
+        assertTrue(drift.contains("rewriteSketch.conflict.conflictResolutionImplemented=false"));
+        assertTrue(drift.contains("rewriteSketch.conflict.selectionApplied=false"));
+        assertTrue(drift.contains("rewriteSelection.sketch.count=6"));
+        assertTrue(drift.contains("rewriteSelection.sketch.ready.count=5"));
+        assertTrue(drift.contains("rewriteSelection.sketch.blocked.count=1"));
+        assertTrue(drift.contains("rewriteSelection.conflict.count=1"));
+        assertTrue(drift.contains("rewriteSelection.status=blocked"));
+        assertTrue(drift.contains("rewriteSelection.firstBlocker=rewrite-sketch-conflict-resolution-required"));
+        assertTrue(drift.contains("rewriteSelection.rewriteBuilderImplemented=false"));
+        assertTrue(drift.contains("rewriteSelection.conflictResolutionImplemented=false"));
+        assertTrue(drift.contains("rewriteSelection.runtimeEquivalenceRequired=true"));
+        assertTrue(drift.contains("rewriteSelection.runtimeEquivalenceProven=false"));
+        assertTrue(drift.contains("rewriteSelection.approvalRequired=true"));
+        assertTrue(drift.contains("rewriteSelection.approvalAccepted=false"));
+        assertTrue(drift.contains("rewriteSelection.mutationAllowed=false"));
+        assertTrue(drift.contains("rewriteSelection.selectionApplied=false"));
+        assertTrue(drift.contains("rewriteSelection.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteProof.status=blocked"));
+        assertTrue(drift.contains("rewriteProof.firstBlocker=rewrite-sketch-conflict-resolution-required"));
+        assertTrue(drift.contains("rewriteProof.proofAccepted=false"));
+        assertTrue(drift.contains("rewriteProof.runtimeEquivalencePayload.present=false"));
+        assertTrue(drift.contains("rewriteProof.runtimeEquivalencePayload.complete=false"));
+        assertTrue(drift.contains("rewriteProof.rollbackEvidence.present=false"));
+        assertTrue(drift.contains("rewriteProof.rollbackClean=false"));
+        assertTrue(drift.contains("rewriteProof.approvalAccepted=false"));
+        assertTrue(drift.contains("rewriteProof.mutationAllowed=false"));
+        assertTrue(drift.contains("rewriteProof.selectedIrReplacement=false"));
+        assertTrue(drift.contains("rewriteReviewPackage.status=blocked"));
+        assertTrue(drift.contains("rewriteReviewPackage.firstBlocker=rewrite-sketch-conflict-resolution-required"));
+        assertTrue(drift.contains("rewriteReviewPackage.complete=false"));
+        assertTrue(drift.contains("rewriteReviewPackage.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.id=madFma"));
+        assertTrue(drift.contains("optimizerRule.0.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.invalid.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementPlan.validation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteVisitor.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.replacementBlueprint.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteTransaction.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.nodeIdsReserved=false"));
+        assertTrue(drift.contains("optimizerRule.0.nodeIdAllocation.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.replacementNodeBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.replacementNode.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.graphPatchApplied=false"));
+        assertTrue(drift.contains("optimizerRule.0.graphPatch.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.transformedGraphBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.transformedGraph.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.artifactEnvelopeBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.optimizedArtifactBuilt=false"));
+        assertTrue(drift.contains("optimizerRule.0.irArtifactEnvelope.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.ready.count=0"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.blocked.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.proofBound=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactProofBinding.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.ready.count=0"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.blocked.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.selectionApplied=false"));
+        assertTrue(drift.contains("optimizerRule.0.artifactSelection.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.count=3"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.ready.count=2"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.blocked.count=1"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSketch.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSelection.status=blocked"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteSelection.firstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.status=blocked"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.firstBlocker=runtime-equivalence-payload-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.proofAccepted=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteProof.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.status=blocked"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.firstBlocker=runtime-equivalence-payload-missing"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.complete=false"));
+        assertTrue(drift.contains("optimizerRule.0.rewriteReviewPackage.selectedIrReplacement=false"));
+        assertTrue(drift.contains("optimizerRule.0.firstBlocker=multiply-operands-incomplete"));
+        assertTrue(drift.contains("optimizerRule.1.id=clamp"));
+        assertTrue(drift.contains("optimizerRule.1.skipped.count=1"));
+        assertTrue(drift.contains("optimizerRule.summary=madFma[candidates=2, proposals=0, applied=0, skipped=0, blocked=1"));
+        assertTrue(drift.contains("planValidations=3, invalidPlanValidations=1, planValidationFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("replacementNodes=3, readyReplacementNodes=2, blockedReplacementNodes=1, replacementNodeFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("graphPatches=3, readyGraphPatches=2, blockedGraphPatches=1, graphPatchFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("transformedGraphs=3, readyTransformedGraphs=2, blockedTransformedGraphs=1, transformedGraphFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("irArtifactEnvelopes=3, readyIrArtifactEnvelopes=2, blockedIrArtifactEnvelopes=1, irArtifactEnvelopeFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactProofBindings=3, readyArtifactProofBindings=0, blockedArtifactProofBindings=3, artifactProofBindingFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("artifactSelections=3, readyArtifactSelections=0, blockedArtifactSelections=3, artifactSelectionFirstBlocker=replacement-plan-root-missing"));
+        assertTrue(drift.contains("rewriteSketches=3, readySketches=2, blockedSketches=1, rewriteSketchFirstBlocker=replacement-plan-root-missing, rewriteSelectionStatus=blocked, rewriteSelectionFirstBlocker=replacement-plan-root-missing, rewriteProofStatus=blocked, rewriteProofFirstBlocker=runtime-equivalence-payload-missing"));
+        assertTrue(drift.contains("optimizerFamily.count=1"));
+        assertTrue(drift.contains("optimizerFamily.summary=peephole[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]"));
+        assertTrue(drift.contains("selectedRuntimeIrStage=original"));
+        assertTrue(drift.contains("optimizedIrRejected=false"));
+    }
+
+    @Test
+    void dumpsRuntimeIrOptimizerEvidenceArtifactForProposalBridgeReports() {
+        IrGpuArtifact original = artifact("body\n  return original\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport noOpReport = GpuRuntimeIrOptimizationPassReport.skipped(
+                "javatogpu.ir-optimizer.noop:1",
+                "irgpu:sha256:original",
+                "no-op proposal provider keeps original IR selected"
+        ).withStage(GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY)
+                .withProofArtifact(GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer",
+                        "not-mutating",
+                        Map.of("provider", "noop")
+                ));
+        GpuRuntimeIrOptimizationPassReport canonicalizationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.text-canonicalization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:canonical",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.text-canonicalization",
+                        "semantics-neutral-text-normalization",
+                        Map.ofEntries(
+                                Map.entry("changedMethodBodies", "1"),
+                                Map.entry("mutationRequired", "false"),
+                                Map.entry("normalizations", "crlf-to-lf,trailing-whitespace"),
+                                Map.entry("optimizedArtifactCandidate.status", "candidate-ready"),
+                                Map.entry("optimizedArtifactCandidate.candidateBuilt", "true"),
+                                Map.entry("optimizedArtifactCandidate.optimizedValidationPassed", "true"),
+                                Map.entry("optimizedArtifactCandidate.proofPresent", "true"),
+                                Map.entry("optimizedArtifactCandidate.rollbackRequired", "true"),
+                                Map.entry("optimizedArtifactCandidate.mutationAllowed", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionReady", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionApplied", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectedIrReplacement", "false"),
+                                Map.entry("optimizedArtifactCandidate.firstBlocker", "none"),
+                                Map.entry("optimizedArtifactCandidate.selectionFirstBlocker", "mutation-disabled")
+                        )
+                ),
+                List.of("optimized artifact validated but mutation is disabled; original IR remains selected")
+        );
+        GpuRuntimeIrOptimizationPassReport previewReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.constant-folding-preview:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:original",
+                "not-mutating",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.constant-folding-preview",
+                        "preview-candidates-recorded",
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("previewOnly", "true"),
+                                Map.entry("rewrite.proposed", "false"),
+                                Map.entry("skipped.nonPlainLiteral.count", "2"),
+                                Map.entry("skipped.divideByZero.count", "1"),
+                                Map.entry("skipped.nonEvenDivision.count", "1"),
+                                Map.entry("skipped.unsupportedOperator.count", "1"),
+                                Map.entry("skipped.nonLiteralOperand.count", "1"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeRewrite", "true"),
+                                Map.entry("proof.approvalRequiredBeforeRewrite", "true"),
+                                Map.entry("safety.integerOverflowProven", "false"),
+                                Map.entry("safety.floatingPointRoundingProven", "false")
+                        )
+                ),
+                List.of("constant folding preview recorded evidence; no rewrite was proposed")
+        );
+        GpuRuntimeIrOptimizationPassReport unrelatedReport = GpuRuntimeIrOptimizationPassReport.applied(
+                "optimizer:other",
+                "irgpu:sha256:original",
+                "irgpu:sha256:other",
+                "proof:other",
+                List.of("unrelated optimizer evidence")
+        );
+        GpuRuntimeIrOptimizationPassReport safeLocalCsePreviewReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.safe-local-cse-preview:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:original",
+                "not-mutating",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.safe-local-cse-preview",
+                        "preview-candidates-recorded",
+                        Map.ofEntries(
+                                Map.entry("expression.count", "5"),
+                                Map.entry("candidateExpression.count", "3"),
+                                Map.entry("duplicateExpression.count", "2"),
+                                Map.entry("equivalenceClass.count", "1"),
+                                Map.entry("blocked.unsupportedOperator.count", "1"),
+                                Map.entry("blocked.impureOperand.count", "2"),
+                                Map.entry("blocked.controlFlowBoundary.count", "3"),
+                                Map.entry("previewOnly", "true"),
+                                Map.entry("rewrite.proposed", "false"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeRewrite", "true"),
+                                Map.entry("proof.approvalRequiredBeforeRewrite", "true"),
+                                Map.entry("safety.dominanceProven", "false"),
+                                Map.entry("safety.sideEffectFreedomProven", "false")
+                        )
+                ),
+                List.of("safe local CSE preview recorded evidence; no rewrite was proposed")
+        );
+        GpuRuntimeIrOptimizationPassReport typedDeadCodePreviewReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.typed-dead-code-preview:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:original",
+                "not-mutating",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.typed-dead-code-preview",
+                        "preview-candidates-recorded",
+                        Map.ofEntries(
+                                Map.entry("node.count", "8"),
+                                Map.entry("reachableNode.count", "5"),
+                                Map.entry("unreachableNode.count", "3"),
+                                Map.entry("blocked.missingRoot.count", "1"),
+                                Map.entry("blocked.missingChildReference.count", "2"),
+                                Map.entry("blocked.sideEffectingUnreachableNode.count", "1"),
+                                Map.entry("previewOnly", "true"),
+                                Map.entry("rewrite.proposed", "false"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeRewrite", "true"),
+                                Map.entry("proof.approvalRequiredBeforeRewrite", "true"),
+                                Map.entry("safety.sideEffectFreedomProven", "false")
+                        )
+                ),
+                List.of("typed dead-code preview recorded evidence; no rewrite was proposed")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(noOpReport, canonicalizationReport, previewReport, safeLocalCsePreviewReport,
+                        typedDeadCodePreviewReport, unrelatedReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT));
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        assertTrue(evidence.contains("status=recorded"));
+        assertTrue(evidence.contains("source=runtime-ir-optimizer"));
+        assertTrue(evidence.contains("providerPrefix=javatogpu.ir-optimizer"));
+        assertTrue(evidence.contains("pass.count=5"));
+        assertTrue(evidence.contains("skipped.count=5"));
+        assertTrue(evidence.contains("applied.count=0"));
+        assertTrue(evidence.contains("proposalOnly.count=1"));
+        assertTrue(evidence.contains("selectedOptimized.count=0"));
+        assertTrue(evidence.contains("approvalTemplate.pending.count=1"));
+        assertTrue(evidence.contains("approvalTemplate.notApplicable.count=4"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadRequired.count=0"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadPresent.count=0"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadPassed.count=0"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadComplete.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.status=candidate-ready"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.count=1"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.ready.count=1"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.blocked.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionReady.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.mutationAllowed.count=0"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.firstBlocker=none"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionFirstBlocker=mutation-disabled"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement=false"));
+        assertTrue(evidence.contains("constantFoldingPreview.pass.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.candidate.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.nonPlainLiteral.count=2"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.divideByZero.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.nonEvenDivision.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.unsupportedOperator.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.skipped.nonLiteralOperand.count=1"));
+        assertTrue(evidence.contains("constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("constantFoldingPreview.approvalRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("constantFoldingPreview.integerOverflowProven=false"));
+        assertTrue(evidence.contains("constantFoldingPreview.floatingPointRoundingProven=false"));
+        assertTrue(evidence.contains("safeLocalCsePreview.pass.count=1"));
+        assertTrue(evidence.contains("safeLocalCsePreview.expression.count=5"));
+        assertTrue(evidence.contains("safeLocalCsePreview.candidateExpression.count=3"));
+        assertTrue(evidence.contains("safeLocalCsePreview.duplicateExpression.count=2"));
+        assertTrue(evidence.contains("safeLocalCsePreview.equivalenceClass.count=1"));
+        assertTrue(evidence.contains("safeLocalCsePreview.blocked.unsupportedOperator.count=1"));
+        assertTrue(evidence.contains("safeLocalCsePreview.blocked.impureOperand.count=2"));
+        assertTrue(evidence.contains("safeLocalCsePreview.blocked.controlFlowBoundary.count=3"));
+        assertTrue(evidence.contains("safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("safeLocalCsePreview.approvalRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("safeLocalCsePreview.dominanceProven=false"));
+        assertTrue(evidence.contains("safeLocalCsePreview.sideEffectFreedomProven=false"));
+        assertTrue(evidence.contains("typedDeadCodePreview.pass.count=1"));
+        assertTrue(evidence.contains("typedDeadCodePreview.node.count=8"));
+        assertTrue(evidence.contains("typedDeadCodePreview.reachableNode.count=5"));
+        assertTrue(evidence.contains("typedDeadCodePreview.unreachableNode.count=3"));
+        assertTrue(evidence.contains("typedDeadCodePreview.blocked.missingRoot.count=1"));
+        assertTrue(evidence.contains("typedDeadCodePreview.blocked.missingChildReference.count=2"));
+        assertTrue(evidence.contains("typedDeadCodePreview.blocked.sideEffectingUnreachableNode.count=1"));
+        assertTrue(evidence.contains("typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("typedDeadCodePreview.approvalRequiredBeforeRewrite=true"));
+        assertTrue(evidence.contains("typedDeadCodePreview.sideEffectFreedomProven=false"));
+        assertTrue(evidence.contains("previewReadiness.status=blocked-by-proof"));
+        assertTrue(evidence.contains("previewReadiness.family.count=3"));
+        assertTrue(evidence.contains("previewReadiness.candidateFamily.count=3"));
+        assertTrue(evidence.contains("previewReadiness.blockedFamily.count=3"));
+        assertTrue(evidence.contains("previewReadiness.familySummary=constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=blocked"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=false"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.required=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=preview-readiness-blocked-by-proof"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.familySummary=constant-folding=blocked-by-proof, "
+                        + "safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof, "
+                        + "constant-folding-materialization=not-recorded, "
+                        + "safe-local-cse-materialization=not-recorded, "
+                        + "mad-fma-materialization=not-recorded, "
+                        + "clamp-materialization=not-recorded, "
+                        + "step-materialization=not-recorded, "
+                        + "mix-materialization=not-recorded, "
+                        + "loop-vectorization-materialization=not-recorded, "
+                        + "typed-dead-code-materialization=not-recorded"
+        ));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.productionMutation=disabled"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.selectedIrReplacement=disabled"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.manualReviewOnly=true"));
+        assertTrue(evidence.contains("reviewPackage.status=pending-manual-review"));
+        assertTrue(evidence.contains("reviewPackage.required=true"));
+        assertTrue(evidence.contains("reviewPackage.complete=false"));
+        assertTrue(evidence.contains("reviewPackage.firstBlocker=preview-readiness-blocked-by-proof"));
+        assertTrue(evidence.contains("reviewPackage.proposalPass.count=1"));
+        assertTrue(evidence.contains("reviewPackage.pendingApproval.count=1"));
+        assertTrue(evidence.contains("reviewPackage.runtimeEquivalence.status=blocked"));
+        assertTrue(evidence.contains("reviewPackage.originalIrRequired=true"));
+        assertTrue(evidence.contains("reviewPackage.optimizedIrRequired=true"));
+        assertTrue(evidence.contains("reviewPackage.proofSummaryRequired=true"));
+        assertTrue(evidence.contains("reviewPackage.manualReviewOnly=true"));
+        assertTrue(evidence.contains("reviewPackage.productionMutation=disabled"));
+        assertTrue(evidence.contains("reviewPackage.selectedIrReplacement=disabled"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.status=pending-resource-path"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.required=true"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.present.count=0"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.accepted.count=0"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.firstBlocker=approval-manifest-resource-path-missing"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.resourcePath.summary=none"));
+        assertTrue(evidence.contains("pass.0.passVersion=javatogpu.ir-optimizer.noop:1"));
+        assertTrue(evidence.contains("pass.1.passVersion=javatogpu.ir-optimizer.text-canonicalization:1"));
+        assertTrue(evidence.contains("pass.2.passVersion=javatogpu.ir-optimizer.constant-folding-preview:1"));
+        assertTrue(evidence.contains("pass.3.passVersion=javatogpu.ir-optimizer.safe-local-cse-preview:1"));
+        assertTrue(evidence.contains("pass.4.passVersion=javatogpu.ir-optimizer.typed-dead-code-preview:1"));
+        assertTrue(evidence.contains("pass.1.proofStatus=proposal-only"));
+        assertTrue(evidence.contains("pass.1.transformedIrIdentity=irgpu:sha256:canonical"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.source=ir-optimizer.text-canonicalization"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.changedMethodBodies=1"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.mutationRequired=false"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.optimizedArtifactCandidate.status=candidate-ready"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("pass.1.proofArtifact.field.optimizedArtifactCandidate.selectedIrReplacement=false"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.1.approvalTemplate.status=pending"));
+        assertTrue(evidence.contains("pass.1.approvalTemplate.applicable=true"));
+        assertTrue(evidence.contains("pass.1.approvalTemplate.resourceDirectory=META-INF/javatogpu/ir-optimization-approvals/"));
+        assertTrue(evidence.contains("pass.2.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.2.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.2.proofArtifact.field.previewOnly=true"));
+        assertTrue(evidence.contains("pass.3.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.3.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.3.proofArtifact.field.duplicateExpression.count=2"));
+        assertTrue(evidence.contains("pass.4.approvalTemplate.status=not-applicable"));
+        assertTrue(evidence.contains("pass.4.approvalTemplate.firstBlocker=proposal-decision-not-proposed"));
+        assertTrue(evidence.contains("pass.4.proofArtifact.field.unreachableNode.count=3"));
+        assertFalse(evidence.contains("optimizer:other"));
+    }
+
+    @Test
+    void dumpsBackendNeutralSourceMaterializationEvidenceWithoutSelectingOptimizedIr() {
+        IrGpuArtifact original = artifact("body\n  set output[0] = 1\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.backend-neutral-source-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:backend-neutral-ready",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.backend-neutral-source-materialization",
+                        "review-only-source-materialized",
+                        Map.ofEntries(
+                                Map.entry("backendTarget", "OPENCL"),
+                                Map.entry("optimizerFamily", "backend-neutral-source-materialization"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("sourceGenerated", "true"),
+                                Map.entry("sourceReady", "true"),
+                                Map.entry("sourceLength", "123"),
+                                Map.entry("materializationOnly", "true"),
+                                Map.entry("mutationRequired", "false"),
+                                Map.entry("productionAffecting", "false"),
+                                Map.entry("provider.mutatesOriginal", "false"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("optimizedArtifactCandidate.status", "candidate-ready"),
+                                Map.entry("optimizedArtifactCandidate.candidateBuilt", "true"),
+                                Map.entry("optimizedArtifactCandidate.optimizedValidationPassed", "true"),
+                                Map.entry("optimizedArtifactCandidate.proofPresent", "true"),
+                                Map.entry("optimizedArtifactCandidate.rollbackRequired", "true"),
+                                Map.entry("optimizedArtifactCandidate.mutationAllowed", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionReady", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionApplied", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectedIrReplacement", "false"),
+                                Map.entry("optimizedArtifactCandidate.firstBlocker", "none"),
+                                Map.entry("optimizedArtifactCandidate.selectionFirstBlocker", "mutation-disabled")
+                        )
+                ),
+                List.of("materialized backend-neutral source metadata for review")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:source-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+
+        assertTrue(evidence.contains("proposalOnly.count=1"));
+        assertTrue(evidence.contains("selectedOptimized.count=0"));
+        assertTrue(evidence.contains("backendNeutralSourceMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("backendNeutralSourceMaterialization.candidate.count=1"));
+        assertTrue(evidence.contains("backendNeutralSourceMaterialization.sourceReady.count=1"));
+        assertTrue(evidence.contains("backendNeutralSourceMaterialization.sourceLength.total=123"));
+        assertTrue(evidence.contains("backendNeutralSourceMaterialization.materializationOnly.count=1"));
+        assertTrue(evidence.contains("backendNeutralSourceMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("backendNeutralSourceMaterialization.firstBlocker=none"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.required=false"));
+        assertTrue(evidence.contains("reviewPackage.status=pending-manual-review"));
+        assertTrue(evidence.contains("reviewPackage.firstBlocker=approval-template-pending"));
+        assertTrue(evidence.contains("reviewPackage.pendingApproval.count=1"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement=false"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.status=pending"));
+        assertTrue(evidence.contains("pass.0.proofArtifact.field.productionAffecting=false"));
+    }
+
+    @Test
+    void dumpsConstantFoldingMaterializationRuntimeEquivalenceReviewEvidence() {
+        IrGpuArtifact original = artifact("body\n  set output[0] = (2 + 3)\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.constant-folding-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:folded",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.constant-folding-materialization",
+                        "review-only-constant-folding-materialized",
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("transformedNode.count", "1"),
+                                Map.entry("literalRewrite.count", "1"),
+                                Map.entry("identityRewrite.count", "0"),
+                                Map.entry("fixedPoint.pass.count", "2"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("bodyTextReplacement.count", "1"),
+                                Map.entry("skipped.divideByZero.count", "1"),
+                                Map.entry("skipped.nonEvenDivision.count", "2"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "constant-folding-materialization"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "false"),
+                                Map.entry("runtimeEquivalencePayload.passed", "false"),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.firstBlocker",
+                                        "runtime-equivalence-payload-not-recorded"
+                                ),
+                                Map.entry("optimizedArtifactCandidate.status", "candidate-ready"),
+                                Map.entry("optimizedArtifactCandidate.candidateBuilt", "true"),
+                                Map.entry("optimizedArtifactCandidate.optimizedValidationPassed", "true"),
+                                Map.entry("optimizedArtifactCandidate.proofPresent", "true"),
+                                Map.entry("optimizedArtifactCandidate.rollbackRequired", "true"),
+                                Map.entry("optimizedArtifactCandidate.mutationAllowed", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionReady", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionApplied", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectedIrReplacement", "false"),
+                                Map.entry("optimizedArtifactCandidate.firstBlocker", "none"),
+                                Map.entry("optimizedArtifactCandidate.selectionFirstBlocker", "mutation-disabled")
+                        )
+                ),
+                List.of("materialized one constant-folding review candidate")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:cf-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        String evidence = GpuRuntimeCompileArtifactDumper.dump(snapshot)
+                .artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+
+        assertTrue(evidence.contains("constantFoldingMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.transformedNode.count=1"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.literalRewrite.count=1"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.identityRewrite.count=0"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.fixedPointPass.count=2"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.skipped.divideByZero.count=1"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.skipped.nonEvenDivision.count=2"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.runtimeEquivalencePayloadRequired=true"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.runtimeEquivalencePayloadPresent.count=0"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.runtimeEquivalencePassed.count=0"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.status=pending-runtime-equivalence"));
+        assertTrue(evidence.contains(
+                "constantFoldingMaterialization.firstBlocker=runtime-equivalence-payload-not-recorded"
+        ));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.required=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=false"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.firstBlocker=runtime-equivalence-payload-not-recorded"
+        ));
+        assertTrue(evidence.contains("reviewPackage.status=pending-manual-review"));
+        assertTrue(evidence.contains("reviewPackage.pendingApproval.count=1"));
+        assertTrue(evidence.contains("reviewPackage.firstBlocker=runtime-equivalence-payload-not-recorded"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.status=pending-resource-path"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.required=true"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.firstBlocker=approval-manifest-resource-path-missing"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadRequired.count=1"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadPresent.count=0"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadPassed.count=0"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadComplete.count=0"));
+        assertTrue(evidence.contains("pass.0.proofArtifact.field.runtimeEquivalencePayload.present=false"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.status=pending"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.required=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.present=false"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.componentsComplete=false"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.comparisonMode=missing"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.resourcePath=missing"));
+    }
+
+    @Test
+    void dumpsConstantFoldingMaterializationReviewReadyRuntimeEquivalencePayload() {
+        IrGpuArtifact original = artifact("body\n  set output[0] = (2 + 3)\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.constant-folding-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:folded",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.constant-folding-materialization",
+                        "accepted",
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("transformedNode.count", "1"),
+                                Map.entry("literalRewrite.count", "1"),
+                                Map.entry("identityRewrite.count", "0"),
+                                Map.entry("fixedPoint.pass.count", "1"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("bodyTextReplacement.count", "1"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "constant-folding-materialization"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.status", "recorded"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                                Map.entry("runtimeEquivalencePayload.firstBlocker", "none"),
+                                Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.failureFixture.present", "true"),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.resource",
+                                        "ir-optimizer://constant-folding-materialization/review-candidate"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.comparisonMode",
+                                        "optimizer-family:constant-folding-materialization:review-candidate"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.cpuReference.resource",
+                                        "ir-optimizer://constant-folding-materialization/review-candidate/cpu-reference"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.preOptimizationOutput.resource",
+                                        "ir-optimizer://constant-folding-materialization/review-candidate/pre-optimization"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.postOptimizationOutput.resource",
+                                        "ir-optimizer://constant-folding-materialization/review-candidate/post-optimization"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.tolerance.resource",
+                                        "ir-optimizer://constant-folding-materialization/review-candidate/tolerance"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.failureFixture.resource",
+                                        "ir-optimizer://constant-folding-materialization/review-candidate/failure-fixture"
+                                ),
+                                Map.entry("runtimeEquivalencePayload.CpuReference", "folds=1, mode=static-exact-int32, first=5"),
+                                Map.entry("runtimeEquivalencePayload.PreOptimizationOutput", "expressions=1, first=(2 + 3)"),
+                                Map.entry("runtimeEquivalencePayload.PostOptimizationOutput", "foldedValues=1, first=5"),
+                                Map.entry("runtimeEquivalencePayload.Tolerance", "mode=exact-int32, overflow=false"),
+                                Map.entry("runtimeEquivalencePayload.FailureFixture", "none"),
+                                Map.entry("runtimeEquivalencePayload.Case.Count", "1"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Name", "kernel#1=2+3->5"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Successful", "true"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.CpuReference", "5"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PreOptimization", "(2 + 3)"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PostOptimization", "5"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Tolerance", "exact-int32"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Equivalent", "true"),
+                                Map.entry("optimizedArtifactCandidate.status", "candidate-ready"),
+                                Map.entry("optimizedArtifactCandidate.candidateBuilt", "true"),
+                                Map.entry("optimizedArtifactCandidate.optimizedValidationPassed", "true"),
+                                Map.entry("optimizedArtifactCandidate.proofPresent", "true"),
+                                Map.entry("optimizedArtifactCandidate.rollbackRequired", "true"),
+                                Map.entry("optimizedArtifactCandidate.mutationAllowed", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionReady", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionApplied", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectedIrReplacement", "false"),
+                                Map.entry("optimizedArtifactCandidate.firstBlocker", "none"),
+                                Map.entry("optimizedArtifactCandidate.selectionFirstBlocker", "mutation-disabled")
+                        )
+                ),
+                List.of("materialized one constant-folding review candidate with exact-int payload")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:cf-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport,
+                GpuRuntimeEquivalenceEvidence.passed(request, 1, 1, List.of("constant folding payload matched"))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        String payload = dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD);
+
+        assertTrue(evidence.contains("constantFoldingMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.literalRewrite.count=1"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.identityRewrite.count=0"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("constantFoldingMaterialization.firstBlocker=none"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=review-ready"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=none"));
+        assertTrue(evidence.contains("reviewPackage.status=pending-manual-review"));
+        assertTrue(evidence.contains("reviewPackage.firstBlocker=approval-template-pending"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.status=pending-resource-path"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.required=true"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.accepted.count=0"));
+        assertTrue(evidence.contains("reviewPackage.approvalManifest.firstBlocker=approval-manifest-resource-path-missing"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadRequired.count=1"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadPassed.count=1"));
+        assertTrue(evidence.contains("approvalTemplate.runtimeEquivalencePayloadComplete.count=1"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.status=pending"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.required=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.present=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.passed=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.componentsComplete=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.caseCount=1"));
+        assertTrue(evidence.contains(
+                "pass.0.approvalTemplate.field.runtimeEquivalencePayload.resource=ir-optimizer://constant-folding-materialization/review-candidate"
+        ));
+        assertTrue(evidence.contains(
+                "pass.0.approvalTemplate.field.runtimeEquivalencePayload.comparisonMode=optimizer-family:constant-folding-materialization:review-candidate"
+        ));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.resourcePath=missing"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectionApplied=false"));
+        assertTrue(evidence.contains("optimizedArtifactCandidate.selectedIrReplacement=false"));
+        assertTrue(payload.contains("family.0.name=constant-folding-materialization"));
+        assertTrue(payload.contains("family.0.complete=true"));
+        assertTrue(payload.contains("family.0.firstMissing=none"));
+        assertTrue(payload.contains("family.0.pass.0.cpuReference.payload=folds=1, mode=static-exact-int32, first=5"));
+        assertTrue(payload.contains("family.0.pass.0.postOptimizationOutput.payload=foldedValues=1, first=5"));
+        String familyDirectory = "runtime-optimizer-family-equivalence-payload/family-0-constant-folding-materialization/pass-0";
+        assertTrue(dump.hasArtifact(familyDirectory + "/cpu-reference.properties"));
+        assertTrue(dump.artifact(familyDirectory + "/cpu-reference.properties").contains(
+                "runtimeEquivalencePayload.Case.0.Output.0.CpuReference"
+        ));
+        assertTrue(dump.artifact(familyDirectory + "/post-optimization-output.properties").contains(
+                "runtimeEquivalencePayload.Case.0.Output.0.PostOptimization"
+        ));
+        assertTrue(dump.artifact(familyDirectory + "/tolerance.properties").contains(
+                "runtimeEquivalencePayload.Case.0.Output.0.Tolerance"
+        ));
+        assertTrue(dump.artifact(familyDirectory + "/failure-fixture.properties").contains("payload=none"));
+    }
+
+    @Test
+    void dumpsSafeLocalCseMaterializationReviewReadyRuntimeEquivalencePayload() {
+        IrGpuArtifact original = artifact("body\n  var int tmp = (a + b)\n  set output[0] = (a + b)\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.safe-local-cse-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:safe-local-cse",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.safe-local-cse-materialization",
+                        "review-only-safe-local-cse-materialized",
+                        Map.ofEntries(
+                                Map.entry("localBinding.count", "1"),
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("transformedNode.count", "1"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("bodyTextReplacement.count", "1"),
+                                Map.entry("fixedPoint.pass.count", "1"),
+                                Map.entry("skipped.controlFlowBoundary.count", "0"),
+                                Map.entry("skipped.unsupportedOperator.count", "0"),
+                                Map.entry("skipped.impureOperand.count", "0"),
+                                Map.entry("skipped.bodyTextPatternMissing.count", "0"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "safe-local-cse-materialization"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.status", "recorded"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                                Map.entry("runtimeEquivalencePayload.firstBlocker", "none"),
+                                Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.failureFixture.present", "true"),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.resource",
+                                        "ir-optimizer://safe-local-cse-materialization/review-candidate"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.comparisonMode",
+                                        "optimizer-family:safe-local-cse-materialization:review-candidate"
+                                ),
+                                Map.entry("runtimeEquivalencePayload.CpuReference", "reuseExistingLocal=1"),
+                                Map.entry("runtimeEquivalencePayload.PreOptimizationOutput", "expressions=1, first=(a + b)"),
+                                Map.entry("runtimeEquivalencePayload.PostOptimizationOutput", "localRefs=1, first=tmp"),
+                                Map.entry("runtimeEquivalencePayload.Tolerance", "mode=exact-expression-reuse, floatingPoint=unchanged"),
+                                Map.entry("runtimeEquivalencePayload.FailureFixture", "none"),
+                                Map.entry("runtimeEquivalencePayload.ReferenceMode", "static-existing-local-expression-reuse"),
+                                Map.entry("runtimeEquivalencePayload.Case.Count", "1"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Name", "kernel#6=(a + b)->tmp"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.MethodName", "kernel"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.NodeId", "6"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.RewriteKind", "safe-local-cse-reuse-existing-local"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Successful", "true"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.CpuReference", "tmp"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PreOptimization", "(a + b)"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PostOptimization", "tmp"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Tolerance", "exact-expression-reuse"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Equivalent", "true"),
+                                Map.entry("safety.dominanceProven", "true"),
+                                Map.entry("safety.sideEffectFreedomProven", "true"),
+                                Map.entry("firstBlocker", "none")
+                        )
+                ),
+                List.of("materialized safe local CSE review candidate")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:safe-cse-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport,
+                GpuRuntimeEquivalenceEvidence.passed(request, 1, 1, List.of("safe local CSE payload matched"))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        String payload = dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD);
+
+        assertTrue(evidence.contains("safeLocalCseMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.localBinding.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.introducedTemporary.count=0"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.transformedNode.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.bodyTextReplacement.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.fixedPoint.pass.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.dominanceProven=true"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.sideEffectFreedomProven=true"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("safeLocalCseMaterialization.firstBlocker=none"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=review-ready"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=none"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.familySummary=constant-folding=not-recorded, "
+                        + "safe-local-cse=not-recorded, typed-dead-code=not-recorded, "
+                        + "constant-folding-materialization=not-recorded, "
+                        + "safe-local-cse-materialization=review-ready, "
+                        + "mad-fma-materialization=not-recorded, "
+                        + "clamp-materialization=not-recorded, "
+                        + "step-materialization=not-recorded, "
+                        + "mix-materialization=not-recorded, "
+                        + "loop-vectorization-materialization=not-recorded, "
+                        + "typed-dead-code-materialization=not-recorded"
+        ));
+        assertTrue(payload.contains("family.0.name=safe-local-cse-materialization"));
+        assertTrue(payload.contains("family.0.complete=true"));
+        assertTrue(payload.contains("family.0.pass.0.cpuReference.payload=reuseExistingLocal=1"));
+        assertTrue(payload.contains("family.0.pass.0.postOptimizationOutput.payload=localRefs=1, first=tmp"));
+        String familyDirectory = "runtime-optimizer-family-equivalence-payload/family-0-safe-local-cse-materialization/pass-0";
+        assertTrue(dump.hasArtifact(familyDirectory + "/cpu-reference.properties"));
+        assertTrue(dump.artifact(familyDirectory + "/post-optimization-output.properties").contains(
+                "runtimeEquivalencePayload.Case.0.Output.0.PostOptimization"
+        ));
+    }
+
+    @Test
+    void dumpsMadFmaMaterializationRuntimeEquivalenceReviewEvidence() {
+        IrGpuArtifact original = artifact("body\n  set output[0] = ((a * b) + c)\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global float* out) { out[0] = 1.0f; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.mad-fma-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:mad-fma",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.mad-fma-materialization",
+                        "review-only-mad-fma-materialized",
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("transformedNode.count", "1"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("bodyTextReplacement.count", "1"),
+                                Map.entry("fixedPoint.pass.count", "1"),
+                                Map.entry("skipped.fastMathPolicy.count", "0"),
+                                Map.entry("skipped.bodyTextPatternMissing.count", "0"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "mad-fma-materialization"),
+                                Map.entry("targetIntrinsic", "mad"),
+                                Map.entry("policy.fastMathAllowed", "true"),
+                                Map.entry("safety.fastMathAllowed", "true"),
+                                Map.entry("safety.fastMathRequired", "true"),
+                                Map.entry("safety.strictFloatPreserved", "false"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "false"),
+                                Map.entry("runtimeEquivalencePayload.passed", "false"),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.firstBlocker",
+                                        "runtime-equivalence-payload-not-recorded"
+                                ),
+                                Map.entry("optimizedArtifactCandidate.status", "candidate-ready"),
+                                Map.entry("optimizedArtifactCandidate.candidateBuilt", "true"),
+                                Map.entry("optimizedArtifactCandidate.optimizedValidationPassed", "true"),
+                                Map.entry("optimizedArtifactCandidate.proofPresent", "true"),
+                                Map.entry("optimizedArtifactCandidate.rollbackRequired", "true"),
+                                Map.entry("optimizedArtifactCandidate.mutationAllowed", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionReady", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectionApplied", "false"),
+                                Map.entry("optimizedArtifactCandidate.selectedIrReplacement", "false"),
+                                Map.entry("optimizedArtifactCandidate.firstBlocker", "none"),
+                                Map.entry("optimizedArtifactCandidate.selectionFirstBlocker", "mutation-disabled")
+                        )
+                ),
+                List.of("materialized one mad/fma review candidate")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:mad-fma-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        String evidence = GpuRuntimeCompileArtifactDumper.dump(snapshot)
+                .artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+
+        assertTrue(evidence.contains("madFmaMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("madFmaMaterialization.candidate.count=1"));
+        assertTrue(evidence.contains("madFmaMaterialization.transformedNode.count=1"));
+        assertTrue(evidence.contains("madFmaMaterialization.bodyTextReplacement.count=1"));
+        assertTrue(evidence.contains("madFmaMaterialization.fixedPoint.pass.count=1"));
+        assertTrue(evidence.contains("madFmaMaterialization.skipped.fastMathPolicy.count=0"));
+        assertTrue(evidence.contains("madFmaMaterialization.runtimeEquivalencePayloadRequired=true"));
+        assertTrue(evidence.contains("madFmaMaterialization.runtimeEquivalencePayloadPresent.count=0"));
+        assertTrue(evidence.contains("madFmaMaterialization.runtimeEquivalencePassed.count=0"));
+        assertTrue(evidence.contains("madFmaMaterialization.fastMathAllowed=true"));
+        assertTrue(evidence.contains("madFmaMaterialization.status=pending-runtime-equivalence"));
+        assertTrue(evidence.contains("madFmaMaterialization.firstBlocker=runtime-equivalence-payload-not-recorded"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.required=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=false"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=runtime-equivalence-payload-not-recorded"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.familySummary=constant-folding=not-recorded, "
+                        + "safe-local-cse=not-recorded, typed-dead-code=not-recorded, "
+                        + "constant-folding-materialization=not-recorded, "
+                        + "safe-local-cse-materialization=not-recorded, "
+                        + "mad-fma-materialization=pending-runtime-equivalence, "
+                        + "clamp-materialization=not-recorded, "
+                        + "step-materialization=not-recorded, "
+                        + "mix-materialization=not-recorded, "
+                        + "loop-vectorization-materialization=not-recorded, "
+                        + "typed-dead-code-materialization=not-recorded"
+        ));
+        assertTrue(evidence.contains("reviewPackage.firstBlocker=runtime-equivalence-payload-not-recorded"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.status=pending"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.present=false"));
+    }
+
+    @Test
+    void dumpsMadFmaMaterializationReviewReadyRuntimeEquivalencePayload() {
+        IrGpuArtifact original = artifact("body\n  set output[0] = ((a * b) + c)\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global float* out) { out[0] = 1.0f; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.mad-fma-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:mad-fma",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.mad-fma-materialization",
+                        "materialized-review-candidate",
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("transformedNode.count", "1"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("bodyTextReplacement.count", "1"),
+                                Map.entry("fixedPoint.pass.count", "1"),
+                                Map.entry("skipped.fastMathPolicy.count", "0"),
+                                Map.entry("skipped.bodyTextPatternMissing.count", "0"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "mad-fma-materialization"),
+                                Map.entry("targetIntrinsic", "mad"),
+                                Map.entry("policy.fastMathAllowed", "true"),
+                                Map.entry("safety.fastMathAllowed", "true"),
+                                Map.entry("safety.fastMathRequired", "true"),
+                                Map.entry("safety.strictFloatPreserved", "false"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.status", "recorded"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                                Map.entry("runtimeEquivalencePayload.firstBlocker", "none"),
+                                Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.failureFixture.present", "true"),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.resource",
+                                        "ir-optimizer://mad-fma-materialization/review-candidate"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.comparisonMode",
+                                        "optimizer-family:mad-fma-materialization:review-candidate"
+                                ),
+                                Map.entry("runtimeEquivalencePayload.CpuReference", "inputs=a,b,c, mode=fast-math-mad"),
+                                Map.entry("runtimeEquivalencePayload.PreOptimizationOutput", "expr=((a * b) + c)"),
+                                Map.entry("runtimeEquivalencePayload.PostOptimizationOutput", "expr=mad(a, b, c)"),
+                                Map.entry("runtimeEquivalencePayload.Tolerance", "mode=fast-math-opencl-mad"),
+                                Map.entry("runtimeEquivalencePayload.FailureFixture", "none"),
+                                Map.entry("runtimeEquivalencePayload.Case.Count", "1"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Name", "kernel#7=a*b+c->mad"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.MethodName", "kernel"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.NodeId", "7"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.RewriteKind", "mad-fma-to-opencl-mad"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Successful", "true"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.CpuReference", "a*b+c"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PreOptimization", "((a * b) + c)"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PostOptimization", "mad(a, b, c)"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Tolerance", "fast-math-opencl-mad"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Equivalent", "true"),
+                                Map.entry("firstBlocker", "none")
+                        )
+                ),
+                List.of("materialized mad/fma review candidate")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:mad-fma-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport,
+                GpuRuntimeEquivalenceEvidence.passed(request, 1, 1, List.of("mad/fma payload matched"))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        String payload = dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD);
+
+        assertTrue(evidence.contains("madFmaMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("madFmaMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("madFmaMaterialization.fastMathAllowed=true"));
+        assertTrue(evidence.contains("madFmaMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("madFmaMaterialization.firstBlocker=none"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=review-ready"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=none"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.familySummary=constant-folding=not-recorded, "
+                        + "safe-local-cse=not-recorded, typed-dead-code=not-recorded, "
+                        + "constant-folding-materialization=not-recorded, "
+                        + "safe-local-cse-materialization=not-recorded, "
+                        + "mad-fma-materialization=review-ready, "
+                        + "clamp-materialization=not-recorded, "
+                        + "step-materialization=not-recorded, "
+                        + "mix-materialization=not-recorded, "
+                        + "loop-vectorization-materialization=not-recorded, "
+                        + "typed-dead-code-materialization=not-recorded"
+        ));
+        assertTrue(payload.contains("family.0.name=mad-fma-materialization"));
+        assertTrue(payload.contains("family.0.complete=true"));
+        assertTrue(payload.contains("family.0.pass.0.postOptimizationOutput.payload=expr=mad(a, b, c)"));
+        String familyDirectory = "runtime-optimizer-family-equivalence-payload/family-0-mad-fma-materialization/pass-0";
+        assertTrue(dump.hasArtifact(familyDirectory + "/cpu-reference.properties"));
+        assertTrue(dump.artifact(familyDirectory + "/post-optimization-output.properties").contains(
+                "runtimeEquivalencePayload.Case.0.Output.0.PostOptimization"
+        ));
+    }
+
+    @Test
+    void dumpsIntrinsicMaterializationRuntimeEquivalenceReviewEvidence() {
+        IrGpuArtifact original = artifact("body\n  return intrinsic candidates\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global float* out) { out[0] = 1.0f; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(
+                        intrinsicMaterializationReport(
+                                "clamp-materialization",
+                                "javatogpu.ir-optimizer.clamp-materialization:1",
+                                Map.ofEntries(
+                                        Map.entry("candidate.count", "1"),
+                                        Map.entry("transformedNode.count", "1"),
+                                        Map.entry("changedMethodBody.count", "1"),
+                                        Map.entry("bodyTextReplacement.count", "1"),
+                                        Map.entry("fixedPoint.pass.count", "1"),
+                                        Map.entry("safety.fastMathRequired", "false"),
+                                        Map.entry("safety.strictFloatPreserved", "true"),
+                                        Map.entry("safety.argumentOrderPreserved", "true")
+                                )
+                        ),
+                        intrinsicMaterializationReport(
+                                "step-materialization",
+                                "javatogpu.ir-optimizer.step-materialization:1",
+                                Map.ofEntries(
+                                        Map.entry("candidate.count", "2"),
+                                        Map.entry("transformedNode.count", "2"),
+                                        Map.entry("changedMethodBody.count", "1"),
+                                        Map.entry("bodyTextReplacement.count", "2"),
+                                        Map.entry("fixedPoint.pass.count", "2"),
+                                        Map.entry("directStep.count", "1"),
+                                        Map.entry("invertedStep.count", "1"),
+                                        Map.entry("safety.fastMathRequired", "false"),
+                                        Map.entry("safety.strictFloatPreserved", "true"),
+                                        Map.entry("safety.strictComparisonPreserved", "true"),
+                                        Map.entry("safety.equalityBehaviorPreserved", "true"),
+                                        Map.entry("safety.nanComparisonPreserved", "true")
+                                )
+                        ),
+                        intrinsicMaterializationReport(
+                                "mix-materialization",
+                                "javatogpu.ir-optimizer.mix-materialization:1",
+                                Map.ofEntries(
+                                        Map.entry("candidate.count", "3"),
+                                        Map.entry("transformedNode.count", "3"),
+                                        Map.entry("changedMethodBody.count", "1"),
+                                        Map.entry("bodyTextReplacement.count", "3"),
+                                        Map.entry("fixedPoint.pass.count", "3"),
+                                        Map.entry("canonicalMix.count", "1"),
+                                        Map.entry("expandedMix.count", "1"),
+                                        Map.entry("madExpandedMix.count", "1"),
+                                        Map.entry("policy.fastMathAllowed", "true"),
+                                        Map.entry("safety.fastMathRequired", "true"),
+                                        Map.entry("safety.strictFloatPreserved", "false"),
+                                        Map.entry("safety.algebraicReassociationRequired", "true"),
+                                        Map.entry("safety.mixArgumentOrderPreserved", "true")
+                                )
+                        )
+                ),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:intrinsic-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport
+        );
+
+        String evidence = GpuRuntimeCompileArtifactDumper.dump(snapshot)
+                .artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+
+        assertTrue(evidence.contains("clampMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("clampMaterialization.transformedNode.count=1"));
+        assertTrue(evidence.contains("clampMaterialization.strictFloatPreserved=true"));
+        assertTrue(evidence.contains("clampMaterialization.argumentOrderPreserved=true"));
+        assertTrue(evidence.contains("clampMaterialization.fastMathRequired=false"));
+        assertTrue(evidence.contains("clampMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("stepMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("stepMaterialization.transformedNode.count=2"));
+        assertTrue(evidence.contains("stepMaterialization.directStep.count=1"));
+        assertTrue(evidence.contains("stepMaterialization.invertedStep.count=1"));
+        assertTrue(evidence.contains("stepMaterialization.strictComparisonPreserved=true"));
+        assertTrue(evidence.contains("stepMaterialization.equalityBehaviorPreserved=true"));
+        assertTrue(evidence.contains("stepMaterialization.nanComparisonPreserved=true"));
+        assertTrue(evidence.contains("stepMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("mixMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("mixMaterialization.transformedNode.count=3"));
+        assertTrue(evidence.contains("mixMaterialization.canonicalMix.count=1"));
+        assertTrue(evidence.contains("mixMaterialization.expandedMix.count=1"));
+        assertTrue(evidence.contains("mixMaterialization.madExpandedMix.count=1"));
+        assertTrue(evidence.contains("mixMaterialization.fastMathAllowed=true"));
+        assertTrue(evidence.contains("mixMaterialization.fastMathRequired=true"));
+        assertTrue(evidence.contains("mixMaterialization.algebraicReassociationRequired=true"));
+        assertTrue(evidence.contains("mixMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=review-ready"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=none"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.familySummary=constant-folding=not-recorded, "
+                        + "safe-local-cse=not-recorded, typed-dead-code=not-recorded, "
+                        + "constant-folding-materialization=not-recorded, "
+                        + "safe-local-cse-materialization=not-recorded, "
+                        + "mad-fma-materialization=not-recorded, "
+                        + "clamp-materialization=review-ready, "
+                        + "step-materialization=review-ready, "
+                        + "mix-materialization=review-ready, "
+                        + "loop-vectorization-materialization=not-recorded, "
+                        + "typed-dead-code-materialization=not-recorded"
+        ));
+    }
+
+    @Test
+    void dumpsLoopVectorizationInvalidatedTypedBodyRebuildAsBlockedEvidence() {
+        IrGpuArtifact original = artifact("body\n  return loop vectorization candidates\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global const float* input, __global float* out) { out[0] = input[0]; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.loop-vectorization-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:loop-vectorized-source-only",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.loop-vectorization-materialization",
+                        "materialized-review-candidate",
+                        Map.ofEntries(
+                                Map.entry("candidate.count", "1"),
+                                Map.entry("transformedLoop.count", "1"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("bodyTextReplacement.count", "1"),
+                                Map.entry("typedBody.materialized.count", "0"),
+                                Map.entry("typedBody.invalidated.count", "1"),
+                                Map.entry("typedBody.rebuild.attempted.count", "1"),
+                                Map.entry("typedBody.rebuild.parsed.count", "1"),
+                                Map.entry("typedBody.rebuild.built.count", "0"),
+                                Map.entry("typedBody.rebuild.graphValidated.count", "0"),
+                                Map.entry("typedBody.rebuild.rejected.count", "1"),
+                                Map.entry(
+                                        "typedBody.rebuild.firstBlocker",
+                                        "typed-body-rebuild-statement-conversion-blocked"
+                                ),
+                                Map.entry("skipped.loopShape.count", "0"),
+                                Map.entry("skipped.unsupportedWidth.count", "0"),
+                                Map.entry("skipped.unsafeLoadPattern.count", "0"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "loop-vectorization-materialization"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.status", "recorded"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                                Map.entry("runtimeEquivalencePayload.firstBlocker", "none"),
+                                Map.entry("safety.loopTripCountProven", "true"),
+                                Map.entry("safety.contiguousLoadProven", "true"),
+                                Map.entry("safety.orderedReductionPreserved", "true"),
+                                Map.entry("firstBlocker", "typed-body-rebuild-statement-conversion-blocked")
+                        )
+                ),
+                List.of("loop vectorization source rewrite succeeded but typed body rebuild was invalidated")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:loop-vectorization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport,
+                GpuRuntimeEquivalenceEvidence.passed(request, 1, 1, List.of("source rewrite payload matched"))
+        );
+
+        String evidence = GpuRuntimeCompileArtifactDumper.dump(snapshot)
+                .artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+
+        assertTrue(evidence.contains("loopVectorizationMaterialization.transformedLoop.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.bodyTextReplacement.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.materialized.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.invalidated.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.attempted.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.parsed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.built.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=0"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.rejected.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.typedBody.rebuild.status=invalidated"));
+        assertTrue(evidence.contains(
+                "loopVectorizationMaterialization.typedBody.rebuild.firstBlocker="
+                        + "typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("loopVectorizationMaterialization.status=blocked"));
+        assertTrue(evidence.contains(
+                "loopVectorizationMaterialization.firstBlocker=typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=blocked"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.firstBlocker=typed-body-rebuild-statement-conversion-blocked"
+        ));
+        assertTrue(evidence.contains("loop-vectorization-materialization=blocked"));
+    }
+
+    @Test
+    void dumpsTypedDeadCodeMaterializationReviewReadyRuntimeEquivalencePayload() {
+        IrGpuArtifact original = artifact("body\n  return live\n");
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* out) { out[0] = 1; }",
+                "runtime/lowered/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                new GpuRuntimeCompileOptions(GpuBackendTarget.OPENCL, List.of(), "diagnostic"),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeIrOptimizationPassReport materializationReport = new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                "javatogpu.ir-optimizer.typed-dead-code-materialization:1",
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:typed-dead-code",
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer.typed-dead-code-materialization",
+                        "materialized-review-candidate",
+                        Map.ofEntries(
+                                Map.entry("node.count", "5"),
+                                Map.entry("reachableNode.count", "2"),
+                                Map.entry("unreachableNode.count", "3"),
+                                Map.entry("removedNode.count", "3"),
+                                Map.entry("changedMethodBody.count", "1"),
+                                Map.entry("blocked.missingRoot.count", "0"),
+                                Map.entry("blocked.missingChildReference.count", "0"),
+                                Map.entry("blocked.sideEffectingUnreachableNode.count", "0"),
+                                Map.entry("rewrite.proposed", "true"),
+                                Map.entry("rewrite.materialized", "true"),
+                                Map.entry("optimizerFamily", "typed-dead-code-materialization"),
+                                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                                Map.entry("runtimeEquivalencePayload.status", "recorded"),
+                                Map.entry("runtimeEquivalencePayload.required", "true"),
+                                Map.entry("runtimeEquivalencePayload.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                                Map.entry("runtimeEquivalencePayload.firstBlocker", "none"),
+                                Map.entry("runtimeEquivalencePayload.cpuReference.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.preOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.postOptimizationOutput.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.tolerance.present", "true"),
+                                Map.entry("runtimeEquivalencePayload.failureFixture.present", "true"),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.resource",
+                                        "ir-optimizer://typed-dead-code-materialization/review-candidate"
+                                ),
+                                Map.entry(
+                                        "runtimeEquivalencePayload.comparisonMode",
+                                        "typed-structure-unreachable-pure-node-removal"
+                                ),
+                                Map.entry("runtimeEquivalencePayload.CpuReference", "removedUnreachablePureNodes=3"),
+                                Map.entry("runtimeEquivalencePayload.PreOptimizationOutput", "typedNodes=5"),
+                                Map.entry("runtimeEquivalencePayload.PostOptimizationOutput", "typedNodes=2"),
+                                Map.entry("runtimeEquivalencePayload.Tolerance", "mode=typed-structure-no-runtime-output-change"),
+                                Map.entry("runtimeEquivalencePayload.FailureFixture", "none"),
+                                Map.entry("runtimeEquivalencePayload.Case.Count", "1"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Name", "kernel#2->removed"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.MethodName", "kernel"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.NodeId", "2"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.RewriteKind", "typed-dead-code-removal"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Successful", "true"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.CpuReference", "removed-unreachable-pure-node"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PreOptimization", "present"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.PostOptimization", "removed"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Tolerance", "typed-structure"),
+                                Map.entry("runtimeEquivalencePayload.Case.0.Output.0.Equivalent", "true"),
+                                Map.entry("safety.sideEffectFreedomProven", "true"),
+                                Map.entry("firstBlocker", "none")
+                        )
+                ),
+                List.of("materialized typed dead-code removal review candidate")
+        );
+        GpuRuntimeIrOptimizationReport optimizationReport = new GpuRuntimeIrOptimizationReport(
+                Optional.of(original),
+                List.of(materializationReport),
+                GpuOptimizationStrategyDecision.none(request)
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "optimizer:tdc-materialization"),
+                GpuRuntimeCompileProvenance.from(request),
+                optimizationReport,
+                GpuRuntimeEquivalenceEvidence.passed(request, 1, 1, List.of("typed dead-code payload matched"))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT);
+        String payload = dump.artifact(GpuPromotionArtifactRegistry.RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD);
+
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.pass.count=1"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.node.count=5"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.unreachableNode.count=3"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.removedNode.count=3"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.changedMethodBody.count=1"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.runtimeEquivalenceRequiredBeforeSelection=true"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.runtimeEquivalencePayloadRequired=true"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.runtimeEquivalencePayloadPresent.count=1"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.runtimeEquivalencePassed.count=1"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.sideEffectFreedomProven=true"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.status=review-ready"));
+        assertTrue(evidence.contains("typedDeadCodeMaterialization.firstBlocker=none"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.status=review-ready"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.eligible=true"));
+        assertTrue(evidence.contains("runtimeEquivalenceReview.firstBlocker=none"));
+        assertTrue(evidence.contains(
+                "runtimeEquivalenceReview.familySummary=constant-folding=not-recorded, "
+                        + "safe-local-cse=not-recorded, typed-dead-code=not-recorded, "
+                        + "constant-folding-materialization=not-recorded, "
+                        + "safe-local-cse-materialization=not-recorded, "
+                        + "mad-fma-materialization=not-recorded, "
+                        + "clamp-materialization=not-recorded, "
+                        + "step-materialization=not-recorded, "
+                        + "mix-materialization=not-recorded, "
+                        + "loop-vectorization-materialization=not-recorded, "
+                        + "typed-dead-code-materialization=review-ready"
+        ));
+        assertTrue(evidence.contains("reviewPackage.status=pending-manual-review"));
+        assertTrue(evidence.contains("reviewPackage.firstBlocker=approval-template-pending"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.status=pending"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.required=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.present=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.passed=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.componentsComplete=true"));
+        assertTrue(evidence.contains("pass.0.approvalTemplate.field.runtimeEquivalencePayload.caseCount=1"));
+        assertTrue(payload.contains("family.0.name=typed-dead-code-materialization"));
+        assertTrue(payload.contains("family.0.complete=true"));
+        assertTrue(payload.contains("family.0.pass.0.cpuReference.payload=removedUnreachablePureNodes=3"));
+        assertTrue(payload.contains("family.0.pass.0.postOptimizationOutput.payload=typedNodes=2"));
+        String familyDirectory = "runtime-optimizer-family-equivalence-payload/family-0-typed-dead-code-materialization/pass-0";
+        assertTrue(dump.hasArtifact(familyDirectory + "/cpu-reference.properties"));
+        assertTrue(dump.artifact(familyDirectory + "/post-optimization-output.properties").contains(
+                "runtimeEquivalencePayload.Case.0.Output.0.PostOptimization"
+        ));
+        assertTrue(dump.artifact(familyDirectory + "/tolerance.properties").contains(
+                "runtimeEquivalencePayload.Case.0.Output.0.Tolerance"
+        ));
+    }
+
     private static GpuKernelDescriptor descriptor() {
         return new GpuKernelDescriptor(
                 "kernel",
                 "javatogpu/sample/Demo/kernel.cl",
                 "__kernel void kernel(__global int* output) { output[0] = 1; }",
                 List.of(new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+    }
+
+    private static GpuRuntimeIrOptimizationPassReport intrinsicMaterializationReport(
+            String family,
+            String version,
+            Map<String, String> overrides
+    ) {
+        Map<String, String> fields = new java.util.LinkedHashMap<>(Map.ofEntries(
+                Map.entry("methodBody.count", "1"),
+                Map.entry("methodBody.rewriteScope", "all-method-bodies"),
+                Map.entry("typedBody.count", "1"),
+                Map.entry("skipped.typedBodyMissing.count", "0"),
+                Map.entry("skipped.unsupportedFormat.count", "0"),
+                Map.entry("skipped.fastMathPolicy.count", "0"),
+                Map.entry("skipped.missingChildReference.count", "0"),
+                Map.entry("skipped.unsupportedShape.count", "0"),
+                Map.entry("skipped.bodyTextPatternMissing.count", "0"),
+                Map.entry("rewrite.proposed", "true"),
+                Map.entry("rewrite.materialized", "true"),
+                Map.entry("optimizerFamily", family),
+                Map.entry("proof.runtimeEquivalenceRequiredBeforeSelection", "true"),
+                Map.entry("proof.runtimeEquivalencePayloadRequiredBeforeSelection", "true"),
+                Map.entry("proof.approvalRequiredBeforeProduction", "true"),
+                Map.entry("runtimeEquivalencePayload.required", "true"),
+                Map.entry("runtimeEquivalencePayload.status", "recorded"),
+                Map.entry("runtimeEquivalencePayload.present", "true"),
+                Map.entry("runtimeEquivalencePayload.passed", "true"),
+                Map.entry("runtimeEquivalencePayload.firstBlocker", "none"),
+                Map.entry("firstBlocker", "none")
+        ));
+        fields.putAll(overrides);
+        return new GpuRuntimeIrOptimizationPassReport(
+                GpuRuntimeIrOptimizationStage.CANDIDATE_DISCOVERY,
+                version,
+                GpuRuntimeIrOptimizationOutcome.SKIPPED,
+                "irgpu:sha256:original",
+                "irgpu:sha256:" + family,
+                "proposal-only",
+                "",
+                GpuRuntimeIrOptimizationProofArtifact.fromFields(
+                        "ir-optimizer." + family,
+                        "materialized-review-candidate",
+                        fields
+                ),
+                List.of("materialized " + family + " review candidate")
+        );
+    }
+
+    private static GpuExtensionExecutionReport execution(
+            String extensionId,
+            GpuExtensionPhase phase,
+            GpuExtensionPermission permission,
+            GpuExtensionExecutionOutcome outcome,
+            boolean pipelineContinued
+    ) {
+        return new GpuExtensionExecutionReport(
+                extensionId,
+                "test-version",
+                phase,
+                permission,
+                "test operation",
+                outcome,
+                GpuExtensionFailurePolicy.CONTINUE,
+                pipelineContinued,
+                "none",
+                "test execution",
+                List.of()
+        );
+    }
+
+    private static GpuRuntimeDeviceSelection syntheticDeviceSelection(GpuExtensionExecutionReport execution) {
+        return new GpuRuntimeDeviceSelection(
+                Optional.empty(),
+                List.of(),
+                List.of(),
+                List.of(execution),
+                true,
+                false,
+                "none",
+                List.of("synthetic device-selection execution for participation artifact test")
         );
     }
 

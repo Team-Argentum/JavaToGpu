@@ -7,13 +7,16 @@ import com.github.javaparser.ast.type.Type;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuVendorTarget;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuAttributeMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuConstantDataMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuConstantMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
@@ -234,10 +237,12 @@ public final class GpuFrontendService {
         validator.validateKernel(kernelMethod, helperMethods, relevantStructs);
 
         List<GpuIrCompiledMethod> compiledMethods = lowerer.lower(kernelMethod, helperMethods, relevantStructs);
+
         List<GpuIrCompiledMethod> compiledHelpers = compiledMethods.subList(0, helperMethods.size());
         GpuIrCompiledMethod compiledKernel = compiledMethods.get(compiledMethods.size() - 1);
         passRunner.run(compiledKernel, compiledHelpers, relevantStructs);
-        validationRunner.run(compiledKernel, compiledHelpers, relevantStructs);
+        List<GpuExtensionExecutionReport> validationExecutions =
+                validationRunner.runWithReport(compiledKernel, compiledHelpers, relevantStructs);
         List<GpuIrCompiledMethod> reachableHelpers = GpuProgramAssemblySupport.selectReachableHelpers(
                 compiledKernel,
                 compiledHelpers,
@@ -252,7 +257,19 @@ public final class GpuFrontendService {
         return new GpuFrontendCompilationResult(
                 openClSource,
                 buildIrGpuArtifact(compiledKernel, reachableHelpers, relevantStructs, derivedOpenClResource, "java-source")
+                        .withExtensionParticipationMetadata(buildIrValidationParticipationMetadata(validationExecutions))
         );
+    }
+
+    private static List<IrGpuExtensionParticipationMetadata> buildIrValidationParticipationMetadata(
+            List<GpuExtensionExecutionReport> executions
+    ) {
+        if (executions == null || executions.isEmpty()) {
+            return List.of();
+        }
+        return executions.stream()
+                .map(report -> IrGpuExtensionParticipationMetadata.fromExecutionReport("ir-validation", report))
+                .toList();
     }
 
     static IrGpuArtifact buildIrGpuArtifact(
@@ -268,6 +285,7 @@ public final class GpuFrontendService {
                         compiledKernel.parsedMethod().name(),
                         compiledKernel.emittedName(),
                         compiledKernel.parsedMethod().openClAttributes(),
+                        buildAttributeMetadata(compiledKernel.parsedMethod().attributeMetadata()),
                         helperMethods.stream()
                                 .map(helper -> new IrGpuModuleMethod(
                                         helper.parsedMethod().name(),
@@ -275,6 +293,7 @@ public final class GpuFrontendService {
                                         helper.parsedMethod().returnType(),
                                         buildMethodParameters(helper),
                                         helper.parsedMethod().openClAttributes(),
+                                        buildAttributeMetadata(helper.parsedMethod().attributeMetadata()),
                                         helper.parsedMethod().inline()
                                 ))
                                 .toList(),
@@ -379,12 +398,20 @@ public final class GpuFrontendService {
             AnnotationExpr annotation,
             String propertyName
     ) {
+        return parseStringAnnotationValues(annotation, propertyName, "GPUDeviceConstraint");
+    }
+
+    private static List<String> parseStringAnnotationValues(
+            AnnotationExpr annotation,
+            String propertyName,
+            String annotationName
+    ) {
         return annotationValue(annotation, propertyName).stream()
                 .flatMap(GpuFrontendService::annotationValues)
                 .map(expression -> {
                     if (!expression.isStringLiteralExpr()) {
                         throw new IllegalArgumentException(
-                                "GPUDeviceConstraint." + propertyName + " must contain string literals: " + expression
+                                annotationName + "." + propertyName + " must contain string literals: " + expression
                         );
                     }
                     return expression.asStringLiteralExpr().asString();
@@ -437,6 +464,26 @@ public final class GpuFrontendService {
                                 exception
                         );
                     }
+                })
+                .orElse(defaultValue);
+    }
+
+    private static boolean parseBooleanAnnotationValue(
+            AnnotationExpr annotation,
+            String propertyName,
+            boolean defaultValue,
+            String annotationName
+    ) {
+        return annotationValue(annotation, propertyName)
+                .map(expression -> {
+                    if (expression.isBooleanLiteralExpr()) {
+                        return expression.asBooleanLiteralExpr().getValue();
+                    }
+                    String value = expression.toString().trim();
+                    if ("true".equals(value) || "false".equals(value)) {
+                        return Boolean.parseBoolean(value);
+                    }
+                    return defaultValue;
                 })
                 .orElse(defaultValue);
     }
@@ -524,16 +571,25 @@ public final class GpuFrontendService {
         }
 
         return declaration.getAnnotationByName("GPUOptimize")
-                .map(annotation -> {
-                    boolean fastMath = annotation.isNormalAnnotationExpr()
-                            && annotation.asNormalAnnotationExpr().getPairs().stream()
-                            .filter(pair -> pair.getNameAsString().equals("fastMath"))
-                            .findFirst()
-                            .map(pair -> Boolean.parseBoolean(pair.getValue().toString()))
-                            .orElse(false);
-                    return IrGpuOptimizerPolicyMetadata.fromGpuOptimize(fastMath);
-                })
+                .map(GpuFrontendService::parseGpuOptimizePolicy)
                 .orElseGet(IrGpuOptimizerPolicyMetadata::defaultStrict);
+    }
+
+    private static IrGpuOptimizerPolicyMetadata parseGpuOptimizePolicy(AnnotationExpr annotation) {
+        String profile = parseOptionalStringAnnotationValue(annotation, "profile", "GPUOptimize");
+        return IrGpuOptimizerPolicyMetadata.fromGpuOptimize(
+                parseBooleanAnnotationValue(annotation, "fastMath", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "enabled", true, "GPUOptimize"),
+                profile.isBlank() ? "default" : profile,
+                parseStringAnnotationValues(annotation, "enabledFamilies", "GPUOptimize"),
+                parseStringAnnotationValues(annotation, "disabledFamilies", "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "journal", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "dumpArtifacts", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "productionIntent", false, "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "vendorAdaptation", false, "GPUOptimize"),
+                parseOptionalStringAnnotationValue(annotation, "vectorization", "GPUOptimize"),
+                parseBooleanAnnotationValue(annotation, "resourceShaping", false, "GPUOptimize")
+        );
     }
 
     private static List<IrGpuStructMetadata> buildStructMetadata(List<ParsedGpuStruct> structs) {
@@ -545,10 +601,25 @@ public final class GpuFrontendService {
                                 .map(field -> new IrGpuStructFieldMetadata(
                                         field.name(),
                                         field.javaType(),
-                                        field.openClAttributes()
+                                        field.openClAttributes(),
+                                        buildAttributeMetadata(field.attributeMetadata())
                                 ))
                                 .toList(),
-                        struct.openClAttributes()
+                        struct.openClAttributes(),
+                        buildAttributeMetadata(struct.attributeMetadata())
+                ))
+                .toList();
+    }
+
+    private static List<IrGpuAttributeMetadata> buildAttributeMetadata(
+            List<net.sixik.ga_utils.javatogpu.frontend.model.GpuAttributeMetadata> metadata
+    ) {
+        return (metadata == null ? List.<net.sixik.ga_utils.javatogpu.frontend.model.GpuAttributeMetadata>of() : metadata)
+                .stream()
+                .map(attribute -> new IrGpuAttributeMetadata(
+                        attribute.kind(),
+                        attribute.value(),
+                        attribute.source()
                 ))
                 .toList();
     }

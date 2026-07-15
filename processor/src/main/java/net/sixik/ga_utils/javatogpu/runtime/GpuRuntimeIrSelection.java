@@ -116,12 +116,13 @@ public record GpuRuntimeIrSelection(
                 || optimizationReport.requiresRollback()
                 || productionGateBlocked;
         String fallbackDecision = fallbackDecision(fallbackEvidence, optimizationReport, productionGateBlocked);
+        String selectedStage = selectedStage(originalArtifact, optimizedArtifact, selectedArtifact);
 
         return new GpuRuntimeIrSelection(
                 originalArtifact,
                 optimizedArtifact,
                 selectedArtifact,
-                selectedStage(originalArtifact, optimizedArtifact, selectedArtifact),
+                selectedStage,
                 originalIdentity,
                 optimizedIdentity,
                 selectedIdentity,
@@ -129,7 +130,7 @@ public record GpuRuntimeIrSelection(
                 optimizedRejected,
                 fallbackDecision,
                 productionIrGate,
-                diagnostic(selectedArtifact, transformed, optimizedRejected, optimizedArtifact, productionGateBlocked)
+                diagnostic(selectedArtifact, selectedStage, transformed, optimizedRejected, optimizedArtifact, productionGateBlocked)
         );
     }
 
@@ -148,6 +149,9 @@ public record GpuRuntimeIrSelection(
         }
         if (productionGateBlocked && originalArtifact.isPresent()) {
             return originalArtifact;
+        }
+        if (optimizationReport.hasReports() && optimizationReport.artifact().isPresent()) {
+            return optimizationReport.artifact();
         }
         return optimizedArtifact.or(() -> originalArtifact);
     }
@@ -189,6 +193,7 @@ public record GpuRuntimeIrSelection(
 
     private static String diagnostic(
             Optional<IrGpuArtifact> selectedArtifact,
+            String selectedStage,
             boolean transformed,
             boolean optimizedRejected,
             Optional<IrGpuArtifact> optimizedArtifact,
@@ -203,8 +208,11 @@ public record GpuRuntimeIrSelection(
         if (optimizedRejected) {
             return "optimized IrGpu was rejected; original IrGpu remains selected for backend lowering";
         }
-        if (transformed) {
+        if (transformed && "optimized".equals(selectedStage)) {
             return "optimized IrGpu is selected for backend lowering after runtime optimizer passes";
+        }
+        if (transformed) {
+            return "optimized IrGpu candidate is materialized for review, but original IrGpu remains selected for backend lowering";
         }
         if (optimizedArtifact.isPresent()) {
             return "optimized IrGpu is a pass-through artifact and remains selected for backend lowering";

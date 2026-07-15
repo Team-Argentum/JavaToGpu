@@ -23,7 +23,12 @@ public final class GpuAnnotationSupport {
     public static final List<String> GPU_STRUCT_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUStruct");
     public static final List<String> GPU_ATTRIBUTE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUAttribute");
     public static final List<String> GPU_ATTRIBUTES_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUAttributes");
+    public static final List<String> GPU_ALIGNED_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUAligned");
+    public static final List<String> GPU_ALWAYS_INLINE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUAlwaysInline");
+    public static final List<String> GPU_PACKED_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUPacked");
+    public static final List<String> GPU_VECTOR_TYPE_HINT_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUVectorTypeHint");
     public static final List<String> GPU_WORK_GROUP_SIZE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUWorkGroupSize");
+    public static final List<String> GPU_WORK_GROUP_SIZE_HINT_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUWorkGroupSizeHint");
     public static final List<String> GPU_OPTIMIZE_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPUOptimize");
     public static final List<String> OPENCL_ATTRIBUTES_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "OpenCLAttributes");
     public static final List<String> OPENCL_QUALIFIERS_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "OpenCLQualifiers");

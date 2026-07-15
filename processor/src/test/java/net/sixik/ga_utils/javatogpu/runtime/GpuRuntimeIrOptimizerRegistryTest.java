@@ -512,6 +512,36 @@ class GpuRuntimeIrOptimizerRegistryTest {
     }
 
     @Test
+    void builtInPeepholeRegistryKeepsStableDiagnosticRuleOrder() {
+        GpuRuntimeIrPeepholeRuleRegistry registry = GpuRuntimeIrPeepholeRuleRegistry.loadWithBuiltIns();
+
+        assertEquals(
+                List.of("madFma", "clamp", "dot", "mix", "step"),
+                registry.rules().stream().map(GpuRuntimeIrPeepholeRule::ruleId).toList()
+        );
+        assertEquals(
+                List.of(
+                        "peephole-rule:mad-fma-v1",
+                        "peephole-rule:clamp-v1",
+                        "peephole-rule:dot-v1",
+                        "peephole-rule:mix-v1",
+                        "peephole-rule:step-v1"
+                ),
+                registry.rules().stream().map(GpuRuntimeIrPeepholeRule::ruleVersion).toList()
+        );
+        assertEquals(
+                List.of(
+                        "javatogpu.peephole.mad-fma",
+                        "javatogpu.peephole.clamp",
+                        "javatogpu.peephole.dot",
+                        "javatogpu.peephole.mix",
+                        "javatogpu.peephole.step"
+                ),
+                registry.rules().stream().map(GpuRuntimeIrPeepholeRule::extensionId).toList()
+        );
+    }
+
+    @Test
     void diagnosticPeepholePassFindsTypedMadFmaCandidateWithoutMutatingIr() {
         IrGpuArtifact artifact = fastMathTypedArtifact();
         GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
@@ -526,7 +556,544 @@ class GpuRuntimeIrOptimizerRegistryTest {
         assertEquals("true", passReport.proofArtifact().fields().get("typedIrAvailable"));
         assertEquals("1", passReport.proofArtifact().fields().get("candidate.count"));
         assertEquals("1", passReport.proofArtifact().fields().get("rule.madFma.candidate.count"));
+        assertEquals("5", passReport.proofArtifact().fields().get("rule.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.complete.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rule.0.replacementPlan.partial.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.firstBlocker"));
+        assertEquals("madFma", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.ruleId"));
+        assertEquals("kernel", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.methodName"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.rootNodeId"));
+        assertEquals("mad-fma", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.replacementKind"));
+        assertEquals("1,2", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.coveredNodeIds"));
+        assertEquals("3,4,5", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.complete"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.0.firstBlocker"));
+        assertEquals("0", passReport.proofArtifact().fields().get("replacementPlan.validation.invalid.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("replacementPlan.validation.firstBlocker"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.valid.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.invalid.count"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.valid"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.rootExists"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.coveredIncludesRoot"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.missingCoveredNodeIds"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rule.0.replacementPlan.validation.0.missingInputNodeIds"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteVisitor.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteVisitor.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rewriteVisitor.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rewriteVisitor.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteVisitor.visitorImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteVisitor.replacementBuilderImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteVisitor.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteVisitor.mutationAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteVisitor.selectedIrReplacement"));
+        assertEquals("visitor-ready", passReport.proofArtifact().fields().get("rule.0.rewriteVisitor.0.status"));
+        assertEquals("1,2,3,4,5", passReport.proofArtifact().fields().get("rule.0.rewriteVisitor.0.visitOrderNodeIds"));
+        assertEquals("5", passReport.proofArtifact().fields().get("rule.0.rewriteVisitor.0.graphNodeMaxId"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.rewriteVisitor.0.visitorReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteVisitor.0.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteVisitor.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("replacementBlueprint.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("replacementBlueprint.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("replacementBlueprint.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("replacementBlueprint.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("replacementBlueprint.blueprintImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("replacementBlueprint.replacementBuilderImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("replacementBlueprint.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("replacementBlueprint.selectedIrReplacement"));
+        assertEquals("blueprint-ready", passReport.proofArtifact().fields().get("rule.0.replacementBlueprint.0.status"));
+        assertEquals("GpuIrIntrinsicCall", passReport.proofArtifact().fields().get("rule.0.replacementBlueprint.0.targetNodeKind"));
+        assertEquals("mad-fma", passReport.proofArtifact().fields().get("rule.0.replacementBlueprint.0.targetOperation"));
+        assertEquals("3,4,5", passReport.proofArtifact().fields().get("rule.0.replacementBlueprint.0.argumentNodeIds"));
+        assertEquals("arg0,arg1,arg2", passReport.proofArtifact().fields().get("rule.0.replacementBlueprint.0.argumentRoles"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.replacementBlueprint.0.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.replacementBlueprint.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteTransaction.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteTransaction.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rewriteTransaction.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rewriteTransaction.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteTransaction.transactionPreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteTransaction.nodeIdAllocatorImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteTransaction.graphRewriteImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteTransaction.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteTransaction.selectedIrReplacement"));
+        assertEquals("transaction-ready", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.status"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.replacedNodeIds"));
+        assertEquals("1,2", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.removedNodeIds"));
+        assertEquals("3,4,5", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.retainedInputNodeIds"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.plannedAddedNode.count"));
+        assertEquals("not-allocated", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.plannedAddedNodeIds"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.graphRewriteImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteTransaction.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("nodeIdAllocation.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("nodeIdAllocation.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("nodeIdAllocation.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("nodeIdAllocation.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("nodeIdAllocation.allocationPreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("nodeIdAllocation.nodeIdsReserved"));
+        assertEquals("false", passReport.proofArtifact().fields().get("nodeIdAllocation.nodeIdAllocatorApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("nodeIdAllocation.graphRewriteImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("nodeIdAllocation.selectedIrReplacement"));
+        assertEquals("allocation-ready", passReport.proofArtifact().fields().get("rule.0.nodeIdAllocation.0.status"));
+        assertEquals("5", passReport.proofArtifact().fields().get("rule.0.nodeIdAllocation.0.graphNodeMaxId"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.nodeIdAllocation.0.plannedAddedNode.count"));
+        assertEquals("6", passReport.proofArtifact().fields().get("rule.0.nodeIdAllocation.0.candidateNodeIds"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.nodeIdAllocation.0.nodeIdsReserved"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.nodeIdAllocation.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("replacementNode.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("replacementNode.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("replacementNode.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("replacementNode.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("replacementNode.replacementNodePreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("replacementNode.replacementNodeBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("replacementNode.replacementBuilderImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("replacementNode.graphRewriteImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("replacementNode.selectedIrReplacement"));
+        assertEquals("replacement-node-ready", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.status"));
+        assertEquals("6", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.candidateReplacementNodeId"));
+        assertEquals("GpuIrIntrinsicCall", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.targetNodeKind"));
+        assertEquals("mad-fma", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.targetOperation"));
+        assertEquals("3,4,5", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.argumentNodeIds"));
+        assertEquals("arg0,arg1,arg2", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.argumentRoles"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.replacementNodeBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.replacementNode.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("graphPatch.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("graphPatch.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("graphPatch.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("graphPatch.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("graphPatch.graphPatchPreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("graphPatch.graphPatchApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("graphPatch.graphRewriteImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("graphPatch.selectedIrReplacement"));
+        assertEquals("graph-patch-ready", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.status"));
+        assertEquals("6", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.replacementNodeId"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.replacedNodeIds"));
+        assertEquals("1,2", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.removedNodeIds"));
+        assertEquals("3,4,5", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.retainedInputNodeIds"));
+        assertEquals("6", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.insertedNodeIds"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.graphPatchApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.graphPatch.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("transformedGraph.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("transformedGraph.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("transformedGraph.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("transformedGraph.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("transformedGraph.materializationPreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("transformedGraph.transformedGraphBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("transformedGraph.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("transformedGraph.graphPatchApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("transformedGraph.selectedIrReplacement"));
+        assertEquals("materialization-ready", passReport.proofArtifact().fields().get("rule.0.transformedGraph.0.status"));
+        assertEquals("not-built", passReport.proofArtifact().fields().get("rule.0.transformedGraph.0.transformedGraphIdentity"));
+        assertEquals(passReport.originalIrIdentity(), passReport.proofArtifact().fields().get("rule.0.transformedGraph.0.originalIrIdentity"));
+        String materializationKey = "madFma|kernel|1|mad-fma|replacement=6|replace=1|remove=1,2|retain=3,4,5|insert=6";
+        assertEquals(materializationKey, passReport.proofArtifact().fields().get("rule.0.transformedGraph.0.materializationKey"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.transformedGraph.0.transformedGraphBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.transformedGraph.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("irArtifactEnvelope.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("irArtifactEnvelope.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("irArtifactEnvelope.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("irArtifactEnvelope.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("irArtifactEnvelope.artifactEnvelopePreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("irArtifactEnvelope.artifactEnvelopeBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("irArtifactEnvelope.optimizedArtifactBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("irArtifactEnvelope.selectedIrReplacement"));
+        assertEquals("artifact-envelope-ready", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.status"));
+        assertEquals("not-built", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.optimizedArtifactIdentity"));
+        assertEquals(passReport.originalIrIdentity(), passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.originalIrIdentity"));
+        assertEquals(materializationKey, passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.materializationKey"));
+        assertEquals("runtime-equivalence-required", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.proofAnchor"));
+        assertEquals("original-ir", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.rollbackAnchor"));
+        assertEquals(
+                "madFma|kernel|1|mad-fma|original=" + passReport.originalIrIdentity()
+                        + "|graph=not-built|materialization=" + materializationKey
+                        + "|proof=runtime-equivalence-required|rollback=original-ir",
+                passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.envelopeKey")
+        );
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.artifactEnvelopeBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.irArtifactEnvelope.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactProofBinding.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("artifactProofBinding.ready.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactProofBinding.blocked.count"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("artifactProofBinding.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("artifactProofBinding.bindingPreflightImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.proofBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.rollbackBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.approvalBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.optimizedArtifactBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactProofBinding.selectedIrReplacement"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.firstBlocker"));
+        assertEquals(passReport.originalIrIdentity(), passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.originalIrIdentity"));
+        assertEquals("not-built", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.optimizedArtifactIdentity"));
+        assertEquals("runtime-equivalence-required", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofAnchor"));
+        assertEquals("original-ir", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackAnchor"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofStatus"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofFirstBlocker"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.reviewPackageStatus"));
+        assertEquals("runtime-equivalence-payload-missing", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.reviewPackageFirstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.artifactEnvelopeReady"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.runtimeEquivalencePayload.complete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackEvidence.present"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackClean"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.approvalAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.reviewPackageComplete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.bindingReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.proofBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.rollbackBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.approvalBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.optimizedArtifactBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.transformedIrBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactProofBinding.0.selectedIrReplacement"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactSelection.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("artifactSelection.ready.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("artifactSelection.blocked.count"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("artifactSelection.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("artifactSelection.selectionPreflightImplemented"));
+        assertEquals("true", passReport.proofArtifact().fields().get("artifactSelection.productionGateRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.productionGateAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.selectionApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.optimizedArtifactSelected"));
+        assertEquals("false", passReport.proofArtifact().fields().get("artifactSelection.selectedIrReplacement"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.firstBlocker"));
+        assertEquals(passReport.originalIrIdentity(), passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.originalIrIdentity"));
+        assertEquals("not-built", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.optimizedArtifactIdentity"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBindingStatus"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBindingFirstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBindingReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.proofBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.rollbackBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.approvalBound"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.optimizedArtifactBuilt"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.transformedIrBuilt"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.productionGateRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.productionGateAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.mutationPolicyAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.selectionReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.selectionApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.artifactSelection.0.optimizedArtifactSelected"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteSketch.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteSketch.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rewriteSketch.blocked.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rewriteSketch.firstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSketch.rewriteBuilderImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSketch.mutationAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSketch.selectedIrReplacement"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteSketch.runtimeEquivalenceRequired"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteSketch.approvalRequired"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rewriteSketch.conflict.count"));
+        assertEquals("none", passReport.proofArtifact().fields().get("rewriteSketch.conflict.firstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSketch.conflict.conflictResolutionImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSketch.conflict.selectionApplied"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rewriteSelection.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rewriteSelection.firstBlocker"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteSelection.sketch.count"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rewriteSelection.sketch.ready.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rewriteSelection.sketch.blocked.count"));
+        assertEquals("0", passReport.proofArtifact().fields().get("rewriteSelection.conflict.count"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSelection.rewriteBuilderImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSelection.conflictResolutionImplemented"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteSelection.runtimeEquivalenceRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSelection.runtimeEquivalenceProven"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteSelection.approvalRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSelection.approvalAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSelection.mutationAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSelection.selectionApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteSelection.selectedIrReplacement"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rewriteProof.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rewriteProof.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteProof.proofRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.proofAccepted"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteProof.runtimeEquivalenceRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.runtimeEquivalencePayload.present"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.runtimeEquivalencePayload.complete"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteProof.rollbackRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.rollbackEvidence.present"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.rollbackClean"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteProof.approvalRequired"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.approvalAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.mutationAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteProof.selectedIrReplacement"));
+        assertEquals("not-built", passReport.proofArtifact().fields().get("rewriteProof.transformedIrIdentity"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rewriteReviewPackage.status"));
+        assertEquals("runtime-equivalence-payload-missing", passReport.proofArtifact().fields().get("rewriteReviewPackage.firstBlocker"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteReviewPackage.required"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.complete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.proofAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.runtimeEquivalencePayload.complete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.rollbackClean"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.approvalAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.mutationAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.selectionApplied"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rewriteReviewPackage.selectedIrReplacement"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rewriteReviewPackage.manualReviewOnly"));
+        assertEquals("sketch-ready", passReport.proofArtifact().fields().get("rule.0.rewriteSketch.0.status"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.rewriteSketch.0.planComplete"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.rewriteSketch.0.planValid"));
+        assertEquals("true", passReport.proofArtifact().fields().get("rule.0.rewriteSketch.0.sketchReady"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteSketch.0.rewriteBuilderImplemented"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteSketch.0.mutationAllowed"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteSketch.0.selectedIrReplacement"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.rewriteSelection.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.rewriteSelection.firstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteSelection.selectionApplied"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.rewriteProof.status"));
+        assertEquals("rewrite-builder-not-implemented", passReport.proofArtifact().fields().get("rule.0.rewriteProof.firstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteProof.proofAccepted"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteProof.runtimeEquivalencePayload.complete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteProof.rollbackClean"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteProof.selectedIrReplacement"));
+        assertEquals("blocked", passReport.proofArtifact().fields().get("rule.0.rewriteReviewPackage.status"));
+        assertEquals("runtime-equivalence-payload-missing", passReport.proofArtifact().fields().get("rule.0.rewriteReviewPackage.firstBlocker"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteReviewPackage.complete"));
+        assertEquals("false", passReport.proofArtifact().fields().get("rule.0.rewriteReviewPackage.selectedIrReplacement"));
+        assertEquals("clamp", passReport.proofArtifact().fields().get("rule.1.id"));
+        assertEquals("dot", passReport.proofArtifact().fields().get("rule.2.id"));
+        assertEquals("mix", passReport.proofArtifact().fields().get("rule.3.id"));
+        assertEquals("step", passReport.proofArtifact().fields().get("rule.4.id"));
+        assertEquals("1", passReport.proofArtifact().fields().get("rule.1.skipped.count"));
+        assertEquals("no-candidate", passReport.proofArtifact().fields().get("rule.1.proofStatus"));
         assertEquals("rewrite-engine-not-implemented", passReport.proofArtifact().fields().get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePreflightsKeepProductionEnablingFieldsDisabled() {
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+        for (IrGpuArtifact artifact : List.of(
+                fastMathTypedArtifact(),
+                fastMathPartialMadFmaTypedArtifact(),
+                fastMathClampTypedArtifact(),
+                fastMathStepTypedArtifact(),
+                fastMathDotTypedArtifact(),
+                fastMathMixTypedArtifact()
+        )) {
+            GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+            GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+
+            assertSame(artifact, report.artifact().orElseThrow());
+            assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+            assertNoProductionEnablingPreflightFields(passReport.proofArtifact().fields());
+        }
+    }
+
+    @Test
+    void diagnosticPeepholePassReportsPartialMadFmaPlanWithoutCandidate() {
+        IrGpuArtifact artifact = fastMathPartialMadFmaTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("0", fields.get("candidate.count"));
+        assertEquals("0", fields.get("rule.madFma.candidate.count"));
+        assertEquals("3", fields.get("replacementPlan.partial.count"));
+        assertEquals("multiply-operands-incomplete", fields.get("replacementPlan.firstBlocker"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.count"));
+        assertEquals("0", fields.get("rule.0.replacementPlan.complete.count"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.partial.count"));
+        assertEquals("multiply-operands-incomplete", fields.get("rule.0.replacementPlan.firstBlocker"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.0.rootNodeId"));
+        assertEquals("1,2", fields.get("rule.0.replacementPlan.0.coveredNodeIds"));
+        assertEquals("5", fields.get("rule.0.replacementPlan.0.inputNodeIds"));
+        assertEquals("false", fields.get("rule.0.replacementPlan.0.complete"));
+        assertEquals("multiply-operands-incomplete", fields.get("rule.0.replacementPlan.0.firstBlocker"));
+        assertEquals("dot", fields.get("rule.2.id"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.count"));
+        assertEquals("0", fields.get("rule.2.replacementPlan.complete.count"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.partial.count"));
+        assertEquals("dot-multiply-operands-incomplete", fields.get("rule.2.replacementPlan.firstBlocker"));
+        assertEquals("mix", fields.get("rule.3.id"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.count"));
+        assertEquals("0", fields.get("rule.3.replacementPlan.complete.count"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.partial.count"));
+        assertEquals("mix-multiply-operands-incomplete", fields.get("rule.3.replacementPlan.firstBlocker"));
+        assertEquals("multiply-operands-incomplete", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("replacement plan is incomplete"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedClampCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathClampTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("1", fields.get("candidate.count"));
+        assertEquals("0", fields.get("rule.madFma.candidate.count"));
+        assertEquals("1", fields.get("rule.clamp.candidate.count"));
+        assertEquals("clamp", fields.get("rule.1.id"));
+        assertEquals("1", fields.get("rule.1.candidate.count"));
+        assertEquals("1", fields.get("rule.1.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.1.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.1.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.1.replacementPlan.firstBlocker"));
+        assertEquals("clamp", fields.get("rule.1.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.1.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.1.replacementPlan.0.rootNodeId"));
+        assertEquals("clamp", fields.get("rule.1.replacementPlan.0.replacementKind"));
+        assertEquals("1,2", fields.get("rule.1.replacementPlan.0.coveredNodeIds"));
+        assertEquals("3,4,5", fields.get("rule.1.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.1.replacementPlan.0.complete"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedStepCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathStepTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("1", fields.get("candidate.count"));
+        assertEquals("0", fields.get("rule.madFma.candidate.count"));
+        assertEquals("0", fields.get("rule.clamp.candidate.count"));
+        assertEquals("1", fields.get("rule.step.candidate.count"));
+        assertEquals("step", fields.get("rule.4.id"));
+        assertEquals("1", fields.get("rule.4.candidate.count"));
+        assertEquals("1", fields.get("rule.4.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.4.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.4.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.4.replacementPlan.firstBlocker"));
+        assertEquals("step", fields.get("rule.4.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.4.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.4.replacementPlan.0.rootNodeId"));
+        assertEquals("step", fields.get("rule.4.replacementPlan.0.replacementKind"));
+        assertEquals("1,2", fields.get("rule.4.replacementPlan.0.coveredNodeIds"));
+        assertEquals("4,3", fields.get("rule.4.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.4.replacementPlan.0.complete"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedDotCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathDotTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("2", fields.get("candidate.count"));
+        assertEquals("1", fields.get("rule.madFma.candidate.count"));
+        assertEquals("0", fields.get("rule.clamp.candidate.count"));
+        assertEquals("1", fields.get("rule.dot.candidate.count"));
+        assertEquals("dot", fields.get("rule.2.id"));
+        assertEquals("1", fields.get("rule.2.candidate.count"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.2.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.2.replacementPlan.firstBlocker"));
+        assertEquals("dot", fields.get("rule.2.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.2.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.2.replacementPlan.0.rootNodeId"));
+        assertEquals("dot", fields.get("rule.2.replacementPlan.0.replacementKind"));
+        assertEquals("1,2,5", fields.get("rule.2.replacementPlan.0.coveredNodeIds"));
+        assertEquals("3,4,6,7", fields.get("rule.2.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.2.replacementPlan.0.complete"));
+        assertEquals("2", fields.get("rewriteSketch.count"));
+        assertEquals("2", fields.get("rewriteSketch.ready.count"));
+        assertEquals("1", fields.get("rewriteSketch.conflict.count"));
+        assertEquals("rewrite-sketch-covered-node-overlap", fields.get("rewriteSketch.conflict.firstBlocker"));
+        assertEquals("false", fields.get("rewriteSketch.conflict.conflictResolutionImplemented"));
+        assertEquals("false", fields.get("rewriteSketch.conflict.selectionApplied"));
+        assertEquals("false", fields.get("rewriteSketch.conflict.mutationAllowed"));
+        assertEquals("false", fields.get("rewriteSketch.conflict.selectedIrReplacement"));
+        assertEquals("kernel", fields.get("rewriteSketch.conflict.0.methodName"));
+        assertEquals("madFma", fields.get("rewriteSketch.conflict.0.firstRuleId"));
+        assertEquals("1", fields.get("rewriteSketch.conflict.0.firstRootNodeId"));
+        assertEquals("mad-fma", fields.get("rewriteSketch.conflict.0.firstReplacementKind"));
+        assertEquals("dot", fields.get("rewriteSketch.conflict.0.secondRuleId"));
+        assertEquals("1", fields.get("rewriteSketch.conflict.0.secondRootNodeId"));
+        assertEquals("dot", fields.get("rewriteSketch.conflict.0.secondReplacementKind"));
+        assertEquals("1,2", fields.get("rewriteSketch.conflict.0.overlappingNodeIds"));
+        assertEquals("blocked", fields.get("rewriteSelection.status"));
+        assertEquals("rewrite-sketch-conflict-resolution-required", fields.get("rewriteSelection.firstBlocker"));
+        assertEquals("2", fields.get("rewriteSelection.sketch.count"));
+        assertEquals("2", fields.get("rewriteSelection.sketch.ready.count"));
+        assertEquals("0", fields.get("rewriteSelection.sketch.blocked.count"));
+        assertEquals("1", fields.get("rewriteSelection.conflict.count"));
+        assertEquals("false", fields.get("rewriteSelection.conflictResolutionImplemented"));
+        assertEquals("false", fields.get("rewriteSelection.selectionApplied"));
+        assertEquals("false", fields.get("rewriteSelection.selectedIrReplacement"));
+        assertEquals("blocked", fields.get("rewriteProof.status"));
+        assertEquals("rewrite-sketch-conflict-resolution-required", fields.get("rewriteProof.firstBlocker"));
+        assertEquals("true", fields.get("rewriteProof.proofRequired"));
+        assertEquals("false", fields.get("rewriteProof.proofAccepted"));
+        assertEquals("true", fields.get("rewriteProof.runtimeEquivalenceRequired"));
+        assertEquals("false", fields.get("rewriteProof.runtimeEquivalencePayload.present"));
+        assertEquals("false", fields.get("rewriteProof.rollbackEvidence.present"));
+        assertEquals("true", fields.get("rewriteProof.rollbackRequired"));
+        assertEquals("false", fields.get("rewriteProof.rollbackClean"));
+        assertEquals("false", fields.get("rewriteProof.selectedIrReplacement"));
+        assertEquals("blocked", fields.get("rewriteReviewPackage.status"));
+        assertEquals("rewrite-sketch-conflict-resolution-required", fields.get("rewriteReviewPackage.firstBlocker"));
+        assertEquals("false", fields.get("rewriteReviewPackage.complete"));
+        assertEquals("false", fields.get("rewriteReviewPackage.selectedIrReplacement"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
+        assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
+    }
+
+    @Test
+    void diagnosticPeepholePassFindsTypedMixCandidateWithoutMutatingIr() {
+        IrGpuArtifact artifact = fastMathMixTypedArtifact();
+        GpuRuntimeIrOptimizerRegistry registry = GpuRuntimeIrOptimizerRegistry.ofPasses(
+                List.of(new GpuRuntimeIrPeepholePass())
+        );
+
+        GpuRuntimeIrOptimizationReport report = registry.optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("2", fields.get("candidate.count"));
+        assertEquals("1", fields.get("rule.madFma.candidate.count"));
+        assertEquals("0", fields.get("rule.clamp.candidate.count"));
+        assertEquals("0", fields.get("rule.dot.candidate.count"));
+        assertEquals("1", fields.get("rule.mix.candidate.count"));
+        assertEquals("mix", fields.get("rule.3.id"));
+        assertEquals("1", fields.get("rule.3.candidate.count"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.count"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.complete.count"));
+        assertEquals("0", fields.get("rule.3.replacementPlan.partial.count"));
+        assertEquals("none", fields.get("rule.3.replacementPlan.firstBlocker"));
+        assertEquals("mix", fields.get("rule.3.replacementPlan.0.ruleId"));
+        assertEquals("kernel", fields.get("rule.3.replacementPlan.0.methodName"));
+        assertEquals("1", fields.get("rule.3.replacementPlan.0.rootNodeId"));
+        assertEquals("mix", fields.get("rule.3.replacementPlan.0.replacementKind"));
+        assertEquals("1,2,3", fields.get("rule.3.replacementPlan.0.coveredNodeIds"));
+        assertEquals("4,5,6", fields.get("rule.3.replacementPlan.0.inputNodeIds"));
+        assertEquals("true", fields.get("rule.3.replacementPlan.0.complete"));
+        assertEquals("rewrite-engine-not-implemented", fields.get("firstBlocker"));
         assertTrue(passReport.toLine().contains("structural rewrite and proof emission are not implemented"));
     }
 
@@ -572,6 +1139,228 @@ class GpuRuntimeIrOptimizerRegistryTest {
         assertEquals("custom-rule-v3", fields.get("rule.0.extensionVersion"));
         assertEquals("2", fields.get("rule.0.candidate.count"));
         assertEquals("1", fields.get("rule.execution.count"));
+    }
+
+    @Test
+    void diagnosticPeepholePassRejectsStructurallyInvalidReplacementPlan() {
+        GpuRuntimeIrPeepholeRule invalidPlanRule = new GpuRuntimeIrPeepholeRule() {
+            @Override
+            public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
+                return GpuRuntimeIrPeepholeRuleReport.diagnosticCandidates(
+                        this,
+                        context.methodBody().name(),
+                        1,
+                        Map.of("family", "invalid-plan-test"),
+                        List.of(GpuRuntimeIrPeepholeReplacementPlan.complete(
+                                ruleId(),
+                                context.methodBody().name(),
+                                999,
+                                "invalid-test",
+                                List.of(999),
+                                List.of(1)
+                        ))
+                );
+            }
+
+            @Override
+            public String ruleId() {
+                return "invalidPlanRule";
+            }
+
+            @Override
+            public String extensionId() {
+                return "test.peephole.invalid-plan";
+            }
+        };
+        GpuRuntimeIrPeepholePass pass = new GpuRuntimeIrPeepholePass(
+                GpuRuntimeIrPeepholeRuleRegistry.of(List.of(invalidPlanRule))
+        );
+        IrGpuArtifact artifact = fastMathTypedArtifact();
+
+        GpuRuntimeIrOptimizationReport report = GpuRuntimeIrOptimizerRegistry.ofPasses(List.of(pass))
+                .optimizeWithReport(request(artifact));
+
+        assertSame(artifact, report.artifact().orElseThrow());
+        GpuRuntimeIrOptimizationPassReport passReport = report.passReports().get(0);
+        Map<String, String> fields = passReport.proofArtifact().fields();
+        assertEquals(GpuRuntimeIrOptimizationOutcome.SKIPPED, passReport.outcome());
+        assertEquals("1", fields.get("candidate.count"));
+        assertEquals("1", fields.get("replacementPlan.validation.invalid.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("replacementPlan.validation.firstBlocker"));
+        assertEquals("1", fields.get("rewriteSketch.count"));
+        assertEquals("1", fields.get("rewriteVisitor.count"));
+        assertEquals("0", fields.get("rewriteVisitor.ready.count"));
+        assertEquals("1", fields.get("rewriteVisitor.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("rewriteVisitor.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.rewriteVisitor.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.rewriteVisitor.0.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.rewriteVisitor.0.rootVisitable"));
+        assertEquals("5", fields.get("rule.0.rewriteVisitor.0.graphNodeMaxId"));
+        assertEquals("false", fields.get("rule.0.rewriteVisitor.0.visitorReady"));
+        assertEquals("false", fields.get("rule.0.rewriteVisitor.0.selectedIrReplacement"));
+        assertEquals("true", fields.get("rewriteVisitor.visitorImplemented"));
+        assertEquals("false", fields.get("rewriteVisitor.replacementBuilderImplemented"));
+        assertEquals("1", fields.get("replacementBlueprint.count"));
+        assertEquals("0", fields.get("replacementBlueprint.ready.count"));
+        assertEquals("1", fields.get("replacementBlueprint.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("replacementBlueprint.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.replacementBlueprint.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.replacementBlueprint.0.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.replacementBlueprint.0.blueprintReady"));
+        assertEquals("false", fields.get("rule.0.replacementBlueprint.0.selectedIrReplacement"));
+        assertEquals("false", fields.get("replacementBlueprint.replacementBuilderImplemented"));
+        assertEquals("1", fields.get("rewriteTransaction.count"));
+        assertEquals("0", fields.get("rewriteTransaction.ready.count"));
+        assertEquals("1", fields.get("rewriteTransaction.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("rewriteTransaction.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.rewriteTransaction.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.rewriteTransaction.0.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.rewriteTransaction.0.transactionReady"));
+        assertEquals("0", fields.get("rule.0.rewriteTransaction.0.plannedAddedNode.count"));
+        assertEquals("none", fields.get("rule.0.rewriteTransaction.0.plannedAddedNodeIds"));
+        assertEquals("false", fields.get("rewriteTransaction.nodeIdAllocatorImplemented"));
+        assertEquals("false", fields.get("rewriteTransaction.graphRewriteImplemented"));
+        assertEquals("false", fields.get("rewriteTransaction.selectedIrReplacement"));
+        assertEquals("1", fields.get("nodeIdAllocation.count"));
+        assertEquals("0", fields.get("nodeIdAllocation.ready.count"));
+        assertEquals("1", fields.get("nodeIdAllocation.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("nodeIdAllocation.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.nodeIdAllocation.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.nodeIdAllocation.0.firstBlocker"));
+        assertEquals("none", fields.get("rule.0.nodeIdAllocation.0.candidateNodeIds"));
+        assertEquals("false", fields.get("rule.0.nodeIdAllocation.0.allocationReady"));
+        assertEquals("false", fields.get("rule.0.nodeIdAllocation.0.nodeIdsReserved"));
+        assertEquals("false", fields.get("nodeIdAllocation.nodeIdAllocatorApplied"));
+        assertEquals("false", fields.get("nodeIdAllocation.graphRewriteImplemented"));
+        assertEquals("1", fields.get("replacementNode.count"));
+        assertEquals("0", fields.get("replacementNode.ready.count"));
+        assertEquals("1", fields.get("replacementNode.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("replacementNode.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.replacementNode.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.replacementNode.0.firstBlocker"));
+        assertEquals("none", fields.get("rule.0.replacementNode.0.candidateReplacementNodeId"));
+        assertEquals("false", fields.get("rule.0.replacementNode.0.replacementNodeReady"));
+        assertEquals("false", fields.get("rule.0.replacementNode.0.replacementNodeBuilt"));
+        assertEquals("false", fields.get("replacementNode.replacementBuilderImplemented"));
+        assertEquals("false", fields.get("replacementNode.graphRewriteImplemented"));
+        assertEquals("1", fields.get("graphPatch.count"));
+        assertEquals("0", fields.get("graphPatch.ready.count"));
+        assertEquals("1", fields.get("graphPatch.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("graphPatch.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.graphPatch.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.graphPatch.0.firstBlocker"));
+        assertEquals("none", fields.get("rule.0.graphPatch.0.insertedNodeIds"));
+        assertEquals("false", fields.get("rule.0.graphPatch.0.graphPatchReady"));
+        assertEquals("false", fields.get("rule.0.graphPatch.0.graphPatchApplied"));
+        assertEquals("false", fields.get("graphPatch.graphRewriteImplemented"));
+        assertEquals("1", fields.get("transformedGraph.count"));
+        assertEquals("0", fields.get("transformedGraph.ready.count"));
+        assertEquals("1", fields.get("transformedGraph.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("transformedGraph.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.transformedGraph.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.transformedGraph.0.firstBlocker"));
+        assertEquals("not-built", fields.get("rule.0.transformedGraph.0.transformedGraphIdentity"));
+        assertEquals("false", fields.get("rule.0.transformedGraph.0.materializationReady"));
+        assertEquals("false", fields.get("rule.0.transformedGraph.0.transformedGraphBuilt"));
+        assertEquals("false", fields.get("transformedGraph.graphPatchApplied"));
+        assertEquals("false", fields.get("transformedGraph.graphRewriteImplemented"));
+        assertEquals("1", fields.get("irArtifactEnvelope.count"));
+        assertEquals("0", fields.get("irArtifactEnvelope.ready.count"));
+        assertEquals("1", fields.get("irArtifactEnvelope.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("irArtifactEnvelope.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.irArtifactEnvelope.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.irArtifactEnvelope.0.firstBlocker"));
+        assertEquals("not-built", fields.get("rule.0.irArtifactEnvelope.0.optimizedArtifactIdentity"));
+        assertEquals("false", fields.get("rule.0.irArtifactEnvelope.0.artifactEnvelopeReady"));
+        assertEquals("false", fields.get("rule.0.irArtifactEnvelope.0.artifactEnvelopeBuilt"));
+        assertEquals("false", fields.get("irArtifactEnvelope.optimizedArtifactBuilt"));
+        assertEquals("false", fields.get("irArtifactEnvelope.selectedIrReplacement"));
+        assertEquals("1", fields.get("artifactProofBinding.count"));
+        assertEquals("0", fields.get("artifactProofBinding.ready.count"));
+        assertEquals("1", fields.get("artifactProofBinding.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("artifactProofBinding.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.artifactProofBinding.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactProofBinding.0.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.artifactEnvelopeReady"));
+        assertEquals("not-required", fields.get("rule.0.artifactProofBinding.0.proofStatus"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactProofBinding.0.proofFirstBlocker"));
+        assertEquals("not-required", fields.get("rule.0.artifactProofBinding.0.reviewPackageStatus"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactProofBinding.0.reviewPackageFirstBlocker"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.proofRequired"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.bindingReady"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.proofBound"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.optimizedArtifactBuilt"));
+        assertEquals("false", fields.get("rule.0.artifactProofBinding.0.transformedIrBuilt"));
+        assertEquals("false", fields.get("artifactProofBinding.optimizedArtifactBuilt"));
+        assertEquals("false", fields.get("artifactProofBinding.selectedIrReplacement"));
+        assertEquals("1", fields.get("artifactSelection.count"));
+        assertEquals("0", fields.get("artifactSelection.ready.count"));
+        assertEquals("1", fields.get("artifactSelection.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("artifactSelection.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.artifactSelection.0.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactSelection.0.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.artifactSelection.0.proofBindingStatus"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.artifactSelection.0.proofBindingFirstBlocker"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.proofBindingReady"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.optimizedArtifactBuilt"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.transformedIrBuilt"));
+        assertEquals("true", fields.get("rule.0.artifactSelection.0.productionGateRequired"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.productionGateAccepted"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.mutationPolicyAllowed"));
+        assertEquals("false", fields.get("rule.0.artifactSelection.0.selectionReady"));
+        assertEquals("false", fields.get("artifactSelection.selectionApplied"));
+        assertEquals("false", fields.get("artifactSelection.optimizedArtifactSelected"));
+        assertEquals("false", fields.get("artifactSelection.selectedIrReplacement"));
+        assertEquals("0", fields.get("rewriteSketch.ready.count"));
+        assertEquals("1", fields.get("rewriteSketch.blocked.count"));
+        assertEquals("replacement-plan-root-missing", fields.get("rewriteSketch.firstBlocker"));
+        assertEquals("blocked", fields.get("rule.0.rewriteSketch.0.status"));
+        assertEquals("true", fields.get("rule.0.rewriteSketch.0.planComplete"));
+        assertEquals("false", fields.get("rule.0.rewriteSketch.0.planValid"));
+        assertEquals("false", fields.get("rule.0.rewriteSketch.0.sketchReady"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.rewriteSketch.0.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.rewriteSketch.0.mutationAllowed"));
+        assertEquals("false", fields.get("rule.0.rewriteSketch.0.selectedIrReplacement"));
+        assertEquals("blocked", fields.get("rewriteSelection.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rewriteSelection.firstBlocker"));
+        assertEquals("1", fields.get("rewriteSelection.sketch.count"));
+        assertEquals("0", fields.get("rewriteSelection.sketch.ready.count"));
+        assertEquals("1", fields.get("rewriteSelection.sketch.blocked.count"));
+        assertEquals("0", fields.get("rewriteSelection.conflict.count"));
+        assertEquals("false", fields.get("rewriteSelection.runtimeEquivalenceRequired"));
+        assertEquals("false", fields.get("rewriteSelection.approvalRequired"));
+        assertEquals("false", fields.get("rewriteSelection.selectedIrReplacement"));
+        assertEquals("not-required", fields.get("rewriteProof.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rewriteProof.firstBlocker"));
+        assertEquals("false", fields.get("rewriteProof.proofRequired"));
+        assertEquals("false", fields.get("rewriteProof.runtimeEquivalenceRequired"));
+        assertEquals("false", fields.get("rewriteProof.rollbackRequired"));
+        assertEquals("false", fields.get("rewriteProof.selectedIrReplacement"));
+        assertEquals("not-required", fields.get("rewriteReviewPackage.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rewriteReviewPackage.firstBlocker"));
+        assertEquals("false", fields.get("rewriteReviewPackage.required"));
+        assertEquals("false", fields.get("rewriteReviewPackage.complete"));
+        assertEquals("blocked", fields.get("rule.0.rewriteSelection.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.rewriteSelection.firstBlocker"));
+        assertEquals("not-required", fields.get("rule.0.rewriteProof.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.rewriteProof.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.rewriteProof.proofAccepted"));
+        assertEquals("false", fields.get("rule.0.rewriteProof.selectedIrReplacement"));
+        assertEquals("not-required", fields.get("rule.0.rewriteReviewPackage.status"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.rewriteReviewPackage.firstBlocker"));
+        assertEquals("false", fields.get("rule.0.rewriteReviewPackage.complete"));
+        assertEquals("false", fields.get("rule.0.rewriteReviewPackage.selectedIrReplacement"));
+        assertEquals("replacement-plan-root-missing", fields.get("firstBlocker"));
+        assertEquals("replacement-plan-root-missing", fields.get("rule.0.firstBlocker"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.validation.count"));
+        assertEquals("0", fields.get("rule.0.replacementPlan.validation.valid.count"));
+        assertEquals("1", fields.get("rule.0.replacementPlan.validation.invalid.count"));
+        assertEquals("false", fields.get("rule.0.replacementPlan.validation.0.valid"));
+        assertEquals("false", fields.get("rule.0.replacementPlan.validation.0.rootExists"));
+        assertEquals("true", fields.get("rule.0.replacementPlan.validation.0.coveredIncludesRoot"));
+        assertEquals("999", fields.get("rule.0.replacementPlan.validation.0.missingCoveredNodeIds"));
+        assertEquals("none", fields.get("rule.0.replacementPlan.validation.0.missingInputNodeIds"));
+        assertTrue(passReport.toLine().contains("structural validation"));
     }
 
     @Test
@@ -693,8 +1482,10 @@ class GpuRuntimeIrOptimizerRegistryTest {
         );
 
         assertTrue(request.fastMathEnabled());
+        assertTrue(request.optimizerPolicyEnabled());
         assertEquals("GPUOptimize", request.optimizerPolicy().source());
         assertFalse(missingArtifactRequest.fastMathEnabled());
+        assertFalse(missingArtifactRequest.optimizerPolicyEnabled());
         assertEquals("default-strict", missingArtifactRequest.optimizerPolicy().source());
     }
 
@@ -866,6 +1657,47 @@ class GpuRuntimeIrOptimizerRegistryTest {
                 ),
                 Optional.of(artifact)
         );
+    }
+
+    private static void assertNoProductionEnablingPreflightFields(Map<String, String> fields) {
+        List<String> forbiddenTrueSuffixes = List.of(
+                ".replacementBuilderImplemented",
+                ".nodeIdsReserved",
+                ".nodeIdAllocatorApplied",
+                ".replacementNodeBuilt",
+                ".graphPatchApplied",
+                ".graphRewriteImplemented",
+                ".transformedGraphBuilt",
+                ".artifactEnvelopeBuilt",
+                ".optimizedArtifactBuilt",
+                ".transformedIrBuilt",
+                ".rewriteBuilderImplemented",
+                ".conflictResolutionImplemented",
+                ".runtimeEquivalenceProven",
+                ".proofAccepted",
+                ".runtimeEquivalencePayload.present",
+                ".runtimeEquivalencePayload.complete",
+                ".rollbackEvidence.present",
+                ".rollbackClean",
+                ".approvalAccepted",
+                ".reviewAccepted",
+                ".proofBound",
+                ".rollbackBound",
+                ".approvalBound",
+                ".bindingReady",
+                ".productionGateAccepted",
+                ".mutationPolicyAllowed",
+                ".selectionApplied",
+                ".optimizedArtifactSelected",
+                ".selectionReady",
+                ".mutationAllowed",
+                ".selectedIrReplacement"
+        );
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            boolean forbidden = forbiddenTrueSuffixes.stream().anyMatch(entry.getKey()::endsWith);
+            assertFalse(forbidden && "true".equals(entry.getValue()),
+                    () -> "production-enabling preflight field unexpectedly true: " + entry.getKey());
+        }
     }
 
     private static GpuKernelDescriptor descriptor() {
@@ -1101,6 +1933,263 @@ class GpuRuntimeIrOptimizerRegistryTest {
                                 "jtg_kernel",
                                 "ir-text-v1",
                                 "body\n  return ((a * b) + c)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathPartialMadFmaTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(2),
+                                "right", List.of(5)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(3)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableRef", Map.of("name", "c"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return ((a * <missing>) + c)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathClampTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrIntrinsicCall", Map.of("name", "min"), Map.of(
+                                "args", List.of(2, 5)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrIntrinsicCall", Map.of("name", "max"), Map.of(
+                                "args", List.of(3, 4)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "x"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "lo"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableRef", Map.of("name", "hi"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return min(max(x, lo), hi)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathStepTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrConditional", Map.of(), Map.of(
+                                "condition", List.of(2),
+                                "then", List.of(5),
+                                "else", List.of(6)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "<"), Map.of(
+                                "left", List.of(3),
+                                "right", List.of(4)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "x"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "edge"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrLiteral", Map.of("sourceText", "0.0f"), Map.of()),
+                        new IrGpuTypedNode(6, "GpuIrLiteral", Map.of("sourceText", "1.0f"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return x < edge ? 0.0f : 1.0f\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathDotTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(2),
+                                "right", List.of(5)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(3),
+                                "right", List.of(4)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrVariableRef", Map.of("name", "a0"), Map.of()),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "b0"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(6),
+                                "right", List.of(7)
+                        )),
+                        new IrGpuTypedNode(6, "GpuIrVariableRef", Map.of("name", "a1"), Map.of()),
+                        new IrGpuTypedNode(7, "GpuIrVariableRef", Map.of("name", "b1"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return (a0 * b0) + (a1 * b1)\n",
+                                typedBody,
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
+                                List.of(),
+                                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation.unknown("kernel")
+                        ))
+                ),
+                List.of(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata.fromGpuOptimize(true),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata.transitionalIrText(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+    }
+
+    private static IrGpuArtifact fastMathMixTypedArtifact() {
+        IrGpuTypedBody typedBody = new IrGpuTypedBody(
+                IrGpuTypedBody.FORMAT,
+                List.of(0),
+                List.of(
+                        new IrGpuTypedNode(0, "GpuIrReturn", Map.of(), Map.of("value", List.of(1))),
+                        new IrGpuTypedNode(1, "GpuIrBinary", Map.of("operator", "+"), Map.of(
+                                "left", List.of(4),
+                                "right", List.of(2)
+                        )),
+                        new IrGpuTypedNode(2, "GpuIrBinary", Map.of("operator", "*"), Map.of(
+                                "left", List.of(6),
+                                "right", List.of(3)
+                        )),
+                        new IrGpuTypedNode(3, "GpuIrBinary", Map.of("operator", "-"), Map.of(
+                                "left", List.of(5),
+                                "right", List.of(4)
+                        )),
+                        new IrGpuTypedNode(4, "GpuIrVariableRef", Map.of("name", "a"), Map.of()),
+                        new IrGpuTypedNode(5, "GpuIrVariableRef", Map.of("name", "b"), Map.of()),
+                        new IrGpuTypedNode(6, "GpuIrVariableRef", Map.of("name", "t"), Map.of())
+                )
+        );
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(new IrGpuMethodBody(
+                                "entry",
+                                "kernel",
+                                "jtg_kernel",
+                                "ir-text-v1",
+                                "body\n  return a + t * (b - a)\n",
                                 typedBody,
                                 net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBodyIndex.empty(),
                                 List.of(),

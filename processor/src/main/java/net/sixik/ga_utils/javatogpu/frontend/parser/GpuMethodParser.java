@@ -10,6 +10,7 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
+import net.sixik.ga_utils.javatogpu.frontend.model.GpuAttributeMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuAddressSpace;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuMethod;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuParameter;
@@ -64,6 +65,7 @@ public final class GpuMethodParser {
                 declaration,
                 parseInlineFlag(declaration),
                 parseOpenClAttributes(declaration),
+                parseAttributeMetadata(declaration),
                 parseNativeCode(declaration),
                 parseAnnotationStringValue(declaration, "support"),
                 parseAnnotationStringValue(declaration, "callback"),
@@ -110,22 +112,78 @@ public final class GpuMethodParser {
     private List<String> parseOpenClAttributes(MethodDeclaration declaration) {
         List<String> attributes = new ArrayList<>(GpuStructParser.parseOpenClAttributes(declaration.getAnnotations()));
         parseWorkGroupSizeAttribute(declaration).ifPresent(attributes::add);
+        parseWorkGroupSizeHintAttribute(declaration).ifPresent(attributes::add);
+        parseVectorTypeHintAttribute(declaration).ifPresent(attributes::add);
+        if (declaration.getAnnotationByName("GPUAlwaysInline").isPresent()) {
+            attributes.add("always_inline");
+        }
         return List.copyOf(attributes);
+    }
+
+    private List<GpuAttributeMetadata> parseAttributeMetadata(MethodDeclaration declaration) {
+        ArrayList<GpuAttributeMetadata> metadata = new ArrayList<>();
+        parseWorkGroupSizeMetadata(declaration).ifPresent(metadata::add);
+        parseWorkGroupSizeHintMetadata(declaration).ifPresent(metadata::add);
+        parseVectorTypeHintMetadata(declaration).ifPresent(metadata::add);
+        if (declaration.getAnnotationByName("GPUAlwaysInline").isPresent()) {
+            metadata.add(GpuAttributeMetadata.alwaysInline("GPUAlwaysInline"));
+        }
+        return List.copyOf(metadata);
     }
 
     private java.util.Optional<String> parseWorkGroupSizeAttribute(MethodDeclaration declaration) {
         return declaration.getAnnotationByName("GPUWorkGroupSize")
-                .map(this::workGroupSizeAttribute);
+                .map(annotation -> workGroupSizeAttribute(annotation, "GPUWorkGroupSize", "reqd_work_group_size"));
     }
 
-    private String workGroupSizeAttribute(AnnotationExpr annotation) {
-        int x = parseIntAnnotationValue(annotation, "x", 1, "GPUWorkGroupSize");
-        int y = parseIntAnnotationValue(annotation, "y", 1, "GPUWorkGroupSize");
-        int z = parseIntAnnotationValue(annotation, "z", 1, "GPUWorkGroupSize");
+    private java.util.Optional<GpuAttributeMetadata> parseWorkGroupSizeMetadata(MethodDeclaration declaration) {
+        return declaration.getAnnotationByName("GPUWorkGroupSize")
+                .map(annotation -> workGroupSizeMetadata(annotation, "GPUWorkGroupSize", "required"));
+    }
+
+    private java.util.Optional<String> parseWorkGroupSizeHintAttribute(MethodDeclaration declaration) {
+        return declaration.getAnnotationByName("GPUWorkGroupSizeHint")
+                .map(annotation -> workGroupSizeAttribute(annotation, "GPUWorkGroupSizeHint", "work_group_size_hint"));
+    }
+
+    private java.util.Optional<GpuAttributeMetadata> parseWorkGroupSizeHintMetadata(MethodDeclaration declaration) {
+        return declaration.getAnnotationByName("GPUWorkGroupSizeHint")
+                .map(annotation -> workGroupSizeMetadata(annotation, "GPUWorkGroupSizeHint", "hint"));
+    }
+
+    private java.util.Optional<String> parseVectorTypeHintAttribute(MethodDeclaration declaration) {
+        return declaration.getAnnotationByName("GPUVectorTypeHint")
+                .map(annotation -> "vec_type_hint(" + parseStringAnnotationValue(annotation, "value", "GPUVectorTypeHint.value") + ")");
+    }
+
+    private java.util.Optional<GpuAttributeMetadata> parseVectorTypeHintMetadata(MethodDeclaration declaration) {
+        return declaration.getAnnotationByName("GPUVectorTypeHint")
+                .map(annotation -> GpuAttributeMetadata.vectorTypeHint(
+                        parseStringAnnotationValue(annotation, "value", "GPUVectorTypeHint.value"),
+                        "GPUVectorTypeHint"
+                ));
+    }
+
+    private String workGroupSizeAttribute(AnnotationExpr annotation, String annotationName, String attributeName) {
+        int x = parseIntAnnotationValue(annotation, "x", 1, annotationName);
+        int y = parseIntAnnotationValue(annotation, "y", 1, annotationName);
+        int z = parseIntAnnotationValue(annotation, "z", 1, annotationName);
         if (x <= 0 || y <= 0 || z <= 0) {
-            throw new IllegalArgumentException("GPUWorkGroupSize dimensions must be positive integers");
+            throw new IllegalArgumentException(annotationName + " dimensions must be positive integers");
         }
-        return "reqd_work_group_size(" + x + ", " + y + ", " + z + ")";
+        return attributeName + "(" + x + ", " + y + ", " + z + ")";
+    }
+
+    private GpuAttributeMetadata workGroupSizeMetadata(AnnotationExpr annotation, String annotationName, String mode) {
+        int x = parseIntAnnotationValue(annotation, "x", 1, annotationName);
+        int y = parseIntAnnotationValue(annotation, "y", 1, annotationName);
+        int z = parseIntAnnotationValue(annotation, "z", 1, annotationName);
+        if (x <= 0 || y <= 0 || z <= 0) {
+            throw new IllegalArgumentException(annotationName + " dimensions must be positive integers");
+        }
+        return "required".equals(mode)
+                ? GpuAttributeMetadata.requiredWorkGroupSize(x, y, z, annotationName)
+                : GpuAttributeMetadata.workGroupSizeHint(x, y, z, annotationName);
     }
 
     private int parseIntAnnotationValue(AnnotationExpr annotation, String propertyName, int defaultValue, String errorLabel) {
@@ -144,6 +202,31 @@ public final class GpuMethodParser {
             return expression.asIntegerLiteralExpr().asInt();
         }
         throw new IllegalArgumentException(errorLabel + " must be an integer literal: " + expression);
+    }
+
+    private String parseStringAnnotationValue(AnnotationExpr annotation, String propertyName, String errorLabel) {
+        com.github.javaparser.ast.expr.Expression value;
+        if (annotation.isSingleMemberAnnotationExpr()) {
+            value = annotation.asSingleMemberAnnotationExpr().getMemberValue();
+        } else if (annotation.isNormalAnnotationExpr()) {
+            value = annotation.asNormalAnnotationExpr().getPairs().stream()
+                    .filter(pair -> pair.getNameAsString().equals(propertyName))
+                    .findFirst()
+                    .map(pair -> pair.getValue())
+                    .orElseThrow(() -> new IllegalArgumentException(errorLabel + " must be declared"));
+        } else {
+            throw new IllegalArgumentException(errorLabel + " must be declared");
+        }
+        if (value instanceof StringLiteralExpr stringLiteralExpr) {
+            return stringLiteralExpr.asString();
+        }
+        if (value instanceof TextBlockLiteralExpr textBlockLiteralExpr) {
+            return textBlockLiteralExpr.asString();
+        }
+        if (value instanceof LiteralStringValueExpr literalStringValueExpr) {
+            return literalStringValueExpr.getValue();
+        }
+        throw new IllegalArgumentException(errorLabel + " must be a string literal: " + value);
     }
 
     private GpuAddressSpace resolveAddressSpace(boolean isGlobal, boolean isConstantAddressSpace, boolean isLocal) {

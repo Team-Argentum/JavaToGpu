@@ -955,7 +955,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Kernel `0` runtime IR handoff: stage=`optimized`, transformed=`true`, rollback=`false`, rejected=`false`, fallback=`none`, first=`optimized IrGpu is selected for backend lowering after runtime optimizer passes`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` production mutation safety: enabled=`false`, gate=`not-requested`, profileRequested=`false`, first=`runtime IR participates in diagnostics, but production mutation is disabled because no production profile was requested`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` I3 readiness: status=`review-ready`, sourcePromotion=`review-ready`, sourceReady=`true`, optimizerGate=`not-requested`, productionMutation=`false`, first=`I3 source pipeline is review-ready, but production mutation remains disabled until production gates are accepted`"));
-            assertTrue(reportMarkdown.contains("- Kernel `0` runtime optimizer drift: passes=`2`, applied=`2`, rolledBack=`0`, failed=`0`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, optimizerFamilies=`0`, promotionReadyFamilies=`0`, selected=`optimized`, fallback=`none`, gate=`not-requested`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` runtime optimizer drift: passes=`2`, applied=`2`, rolledBack=`0`, failed=`0`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, replacementPlanComplete=`0`, replacementPlanPartial=`0`, replacementPlanFirstBlocker=`none`, replacementPlanValidation=`0/0 valid, invalid=0`, replacementPlanValidationFirstBlocker=`none`, rewriteSketch=`0/0 ready, blocked=0`, rewriteSketchFirstBlocker=`none`, rewriteSketchConflicts=`0`, rewriteSketchConflictFirstBlocker=`none`, rewriteSelection=`not-required`, rewriteSelectionFirstBlocker=`no-rewrite-sketches`, rewriteProof=`not-required`, rewriteProofFirstBlocker=`no-proof-candidates`, rewriteReviewPackage=`not-required`, rewriteReviewPackageFirstBlocker=`no-review-candidates`, optimizerRules=`0`, optimizerRuleDetails=`none`, optimizerFamilies=`0`, promotionReadyFamilies=`0`, selected=`optimized`, fallback=`none`, gate=`not-requested`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` diagnostics: `1`; first=`packaged IrGpu source reconstructed from runtime artifact loader with descriptor parity`"));
             assertFalse(reportMarkdown.contains("- Kernel `0` reconstruction blockers:"));
             assertTrue(reportMarkdown.contains("- Kernel `1`: `inline://integration/perlin-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`, operatorAccepted=`false`, runtimeIr=`original`, productionMutation=`false`, sourceReady=`false`, i3=`blocked`"));
@@ -963,7 +963,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Kernel `1` runtime IR handoff: stage=`original`, transformed=`false`, rollback=`false`, rejected=`true`, fallback=`production-ir-gate-blocked`, first=`optimized IrGpu was rejected by the production IR acceptance gate; original IrGpu remains selected`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` production mutation safety: enabled=`false`, gate=`blocked`, profileRequested=`true`, first=`runtime IR participates in diagnostics, but production mutation remains fail-closed until production optimizer gates pass`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` I3 readiness: status=`blocked`, sourcePromotion=`blocked`, sourceReady=`false`, optimizerGate=`blocked`, productionMutation=`false`, first=`I3 pipeline is active for diagnostics, but source promotion or production mutation is still blocked`"));
-            assertTrue(reportMarkdown.contains("- Kernel `1` runtime optimizer drift: passes=`3`, applied=`1`, rolledBack=`0`, failed=`1`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, optimizerFamilies=`0`, promotionReadyFamilies=`0`, selected=`original`, fallback=`production-ir-gate-blocked`, gate=`blocked`"));
+            assertTrue(reportMarkdown.contains("- Kernel `1` runtime optimizer drift: passes=`3`, applied=`1`, rolledBack=`0`, failed=`1`, proof=`0`, acceptedProof=`0`, blockingProof=`0`, replacementPlanComplete=`0`, replacementPlanPartial=`0`, replacementPlanFirstBlocker=`none`, replacementPlanValidation=`0/0 valid, invalid=0`, replacementPlanValidationFirstBlocker=`none`, rewriteSketch=`0/0 ready, blocked=0`, rewriteSketchFirstBlocker=`none`, rewriteSketchConflicts=`0`, rewriteSketchConflictFirstBlocker=`none`, rewriteSelection=`not-required`, rewriteSelectionFirstBlocker=`no-rewrite-sketches`, rewriteProof=`not-required`, rewriteProofFirstBlocker=`no-proof-candidates`, rewriteReviewPackage=`not-required`, rewriteReviewPackageFirstBlocker=`no-review-candidates`, optimizerRules=`0`, optimizerRuleDetails=`none`, optimizerFamilies=`0`, promotionReadyFamilies=`0`, selected=`original`, fallback=`production-ir-gate-blocked`, gate=`blocked`"));
             assertTrue(reportMarkdown.contains("- Kernel `1` diagnostics: `1`; first=`reconstructed source must match descriptor source before promotion review`"));
             assertTrue(reportMarkdown.contains("- Kernel blocker families: `source-parity=1`"));
             assertFalse(reportMarkdown.contains("runtimeIr=`unknown`"));
@@ -980,8 +980,8 @@ class OpenClValidationReportTest {
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourcePromotionFirstBlockers=runtime equivalence must execute and pass before backend source promotion=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("sourcePromotionFirstBlockerFamilies=runtime-equivalence=1"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernelCount=2"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review/operatorAccepted=false/sourcePromotionFirstBlocker=none, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
-            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source/operatorAccepted=false/sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.0=inline://integration/image-kernel.cl[diagnostics=1, sourceSwitching=compile-irgpu-source-review/operatorAccepted=false/sourcePromotionFirstBlocker=none, runtimeIr=optimized, optimizerDrift=recorded/2passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/replacementPlanComplete=0/replacementPlanPartial=0/replacementPlanFirstBlocker=none/replacementPlanValidationValid=0/replacementPlanValidationTotal=0/replacementPlanValidationInvalid=0/replacementPlanValidationFirstBlocker=none/rewriteSketchReady=0/rewriteSketchTotal=0/rewriteSketchBlocked=0/rewriteSketchFirstBlocker=none/rewriteSketchConflicts=0/rewriteSketchConflictFirstBlocker=none/rewriteSketchConflictResolutionImplemented=false/rewriteSketchSelectionApplied=false/rewriteSelectionStatus=not-required/rewriteSelectionFirstBlocker=no-rewrite-sketches/rewriteSelectionApplied=false/rewriteProofStatus=not-required/rewriteProofFirstBlocker=no-proof-candidates/rewriteProofAccepted=false/rewriteBuilderImplemented=false/selectedIrReplacement=false/rewriteReviewPackageStatus=not-required/rewriteReviewPackageFirstBlocker=no-review-candidates/rewriteReviewPackageComplete=false/optimizerRules=0/optimizerRuleDetails=none/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false, extensionParticipation=not-recorded/0executions/failedContinued=0/failedClosed=0/fallback=none, productionMutation=false, sourceReady=true, i3=review-ready, families=none]"));
+            assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("kernel.1=inline://integration/perlin-kernel.cl[diagnostics=1, sourceSwitching=reject-production-irgpu-source/operatorAccepted=false/sourcePromotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion, runtimeIr=original, optimizerDrift=recorded/3passes/rollback=0/proof=0/acceptedProof=0/blockingProof=0/replacementPlanComplete=0/replacementPlanPartial=0/replacementPlanFirstBlocker=none/replacementPlanValidationValid=0/replacementPlanValidationTotal=0/replacementPlanValidationInvalid=0/replacementPlanValidationFirstBlocker=none/rewriteSketchReady=0/rewriteSketchTotal=0/rewriteSketchBlocked=0/rewriteSketchFirstBlocker=none/rewriteSketchConflicts=0/rewriteSketchConflictFirstBlocker=none/rewriteSketchConflictResolutionImplemented=false/rewriteSketchSelectionApplied=false/rewriteSelectionStatus=not-required/rewriteSelectionFirstBlocker=no-rewrite-sketches/rewriteSelectionApplied=false/rewriteProofStatus=not-required/rewriteProofFirstBlocker=no-proof-candidates/rewriteProofAccepted=false/rewriteBuilderImplemented=false/selectedIrReplacement=false/rewriteReviewPackageStatus=not-required/rewriteReviewPackageFirstBlocker=no-review-candidates/rewriteReviewPackageComplete=false/optimizerRules=0/optimizerRuleDetails=none/optimizerFamilies=0/promotionReadyFamilies=0/payloadCompleteFamilies=0/payloadCompleteAll=false, extensionParticipation=not-recorded/0executions/failedContinued=0/failedClosed=0/fallback=production-ir-gate-blocked, productionMutation=false, sourceReady=false, i3=blocked, families=source-parity=1]"));
             assertTrue(entries.get(0).backendSourcePromotionWorkloadStatus().contains("productionSourceSwitching=disabled"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("contract=valid"));
             assertTrue(entries.get(0).productionPromotionExplainabilityStatus().contains("decisionMode=diagnostic-only"));
@@ -1362,6 +1362,61 @@ class OpenClValidationReportTest {
                         ""
                 )
         );
+        java.nio.file.Files.writeString(
+                artifactDirectory.resolve("backend-module.properties"),
+                String.join("\n",
+                        "resource=workload/perlin.cl",
+                        "backendTarget=OPENCL",
+                        ""
+                )
+        );
+        java.nio.file.Files.writeString(
+                artifactDirectory.resolve(
+                        net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper
+                                .RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT),
+                String.join("\n",
+                        "status=recorded",
+                        "pass.count=1",
+                        "proposalOnly.count=1",
+                        "selectedOptimized.count=0",
+                        "rolledBack.count=0",
+                        "constantFoldingPreview.pass.count=1",
+                        "constantFoldingPreview.candidate.count=2",
+                        "constantFoldingPreview.skipped.nonPlainLiteral.count=1",
+                        "constantFoldingPreview.skipped.divideByZero.count=1",
+                        "constantFoldingPreview.skipped.nonEvenDivision.count=0",
+                        "constantFoldingPreview.skipped.unsupportedOperator.count=0",
+                        "constantFoldingPreview.skipped.nonLiteralOperand.count=0",
+                        "constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite=true",
+                        "constantFoldingPreview.approvalRequiredBeforeRewrite=true",
+                        "constantFoldingPreview.integerOverflowProven=false",
+                        "constantFoldingPreview.floatingPointRoundingProven=false",
+                        "safeLocalCsePreview.pass.count=1",
+                        "safeLocalCsePreview.expression.count=5",
+                        "safeLocalCsePreview.candidateExpression.count=3",
+                        "safeLocalCsePreview.duplicateExpression.count=1",
+                        "safeLocalCsePreview.equivalenceClass.count=1",
+                        "safeLocalCsePreview.blocked.unsupportedOperator.count=1",
+                        "safeLocalCsePreview.blocked.impureOperand.count=0",
+                        "safeLocalCsePreview.blocked.controlFlowBoundary.count=1",
+                        "safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite=true",
+                        "safeLocalCsePreview.approvalRequiredBeforeRewrite=true",
+                        "safeLocalCsePreview.dominanceProven=false",
+                        "safeLocalCsePreview.sideEffectFreedomProven=false",
+                        "typedDeadCodePreview.pass.count=1",
+                        "typedDeadCodePreview.node.count=7",
+                        "typedDeadCodePreview.reachableNode.count=5",
+                        "typedDeadCodePreview.unreachableNode.count=2",
+                        "typedDeadCodePreview.blocked.missingRoot.count=0",
+                        "typedDeadCodePreview.blocked.missingChildReference.count=1",
+                        "typedDeadCodePreview.blocked.sideEffectingUnreachableNode.count=1",
+                        "typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=true",
+                        "typedDeadCodePreview.approvalRequiredBeforeRewrite=true",
+                        "typedDeadCodePreview.sideEffectFreedomProven=false",
+                        "pass.0.passVersion=ir-optimizer:text-canonicalization:1",
+                        ""
+                )
+        );
         String previousGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
         String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
         String previousSummaryFile = System.getProperty("javatogpu.opencl.kernelLaunchAdvisorySummaryFile");
@@ -1406,6 +1461,54 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("## Kernel Launch Advisories"));
             assertTrue(reportMarkdown.contains("- Non-preferred multiple: `1`"));
             assertTrue(reportMarkdown.contains("`workload/perlin.cl` | `non-preferred-multiple`"));
+            assertTrue(reportMarkdown.contains("## Runtime IR Optimizer Evidence"));
+            assertTrue(reportMarkdown.contains("- Proposal-only count: `1`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate status: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidates: `0`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate first blocker: `no-candidates`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate selection first blocker: `no-candidates`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate selection applied: `false`"));
+            assertTrue(reportMarkdown.contains("- Optimized artifact candidate selected IR replacement: `false`"));
+            assertTrue(reportMarkdown.contains("- Constant folding preview passes: `1`"));
+            assertTrue(reportMarkdown.contains("- Constant folding preview candidates: `2`"));
+            assertTrue(reportMarkdown.contains("- Constant folding preview skipped blockers: `2`"));
+            assertTrue(reportMarkdown.contains("- Constant folding materialization status: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Constant folding materialized nodes: `0`"));
+            assertTrue(reportMarkdown.contains("- Constant folding materialization literal rewrites: `0`"));
+            assertTrue(reportMarkdown.contains("- Constant folding materialization identity rewrites: `0`"));
+            assertTrue(reportMarkdown.contains("- Constant folding materialization first blocker: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview passes: `1`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview candidate expressions: `3`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview duplicate expressions: `1`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE preview blockers: `2`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE materialization status: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE materialized nodes: `0`"));
+            assertTrue(reportMarkdown.contains("- Safe local CSE materialization first blocker: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code preview passes: `1`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code preview unreachable nodes: `2`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code preview blockers: `2`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code materialization status: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code materialization removed nodes: `0`"));
+            assertTrue(reportMarkdown.contains("- Typed dead-code materialization first blocker: `not-recorded`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness status: `blocked-by-proof`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness families: `constant-folding=blocked-by-proof, safe-local-cse=blocked-by-proof, typed-dead-code=blocked-by-proof`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness recorded families: `3`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness candidate families: `3`"));
+            assertTrue(reportMarkdown.contains("- Preview readiness blocked families: `3`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review status: `blocked`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review eligible: `false`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review required: `true`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review first blocker: `preview-readiness-blocked-by-proof`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review production mutation: `disabled`"));
+            assertTrue(reportMarkdown.contains("- Runtime-equivalence review selected IR replacement: `disabled`"));
+            assertTrue(reportMarkdown.contains("- Review package status: `not-required`"));
+            assertTrue(reportMarkdown.contains("- Review package required kernels: `0`"));
+            assertTrue(reportMarkdown.contains("- Review package first blocker: `none`"));
+            assertTrue(reportMarkdown.contains("- Review package manual review only: `true`"));
+            assertTrue(reportMarkdown.contains("- Review package production mutation: `disabled`"));
+            assertTrue(reportMarkdown.contains("- Review package selected IR replacement: `disabled`"));
+            assertTrue(reportMarkdown.contains("| `workload/perlin.cl` | `recorded` | `1` | `1` | `0` | `0` | `0` | `0` | `not-recorded` | `no-candidates` | `no-candidates` | `2` | `2` | `0` | `not-recorded` | `3` | `1` | `2` | `0` | `not-recorded` | `2` | `2` | `0` | `not-recorded` | `not-recorded` | `none` | `ir-optimizer:text-canonicalization:1=1` |"));
+            assertTrue(reportMarkdown.contains("ir-optimizer:text-canonicalization:1=1"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisories"));
             assertTrue(summaryMarkdown.contains("- Blocking: `0`"));
             assertTrue(summaryMarkdown.contains("## Kernel Launch Advisory Drift"));
@@ -1461,7 +1564,19 @@ class OpenClValidationReportTest {
             assertTrue(workflow.contains("production_promotion_manifest_mode:"));
             assertTrue(workflow.contains("production_promotion_manifest_file:"));
             assertTrue(workflow.contains("production_promotion_candidate_git_sha:"));
+            assertTrue(workflow.contains("JTG_WORKFLOW_EVENT: ${{ github.event_name }}"));
+            assertTrue(workflow.contains("github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_manifest_mode || 'skip'"));
+            assertTrue(workflow.contains("Validate manual production-promotion inputs"));
+            assertTrue(workflow.contains("production_promotion_candidate_git_sha is required for manual validate/activate modes."));
+            assertTrue(workflow.contains("nvidia-rtx5070"));
+            assertTrue(workflow.contains("nvidia-rtx3060"));
+            assertTrue(workflow.contains("\"device_name\":\"RTX 3060\""));
+            assertTrue(workflow.contains("\"runner_labels\":[\"self-hosted\",\"Windows\",\"X64\",\"nvidia\",\"rtx3060\"]"));
+            assertTrue(workflow.contains("github.event_name == 'workflow_dispatch' && github.event.inputs.validation_lane == 'nvidia'"));
+            assertTrue(workflow.contains("github.event_name == 'workflow_dispatch' && github.event.inputs.validation_lane == 'nvidia-rtx3060'"));
+            assertTrue(workflow.contains("github.event_name == 'workflow_dispatch' && github.event.inputs.validation_lane == 'amd'"));
             assertTrue(workflow.contains("github.event.inputs.validation_lane == 'nvidia'"));
+            assertTrue(workflow.contains("github.event.inputs.validation_lane == 'nvidia-rtx3060'"));
             assertTrue(workflow.contains("github.event.inputs.validation_lane == 'amd'"));
             assertTrue(workflow.contains(":processor:writeOpenClBackendSourcePromotionManifestTemplate"));
             assertTrue(workflow.contains(":processor:validateOpenClBackendSourcePromotionManifest"));

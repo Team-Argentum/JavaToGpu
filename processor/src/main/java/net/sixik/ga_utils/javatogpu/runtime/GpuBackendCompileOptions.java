@@ -22,6 +22,9 @@ public record GpuBackendCompileOptions(
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY = "opencl.productionSourceSwitching";
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_DISABLED = "disabled";
     public static final String OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED = "enabled";
+    public static final String RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY = "runtime.irOptimizerSelection";
+    public static final String RUNTIME_IR_OPTIMIZER_SELECTION_REVIEW_ONLY = "review-only";
+    public static final String RUNTIME_IR_OPTIMIZER_SELECTION_EXPERIMENTAL_APPLY = "experimental-apply";
     public static final String PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY = "productionPromotion.decisionMode";
     public static final String PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY = "productionPromotion.operatorAccepted";
     public static final String RUNTIME_DEVICE_SELF_TEST_PROPERTY = "runtime.deviceSelfTest";
@@ -89,6 +92,29 @@ public record GpuBackendCompileOptions(
                 && OPENCL_PRODUCTION_SOURCE_SWITCHING_ENABLED.equals(
                 properties.get(OPENCL_PRODUCTION_SOURCE_SWITCHING_PROPERTY)
         );
+    }
+
+    public boolean requestsRuntimeIrOptimizerExperimentalApply() {
+        return RUNTIME_IR_OPTIMIZER_SELECTION_EXPERIMENTAL_APPLY.equals(
+                properties.get(RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY)
+        );
+    }
+
+    public GpuBackendCompileOptions withRuntimeIrOptimizerSelection(String selection) {
+        String normalizedSelection = selection == null || selection.isBlank()
+                ? RUNTIME_IR_OPTIMIZER_SELECTION_REVIEW_ONLY
+                : selection;
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        if (RUNTIME_IR_OPTIMIZER_SELECTION_REVIEW_ONLY.equals(normalizedSelection)) {
+            updated.remove(RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY);
+        } else {
+            updated.put(RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY, normalizedSelection);
+        }
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withRuntimeIrOptimizerExperimentalApply() {
+        return withRuntimeIrOptimizerSelection(RUNTIME_IR_OPTIMIZER_SELECTION_EXPERIMENTAL_APPLY);
     }
 
     public String productionPromotionDecisionMode() {

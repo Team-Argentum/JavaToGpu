@@ -120,6 +120,132 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
     }
 
     @Test
+    void carriesRuntimeExtensionParticipationIntoWorkloadGateEvidence() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-extension-participation.cl",
+                blockedGateProperties("backend source promotion remains blocked for fixture"),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                runtimeExtensionParticipationProperties()
+        ));
+
+        assertEquals("1", gate.getProperty("runtimeExtensionParticipation.recordedKernel.count"));
+        assertEquals("3", gate.getProperty("runtimeExtensionParticipation.entry.count"));
+        assertEquals("1", gate.getProperty("runtimeExtensionParticipation.failedContinued.count"));
+        assertEquals("0", gate.getProperty("runtimeExtensionParticipation.failedClosed.count"));
+        assertEquals("2", gate.getProperty("runtimeExtensionParticipation.source.count"));
+        assertEquals("original-irgpu:ir-validation", gate.getProperty("runtimeExtensionParticipation.source.0.name"));
+        assertEquals("1", gate.getProperty("runtimeExtensionParticipation.source.0.count"));
+        assertEquals("backend-compiler-feedback", gate.getProperty("runtimeExtensionParticipation.source.1.name"));
+        assertEquals("2", gate.getProperty("runtimeExtensionParticipation.source.1.count"));
+        assertEquals("recorded", gate.getProperty("kernel.0.runtimeExtensionParticipation.status"));
+        assertEquals("3", gate.getProperty("kernel.0.runtimeExtensionParticipation.entry.count"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeExtensionParticipation.succeeded.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeExtensionParticipation.failedContinued.count"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeExtensionParticipation.pipelineContinued.all"));
+        assertEquals("compiler-feedback:mock:FAILED_CONTINUED", gate.getProperty("kernel.0.runtimeExtensionParticipation.firstFailure"));
+        assertEquals("original-irgpu:ir-validation", gate.getProperty("kernel.0.runtimeExtensionParticipation.source.0.name"));
+        assertEquals("backend-compiler-feedback", gate.getProperty("kernel.0.runtimeExtensionParticipation.source.1.name"));
+    }
+
+    @Test
+    void keepsRuntimeOptimizerDriftDefaultsAlignedWhenArtifactIsMissing() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-missing-drift.cl",
+                blockedGateProperties("backend source promotion remains blocked for fixture"),
+                "",
+                runtimeIrHandoffProperties(
+                        "optimized",
+                        "true",
+                        "false",
+                        "none",
+                        "false",
+                        "optimized runtime IR remains diagnostic-only"
+                ),
+                runtimeProductionMutationSafetyProperties(
+                        "disabled",
+                        "false",
+                        "blocked",
+                        "true",
+                        "original",
+                        "production mutation remains blocked"
+                ),
+                "",
+                ""
+        ));
+
+        assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeOptimizerDrift.status"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.proofBound"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.productionGateAccepted"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.optimizedArtifactSelected"));
+        assertEquals("not-required", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSelection.status"));
+        assertEquals("no-proof-candidates", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteProof.firstBlocker"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteReviewPackage.manualReviewOnly"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
+        assertEquals("optimized", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedRuntimeIrStage"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizedIrRejected"));
+        assertEquals("blocked", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionGateStatus"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionProfileRequested"));
+    }
+
+    @Test
+    void keepsRuntimeOptimizerDriftRecordedDefaultsAlignedWhenArtifactIsPartial() throws IOException {
+        Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
+
+        Properties gate = loadProperties(GpuBackendSourcePromotionWorkloadGateFormatter.merge(
+                gateFile,
+                "kernel-partial-drift.cl",
+                blockedGateProperties("backend source promotion remains blocked for fixture"),
+                "",
+                "",
+                "",
+                "",
+                String.join("\n",
+                        "optimizerFamily.count=2",
+                        "optimizerFamily.promotionReady.count=1",
+                        "optimizerFamily.summary=fixture-family-summary",
+                        "selectedProfile=diagnostic-only",
+                        "productionGateStatus=blocked",
+                        "productionProfileRequested=true",
+                        ""
+                )
+        ));
+
+        assertEquals("recorded", gate.getProperty("kernel.0.runtimeOptimizerDrift.status"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.count"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.pass.applied.count"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.complete.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactProofBinding.proofBound"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.count"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.artifactSelection.productionGateAccepted"));
+        assertEquals("not-required", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSelection.status"));
+        assertEquals("no-proof-candidates", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteProof.firstBlocker"));
+        assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
+        assertEquals("fixture-family-summary", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary"));
+        assertEquals("unknown", gate.getProperty("kernel.0.runtimeOptimizerDrift.fallbackDecision"));
+        assertEquals("diagnostic-only", gate.getProperty("kernel.0.runtimeOptimizerDrift.selectedProfile"));
+        assertEquals("blocked", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionGateStatus"));
+        assertEquals("true", gate.getProperty("kernel.0.runtimeOptimizerDrift.productionProfileRequested"));
+    }
+
+    @Test
     void updatesExistingKernelResourceInsteadOfDuplicatingIt() throws IOException {
         Path gateFile = tempDir.resolve("backend-source-promotion-workload-gate.properties");
 
@@ -366,6 +492,34 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.accepted.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.blocking.count"));
+        assertEquals("3", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.complete.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.partial.count"));
+        assertEquals("multiply-operands-incomplete", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.firstBlocker"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.valid.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.invalid.count"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.ready.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.blocked.count"));
+        assertEquals("none", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.firstBlocker"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.mutationAllowed"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.count"));
+        assertEquals("rewrite-sketch-covered-node-overlap", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented"));
+        assertEquals("false", gate.getProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.count"));
+        assertEquals("madFma", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.id"));
+        assertEquals("3", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.candidate.count"));
+        assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.blocked.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.replacementPlan.validation.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.replacementPlan.validation.invalid.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.rewriteSketch.count"));
+        assertEquals("4", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.rewriteSketch.ready.count"));
+        assertEquals("0", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.rewriteSketch.blocked.count"));
+        assertEquals("multiply-operands-incomplete", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerRule.0.firstBlocker"));
         assertEquals("2", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count"));
         assertEquals("1", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
         assertEquals("cse[passes=1, acceptedProof=1, blockingProof=0, rolledBack=0, failed=0, promotionReady=true], vector[passes=1, acceptedProof=0, blockingProof=1, rolledBack=0, failed=0, promotionReady=false]", gate.getProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary"));
@@ -384,6 +538,21 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("2", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.accepted.count"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.proofArtifact.blocking.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.complete.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.partial.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.valid.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.invalid.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.ready.count"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.blocked.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.conflict.count"));
+        assertEquals("none", gate.getProperty("kernel.1.runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker"));
+        assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerRule.count"));
+        assertEquals(null, gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerRule.0.id"));
         assertEquals("1", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.count"));
         assertEquals("0", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.promotionReady.count"));
         assertEquals("vector[passes=2, acceptedProof=1, blockingProof=1, rolledBack=1, failed=0, promotionReady=false]", gate.getProperty("kernel.1.runtimeOptimizerDrift.optimizerFamily.summary"));
@@ -782,6 +951,57 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "proofArtifact.count=2",
                 "proofArtifact.accepted.count=1",
                 "proofArtifact.blocking.count=1",
+                "replacementPlan.complete.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "3" : "0"),
+                "replacementPlan.partial.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "replacementPlan.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "multiply-operands-incomplete" : "none"),
+                "replacementPlan.validation.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "replacementPlan.validation.valid.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "replacementPlan.validation.invalid.count=0",
+                "replacementPlan.validation.firstBlocker=none",
+                "rewriteSketch.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "rewriteSketch.ready.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "rewriteSketch.blocked.count=0",
+                "rewriteSketch.firstBlocker=none",
+                "rewriteSketch.rewriteBuilderImplemented=false",
+                "rewriteSketch.mutationAllowed=false",
+                "rewriteSketch.selectedIrReplacement=false",
+                "rewriteSketch.conflict.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "rewriteSketch.conflict.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "rewrite-sketch-covered-node-overlap" : "none"),
+                "rewriteSketch.conflict.conflictResolutionImplemented=false",
+                "rewriteSketch.conflict.selectionApplied=false",
+                "rewriteSketch.conflict.mutationAllowed=false",
+                "rewriteSketch.conflict.selectedIrReplacement=false",
+                "optimizerRule.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "optimizerRule.summary=" + ("optimized".equals(selectedRuntimeIrStage)
+                        ? "madFma[candidates=3, proposals=0, applied=0, skipped=0, blocked=1, mutationProposed=false, replacementPlans=4, completePlans=3, partialPlans=1, planValidations=4, invalidPlanValidations=0, planValidationFirstBlocker=none, rewriteSketches=4, readySketches=4, blockedSketches=0, rewriteSketchFirstBlocker=none, firstBlocker=multiply-operands-incomplete]"
+                        : "none"),
+                "optimizerRule.0.id=" + ("optimized".equals(selectedRuntimeIrStage) ? "madFma" : ""),
+                "optimizerRule.0.version=peephole-rule:mad-fma-v1",
+                "optimizerRule.0.extensionId=javatogpu.peephole.mad-fma",
+                "optimizerRule.0.extensionVersion=peephole-rule:mad-fma-v1",
+                "optimizerRule.0.proofStatus=candidate-detected",
+                "optimizerRule.0.candidate.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "3" : "0"),
+                "optimizerRule.0.proposal.count=0",
+                "optimizerRule.0.applied.count=0",
+                "optimizerRule.0.skipped.count=0",
+                "optimizerRule.0.blocked.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "optimizerRule.0.mutationProposed=false",
+                "optimizerRule.0.replacementPlan.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.replacementPlan.complete.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "3" : "0"),
+                "optimizerRule.0.replacementPlan.partial.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
+                "optimizerRule.0.replacementPlan.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "multiply-operands-incomplete" : "none"),
+                "optimizerRule.0.replacementPlan.validation.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.replacementPlan.validation.valid.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.replacementPlan.validation.invalid.count=0",
+                "optimizerRule.0.replacementPlan.validation.firstBlocker=none",
+                "optimizerRule.0.rewriteSketch.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.rewriteSketch.ready.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "4" : "0"),
+                "optimizerRule.0.rewriteSketch.blocked.count=0",
+                "optimizerRule.0.rewriteSketch.firstBlocker=none",
+                "optimizerRule.0.rewriteSketch.rewriteBuilderImplemented=false",
+                "optimizerRule.0.rewriteSketch.mutationAllowed=false",
+                "optimizerRule.0.rewriteSketch.selectedIrReplacement=false",
+                "optimizerRule.0.firstBlocker=" + ("optimized".equals(selectedRuntimeIrStage) ? "multiply-operands-incomplete" : "none"),
                 "optimizerFamily.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "2" : "1"),
                 "optimizerFamily.promotionReady.count=" + ("optimized".equals(selectedRuntimeIrStage) ? "1" : "0"),
                 "optimizerFamily.summary=" + ("optimized".equals(selectedRuntimeIrStage)
@@ -797,6 +1017,29 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
                 "promotionEligible=false",
                 "productionGateStatus=" + productionGateStatus,
                 "productionProfileRequested=" + productionProfileRequested,
+                ""
+        );
+    }
+
+    private static String runtimeExtensionParticipationProperties() {
+        return String.join("\n",
+                "status=recorded",
+                "backendTarget=OPENCL",
+                "backendFormat=opencl-c",
+                "backendResource=kernel-extension-participation.cl",
+                "entry.count=3",
+                "succeeded.count=2",
+                "skipped.count=0",
+                "failedContinued.count=1",
+                "failedClosed.count=0",
+                "pipelineContinued.all=true",
+                "firstFailure=compiler-feedback:mock:FAILED_CONTINUED",
+                "entry.0.source=original-irgpu:ir-validation",
+                "entry.0.extensionId=validator:shape-contract",
+                "entry.1.source=backend-compiler-feedback",
+                "entry.1.extensionId=compiler-feedback:mock",
+                "entry.2.source=backend-compiler-feedback",
+                "entry.2.extensionId=compiler-feedback:fallback",
                 ""
         );
     }

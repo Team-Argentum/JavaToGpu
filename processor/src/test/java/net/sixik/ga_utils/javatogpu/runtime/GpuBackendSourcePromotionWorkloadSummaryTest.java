@@ -36,6 +36,23 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.count", "2");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.accepted.count", "1");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.proofArtifact.blocking.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.complete.count", "3");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.partial.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.firstBlocker", "multiply-operands-incomplete");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.count", "4");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.valid.count", "3");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "replacement-plan-root-missing");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.count", "4");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.ready.count", "3");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.blocked.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.firstBlocker", "replacement-plan-root-missing");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.count", "1");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "rewrite-sketch-covered-node-overlap");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented", "false");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied", "false");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented", "false");
+        properties.setProperty("kernel.0.runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement", "false");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "2");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "1");
         properties.setProperty(
@@ -58,6 +75,19 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.count", "1");
         properties.setProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.name", "runtime-equivalence");
         properties.setProperty("sourceSwitching.sourcePromotionFirstBlockerFamily.0.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.recordedKernel.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.entry.count", "3");
+        properties.setProperty("runtimeExtensionParticipation.failedContinued.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.failedClosed.count", "0");
+        properties.setProperty("runtimeExtensionParticipation.source.count", "2");
+        properties.setProperty("runtimeExtensionParticipation.source.0.name", "original-irgpu:ir-validation");
+        properties.setProperty("runtimeExtensionParticipation.source.0.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.source.1.name", "backend-compiler-feedback");
+        properties.setProperty("runtimeExtensionParticipation.source.1.count", "2");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.status", "recorded");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.entry.count", "3");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.failedContinued.count", "1");
+        properties.setProperty("kernel.0.runtimeExtensionParticipation.failedClosed.count", "0");
 
         GpuBackendSourcePromotionWorkloadSummary summary =
                 GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
@@ -71,6 +101,19 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertEquals(2, summary.optimizerProofArtifactCount());
         assertEquals(1, summary.optimizerAcceptedProofArtifactCount());
         assertEquals(1, summary.optimizerBlockingProofArtifactCount());
+        assertEquals(3, summary.optimizerReplacementPlanCompleteCount());
+        assertEquals(1, summary.optimizerReplacementPlanPartialCount());
+        assertEquals("multiply-operands-incomplete=1", summary.optimizerReplacementPlanFirstBlockers());
+        assertEquals(4, summary.optimizerReplacementPlanValidationCount());
+        assertEquals(3, summary.optimizerReplacementPlanValidationValidCount());
+        assertEquals(1, summary.optimizerReplacementPlanValidationInvalidCount());
+        assertEquals("replacement-plan-root-missing=1", summary.optimizerReplacementPlanValidationFirstBlockers());
+        assertEquals(4, summary.optimizerRewriteSketchCount());
+        assertEquals(3, summary.optimizerRewriteSketchReadyCount());
+        assertEquals(1, summary.optimizerRewriteSketchBlockedCount());
+        assertEquals("replacement-plan-root-missing=1", summary.optimizerRewriteSketchFirstBlockers());
+        assertEquals(1, summary.optimizerRewriteSketchConflictCount());
+        assertEquals("rewrite-sketch-covered-node-overlap=1", summary.optimizerRewriteSketchConflictFirstBlockers());
         assertEquals(2, summary.optimizerFamilyCount());
         assertEquals(1, summary.optimizerFamilyPromotionReadyCount());
         assertEquals(
@@ -79,16 +122,28 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         );
         assertEquals(1, summary.productionPromotionOperatorAcceptedCount());
         assertEquals("true", summary.productionPromotionOperatorAcceptedAll());
+        assertEquals(1, summary.runtimeExtensionParticipationRecordedKernelCount());
+        assertEquals(3, summary.runtimeExtensionParticipationEntryCount());
+        assertEquals(1, summary.runtimeExtensionParticipationFailedContinuedCount());
+        assertEquals(0, summary.runtimeExtensionParticipationFailedClosedCount());
+        assertEquals(
+                "original-irgpu:ir-validation=1, backend-compiler-feedback=2",
+                summary.runtimeExtensionParticipationSources()
+        );
         assertTrue(summary.historyStatus().contains("gateStatus=blocked"));
         assertTrue(summary.historyStatus().contains("realWorkloadEvidence=runtime-snapshot"));
         assertTrue(summary.historyStatus().contains("productionPromotionOperatorAccepted=1/1"));
         assertTrue(summary.historyStatus().contains("productionPromotionOperatorAcceptedAll=true"));
+        assertTrue(summary.historyStatus().contains("runtimeExtensionParticipation=recordedKernels=1/executions=3/failedContinued=1/failedClosed=0/sources=original-irgpu:ir-validation=1, backend-compiler-feedback=2"));
         assertTrue(summary.historyStatus().contains("optimizerFamilies=2"));
         assertTrue(summary.historyStatus().contains("optimizerPromotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("optimizerReplacementPlans=complete=3/partial=1/validation=valid=3/total=4/invalid=1/validationFirstBlockers=replacement-plan-root-missing=1/firstBlockers=multiply-operands-incomplete=1"));
+        assertTrue(summary.historyStatus().contains("optimizerRewriteSketches=ready=3/total=4/blocked=1/conflicts=1/rewriteBuilderImplemented=false/mutationAllowed=false/selectedIrReplacement=false/firstBlockers=replacement-plan-root-missing=1/conflictFirstBlockers=rewrite-sketch-covered-node-overlap=1/selectionApplied=false"));
         assertTrue(summary.historyStatus().contains("optimizerFamilySummary=cse[passes=1"));
         assertTrue(summary.historyStatus().contains("kernelCount=1"));
+        assertTrue(summary.historyStatus().contains("extensionParticipation=recorded/3executions/failedContinued=1/failedClosed=0"));
         assertTrue(summary.historyStatus().contains("sourceSwitching=reject-production-irgpu-source/operatorAccepted=true"));
-        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/optimizerFamilies=2/promotionReadyFamilies=1"));
+        assertTrue(summary.historyStatus().contains("proof=2/acceptedProof=1/blockingProof=1/replacementPlanComplete=3/replacementPlanPartial=1/replacementPlanFirstBlocker=multiply-operands-incomplete/replacementPlanValidationValid=3/replacementPlanValidationTotal=4/replacementPlanValidationInvalid=1/replacementPlanValidationFirstBlocker=replacement-plan-root-missing/rewriteSketchReady=3/rewriteSketchTotal=4/rewriteSketchBlocked=1/rewriteSketchFirstBlocker=replacement-plan-root-missing/rewriteSketchConflicts=1/rewriteSketchConflictFirstBlocker=rewrite-sketch-covered-node-overlap/rewriteSketchConflictResolutionImplemented=false/rewriteSketchSelectionApplied=false/rewriteSelectionStatus=not-required/rewriteSelectionFirstBlocker=no-rewrite-sketches/rewriteSelectionApplied=false/rewriteProofStatus=not-required/rewriteProofFirstBlocker=no-proof-candidates/rewriteProofAccepted=false/rewriteBuilderImplemented=false/selectedIrReplacement=false/rewriteReviewPackageStatus=not-required/rewriteReviewPackageFirstBlocker=no-review-candidates/rewriteReviewPackageComplete=false/optimizerRules=0/optimizerRuleDetails=none/optimizerFamilies=2/promotionReadyFamilies=1"));
         assertTrue(summary.historyStatus().contains("families=source-parity=1"));
     }
 
@@ -235,6 +290,13 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.count", "0");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.promotionReady.count", "0");
         properties.setProperty("kernel.0.runtimeOptimizerDrift.optimizerFamily.summary", "none");
+        properties.setProperty("runtimeExtensionParticipation.recordedKernel.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.entry.count", "2");
+        properties.setProperty("runtimeExtensionParticipation.failedContinued.count", "0");
+        properties.setProperty("runtimeExtensionParticipation.failedClosed.count", "0");
+        properties.setProperty("runtimeExtensionParticipation.source.count", "1");
+        properties.setProperty("runtimeExtensionParticipation.source.0.name", "original-irgpu:ir-validation");
+        properties.setProperty("runtimeExtensionParticipation.source.0.count", "2");
         properties.setProperty(
                 "kernel.0.sourceSwitching.sourcePromotionFirstBlocker",
                 "backend source must be reconstructed from IrGpu before promotion review"
@@ -260,6 +322,13 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(formatted.contains("optimizerFamily.count=0\n"));
         assertTrue(formatted.contains("optimizerFamily.promotionReady.count=0\n"));
         assertTrue(formatted.contains("optimizerFamily.summary=none\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.recordedKernel.count=1\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.entry.count=2\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.failedContinued.count=0\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.failedClosed.count=0\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.sources=original-irgpu:ir-validation=2\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.source.0.name=original-irgpu:ir-validation\n"));
+        assertTrue(formatted.contains("runtimeExtensionParticipation.source.0.count=2\n"));
         assertTrue(formatted.contains("historyStatus=not-promoted"));
     }
 }

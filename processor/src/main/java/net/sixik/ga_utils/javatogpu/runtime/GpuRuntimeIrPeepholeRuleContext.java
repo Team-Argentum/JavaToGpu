@@ -7,7 +7,6 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * Immutable typed method-body context passed to one peephole rule.
@@ -16,7 +15,7 @@ public record GpuRuntimeIrPeepholeRuleContext(
         GpuRuntimeIrOptimizationRequest request,
         IrGpuArtifact artifact,
         IrGpuMethodBody methodBody,
-        Map<Integer, IrGpuTypedNode> nodesById
+        GpuRuntimeIrTypedNodeGraph graph
 ) {
 
     public GpuRuntimeIrPeepholeRuleContext {
@@ -26,9 +25,7 @@ public record GpuRuntimeIrPeepholeRuleContext(
         if (!methodBody.typedBody().available()) {
             throw new IllegalArgumentException("Peephole rule context requires an available typed IrGpu body");
         }
-        nodesById = nodesById == null
-                ? indexNodes(methodBody.typedBody())
-                : Map.copyOf(nodesById);
+        graph = graph == null ? GpuRuntimeIrTypedNodeGraph.from(methodBody.typedBody()) : graph;
     }
 
     public GpuRuntimeIrPeepholeRuleContext(
@@ -36,7 +33,16 @@ public record GpuRuntimeIrPeepholeRuleContext(
             IrGpuArtifact artifact,
             IrGpuMethodBody methodBody
     ) {
-        this(request, artifact, methodBody, null);
+        this(request, artifact, methodBody, (GpuRuntimeIrTypedNodeGraph) null);
+    }
+
+    public GpuRuntimeIrPeepholeRuleContext(
+            GpuRuntimeIrOptimizationRequest request,
+            IrGpuArtifact artifact,
+            IrGpuMethodBody methodBody,
+            Map<Integer, IrGpuTypedNode> nodesById
+    ) {
+        this(request, artifact, methodBody, GpuRuntimeIrTypedNodeGraph.from(methodBody.typedBody(), nodesById));
     }
 
     public IrGpuTypedBody typedBody() {
@@ -44,10 +50,10 @@ public record GpuRuntimeIrPeepholeRuleContext(
     }
 
     public IrGpuTypedNode node(int id) {
-        return nodesById.get(id);
+        return graph.node(id);
     }
 
-    private static Map<Integer, IrGpuTypedNode> indexNodes(IrGpuTypedBody body) {
-        return body.nodes().stream().collect(Collectors.toUnmodifiableMap(IrGpuTypedNode::id, node -> node));
+    public Map<Integer, IrGpuTypedNode> nodesById() {
+        return graph.nodesById();
     }
 }

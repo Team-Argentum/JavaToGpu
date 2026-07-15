@@ -91,12 +91,14 @@ public final class GpuRuntimeIrOptimizerRegistry {
 
     public GpuRuntimeIrOptimizationReport optimizeWithReport(GpuRuntimeIrOptimizationRequest request) {
         Optional<IrGpuArtifact> currentArtifact = request.artifact();
+        Optional<IrGpuArtifact> currentCandidateArtifact = Optional.empty();
         java.util.ArrayList<GpuRuntimeIrOptimizationPassReport> passReports = new java.util.ArrayList<>();
         java.util.ArrayList<GpuExtensionExecutionReport> executionReports = new java.util.ArrayList<>();
         for (GpuRuntimeIrOptimizationPass pass : optimizerPasses()) {
             GpuRuntimeIrOptimizationRequest passRequest = new GpuRuntimeIrOptimizationRequest(
                     request.compileRequest(),
-                    currentArtifact
+                    currentArtifact,
+                    request.strategyDecision()
             );
             if (requiresProductionAuthorization(pass, passRequest)) {
                 GpuProductionExtensionAuthorizationDecision authorization = productionAuthorizations.get(pass.extensionId());
@@ -148,6 +150,9 @@ public final class GpuRuntimeIrOptimizerRegistry {
                     ).withStage(pass.stage()));
                     break;
                 }
+                if (passReport.candidateArtifact().isPresent()) {
+                    currentCandidateArtifact = passReport.candidateArtifact();
+                }
                 currentArtifact = passReport.artifact();
             } catch (RuntimeException exception) {
                 GpuExtensionFailurePolicy failurePolicy = failurePolicy(pass, passRequest);
@@ -177,7 +182,8 @@ public final class GpuRuntimeIrOptimizerRegistry {
                 currentArtifact,
                 passReports,
                 request.strategyDecision(),
-                executionReports
+                executionReports,
+                currentCandidateArtifact
         );
     }
 

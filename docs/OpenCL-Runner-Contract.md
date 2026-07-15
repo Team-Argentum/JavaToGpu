@@ -12,9 +12,16 @@ This page describes the expected contract for future Intel, NVIDIA, and AMD vali
 ## Expected Labels
 
 - `self-hosted`
-- `windows`
-- `opencl`
+- `Windows`
+- `X64`
 - vendor-specific label such as `intel`, `nvidia`, or `amd`
+- device-specific label for CI matrix routing, for example `rtx3060`, `rtx5070`, or `rx7800xt`
+
+The current GitHub workflow routes NVIDIA RTX 3060 machines with:
+
+```text
+self-hosted, Windows, X64, nvidia, rtx3060
+```
 
 ## Expected Task Set
 

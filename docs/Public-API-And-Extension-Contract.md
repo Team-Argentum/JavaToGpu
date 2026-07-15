@@ -9,10 +9,20 @@ Portable intent should be represented by backend-neutral annotations and `IrGpu`
 ```java
 @GPU
 @GPUWorkGroupSize(x = 8, y = 8, z = 1)
+@GPUWorkGroupSizeHint(x = 8, y = 8, z = 1)
 static void kernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
+
+Common backend metadata should also prefer portable annotations before raw strings: `@GPUWorkGroupSizeHint`,
+`@GPUVectorTypeHint`, `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` lower through backend-neutral
+`attributeMetadata` in `kernel.irgpu.properties`. OpenCL currently projects that metadata back to OpenCL attributes
+for validation and source emission, while future CUDA, Vulkan/SPIR-V, and Metal lowerers should consume the same
+metadata directly instead of parsing OpenCL-specific strings.
+When users provide a raw OpenCL attribute for a concept JavaToGpu already models, diagnostics should steer them to
+the portable annotation replacement such as `@GPUWorkGroupSize`, `@GPUWorkGroupSizeHint`, `@GPUVectorTypeHint`,
+`@GPUPacked`, `@GPUAligned`, or `@GPUAlwaysInline`.
 
 Use `@GPUAttribute` only when no portable annotation exists yet. It supports repeated usage on the same method, field, type, or parameter:
 
@@ -36,7 +46,7 @@ For vendor or device-specific metadata, narrow the selector explicitly:
 )
 ```
 
-`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only code, but new backend-specific metadata should prefer `@GPUAttribute`. Generic OpenCL emission should not apply vendor/device-specific raw attributes until device-aware lowering is available.
+`@GPUAttribute` is not portable by itself. A backend lowerer may consume it only when the selected backend, vendor, and device class match the annotation selectors; otherwise it should reject or ignore it fail-closed with a diagnostic. Existing `@OpenCLAttributes` and `@OpenCLQualifiers` remain compatibility surfaces for OpenCL-only expert code, but new backend-specific metadata should prefer `@GPUAttribute`. Generic OpenCL emission should not apply vendor/device-specific raw attributes until device-aware lowering is available. Portable `attributeMetadata` is the source-of-truth for modeled concepts; backend-specific string attributes are compatibility projections or explicit escape hatches.
 
 ## Runtime selection
 
@@ -173,14 +183,19 @@ Method-level optimizer intent should be declared with `@GPUOptimize`. The defaul
 
 ```java
 @GPU
-@GPUOptimize(fastMath = false)
+@GPUOptimize(fastMath = false, enabledFamilies = {"clamp", "step", "mix"})
 static void strictKernel(@GPUGlobal float[] output) {
     output[GPU.get_global_id(0)] = 1.0f;
 }
 ```
 
-`fastMath = true` only records permission for future proof-backed rewrites. It does not bypass runtime-equivalence,
-rollback, or production-promotion gates.
+`@GPUOptimize` persists method-level optimizer metadata into the generated `IrGpu` manifest: enablement/profile hints,
+`fastMath`, enabled/disabled optimizer families, optional journal and artifact-dump hints, production intent, vendor
+adaptation, vectorization preference, and resource/register-pressure shaping intent. The optional optimizer bridge uses
+`enabledFamilies` / `disabledFamilies` and explicit `enabled = false` to decide provider participation, with policy-skip
+evidence recorded in optimizer reports and aggregated under `policyGate.*` in runtime optimizer evidence summaries.
+`fastMath = true` only records permission for proof-backed non-strict rewrites, and `productionIntent = true` only records intent. Neither bypasses runtime-equivalence, approval, rollback, or
+production-promotion gates.
 
 Any mutating runtime optimizer, peephole pass, vendor rewrite, or third-party optimization hook must produce evidence before it can affect production code:
 
@@ -207,7 +222,9 @@ The shared metadata foundation is available through:
 - `GpuExtensionDescriptor` for validated immutable metadata;
 - `GpuExtensionRegistry` for duplicate-id rejection, deterministic audit ordering, and properties-compatible field export.
 
-`GpuRuntimeIrOptimizationPass` declares the `RUNTIME_IR_OPTIMIZATION` phase, `IR_OPTIMIZATION_PROPOSAL` capability, and `MUTATION_PROPOSAL` permission. `GpuIrValidationProvider` declares the `IR_VALIDATION` phase and capability with `READ_ONLY` permission. `GpuBackendCompilerFeedbackProvider` declares the `BACKEND_COMPILER_FEEDBACK` phase and `COMPILER_FEEDBACK` capability with `READ_ONLY` permission. Explicitly supplied pass/provider lists retain caller order where execution order is semantic; ServiceLoader registries sort by extension order, id, and version before execution.
+`GpuRuntimeIrOptimizationPass` declares the `RUNTIME_IR_OPTIMIZATION` phase, `IR_OPTIMIZATION_PROPOSAL` capability, and `MUTATION_PROPOSAL` permission. `GpuIrValidationProvider` declares the `IR_VALIDATION` phase and capability with `READ_ONLY` permission. `GpuBackendCompilerFeedbackProvider` declares the `BACKEND_COMPILER_FEEDBACK` phase and `COMPILER_FEEDBACK` capability with `READ_ONLY` permission. `GpuRuntimeLifecycleService` is the ServiceLoader-facing hook for runtime lifecycle journaling, metrics, tracing, and diagnostics; it declares the `RUNTIME_LIFECYCLE` phase, `RUNTIME_LIFECYCLE_EVENT_LISTENER` capability, and `READ_ONLY` permission through its listener contract. Explicitly supplied pass/provider lists retain caller order where execution order is semantic; ServiceLoader registries sort by extension order, id, and version before execution.
+
+Runtime lifecycle hooks should be added as services, not by application-side callback registration. A module implements `GpuRuntimeLifecycleService` and registers the implementation in `META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleService`; putting that module on the runtime classpath is enough for the OpenCL backend to discover it. The lower-level `GpuRuntimeLifecycleEventListener` remains the event handling contract and a compatibility bridge for legacy ServiceLoader descriptors, but user code should not need a `Journal.listenerAdd(...)` style API.
 
 Extension ids must be unique inside a pipeline. Blank metadata, whitespace/control characters in ids or versions, missing capabilities, null entries, duplicate ids, wrong phases, excessive permissions, and missing required capabilities are rejected before execution.
 

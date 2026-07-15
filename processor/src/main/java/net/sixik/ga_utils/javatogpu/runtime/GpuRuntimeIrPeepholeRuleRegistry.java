@@ -44,6 +44,10 @@ public final class GpuRuntimeIrPeepholeRuleRegistry {
     public static GpuRuntimeIrPeepholeRuleRegistry loadWithBuiltIns() {
         ArrayList<GpuRuntimeIrPeepholeRule> loaded = new ArrayList<>();
         loaded.add(new GpuRuntimeMadFmaPeepholeRule());
+        loaded.add(new GpuRuntimeClampPeepholeRule());
+        loaded.add(new GpuRuntimeMixPeepholeRule());
+        loaded.add(new GpuRuntimeStepPeepholeRule());
+        loaded.add(new GpuRuntimeDotPeepholeRule());
         ServiceLoader.load(GpuRuntimeIrPeepholeRule.class, GpuRuntimeIrPeepholeRule.class.getClassLoader())
                 .forEach(loaded::add);
         loaded.sort(Comparator
@@ -65,11 +69,17 @@ public final class GpuRuntimeIrPeepholeRuleRegistry {
                     continue;
                 }
                 try {
+                    GpuRuntimeIrPeepholeRuleContext context = new GpuRuntimeIrPeepholeRuleContext(
+                            request,
+                            artifact,
+                            methodBody
+                    );
                     GpuRuntimeIrPeepholeRuleReport report = Objects.requireNonNull(
-                            rule.analyze(new GpuRuntimeIrPeepholeRuleContext(request, artifact, methodBody)),
+                            rule.analyze(context),
                             "peephole rule report"
                     );
                     validateRuleReport(rule, report);
+                    report = withReplacementPlanValidations(context, report);
                     reports.add(report);
                     executions.add(GpuExtensionExecutionReport.succeeded(
                             rule,
@@ -130,6 +140,26 @@ public final class GpuRuntimeIrPeepholeRuleRegistry {
         }
     }
 
+    private static GpuRuntimeIrPeepholeRuleReport withReplacementPlanValidations(
+            GpuRuntimeIrPeepholeRuleContext context,
+            GpuRuntimeIrPeepholeRuleReport report
+    ) {
+        List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations = report.replacementPlans().stream()
+                .map(plan -> GpuRuntimeIrPeepholeReplacementPlanValidation.validate(plan, context.graph()))
+                .toList();
+        GpuRuntimeIrPeepholeTypedRewriteVisitor visitor = GpuRuntimeIrPeepholeTypedRewriteVisitor.forGraph(
+                context.graph()
+        );
+        ArrayList<GpuRuntimeIrPeepholeRewriteVisitPreflight> visitPreflights = new ArrayList<>();
+        for (int index = 0; index < report.replacementPlans().size(); index++) {
+            GpuRuntimeIrPeepholeReplacementPlanValidation validation = index < validations.size()
+                    ? validations.get(index)
+                    : null;
+            visitPreflights.add(visitor.preflight(report.replacementPlans().get(index), validation));
+        }
+        return report.withReplacementPlanAnalysis(validations, visitPreflights);
+    }
+
     public record Analysis(
             List<GpuRuntimeIrPeepholeRuleReport> ruleReports,
             List<GpuExtensionExecutionReport> executionReports,
@@ -146,6 +176,67 @@ public final class GpuRuntimeIrPeepholeRuleRegistry {
 
         public int proposalCount() {
             return ruleReports.stream().mapToInt(GpuRuntimeIrPeepholeRuleReport::proposalCount).sum();
+        }
+
+        public int partialReplacementPlanCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.replacementPlans().stream())
+                    .filter(plan -> !plan.complete())
+                    .count();
+        }
+
+        public String firstReplacementPlanBlocker() {
+            return ruleReports.stream()
+                    .flatMap(report -> report.replacementPlans().stream())
+                    .filter(plan -> !plan.complete())
+                    .map(GpuRuntimeIrPeepholeReplacementPlan::firstBlocker)
+                    .findFirst()
+                    .orElse("none");
+        }
+
+        public int invalidReplacementPlanValidationCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.replacementPlanValidations().stream())
+                    .filter(validation -> !validation.valid())
+                    .count();
+        }
+
+        public String firstReplacementPlanValidationBlocker() {
+            return ruleReports.stream()
+                    .flatMap(report -> report.replacementPlanValidations().stream())
+                    .filter(validation -> !validation.valid())
+                    .map(GpuRuntimeIrPeepholeReplacementPlanValidation::firstBlocker)
+                    .findFirst()
+                    .orElse("none");
+        }
+
+        public int rewriteVisitPreflightCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .count();
+        }
+
+        public int rewriteVisitPreflightReadyCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .filter(GpuRuntimeIrPeepholeRewriteVisitPreflight::visitorReady)
+                    .count();
+        }
+
+        public int rewriteVisitPreflightBlockedCount() {
+            return (int) ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .filter(preflight -> !preflight.visitorReady())
+                    .count();
+        }
+
+        public String firstRewriteVisitPreflightBlocker() {
+            return ruleReports.stream()
+                    .flatMap(report -> report.rewriteVisitPreflights().stream())
+                    .filter(preflight -> !preflight.visitorReady())
+                    .map(GpuRuntimeIrPeepholeRewriteVisitPreflight::firstBlocker)
+                    .findFirst()
+                    .orElse("none");
         }
     }
 }

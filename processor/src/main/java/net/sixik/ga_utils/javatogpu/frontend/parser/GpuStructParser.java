@@ -20,6 +20,7 @@ import net.sixik.ga_utils.javatogpu.backend.GpuBackendSupport;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstant;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuConstantData;
 import net.sixik.ga_utils.javatogpu.frontend.model.GpuConstantDataKind;
+import net.sixik.ga_utils.javatogpu.frontend.model.GpuAttributeMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStruct;
 import net.sixik.ga_utils.javatogpu.frontend.model.ParsedGpuStructField;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
@@ -95,7 +96,8 @@ public final class GpuStructParser {
                 fields.add(new ParsedGpuStructField(
                         variable.getNameAsString(),
                         variable.getTypeAsString(),
-                        parseOpenClAttributes(fieldDeclaration.getAnnotations())
+                        parseOpenClAttributes(fieldDeclaration.getAnnotations()),
+                        parseAttributeMetadata(fieldDeclaration.getAnnotations())
                 ));
             });
         }
@@ -106,7 +108,8 @@ public final class GpuStructParser {
                 List.copyOf(fields),
                 List.copyOf(constants),
                 List.copyOf(constantData),
-                parseOpenClAttributes(classDeclaration.getAnnotations())
+                parseOpenClAttributes(classDeclaration.getAnnotations()),
+                parseAttributeMetadata(classDeclaration.getAnnotations())
         );
     }
 
@@ -117,7 +120,64 @@ public final class GpuStructParser {
                 "OpenCLAttributes"
         ));
         attributes.addAll(parseGpuAttributesForOpenCl(annotations));
+        if (hasAnnotation(annotations, "GPUPacked")) {
+            attributes.add("packed");
+        }
+        parseAlignedAttribute(annotations).ifPresent(attributes::add);
         return List.copyOf(attributes);
+    }
+
+    static List<GpuAttributeMetadata> parseAttributeMetadata(NodeList<AnnotationExpr> annotations) {
+        ArrayList<GpuAttributeMetadata> metadata = new ArrayList<>();
+        if (hasAnnotation(annotations, "GPUPacked")) {
+            metadata.add(GpuAttributeMetadata.packed("GPUPacked"));
+        }
+        parseAlignedMetadata(annotations).ifPresent(metadata::add);
+        return List.copyOf(metadata);
+    }
+
+    private static boolean hasAnnotation(NodeList<AnnotationExpr> annotations, String annotationName) {
+        return annotations.stream().anyMatch(annotation -> annotation.getNameAsString().equals(annotationName));
+    }
+
+    private static java.util.Optional<String> parseAlignedAttribute(NodeList<AnnotationExpr> annotations) {
+        return annotations.stream()
+                .filter(annotation -> annotation.getNameAsString().equals("GPUAligned"))
+                .findFirst()
+                .map(annotation -> "aligned(" + parsePositiveIntAnnotationValue(annotation, "value", "GPUAligned.value") + ")");
+    }
+
+    private static java.util.Optional<GpuAttributeMetadata> parseAlignedMetadata(NodeList<AnnotationExpr> annotations) {
+        return annotations.stream()
+                .filter(annotation -> annotation.getNameAsString().equals("GPUAligned"))
+                .findFirst()
+                .map(annotation -> GpuAttributeMetadata.aligned(
+                        parsePositiveIntAnnotationValue(annotation, "value", "GPUAligned.value"),
+                        "GPUAligned"
+                ));
+    }
+
+    static int parsePositiveIntAnnotationValue(AnnotationExpr annotation, String propertyName, String errorLabel) {
+        Expression value;
+        if (annotation.isSingleMemberAnnotationExpr()) {
+            value = annotation.asSingleMemberAnnotationExpr().getMemberValue();
+        } else if (annotation.isNormalAnnotationExpr()) {
+            value = annotation.asNormalAnnotationExpr().getPairs().stream()
+                    .filter(pair -> pair.getNameAsString().equals(propertyName))
+                    .findFirst()
+                    .map(pair -> pair.getValue())
+                    .orElseThrow(() -> new IllegalArgumentException(errorLabel + " must be declared"));
+        } else {
+            throw new IllegalArgumentException(errorLabel + " must be declared");
+        }
+        if (!value.isIntegerLiteralExpr()) {
+            throw new IllegalArgumentException(errorLabel + " must be an integer literal: " + value);
+        }
+        int intValue = value.asIntegerLiteralExpr().asInt();
+        if (intValue <= 0) {
+            throw new IllegalArgumentException(errorLabel + " must be a positive integer");
+        }
+        return intValue;
     }
 
     static List<String> parseGpuAttributesForOpenCl(NodeList<AnnotationExpr> annotations) {

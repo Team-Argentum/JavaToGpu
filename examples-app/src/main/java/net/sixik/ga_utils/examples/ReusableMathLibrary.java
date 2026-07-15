@@ -2,7 +2,7 @@ package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 import net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary;
-import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
+import net.sixik.ga_utils.javatogpu.api.annotations.GPUAlwaysInline;
 
 @CCodeLibrary
 public final class ReusableMathLibrary {
@@ -12,7 +12,7 @@ public final class ReusableMathLibrary {
     private ReusableMathLibrary() {
     }
 
-    @OpenCLAttributes({"always_inline"})
+    @GPUAlwaysInline
     @CCode(inline = true)
     public static float square(float value) {
         return (value * value) * SCALE;

@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Optional;
+import java.util.Properties;
 
 /**
  * Small CLI entry point for generating a vendor-validation snapshot report.
@@ -61,9 +62,12 @@ public final class OpenClValidationReporter {
         ensureProductionPromotionExplainabilityArtifact();
         OpenClKernelLaunchAdvisorySummary launchAdvisorySummary = loadKernelLaunchAdvisorySummary();
         OpenClCompilerResourceSummary compilerResourceSummary = loadCompilerResourceSummary();
+        OpenClExtensionParticipationSummary extensionParticipationSummary = loadExtensionParticipationSummary();
+        OpenClRuntimeIrOptimizerEvidenceSummary irOptimizerEvidenceSummary = loadIrOptimizerEvidenceSummary();
         OpenClValidationHistoryEntry currentHistoryEntry = buildHistoryEntry(
                 launchAdvisorySummary,
-                compilerResourceSummary
+                compilerResourceSummary,
+                extensionParticipationSummary
         );
         OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift = loadKernelLaunchAdvisoryDrift(currentHistoryEntry);
         OpenClCompilerResourceDrift compilerResourceDrift = loadCompilerResourceDrift(currentHistoryEntry);
@@ -71,7 +75,9 @@ public final class OpenClValidationReporter {
                 launchAdvisorySummary,
                 launchAdvisoryDrift,
                 compilerResourceSummary,
-                compilerResourceDrift
+                compilerResourceDrift,
+                extensionParticipationSummary,
+                irOptimizerEvidenceSummary
         );
         String outputPath = System.getProperty(REPORT_FILE_PROPERTY);
         if (outputPath != null && !outputPath.isBlank()) {
@@ -94,7 +100,9 @@ public final class OpenClValidationReporter {
             OpenClKernelLaunchAdvisorySummary launchAdvisorySummary,
             OpenClKernelLaunchAdvisoryDrift launchAdvisoryDrift,
             OpenClCompilerResourceSummary compilerResourceSummary,
-            OpenClCompilerResourceDrift compilerResourceDrift
+            OpenClCompilerResourceDrift compilerResourceDrift,
+            OpenClExtensionParticipationSummary extensionParticipationSummary,
+            OpenClRuntimeIrOptimizerEvidenceSummary irOptimizerEvidenceSummary
     ) {
         StringBuilder markdown = new StringBuilder();
         String requestedVendor = env("JTG_VALIDATION_VENDOR");
@@ -132,6 +140,8 @@ public final class OpenClValidationReporter {
         markdown.append(launchAdvisoryDrift.toMarkdown());
         markdown.append(compilerResourceSummary.toMarkdown());
         markdown.append(compilerResourceDrift.toMarkdown());
+        markdown.append(extensionParticipationSummary.toMarkdown());
+        markdown.append(irOptimizerEvidenceSummary.toMarkdown());
         appendIrGpuSourceReviewSummary(markdown);
         appendProductionSourceSwitchingValidationSummary(markdown);
         appendLongRunningSummary(markdown);
@@ -172,6 +182,30 @@ public final class OpenClValidationReporter {
             return OpenClCompilerResourceSummary.read(Paths.get(gatePath));
         } catch (Throwable failure) {
             return OpenClCompilerResourceSummary.failed(failure);
+        }
+    }
+
+    private static OpenClExtensionParticipationSummary loadExtensionParticipationSummary() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return OpenClExtensionParticipationSummary.notRecorded();
+        }
+        try {
+            return OpenClExtensionParticipationSummary.read(Paths.get(gatePath));
+        } catch (Throwable failure) {
+            return OpenClExtensionParticipationSummary.failed(failure);
+        }
+    }
+
+    private static OpenClRuntimeIrOptimizerEvidenceSummary loadIrOptimizerEvidenceSummary() {
+        String gatePath = System.getProperty(BACKEND_SOURCE_PROMOTION_WORKLOAD_GATE_FILE_PROPERTY);
+        if (gatePath == null || gatePath.isBlank()) {
+            return OpenClRuntimeIrOptimizerEvidenceSummary.notRecorded();
+        }
+        try {
+            return OpenClRuntimeIrOptimizerEvidenceSummary.read(Paths.get(gatePath));
+        } catch (Throwable failure) {
+            return OpenClRuntimeIrOptimizerEvidenceSummary.failed(failure);
         }
     }
 
@@ -1039,6 +1073,48 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.proofArtifact.accepted.count", "0")))
                     .append("`, blockingProof=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.proofArtifact.blocking.count", "0")))
+                    .append("`, replacementPlanComplete=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.complete.count", "0")))
+                    .append("`, replacementPlanPartial=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.partial.count", "0")))
+                    .append("`, replacementPlanFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.firstBlocker", "none")))
+                    .append("`, replacementPlanValidation=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0")))
+                    .append("/")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.count", "0")))
+                    .append(" valid, invalid=")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")))
+                    .append("`, replacementPlanValidationFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")))
+                    .append("`, rewriteSketch=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.ready.count", "0")))
+                    .append("/")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.count", "0")))
+                    .append(" ready, blocked=")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.blocked.count", "0")))
+                    .append("`, rewriteSketchFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.firstBlocker", "none")))
+                    .append("`, rewriteSketchConflicts=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.count", "0")))
+                    .append("`, rewriteSketchConflictFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "none")))
+                    .append("`, rewriteSelection=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.status", "not-required")))
+                    .append("`, rewriteSelectionFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.firstBlocker", "no-rewrite-sketches")))
+                    .append("`, rewriteProof=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteProof.status", "not-required")))
+                    .append("`, rewriteProofFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteProof.firstBlocker", "no-proof-candidates")))
+                    .append("`, rewriteReviewPackage=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteReviewPackage.status", "not-required")))
+                    .append("`, rewriteReviewPackageFirstBlocker=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker", "no-review-candidates")))
+                    .append("`, optimizerRules=`")
+                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.count", "0")))
+                    .append("`, optimizerRuleDetails=`")
+                    .append(sanitizeInline(kernelOptimizerRuleDetails(properties, prefix)))
                     .append("`, optimizerFamilies=`")
                     .append(sanitizeInline(properties.getProperty(prefix + "runtimeOptimizerDrift.optimizerFamily.count", "0")))
                     .append("`, promotionReadyFamilies=`")
@@ -1398,6 +1474,35 @@ public final class OpenClValidationReporter {
             builder.append(prefix).append("optimizerDriftStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.status", "not-recorded")).append('\n');
             builder.append(prefix).append("optimizerDriftPassCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.count", "0")).append('\n');
             builder.append(prefix).append("optimizerDriftRolledBackCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.pass.rolledBack.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanCompleteCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.complete.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanPartialCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.partial.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationValidCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.valid.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationInvalidCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.invalid.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftReplacementPlanValidationFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.replacementPlan.validation.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchReadyCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.ready.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchBlockedCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.blocked.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchConflictCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchConflictFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.firstBlocker", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchConflictResolutionImplemented=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.conflictResolutionImplemented", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSketchSelectionApplied=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.conflict.selectionApplied", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSelectionStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.status", "not-required")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSelectionFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.firstBlocker", "no-rewrite-sketches")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteSelectionApplied=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSelection.selectionApplied", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteProofStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteProof.status", "not-required")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteProofFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteProof.firstBlocker", "no-proof-candidates")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteProofAccepted=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteProof.proofAccepted", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteReviewPackageStatus=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteReviewPackage.status", "not-required")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteReviewPackageFirstBlocker=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteReviewPackage.firstBlocker", "no-review-candidates")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteReviewPackageComplete=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteReviewPackage.complete", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRewriteBuilderImplemented=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.rewriteBuilderImplemented", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftSelectedIrReplacement=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.rewriteSketch.selectedIrReplacement", "false")).append('\n');
+            builder.append(prefix).append("optimizerDriftRuleCount=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.count", "0")).append('\n');
+            builder.append(prefix).append("optimizerDriftRuleSummary=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.optimizerRule.summary", "none")).append('\n');
+            builder.append(prefix).append("optimizerDriftRuleDetails=").append(kernelOptimizerRuleDetails(gate, prefix)).append('\n');
             builder.append(prefix).append("optimizerDriftFallbackDecision=").append(gate.getProperty(prefix + "runtimeOptimizerDrift.fallbackDecision", "unknown")).append('\n');
             builder.append(prefix).append("sourceReady=").append(gate.getProperty(prefix + "i3Readiness.sourceReady", "unknown")).append('\n');
             builder.append(prefix).append("sourcePromotionStatus=").append(gate.getProperty(prefix + "i3Readiness.sourcePromotionStatus", "unknown")).append('\n');
@@ -1417,6 +1522,65 @@ public final class OpenClValidationReporter {
             case "production-enabled", "review-ready", "blocked" -> status;
             default -> "blocked";
         };
+    }
+
+    private static String kernelOptimizerRuleDetails(Properties properties, String kernelPrefix) {
+        int ruleCount = parsePositiveInt(properties.getProperty(
+                kernelPrefix + "runtimeOptimizerDrift.optimizerRule.count",
+                "0"
+        ));
+        if (ruleCount == 0) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int ruleIndex = 0; ruleIndex < ruleCount; ruleIndex++) {
+            String prefix = kernelPrefix + "runtimeOptimizerDrift.optimizerRule." + ruleIndex + ".";
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(properties.getProperty(prefix + "id", "unknown"))
+                    .append("[candidates=")
+                    .append(properties.getProperty(prefix + "candidate.count", "0"))
+                    .append(", proposals=")
+                    .append(properties.getProperty(prefix + "proposal.count", "0"))
+                    .append(", applied=")
+                    .append(properties.getProperty(prefix + "applied.count", "0"))
+                    .append(", skipped=")
+                    .append(properties.getProperty(prefix + "skipped.count", "0"))
+                    .append(", blocked=")
+                    .append(properties.getProperty(prefix + "blocked.count", "0"))
+                    .append(", replacementPlans=")
+                    .append(properties.getProperty(prefix + "replacementPlan.count", "0"))
+                    .append(", completePlans=")
+                    .append(properties.getProperty(prefix + "replacementPlan.complete.count", "0"))
+                    .append(", partialPlans=")
+                    .append(properties.getProperty(prefix + "replacementPlan.partial.count", "0"))
+                    .append(", planValidations=")
+                    .append(properties.getProperty(prefix + "replacementPlan.validation.count", "0"))
+                    .append(", invalidPlanValidations=")
+                    .append(properties.getProperty(prefix + "replacementPlan.validation.invalid.count", "0"))
+                    .append(", planValidationFirstBlocker=")
+                    .append(properties.getProperty(prefix + "replacementPlan.validation.firstBlocker", "none"))
+                    .append(", rewriteSketches=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.count", "0"))
+                    .append(", readySketches=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.ready.count", "0"))
+                    .append(", blockedSketches=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.blocked.count", "0"))
+                    .append(", rewriteSketchFirstBlocker=")
+                    .append(properties.getProperty(prefix + "rewriteSketch.firstBlocker", "none"))
+                    .append(", rewriteReviewPackageStatus=")
+                    .append(properties.getProperty(prefix + "rewriteReviewPackage.status", "not-required"))
+                    .append(", rewriteReviewPackageFirstBlocker=")
+                    .append(properties.getProperty(prefix + "rewriteReviewPackage.firstBlocker", "no-review-candidates"))
+                    .append(", firstBlocker=")
+                    .append(properties.getProperty(
+                            prefix + "firstBlocker",
+                            properties.getProperty(prefix + "replacementPlan.firstBlocker", "none")
+                    ))
+                    .append(']');
+        }
+        return builder.toString();
     }
 
     private static String i3ReadinessWorkloadSummaryDiagnostic(
@@ -1475,7 +1639,8 @@ public final class OpenClValidationReporter {
 
     private static OpenClValidationHistoryEntry buildHistoryEntry(
             OpenClKernelLaunchAdvisorySummary launchAdvisorySummary,
-            OpenClCompilerResourceSummary compilerResourceSummary
+            OpenClCompilerResourceSummary compilerResourceSummary,
+            OpenClExtensionParticipationSummary extensionParticipationSummary
     ) {
         String requestedVendor = env("JTG_VALIDATION_VENDOR");
         String bucketSummary = summarizeBuckets();
@@ -1488,6 +1653,7 @@ public final class OpenClValidationReporter {
         String productionPromotionExplainabilityStatus = summarizeProductionPromotionExplainabilityStatus();
         String kernelLaunchAdvisoryStatus = launchAdvisorySummary.toHistorySummary();
         String compilerResourceStatus = compilerResourceSummary.toHistorySummary();
+        String extensionParticipationStatus = extensionParticipationSummary.toHistorySummary();
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend()) {
             OpenClValidationReport report = backend.validationReport();
@@ -1508,7 +1674,8 @@ public final class OpenClValidationReporter {
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus,
                     kernelLaunchAdvisoryStatus,
-                    compilerResourceStatus
+                    compilerResourceStatus,
+                    extensionParticipationStatus
             );
         } catch (Throwable failure) {
             return new OpenClValidationHistoryEntry(
@@ -1528,7 +1695,8 @@ public final class OpenClValidationReporter {
                     backendSourcePromotionWorkloadStatus,
                     productionPromotionExplainabilityStatus,
                     kernelLaunchAdvisoryStatus,
-                    compilerResourceStatus
+                    compilerResourceStatus,
+                    extensionParticipationStatus
             );
         }
     }

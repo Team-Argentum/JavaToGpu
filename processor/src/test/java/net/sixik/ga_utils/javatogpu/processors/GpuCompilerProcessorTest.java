@@ -127,6 +127,16 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuManifest.contains("feature.optional.count=1"));
         assertTrue(irGpuManifest.contains("feature.optional.0=opencl-source-compat"));
         assertTrue(irGpuManifest.contains("optimizerPolicy.fastMath=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.enabled=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.profile=off"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.enabledFamily.count=0"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.disabledFamily.count=0"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.journal=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.dumpArtifacts=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.productionIntent=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.vendorAdaptation=false"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.vectorization=auto"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.resourceShaping=false"));
         assertTrue(irGpuManifest.contains("optimizerPolicy.source=default-strict"));
         assertTrue(irGpuManifest.contains("regeneration.backendNeutralSourceReady=false"));
         assertTrue(irGpuManifest.contains("regeneration.payloadFormat=ir-text-v1"));
@@ -175,7 +185,35 @@ class GpuCompilerProcessorTest {
         assertTrue(irGpuArtifact.featureMetadata().requiredFeatures().isEmpty());
         assertEquals(List.of("opencl-source-compat"), irGpuArtifact.featureMetadata().optionalFeatures());
         assertFalse(irGpuArtifact.optimizerPolicyMetadata().fastMath());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().enabled());
+        assertEquals("off", irGpuArtifact.optimizerPolicyMetadata().profile());
+        assertTrue(irGpuArtifact.optimizerPolicyMetadata().enabledFamilies().isEmpty());
+        assertTrue(irGpuArtifact.optimizerPolicyMetadata().disabledFamilies().isEmpty());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().journal());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().dumpArtifacts());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().productionIntent());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().vendorAdaptation());
+        assertEquals("auto", irGpuArtifact.optimizerPolicyMetadata().vectorization());
+        assertFalse(irGpuArtifact.optimizerPolicyMetadata().resourceShaping());
         assertEquals("default-strict", irGpuArtifact.optimizerPolicyMetadata().source());
+
+        String legacyOptimizerPolicyManifest = String.join("\n", irGpuManifest.lines()
+                .filter(line -> !line.startsWith("optimizerPolicy.enabled="))
+                .filter(line -> !line.startsWith("optimizerPolicy.profile="))
+                .filter(line -> !line.startsWith("optimizerPolicy.enabledFamily"))
+                .filter(line -> !line.startsWith("optimizerPolicy.disabledFamily"))
+                .filter(line -> !line.startsWith("optimizerPolicy.journal="))
+                .filter(line -> !line.startsWith("optimizerPolicy.dumpArtifacts="))
+                .filter(line -> !line.startsWith("optimizerPolicy.productionIntent="))
+                .filter(line -> !line.startsWith("optimizerPolicy.vendorAdaptation="))
+                .filter(line -> !line.startsWith("optimizerPolicy.vectorization="))
+                .filter(line -> !line.startsWith("optimizerPolicy.resourceShaping="))
+                .toList());
+        var legacyOptimizerPolicy = IrGpuArtifactParser.parse(legacyOptimizerPolicyManifest).optimizerPolicyMetadata();
+        assertFalse(legacyOptimizerPolicy.enabled());
+        assertEquals("off", legacyOptimizerPolicy.profile());
+        assertTrue(legacyOptimizerPolicy.enabledFamilies().isEmpty());
+        assertTrue(legacyOptimizerPolicy.disabledFamilies().isEmpty());
         assertFalse(irGpuArtifact.regenerationMetadata().backendNeutralSourceReady());
         assertEquals("ir-text-v1", irGpuArtifact.regenerationMetadata().payloadFormat());
         assertEquals("derived-opencl-source", irGpuArtifact.regenerationMetadata().fallbackSource());
@@ -638,11 +676,104 @@ class GpuCompilerProcessorTest {
         assertTrue(Files.exists(irGpuPath));
         String irGpuManifest = Files.readString(irGpuPath);
         assertTrue(irGpuManifest.contains("optimizerPolicy.fastMath=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.enabled=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.profile=default"));
         assertTrue(irGpuManifest.contains("optimizerPolicy.source=GPUOptimize"));
 
         IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
         assertTrue(irGpuArtifact.optimizerPolicyMetadata().fastMath());
+        assertTrue(irGpuArtifact.optimizerPolicyMetadata().enabled());
+        assertEquals("default", irGpuArtifact.optimizerPolicyMetadata().profile());
         assertEquals("GPUOptimize", irGpuArtifact.optimizerPolicyMetadata().source());
+    }
+
+    @Test
+    void generatedIrGpuManifestPreservesRichOptimizerPolicy() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-rich-optimizer-policy-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-rich-optimizer-policy-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUOptimize;
+
+                public class Demo {
+                    @GPUOptimize(
+                            profile = "review",
+                            fastMath = true,
+                            enabledFamilies = {"mix", "CLAMP", "step"},
+                            disabledFamilies = "dot",
+                            journal = true,
+                            dumpArtifacts = true,
+                            productionIntent = true,
+                            vendorAdaptation = true,
+                            vectorization = "prefer",
+                            resourceShaping = true
+                    )
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = input[id] * 2.0f + 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("optimizerPolicy.profile=review"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.enabledFamily.count=3"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.enabledFamily.0=mix"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.enabledFamily.1=clamp"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.enabledFamily.2=step"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.disabledFamily.0=dot"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.journal=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.dumpArtifacts=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.productionIntent=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.vendorAdaptation=true"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.vectorization=prefer"));
+        assertTrue(irGpuManifest.contains("optimizerPolicy.resourceShaping=true"));
+
+        IrGpuArtifact irGpuArtifact = IrGpuArtifactParser.parse(irGpuManifest);
+        var policy = irGpuArtifact.optimizerPolicyMetadata();
+        assertTrue(policy.fastMath());
+        assertTrue(policy.enabled());
+        assertEquals("review", policy.profile());
+        assertEquals(List.of("mix", "clamp", "step"), policy.enabledFamilies());
+        assertEquals(List.of("dot"), policy.disabledFamilies());
+        assertTrue(policy.journal());
+        assertTrue(policy.dumpArtifacts());
+        assertTrue(policy.productionIntent());
+        assertTrue(policy.vendorAdaptation());
+        assertEquals("prefer", policy.vectorization());
+        assertTrue(policy.resourceShaping());
+        assertTrue(policy.allowsFamily("mix"));
+        assertFalse(policy.allowsFamily("dot"));
+        assertFalse(policy.allowsFamily("mad-fma"));
+        assertEquals("GPUOptimize", policy.source());
     }
 
     @Test
@@ -7938,6 +8069,58 @@ class GpuCompilerProcessorTest {
         assertTrue(Files.exists(kernelPath));
         assertEquals("""
                 __attribute__((reqd_work_group_size(8, 4, 2))) __kernel void jtg_kernel(__global float* output) {
+                    int id = get_global_id(0);
+                    output[id] = 1.0F;
+                }""", Files.readString(kernelPath));
+    }
+
+    @Test
+    void generatesKernelWithPortableGpuWorkGroupSizeHint() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-portable-workgroup-hint-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-portable-workgroup-hint-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSizeHint;
+
+                public class Demo {
+                    @GPUWorkGroupSizeHint(x = 4, y = 2, z = 1)
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    static void kernel(@GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaFileObject sourceFile = new StringJavaFileObject("sample.Demo", source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    null,
+                    options,
+                    null,
+                    List.of(sourceFile)
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        Path kernelPath = generatedOutputDir.resolve("javatogpu/sample/Demo/kernel.cl");
+        assertTrue(Files.exists(kernelPath));
+        assertEquals("""
+                __attribute__((work_group_size_hint(4, 2, 1))) __kernel void jtg_kernel(__global float* output) {
                     int id = get_global_id(0);
                     output[id] = 1.0F;
                 }""", Files.readString(kernelPath));

@@ -19,6 +19,10 @@ public final class GpuRuntimeCompileArtifactDumper {
 
     public static final String RUNTIME_DEVICE_SELECTION_ARTIFACT = "runtime-device-selection.properties";
     public static final String BACKEND_COMPILER_FEEDBACK_ARTIFACT = "backend-compiler-feedback.properties";
+    public static final String RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT =
+            "runtime-extension-participation.properties";
+    public static final String RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT =
+            "runtime-ir-optimizer-evidence.properties";
     public static final String RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD_DIRECTORY =
             "runtime-optimizer-family-equivalence-payload";
 
@@ -61,6 +65,16 @@ public final class GpuRuntimeCompileArtifactDumper {
         if (snapshot.originalIrGpuArtifact().isPresent() || snapshot.optimizedIrGpuArtifact().isPresent()) {
             artifacts.put("irgpu-regeneration.properties", formatRegenerationMetadata(snapshot));
         }
+        snapshot.originalBackendModuleArtifact().ifPresent(artifact -> putBackendStageArtifact(
+                artifacts,
+                "original",
+                artifact
+        ));
+        snapshot.optimizedBackendModuleArtifact().ifPresent(artifact -> putBackendStageArtifact(
+                artifacts,
+                "optimized",
+                artifact
+        ));
         artifacts.put("backend." + snapshot.backendModuleArtifact().format(), snapshot.backendModuleArtifact().source());
         artifacts.put("compile-provenance.properties", snapshot.compileProvenance().toPropertiesText());
         snapshot.deviceSelection().ifPresent(selection -> artifacts.put(
@@ -77,6 +91,10 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.put("backend-module.properties", formatBackendModule(snapshot.backendModuleArtifact()));
         artifacts.put("backend-diagnostics.properties", formatBackendDiagnostics(snapshot));
         artifacts.put(BACKEND_COMPILER_FEEDBACK_ARTIFACT, compilerFeedbackReport.toPropertiesText());
+        artifacts.put(
+                RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT,
+                GpuRuntimeExtensionParticipationArtifact.from(snapshot, compilerFeedbackReport).toPropertiesText()
+        );
         artifacts.put("opencl-irgpu-reconstruction-preview.properties", formatOpenClIrGpuReconstructionPreview(snapshot));
         artifacts.put("backend-source-reconstruction.properties", formatBackendSourceReconstruction(snapshot));
         artifacts.put(GpuPromotionArtifactRegistry.BACKEND_SOURCE_PROMOTION_GATE, formatBackendSourcePromotionGate(snapshot));
@@ -92,6 +110,10 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.putAll(optimizerFamilyEquivalenceArtifacts.files());
         if (snapshot.optimizationReport().hasReports() || snapshot.productionOptimizerGate().productionProfileRequested()) {
             artifacts.put("optimizer-report.txt", snapshot.optimizationReport().toText());
+        }
+        String irOptimizerEvidence = formatRuntimeIrOptimizerEvidence(snapshot.optimizationReport());
+        if (!irOptimizerEvidence.isBlank()) {
+            artifacts.put(RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT, irOptimizerEvidence);
         }
         String runtimeIrAnalysis = formatRuntimeIrAnalysis(snapshot.optimizationReport(), compilerFeedbackReport);
         if (!runtimeIrAnalysis.isBlank()) {
@@ -130,6 +152,17 @@ public final class GpuRuntimeCompileArtifactDumper {
                 + location.endLine()
                 + ":"
                 + location.endColumn();
+    }
+
+    private static void putBackendStageArtifact(
+            LinkedHashMap<String, String> artifacts,
+            String stage,
+            GpuBackendModuleArtifact artifact
+    ) {
+        if (artifact == null || !artifact.sourceAvailable()) {
+            return;
+        }
+        artifacts.put(stage + ".backend." + artifact.format(), artifact.source());
     }
 
     private static String formatProperties(Map<String, String> fields) {
@@ -691,6 +724,2883 @@ public final class GpuRuntimeCompileArtifactDumper {
         }
         appendCompilerFeedbackAnalysis(builder, analysisReports, compilerFeedbackReport);
         return builder.toString();
+    }
+
+    private static String formatRuntimeIrOptimizerEvidence(GpuRuntimeIrOptimizationReport report) {
+        List<GpuRuntimeIrOptimizationPassReport> irOptimizerReports = report.passReports().stream()
+                .filter(GpuRuntimeCompileArtifactDumper::isRuntimeIrOptimizerEvidence)
+                .toList();
+        if (irOptimizerReports.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("status=recorded\n");
+        builder.append("source=runtime-ir-optimizer\n");
+        builder.append("providerPrefix=javatogpu.ir-optimizer\n");
+        builder.append("pass.count=").append(irOptimizerReports.size()).append('\n');
+        builder.append("applied.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.APPLIED)).append('\n');
+        builder.append("skipped.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.SKIPPED)).append('\n');
+        builder.append("rolledBack.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.ROLLED_BACK)).append('\n');
+        builder.append("failed.count=").append(countOutcome(irOptimizerReports, GpuRuntimeIrOptimizationOutcome.FAILED)).append('\n');
+        builder.append("proposalOnly.count=").append(countProofStatus(irOptimizerReports, "proposal-only")).append('\n');
+        builder.append("selectedOptimized.count=").append(countProofStatus(irOptimizerReports, "optimized-selected")).append('\n');
+        ExperimentalApplyEvidence experimentalApply = experimentalApplyEvidence(irOptimizerReports);
+        builder.append("experimentalApply.requested=").append(experimentalApply.requested()).append('\n');
+        builder.append("experimentalApply.enabled=").append(experimentalApply.enabled()).append('\n');
+        builder.append("experimentalApply.requested.count=").append(experimentalApply.requestedCount()).append('\n');
+        builder.append("experimentalApply.enabled.count=").append(experimentalApply.enabledCount()).append('\n');
+        builder.append("experimentalApply.selected.count=").append(experimentalApply.selectedCount()).append('\n');
+        builder.append("approvalTemplate.pending.count=")
+                .append(countApprovalTemplateStatus(irOptimizerReports, "pending"))
+                .append('\n');
+        builder.append("approvalTemplate.notApplicable.count=")
+                .append(countApprovalTemplateStatus(irOptimizerReports, "not-applicable"))
+                .append('\n');
+        ApprovalTemplatePayloadEvidence approvalTemplatePayload = approvalTemplatePayloadEvidence(irOptimizerReports);
+        builder.append("approvalTemplate.runtimeEquivalencePayloadRequired.count=")
+                .append(approvalTemplatePayload.requiredCount()).append('\n');
+        builder.append("approvalTemplate.runtimeEquivalencePayloadPresent.count=")
+                .append(approvalTemplatePayload.presentCount()).append('\n');
+        builder.append("approvalTemplate.runtimeEquivalencePayloadPassed.count=")
+                .append(approvalTemplatePayload.passedCount()).append('\n');
+        builder.append("approvalTemplate.runtimeEquivalencePayloadComplete.count=")
+                .append(approvalTemplatePayload.completeCount()).append('\n');
+        PolicyGateEvidence policyGate = policyGateEvidence(irOptimizerReports);
+        builder.append("policyGate.skipped.count=").append(policyGate.skippedCount()).append('\n');
+        builder.append("policyGate.optimizerPolicyDisabled.count=")
+                .append(policyGate.optimizerPolicyDisabledCount()).append('\n');
+        builder.append("policyGate.familyDisabled.count=")
+                .append(policyGate.familyDisabledCount()).append('\n');
+        builder.append("policyGate.familyNotEnabled.count=")
+                .append(policyGate.familyNotEnabledCount()).append('\n');
+        builder.append("policyGate.providerInvoked.count=")
+                .append(policyGate.providerInvokedCount()).append('\n');
+        builder.append("policyGate.firstBlocker=")
+                .append(safePropertyValue(policyGate.firstBlocker())).append('\n');
+        builder.append("policyGate.family.summary=")
+                .append(safePropertyValue(policyGate.familySummary())).append('\n');
+        builder.append("policyGate.mutationAllowed=false\n");
+        builder.append("policyGate.selectionApplied=false\n");
+        builder.append("policyGate.optimizedArtifactSelected=false\n");
+        builder.append("policyGate.selectedIrReplacement=false\n");
+        OptimizedArtifactCandidateEvidence optimizedArtifactCandidate = optimizedArtifactCandidateEvidence(irOptimizerReports);
+        builder.append("optimizedArtifactCandidate.status=").append(optimizedArtifactCandidate.status()).append('\n');
+        builder.append("optimizedArtifactCandidate.count=").append(optimizedArtifactCandidate.count()).append('\n');
+        builder.append("optimizedArtifactCandidate.ready.count=")
+                .append(optimizedArtifactCandidate.readyCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.blocked.count=")
+                .append(optimizedArtifactCandidate.blockedCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionReady.count=")
+                .append(optimizedArtifactCandidate.selectionReadyCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionApplied.count=")
+                .append(optimizedArtifactCandidate.selectionAppliedCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectedIrReplacement.count=")
+                .append(optimizedArtifactCandidate.selectedIrReplacementCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.mutationAllowed.count=")
+                .append(optimizedArtifactCandidate.mutationAllowedCount()).append('\n');
+        builder.append("optimizedArtifactCandidate.firstBlocker=")
+                .append(safePropertyValue(optimizedArtifactCandidate.firstBlocker())).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionFirstBlocker=")
+                .append(safePropertyValue(optimizedArtifactCandidate.selectionFirstBlocker())).append('\n');
+        builder.append("optimizedArtifactCandidate.selectionApplied=")
+                .append(optimizedArtifactCandidate.selectionApplied()).append('\n');
+        builder.append("optimizedArtifactCandidate.selectedIrReplacement=")
+                .append(optimizedArtifactCandidate.selectedIrReplacement()).append('\n');
+        BackendNeutralSourceMaterializationEvidence backendNeutralSourceMaterialization =
+                backendNeutralSourceMaterializationEvidence(irOptimizerReports);
+        builder.append("backendNeutralSourceMaterialization.pass.count=")
+                .append(backendNeutralSourceMaterialization.passCount()).append('\n');
+        builder.append("backendNeutralSourceMaterialization.candidate.count=")
+                .append(backendNeutralSourceMaterialization.candidateCount()).append('\n');
+        builder.append("backendNeutralSourceMaterialization.sourceReady.count=")
+                .append(backendNeutralSourceMaterialization.sourceReadyCount()).append('\n');
+        builder.append("backendNeutralSourceMaterialization.sourceLength.total=")
+                .append(backendNeutralSourceMaterialization.sourceLengthTotal()).append('\n');
+        builder.append("backendNeutralSourceMaterialization.materializationOnly.count=")
+                .append(backendNeutralSourceMaterialization.materializationOnlyCount()).append('\n');
+        builder.append("backendNeutralSourceMaterialization.status=")
+                .append(backendNeutralSourceMaterialization.status()).append('\n');
+        builder.append("backendNeutralSourceMaterialization.firstBlocker=")
+                .append(safePropertyValue(backendNeutralSourceMaterialization.firstBlocker())).append('\n');
+        ConstantFoldingPreviewEvidence constantFoldingPreview = constantFoldingPreviewEvidence(irOptimizerReports);
+        builder.append("constantFoldingPreview.pass.count=").append(constantFoldingPreview.passCount()).append('\n');
+        builder.append("constantFoldingPreview.candidate.count=").append(constantFoldingPreview.candidateCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.nonPlainLiteral.count=")
+                .append(constantFoldingPreview.skippedNonPlainLiteralCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.divideByZero.count=")
+                .append(constantFoldingPreview.skippedDivideByZeroCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.nonEvenDivision.count=")
+                .append(constantFoldingPreview.skippedNonEvenDivisionCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.unsupportedOperator.count=")
+                .append(constantFoldingPreview.skippedUnsupportedOperatorCount()).append('\n');
+        builder.append("constantFoldingPreview.skipped.nonLiteralOperand.count=")
+                .append(constantFoldingPreview.skippedNonLiteralOperandCount()).append('\n');
+        builder.append("constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite=")
+                .append(constantFoldingPreview.runtimeEquivalenceRequiredBeforeRewrite()).append('\n');
+        builder.append("constantFoldingPreview.approvalRequiredBeforeRewrite=")
+                .append(constantFoldingPreview.approvalRequiredBeforeRewrite()).append('\n');
+        builder.append("constantFoldingPreview.integerOverflowProven=")
+                .append(constantFoldingPreview.integerOverflowProven()).append('\n');
+        builder.append("constantFoldingPreview.floatingPointRoundingProven=")
+                .append(constantFoldingPreview.floatingPointRoundingProven()).append('\n');
+        ConstantFoldingMaterializationEvidence constantFoldingMaterialization =
+                constantFoldingMaterializationEvidence(irOptimizerReports);
+        builder.append("constantFoldingMaterialization.pass.count=")
+                .append(constantFoldingMaterialization.passCount()).append('\n');
+        builder.append("constantFoldingMaterialization.candidate.count=")
+                .append(constantFoldingMaterialization.candidateCount()).append('\n');
+        builder.append("constantFoldingMaterialization.transformedNode.count=")
+                .append(constantFoldingMaterialization.transformedNodeCount()).append('\n');
+        builder.append("constantFoldingMaterialization.literalRewrite.count=")
+                .append(constantFoldingMaterialization.literalRewriteCount()).append('\n');
+        builder.append("constantFoldingMaterialization.identityRewrite.count=")
+                .append(constantFoldingMaterialization.identityRewriteCount()).append('\n');
+        builder.append("constantFoldingMaterialization.fixedPointPass.count=")
+                .append(constantFoldingMaterialization.fixedPointPassCount()).append('\n');
+        builder.append("constantFoldingMaterialization.changedMethodBody.count=")
+                .append(constantFoldingMaterialization.changedMethodBodyCount()).append('\n');
+        builder.append("constantFoldingMaterialization.bodyTextReplacement.count=")
+                .append(constantFoldingMaterialization.bodyTextReplacementCount()).append('\n');
+        builder.append("constantFoldingMaterialization.skipped.divideByZero.count=")
+                .append(constantFoldingMaterialization.skippedDivideByZeroCount()).append('\n');
+        builder.append("constantFoldingMaterialization.skipped.nonEvenDivision.count=")
+                .append(constantFoldingMaterialization.skippedNonEvenDivisionCount()).append('\n');
+        builder.append("constantFoldingMaterialization.runtimeEquivalenceRequiredBeforeSelection=")
+                .append(constantFoldingMaterialization.runtimeEquivalenceRequiredBeforeSelection()).append('\n');
+        builder.append("constantFoldingMaterialization.runtimeEquivalencePayloadRequired=")
+                .append(constantFoldingMaterialization.runtimeEquivalencePayloadRequired()).append('\n');
+        builder.append("constantFoldingMaterialization.runtimeEquivalencePayloadPresent.count=")
+                .append(constantFoldingMaterialization.runtimeEquivalencePayloadPresentCount()).append('\n');
+        builder.append("constantFoldingMaterialization.runtimeEquivalencePassed.count=")
+                .append(constantFoldingMaterialization.runtimeEquivalencePassedCount()).append('\n');
+        builder.append("constantFoldingMaterialization.approvalRequiredBeforeProduction=")
+                .append(constantFoldingMaterialization.approvalRequiredBeforeProduction()).append('\n');
+        builder.append("constantFoldingMaterialization.status=")
+                .append(constantFoldingMaterialization.status()).append('\n');
+        builder.append("constantFoldingMaterialization.firstBlocker=")
+                .append(safePropertyValue(constantFoldingMaterialization.firstBlocker())).append('\n');
+        SafeLocalCsePreviewEvidence safeLocalCsePreview = safeLocalCsePreviewEvidence(irOptimizerReports);
+        builder.append("safeLocalCsePreview.pass.count=").append(safeLocalCsePreview.passCount()).append('\n');
+        builder.append("safeLocalCsePreview.expression.count=")
+                .append(safeLocalCsePreview.expressionCount()).append('\n');
+        builder.append("safeLocalCsePreview.candidateExpression.count=")
+                .append(safeLocalCsePreview.candidateExpressionCount()).append('\n');
+        builder.append("safeLocalCsePreview.duplicateExpression.count=")
+                .append(safeLocalCsePreview.duplicateExpressionCount()).append('\n');
+        builder.append("safeLocalCsePreview.equivalenceClass.count=")
+                .append(safeLocalCsePreview.equivalenceClassCount()).append('\n');
+        builder.append("safeLocalCsePreview.blocked.unsupportedOperator.count=")
+                .append(safeLocalCsePreview.blockedUnsupportedOperatorCount()).append('\n');
+        builder.append("safeLocalCsePreview.blocked.impureOperand.count=")
+                .append(safeLocalCsePreview.blockedImpureOperandCount()).append('\n');
+        builder.append("safeLocalCsePreview.blocked.controlFlowBoundary.count=")
+                .append(safeLocalCsePreview.blockedControlFlowBoundaryCount()).append('\n');
+        builder.append("safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite=")
+                .append(safeLocalCsePreview.runtimeEquivalenceRequiredBeforeRewrite()).append('\n');
+        builder.append("safeLocalCsePreview.approvalRequiredBeforeRewrite=")
+                .append(safeLocalCsePreview.approvalRequiredBeforeRewrite()).append('\n');
+        builder.append("safeLocalCsePreview.dominanceProven=")
+                .append(safeLocalCsePreview.dominanceProven()).append('\n');
+        builder.append("safeLocalCsePreview.sideEffectFreedomProven=")
+                .append(safeLocalCsePreview.sideEffectFreedomProven()).append('\n');
+        SafeLocalCseMaterializationEvidence safeLocalCseMaterialization =
+                safeLocalCseMaterializationEvidence(irOptimizerReports);
+        builder.append("safeLocalCseMaterialization.pass.count=")
+                .append(safeLocalCseMaterialization.passCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.localBinding.count=")
+                .append(safeLocalCseMaterialization.localBindingCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.introducedTemporary.count=")
+                .append(safeLocalCseMaterialization.introducedTemporaryCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.candidate.count=")
+                .append(safeLocalCseMaterialization.candidateCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.transformedNode.count=")
+                .append(safeLocalCseMaterialization.transformedNodeCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.changedMethodBody.count=")
+                .append(safeLocalCseMaterialization.changedMethodBodyCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.bodyTextReplacement.count=")
+                .append(safeLocalCseMaterialization.bodyTextReplacementCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.fixedPoint.pass.count=")
+                .append(safeLocalCseMaterialization.fixedPointPassCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.skipped.controlFlowBoundary.count=")
+                .append(safeLocalCseMaterialization.skippedControlFlowBoundaryCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.skipped.unsupportedOperator.count=")
+                .append(safeLocalCseMaterialization.skippedUnsupportedOperatorCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.skipped.impureOperand.count=")
+                .append(safeLocalCseMaterialization.skippedImpureOperandCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.skipped.bodyTextPatternMissing.count=")
+                .append(safeLocalCseMaterialization.skippedBodyTextPatternMissingCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.runtimeEquivalenceRequiredBeforeSelection=")
+                .append(safeLocalCseMaterialization.runtimeEquivalenceRequiredBeforeSelection()).append('\n');
+        builder.append("safeLocalCseMaterialization.runtimeEquivalencePayloadRequired=")
+                .append(safeLocalCseMaterialization.runtimeEquivalencePayloadRequired()).append('\n');
+        builder.append("safeLocalCseMaterialization.runtimeEquivalencePayloadPresent.count=")
+                .append(safeLocalCseMaterialization.runtimeEquivalencePayloadPresentCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.runtimeEquivalencePassed.count=")
+                .append(safeLocalCseMaterialization.runtimeEquivalencePassedCount()).append('\n');
+        builder.append("safeLocalCseMaterialization.approvalRequiredBeforeProduction=")
+                .append(safeLocalCseMaterialization.approvalRequiredBeforeProduction()).append('\n');
+        builder.append("safeLocalCseMaterialization.dominanceProven=")
+                .append(safeLocalCseMaterialization.dominanceProven()).append('\n');
+        builder.append("safeLocalCseMaterialization.sideEffectFreedomProven=")
+                .append(safeLocalCseMaterialization.sideEffectFreedomProven()).append('\n');
+        builder.append("safeLocalCseMaterialization.status=")
+                .append(safeLocalCseMaterialization.status()).append('\n');
+        builder.append("safeLocalCseMaterialization.firstBlocker=")
+                .append(safePropertyValue(safeLocalCseMaterialization.firstBlocker())).append('\n');
+        MadFmaMaterializationEvidence madFmaMaterialization = madFmaMaterializationEvidence(irOptimizerReports);
+        builder.append("madFmaMaterialization.pass.count=")
+                .append(madFmaMaterialization.passCount()).append('\n');
+        builder.append("madFmaMaterialization.candidate.count=")
+                .append(madFmaMaterialization.candidateCount()).append('\n');
+        builder.append("madFmaMaterialization.transformedNode.count=")
+                .append(madFmaMaterialization.transformedNodeCount()).append('\n');
+        builder.append("madFmaMaterialization.changedMethodBody.count=")
+                .append(madFmaMaterialization.changedMethodBodyCount()).append('\n');
+        builder.append("madFmaMaterialization.bodyTextReplacement.count=")
+                .append(madFmaMaterialization.bodyTextReplacementCount()).append('\n');
+        builder.append("madFmaMaterialization.fixedPoint.pass.count=")
+                .append(madFmaMaterialization.fixedPointPassCount()).append('\n');
+        builder.append("madFmaMaterialization.skipped.fastMathPolicy.count=")
+                .append(madFmaMaterialization.skippedFastMathPolicyCount()).append('\n');
+        builder.append("madFmaMaterialization.skipped.bodyTextPatternMissing.count=")
+                .append(madFmaMaterialization.skippedBodyTextPatternMissingCount()).append('\n');
+        builder.append("madFmaMaterialization.runtimeEquivalenceRequiredBeforeSelection=")
+                .append(madFmaMaterialization.runtimeEquivalenceRequiredBeforeSelection()).append('\n');
+        builder.append("madFmaMaterialization.runtimeEquivalencePayloadRequired=")
+                .append(madFmaMaterialization.runtimeEquivalencePayloadRequired()).append('\n');
+        builder.append("madFmaMaterialization.runtimeEquivalencePayloadPresent.count=")
+                .append(madFmaMaterialization.runtimeEquivalencePayloadPresentCount()).append('\n');
+        builder.append("madFmaMaterialization.runtimeEquivalencePassed.count=")
+                .append(madFmaMaterialization.runtimeEquivalencePassedCount()).append('\n');
+        builder.append("madFmaMaterialization.approvalRequiredBeforeProduction=")
+                .append(madFmaMaterialization.approvalRequiredBeforeProduction()).append('\n');
+        builder.append("madFmaMaterialization.fastMathAllowed=")
+                .append(madFmaMaterialization.fastMathAllowed()).append('\n');
+        builder.append("madFmaMaterialization.status=")
+                .append(madFmaMaterialization.status()).append('\n');
+        builder.append("madFmaMaterialization.firstBlocker=")
+                .append(safePropertyValue(madFmaMaterialization.firstBlocker())).append('\n');
+        IntrinsicMaterializationEvidence clampMaterialization = intrinsicMaterializationEvidence(
+                irOptimizerReports,
+                "clamp-materialization"
+        );
+        appendIntrinsicMaterializationEvidence(builder, "clampMaterialization", clampMaterialization);
+        builder.append("clampMaterialization.strictFloatPreserved=")
+                .append(clampMaterialization.strictFloatPreserved()).append('\n');
+        builder.append("clampMaterialization.argumentOrderPreserved=")
+                .append(clampMaterialization.argumentOrderPreserved()).append('\n');
+        builder.append("clampMaterialization.fastMathRequired=")
+                .append(clampMaterialization.fastMathRequired()).append('\n');
+        IntrinsicMaterializationEvidence stepMaterialization = intrinsicMaterializationEvidence(
+                irOptimizerReports,
+                "step-materialization"
+        );
+        appendIntrinsicMaterializationEvidence(builder, "stepMaterialization", stepMaterialization);
+        builder.append("stepMaterialization.directStep.count=")
+                .append(stepMaterialization.directStepCount()).append('\n');
+        builder.append("stepMaterialization.invertedStep.count=")
+                .append(stepMaterialization.invertedStepCount()).append('\n');
+        builder.append("stepMaterialization.strictFloatPreserved=")
+                .append(stepMaterialization.strictFloatPreserved()).append('\n');
+        builder.append("stepMaterialization.strictComparisonPreserved=")
+                .append(stepMaterialization.strictComparisonPreserved()).append('\n');
+        builder.append("stepMaterialization.equalityBehaviorPreserved=")
+                .append(stepMaterialization.equalityBehaviorPreserved()).append('\n');
+        builder.append("stepMaterialization.nanComparisonPreserved=")
+                .append(stepMaterialization.nanComparisonPreserved()).append('\n');
+        builder.append("stepMaterialization.fastMathRequired=")
+                .append(stepMaterialization.fastMathRequired()).append('\n');
+        IntrinsicMaterializationEvidence mixMaterialization = intrinsicMaterializationEvidence(
+                irOptimizerReports,
+                "mix-materialization"
+        );
+        appendIntrinsicMaterializationEvidence(builder, "mixMaterialization", mixMaterialization);
+        builder.append("mixMaterialization.canonicalMix.count=")
+                .append(mixMaterialization.canonicalMixCount()).append('\n');
+        builder.append("mixMaterialization.expandedMix.count=")
+                .append(mixMaterialization.expandedMixCount()).append('\n');
+        builder.append("mixMaterialization.madExpandedMix.count=")
+                .append(mixMaterialization.madExpandedMixCount()).append('\n');
+        builder.append("mixMaterialization.fastMathAllowed=")
+                .append(mixMaterialization.fastMathAllowed()).append('\n');
+        builder.append("mixMaterialization.fastMathRequired=")
+                .append(mixMaterialization.fastMathRequired()).append('\n');
+        builder.append("mixMaterialization.strictFloatPreserved=")
+                .append(mixMaterialization.strictFloatPreserved()).append('\n');
+        builder.append("mixMaterialization.algebraicReassociationRequired=")
+                .append(mixMaterialization.algebraicReassociationRequired()).append('\n');
+        builder.append("mixMaterialization.mixArgumentOrderPreserved=")
+                .append(mixMaterialization.mixArgumentOrderPreserved()).append('\n');
+        LoopVectorizationMaterializationEvidence loopVectorizationMaterialization =
+                loopVectorizationMaterializationEvidence(irOptimizerReports);
+        builder.append("loopVectorizationMaterialization.pass.count=")
+                .append(loopVectorizationMaterialization.passCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.candidate.count=")
+                .append(loopVectorizationMaterialization.candidateCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.transformedLoop.count=")
+                .append(loopVectorizationMaterialization.transformedLoopCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.changedMethodBody.count=")
+                .append(loopVectorizationMaterialization.changedMethodBodyCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.bodyTextReplacement.count=")
+                .append(loopVectorizationMaterialization.bodyTextReplacementCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.materialized.count=")
+                .append(loopVectorizationMaterialization.typedBodyMaterializedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.invalidated.count=")
+                .append(loopVectorizationMaterialization.typedBodyInvalidatedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.attempted.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildAttemptedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.parsed.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildParsedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.built.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildBuiltCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.graphValidated.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildGraphValidatedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.rejected.count=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildRejectedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.status=")
+                .append(loopVectorizationMaterialization.typedBodyRebuildStatus()).append('\n');
+        builder.append("loopVectorizationMaterialization.typedBody.rebuild.firstBlocker=")
+                .append(safePropertyValue(loopVectorizationMaterialization.typedBodyRebuildFirstBlocker())).append('\n');
+        builder.append("loopVectorizationMaterialization.skipped.loopShape.count=")
+                .append(loopVectorizationMaterialization.skippedLoopShapeCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.skipped.unsupportedWidth.count=")
+                .append(loopVectorizationMaterialization.skippedUnsupportedWidthCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.skipped.unsafeLoadPattern.count=")
+                .append(loopVectorizationMaterialization.skippedUnsafeLoadPatternCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.runtimeEquivalenceRequiredBeforeSelection=")
+                .append(loopVectorizationMaterialization.runtimeEquivalenceRequiredBeforeSelection()).append('\n');
+        builder.append("loopVectorizationMaterialization.runtimeEquivalencePayloadRequired=")
+                .append(loopVectorizationMaterialization.runtimeEquivalencePayloadRequired()).append('\n');
+        builder.append("loopVectorizationMaterialization.runtimeEquivalencePayloadPresent.count=")
+                .append(loopVectorizationMaterialization.runtimeEquivalencePayloadPresentCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.runtimeEquivalencePassed.count=")
+                .append(loopVectorizationMaterialization.runtimeEquivalencePassedCount()).append('\n');
+        builder.append("loopVectorizationMaterialization.approvalRequiredBeforeProduction=")
+                .append(loopVectorizationMaterialization.approvalRequiredBeforeProduction()).append('\n');
+        builder.append("loopVectorizationMaterialization.loopTripCountProven=")
+                .append(loopVectorizationMaterialization.loopTripCountProven()).append('\n');
+        builder.append("loopVectorizationMaterialization.contiguousLoadProven=")
+                .append(loopVectorizationMaterialization.contiguousLoadProven()).append('\n');
+        builder.append("loopVectorizationMaterialization.orderedReductionPreserved=")
+                .append(loopVectorizationMaterialization.orderedReductionPreserved()).append('\n');
+        builder.append("loopVectorizationMaterialization.status=")
+                .append(loopVectorizationMaterialization.status()).append('\n');
+        builder.append("loopVectorizationMaterialization.firstBlocker=")
+                .append(safePropertyValue(loopVectorizationMaterialization.firstBlocker())).append('\n');
+        TypedDeadCodePreviewEvidence typedDeadCodePreview = typedDeadCodePreviewEvidence(irOptimizerReports);
+        builder.append("typedDeadCodePreview.pass.count=").append(typedDeadCodePreview.passCount()).append('\n');
+        builder.append("typedDeadCodePreview.node.count=").append(typedDeadCodePreview.nodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.reachableNode.count=")
+                .append(typedDeadCodePreview.reachableNodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.unreachableNode.count=")
+                .append(typedDeadCodePreview.unreachableNodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.blocked.missingRoot.count=")
+                .append(typedDeadCodePreview.blockedMissingRootCount()).append('\n');
+        builder.append("typedDeadCodePreview.blocked.missingChildReference.count=")
+                .append(typedDeadCodePreview.blockedMissingChildReferenceCount()).append('\n');
+        builder.append("typedDeadCodePreview.blocked.sideEffectingUnreachableNode.count=")
+                .append(typedDeadCodePreview.blockedSideEffectingUnreachableNodeCount()).append('\n');
+        builder.append("typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite=")
+                .append(typedDeadCodePreview.runtimeEquivalenceRequiredBeforeRewrite()).append('\n');
+        builder.append("typedDeadCodePreview.approvalRequiredBeforeRewrite=")
+                .append(typedDeadCodePreview.approvalRequiredBeforeRewrite()).append('\n');
+        builder.append("typedDeadCodePreview.sideEffectFreedomProven=")
+                .append(typedDeadCodePreview.sideEffectFreedomProven()).append('\n');
+        TypedDeadCodeMaterializationEvidence typedDeadCodeMaterialization =
+                typedDeadCodeMaterializationEvidence(irOptimizerReports);
+        builder.append("typedDeadCodeMaterialization.pass.count=")
+                .append(typedDeadCodeMaterialization.passCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.node.count=")
+                .append(typedDeadCodeMaterialization.nodeCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.unreachableNode.count=")
+                .append(typedDeadCodeMaterialization.unreachableNodeCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.removedNode.count=")
+                .append(typedDeadCodeMaterialization.removedNodeCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.changedMethodBody.count=")
+                .append(typedDeadCodeMaterialization.changedMethodBodyCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.blocked.missingRoot.count=")
+                .append(typedDeadCodeMaterialization.blockedMissingRootCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.blocked.missingChildReference.count=")
+                .append(typedDeadCodeMaterialization.blockedMissingChildReferenceCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.blocked.sideEffectingUnreachableNode.count=")
+                .append(typedDeadCodeMaterialization.blockedSideEffectingUnreachableNodeCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.runtimeEquivalenceRequiredBeforeSelection=")
+                .append(typedDeadCodeMaterialization.runtimeEquivalenceRequiredBeforeSelection()).append('\n');
+        builder.append("typedDeadCodeMaterialization.runtimeEquivalencePayloadRequired=")
+                .append(typedDeadCodeMaterialization.runtimeEquivalencePayloadRequired()).append('\n');
+        builder.append("typedDeadCodeMaterialization.runtimeEquivalencePayloadPresent.count=")
+                .append(typedDeadCodeMaterialization.runtimeEquivalencePayloadPresentCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.runtimeEquivalencePassed.count=")
+                .append(typedDeadCodeMaterialization.runtimeEquivalencePassedCount()).append('\n');
+        builder.append("typedDeadCodeMaterialization.approvalRequiredBeforeProduction=")
+                .append(typedDeadCodeMaterialization.approvalRequiredBeforeProduction()).append('\n');
+        builder.append("typedDeadCodeMaterialization.sideEffectFreedomProven=")
+                .append(typedDeadCodeMaterialization.sideEffectFreedomProven()).append('\n');
+        builder.append("typedDeadCodeMaterialization.status=")
+                .append(typedDeadCodeMaterialization.status()).append('\n');
+        builder.append("typedDeadCodeMaterialization.firstBlocker=")
+                .append(safePropertyValue(typedDeadCodeMaterialization.firstBlocker())).append('\n');
+        PreviewReadinessEvidence previewReadiness = previewReadinessEvidence(
+                constantFoldingPreview,
+                safeLocalCsePreview,
+                typedDeadCodePreview
+        );
+        builder.append("previewReadiness.status=").append(previewReadiness.status()).append('\n');
+        builder.append("previewReadiness.family.count=").append(previewReadiness.familyCount()).append('\n');
+        builder.append("previewReadiness.candidateFamily.count=")
+                .append(previewReadiness.candidateFamilyCount()).append('\n');
+        builder.append("previewReadiness.blockedFamily.count=")
+                .append(previewReadiness.blockedFamilyCount()).append('\n');
+        builder.append("previewReadiness.familySummary=")
+                .append(safePropertyValue(previewReadiness.familySummary())).append('\n');
+        RuntimeEquivalenceReviewEvidence runtimeEquivalenceReview = runtimeEquivalenceReviewEvidence(
+                previewReadiness,
+                constantFoldingMaterialization,
+                safeLocalCseMaterialization,
+                madFmaMaterialization,
+                clampMaterialization,
+                stepMaterialization,
+                mixMaterialization,
+                loopVectorizationMaterialization,
+                typedDeadCodeMaterialization
+        );
+        builder.append("runtimeEquivalenceReview.status=").append(runtimeEquivalenceReview.status()).append('\n');
+        builder.append("runtimeEquivalenceReview.eligible=").append(runtimeEquivalenceReview.eligible()).append('\n');
+        builder.append("runtimeEquivalenceReview.required=").append(runtimeEquivalenceReview.required()).append('\n');
+        builder.append("runtimeEquivalenceReview.firstBlocker=")
+                .append(safePropertyValue(runtimeEquivalenceReview.firstBlocker())).append('\n');
+        builder.append("runtimeEquivalenceReview.familySummary=")
+                .append(safePropertyValue(runtimeEquivalenceReview.familySummary())).append('\n');
+        builder.append("runtimeEquivalenceReview.productionMutation=disabled\n");
+        builder.append("runtimeEquivalenceReview.selectedIrReplacement=disabled\n");
+        builder.append("runtimeEquivalenceReview.manualReviewOnly=true\n");
+        ReviewPackageEvidence reviewPackage = reviewPackageEvidence(irOptimizerReports, runtimeEquivalenceReview);
+        builder.append("reviewPackage.status=").append(reviewPackage.status()).append('\n');
+        builder.append("reviewPackage.required=").append(reviewPackage.required()).append('\n');
+        builder.append("reviewPackage.complete=").append(reviewPackage.complete()).append('\n');
+        builder.append("reviewPackage.firstBlocker=")
+                .append(safePropertyValue(reviewPackage.firstBlocker())).append('\n');
+        builder.append("reviewPackage.proposalPass.count=").append(reviewPackage.proposalPassCount()).append('\n');
+        builder.append("reviewPackage.pendingApproval.count=").append(reviewPackage.pendingApprovalCount()).append('\n');
+        builder.append("reviewPackage.runtimeEquivalence.status=")
+                .append(safePropertyValue(reviewPackage.runtimeEquivalenceStatus())).append('\n');
+        ApprovalManifestPackageEvidence approvalManifestPackage = approvalManifestPackageEvidence(
+                irOptimizerReports,
+                reviewPackage
+        );
+        builder.append("reviewPackage.approvalManifest.status=")
+                .append(approvalManifestPackage.status()).append('\n');
+        builder.append("reviewPackage.approvalManifest.required=")
+                .append(approvalManifestPackage.required()).append('\n');
+        builder.append("reviewPackage.approvalManifest.present.count=")
+                .append(approvalManifestPackage.presentCount()).append('\n');
+        builder.append("reviewPackage.approvalManifest.accepted.count=")
+                .append(approvalManifestPackage.acceptedCount()).append('\n');
+        builder.append("reviewPackage.approvalManifest.resourcePath.summary=")
+                .append(safePropertyValue(approvalManifestPackage.resourcePathSummary())).append('\n');
+        builder.append("reviewPackage.approvalManifest.firstBlocker=")
+                .append(safePropertyValue(approvalManifestPackage.firstBlocker())).append('\n');
+        builder.append("reviewPackage.approvalManifest.manualReviewOnly=true\n");
+        builder.append("reviewPackage.approvalManifest.productionMutation=disabled\n");
+        builder.append("reviewPackage.approvalManifest.selectedIrReplacement=disabled\n");
+        builder.append("reviewPackage.originalIrRequired=true\n");
+        builder.append("reviewPackage.optimizedIrRequired=true\n");
+        builder.append("reviewPackage.proofSummaryRequired=true\n");
+        builder.append("reviewPackage.manualReviewOnly=true\n");
+        builder.append("reviewPackage.productionMutation=disabled\n");
+        builder.append("reviewPackage.selectedIrReplacement=disabled\n");
+        for (int index = 0; index < irOptimizerReports.size(); index++) {
+            GpuRuntimeIrOptimizationPassReport passReport = irOptimizerReports.get(index);
+            String prefix = "pass." + index + ".";
+            ApprovalTemplateEvidence approvalTemplate = approvalTemplateEvidence(passReport);
+            builder.append(prefix).append("passVersion=")
+                    .append(safePropertyValue(passReport.optimizerVersion())).append('\n');
+            builder.append(prefix).append("stage=").append(passReport.stage()).append('\n');
+            builder.append(prefix).append("outcome=").append(passReport.outcome()).append('\n');
+            builder.append(prefix).append("proofStatus=")
+                    .append(safePropertyValue(passReport.proofStatus())).append('\n');
+            builder.append(prefix).append("originalIrIdentity=")
+                    .append(safePropertyValue(passReport.originalIrIdentity())).append('\n');
+            builder.append(prefix).append("transformedIrIdentity=")
+                    .append(safePropertyValue(passReport.transformedIrIdentity())).append('\n');
+            builder.append(prefix).append("rollbackReason=")
+                    .append(safePropertyValue(passReport.rollbackReason())).append('\n');
+            builder.append(prefix).append("proofArtifact.source=")
+                    .append(safePropertyValue(passReport.proofArtifact().source())).append('\n');
+            builder.append(prefix).append("proofArtifact.verdict=")
+                    .append(safePropertyValue(passReport.proofArtifact().verdict())).append('\n');
+            builder.append(prefix).append("proofArtifact.field.count=")
+                    .append(passReport.proofArtifact().fields().size()).append('\n');
+            passReport.proofArtifact().fields().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> builder.append(prefix).append("proofArtifact.field.")
+                            .append(safePropertyValue(entry.getKey())).append('=')
+                            .append(safePropertyValue(entry.getValue())).append('\n'));
+            builder.append(prefix).append("approvalTemplate.status=")
+                    .append(approvalTemplate.status()).append('\n');
+            builder.append(prefix).append("approvalTemplate.applicable=")
+                    .append(approvalTemplate.applicable()).append('\n');
+            builder.append(prefix).append("approvalTemplate.firstBlocker=")
+                    .append(safePropertyValue(approvalTemplate.firstBlocker())).append('\n');
+            builder.append(prefix).append("approvalTemplate.productionMutation=disabled\n");
+            builder.append(prefix).append("approvalTemplate.manualReviewOnly=true\n");
+            if (approvalTemplate.applicable()) {
+                builder.append(prefix)
+                        .append("approvalTemplate.resourceDirectory=META-INF/javatogpu/ir-optimization-approvals/\n");
+            }
+            approvalTemplate.fields().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> builder.append(prefix).append("approvalTemplate.field.")
+                            .append(safePropertyValue(entry.getKey())).append('=')
+                            .append(safePropertyValue(entry.getValue())).append('\n'));
+            builder.append(prefix).append("diagnostic.count=").append(passReport.diagnostics().size()).append('\n');
+            for (int diagnosticIndex = 0; diagnosticIndex < passReport.diagnostics().size(); diagnosticIndex++) {
+                builder.append(prefix).append("diagnostic.").append(diagnosticIndex).append('=')
+                        .append(safePropertyValue(passReport.diagnostics().get(diagnosticIndex))).append('\n');
+            }
+        }
+        return builder.toString();
+    }
+
+    private static boolean isRuntimeIrOptimizerEvidence(GpuRuntimeIrOptimizationPassReport passReport) {
+        if (passReport == null) {
+            return false;
+        }
+        String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+        String proofSource = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+        return optimizerVersion.startsWith("javatogpu.ir-optimizer")
+                || proofSource.startsWith("ir-optimizer");
+    }
+
+    private static long countOutcome(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            GpuRuntimeIrOptimizationOutcome outcome
+    ) {
+        return passReports.stream().filter(passReport -> passReport.outcome() == outcome).count();
+    }
+
+    private static long countProofStatus(List<GpuRuntimeIrOptimizationPassReport> passReports, String proofStatus) {
+        return passReports.stream()
+                .filter(passReport -> proofStatus.equals(passReport.proofStatus()))
+                .count();
+    }
+
+    private static long countApprovalTemplateStatus(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            String status
+    ) {
+        return passReports.stream()
+                .map(GpuRuntimeCompileArtifactDumper::approvalTemplateEvidence)
+                .filter(evidence -> status.equals(evidence.status()))
+                .count();
+    }
+
+    private static ApprovalTemplatePayloadEvidence approvalTemplatePayloadEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int requiredCount = 0;
+        int presentCount = 0;
+        int passedCount = 0;
+        int completeCount = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            ApprovalTemplateEvidence approvalTemplate = approvalTemplateEvidence(passReport);
+            if (!approvalTemplate.applicable()) {
+                continue;
+            }
+            Map<String, String> fields = approvalTemplate.fields();
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.required"))) {
+                requiredCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.present"))) {
+                presentCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.passed"))) {
+                passedCount++;
+            }
+            if (approvalTemplatePayloadComplete(fields)) {
+                completeCount++;
+            }
+        }
+        return new ApprovalTemplatePayloadEvidence(requiredCount, presentCount, passedCount, completeCount);
+    }
+
+    private static boolean approvalTemplatePayloadComplete(Map<String, String> fields) {
+        return parseBoolean(fields.get("runtimeEquivalencePayload.present"))
+                && parseBoolean(fields.get("runtimeEquivalencePayload.passed"))
+                && parseBoolean(fields.get("runtimeEquivalencePayload.componentsComplete"))
+                && parseNonNegativeInt(fields.get("runtimeEquivalencePayload.caseCount")) > 0;
+    }
+
+    private record ApprovalTemplatePayloadEvidence(
+            int requiredCount,
+            int presentCount,
+            int passedCount,
+            int completeCount
+    ) {
+    }
+
+    private static PolicyGateEvidence policyGateEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int skippedCount = 0;
+        int optimizerPolicyDisabledCount = 0;
+        int familyDisabledCount = 0;
+        int familyNotEnabledCount = 0;
+        int providerInvokedCount = 0;
+        String firstBlocker = "none";
+        LinkedHashMap<String, Integer> familyCounts = new LinkedHashMap<>();
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (!"skipped".equals(fields.get("policyGate.status"))) {
+                continue;
+            }
+            skippedCount++;
+            String reason = fields.getOrDefault("policyGate.reason", "unknown");
+            String family = fields.getOrDefault("policyGate.family", fields.getOrDefault("optimizerFamily", "unknown"));
+            if (!family.isBlank()) {
+                familyCounts.merge(family, 1, Integer::sum);
+            }
+            if (parseBoolean(fields.get("policyGate.providerInvoked"))) {
+                providerInvokedCount++;
+            }
+            switch (reason) {
+                case "optimizer-policy-disabled" -> optimizerPolicyDisabledCount++;
+                case "optimizer-family-disabled" -> familyDisabledCount++;
+                case "optimizer-family-not-enabled" -> familyNotEnabledCount++;
+                default -> { }
+            }
+            if ("none".equals(firstBlocker) && !reason.isBlank() && !"none".equals(reason)) {
+                firstBlocker = reason;
+            }
+        }
+        return new PolicyGateEvidence(
+                skippedCount,
+                optimizerPolicyDisabledCount,
+                familyDisabledCount,
+                familyNotEnabledCount,
+                providerInvokedCount,
+                skippedCount == 0 ? "none" : firstBlocker,
+                formatCountSummary(familyCounts)
+        );
+    }
+
+    private static String formatCountSummary(Map<String, Integer> counts) {
+        if (counts == null || counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder summary = new StringBuilder();
+        counts.forEach((key, count) -> {
+            if (!summary.isEmpty()) {
+                summary.append(", ");
+            }
+            summary.append(key).append('=').append(Math.max(0, count));
+        });
+        return summary.toString();
+    }
+
+    private static OptimizedArtifactCandidateEvidence optimizedArtifactCandidateEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int count = 0;
+        int readyCount = 0;
+        int blockedCount = 0;
+        int selectionReadyCount = 0;
+        int selectionAppliedCount = 0;
+        int selectedIrReplacementCount = 0;
+        int mutationAllowedCount = 0;
+        String firstBlocker = "no-candidates";
+        String selectionFirstBlocker = "no-candidates";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (!hasOptimizedArtifactCandidate(fields)) {
+                continue;
+            }
+            count++;
+            String status = fields.getOrDefault("optimizedArtifactCandidate.status", "unknown");
+            if ("candidate-ready".equals(status)) {
+                readyCount++;
+            } else {
+                blockedCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.selectionReady"))) {
+                selectionReadyCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.selectionApplied"))) {
+                selectionAppliedCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.selectedIrReplacement"))) {
+                selectedIrReplacementCount++;
+            }
+            if (parseBoolean(fields.get("optimizedArtifactCandidate.mutationAllowed"))) {
+                mutationAllowedCount++;
+            }
+            String candidateBlocker = fields.getOrDefault("optimizedArtifactCandidate.firstBlocker", "none");
+            if (isPreferredCandidateBlocker(firstBlocker, candidateBlocker)) {
+                firstBlocker = candidateBlocker;
+            }
+            String candidateSelectionBlocker = fields.getOrDefault(
+                    "optimizedArtifactCandidate.selectionFirstBlocker",
+                    "selection-gate-not-bound"
+            );
+            if (isPreferredCandidateBlocker(selectionFirstBlocker, candidateSelectionBlocker)) {
+                selectionFirstBlocker = candidateSelectionBlocker;
+            }
+        }
+        String status = optimizedArtifactCandidateStatus(count, readyCount, blockedCount);
+        if (count > 0 && "no-candidates".equals(firstBlocker)) {
+            firstBlocker = "none";
+        }
+        if (count > 0 && "no-candidates".equals(selectionFirstBlocker)) {
+            selectionFirstBlocker = "selection-gate-not-bound";
+        }
+        return new OptimizedArtifactCandidateEvidence(
+                status,
+                count,
+                readyCount,
+                blockedCount,
+                selectionReadyCount,
+                selectionAppliedCount,
+                selectedIrReplacementCount,
+                mutationAllowedCount,
+                firstBlocker,
+                selectionFirstBlocker
+        );
+    }
+
+    private static ExperimentalApplyEvidence experimentalApplyEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int requestedCount = 0;
+        int enabledCount = 0;
+        int selectedCount = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            if (parseBoolean(fields.get("experimentalApply.requested"))) {
+                requestedCount++;
+            }
+            if (parseBoolean(fields.get("experimentalApply.enabled"))) {
+                enabledCount++;
+            }
+            if (parseBoolean(fields.get("experimentalApply.selected"))
+                    || "optimized-selected".equals(passReport.proofStatus())) {
+                selectedCount++;
+            }
+        }
+        return new ExperimentalApplyEvidence(
+                requestedCount > 0,
+                enabledCount > 0,
+                requestedCount,
+                enabledCount,
+                selectedCount
+        );
+    }
+
+    private static boolean hasOptimizedArtifactCandidate(Map<String, String> fields) {
+        return fields != null && fields.keySet().stream()
+                .anyMatch(key -> key.startsWith("optimizedArtifactCandidate."));
+    }
+
+    private static boolean isPreferredCandidateBlocker(String currentBlocker, String candidateBlocker) {
+        if (candidateBlocker == null || candidateBlocker.isBlank()) {
+            return false;
+        }
+        if ("no-candidates".equals(currentBlocker)) {
+            return true;
+        }
+        return "none".equals(currentBlocker) && !"none".equals(candidateBlocker);
+    }
+
+    private static boolean isPreferredMaterializationBlocker(String currentBlocker, String candidateBlocker) {
+        if (candidateBlocker == null || candidateBlocker.isBlank()) {
+            return false;
+        }
+        if (currentBlocker == null || currentBlocker.isBlank() || "not-recorded".equals(currentBlocker)) {
+            return true;
+        }
+        return "none".equals(currentBlocker) && !"none".equals(candidateBlocker);
+    }
+
+    private static BackendNeutralSourceMaterializationEvidence backendNeutralSourceMaterializationEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int candidateCount = 0;
+        int sourceReadyCount = 0;
+        int sourceLengthTotal = 0;
+        int materializationOnlyCount = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("backend-neutral-source-materialization")
+                    && !optimizerVersion.contains("backend-neutral-source-materialization")) {
+                continue;
+            }
+            passCount++;
+            if (parseBoolean(fields.get("materializationOnly"))) {
+                materializationOnlyCount++;
+                candidateCount++;
+            }
+            if (parseBoolean(fields.get("sourceGenerated")) || parseBoolean(fields.get("sourceReady"))) {
+                sourceReadyCount++;
+            }
+            sourceLengthTotal += parseNonNegativeInt(fields.get("sourceLength"));
+        }
+        String status;
+        String firstBlocker;
+        if (passCount <= 0) {
+            status = "not-recorded";
+            firstBlocker = "not-recorded";
+        } else if (candidateCount <= 0) {
+            status = "no-candidates";
+            firstBlocker = "backend-neutral-source-materialization-not-needed";
+        } else if (sourceReadyCount >= candidateCount) {
+            status = "review-ready";
+            firstBlocker = "none";
+        } else if (sourceReadyCount > 0) {
+            status = "mixed";
+            firstBlocker = "backend-neutral-source-partially-materialized";
+        } else {
+            status = "blocked";
+            firstBlocker = "backend-neutral-source-not-materialized";
+        }
+        return new BackendNeutralSourceMaterializationEvidence(
+                passCount,
+                candidateCount,
+                sourceReadyCount,
+                sourceLengthTotal,
+                materializationOnlyCount,
+                status,
+                firstBlocker
+        );
+    }
+
+    private static String optimizedArtifactCandidateStatus(int count, int readyCount, int blockedCount) {
+        if (count <= 0) {
+            return "not-recorded";
+        }
+        if (readyCount > 0 && blockedCount > 0) {
+            return "mixed";
+        }
+        return blockedCount > 0 ? "blocked" : "candidate-ready";
+    }
+
+    private static ConstantFoldingPreviewEvidence constantFoldingPreviewEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int candidateCount = 0;
+        int skippedNonPlainLiteralCount = 0;
+        int skippedDivideByZeroCount = 0;
+        int skippedNonEvenDivisionCount = 0;
+        int skippedUnsupportedOperatorCount = 0;
+        int skippedNonLiteralOperandCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeRewrite = false;
+        boolean approvalRequiredBeforeRewrite = false;
+        boolean integerOverflowProven = false;
+        boolean floatingPointRoundingProven = false;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            if (!source.contains("constant-folding-preview")
+                    && !passReport.optimizerVersion().contains("constant-folding-preview")) {
+                continue;
+            }
+            passCount++;
+            candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
+            skippedNonPlainLiteralCount += parseNonNegativeInt(fields.get("skipped.nonPlainLiteral.count"));
+            skippedDivideByZeroCount += parseNonNegativeInt(fields.get("skipped.divideByZero.count"));
+            skippedNonEvenDivisionCount += parseNonNegativeInt(fields.get("skipped.nonEvenDivision.count"));
+            skippedUnsupportedOperatorCount += parseNonNegativeInt(fields.get("skipped.unsupportedOperator.count"));
+            skippedNonLiteralOperandCount += parseNonNegativeInt(fields.get("skipped.nonLiteralOperand.count"));
+            runtimeEquivalenceRequiredBeforeRewrite |= parseBoolean(fields.get("proof.runtimeEquivalenceRequiredBeforeRewrite"));
+            approvalRequiredBeforeRewrite |= parseBoolean(fields.get("proof.approvalRequiredBeforeRewrite"));
+            integerOverflowProven |= parseBoolean(fields.get("safety.integerOverflowProven"));
+            floatingPointRoundingProven |= parseBoolean(fields.get("safety.floatingPointRoundingProven"));
+        }
+        return new ConstantFoldingPreviewEvidence(
+                passCount,
+                candidateCount,
+                skippedNonPlainLiteralCount,
+                skippedDivideByZeroCount,
+                skippedNonEvenDivisionCount,
+                skippedUnsupportedOperatorCount,
+                skippedNonLiteralOperandCount,
+                runtimeEquivalenceRequiredBeforeRewrite,
+                approvalRequiredBeforeRewrite,
+                integerOverflowProven,
+                floatingPointRoundingProven
+        );
+    }
+
+    private static ConstantFoldingMaterializationEvidence constantFoldingMaterializationEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int candidateCount = 0;
+        int transformedNodeCount = 0;
+        int literalRewriteCount = 0;
+        int identityRewriteCount = 0;
+        int fixedPointPassCount = 0;
+        int changedMethodBodyCount = 0;
+        int bodyTextReplacementCount = 0;
+        int skippedDivideByZeroCount = 0;
+        int skippedNonEvenDivisionCount = 0;
+        int runtimeEquivalencePayloadPresentCount = 0;
+        int runtimeEquivalencePassedCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeSelection = false;
+        boolean runtimeEquivalencePayloadRequired = false;
+        boolean approvalRequiredBeforeProduction = false;
+        String firstBlocker = "not-recorded";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("constant-folding-materialization")
+                    && !optimizerVersion.contains("constant-folding-materialization")) {
+                continue;
+            }
+            passCount++;
+            candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
+            transformedNodeCount += parseNonNegativeInt(fields.get("transformedNode.count"));
+            literalRewriteCount += parseNonNegativeInt(fields.get("literalRewrite.count"));
+            identityRewriteCount += parseNonNegativeInt(fields.get("identityRewrite.count"));
+            fixedPointPassCount += parseNonNegativeInt(fields.get("fixedPoint.pass.count"));
+            changedMethodBodyCount += parseNonNegativeInt(fields.get("changedMethodBody.count"));
+            bodyTextReplacementCount += parseNonNegativeInt(fields.get("bodyTextReplacement.count"));
+            skippedDivideByZeroCount += parseNonNegativeInt(fields.get("skipped.divideByZero.count"));
+            skippedNonEvenDivisionCount += parseNonNegativeInt(fields.get("skipped.nonEvenDivision.count"));
+            runtimeEquivalenceRequiredBeforeSelection |= parseBoolean(
+                    fields.get("proof.runtimeEquivalenceRequiredBeforeSelection")
+            );
+            runtimeEquivalencePayloadRequired |= parseBoolean(
+                    fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("runtimeEquivalencePayload.required"));
+            approvalRequiredBeforeProduction |= parseBoolean(fields.get("proof.approvalRequiredBeforeProduction"));
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.present"))) {
+                runtimeEquivalencePayloadPresentCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.passed"))) {
+                runtimeEquivalencePassedCount++;
+            }
+            String blocker = fields.getOrDefault("runtimeEquivalencePayload.firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+        }
+        String status;
+        if (passCount <= 0) {
+            status = "not-recorded";
+            firstBlocker = "not-recorded";
+        } else if (transformedNodeCount <= 0) {
+            status = "no-candidates";
+            firstBlocker = "no-materialized-candidates";
+        } else if (runtimeEquivalencePayloadPresentCount <= 0) {
+            status = "pending-runtime-equivalence";
+            firstBlocker = "runtime-equivalence-payload-not-recorded";
+        } else if (runtimeEquivalencePassedCount < runtimeEquivalencePayloadPresentCount) {
+            status = "runtime-equivalence-not-passed";
+            firstBlocker = "runtime-equivalence-not-passed";
+        } else {
+            status = "review-ready";
+            firstBlocker = "none";
+        }
+        return new ConstantFoldingMaterializationEvidence(
+                passCount,
+                candidateCount,
+                transformedNodeCount,
+                literalRewriteCount,
+                identityRewriteCount,
+                fixedPointPassCount,
+                changedMethodBodyCount,
+                bodyTextReplacementCount,
+                skippedDivideByZeroCount,
+                skippedNonEvenDivisionCount,
+                runtimeEquivalenceRequiredBeforeSelection,
+                runtimeEquivalencePayloadRequired,
+                runtimeEquivalencePayloadPresentCount,
+                runtimeEquivalencePassedCount,
+                approvalRequiredBeforeProduction,
+                status,
+                firstBlocker
+        );
+    }
+
+    private static TypedDeadCodeMaterializationEvidence typedDeadCodeMaterializationEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int nodeCount = 0;
+        int unreachableNodeCount = 0;
+        int removedNodeCount = 0;
+        int changedMethodBodyCount = 0;
+        int blockedMissingRootCount = 0;
+        int blockedMissingChildReferenceCount = 0;
+        int blockedSideEffectingUnreachableNodeCount = 0;
+        int runtimeEquivalencePayloadPresentCount = 0;
+        int runtimeEquivalencePassedCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeSelection = false;
+        boolean runtimeEquivalencePayloadRequired = false;
+        boolean approvalRequiredBeforeProduction = false;
+        boolean sideEffectFreedomProven = false;
+        String firstBlocker = "not-recorded";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("typed-dead-code-materialization")
+                    && !optimizerVersion.contains("typed-dead-code-materialization")) {
+                continue;
+            }
+            passCount++;
+            nodeCount += parseNonNegativeInt(fields.get("node.count"));
+            unreachableNodeCount += parseNonNegativeInt(fields.get("unreachableNode.count"));
+            removedNodeCount += parseNonNegativeInt(fields.get("removedNode.count"));
+            changedMethodBodyCount += parseNonNegativeInt(fields.get("changedMethodBody.count"));
+            blockedMissingRootCount += parseNonNegativeInt(fields.get("blocked.missingRoot.count"));
+            blockedMissingChildReferenceCount += parseNonNegativeInt(fields.get("blocked.missingChildReference.count"));
+            blockedSideEffectingUnreachableNodeCount += parseNonNegativeInt(
+                    fields.get("blocked.sideEffectingUnreachableNode.count")
+            );
+            runtimeEquivalenceRequiredBeforeSelection |= parseBoolean(
+                    fields.get("proof.runtimeEquivalenceRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection"));
+            runtimeEquivalencePayloadRequired |= parseBoolean(
+                    fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("runtimeEquivalencePayload.required"));
+            approvalRequiredBeforeProduction |= parseBoolean(fields.get("proof.approvalRequiredBeforeProduction"));
+            sideEffectFreedomProven |= parseBoolean(fields.get("safety.sideEffectFreedomProven"));
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.present"))) {
+                runtimeEquivalencePayloadPresentCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.passed"))) {
+                runtimeEquivalencePassedCount++;
+            }
+            String blocker = fields.getOrDefault("firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+            blocker = fields.getOrDefault("runtimeEquivalencePayload.firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+        }
+
+        int blockerCount = blockedMissingRootCount
+                + blockedMissingChildReferenceCount
+                + blockedSideEffectingUnreachableNodeCount;
+        String status;
+        if (passCount <= 0) {
+            status = "not-recorded";
+            firstBlocker = "not-recorded";
+        } else if (removedNodeCount <= 0 && blockerCount > 0) {
+            status = "blocked";
+            if ("not-recorded".equals(firstBlocker) || "none".equals(firstBlocker)) {
+                firstBlocker = typedDeadCodeMaterializationFirstBlocker(
+                        blockedMissingRootCount,
+                        blockedMissingChildReferenceCount,
+                        blockedSideEffectingUnreachableNodeCount
+                );
+            }
+        } else if (removedNodeCount <= 0) {
+            status = "no-candidates";
+            firstBlocker = "no-materialized-candidates";
+        } else if (!sideEffectFreedomProven) {
+            status = "blocked";
+            firstBlocker = "side-effect-freedom-not-proven";
+        } else if (runtimeEquivalencePayloadPresentCount <= 0) {
+            status = "pending-runtime-equivalence";
+            firstBlocker = "runtime-equivalence-payload-not-recorded";
+        } else if (runtimeEquivalencePassedCount < runtimeEquivalencePayloadPresentCount) {
+            status = "runtime-equivalence-not-passed";
+            firstBlocker = "runtime-equivalence-not-passed";
+        } else {
+            status = "review-ready";
+            firstBlocker = "none";
+        }
+        return new TypedDeadCodeMaterializationEvidence(
+                passCount,
+                nodeCount,
+                unreachableNodeCount,
+                removedNodeCount,
+                changedMethodBodyCount,
+                blockedMissingRootCount,
+                blockedMissingChildReferenceCount,
+                blockedSideEffectingUnreachableNodeCount,
+                runtimeEquivalenceRequiredBeforeSelection,
+                runtimeEquivalencePayloadRequired,
+                runtimeEquivalencePayloadPresentCount,
+                runtimeEquivalencePassedCount,
+                approvalRequiredBeforeProduction,
+                sideEffectFreedomProven,
+                status,
+                firstBlocker
+        );
+    }
+
+    private static String typedDeadCodeMaterializationFirstBlocker(
+            int blockedMissingRootCount,
+            int blockedMissingChildReferenceCount,
+            int blockedSideEffectingUnreachableNodeCount
+    ) {
+        if (blockedMissingRootCount > 0) {
+            return "missing-root-node";
+        }
+        if (blockedMissingChildReferenceCount > 0) {
+            return "missing-child-reference";
+        }
+        if (blockedSideEffectingUnreachableNodeCount > 0) {
+            return "side-effecting-unreachable-node";
+        }
+        return "typed-dead-code-materialization-blocked";
+    }
+
+    private static SafeLocalCseMaterializationEvidence safeLocalCseMaterializationEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int localBindingCount = 0;
+        int introducedTemporaryCount = 0;
+        int candidateCount = 0;
+        int transformedNodeCount = 0;
+        int changedMethodBodyCount = 0;
+        int bodyTextReplacementCount = 0;
+        int fixedPointPassCount = 0;
+        int skippedControlFlowBoundaryCount = 0;
+        int skippedUnsupportedOperatorCount = 0;
+        int skippedImpureOperandCount = 0;
+        int skippedBodyTextPatternMissingCount = 0;
+        int runtimeEquivalencePayloadPresentCount = 0;
+        int runtimeEquivalencePassedCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeSelection = false;
+        boolean runtimeEquivalencePayloadRequired = false;
+        boolean approvalRequiredBeforeProduction = false;
+        boolean dominanceProven = false;
+        boolean sideEffectFreedomProven = false;
+        String firstBlocker = "not-recorded";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("safe-local-cse-materialization")
+                    && !optimizerVersion.contains("safe-local-cse-materialization")) {
+                continue;
+            }
+            passCount++;
+            localBindingCount += parseNonNegativeInt(fields.get("localBinding.count"));
+            introducedTemporaryCount += parseNonNegativeInt(fields.get("introducedTemporary.count"));
+            candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
+            transformedNodeCount += parseNonNegativeInt(fields.get("transformedNode.count"));
+            changedMethodBodyCount += parseNonNegativeInt(fields.get("changedMethodBody.count"));
+            bodyTextReplacementCount += parseNonNegativeInt(fields.get("bodyTextReplacement.count"));
+            fixedPointPassCount += parseNonNegativeInt(fields.get("fixedPoint.pass.count"));
+            skippedControlFlowBoundaryCount += parseNonNegativeInt(fields.get("skipped.controlFlowBoundary.count"));
+            skippedUnsupportedOperatorCount += parseNonNegativeInt(fields.get("skipped.unsupportedOperator.count"));
+            skippedImpureOperandCount += parseNonNegativeInt(fields.get("skipped.impureOperand.count"));
+            skippedBodyTextPatternMissingCount += parseNonNegativeInt(fields.get("skipped.bodyTextPatternMissing.count"));
+            runtimeEquivalenceRequiredBeforeSelection |= parseBoolean(
+                    fields.get("proof.runtimeEquivalenceRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection"));
+            runtimeEquivalencePayloadRequired |= parseBoolean(
+                    fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("runtimeEquivalencePayload.required"));
+            approvalRequiredBeforeProduction |= parseBoolean(fields.get("proof.approvalRequiredBeforeProduction"));
+            dominanceProven |= parseBoolean(fields.get("safety.dominanceProven"));
+            sideEffectFreedomProven |= parseBoolean(fields.get("safety.sideEffectFreedomProven"));
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.present"))) {
+                runtimeEquivalencePayloadPresentCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.passed"))) {
+                runtimeEquivalencePassedCount++;
+            }
+            String blocker = fields.getOrDefault("firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+            blocker = fields.getOrDefault("runtimeEquivalencePayload.firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+        }
+
+        int blockerCount = skippedControlFlowBoundaryCount
+                + skippedUnsupportedOperatorCount
+                + skippedImpureOperandCount
+                + skippedBodyTextPatternMissingCount;
+        String status;
+        if (passCount <= 0) {
+            status = "not-recorded";
+            firstBlocker = "not-recorded";
+        } else if (transformedNodeCount <= 0 && blockerCount > 0) {
+            status = "blocked";
+            if ("not-recorded".equals(firstBlocker) || "none".equals(firstBlocker)) {
+                firstBlocker = "safe-local-cse-materialization-blocked";
+            }
+        } else if (transformedNodeCount <= 0) {
+            status = "no-candidates";
+            firstBlocker = "no-materialized-candidates";
+        } else if (!dominanceProven) {
+            status = "blocked";
+            firstBlocker = "dominance-not-proven";
+        } else if (!sideEffectFreedomProven) {
+            status = "blocked";
+            firstBlocker = "side-effect-freedom-not-proven";
+        } else if (runtimeEquivalencePayloadPresentCount <= 0) {
+            status = "pending-runtime-equivalence";
+            firstBlocker = "runtime-equivalence-payload-not-recorded";
+        } else if (runtimeEquivalencePassedCount < runtimeEquivalencePayloadPresentCount) {
+            status = "runtime-equivalence-not-passed";
+            firstBlocker = "runtime-equivalence-not-passed";
+        } else {
+            status = "review-ready";
+            firstBlocker = "none";
+        }
+        return new SafeLocalCseMaterializationEvidence(
+                passCount,
+                localBindingCount,
+                introducedTemporaryCount,
+                candidateCount,
+                transformedNodeCount,
+                changedMethodBodyCount,
+                bodyTextReplacementCount,
+                fixedPointPassCount,
+                skippedControlFlowBoundaryCount,
+                skippedUnsupportedOperatorCount,
+                skippedImpureOperandCount,
+                skippedBodyTextPatternMissingCount,
+                runtimeEquivalenceRequiredBeforeSelection,
+                runtimeEquivalencePayloadRequired,
+                runtimeEquivalencePayloadPresentCount,
+                runtimeEquivalencePassedCount,
+                approvalRequiredBeforeProduction,
+                dominanceProven,
+                sideEffectFreedomProven,
+                status,
+                firstBlocker
+        );
+    }
+
+    private static MadFmaMaterializationEvidence madFmaMaterializationEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int candidateCount = 0;
+        int transformedNodeCount = 0;
+        int changedMethodBodyCount = 0;
+        int bodyTextReplacementCount = 0;
+        int fixedPointPassCount = 0;
+        int skippedFastMathPolicyCount = 0;
+        int skippedBodyTextPatternMissingCount = 0;
+        int runtimeEquivalencePayloadPresentCount = 0;
+        int runtimeEquivalencePassedCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeSelection = false;
+        boolean runtimeEquivalencePayloadRequired = false;
+        boolean approvalRequiredBeforeProduction = false;
+        boolean fastMathAllowed = false;
+        String firstBlocker = "not-recorded";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("mad-fma-materialization")
+                    && !optimizerVersion.contains("mad-fma-materialization")) {
+                continue;
+            }
+            passCount++;
+            candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
+            transformedNodeCount += parseNonNegativeInt(fields.get("transformedNode.count"));
+            changedMethodBodyCount += parseNonNegativeInt(fields.get("changedMethodBody.count"));
+            bodyTextReplacementCount += parseNonNegativeInt(fields.get("bodyTextReplacement.count"));
+            fixedPointPassCount += parseNonNegativeInt(fields.get("fixedPoint.pass.count"));
+            skippedFastMathPolicyCount += parseNonNegativeInt(fields.get("skipped.fastMathPolicy.count"));
+            skippedBodyTextPatternMissingCount += parseNonNegativeInt(fields.get("skipped.bodyTextPatternMissing.count"));
+            runtimeEquivalenceRequiredBeforeSelection |= parseBoolean(
+                    fields.get("proof.runtimeEquivalenceRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection"));
+            runtimeEquivalencePayloadRequired |= parseBoolean(
+                    fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("runtimeEquivalencePayload.required"));
+            approvalRequiredBeforeProduction |= parseBoolean(fields.get("proof.approvalRequiredBeforeProduction"));
+            fastMathAllowed |= parseBoolean(fields.get("policy.fastMathAllowed"))
+                    || parseBoolean(fields.get("safety.fastMathAllowed"));
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.present"))) {
+                runtimeEquivalencePayloadPresentCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.passed"))) {
+                runtimeEquivalencePassedCount++;
+            }
+            String blocker = fields.getOrDefault("firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+            blocker = fields.getOrDefault("runtimeEquivalencePayload.firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+        }
+
+        int blockerCount = skippedFastMathPolicyCount + skippedBodyTextPatternMissingCount;
+        String status;
+        if (passCount <= 0) {
+            status = "not-recorded";
+            firstBlocker = "not-recorded";
+        } else if (transformedNodeCount <= 0 && blockerCount > 0) {
+            status = "blocked";
+            if ("not-recorded".equals(firstBlocker) || "none".equals(firstBlocker)) {
+                firstBlocker = madFmaMaterializationFirstBlocker(
+                        skippedFastMathPolicyCount,
+                        skippedBodyTextPatternMissingCount
+                );
+            }
+        } else if (transformedNodeCount <= 0) {
+            status = "no-candidates";
+            firstBlocker = "no-materialized-candidates";
+        } else if (!fastMathAllowed) {
+            status = "blocked";
+            firstBlocker = "fast-math-policy-not-enabled";
+        } else if (runtimeEquivalencePayloadPresentCount <= 0) {
+            status = "pending-runtime-equivalence";
+            firstBlocker = "runtime-equivalence-payload-not-recorded";
+        } else if (runtimeEquivalencePassedCount < runtimeEquivalencePayloadPresentCount) {
+            status = "runtime-equivalence-not-passed";
+            firstBlocker = "runtime-equivalence-not-passed";
+        } else {
+            status = "review-ready";
+            firstBlocker = "none";
+        }
+        return new MadFmaMaterializationEvidence(
+                passCount,
+                candidateCount,
+                transformedNodeCount,
+                changedMethodBodyCount,
+                bodyTextReplacementCount,
+                fixedPointPassCount,
+                skippedFastMathPolicyCount,
+                skippedBodyTextPatternMissingCount,
+                runtimeEquivalenceRequiredBeforeSelection,
+                runtimeEquivalencePayloadRequired,
+                runtimeEquivalencePayloadPresentCount,
+                runtimeEquivalencePassedCount,
+                approvalRequiredBeforeProduction,
+                fastMathAllowed,
+                status,
+                firstBlocker
+        );
+    }
+
+    private static String madFmaMaterializationFirstBlocker(
+            int skippedFastMathPolicyCount,
+            int skippedBodyTextPatternMissingCount
+    ) {
+        if (skippedFastMathPolicyCount > 0) {
+            return "fast-math-policy-not-enabled";
+        }
+        if (skippedBodyTextPatternMissingCount > 0) {
+            return "body-text-pattern-missing";
+        }
+        return "mad-fma-materialization-blocked";
+    }
+
+    private static void appendIntrinsicMaterializationEvidence(
+            StringBuilder builder,
+            String prefix,
+            IntrinsicMaterializationEvidence evidence
+    ) {
+        builder.append(prefix).append(".pass.count=").append(evidence.passCount()).append('\n');
+        builder.append(prefix).append(".candidate.count=").append(evidence.candidateCount()).append('\n');
+        builder.append(prefix).append(".transformedNode.count=").append(evidence.transformedNodeCount()).append('\n');
+        builder.append(prefix).append(".changedMethodBody.count=")
+                .append(evidence.changedMethodBodyCount()).append('\n');
+        builder.append(prefix).append(".bodyTextReplacement.count=")
+                .append(evidence.bodyTextReplacementCount()).append('\n');
+        builder.append(prefix).append(".fixedPoint.pass.count=")
+                .append(evidence.fixedPointPassCount()).append('\n');
+        builder.append(prefix).append(".skipped.typedBodyMissing.count=")
+                .append(evidence.skippedTypedBodyMissingCount()).append('\n');
+        builder.append(prefix).append(".skipped.unsupportedFormat.count=")
+                .append(evidence.skippedUnsupportedFormatCount()).append('\n');
+        builder.append(prefix).append(".skipped.fastMathPolicy.count=")
+                .append(evidence.skippedFastMathPolicyCount()).append('\n');
+        builder.append(prefix).append(".skipped.missingChildReference.count=")
+                .append(evidence.skippedMissingChildReferenceCount()).append('\n');
+        builder.append(prefix).append(".skipped.unsupportedShape.count=")
+                .append(evidence.skippedUnsupportedShapeCount()).append('\n');
+        builder.append(prefix).append(".skipped.bodyTextPatternMissing.count=")
+                .append(evidence.skippedBodyTextPatternMissingCount()).append('\n');
+        builder.append(prefix).append(".runtimeEquivalenceRequiredBeforeSelection=")
+                .append(evidence.runtimeEquivalenceRequiredBeforeSelection()).append('\n');
+        builder.append(prefix).append(".runtimeEquivalencePayloadRequired=")
+                .append(evidence.runtimeEquivalencePayloadRequired()).append('\n');
+        builder.append(prefix).append(".runtimeEquivalencePayloadPresent.count=")
+                .append(evidence.runtimeEquivalencePayloadPresentCount()).append('\n');
+        builder.append(prefix).append(".runtimeEquivalencePassed.count=")
+                .append(evidence.runtimeEquivalencePassedCount()).append('\n');
+        builder.append(prefix).append(".approvalRequiredBeforeProduction=")
+                .append(evidence.approvalRequiredBeforeProduction()).append('\n');
+        builder.append(prefix).append(".status=").append(evidence.status()).append('\n');
+        builder.append(prefix).append(".firstBlocker=")
+                .append(safePropertyValue(evidence.firstBlocker())).append('\n');
+    }
+
+    private static IntrinsicMaterializationEvidence intrinsicMaterializationEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            String familyToken
+    ) {
+        int passCount = 0;
+        int candidateCount = 0;
+        int transformedNodeCount = 0;
+        int changedMethodBodyCount = 0;
+        int bodyTextReplacementCount = 0;
+        int fixedPointPassCount = 0;
+        int skippedTypedBodyMissingCount = 0;
+        int skippedUnsupportedFormatCount = 0;
+        int skippedFastMathPolicyCount = 0;
+        int skippedMissingChildReferenceCount = 0;
+        int skippedUnsupportedShapeCount = 0;
+        int skippedBodyTextPatternMissingCount = 0;
+        int runtimeEquivalencePayloadPresentCount = 0;
+        int runtimeEquivalencePassedCount = 0;
+        int directStepCount = 0;
+        int invertedStepCount = 0;
+        int canonicalMixCount = 0;
+        int expandedMixCount = 0;
+        int madExpandedMixCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeSelection = false;
+        boolean runtimeEquivalencePayloadRequired = false;
+        boolean approvalRequiredBeforeProduction = false;
+        boolean fastMathAllowed = false;
+        boolean fastMathRequired = false;
+        boolean strictFloatPreserved = false;
+        boolean argumentOrderPreserved = false;
+        boolean strictComparisonPreserved = false;
+        boolean equalityBehaviorPreserved = false;
+        boolean nanComparisonPreserved = false;
+        boolean algebraicReassociationRequired = false;
+        boolean mixArgumentOrderPreserved = false;
+        String firstBlocker = "not-recorded";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            String optimizerFamily = fields.getOrDefault("optimizerFamily", "");
+            if (!familyToken.equals(optimizerFamily)
+                    && !source.contains(familyToken)
+                    && !optimizerVersion.contains(familyToken)) {
+                continue;
+            }
+            passCount++;
+            candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
+            transformedNodeCount += parseNonNegativeInt(fields.get("transformedNode.count"));
+            changedMethodBodyCount += parseNonNegativeInt(fields.get("changedMethodBody.count"));
+            bodyTextReplacementCount += parseNonNegativeInt(fields.get("bodyTextReplacement.count"));
+            fixedPointPassCount += parseNonNegativeInt(fields.get("fixedPoint.pass.count"));
+            skippedTypedBodyMissingCount += parseNonNegativeInt(fields.get("skipped.typedBodyMissing.count"));
+            skippedUnsupportedFormatCount += parseNonNegativeInt(fields.get("skipped.unsupportedFormat.count"));
+            skippedFastMathPolicyCount += parseNonNegativeInt(fields.get("skipped.fastMathPolicy.count"));
+            skippedMissingChildReferenceCount += parseNonNegativeInt(fields.get("skipped.missingChildReference.count"));
+            skippedUnsupportedShapeCount += parseNonNegativeInt(fields.get("skipped.unsupportedShape.count"));
+            skippedBodyTextPatternMissingCount += parseNonNegativeInt(fields.get("skipped.bodyTextPatternMissing.count"));
+            directStepCount += parseNonNegativeInt(fields.get("directStep.count"));
+            invertedStepCount += parseNonNegativeInt(fields.get("invertedStep.count"));
+            canonicalMixCount += parseNonNegativeInt(fields.get("canonicalMix.count"));
+            expandedMixCount += parseNonNegativeInt(fields.get("expandedMix.count"));
+            madExpandedMixCount += parseNonNegativeInt(fields.get("madExpandedMix.count"));
+            runtimeEquivalenceRequiredBeforeSelection |= parseBoolean(
+                    fields.get("proof.runtimeEquivalenceRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection"));
+            runtimeEquivalencePayloadRequired |= parseBoolean(
+                    fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("runtimeEquivalencePayload.required"));
+            approvalRequiredBeforeProduction |= parseBoolean(fields.get("proof.approvalRequiredBeforeProduction"));
+            fastMathAllowed |= parseBoolean(fields.get("policy.fastMathAllowed"))
+                    || parseBoolean(fields.get("safety.fastMathAllowed"));
+            fastMathRequired |= parseBoolean(fields.get("safety.fastMathRequired"));
+            strictFloatPreserved |= parseBoolean(fields.get("safety.strictFloatPreserved"));
+            argumentOrderPreserved |= parseBoolean(fields.get("safety.argumentOrderPreserved"));
+            strictComparisonPreserved |= parseBoolean(fields.get("safety.strictComparisonPreserved"));
+            equalityBehaviorPreserved |= parseBoolean(fields.get("safety.equalityBehaviorPreserved"));
+            nanComparisonPreserved |= parseBoolean(fields.get("safety.nanComparisonPreserved"));
+            algebraicReassociationRequired |= parseBoolean(fields.get("safety.algebraicReassociationRequired"));
+            mixArgumentOrderPreserved |= parseBoolean(fields.get("safety.mixArgumentOrderPreserved"));
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.present"))) {
+                runtimeEquivalencePayloadPresentCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.passed"))) {
+                runtimeEquivalencePassedCount++;
+            }
+            String blocker = fields.getOrDefault("firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+            blocker = fields.getOrDefault("runtimeEquivalencePayload.firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+        }
+
+        int blockerCount = skippedTypedBodyMissingCount
+                + skippedUnsupportedFormatCount
+                + skippedFastMathPolicyCount
+                + skippedMissingChildReferenceCount
+                + skippedUnsupportedShapeCount
+                + skippedBodyTextPatternMissingCount;
+        String status;
+        if (passCount <= 0) {
+            status = "not-recorded";
+            firstBlocker = "not-recorded";
+        } else if (transformedNodeCount <= 0 && blockerCount > 0) {
+            status = "blocked";
+            if ("not-recorded".equals(firstBlocker) || "none".equals(firstBlocker)) {
+                firstBlocker = intrinsicMaterializationFirstBlocker(
+                        familyToken,
+                        skippedTypedBodyMissingCount,
+                        skippedUnsupportedFormatCount,
+                        skippedFastMathPolicyCount,
+                        skippedMissingChildReferenceCount,
+                        skippedUnsupportedShapeCount,
+                        skippedBodyTextPatternMissingCount
+                );
+            }
+        } else if (transformedNodeCount <= 0) {
+            status = "no-candidates";
+            firstBlocker = "no-materialized-candidates";
+        } else {
+            String safetyBlocker = intrinsicMaterializationSafetyBlocker(
+                    familyToken,
+                    fastMathAllowed,
+                    fastMathRequired,
+                    strictFloatPreserved,
+                    argumentOrderPreserved,
+                    strictComparisonPreserved,
+                    equalityBehaviorPreserved,
+                    nanComparisonPreserved,
+                    algebraicReassociationRequired,
+                    mixArgumentOrderPreserved,
+                    expandedMixCount,
+                    madExpandedMixCount
+            );
+            if (!"none".equals(safetyBlocker)) {
+                status = "blocked";
+                firstBlocker = safetyBlocker;
+            } else if (runtimeEquivalencePayloadPresentCount <= 0) {
+                status = "pending-runtime-equivalence";
+                firstBlocker = "runtime-equivalence-payload-not-recorded";
+            } else if (runtimeEquivalencePassedCount < runtimeEquivalencePayloadPresentCount) {
+                status = "runtime-equivalence-not-passed";
+                firstBlocker = "runtime-equivalence-not-passed";
+            } else {
+                status = "review-ready";
+                firstBlocker = "none";
+            }
+        }
+        return new IntrinsicMaterializationEvidence(
+                passCount,
+                candidateCount,
+                transformedNodeCount,
+                changedMethodBodyCount,
+                bodyTextReplacementCount,
+                fixedPointPassCount,
+                skippedTypedBodyMissingCount,
+                skippedUnsupportedFormatCount,
+                skippedFastMathPolicyCount,
+                skippedMissingChildReferenceCount,
+                skippedUnsupportedShapeCount,
+                skippedBodyTextPatternMissingCount,
+                runtimeEquivalenceRequiredBeforeSelection,
+                runtimeEquivalencePayloadRequired,
+                runtimeEquivalencePayloadPresentCount,
+                runtimeEquivalencePassedCount,
+                approvalRequiredBeforeProduction,
+                directStepCount,
+                invertedStepCount,
+                canonicalMixCount,
+                expandedMixCount,
+                madExpandedMixCount,
+                fastMathAllowed,
+                fastMathRequired,
+                strictFloatPreserved,
+                argumentOrderPreserved,
+                strictComparisonPreserved,
+                equalityBehaviorPreserved,
+                nanComparisonPreserved,
+                algebraicReassociationRequired,
+                mixArgumentOrderPreserved,
+                status,
+                firstBlocker
+        );
+    }
+
+    private static String intrinsicMaterializationFirstBlocker(
+            String familyToken,
+            int skippedTypedBodyMissingCount,
+            int skippedUnsupportedFormatCount,
+            int skippedFastMathPolicyCount,
+            int skippedMissingChildReferenceCount,
+            int skippedUnsupportedShapeCount,
+            int skippedBodyTextPatternMissingCount
+    ) {
+        if (skippedTypedBodyMissingCount > 0) {
+            return "typed-body-missing";
+        }
+        if (skippedUnsupportedFormatCount > 0) {
+            return "unsupported-format";
+        }
+        if (skippedFastMathPolicyCount > 0) {
+            return "fast-math-policy-not-enabled";
+        }
+        if (skippedMissingChildReferenceCount > 0) {
+            return "missing-child-reference";
+        }
+        if (skippedUnsupportedShapeCount > 0) {
+            return "unsupported-shape";
+        }
+        if (skippedBodyTextPatternMissingCount > 0) {
+            return "body-text-pattern-missing";
+        }
+        return familyToken + "-blocked";
+    }
+
+    private static String intrinsicMaterializationSafetyBlocker(
+            String familyToken,
+            boolean fastMathAllowed,
+            boolean fastMathRequired,
+            boolean strictFloatPreserved,
+            boolean argumentOrderPreserved,
+            boolean strictComparisonPreserved,
+            boolean equalityBehaviorPreserved,
+            boolean nanComparisonPreserved,
+            boolean algebraicReassociationRequired,
+            boolean mixArgumentOrderPreserved,
+            int expandedMixCount,
+            int madExpandedMixCount
+    ) {
+        return switch (familyToken) {
+            case "clamp-materialization" -> clampMaterializationSafetyBlocker(
+                    fastMathRequired,
+                    strictFloatPreserved,
+                    argumentOrderPreserved
+            );
+            case "step-materialization" -> stepMaterializationSafetyBlocker(
+                    fastMathRequired,
+                    strictFloatPreserved,
+                    strictComparisonPreserved,
+                    equalityBehaviorPreserved,
+                    nanComparisonPreserved
+            );
+            case "mix-materialization" -> mixMaterializationSafetyBlocker(
+                    fastMathAllowed,
+                    fastMathRequired,
+                    strictFloatPreserved,
+                    algebraicReassociationRequired,
+                    mixArgumentOrderPreserved,
+                    expandedMixCount,
+                    madExpandedMixCount
+            );
+            default -> "none";
+        };
+    }
+
+    private static String clampMaterializationSafetyBlocker(
+            boolean fastMathRequired,
+            boolean strictFloatPreserved,
+            boolean argumentOrderPreserved
+    ) {
+        if (fastMathRequired) {
+            return "unexpected-fast-math-requirement";
+        }
+        if (!strictFloatPreserved) {
+            return "strict-float-proof-not-recorded";
+        }
+        if (!argumentOrderPreserved) {
+            return "argument-order-not-preserved";
+        }
+        return "none";
+    }
+
+    private static String stepMaterializationSafetyBlocker(
+            boolean fastMathRequired,
+            boolean strictFloatPreserved,
+            boolean strictComparisonPreserved,
+            boolean equalityBehaviorPreserved,
+            boolean nanComparisonPreserved
+    ) {
+        if (fastMathRequired) {
+            return "unexpected-fast-math-requirement";
+        }
+        if (!strictFloatPreserved) {
+            return "strict-float-proof-not-recorded";
+        }
+        if (!strictComparisonPreserved) {
+            return "strict-comparison-proof-not-recorded";
+        }
+        if (!equalityBehaviorPreserved) {
+            return "equality-behavior-proof-not-recorded";
+        }
+        if (!nanComparisonPreserved) {
+            return "nan-comparison-proof-not-recorded";
+        }
+        return "none";
+    }
+
+    private static String mixMaterializationSafetyBlocker(
+            boolean fastMathAllowed,
+            boolean fastMathRequired,
+            boolean strictFloatPreserved,
+            boolean algebraicReassociationRequired,
+            boolean mixArgumentOrderPreserved,
+            int expandedMixCount,
+            int madExpandedMixCount
+    ) {
+        boolean expandedRewrite = fastMathRequired
+                || algebraicReassociationRequired
+                || expandedMixCount > 0
+                || madExpandedMixCount > 0;
+        if (!mixArgumentOrderPreserved) {
+            return "mix-argument-order-not-preserved";
+        }
+        if (expandedRewrite && !fastMathAllowed) {
+            return "fast-math-policy-not-enabled";
+        }
+        if (!expandedRewrite && !strictFloatPreserved) {
+            return "strict-float-proof-not-recorded";
+        }
+        return "none";
+    }
+
+    private static LoopVectorizationMaterializationEvidence loopVectorizationMaterializationEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int candidateCount = 0;
+        int transformedLoopCount = 0;
+        int changedMethodBodyCount = 0;
+        int bodyTextReplacementCount = 0;
+        int typedBodyMaterializedCount = 0;
+        int typedBodyInvalidatedCount = 0;
+        int typedBodyRebuildAttemptedCount = 0;
+        int typedBodyRebuildParsedCount = 0;
+        int typedBodyRebuildBuiltCount = 0;
+        int typedBodyRebuildGraphValidatedCount = 0;
+        int typedBodyRebuildRejectedCount = 0;
+        int skippedLoopShapeCount = 0;
+        int skippedUnsupportedWidthCount = 0;
+        int skippedUnsafeLoadPatternCount = 0;
+        int runtimeEquivalencePayloadPresentCount = 0;
+        int runtimeEquivalencePassedCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeSelection = false;
+        boolean runtimeEquivalencePayloadRequired = false;
+        boolean approvalRequiredBeforeProduction = false;
+        boolean loopTripCountProven = false;
+        boolean contiguousLoadProven = false;
+        boolean orderedReductionPreserved = false;
+        String firstBlocker = "not-recorded";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("loop-vectorization-materialization")
+                    && !optimizerVersion.contains("loop-vectorization-materialization")) {
+                continue;
+            }
+            passCount++;
+            candidateCount += parseNonNegativeInt(fields.get("candidate.count"));
+            transformedLoopCount += parseNonNegativeInt(fields.get("transformedLoop.count"));
+            changedMethodBodyCount += parseNonNegativeInt(fields.get("changedMethodBody.count"));
+            bodyTextReplacementCount += parseNonNegativeInt(fields.get("bodyTextReplacement.count"));
+            typedBodyMaterializedCount += parseNonNegativeInt(fields.get("typedBody.materialized.count"));
+            typedBodyInvalidatedCount += parseNonNegativeInt(fields.get("typedBody.invalidated.count"));
+            typedBodyRebuildAttemptedCount += parseNonNegativeInt(fields.get("typedBody.rebuild.attempted.count"));
+            typedBodyRebuildParsedCount += parseNonNegativeInt(fields.get("typedBody.rebuild.parsed.count"));
+            typedBodyRebuildBuiltCount += parseNonNegativeInt(fields.get("typedBody.rebuild.built.count"));
+            typedBodyRebuildGraphValidatedCount += parseNonNegativeInt(
+                    fields.get("typedBody.rebuild.graphValidated.count")
+            );
+            typedBodyRebuildRejectedCount += parseNonNegativeInt(fields.get("typedBody.rebuild.rejected.count"));
+            skippedLoopShapeCount += parseNonNegativeInt(fields.get("skipped.loopShape.count"));
+            skippedUnsupportedWidthCount += parseNonNegativeInt(fields.get("skipped.unsupportedWidth.count"));
+            skippedUnsafeLoadPatternCount += parseNonNegativeInt(fields.get("skipped.unsafeLoadPattern.count"));
+            runtimeEquivalenceRequiredBeforeSelection |= parseBoolean(
+                    fields.get("proof.runtimeEquivalenceRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection"));
+            runtimeEquivalencePayloadRequired |= parseBoolean(
+                    fields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+            ) || parseBoolean(fields.get("runtimeEquivalencePayload.required"));
+            approvalRequiredBeforeProduction |= parseBoolean(fields.get("proof.approvalRequiredBeforeProduction"));
+            loopTripCountProven |= parseBoolean(fields.get("safety.loopTripCountProven"));
+            contiguousLoadProven |= parseBoolean(fields.get("safety.contiguousLoadProven"));
+            orderedReductionPreserved |= parseBoolean(fields.get("safety.orderedReductionPreserved"));
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.present"))) {
+                runtimeEquivalencePayloadPresentCount++;
+            }
+            if (parseBoolean(fields.get("runtimeEquivalencePayload.passed"))) {
+                runtimeEquivalencePassedCount++;
+            }
+            String blocker = fields.getOrDefault("firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+            blocker = fields.getOrDefault("runtimeEquivalencePayload.firstBlocker", "");
+            if (isPreferredMaterializationBlocker(firstBlocker, blocker)) {
+                firstBlocker = blocker;
+            }
+        }
+
+        String typedBodyRebuildStatus;
+        String typedBodyRebuildFirstBlocker;
+        if (typedBodyRebuildAttemptedCount <= 0) {
+            typedBodyRebuildStatus = "not-attempted";
+            typedBodyRebuildFirstBlocker = "not-attempted";
+        } else if (typedBodyRebuildRejectedCount <= 0) {
+            typedBodyRebuildStatus = "validated";
+            typedBodyRebuildFirstBlocker = "none";
+        } else if (typedBodyRebuildGraphValidatedCount > 0) {
+            typedBodyRebuildStatus = "partially-validated";
+            typedBodyRebuildFirstBlocker = firstLoopVectorizationTypedBodyRebuildBlocker(passReports);
+        } else {
+            typedBodyRebuildStatus = "invalidated";
+            typedBodyRebuildFirstBlocker = firstLoopVectorizationTypedBodyRebuildBlocker(passReports);
+        }
+
+        int blockerCount = skippedLoopShapeCount + skippedUnsupportedWidthCount + skippedUnsafeLoadPatternCount;
+        String status;
+        if (passCount <= 0) {
+            status = "not-recorded";
+            firstBlocker = "not-recorded";
+        } else if (transformedLoopCount <= 0 && blockerCount > 0) {
+            status = "blocked";
+            if ("not-recorded".equals(firstBlocker) || "none".equals(firstBlocker)) {
+                firstBlocker = loopVectorizationMaterializationFirstBlocker(
+                        skippedLoopShapeCount,
+                        skippedUnsupportedWidthCount,
+                        skippedUnsafeLoadPatternCount
+                );
+            }
+        } else if (transformedLoopCount <= 0) {
+            status = "no-candidates";
+            firstBlocker = "no-materialized-candidates";
+        } else if (typedBodyRebuildRejectedCount > 0 || typedBodyInvalidatedCount > 0) {
+            status = "blocked";
+            firstBlocker = typedBodyRebuildFirstBlocker == null
+                    || typedBodyRebuildFirstBlocker.isBlank()
+                    || "none".equals(typedBodyRebuildFirstBlocker)
+                    ? "typed-body-rebuild-blocked"
+                    : typedBodyRebuildFirstBlocker;
+        } else if (!loopTripCountProven || !contiguousLoadProven || !orderedReductionPreserved) {
+            status = "blocked";
+            firstBlocker = "loop-vectorization-proof-incomplete";
+        } else if (runtimeEquivalencePayloadPresentCount <= 0) {
+            status = "pending-runtime-equivalence";
+            firstBlocker = "runtime-equivalence-payload-not-recorded";
+        } else if (runtimeEquivalencePassedCount < runtimeEquivalencePayloadPresentCount) {
+            status = "runtime-equivalence-not-passed";
+            firstBlocker = "runtime-equivalence-not-passed";
+        } else {
+            status = "review-ready";
+            firstBlocker = "none";
+        }
+        return new LoopVectorizationMaterializationEvidence(
+                passCount,
+                candidateCount,
+                transformedLoopCount,
+                changedMethodBodyCount,
+                bodyTextReplacementCount,
+                typedBodyMaterializedCount,
+                typedBodyInvalidatedCount,
+                typedBodyRebuildAttemptedCount,
+                typedBodyRebuildParsedCount,
+                typedBodyRebuildBuiltCount,
+                typedBodyRebuildGraphValidatedCount,
+                typedBodyRebuildRejectedCount,
+                typedBodyRebuildStatus,
+                typedBodyRebuildFirstBlocker,
+                skippedLoopShapeCount,
+                skippedUnsupportedWidthCount,
+                skippedUnsafeLoadPatternCount,
+                runtimeEquivalenceRequiredBeforeSelection,
+                runtimeEquivalencePayloadRequired,
+                runtimeEquivalencePayloadPresentCount,
+                runtimeEquivalencePassedCount,
+                approvalRequiredBeforeProduction,
+                loopTripCountProven,
+                contiguousLoadProven,
+                orderedReductionPreserved,
+                status,
+                firstBlocker
+        );
+    }
+
+    private static String loopVectorizationMaterializationFirstBlocker(
+            int skippedLoopShapeCount,
+            int skippedUnsupportedWidthCount,
+            int skippedUnsafeLoadPatternCount
+    ) {
+        if (skippedUnsupportedWidthCount > 0) {
+            return "loop-width-unsupported";
+        }
+        if (skippedUnsafeLoadPatternCount > 0) {
+            return "load-pattern-not-contiguous-float-reduction";
+        }
+        if (skippedLoopShapeCount > 0) {
+            return "loop-shape-unsupported";
+        }
+        return "loop-vectorization-materialization-blocked";
+    }
+
+    private static String firstLoopVectorizationTypedBodyRebuildBlocker(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("loop-vectorization-materialization")
+                    && !optimizerVersion.contains("loop-vectorization-materialization")) {
+                continue;
+            }
+            String blocker = fields.getOrDefault("typedBody.rebuild.firstBlocker", "");
+            if (blocker != null && !blocker.isBlank() && !"none".equals(blocker)) {
+                return blocker;
+            }
+        }
+        return "typed-body-rebuild-blocked";
+    }
+
+    private static SafeLocalCsePreviewEvidence safeLocalCsePreviewEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int expressionCount = 0;
+        int candidateExpressionCount = 0;
+        int duplicateExpressionCount = 0;
+        int equivalenceClassCount = 0;
+        int blockedUnsupportedOperatorCount = 0;
+        int blockedImpureOperandCount = 0;
+        int blockedControlFlowBoundaryCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeRewrite = false;
+        boolean approvalRequiredBeforeRewrite = false;
+        boolean dominanceProven = false;
+        boolean sideEffectFreedomProven = false;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("safe-local-cse-preview")
+                    && !optimizerVersion.contains("safe-local-cse-preview")) {
+                continue;
+            }
+            passCount++;
+            expressionCount += parseNonNegativeInt(fields.get("expression.count"));
+            candidateExpressionCount += parseNonNegativeInt(fields.get("candidateExpression.count"));
+            duplicateExpressionCount += parseNonNegativeInt(fields.get("duplicateExpression.count"));
+            equivalenceClassCount += parseNonNegativeInt(fields.get("equivalenceClass.count"));
+            blockedUnsupportedOperatorCount += parseNonNegativeInt(fields.get("blocked.unsupportedOperator.count"));
+            blockedImpureOperandCount += parseNonNegativeInt(fields.get("blocked.impureOperand.count"));
+            blockedControlFlowBoundaryCount += parseNonNegativeInt(fields.get("blocked.controlFlowBoundary.count"));
+            runtimeEquivalenceRequiredBeforeRewrite |= parseBoolean(fields.get("proof.runtimeEquivalenceRequiredBeforeRewrite"));
+            approvalRequiredBeforeRewrite |= parseBoolean(fields.get("proof.approvalRequiredBeforeRewrite"));
+            dominanceProven |= parseBoolean(fields.get("safety.dominanceProven"));
+            sideEffectFreedomProven |= parseBoolean(fields.get("safety.sideEffectFreedomProven"));
+        }
+        return new SafeLocalCsePreviewEvidence(
+                passCount,
+                expressionCount,
+                candidateExpressionCount,
+                duplicateExpressionCount,
+                equivalenceClassCount,
+                blockedUnsupportedOperatorCount,
+                blockedImpureOperandCount,
+                blockedControlFlowBoundaryCount,
+                runtimeEquivalenceRequiredBeforeRewrite,
+                approvalRequiredBeforeRewrite,
+                dominanceProven,
+                sideEffectFreedomProven
+        );
+    }
+
+    private static TypedDeadCodePreviewEvidence typedDeadCodePreviewEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports
+    ) {
+        int passCount = 0;
+        int nodeCount = 0;
+        int reachableNodeCount = 0;
+        int unreachableNodeCount = 0;
+        int blockedMissingRootCount = 0;
+        int blockedMissingChildReferenceCount = 0;
+        int blockedSideEffectingUnreachableNodeCount = 0;
+        boolean runtimeEquivalenceRequiredBeforeRewrite = false;
+        boolean approvalRequiredBeforeRewrite = false;
+        boolean sideEffectFreedomProven = false;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null || passReport.proofArtifact() == null) {
+                continue;
+            }
+            Map<String, String> fields = passReport.proofArtifact().fields();
+            String source = passReport.proofArtifact().source() == null ? "" : passReport.proofArtifact().source();
+            String optimizerVersion = passReport.optimizerVersion() == null ? "" : passReport.optimizerVersion();
+            if (!source.contains("typed-dead-code-preview")
+                    && !optimizerVersion.contains("typed-dead-code-preview")) {
+                continue;
+            }
+            passCount++;
+            nodeCount += parseNonNegativeInt(fields.get("node.count"));
+            reachableNodeCount += parseNonNegativeInt(fields.get("reachableNode.count"));
+            unreachableNodeCount += parseNonNegativeInt(fields.get("unreachableNode.count"));
+            blockedMissingRootCount += parseNonNegativeInt(fields.get("blocked.missingRoot.count"));
+            blockedMissingChildReferenceCount += parseNonNegativeInt(fields.get("blocked.missingChildReference.count"));
+            blockedSideEffectingUnreachableNodeCount += parseNonNegativeInt(fields.get("blocked.sideEffectingUnreachableNode.count"));
+            runtimeEquivalenceRequiredBeforeRewrite |= parseBoolean(fields.get("proof.runtimeEquivalenceRequiredBeforeRewrite"));
+            approvalRequiredBeforeRewrite |= parseBoolean(fields.get("proof.approvalRequiredBeforeRewrite"));
+            sideEffectFreedomProven |= parseBoolean(fields.get("safety.sideEffectFreedomProven"));
+        }
+        return new TypedDeadCodePreviewEvidence(
+                passCount,
+                nodeCount,
+                reachableNodeCount,
+                unreachableNodeCount,
+                blockedMissingRootCount,
+                blockedMissingChildReferenceCount,
+                blockedSideEffectingUnreachableNodeCount,
+                runtimeEquivalenceRequiredBeforeRewrite,
+                approvalRequiredBeforeRewrite,
+                sideEffectFreedomProven
+        );
+    }
+
+    private static PreviewReadinessEvidence previewReadinessEvidence(
+            ConstantFoldingPreviewEvidence constantFoldingPreview,
+            SafeLocalCsePreviewEvidence safeLocalCsePreview,
+            TypedDeadCodePreviewEvidence typedDeadCodePreview
+    ) {
+        PreviewFamilyReadiness constantFolding = new PreviewFamilyReadiness(
+                "constant-folding",
+                previewFamilyStatus(
+                        constantFoldingPreview.passCount(),
+                        constantFoldingPreview.candidateCount(),
+                        constantFoldingPreview.skippedCount() + constantFoldingPreview.proofBlockerCount()
+                ),
+                constantFoldingPreview.candidateCount(),
+                constantFoldingPreview.skippedCount() + constantFoldingPreview.proofBlockerCount()
+        );
+        PreviewFamilyReadiness safeLocalCse = new PreviewFamilyReadiness(
+                "safe-local-cse",
+                previewFamilyStatus(
+                        safeLocalCsePreview.passCount(),
+                        safeLocalCsePreview.duplicateExpressionCount(),
+                        safeLocalCsePreview.blockedCount() + safeLocalCsePreview.proofBlockerCount()
+                ),
+                safeLocalCsePreview.duplicateExpressionCount(),
+                safeLocalCsePreview.blockedCount() + safeLocalCsePreview.proofBlockerCount()
+        );
+        PreviewFamilyReadiness typedDeadCode = new PreviewFamilyReadiness(
+                "typed-dead-code",
+                previewFamilyStatus(
+                        typedDeadCodePreview.passCount(),
+                        typedDeadCodePreview.unreachableNodeCount(),
+                        typedDeadCodePreview.blockedCount() + typedDeadCodePreview.proofBlockerCount()
+                ),
+                typedDeadCodePreview.unreachableNodeCount(),
+                typedDeadCodePreview.blockedCount() + typedDeadCodePreview.proofBlockerCount()
+        );
+        List<PreviewFamilyReadiness> families = List.of(constantFolding, safeLocalCse, typedDeadCode);
+        int familyCount = (int) families.stream()
+                .filter(family -> !"not-recorded".equals(family.status()))
+                .count();
+        int candidateFamilyCount = (int) families.stream()
+                .filter(family -> family.candidateCount() > 0)
+                .count();
+        int blockedFamilyCount = (int) families.stream()
+                .filter(family -> "blocked-by-proof".equals(family.status()))
+                .count();
+        String status = previewReadinessStatus(families);
+        String familySummary = families.stream()
+                .map(family -> family.family() + "=" + family.status())
+                .collect(java.util.stream.Collectors.joining(", "));
+        return new PreviewReadinessEvidence(status, familyCount, candidateFamilyCount, blockedFamilyCount, familySummary);
+    }
+
+    private static RuntimeEquivalenceReviewEvidence runtimeEquivalenceReviewEvidence(
+            PreviewReadinessEvidence previewReadiness,
+            ConstantFoldingMaterializationEvidence constantFoldingMaterialization,
+            SafeLocalCseMaterializationEvidence safeLocalCseMaterialization,
+            MadFmaMaterializationEvidence madFmaMaterialization,
+            IntrinsicMaterializationEvidence clampMaterialization,
+            IntrinsicMaterializationEvidence stepMaterialization,
+            IntrinsicMaterializationEvidence mixMaterialization,
+            LoopVectorizationMaterializationEvidence loopVectorizationMaterialization,
+            TypedDeadCodeMaterializationEvidence typedDeadCodeMaterialization
+    ) {
+        boolean constantFoldingMaterializedCandidate = constantFoldingMaterialization.transformedNodeCount() > 0;
+        boolean safeLocalCseMaterializedCandidate = safeLocalCseMaterialization.transformedNodeCount() > 0;
+        boolean madFmaMaterializedCandidate = madFmaMaterialization.transformedNodeCount() > 0;
+        boolean clampMaterializedCandidate = clampMaterialization.transformedNodeCount() > 0;
+        boolean stepMaterializedCandidate = stepMaterialization.transformedNodeCount() > 0;
+        boolean mixMaterializedCandidate = mixMaterialization.transformedNodeCount() > 0;
+        boolean loopVectorizationMaterializedCandidate = loopVectorizationMaterialization.transformedLoopCount() > 0;
+        boolean typedDeadCodeMaterializedCandidate = typedDeadCodeMaterialization.removedNodeCount() > 0;
+        boolean constantFoldingMaterializationReady = !constantFoldingMaterializedCandidate
+                || "review-ready".equals(constantFoldingMaterialization.status());
+        boolean safeLocalCseMaterializationReady = !safeLocalCseMaterializedCandidate
+                || "review-ready".equals(safeLocalCseMaterialization.status());
+        boolean madFmaMaterializationReady = !madFmaMaterializedCandidate
+                || "review-ready".equals(madFmaMaterialization.status());
+        boolean clampMaterializationReady = !clampMaterializedCandidate
+                || "review-ready".equals(clampMaterialization.status());
+        boolean stepMaterializationReady = !stepMaterializedCandidate
+                || "review-ready".equals(stepMaterialization.status());
+        boolean mixMaterializationReady = !mixMaterializedCandidate
+                || "review-ready".equals(mixMaterialization.status());
+        boolean loopVectorizationMaterializationReady = !loopVectorizationMaterializedCandidate
+                || "review-ready".equals(loopVectorizationMaterialization.status());
+        boolean typedDeadCodeMaterializationReady = !typedDeadCodeMaterializedCandidate
+                || "review-ready".equals(typedDeadCodeMaterialization.status());
+        boolean previewRequired = previewReadiness.candidateFamilyCount() > 0;
+        boolean previewEligible = !previewRequired
+                || "ready-for-runtime-equivalence-review".equals(previewReadiness.status());
+        boolean required = previewRequired
+                || constantFoldingMaterializedCandidate
+                || safeLocalCseMaterializedCandidate
+                || madFmaMaterializedCandidate
+                || clampMaterializedCandidate
+                || stepMaterializedCandidate
+                || mixMaterializedCandidate
+                || loopVectorizationMaterializedCandidate
+                || typedDeadCodeMaterializedCandidate;
+        boolean eligible = required
+                && constantFoldingMaterializationReady
+                && safeLocalCseMaterializationReady
+                && madFmaMaterializationReady
+                && clampMaterializationReady
+                && stepMaterializationReady
+                && mixMaterializationReady
+                && loopVectorizationMaterializationReady
+                && typedDeadCodeMaterializationReady
+                && previewEligible;
+        String status = eligible ? "review-ready" : "blocked";
+        String previewBlocker = switch (previewReadiness.status()) {
+            case "ready-for-runtime-equivalence-review" -> "none";
+            case "not-recorded" -> "preview-readiness-not-recorded";
+            case "no-candidates" -> "preview-readiness-no-candidates";
+            case "blocked-by-proof" -> "preview-readiness-blocked-by-proof";
+            case "candidates-recorded" -> "preview-readiness-candidates-not-proof-clean";
+            default -> "preview-readiness-unknown";
+        };
+        String firstBlocker;
+        if (constantFoldingMaterializedCandidate && !constantFoldingMaterializationReady) {
+            firstBlocker = constantFoldingMaterialization.firstBlocker();
+        } else if (safeLocalCseMaterializedCandidate && !safeLocalCseMaterializationReady) {
+            firstBlocker = safeLocalCseMaterialization.firstBlocker();
+        } else if (madFmaMaterializedCandidate && !madFmaMaterializationReady) {
+            firstBlocker = madFmaMaterialization.firstBlocker();
+        } else if (clampMaterializedCandidate && !clampMaterializationReady) {
+            firstBlocker = clampMaterialization.firstBlocker();
+        } else if (stepMaterializedCandidate && !stepMaterializationReady) {
+            firstBlocker = stepMaterialization.firstBlocker();
+        } else if (mixMaterializedCandidate && !mixMaterializationReady) {
+            firstBlocker = mixMaterialization.firstBlocker();
+        } else if (loopVectorizationMaterializedCandidate && !loopVectorizationMaterializationReady) {
+            firstBlocker = loopVectorizationMaterialization.firstBlocker();
+        } else if (typedDeadCodeMaterializedCandidate && !typedDeadCodeMaterializationReady) {
+            firstBlocker = typedDeadCodeMaterialization.firstBlocker();
+        } else if (previewRequired && !previewEligible) {
+            firstBlocker = previewBlocker;
+        } else {
+            firstBlocker = required ? "none" : "review-not-required";
+        }
+        String familySummary = previewReadiness.familySummary()
+                + ", constant-folding-materialization="
+                + constantFoldingMaterialization.status()
+                + ", safe-local-cse-materialization="
+                + safeLocalCseMaterialization.status()
+                + ", mad-fma-materialization="
+                + madFmaMaterialization.status()
+                + ", clamp-materialization="
+                + clampMaterialization.status()
+                + ", step-materialization="
+                + stepMaterialization.status()
+                + ", mix-materialization="
+                + mixMaterialization.status()
+                + ", loop-vectorization-materialization="
+                + loopVectorizationMaterialization.status()
+                + ", typed-dead-code-materialization="
+                + typedDeadCodeMaterialization.status();
+        return new RuntimeEquivalenceReviewEvidence(
+                status,
+                eligible,
+                required,
+                firstBlocker,
+                familySummary
+        );
+    }
+
+    private static ReviewPackageEvidence reviewPackageEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            RuntimeEquivalenceReviewEvidence runtimeEquivalenceReview
+    ) {
+        int proposalPassCount = 0;
+        int pendingApprovalCount = 0;
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            if (passReport == null) {
+                continue;
+            }
+            ApprovalTemplateEvidence approvalTemplate = approvalTemplateEvidence(passReport);
+            if (approvalTemplate.applicable()) {
+                proposalPassCount++;
+            }
+            if ("pending".equals(approvalTemplate.status())) {
+                pendingApprovalCount++;
+            }
+        }
+        boolean required = runtimeEquivalenceReview.required() || proposalPassCount > 0;
+        boolean complete = false;
+        String firstBlocker;
+        if (!required) {
+            firstBlocker = "review-package-not-required";
+        } else if (runtimeEquivalenceReview.required() && !runtimeEquivalenceReview.eligible()) {
+            firstBlocker = runtimeEquivalenceReview.firstBlocker();
+        } else if (pendingApprovalCount > 0) {
+            firstBlocker = "approval-template-pending";
+        } else if (proposalPassCount <= 0) {
+            firstBlocker = "optimized-ir-proposal-missing";
+        } else {
+            firstBlocker = "manual-review-required";
+        }
+        String status = required ? "pending-manual-review" : "not-required";
+        return new ReviewPackageEvidence(
+                status,
+                required,
+                complete,
+                firstBlocker,
+                proposalPassCount,
+                pendingApprovalCount,
+                runtimeEquivalenceReview.status()
+        );
+    }
+
+    private static ApprovalManifestPackageEvidence approvalManifestPackageEvidence(
+            List<GpuRuntimeIrOptimizationPassReport> passReports,
+            ReviewPackageEvidence reviewPackage
+    ) {
+        LinkedHashMap<String, Integer> resourcePaths = new LinkedHashMap<>();
+        int applicableTemplateCount = 0;
+        int presentCount = 0;
+        int acceptedCount = 0;
+        String firstManifestBlocker = "none";
+        for (GpuRuntimeIrOptimizationPassReport passReport : passReports) {
+            ApprovalTemplateEvidence approvalTemplate = approvalTemplateEvidence(passReport);
+            if (!approvalTemplate.applicable()) {
+                continue;
+            }
+            applicableTemplateCount++;
+            String resourcePath = approvalTemplate.fields().getOrDefault("resourcePath", "missing");
+            if (!resourcePath.isBlank() && !"missing".equals(resourcePath)) {
+                resourcePaths.merge(resourcePath, 1, Integer::sum);
+            }
+            if (parseBoolean(approvalTemplate.fields().get("approvalManifest.present"))) {
+                presentCount++;
+            }
+            if (parseBoolean(approvalTemplate.fields().get("approvalManifest.accepted"))) {
+                acceptedCount++;
+            }
+            String blocker = approvalTemplate.fields().getOrDefault("approvalManifest.firstBlocker", "none");
+            if ("none".equals(firstManifestBlocker) && !"none".equals(blocker)) {
+                firstManifestBlocker = blocker;
+            }
+        }
+        boolean required = reviewPackage.required() && applicableTemplateCount > 0;
+        String resourcePathSummary = compactCountSummary(resourcePaths);
+        String status;
+        String firstBlocker;
+        if (!required) {
+            status = "not-required";
+            firstBlocker = "approval-manifest-not-required";
+        } else if (resourcePaths.isEmpty()) {
+            status = "pending-resource-path";
+            firstBlocker = "approval-manifest-resource-path-missing";
+        } else if (acceptedCount >= applicableTemplateCount) {
+            status = "accepted";
+            firstBlocker = "none";
+        } else if (presentCount > 0) {
+            status = "blocked";
+            firstBlocker = "none".equals(firstManifestBlocker)
+                    ? "approval-manifest-validation-blocked"
+                    : firstManifestBlocker;
+        } else {
+            status = "pending-manifest-validation";
+            firstBlocker = "approval-manifest-not-loaded";
+        }
+        return new ApprovalManifestPackageEvidence(
+                status,
+                required,
+                presentCount,
+                acceptedCount,
+                resourcePathSummary,
+                firstBlocker
+        );
+    }
+
+    private static String compactCountSummary(Map<String, Integer> counts) {
+        if (counts == null || counts.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        counts.forEach((key, count) -> {
+            if (!builder.isEmpty()) {
+                builder.append(", ");
+            }
+            builder.append(key).append('=').append(count);
+        });
+        return builder.toString();
+    }
+
+    private static String previewReadinessStatus(List<PreviewFamilyReadiness> families) {
+        if (families.stream().allMatch(family -> "not-recorded".equals(family.status()))) {
+            return "not-recorded";
+        }
+        if (families.stream().anyMatch(family -> "blocked-by-proof".equals(family.status()))) {
+            return "blocked-by-proof";
+        }
+        if (families.stream().anyMatch(family -> "ready-for-runtime-equivalence-review".equals(family.status()))) {
+            return "ready-for-runtime-equivalence-review";
+        }
+        if (families.stream().anyMatch(family -> "candidates-recorded".equals(family.status()))) {
+            return "candidates-recorded";
+        }
+        return "no-candidates";
+    }
+
+    private static String previewFamilyStatus(int passCount, int candidateCount, int blockerCount) {
+        if (passCount <= 0) {
+            return "not-recorded";
+        }
+        if (candidateCount <= 0 && blockerCount <= 0) {
+            return "no-candidates";
+        }
+        if (blockerCount > 0) {
+            return "blocked-by-proof";
+        }
+        if (candidateCount > 0) {
+            return "ready-for-runtime-equivalence-review";
+        }
+        return "candidates-recorded";
+    }
+
+    private static int parseNonNegativeInt(String value) {
+        try {
+            return Math.max(0, Integer.parseInt(value));
+        } catch (RuntimeException ignored) {
+            return 0;
+        }
+    }
+
+    private static boolean parseBoolean(String value) {
+        return "true".equalsIgnoreCase(value)
+                || "yes".equalsIgnoreCase(value)
+                || "enabled".equalsIgnoreCase(value)
+                || "required".equalsIgnoreCase(value);
+    }
+
+    private record ConstantFoldingPreviewEvidence(
+            int passCount,
+            int candidateCount,
+            int skippedNonPlainLiteralCount,
+            int skippedDivideByZeroCount,
+            int skippedNonEvenDivisionCount,
+            int skippedUnsupportedOperatorCount,
+            int skippedNonLiteralOperandCount,
+            boolean runtimeEquivalenceRequiredBeforeRewrite,
+            boolean approvalRequiredBeforeRewrite,
+            boolean integerOverflowProven,
+            boolean floatingPointRoundingProven
+    ) {
+        private int skippedCount() {
+            return skippedNonPlainLiteralCount
+                    + skippedDivideByZeroCount
+                    + skippedNonEvenDivisionCount
+                    + skippedUnsupportedOperatorCount
+                    + skippedNonLiteralOperandCount;
+        }
+
+        private int proofBlockerCount() {
+            if (candidateCount <= 0) {
+                return 0;
+            }
+            int blockers = 0;
+            if (!integerOverflowProven) {
+                blockers++;
+            }
+            if (!floatingPointRoundingProven) {
+                blockers++;
+            }
+            return blockers;
+        }
+    }
+
+    private record ConstantFoldingMaterializationEvidence(
+            int passCount,
+            int candidateCount,
+            int transformedNodeCount,
+            int literalRewriteCount,
+            int identityRewriteCount,
+            int fixedPointPassCount,
+            int changedMethodBodyCount,
+            int bodyTextReplacementCount,
+            int skippedDivideByZeroCount,
+            int skippedNonEvenDivisionCount,
+            boolean runtimeEquivalenceRequiredBeforeSelection,
+            boolean runtimeEquivalencePayloadRequired,
+            int runtimeEquivalencePayloadPresentCount,
+            int runtimeEquivalencePassedCount,
+            boolean approvalRequiredBeforeProduction,
+            String status,
+            String firstBlocker
+    ) {
+    }
+
+    private record TypedDeadCodeMaterializationEvidence(
+            int passCount,
+            int nodeCount,
+            int unreachableNodeCount,
+            int removedNodeCount,
+            int changedMethodBodyCount,
+            int blockedMissingRootCount,
+            int blockedMissingChildReferenceCount,
+            int blockedSideEffectingUnreachableNodeCount,
+            boolean runtimeEquivalenceRequiredBeforeSelection,
+            boolean runtimeEquivalencePayloadRequired,
+            int runtimeEquivalencePayloadPresentCount,
+            int runtimeEquivalencePassedCount,
+            boolean approvalRequiredBeforeProduction,
+            boolean sideEffectFreedomProven,
+            String status,
+            String firstBlocker
+    ) {
+    }
+
+    private record SafeLocalCseMaterializationEvidence(
+            int passCount,
+            int localBindingCount,
+            int introducedTemporaryCount,
+            int candidateCount,
+            int transformedNodeCount,
+            int changedMethodBodyCount,
+            int bodyTextReplacementCount,
+            int fixedPointPassCount,
+            int skippedControlFlowBoundaryCount,
+            int skippedUnsupportedOperatorCount,
+            int skippedImpureOperandCount,
+            int skippedBodyTextPatternMissingCount,
+            boolean runtimeEquivalenceRequiredBeforeSelection,
+            boolean runtimeEquivalencePayloadRequired,
+            int runtimeEquivalencePayloadPresentCount,
+            int runtimeEquivalencePassedCount,
+            boolean approvalRequiredBeforeProduction,
+            boolean dominanceProven,
+            boolean sideEffectFreedomProven,
+            String status,
+            String firstBlocker
+    ) {
+    }
+
+    private record MadFmaMaterializationEvidence(
+            int passCount,
+            int candidateCount,
+            int transformedNodeCount,
+            int changedMethodBodyCount,
+            int bodyTextReplacementCount,
+            int fixedPointPassCount,
+            int skippedFastMathPolicyCount,
+            int skippedBodyTextPatternMissingCount,
+            boolean runtimeEquivalenceRequiredBeforeSelection,
+            boolean runtimeEquivalencePayloadRequired,
+            int runtimeEquivalencePayloadPresentCount,
+            int runtimeEquivalencePassedCount,
+            boolean approvalRequiredBeforeProduction,
+            boolean fastMathAllowed,
+            String status,
+            String firstBlocker
+    ) {
+    }
+
+    private record IntrinsicMaterializationEvidence(
+            int passCount,
+            int candidateCount,
+            int transformedNodeCount,
+            int changedMethodBodyCount,
+            int bodyTextReplacementCount,
+            int fixedPointPassCount,
+            int skippedTypedBodyMissingCount,
+            int skippedUnsupportedFormatCount,
+            int skippedFastMathPolicyCount,
+            int skippedMissingChildReferenceCount,
+            int skippedUnsupportedShapeCount,
+            int skippedBodyTextPatternMissingCount,
+            boolean runtimeEquivalenceRequiredBeforeSelection,
+            boolean runtimeEquivalencePayloadRequired,
+            int runtimeEquivalencePayloadPresentCount,
+            int runtimeEquivalencePassedCount,
+            boolean approvalRequiredBeforeProduction,
+            int directStepCount,
+            int invertedStepCount,
+            int canonicalMixCount,
+            int expandedMixCount,
+            int madExpandedMixCount,
+            boolean fastMathAllowed,
+            boolean fastMathRequired,
+            boolean strictFloatPreserved,
+            boolean argumentOrderPreserved,
+            boolean strictComparisonPreserved,
+            boolean equalityBehaviorPreserved,
+            boolean nanComparisonPreserved,
+            boolean algebraicReassociationRequired,
+            boolean mixArgumentOrderPreserved,
+            String status,
+            String firstBlocker
+    ) {
+    }
+
+    private record LoopVectorizationMaterializationEvidence(
+            int passCount,
+            int candidateCount,
+            int transformedLoopCount,
+            int changedMethodBodyCount,
+            int bodyTextReplacementCount,
+            int typedBodyMaterializedCount,
+            int typedBodyInvalidatedCount,
+            int typedBodyRebuildAttemptedCount,
+            int typedBodyRebuildParsedCount,
+            int typedBodyRebuildBuiltCount,
+            int typedBodyRebuildGraphValidatedCount,
+            int typedBodyRebuildRejectedCount,
+            String typedBodyRebuildStatus,
+            String typedBodyRebuildFirstBlocker,
+            int skippedLoopShapeCount,
+            int skippedUnsupportedWidthCount,
+            int skippedUnsafeLoadPatternCount,
+            boolean runtimeEquivalenceRequiredBeforeSelection,
+            boolean runtimeEquivalencePayloadRequired,
+            int runtimeEquivalencePayloadPresentCount,
+            int runtimeEquivalencePassedCount,
+            boolean approvalRequiredBeforeProduction,
+            boolean loopTripCountProven,
+            boolean contiguousLoadProven,
+            boolean orderedReductionPreserved,
+            String status,
+            String firstBlocker
+    ) {
+    }
+
+    private record BackendNeutralSourceMaterializationEvidence(
+            int passCount,
+            int candidateCount,
+            int sourceReadyCount,
+            int sourceLengthTotal,
+            int materializationOnlyCount,
+            String status,
+            String firstBlocker
+    ) {
+    }
+
+    private record SafeLocalCsePreviewEvidence(
+            int passCount,
+            int expressionCount,
+            int candidateExpressionCount,
+            int duplicateExpressionCount,
+            int equivalenceClassCount,
+            int blockedUnsupportedOperatorCount,
+            int blockedImpureOperandCount,
+            int blockedControlFlowBoundaryCount,
+            boolean runtimeEquivalenceRequiredBeforeRewrite,
+            boolean approvalRequiredBeforeRewrite,
+            boolean dominanceProven,
+            boolean sideEffectFreedomProven
+    ) {
+        private int blockedCount() {
+            return blockedUnsupportedOperatorCount
+                    + blockedImpureOperandCount
+                    + blockedControlFlowBoundaryCount;
+        }
+
+        private int proofBlockerCount() {
+            if (duplicateExpressionCount <= 0) {
+                return 0;
+            }
+            int blockers = 0;
+            if (!dominanceProven) {
+                blockers++;
+            }
+            if (!sideEffectFreedomProven) {
+                blockers++;
+            }
+            return blockers;
+        }
+    }
+
+    private record TypedDeadCodePreviewEvidence(
+            int passCount,
+            int nodeCount,
+            int reachableNodeCount,
+            int unreachableNodeCount,
+            int blockedMissingRootCount,
+            int blockedMissingChildReferenceCount,
+            int blockedSideEffectingUnreachableNodeCount,
+            boolean runtimeEquivalenceRequiredBeforeRewrite,
+            boolean approvalRequiredBeforeRewrite,
+            boolean sideEffectFreedomProven
+    ) {
+        private int blockedCount() {
+            return blockedMissingRootCount
+                    + blockedMissingChildReferenceCount
+                    + blockedSideEffectingUnreachableNodeCount;
+        }
+
+        private int proofBlockerCount() {
+            if (unreachableNodeCount <= 0) {
+                return 0;
+            }
+            return sideEffectFreedomProven ? 0 : 1;
+        }
+    }
+
+    private record PreviewFamilyReadiness(String family, String status, int candidateCount, int blockerCount) {
+    }
+
+    private record PreviewReadinessEvidence(
+            String status,
+            int familyCount,
+            int candidateFamilyCount,
+            int blockedFamilyCount,
+            String familySummary
+    ) {
+    }
+
+    private record RuntimeEquivalenceReviewEvidence(
+            String status,
+            boolean eligible,
+            boolean required,
+            String firstBlocker,
+            String familySummary
+    ) {
+    }
+
+    private record ReviewPackageEvidence(
+            String status,
+            boolean required,
+            boolean complete,
+            String firstBlocker,
+            int proposalPassCount,
+            int pendingApprovalCount,
+            String runtimeEquivalenceStatus
+    ) {
+    }
+
+    private record ApprovalManifestPackageEvidence(
+            String status,
+            boolean required,
+            int presentCount,
+            int acceptedCount,
+            String resourcePathSummary,
+            String firstBlocker
+    ) {
+    }
+
+    private record PolicyGateEvidence(
+            int skippedCount,
+            int optimizerPolicyDisabledCount,
+            int familyDisabledCount,
+            int familyNotEnabledCount,
+            int providerInvokedCount,
+            String firstBlocker,
+            String familySummary
+    ) {
+    }
+
+    private record OptimizedArtifactCandidateEvidence(
+            String status,
+            int count,
+            int readyCount,
+            int blockedCount,
+            int selectionReadyCount,
+            int selectionAppliedCount,
+            int selectedIrReplacementCount,
+            int mutationAllowedCount,
+            String firstBlocker,
+            String selectionFirstBlocker
+    ) {
+        private boolean selectionApplied() {
+            return selectionAppliedCount > 0;
+        }
+
+        private boolean selectedIrReplacement() {
+            return selectedIrReplacementCount > 0;
+        }
+    }
+
+    private record ExperimentalApplyEvidence(
+            boolean requested,
+            boolean enabled,
+            int requestedCount,
+            int enabledCount,
+            int selectedCount
+    ) {
+    }
+
+    private static ApprovalTemplateEvidence approvalTemplateEvidence(GpuRuntimeIrOptimizationPassReport passReport) {
+        if (passReport == null) {
+            return ApprovalTemplateEvidence.notApplicable("pass-report-missing", Map.of());
+        }
+        Map<String, String> proofFields = passReport.proofArtifact().fields();
+        if ("false".equals(proofFields.get("rewrite.proposed"))
+                || "true".equals(proofFields.get("previewOnly"))) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-decision-not-proposed", Map.of());
+        }
+        if (!"proposal-only".equals(passReport.proofStatus())
+                && !"optimized-selected".equals(passReport.proofStatus())) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-decision-not-proposed", Map.of());
+        }
+        if (!distinctIrIdentities(passReport.originalIrIdentity(), passReport.transformedIrIdentity())) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-identities-not-distinct", Map.of());
+        }
+        String proofSource = passReport.proofArtifact().source();
+        if (proofSource == null
+                || proofSource.isBlank()
+                || "none".equals(proofSource)
+                || "ir-optimizer".equals(proofSource)) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-proof-source-not-specific", Map.of());
+        }
+        String proofVerdict = passReport.proofArtifact().verdict() == null
+                ? ""
+                : passReport.proofArtifact().verdict().toLowerCase(java.util.Locale.ROOT);
+        if (proofVerdict.isBlank()
+                || proofVerdict.contains("not-proven")
+                || proofVerdict.contains("rejected")
+                || proofVerdict.contains("failed")) {
+            return ApprovalTemplateEvidence.notApplicable("proposal-proof-verdict-not-accepted", Map.of());
+        }
+        return ApprovalTemplateEvidence.pending(approvalTemplateFields(passReport));
+    }
+
+    private static Map<String, String> approvalTemplateFields(GpuRuntimeIrOptimizationPassReport passReport) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        Map<String, String> proofFields = passReport.proofArtifact().fields();
+        boolean runtimeEquivalencePayloadRequired = parseBoolean(
+                proofFields.get("proof.runtimeEquivalencePayloadRequiredBeforeSelection")
+        ) || parseBoolean(proofFields.get("runtimeEquivalencePayload.required"));
+        boolean runtimeEquivalencePayloadComponentsComplete = parseBoolean(
+                proofFields.get("runtimeEquivalencePayload.cpuReference.present")
+        ) && parseBoolean(proofFields.get("runtimeEquivalencePayload.preOptimizationOutput.present"))
+                && parseBoolean(proofFields.get("runtimeEquivalencePayload.postOptimizationOutput.present"))
+                && parseBoolean(proofFields.get("runtimeEquivalencePayload.tolerance.present"))
+                && parseBoolean(proofFields.get("runtimeEquivalencePayload.failureFixture.present"));
+        fields.put("runtimeEquivalencePayload.required", Boolean.toString(runtimeEquivalencePayloadRequired));
+        fields.put(
+                "runtimeEquivalencePayload.present",
+                Boolean.toString(parseBoolean(proofFields.get("runtimeEquivalencePayload.present")))
+        );
+        fields.put(
+                "runtimeEquivalencePayload.passed",
+                Boolean.toString(parseBoolean(proofFields.get("runtimeEquivalencePayload.passed")))
+        );
+        fields.put(
+                "runtimeEquivalencePayload.componentsComplete",
+                Boolean.toString(runtimeEquivalencePayloadComponentsComplete)
+        );
+        fields.put(
+                "runtimeEquivalencePayload.caseCount",
+                proofFields.getOrDefault("runtimeEquivalencePayload.Case.Count", "0")
+        );
+        fields.put(
+                "runtimeEquivalencePayload.resource",
+                runtimeEquivalencePayloadRequired
+                        ? proofFields.getOrDefault("runtimeEquivalencePayload.resource", "missing")
+                        : "not-required"
+        );
+        fields.put(
+                "runtimeEquivalencePayload.comparisonMode",
+                runtimeEquivalencePayloadRequired
+                        ? proofFields.getOrDefault("runtimeEquivalencePayload.comparisonMode", "missing")
+                        : "not-required"
+        );
+        fields.put("resourceDirectory", "META-INF/javatogpu/ir-optimization-approvals/");
+        fields.put("resourcePath", proofFields.getOrDefault("approvalTemplate.resourcePath", "missing"));
+        fields.put("approvalManifest.status", proofFields.getOrDefault("approvalManifest.status", "pending-manifest-validation"));
+        fields.put("approvalManifest.required", proofFields.getOrDefault("approvalManifest.required", "true"));
+        fields.put("approvalManifest.present", proofFields.getOrDefault("approvalManifest.present", "false"));
+        fields.put("approvalManifest.accepted", proofFields.getOrDefault("approvalManifest.accepted", "false"));
+        fields.put("approvalManifest.resourcePath", proofFields.getOrDefault("approvalManifest.resourcePath", "missing"));
+        fields.put("approvalManifest.resource.count", proofFields.getOrDefault("approvalManifest.resource.count", "0"));
+        fields.put("approvalManifest.firstBlocker", proofFields.getOrDefault(
+                "approvalManifest.firstBlocker",
+                "approval-manifest-not-loaded"
+        ));
+        return Map.copyOf(fields);
+    }
+
+    private static boolean distinctIrIdentities(String original, String transformed) {
+        String normalizedOriginal = original == null ? "" : original;
+        String normalizedTransformed = transformed == null ? "" : transformed;
+        return !normalizedOriginal.isBlank()
+                && !normalizedTransformed.isBlank()
+                && !"irgpu:missing".equals(normalizedOriginal)
+                && !"irgpu:missing".equals(normalizedTransformed)
+                && !normalizedOriginal.equals(normalizedTransformed);
+    }
+
+    private record ApprovalTemplateEvidence(
+            String status,
+            boolean applicable,
+            String firstBlocker,
+            Map<String, String> fields
+    ) {
+        private ApprovalTemplateEvidence {
+            fields = fields == null ? Map.of() : Map.copyOf(fields);
+        }
+
+        private static ApprovalTemplateEvidence pending(Map<String, String> fields) {
+            return new ApprovalTemplateEvidence("pending", true, "none", fields);
+        }
+
+        private static ApprovalTemplateEvidence notApplicable(String firstBlocker, Map<String, String> fields) {
+            return new ApprovalTemplateEvidence("not-applicable", false, firstBlocker, fields);
+        }
     }
 
     private static void appendCompilerFeedbackAnalysis(
