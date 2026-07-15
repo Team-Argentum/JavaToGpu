@@ -90,6 +90,7 @@ processor/build/reports/opencl/production-activation-token-negative.properties
 <custom-dir-from-javatogpu.opencl.runtimeCompileArtifactDirectory>/**/optimized.backend.opencl-c
 <custom-dir-from-javatogpu.opencl.runtimeCompileArtifactDirectory>/**/backend.opencl-c
 processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-ir-optimizer-evidence.properties
+processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-method-test-evidence.properties
 processor/build/reports/opencl/runtime-compile-artifacts/**/runtime-optimizer-family-equivalence-payload/
 processor/build/reports/opencl/optimizer-family-payload-fixture/
 processor/build/test-results/
@@ -98,6 +99,11 @@ processor/build/test-results/
 These files are more useful than a screenshot because they preserve bucket status, device details, and machine-readable failure state.
 
 For local pre/post optimizer inspection, set `-Djavatogpu.opencl.runtimeCompileArtifactDirectory=<directory>` on the runtime process. This writes the same per-kernel artifact bundle independently of the validation report path, including `original.irgpu.properties`, `optimized.irgpu.properties`, `original.backend.opencl-c`, `optimized.backend.opencl-c`, selected `backend.opencl-c`, `runtime-ir-handoff.properties`, and optimizer evidence when present.
+
+Method-level `@GPUTest` evidence is recorded in `runtime-method-test-evidence.properties` inside each runtime compile
+artifact directory. The validation report aggregates it into `Method Test Evidence`, including metadata counts,
+selection-probe counts, cache-evidence status, and cached passed/failed/missing evidence totals. This is diagnostic-only:
+the report does not run probes; it summarizes metadata and cache-ranking facts already recorded by the runtime path.
 
 The candidate gate combines the real-workload gate with controlled source-switching acceptance for the same kernel resources and device identity. `review-ready` means the candidate evidence is complete; default production source switching and production mutation remain disabled.
 

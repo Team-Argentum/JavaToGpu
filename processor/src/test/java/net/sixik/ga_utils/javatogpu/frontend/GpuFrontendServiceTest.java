@@ -363,6 +363,61 @@ class GpuFrontendServiceTest {
     }
 
     @Test
+    void persistsGpuTestVectorsThroughIrGpuRoundTrip() {
+        String methodSource = """
+                @GPU
+                @GPUTest(
+                    id = "smoke",
+                    inputs = {"fixtures/wave-smoke.inputs.json"},
+                    expectedOutputs = {"fixtures/wave-smoke.outputs.json"},
+                    tolerance = "abs=1e-5,rel=1e-4",
+                    tags = {"smoke", "selection"}
+                )
+                @GPUTest(
+                    id = "slow-edge",
+                    inputs = {"fixtures/wave-edge.inputs.json"},
+                    expectedOutputs = {"fixtures/wave-edge.outputs.json"},
+                    selectionProbe = false
+                )
+                void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                    int id = GPU.get_global_id(0);
+                    output[id] = input[id] * 2.0f;
+                }
+                """;
+        GpuFrontendService service = GpuFrontendService.createDefault();
+        ParsedGpuMethod kernelMethod = new net.sixik.ga_utils.javatogpu.frontend.parser.GpuMethodParser()
+                .parseMethod(methodSource, "Demo", "sample.Demo");
+
+        GpuFrontendCompilationResult result = service.compile(
+                kernelMethod,
+                List.of(),
+                List.of(),
+                "javatogpu/sample/Demo/kernel.cl"
+        );
+
+        var testVectors = result.irGpuArtifact().entryTestVectors();
+        assertEquals(2, testVectors.size());
+        assertEquals("smoke", testVectors.get(0).testId());
+        assertEquals(List.of("fixtures/wave-smoke.inputs.json"), testVectors.get(0).inputRefs());
+        assertEquals(List.of("fixtures/wave-smoke.outputs.json"), testVectors.get(0).expectedOutputRefs());
+        assertEquals("abs=1e-5,rel=1e-4", testVectors.get(0).tolerance());
+        assertEquals(List.of("smoke", "selection"), testVectors.get(0).tags());
+        assertTrue(testVectors.get(0).selectionProbe());
+        assertEquals("slow-edge", testVectors.get(1).testId());
+        assertFalse(testVectors.get(1).selectionProbe());
+
+        String manifest = IrGpuArtifactSerializer.serialize(result.irGpuArtifact());
+        var reparsed = IrGpuArtifactParser.parse(manifest).entryTestVectors();
+        assertEquals(testVectors, reparsed);
+        assertTrue(manifest.contains("methodTestVector.count=2"));
+        assertTrue(manifest.contains("methodTestVector.0.testId=smoke"));
+        assertTrue(manifest.contains("methodTestVector.0.inputRef.0=fixtures/wave-smoke.inputs.json"));
+        assertTrue(manifest.contains("methodTestVector.0.expectedOutputRef.0=fixtures/wave-smoke.outputs.json"));
+        assertTrue(manifest.contains("methodTestVector.0.selectionProbe=true"));
+        assertTrue(manifest.contains("methodTestVector.1.selectionProbe=false"));
+    }
+
+    @Test
     void persistsIrValidationParticipationThroughIrGpuRoundTrip() {
         String methodSource = """
                 @GPU

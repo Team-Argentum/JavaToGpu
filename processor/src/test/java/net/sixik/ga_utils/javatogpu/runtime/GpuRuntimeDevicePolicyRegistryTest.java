@@ -7,9 +7,12 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodDeviceConstraint;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodTestVectorMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -186,12 +189,243 @@ class GpuRuntimeDevicePolicyRegistryTest {
     @Test
     void deviceOverrideSurvivesCompileOptionDerivations() {
         GpuRuntimeDeviceOverride override = GpuRuntimeDeviceOverride.byDeviceLabel("RTX 5070");
+        GpuRuntimeDevicePreference preference = GpuRuntimeDevicePreference.builder()
+                .preferVendor("NVIDIA")
+                .excludeDeviceClass(GpuDeviceClassTarget.CPU)
+                .build();
         GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
                 .withDeviceOverride(override)
+                .withDevicePreference(preference)
                 .withProductionPromotionOperatorAccepted(true)
-                .withProductionPromotionDecision(GpuProductionPromotionDecision.diagnosticOnly());
+                .withProductionPromotionDecision(GpuProductionPromotionDecision.diagnosticOnly())
+                .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED);
 
         assertEquals(override, options.deviceOverride());
+        assertEquals(preference, options.devicePreference());
+    }
+
+    @Test
+    void compileProvenanceRecordsDeviceOverrideAndPreference() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .withDeviceOverride(GpuRuntimeDeviceOverride.byVendor("NVIDIA"))
+                .preferDeviceClass(GpuDeviceClassTarget.DGPU)
+                .excludeIntegratedAndCpuDevices();
+
+        GpuRuntimeCompileProvenance provenance = GpuRuntimeCompileProvenance.from(new GpuRuntimeCompileRequest(
+                descriptor(),
+                options,
+                classifiedDevice(
+                        "opencl-1",
+                        "NVIDIA RTX",
+                        "NVIDIA Corporation",
+                        GpuDeviceClassTarget.DGPU,
+                        48,
+                        false
+                )
+        ));
+
+        assertEquals("deviceId=any, vendor=NVIDIA, deviceLabel=any, deviceClass=any", provenance.deviceOverride());
+        assertTrue(provenance.devicePreference().contains("preferDeviceClasses=[dgpu]"));
+        assertTrue(provenance.devicePreference().contains("excludeDeviceClasses=[cpu, igpu]"));
+        assertTrue(provenance.toPropertiesText().contains("deviceOverride=deviceId=any, vendor=NVIDIA"));
+        assertTrue(provenance.toPropertiesText().contains("devicePreference=preferDeviceIds=any"));
+    }
+
+    @Test
+    void devicePreferenceCanPreferIntegratedGpuOverAutomaticDiscreteWinner() {
+        GpuRuntimeDeviceProfile integrated = classifiedDevice(
+                "opencl-0",
+                "Intel Arc Integrated",
+                "Intel",
+                GpuDeviceClassTarget.IGPU,
+                8,
+                true
+        );
+        GpuRuntimeDeviceProfile discrete = classifiedDevice(
+                "opencl-1",
+                "NVIDIA RTX",
+                "NVIDIA Corporation",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                false
+        );
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .preferDeviceClass(GpuDeviceClassTarget.IGPU);
+
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                new GpuRuntimeDevicePolicyContext(descriptor(), options, List.of(integrated, discrete))
+        );
+        GpuRuntimeDevicePolicyDecision preferenceDecision = decision(selection, GpuRuntimeDevicePreferencePolicy.POLICY_ID);
+        String integratedKey = GpuRuntimeDevicePolicyContext.deviceKey(integrated);
+
+        assertEquals("Intel Arc Integrated", selection.selectedDevice().orElseThrow().deviceLabel());
+        assertTrue(preferenceDecision.scoreAdjustments().get(integratedKey) > 0);
+        assertEquals("true", preferenceDecision.capabilityFacts().get(integratedKey + ".preferenceMatched"));
+        assertTrue(selection.diagnostics().stream().anyMatch(value -> value.contains("device preference applied")));
+    }
+
+    @Test
+    void devicePreferenceCanExcludeCpuAndIntegratedDevices() {
+        GpuRuntimeDeviceProfile cpu = classifiedDevice(
+                "opencl-cpu",
+                "CPU OpenCL",
+                "PortableCL",
+                GpuDeviceClassTarget.CPU,
+                64,
+                true
+        );
+        GpuRuntimeDeviceProfile integrated = classifiedDevice(
+                "opencl-igpu",
+                "Intel Integrated",
+                "Intel",
+                GpuDeviceClassTarget.IGPU,
+                8,
+                true
+        );
+        GpuRuntimeDeviceProfile discrete = classifiedDevice(
+                "opencl-dgpu",
+                "NVIDIA RTX",
+                "NVIDIA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                false
+        );
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .excludeIntegratedAndCpuDevices();
+
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                new GpuRuntimeDevicePolicyContext(descriptor(), options, List.of(cpu, integrated, discrete))
+        );
+        GpuRuntimeDevicePolicyDecision preferenceDecision = decision(selection, GpuRuntimeDevicePreferencePolicy.POLICY_ID);
+
+        assertEquals("NVIDIA RTX", selection.selectedDevice().orElseThrow().deviceLabel());
+        assertTrue(preferenceDecision.rejectedDeviceKeys().contains(GpuRuntimeDevicePolicyContext.deviceKey(cpu)));
+        assertTrue(preferenceDecision.rejectedDeviceKeys().contains(GpuRuntimeDevicePolicyContext.deviceKey(integrated)));
+        assertTrue(!preferenceDecision.rejectedDeviceKeys().contains(GpuRuntimeDevicePolicyContext.deviceKey(discrete)));
+        assertEquals(
+                "device class is excluded: cpu",
+                preferenceDecision.capabilityFacts().get(GpuRuntimeDevicePolicyContext.deviceKey(cpu) + ".preferenceRejectionReason")
+        );
+    }
+
+    @Test
+    void cachedMethodTestProbeEvidenceCanPreferPassedCandidate() throws Exception {
+        GpuRuntimeDeviceProfile integrated = classifiedDevice(
+                "opencl-igpu",
+                "Intel Integrated",
+                "Intel",
+                GpuDeviceClassTarget.IGPU,
+                8,
+                true
+        );
+        GpuRuntimeDeviceProfile discrete = classifiedDevice(
+                "opencl-dgpu",
+                "NVIDIA RTX",
+                "NVIDIA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                false
+        );
+        Path fixtureRoot = methodTestFixtureRoot("method-test-rank-passed");
+        Path cacheDirectory = Files.createTempDirectory("javatogpu-method-test-rank-cache");
+        GpuKernelDescriptor descriptor = descriptorWithInputScaleOutput("demo.irgpu.properties");
+        IrGpuArtifact artifact = methodTestArtifact("method-test-rank-passed");
+        GpuRuntimeCompileOptions baseOptions = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL);
+
+        try (java.net.URLClassLoader classLoader = new java.net.URLClassLoader(new java.net.URL[]{fixtureRoot.toUri().toURL()})) {
+            ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+            Thread.currentThread().setContextClassLoader(classLoader);
+            try {
+                GpuRuntimeMethodTestInvocationMaterialization invocation = materializedInvocation(
+                        descriptor,
+                        artifact,
+                        classLoader
+                );
+                recordProbeEvidence(cacheDirectory, descriptor, invocation, integrated, baseOptions, true);
+
+                GpuRuntimeCompileOptions rankingOptions = baseOptions.withPersistentMethodTestProbeEvidenceRanking(cacheDirectory);
+                GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                        new GpuRuntimeDevicePolicyContext(
+                                descriptor,
+                                rankingOptions,
+                                List.of(integrated, discrete),
+                                java.util.Optional.of(artifact)
+                        )
+                );
+                GpuRuntimeDevicePolicyDecision decision = decision(
+                        selection,
+                        GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_ID
+                );
+                String integratedKey = GpuRuntimeDevicePolicyContext.deviceKey(integrated);
+                String discreteKey = GpuRuntimeDevicePolicyContext.deviceKey(discrete);
+
+                assertEquals("Intel Integrated", selection.selectedDevice().orElseThrow().deviceLabel());
+                assertTrue(decision.scoreAdjustments().get(integratedKey) > 0);
+                assertEquals("passed", decision.capabilityFacts().get(integratedKey + ".methodTestProbeEvidence.status"));
+                assertEquals("missing", decision.capabilityFacts().get(discreteKey + ".methodTestProbeEvidence.status"));
+            } finally {
+                Thread.currentThread().setContextClassLoader(previousClassLoader);
+            }
+        }
+    }
+
+    @Test
+    void cachedMethodTestProbeFailureRejectsCandidate() throws Exception {
+        GpuRuntimeDeviceProfile integrated = classifiedDevice(
+                "opencl-igpu",
+                "Intel Integrated",
+                "Intel",
+                GpuDeviceClassTarget.IGPU,
+                8,
+                true
+        );
+        GpuRuntimeDeviceProfile discrete = classifiedDevice(
+                "opencl-dgpu",
+                "NVIDIA RTX",
+                "NVIDIA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                false
+        );
+        Path fixtureRoot = methodTestFixtureRoot("method-test-rank-failed");
+        Path cacheDirectory = Files.createTempDirectory("javatogpu-method-test-rank-cache-failed");
+        GpuKernelDescriptor descriptor = descriptorWithInputScaleOutput("demo.irgpu.properties");
+        IrGpuArtifact artifact = methodTestArtifact("method-test-rank-failed");
+        GpuRuntimeCompileOptions baseOptions = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL);
+
+        try (java.net.URLClassLoader classLoader = new java.net.URLClassLoader(new java.net.URL[]{fixtureRoot.toUri().toURL()})) {
+            ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+            Thread.currentThread().setContextClassLoader(classLoader);
+            try {
+                GpuRuntimeMethodTestInvocationMaterialization invocation = materializedInvocation(
+                        descriptor,
+                        artifact,
+                        classLoader
+                );
+                recordProbeEvidence(cacheDirectory, descriptor, invocation, discrete, baseOptions, false);
+
+                GpuRuntimeCompileOptions rankingOptions = baseOptions.withPersistentMethodTestProbeEvidenceRanking(cacheDirectory);
+                GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                        new GpuRuntimeDevicePolicyContext(
+                                descriptor,
+                                rankingOptions,
+                                List.of(integrated, discrete),
+                                java.util.Optional.of(artifact)
+                        )
+                );
+                GpuRuntimeDevicePolicyDecision decision = decision(
+                        selection,
+                        GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_ID
+                );
+                String discreteKey = GpuRuntimeDevicePolicyContext.deviceKey(discrete);
+
+                assertEquals("Intel Integrated", selection.selectedDevice().orElseThrow().deviceLabel());
+                assertTrue(decision.rejectedDeviceKeys().contains(discreteKey));
+                assertEquals("failed", decision.capabilityFacts().get(discreteKey + ".methodTestProbeEvidence.status"));
+            } finally {
+                Thread.currentThread().setContextClassLoader(previousClassLoader);
+            }
+        }
     }
 
     @Test
@@ -322,6 +556,20 @@ class GpuRuntimeDevicePolicyRegistryTest {
         );
     }
 
+    private static GpuKernelDescriptor descriptorWithInputScaleOutput(String irGpuResource) {
+        return new GpuKernelDescriptor(
+                "jtg_kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void jtg_kernel(__global const float* input, float scale, __global float* output) { output[0] = input[0] * scale; }",
+                irGpuResource,
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scale", "float", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+    }
+
     private static GpuRuntimeDeviceProfile device(
             String label,
             String vendor,
@@ -392,6 +640,16 @@ class GpuRuntimeDevicePolicyRegistryTest {
         };
     }
 
+    private static GpuRuntimeDevicePolicyDecision decision(
+            GpuRuntimeDeviceSelection selection,
+            String policyId
+    ) {
+        return selection.policyDecisions().stream()
+                .filter(value -> value.policyId().equals(policyId))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private static IrGpuArtifact constrainedArtifact(IrGpuMethodDeviceConstraint constraint) {
         return new IrGpuArtifact(
                 IrGpuArtifactHeader.javaSourceV1(),
@@ -400,5 +658,118 @@ class GpuRuntimeDevicePolicyRegistryTest {
                 "opencl",
                 "off"
         ).withMethodDeviceConstraints(List.of(constraint));
+    }
+
+    private static IrGpuArtifact methodTestArtifact(String testId) {
+        return new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule("kernel", "jtg_kernel", List.of(), List.of(), List.of()),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        ).withMethodTestVectors(List.of(new IrGpuMethodTestVectorMetadata(
+                "kernel",
+                "jtg_kernel",
+                testId,
+                List.of("fixtures/" + testId + ".inputs.json"),
+                List.of("fixtures/" + testId + ".outputs.json"),
+                "abs=1e-5",
+                List.of("selection"),
+                true,
+                "GPUTest"
+        )));
+    }
+
+    private static Path methodTestFixtureRoot(String testId) throws Exception {
+        Path root = Files.createTempDirectory("javatogpu-method-test-rank-fixtures");
+        Files.createDirectories(root.resolve("fixtures"));
+        Files.writeString(root.resolve("fixtures/" + testId + ".inputs.json"), "{\"input\":[1.0,2.0],\"scale\":2.5}");
+        Files.writeString(root.resolve("fixtures/" + testId + ".outputs.json"), "{\"output\":[2.5,5.0]}");
+        return root;
+    }
+
+    private static GpuRuntimeMethodTestInvocationMaterialization materializedInvocation(
+            GpuKernelDescriptor descriptor,
+            IrGpuArtifact artifact,
+            ClassLoader classLoader
+    ) {
+        GpuRuntimeMethodTestProbePlan plan = GpuRuntimeMethodTestProbes.plan(
+                descriptor,
+                artifact,
+                GpuRuntimeLifecycleEventBus.empty()
+        );
+        GpuRuntimeMethodTestFixtureValueBindingPlan bindings = GpuRuntimeMethodTestProbes.fixtureValueBindings(
+                descriptor,
+                plan,
+                classLoader,
+                GpuRuntimeLifecycleEventBus.empty()
+        );
+        return GpuRuntimeMethodTestProbes.fixtureInvocationMaterialization(
+                        descriptor,
+                        bindings,
+                        GpuRuntimeLifecycleEventBus.empty()
+                )
+                .invocations()
+                .get(0);
+    }
+
+    private static void recordProbeEvidence(
+            Path cacheDirectory,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeMethodTestInvocationMaterialization invocation,
+            GpuRuntimeDeviceProfile profile,
+            GpuRuntimeCompileOptions compileOptions,
+            boolean passed
+    ) {
+        GpuExecutionConfig executionConfig = GpuExecutionConfig.oneDimensional(2);
+        GpuRuntimeMethodTestGpuProbeEvidenceKey evidenceKey = GpuRuntimeMethodTestGpuProbeEvidenceKey.from(
+                descriptor,
+                invocation,
+                executionConfig,
+                compileOptions,
+                GpuRuntimeBackendReport.available(
+                        profile.backendTarget(),
+                        profile.backendName(),
+                        profile.deviceLabel(),
+                        null,
+                        profile.apiVersionText(),
+                        Set.of(),
+                        profile.localMemoryBytes(),
+                        profile.maxWorkGroupSize(),
+                        "test candidate"
+                ),
+                profile
+        );
+        GpuRuntimeMethodTestReferenceComparison comparison = new GpuRuntimeMethodTestReferenceComparison(
+                invocation.testId(),
+                2,
+                "output",
+                "float[]",
+                GpuKernelParameterAccess.READ_WRITE,
+                true,
+                passed,
+                "java-float-array",
+                2,
+                passed ? List.of("2.5", "5.0") : List.of("2.5", "4.0"),
+                "java-float-array",
+                2,
+                List.of("2.5", "5.0"),
+                1.0e-5d,
+                0.0d,
+                "none",
+                passed ? "none" : "fixture-gpu-probe-output-mismatch",
+                passed ? "none" : "Mismatch at item 1"
+        );
+        GpuRuntimeMethodTestGpuProbeCache.persistent(cacheDirectory).record(new GpuRuntimeMethodTestGpuProbeExecution(
+                invocation.testId(),
+                evidenceKey,
+                false,
+                true,
+                passed,
+                executionConfig,
+                List.of(comparison),
+                List.of(),
+                List.of()
+        ));
     }
 }

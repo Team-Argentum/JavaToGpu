@@ -15,6 +15,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipa
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodTestVectorMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation;
@@ -104,6 +105,60 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(participation.contains("entry.4.source=backend-compiler-feedback"));
         assertTrue(participation.contains("entry.4.extensionId=compiler-feedback:mock"));
         assertTrue(participation.contains("entry.4.outcome=FAILED_CONTINUED"));
+    }
+
+    @Test
+    void dumpsMethodTestEvidenceArtifactForValidationReports() {
+        IrGpuArtifact irGpuArtifact = artifact("body\n  return original\n")
+                .withMethodTestVectors(List.of(new IrGpuMethodTestVectorMetadata(
+                        "kernel",
+                        "jtg_kernel",
+                        "selection-smoke",
+                        List.of("fixtures/selection-smoke.inputs.json"),
+                        List.of("fixtures/selection-smoke.outputs.json"),
+                        "abs=1e-5",
+                        List.of("selection", "smoke"),
+                        true,
+                        "GPUTest"
+                )));
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(irGpuArtifact)
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "method-test:evidence"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(irGpuArtifact))
+        ).withDeviceSelection(methodTestEvidenceDeviceSelection());
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                snapshot,
+                GpuBackendCompilerFeedbackRegistry.of(List.of())
+        );
+
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_METHOD_TEST_EVIDENCE_ARTIFACT));
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_METHOD_TEST_EVIDENCE_ARTIFACT);
+        assertTrue(evidence.contains("status=recorded"));
+        assertTrue(evidence.contains("backendResource=javatogpu/sample/Demo/kernel.cl"));
+        assertTrue(evidence.contains("metadata.status=recorded"));
+        assertTrue(evidence.contains("metadata.entryTestVector.count=1"));
+        assertTrue(evidence.contains("metadata.selectionProbe.count=1"));
+        assertTrue(evidence.contains("original.entryTestVector.0.testId=selection-smoke"));
+        assertTrue(evidence.contains("cacheEvidence.status=active"));
+        assertTrue(evidence.contains("cacheEvidence.candidate.count=1"));
+        assertTrue(evidence.contains("cacheEvidence.passed.count=1"));
+        assertTrue(evidence.contains("cacheEvidence.missing.count=0"));
+        assertTrue(evidence.contains("firstBlocker=none"));
     }
 
     @Test
@@ -532,6 +587,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendOption.target=OPENCL"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendOption.flag.0=-cl-fast-relaxed-math"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendOption.property.count=0"));
+        assertTrue(dump.artifact("compile-provenance.properties").contains("deviceOverride=automatic"));
+        assertTrue(dump.artifact("compile-provenance.properties").contains("devicePreference=automatic"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("optimizationProfile=fast"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("fallbackDecision=none"));
         assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_DEVICE_SELECTION_ARTIFACT));
@@ -4017,6 +4074,41 @@ class GpuRuntimeCompileArtifactDumperTest {
                 false,
                 "none",
                 List.of("synthetic device-selection execution for participation artifact test")
+        );
+    }
+
+    private static GpuRuntimeDeviceSelection methodTestEvidenceDeviceSelection() {
+        String deviceKey = "OPENCL:opencl-1";
+        GpuRuntimeDevicePolicyDecision decision = new GpuRuntimeDevicePolicyDecision(
+                GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_ID,
+                GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_VERSION,
+                Map.of(deviceKey, 1_600_000_000),
+                java.util.Set.of(),
+                Map.ofEntries(
+                        Map.entry("methodTestProbeEvidence.status", "active"),
+                        Map.entry("methodTestProbeEvidence.mode", "cached"),
+                        Map.entry("methodTestProbeEvidence.cache.persistent", "true"),
+                        Map.entry("methodTestProbeEvidence.cache.path", ".javatogpu/method-test-probes"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.status", "passed"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.passed.count", "1"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.failed.count", "0"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.missing.count", "0"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.blocked.count", "0")
+                ),
+                List.of(),
+                true,
+                List.of(),
+                List.of(deviceKey + ": cached method-test GPU probe evidence passed")
+        );
+        return new GpuRuntimeDeviceSelection(
+                Optional.empty(),
+                List.of(),
+                List.of(decision),
+                List.of(),
+                true,
+                false,
+                "none",
+                List.of("synthetic method-test evidence policy decision")
         );
     }
 

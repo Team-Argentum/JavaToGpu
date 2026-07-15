@@ -382,6 +382,8 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 deviceInfo.vendor(),
                 deviceInfo.driverVersion(),
                 deviceInfo.deviceVersion(),
+                deviceInfo.platformName(),
+                deviceInfo.platformVersion(),
                 classifyDevice(device, unifiedMemory),
                 deviceInfo.computeUnits(),
                 device.globalMemoryBytes(),

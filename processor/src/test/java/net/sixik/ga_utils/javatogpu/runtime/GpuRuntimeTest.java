@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
@@ -729,6 +730,11 @@ class GpuRuntimeTest {
         assertTrue(!result.matched());
         assertTrue(result.failureSummary().contains("CUDA: CUDA runtime is unavailable"));
         assertTrue(result.failureSummary().contains("OpenCL: requires API version at least 3.0 but found 2.0; missing feature IMAGES"));
+        assertEquals(2, result.candidateDecisions().size());
+        assertEquals(GpuBackendTarget.CUDA, result.candidateDecisions().get(0).backendTarget());
+        assertEquals("CUDA runtime is unavailable", result.candidateDecisions().get(0).firstBlocker());
+        assertEquals(GpuBackendTarget.OPENCL, result.candidateDecisions().get(1).backendTarget());
+        assertTrue(result.explanationSummary().contains("CUDA: CUDA runtime is unavailable"));
     }
 
     @Test
@@ -962,6 +968,296 @@ class GpuRuntimeTest {
         assertTrue(result.matched());
         assertSame(openClBackend, result.requireSelection().backend());
         assertEquals(GpuBackendTarget.OPENCL, result.requireSelection().report().backendTarget());
+        assertEquals(2, result.candidateDecisions().size());
+        assertTrue(!result.candidateDecisions().get(0).selected());
+        assertTrue(result.candidateDecisions().get(1).selected());
+        assertEquals("OpenCL selected", result.candidateDecisions().get(1).summary());
+    }
+
+    @Test
+    void backendSelectionExplanationExposesSummaryMarkdownAndArtifactFields() {
+        GpuRuntimeBackend cudaBackend = new ReportingBackend(
+                GpuRuntimeBackendReport.unavailable(GpuBackendTarget.CUDA, "CUDA", "CUDA runtime is unavailable")
+        );
+        GpuRuntimeBackend openClBackend = new ReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Explanation GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 Explanation GPU",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+
+        GpuRuntimeSelectionResult result = GpuRuntimeBackendPolicy.builder()
+                .preferOwnedBackend(cudaBackend)
+                .preferOwnedBackend(openClBackend)
+                .build()
+                .trySelect();
+        GpuRuntimeBackendSelectionExplanation explanation = result.explanation();
+        Map<String, String> fields = result.artifactFields("backendSelection");
+
+        assertTrue(explanation.matched());
+        assertEquals(GpuBackendTarget.OPENCL, explanation.selectedBackendTarget());
+        assertEquals("OpenCL", explanation.selectedBackendName());
+        assertEquals("Explanation GPU", explanation.selectedDeviceLabel());
+        assertEquals(result.explanationSummary(), explanation.summary());
+        assertTrue(explanation.toMarkdown().contains("Selected: OpenCL (`OPENCL`) on Explanation GPU"));
+        assertEquals("true", fields.get("backendSelection.matched"));
+        assertEquals("OPENCL", fields.get("backendSelection.selected.backendTarget"));
+        assertEquals("2", fields.get("backendSelection.candidate.count"));
+        assertEquals("CUDA runtime is unavailable", fields.get("backendSelection.candidate.0.firstBlocker"));
+    }
+
+    @Test
+    void backendDeviceSelectionExplanationLinksBackendAndDeviceEvidence() {
+        GpuRuntimeBackend openClBackend = new ReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "NVIDIA RTX",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 NVIDIA RTX",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+        GpuRuntimeSelectionResult backendResult = GpuRuntimeBackendPolicy.builder()
+                .preferBorrowedBackend(openClBackend)
+                .build()
+                .trySelect();
+        GpuRuntimeDeviceProfile device = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-0",
+                "NVIDIA RTX",
+                "NVIDIA",
+                "test-driver",
+                "OpenCL 3.0 Test",
+                "NVIDIA CUDA",
+                "OpenCL 3.0 CUDA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                8L * 1024L * 1024L * 1024L,
+                64L * 1024L,
+                1024L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceSelection deviceSelection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                                .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED),
+                        List.of(device)
+                )
+        );
+        GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscoveryResult.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                List.of(device),
+                deviceSelection
+        );
+        GpuRuntimeDeviceDiscoveryCatalog catalog = GpuRuntimeDeviceDiscoveryCatalog.of(List.of(
+                discovery,
+                GpuRuntimeDeviceDiscovery.plannedUnavailable(GpuBackendTarget.CUDA)
+        ));
+
+        GpuRuntimeBackendDeviceSelectionExplanation explanation = backendResult.explainWithDeviceDiscovery(catalog);
+        Map<String, String> fields = explanation.artifactFields("runtimeSelection");
+
+        assertEquals("backend-and-device-selected", explanation.status());
+        assertTrue(explanation.summary().contains("selected OpenCL on NVIDIA RTX"));
+        assertTrue(explanation.toMarkdown().contains("Runtime selection: backend-and-device-selected"));
+        assertTrue(explanation.toMarkdown().contains("Device discoveries:"));
+        assertTrue(explanation.toMarkdown().contains("Backend device discovery: CUDA (`CUDA`)"));
+        assertEquals("backend-and-device-selected", fields.get("runtimeSelection.status"));
+        assertEquals("OPENCL", fields.get("runtimeSelection.backend.selected.backendTarget"));
+        assertEquals("OPENCL:opencl-0", fields.get("runtimeSelection.device.selected.deviceKey"));
+        assertEquals("NVIDIA CUDA", fields.get("runtimeSelection.device.selected.platformName"));
+        assertEquals("true", fields.get("runtimeSelection.deviceDiscovery.present"));
+        assertEquals("2", fields.get("runtimeSelection.deviceDiscoveryCatalog.backend.count"));
+        assertEquals("CUDA", fields.get("runtimeSelection.deviceDiscoveryCatalog.backend.1.backendTarget"));
+    }
+
+    @Test
+    void backendPolicyCanForceOrExcludeBackendTargets() {
+        GpuRuntimeBackend cudaBackend = new ReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.CUDA,
+                        "CUDA",
+                        "CUDA GPU",
+                        new GpuRuntimeApiVersion(12, 0),
+                        "CUDA 12.0",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        65_536L,
+                        256L,
+                        null
+                )
+        );
+        GpuRuntimeBackend openClBackend = new ReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "OpenCL GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+
+        GpuRuntimeSelectionResult forced = GpuRuntimeBackendPolicy.builder()
+                .forceBackendTarget(GpuBackendTarget.OPENCL)
+                .preferOwnedBackend(cudaBackend)
+                .preferOwnedBackend(openClBackend)
+                .build()
+                .trySelect();
+        GpuRuntimeSelectionResult excluded = GpuRuntimeBackendPolicy.builder()
+                .excludeBackendTarget(GpuBackendTarget.CUDA)
+                .preferOwnedBackend(cudaBackend)
+                .preferOwnedBackend(openClBackend)
+                .build()
+                .trySelect();
+
+        assertTrue(forced.matched());
+        assertSame(openClBackend, forced.requireSelection().backend());
+        assertEquals(
+                "requires backend target OPENCL but found CUDA",
+                forced.candidateDecisions().get(0).firstBlocker()
+        );
+        assertTrue(forced.explanationSummary().contains("CUDA: requires backend target OPENCL but found CUDA"));
+        assertTrue(excluded.matched());
+        assertSame(openClBackend, excluded.requireSelection().backend());
+        assertEquals("backend target CUDA is excluded", excluded.candidateDecisions().get(0).firstBlocker());
+    }
+
+    @Test
+    void backendCatalogStandardEntriesAreLazyAndInspectable() {
+        List<GpuRuntimeBackendCatalogEntry> entries = GpuRuntimeBackendCatalog.standard();
+
+        assertEquals(1, entries.size());
+        GpuRuntimeBackendCatalogEntry entry = entries.get(0);
+        assertEquals(GpuBackendTarget.OPENCL, entry.backendTarget());
+        assertEquals("OpenCL (shared cache)", entry.backendName());
+        assertEquals(GpuRuntimeBackendOwnership.OWNED, entry.ownership());
+        assertTrue(entry.productionAdapter());
+        assertEquals("production runtime adapter", entry.diagnostic());
+    }
+
+    @Test
+    void backendCatalogPlannedUnsupportedEntriesProduceExplicitDiagnostics() {
+        GpuRuntimeBackendCatalogEntry cudaEntry = GpuRuntimeBackendCatalog.plannedUnsupported(GpuBackendTarget.CUDA);
+
+        GpuRuntimeSelectionResult result = GpuRuntimeBackendPolicy.builder()
+                .preferCatalogEntry(cudaEntry)
+                .build()
+                .trySelect();
+
+        assertTrue(!result.matched());
+        assertEquals(1, result.candidateDecisions().size());
+        assertEquals(GpuBackendTarget.CUDA, result.candidateDecisions().get(0).backendTarget());
+        assertTrue(result.failureSummary().contains("Runtime backend adapter is not implemented for CUDA"));
+        assertTrue(result.explanation().toMarkdown().contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
+    }
+
+    @Test
+    void backendPolicyCanSelectFromCustomCatalogEntries() {
+        CloseCountingBackend unavailableCuda = new CloseCountingBackend(
+                GpuRuntimeBackendReport.unavailable(GpuBackendTarget.CUDA, "CUDA", "CUDA fixture unavailable")
+        );
+        CloseCountingBackend openCl = new CloseCountingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Catalog GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 Catalog GPU",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+        List<GpuRuntimeBackendCatalogEntry> catalog = List.of(
+                GpuRuntimeBackendCatalogEntry.owned(
+                        GpuBackendTarget.CUDA,
+                        "CUDA fixture",
+                        () -> unavailableCuda,
+                        false,
+                        "test fixture"
+                ),
+                GpuRuntimeBackendCatalogEntry.owned(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL fixture",
+                        () -> openCl,
+                        true,
+                        "test fixture"
+                )
+        );
+
+        GpuRuntimeSelectionResult result = GpuRuntimeBackendPolicy.builder()
+                .preferCatalog(catalog)
+                .build()
+                .trySelect();
+
+        assertTrue(result.matched());
+        assertSame(openCl, result.requireSelection().backend());
+        assertEquals(1, unavailableCuda.closeCalls);
+        assertEquals(0, openCl.closeCalls);
+        assertEquals(2, result.candidateDecisions().size());
+        assertEquals("CUDA fixture unavailable", result.candidateDecisions().get(0).firstBlocker());
+        assertTrue(result.candidateDecisions().get(1).selected());
+    }
+
+    @Test
+    void backendSelectionOrchestratorRecordsFactoryFailuresAndClosesRejectedOwnedBackends() {
+        CloseCountingBackend unavailableOpenCl = new CloseCountingBackend(
+                GpuRuntimeBackendReport.unavailable(GpuBackendTarget.OPENCL, "OpenCL", "OpenCL ICD is unavailable")
+        );
+        CloseCountingBackend selectedCuda = new CloseCountingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.CUDA,
+                        "CUDA",
+                        "Future CUDA GPU",
+                        new GpuRuntimeApiVersion(12, 0),
+                        "CUDA 12.0",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        65_536L,
+                        256L,
+                        null
+                )
+        );
+
+        GpuRuntimeSelectionResult result = GpuRuntimeBackendPolicy.builder()
+                .preferFactory(() -> {
+                    throw new IllegalStateException("backend adapter missing");
+                })
+                .preferOwnedBackend(unavailableOpenCl)
+                .preferOwnedBackend(selectedCuda)
+                .build()
+                .trySelect();
+
+        assertTrue(result.matched());
+        assertSame(selectedCuda, result.requireSelection().backend());
+        assertEquals(3, result.candidateDecisions().size());
+        assertEquals("creation-failed", result.candidateDecisions().get(0).firstBlocker());
+        assertEquals("OpenCL ICD is unavailable", result.candidateDecisions().get(1).firstBlocker());
+        assertTrue(result.candidateDecisions().get(1).closed());
+        assertTrue(result.candidateDecisions().get(2).selected());
+        assertEquals(1, unavailableOpenCl.closeCalls);
+        assertEquals(0, selectedCuda.closeCalls);
+        assertTrue(result.explanationSummary().contains("candidate.0: Failed to create backend candidate: backend adapter missing"));
+        assertTrue(result.explanationSummary().contains("CUDA selected"));
     }
 
     @Test
@@ -1161,6 +1457,34 @@ class GpuRuntimeTest {
 
         @Override
         public void invoke(GpuKernelInvocation invocation) {
+        }
+    }
+
+    private static final class CloseCountingBackend implements GpuRuntimeBackend, AutoCloseable {
+        private final GpuRuntimeBackendReport report;
+        private int closeCalls;
+
+        private CloseCountingBackend(GpuRuntimeBackendReport report) {
+            this.report = report;
+        }
+
+        @Override
+        public GpuBackendTarget backendTarget() {
+            return report.backendTarget();
+        }
+
+        @Override
+        public GpuRuntimeBackendReport describeCapabilities() {
+            return report;
+        }
+
+        @Override
+        public void invoke(GpuKernelInvocation invocation) {
+        }
+
+        @Override
+        public void close() {
+            closeCalls++;
         }
     }
 

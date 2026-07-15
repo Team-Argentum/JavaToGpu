@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Factory and evaluation helpers for backend capability requirements.
@@ -31,6 +32,20 @@ public final class GpuRuntimeRequirements {
             }
         }
         return List.copyOf(reasons);
+    }
+
+    public static GpuRuntimeRequirement requireBackendTarget(GpuBackendTarget backendTarget) {
+        Objects.requireNonNull(backendTarget, "backendTarget");
+        return report -> report.backendTarget() == backendTarget
+                ? null
+                : "requires backend target " + backendTarget + " but found " + report.backendTarget();
+    }
+
+    public static GpuRuntimeRequirement excludeBackendTarget(GpuBackendTarget backendTarget) {
+        Objects.requireNonNull(backendTarget, "backendTarget");
+        return report -> report.backendTarget() == backendTarget
+                ? "backend target " + backendTarget + " is excluded"
+                : null;
     }
 
     public static GpuRuntimeRequirement requireFeature(GpuRuntimeFeature feature) {

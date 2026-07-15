@@ -108,7 +108,7 @@ public final class GpuGeneratedLauncherInvoker {
         return null;
     }
 
-    private static GpuKernelDescriptor descriptor(Class<?> ownerClass, String methodName) {
+    public static GpuKernelDescriptor descriptor(Class<?> ownerClass, String methodName) {
         return launcherBinding(ownerClass, methodName).descriptor();
     }
 

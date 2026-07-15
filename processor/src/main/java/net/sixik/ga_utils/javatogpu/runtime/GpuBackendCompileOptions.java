@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.Duration;
 
 /**
  * Backend-specific compile options kept separate from legacy OpenCL-style command-line args.
@@ -28,6 +29,11 @@ public record GpuBackendCompileOptions(
     public static final String PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY = "productionPromotion.decisionMode";
     public static final String PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY = "productionPromotion.operatorAccepted";
     public static final String RUNTIME_DEVICE_SELF_TEST_PROPERTY = "runtime.deviceSelfTest";
+    public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY = "runtime.methodTestProbeEvidenceRanking";
+    public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_DISABLED = "disabled";
+    public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED = "cached";
+    public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY = "runtime.methodTestProbeEvidenceCachePath";
+    public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY = "runtime.methodTestProbeEvidenceMaxAgeMillis";
 
     public GpuBackendCompileOptions {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -140,6 +146,30 @@ public record GpuBackendCompileOptions(
         return GpuRuntimeDeviceSelfTestMode.parse(properties.get(RUNTIME_DEVICE_SELF_TEST_PROPERTY));
     }
 
+    public boolean requestsMethodTestProbeEvidenceRanking() {
+        return RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED.equals(
+                properties.get(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY)
+        );
+    }
+
+    public Optional<String> methodTestProbeEvidenceCachePath() {
+        String value = properties.get(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY);
+        return value == null || value.isBlank() ? Optional.empty() : Optional.of(value.trim());
+    }
+
+    public Optional<Duration> methodTestProbeEvidenceMaxAge() {
+        String value = properties.get(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY);
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            long millis = Long.parseLong(value.trim());
+            return millis <= 0L ? Optional.empty() : Optional.of(Duration.ofMillis(millis));
+        } catch (NumberFormatException exception) {
+            return Optional.empty();
+        }
+    }
+
     public GpuBackendCompileOptions withProductionPromotionDecision(GpuProductionPromotionDecision decision) {
         GpuProductionPromotionDecision normalized = decision == null
                 ? GpuProductionPromotionDecision.diagnosticOnly()
@@ -184,6 +214,40 @@ public record GpuBackendCompileOptions(
         GpuRuntimeDeviceSelfTestMode normalized = mode == null ? GpuRuntimeDeviceSelfTestMode.AUTO : mode;
         Map<String, String> updated = new LinkedHashMap<>(properties);
         updated.put(RUNTIME_DEVICE_SELF_TEST_PROPERTY, normalized.optionValue());
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withMethodTestProbeEvidenceRankingCached() {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(
+                RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY,
+                RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED
+        );
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withPersistentMethodTestProbeEvidenceRanking(
+            java.nio.file.Path cacheDirectory,
+            Duration maxEntryAge
+    ) {
+        Map<String, String> updated = new LinkedHashMap<>(withMethodTestProbeEvidenceRankingCached().properties());
+        if (cacheDirectory != null) {
+            updated.put(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY, cacheDirectory.toString());
+        }
+        if (maxEntryAge != null && !maxEntryAge.isNegative() && !maxEntryAge.isZero()) {
+            updated.put(
+                    RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY,
+                    Long.toString(maxEntryAge.toMillis())
+            );
+        }
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withoutMethodTestProbeEvidenceRanking() {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY);
+        updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY);
+        updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY);
         return new GpuBackendCompileOptions(backendTarget, flags, updated);
     }
 

@@ -117,6 +117,7 @@ Start with `diagnostic` mode. Move to strict modes only when you want builds to 
 ## Read Next
 
 - [Cookbook](Cookbook.md) for copyable patterns.
+- [Method Tests](Method-Tests.md) for fixture-based `@GPUTest` checks, including `@GPUStruct[]` examples.
 - [Runtime Guide](Runtime-Guide.md) for launch sizes, fallback policies, compile options, and review-lane options.
 - [OpenCL Data Model](OpenCL-Data-Model.md) for structs, vectors, pointers, images, and packed data.
 - [Known Limitations](Known-Limitations.md) before relying on JavaToGpu in larger projects.

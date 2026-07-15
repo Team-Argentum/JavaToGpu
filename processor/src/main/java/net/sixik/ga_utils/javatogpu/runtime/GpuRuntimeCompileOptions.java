@@ -1,7 +1,10 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -10,7 +13,8 @@ public record GpuRuntimeCompileOptions(
         List<String> compileArgs,
         String optimizationProfile,
         GpuBackendCompileOptions backendOptions,
-        GpuRuntimeDeviceOverride deviceOverride
+        GpuRuntimeDeviceOverride deviceOverride,
+        GpuRuntimeDevicePreference devicePreference
 ) {
 
     public static final String OPENCL_IRGPU_SOURCE_REVIEW_PROFILE = "source-reconstruction-review";
@@ -28,7 +32,8 @@ public record GpuRuntimeCompileOptions(
                 backendTarget == GpuBackendTarget.OPENCL
                         ? GpuBackendCompileOptions.openCl(compileArgs)
                         : GpuBackendCompileOptions.empty(backendTarget),
-                GpuRuntimeDeviceOverride.automatic()
+                GpuRuntimeDeviceOverride.automatic(),
+                GpuRuntimeDevicePreference.automatic()
         );
     }
 
@@ -43,7 +48,25 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions,
-                GpuRuntimeDeviceOverride.automatic()
+                GpuRuntimeDeviceOverride.automatic(),
+                GpuRuntimeDevicePreference.automatic()
+        );
+    }
+
+    public GpuRuntimeCompileOptions(
+            GpuBackendTarget backendTarget,
+            List<String> compileArgs,
+            String optimizationProfile,
+            GpuBackendCompileOptions backendOptions,
+            GpuRuntimeDeviceOverride deviceOverride
+    ) {
+        this(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions,
+                deviceOverride,
+                GpuRuntimeDevicePreference.automatic()
         );
     }
 
@@ -56,6 +79,7 @@ public record GpuRuntimeCompileOptions(
         backendOptions = normalizeBackendOptions(backendTarget, compileArgs, backendOptions);
         backendOptions.deviceSelfTestMode();
         deviceOverride = deviceOverride == null ? GpuRuntimeDeviceOverride.automatic() : deviceOverride;
+        devicePreference = devicePreference == null ? GpuRuntimeDevicePreference.automatic() : devicePreference;
     }
 
     public static GpuRuntimeCompileOptions defaults(GpuBackendTarget backendTarget) {
@@ -118,7 +142,8 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions.withRuntimeIrOptimizerExperimentalApply(),
-                deviceOverride
+                deviceOverride,
+                devicePreference
         );
     }
 
@@ -128,7 +153,8 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions.withProductionPromotionDecision(decision),
-                deviceOverride
+                deviceOverride,
+                devicePreference
         );
     }
 
@@ -138,7 +164,8 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions.withProductionPromotionOperatorAccepted(accepted),
-                deviceOverride
+                deviceOverride,
+                devicePreference
         );
     }
 
@@ -150,7 +177,8 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions.withProductionPromotionOperatorAcceptance(acceptance),
-                deviceOverride
+                deviceOverride,
+                devicePreference
         );
     }
 
@@ -160,7 +188,8 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions.withProductionActivationToken(token),
-                deviceOverride
+                deviceOverride,
+                devicePreference
         );
     }
 
@@ -170,7 +199,66 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions,
-                override
+                override,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withDevicePreference(GpuRuntimeDevicePreference preference) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions,
+                deviceOverride,
+                preference
+        );
+    }
+
+    public GpuRuntimeCompileOptions preferDeviceId(String deviceId) {
+        return withDevicePreference(devicePreference.withPreferredDeviceId(deviceId));
+    }
+
+    public GpuRuntimeCompileOptions preferDeviceVendor(String vendorContains) {
+        return withDevicePreference(devicePreference.withPreferredVendor(vendorContains));
+    }
+
+    public GpuRuntimeCompileOptions preferDeviceLabel(String labelContains) {
+        return withDevicePreference(devicePreference.withPreferredDeviceLabel(labelContains));
+    }
+
+    public GpuRuntimeCompileOptions preferDeviceClass(GpuDeviceClassTarget deviceClass) {
+        return withDevicePreference(devicePreference.withPreferredDeviceClass(deviceClass));
+    }
+
+    public GpuRuntimeCompileOptions excludeDeviceId(String deviceId) {
+        return withDevicePreference(devicePreference.withExcludedDeviceId(deviceId));
+    }
+
+    public GpuRuntimeCompileOptions excludeDeviceVendor(String vendorContains) {
+        return withDevicePreference(devicePreference.withExcludedVendor(vendorContains));
+    }
+
+    public GpuRuntimeCompileOptions excludeDeviceLabel(String labelContains) {
+        return withDevicePreference(devicePreference.withExcludedDeviceLabel(labelContains));
+    }
+
+    public GpuRuntimeCompileOptions excludeDeviceClass(GpuDeviceClassTarget deviceClass) {
+        return withDevicePreference(devicePreference.withExcludedDeviceClass(deviceClass));
+    }
+
+    public GpuRuntimeCompileOptions excludeCpuDevices() {
+        return excludeDeviceClass(GpuDeviceClassTarget.CPU);
+    }
+
+    public GpuRuntimeCompileOptions excludeIntegratedGpuDevices() {
+        return excludeDeviceClass(GpuDeviceClassTarget.IGPU);
+    }
+
+    public GpuRuntimeCompileOptions excludeIntegratedAndCpuDevices() {
+        return withDevicePreference(devicePreference
+                .withExcludedDeviceClass(GpuDeviceClassTarget.IGPU)
+                .withExcludedDeviceClass(GpuDeviceClassTarget.CPU)
         );
     }
 
@@ -180,7 +268,48 @@ public record GpuRuntimeCompileOptions(
                 compileArgs,
                 optimizationProfile,
                 backendOptions.withDeviceSelfTestMode(mode),
-                deviceOverride
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withMethodTestProbeEvidenceRankingCached() {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withMethodTestProbeEvidenceRankingCached(),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withPersistentMethodTestProbeEvidenceRanking(Path cacheDirectory) {
+        return withPersistentMethodTestProbeEvidenceRanking(cacheDirectory, null);
+    }
+
+    public GpuRuntimeCompileOptions withPersistentMethodTestProbeEvidenceRanking(
+            Path cacheDirectory,
+            Duration maxEntryAge
+    ) {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withPersistentMethodTestProbeEvidenceRanking(cacheDirectory, maxEntryAge),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withoutMethodTestProbeEvidenceRanking() {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withoutMethodTestProbeEvidenceRanking(),
+                deviceOverride,
+                devicePreference
         );
     }
 

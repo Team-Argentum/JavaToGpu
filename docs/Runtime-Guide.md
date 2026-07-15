@@ -54,6 +54,24 @@ try (GpuRuntimeScope ignored = GpuRuntime.use(policy)) {
 }
 ```
 
+### Standard Backend Catalog
+
+Use the standard backend catalog when you want JavaToGpu to assemble the normal production backend chain for you:
+
+```java
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .preferStandardBackends()
+        .build();
+
+GpuRuntimeSelectionResult result = GpuRuntime.trySelect(policy);
+System.out.println(result.explanationSummary());
+```
+
+`GpuRuntimeBackendCatalog.standard()` is lazy and inspectable: listing entries does not initialize OpenCL or any native
+driver. Today the production catalog contains the OpenCL shared-cache adapter. `standardWithPlannedBackends()` also
+adds explicit unsupported CUDA, Vulkan/SPIR-V, and Metal placeholders so tools can show planned backend families with
+clear diagnostics instead of silently hiding them.
+
 ### Capability Precheck
 
 ```java
@@ -72,6 +90,276 @@ try (GpuRuntimeScope ignored = result.install()) {
     DemoKernel.transform(input, output);
 }
 ```
+
+### Backend Target Controls
+
+Use backend target controls when you want deterministic startup behavior instead of "try whatever works":
+
+```java
+GpuRuntimeBackendPolicy openClOnly = GpuRuntimeBackendPolicy.builder()
+        .forceBackendTarget(GpuBackendTarget.OPENCL)
+        .preferStandardBackends()
+        .build();
+
+GpuRuntimeSelectionResult result = GpuRuntime.trySelect(openClOnly);
+System.out.println(result.explanation().toMarkdown());
+```
+
+`forceBackendTarget(...)` is an alias for `requireBackendTarget(...)`. `excludeBackendTarget(...)` rejects a backend
+family while still allowing later fallback candidates. Both controls participate in `failureSummary()`,
+`explanationSummary()`, `candidateDecisions()`, and `artifactFields(...)`, so applications can explain why CUDA,
+OpenCL, Vulkan/SPIR-V, Metal, or a custom backend was selected or rejected.
+
+### Device Selection Controls
+
+Use strict device overrides when the application must run on one specific device family:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withDeviceOverride(GpuRuntimeDeviceOverride.byVendor("NVIDIA"));
+```
+
+Use device preferences when you want deterministic ranking without forcing a single device. Preferred values add score;
+excluded values reject matching candidates before OpenCL creates the runtime context:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .preferDeviceVendor("NVIDIA")
+        .preferDeviceClass(GpuDeviceClassTarget.DGPU)
+        .excludeIntegratedAndCpuDevices();
+```
+
+Available helpers include `preferDeviceId(...)`, `preferDeviceVendor(...)`, `preferDeviceLabel(...)`,
+`preferDeviceClass(...)`, `excludeDeviceId(...)`, `excludeDeviceVendor(...)`, `excludeDeviceLabel(...)`,
+`excludeDeviceClass(...)`, `excludeCpuDevices()`, `excludeIntegratedGpuDevices()`, and
+`excludeIntegratedAndCpuDevices()`. These controls feed the same device-selection artifact fields as the built-in
+OpenCL self-tests, so the selected device, rejected candidates, score adjustments, and first blocker stay auditable.
+Compile dumps also include `deviceOverride` and `devicePreference` in `compile-provenance.properties`, making the
+selection intent visible beside backend target, compile args, optimization profile, and selected device facts.
+
+Preview the OpenCL device decision without compiling or invoking a kernel:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .preferDeviceClass(GpuDeviceClassTarget.DGPU)
+        .excludeCpuDevices();
+
+GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscovery.discoverOpenCl(options);
+System.out.println(discovery.toMarkdown());
+
+GpuRuntimeDeviceDiscoveryCatalog catalog = GpuRuntimeDeviceDiscovery.discoverStandardBackends(options);
+System.out.println(catalog.toMarkdown());
+
+GpuRuntimeSelectionResult backendSelection = GpuRuntime.trySelectStandardBackends();
+System.out.println(backendSelection.explainWithDeviceDiscovery(catalog).toMarkdown());
+```
+
+`GpuRuntimeDeviceDiscoveryResult` is fail-soft: it carries `discoveryAvailable=false`, `firstBlocker`, and diagnostics
+when OpenCL cannot be queried, and otherwise includes discovered device profiles plus the same ranked device-selection
+evidence used by runtime compile artifacts. The markdown and artifact fields also summarize native platform groups and
+runtime self-test state, so local diagnostics can distinguish "which OpenCL platform?", "which device?", and "were
+self-tests disabled, missing, accepted, or failed?" without opening raw artifacts.
+`GpuRuntimeDeviceDiscoveryCatalog` wraps multiple backend discovery states. Today it contains real OpenCL discovery plus
+explicit planned/unavailable CUDA, Vulkan/SPIR-V, and Metal entries, so tools can render one inventory even before all
+backend adapters exist.
+`GpuRuntimeBackendDeviceSelectionExplanation` is the combined surface for CLIs and support logs: it links backend
+candidate decisions with the discovery catalog and reports whether the selected backend and selected device evidence
+agree.
+
+### Method Test-Vector Metadata Preview
+
+`@GPUTest` is the first authoring contract for method-specific backend/device probes. It records stable fixture
+references in the generated `IrGpu` manifest so runtime tooling can preflight fixtures, compare a CPU/reference path,
+and optionally validate the same kernel on candidate devices without users writing separate probe methods.
+
+For a beginner-friendly walkthrough with copyable numeric and `@GPUStruct[]` examples, start with
+[Method Tests](Method-Tests.md). This section focuses on the lower-level runtime API surface.
+
+```java
+@GPU
+@GPUTest(
+        id = "selection-smoke",
+        inputs = {"fixtures/selection-smoke.inputs.json"},
+        expectedOutputs = {"fixtures/selection-smoke.outputs.json"},
+        tolerance = "abs=1e-5,rel=1e-4",
+        tags = {"selection", "smoke"}
+)
+void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+    int id = GPU.get_global_id(0);
+    output[id] = input[id] * 2.0f;
+}
+```
+
+The generated `.irgpu.properties` file stores this as `methodTestVector.*` metadata with the method name, emitted name,
+case id, input refs, expected-output refs, tolerance, tags, and `selectionProbe` flag. Old manifests parse with an empty
+test-vector list, so this metadata is safe to keep even when applications skip the optional runtime probe executor.
+
+At runtime, inspect the generated metadata without executing the kernel:
+
+```java
+GpuRuntimeMethodTestProbePlan plan = GpuRuntimeMethodTestProbes.plan(MyKernel_GpuLauncher.KERNEL_DESCRIPTOR);
+GpuRuntimeMethodTestFixtureReadiness readiness = GpuRuntimeMethodTestProbes.fixtureReadiness(plan);
+GpuRuntimeMethodTestFixtureValueBindingPlan bindings = GpuRuntimeMethodTestProbes.fixtureValueBindings(
+        MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+        plan,
+        MyKernel.class.getClassLoader()
+);
+GpuRuntimeMethodTestInvocationMaterializationPlan materialization =
+        GpuRuntimeMethodTestProbes.fixtureInvocationMaterialization(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                bindings
+        );
+GpuRuntimeMethodTestReferenceComparisonPlan referenceComparison =
+        GpuRuntimeMethodTestProbes.compareWithReference(
+                materialization,
+                plan,
+                invocationArguments -> MyKernelReference.kernel(
+                        (float[]) invocationArguments[0],
+                        (float[]) invocationArguments[1]
+                )
+        );
+GpuRuntimeMethodTestGpuProbePlan gpuProbe =
+        GpuRuntimeMethodTestProbes.executeGpuProbe(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                materialization,
+                plan,
+                GpuRuntimeMethodTestGpuProbeOptions.cached()
+        );
+
+System.out.println(plan.toMarkdown());
+System.out.println(readiness.toMarkdown());
+System.out.println(bindings.toMarkdown());
+System.out.println(materialization.toMarkdown());
+System.out.println(referenceComparison.toMarkdown());
+System.out.println(gpuProbe.toMarkdown());
+System.out.println(plan.artifactFields("methodTests"));
+System.out.println(readiness.artifactFields("methodTestFixtures"));
+System.out.println(bindings.artifactFields("methodTestValueBindings"));
+System.out.println(materialization.artifactFields("methodTestInvocations"));
+System.out.println(referenceComparison.artifactFields("methodTestReferenceComparisons"));
+System.out.println(gpuProbe.artifactFields("methodTestGpuProbes"));
+```
+
+The plan reports whether the `IrGpu` artifact loaded, how many vectors were found, how many are usable as future
+selection probes, and the first blocker when metadata is unavailable. The fixture readiness report resolves declared
+input and expected-output refs as classpath resources, reads their raw bytes, records byte size plus SHA-256 as stable
+evidence/cache keys, and performs a narrow JSON-object shape preview. The preview records the root kind, top-level field
+count, primary field, primary value kind, and primary item count.
+
+`fixtureValueBindings(...)` is the first value-binding preflight. It matches JSON fields to descriptor parameter names
+for read-only, read-write, or value inputs plus read-write expected outputs. Supported fixture values include primitive
+numeric scalars and arrays such as `float`, `float[]`, `int`, and `int[]`, plus `@GPUStruct` objects and `@GPUStruct[]`
+arrays whose fields are primitive numeric values or nested `@GPUStruct` objects. Array fields inside a struct remain
+unsupported, matching the current OpenCL ABI marshalling rules. It does not allocate buffers or invoke OpenCL, so
+applications can use it as a safe preflight before enabling CPU-reference comparison or the optional GPU probe executor.
+
+Struct fixture JSON is written as ordinary objects. For a kernel parameter `Point[] points` and read-write output
+`Point[] output`, use arrays of objects with field names matching the Java struct fields:
+
+```json
+{
+  "points": [
+    { "x": 1.0, "y": 2.0 },
+    { "x": 3.0, "y": 4.0 }
+  ]
+}
+```
+
+```json
+{
+  "output": [
+    { "x": 2.0, "y": 4.0 },
+    { "x": 6.0, "y": 8.0 }
+  ]
+}
+```
+
+`fixtureInvocationMaterialization(...)` is the next read-only step. It converts ready bindings into Java invocation
+objects in descriptor-parameter order, including boxed scalar values, primitive arrays, struct objects, struct arrays,
+and zero-filled read-write output arrays sized from expected-output fixtures. Struct materialization requires an
+accessible no-arg constructor and writable fields. Expected-output values are materialized separately for a reference
+comparison step. This still does not allocate GPU buffers or invoke OpenCL.
+
+`compareWithReference(...)` runs a caller-supplied CPU/reference callback against cloned materialized arguments and
+compares read-write outputs with materialized expected outputs. Numeric arrays compare element-by-element; struct
+outputs compare deterministic flattened numeric field paths such as `[0].x` and `[0].y`. The same simple `abs=` / `rel=`
+tolerances from `@GPUTest` apply to both numeric and struct fixtures. The reference callback is explicit on purpose: generated
+examples and builds may rewrite `@GPU` method bodies to launcher calls, so runtime tooling must not assume the original
+CPU body is still available through reflection. This is a bounded local correctness check that can run before or beside
+the GPU probe executor; by itself it does not allocate GPU buffers, invoke OpenCL, persist probe-result caches, or affect
+backend ranking.
+
+`executeGpuProbe(...)` is the first bounded runtime execution step. It uses the current `GpuRuntime` backend, infers a
+1D launch size from materialized expected-output fixture length when no explicit `GpuExecutionConfig` is supplied,
+applies a default max-global-work-items cap, executes the generated descriptor with the materialized arguments, and
+compares read-write outputs against expected fixtures with the same numeric tolerance logic. This API is opt-in: install
+an OpenCL/custom backend before calling it, keep fixture sizes small, and treat the resulting `GpuRuntimeMethodTestGpuProbePlan`
+as execution evidence rather than automatic backend-ranking policy. Each execution includes a stable
+`GpuRuntimeMethodTestGpuProbeEvidenceKey` hash built from the test id, kernel source/resource, materialized fixture
+values, expected outputs, launch config, compile options, backend/device identity, and compiler identity.
+
+Use `GpuRuntimeMethodTestGpuProbeOptions.cached()` or `withCache(...)` to enable the process-local
+`GpuRuntimeMethodTestGpuProbeCache`. Use `GpuRuntimeMethodTestGpuProbeOptions.persistentCached(path)` when probe
+evidence should survive a new cache instance, or `persistentCached(path, maxEntryAge)` when old entries should expire.
+Cache entries are keyed by the evidence hash, store only executed probe evidence, reject corrupted/mismatched/expired
+properties files as cache misses, and mark returned executions with `cacheHit=true` when a backend run was skipped.
+Method-test metadata, fixture readiness, value binding, invocation materialization, reference comparison, GPU probe
+execution, and GPU probe cache lookup now publish standard `GpuRuntimeLifecycleEvent` entries. Applications can observe
+them through ServiceLoader `GpuRuntimeLifecycleService` implementations or pass an explicit `GpuRuntimeLifecycleEventBus`
+to the overloads that accept one.
+
+To let device selection consume already-recorded probe evidence, opt in through compile options:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withPersistentMethodTestProbeEvidenceRanking(Path.of(".javatogpu/method-test-probes"));
+```
+
+The ranking policy is cache-only: it does not compile or execute probes during device selection. For each candidate it
+recomputes the stable evidence hash for selection-probe vectors, reads the configured cache, gives passed evidence a
+ranking boost, rejects failed cached evidence, and treats missing evidence as neutral. This keeps startup predictable
+while allowing applications and future tools to warm evidence ahead of backend/device selection.
+
+Warm evidence explicitly before selection when you want stronger placement confidence without making the selection
+policy execute kernels:
+
+```java
+GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmup =
+        GpuRuntimeMethodTestProbeEvidenceWarmup.warmSelectionProbeEvidence(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                MyKernel.class.getClassLoader(),
+                List.of(GpuRuntimeMethodTestProbeEvidenceWarmupCandidate.owned(deviceProfile, backendFactory)),
+                GpuRuntimeMethodTestGpuProbeOptions
+                        .persistentCached(Path.of(".javatogpu/method-test-probes"))
+                        .withCompileOptions(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL))
+        );
+
+System.out.println(warmup.toMarkdown());
+```
+
+The warm-up helper runs only selection-probe vectors, installs each caller-provided backend/device candidate in a scoped
+runtime backend, writes successful or failed executions through the configured cache, and emits lifecycle events for the
+warm-up boundary plus the existing metadata/fixture/materialization/GPU-probe/cache stages. Selection can then consume
+the warmed cache through `withPersistentMethodTestProbeEvidenceRanking(path)` while staying read-only.
+
+Runtime compile artifact dumps include `runtime-method-test-evidence.properties` for each compiled kernel. That artifact
+records entry-method `@GPUTest` metadata counts, selection-probe counts, and cache-only probe-evidence ranking facts
+when the ranking policy participated. `openClValidationReport` aggregates those per-kernel artifacts into a `Method Test
+Evidence` section so CI logs can distinguish kernels with no method-test metadata, kernels with metadata but no warmed
+cache evidence, and kernels where cached passed/failed/missing evidence affected ranking.
+
+The examples app includes a portable walkthrough that uses a synthetic reference backend to record one persistent probe
+entry, then demonstrates cache-only ranking without requiring OpenCL hardware:
+
+```powershell
+.\gradlew.bat :examples-app:runMethodTestProbeEvidenceRankingExample --console=plain
+```
+
+Use `-Pjavatogpu.methodTestProbeEvidenceCacheDir=...` when you want to inspect or reuse the generated cache directory.
 
 ## Explicit Launch Sizes
 

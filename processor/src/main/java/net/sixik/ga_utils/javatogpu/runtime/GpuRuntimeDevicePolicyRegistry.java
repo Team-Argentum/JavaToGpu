@@ -58,9 +58,11 @@ public final class GpuRuntimeDevicePolicyRegistry {
         loaded.add(new GpuRuntimeBackendCompatibilityDevicePolicy());
         loaded.add(new GpuRuntimeExplicitDeviceOverridePolicy());
         loaded.add(new GpuRuntimeMethodDeviceConstraintPolicy());
+        loaded.add(new GpuRuntimeDevicePreferencePolicy());
         loaded.add(new GpuRuntimeDeviceSelfTestPolicy(
                 Objects.requireNonNull(selfTestCache, "selfTestCache")
         ));
+        loaded.add(new GpuRuntimeMethodTestGpuProbeEvidencePolicy());
         ServiceLoader.load(GpuRuntimeDevicePolicy.class, GpuRuntimeDevicePolicy.class.getClassLoader())
                 .forEach(loaded::add);
         loaded.sort(Comparator

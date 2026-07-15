@@ -23,6 +23,8 @@ public final class GpuRuntimeCompileArtifactDumper {
             "runtime-extension-participation.properties";
     public static final String RUNTIME_IR_OPTIMIZER_EVIDENCE_ARTIFACT =
             "runtime-ir-optimizer-evidence.properties";
+    public static final String RUNTIME_METHOD_TEST_EVIDENCE_ARTIFACT =
+            "runtime-method-test-evidence.properties";
     public static final String RUNTIME_OPTIMIZER_FAMILY_EQUIVALENCE_PAYLOAD_DIRECTORY =
             "runtime-optimizer-family-equivalence-payload";
 
@@ -91,6 +93,10 @@ public final class GpuRuntimeCompileArtifactDumper {
         artifacts.put("backend-module.properties", formatBackendModule(snapshot.backendModuleArtifact()));
         artifacts.put("backend-diagnostics.properties", formatBackendDiagnostics(snapshot));
         artifacts.put(BACKEND_COMPILER_FEEDBACK_ARTIFACT, compilerFeedbackReport.toPropertiesText());
+        artifacts.put(
+                RUNTIME_METHOD_TEST_EVIDENCE_ARTIFACT,
+                GpuRuntimeMethodTestEvidenceArtifact.from(snapshot)
+        );
         artifacts.put(
                 RUNTIME_EXTENSION_PARTICIPATION_ARTIFACT,
                 GpuRuntimeExtensionParticipationArtifact.from(snapshot, compilerFeedbackReport).toPropertiesText()

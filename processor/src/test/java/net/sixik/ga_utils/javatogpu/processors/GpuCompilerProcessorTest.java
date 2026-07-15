@@ -265,6 +265,9 @@ class GpuCompilerProcessorTest {
         try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classOutputDir.toUri().toURL()}, getClass().getClassLoader())) {
             Class<?> launcherClass = Class.forName("sample.generated.Demo_kernel_GpuLauncher", true, classLoader);
             Class<?> ownerClass = Class.forName("sample.Demo", true, classLoader);
+            GpuKernelDescriptor reflectedDescriptor = GpuGeneratedLauncherInvoker.descriptor(ownerClass, "kernel");
+            assertEquals("jtg_kernel", reflectedDescriptor.kernelName());
+            assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", reflectedDescriptor.irGpuResource());
             float[] input = new float[]{1.0f, 2.0f};
             float[] output = new float[]{0.0f, 0.0f};
             launcherClass.getMethod("invoke", float[].class, float[].class).invoke(null, input, output);
@@ -361,6 +364,64 @@ class GpuCompilerProcessorTest {
         } finally {
             GpuRuntime.setBackend(previousBackend);
         }
+    }
+
+    @Test
+    void writesGpuTestVectorsToGeneratedIrGpuManifest() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-gputest-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-gputest-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUTest;
+
+                public class TestVectorDemo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    @GPUTest(
+                        id = "selection-smoke",
+                        inputs = {"fixtures/selection-smoke.inputs.json"},
+                        expectedOutputs = {"fixtures/selection-smoke.outputs.json"},
+                        tolerance = "abs=1e-5",
+                        tags = {"selection", "smoke"}
+                    )
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = input[id] * 2.0f;
+                    }
+                }
+                """;
+
+        compileWithProcessor(
+                compiler,
+                "sample.TestVectorDemo",
+                source,
+                classOutputDir,
+                generatedOutputDir,
+                System.getProperty("java.class.path")
+        );
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/TestVectorDemo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("methodTestVector.count=1"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.testId=selection-smoke"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.inputRef.0=fixtures/selection-smoke.inputs.json"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.expectedOutputRef.0=fixtures/selection-smoke.outputs.json"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.tolerance=abs=1e-5"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.tag.0=selection"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.tag.1=smoke"));
+
+        var testVectors = IrGpuArtifactParser.parse(irGpuManifest).entryTestVectors();
+        assertEquals(1, testVectors.size());
+        assertEquals("selection-smoke", testVectors.get(0).testId());
+        assertEquals(List.of("fixtures/selection-smoke.inputs.json"), testVectors.get(0).inputRefs());
+        assertEquals(List.of("fixtures/selection-smoke.outputs.json"), testVectors.get(0).expectedOutputRefs());
+        assertEquals("abs=1e-5", testVectors.get(0).tolerance());
+        assertTrue(testVectors.get(0).selectionProbe());
     }
 
     @Test

@@ -57,6 +57,34 @@ tasks.register('runOptimizationJournalExample', JavaExec) {
     }
 }
 
+tasks.register('runBackendSelectionExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.BackendSelectionExample'
+}
+
+tasks.register('runMethodTestProbeExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.MethodTestProbeExample'
+}
+
+tasks.register('runMethodTestStructProbeExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.MethodTestStructProbeExample'
+}
+
+tasks.register('runMethodTestProbeEvidenceRankingExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.MethodTestProbeEvidenceRankingExample'
+    def cacheDir = providers.gradleProperty('javatogpu.methodTestProbeEvidenceCacheDir')
+    if (cacheDir.isPresent()) {
+        args cacheDir.get()
+    }
+}
+
 tasks.named('classes') {
     dependsOn tasks.named('rewriteGpuMethods')
 }

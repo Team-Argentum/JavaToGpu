@@ -24,11 +24,55 @@ public record GpuRuntimeCompileProvenance(
         boolean supportsSubgroups,
         List<String> compileArgs,
         GpuBackendCompileOptions backendOptions,
+        String deviceOverride,
+        String devicePreference,
         String optimizationProfile,
         String fallbackDecision
 ) {
 
     public static final String NO_FALLBACK = "none";
+
+    public GpuRuntimeCompileProvenance(
+            GpuBackendTarget backendTarget,
+            String backendName,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            long computeUnits,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsSubgroups,
+            List<String> compileArgs,
+            GpuBackendCompileOptions backendOptions,
+            String optimizationProfile,
+            String fallbackDecision
+    ) {
+        this(
+                backendTarget,
+                backendName,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                computeUnits,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsSubgroups,
+                compileArgs,
+                backendOptions,
+                "automatic",
+                "automatic",
+                optimizationProfile,
+                fallbackDecision
+        );
+    }
 
     public GpuRuntimeCompileProvenance(
             GpuBackendTarget backendTarget,
@@ -66,6 +110,8 @@ public record GpuRuntimeCompileProvenance(
                 backendTarget == GpuBackendTarget.OPENCL
                         ? GpuBackendCompileOptions.openCl(compileArgs)
                         : GpuBackendCompileOptions.empty(backendTarget),
+                "automatic",
+                "automatic",
                 optimizationProfile,
                 fallbackDecision
         );
@@ -86,6 +132,8 @@ public record GpuRuntimeCompileProvenance(
         backendOptions = backendOptions == null
                 ? GpuBackendCompileOptions.empty(backendTarget)
                 : backendOptions;
+        deviceOverride = normalizeSelection(deviceOverride);
+        devicePreference = normalizeSelection(devicePreference);
         optimizationProfile = optimizationProfile == null || optimizationProfile.isBlank()
                 ? "off"
                 : optimizationProfile;
@@ -116,6 +164,8 @@ public record GpuRuntimeCompileProvenance(
                 deviceProfile.supportsSubgroups(),
                 options.compileArgs(),
                 options.backendOptions(),
+                options.deviceOverride().describe(),
+                options.devicePreference().describe(),
                 options.optimizationProfile(),
                 NO_FALLBACK
         );
@@ -138,6 +188,8 @@ public record GpuRuntimeCompileProvenance(
                 false,
                 List.of(),
                 GpuBackendCompileOptions.empty(GpuBackendTarget.UNKNOWN),
+                "automatic",
+                "automatic",
                 "off",
                 NO_FALLBACK
         );
@@ -160,6 +212,8 @@ public record GpuRuntimeCompileProvenance(
                 supportsSubgroups,
                 compileArgs,
                 backendOptions,
+                deviceOverride,
+                devicePreference,
                 optimizationProfile,
                 fallbackDecision
         );
@@ -198,12 +252,18 @@ public record GpuRuntimeCompileProvenance(
             propertyIndex++;
         }
         builder.append("optimizationProfile=").append(optimizationProfile).append('\n');
+        builder.append("deviceOverride=").append(deviceOverride).append('\n');
+        builder.append("devicePreference=").append(devicePreference).append('\n');
         builder.append("fallbackDecision=").append(fallbackDecision).append('\n');
         return builder.toString();
     }
 
     private static String normalize(String value) {
         return value == null || value.isBlank() ? "unknown" : value;
+    }
+
+    private static String normalizeSelection(String value) {
+        return value == null || value.isBlank() ? "automatic" : value;
     }
 
     private static long normalizeLong(long value) {

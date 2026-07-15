@@ -17,9 +17,10 @@ This documentation is written for users of the current alpha. It starts with pra
 
 1. [Getting Started](Getting-Started.md) - install the dependency, write a first kernel, and run it.
 2. [Cookbook](Cookbook.md) - copy small patterns for common tasks.
-3. [Runtime Guide](Runtime-Guide.md) - choose runtime scopes, launch sizes, compile options, and review-lane options.
-4. [API Overview](API-Overview.md) - learn the public packages and the most-used types.
-5. [Known Limitations](Known-Limitations.md) - understand the alpha boundaries before using it seriously.
+3. [Method Tests](Method-Tests.md) - add fixture-based `@GPUTest` checks for numeric and `@GPUStruct` kernels.
+4. [Runtime Guide](Runtime-Guide.md) - choose runtime scopes, launch sizes, compile options, and review-lane options.
+5. [API Overview](API-Overview.md) - learn the public packages and the most-used types.
+6. [Known Limitations](Known-Limitations.md) - understand the alpha boundaries before using it seriously.
 
 ## Practical Topics
 

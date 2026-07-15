@@ -4,6 +4,7 @@
 - [Getting Started](Getting-Started.md)
 - [API Overview](API-Overview.md)
 - [Runtime Guide](Runtime-Guide.md)
+- [Method Tests](Method-Tests.md)
 - [Cookbook](Cookbook.md)
 - [Known Limitations](Known-Limitations.md)
 - [Troubleshooting](Troubleshooting.md)

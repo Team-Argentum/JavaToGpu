@@ -19,6 +19,7 @@ public final class IrGpuArtifactSerializer {
         writeOptimizerPolicyMetadata(properties, artifact.optimizerPolicyMetadata());
         writeMethodDeviceConstraints(properties, artifact.methodDeviceConstraints());
         writeMethodFallbackVariants(properties, artifact.methodFallbackVariants());
+        writeMethodTestVectors(properties, artifact.methodTestVectors());
         writeExtensionParticipationMetadata(properties, artifact.extensionParticipationMetadata());
         writeRegenerationMetadata(properties, artifact.regenerationMetadata());
         writeStructMetadata(properties, artifact.structMetadata());
@@ -136,6 +137,27 @@ public final class IrGpuArtifactSerializer {
             properties.put(prefix + "priority", Integer.toString(variant.priority()));
             properties.put(prefix + "compatibilityNote", variant.compatibilityNote());
             properties.put(prefix + "source", variant.source());
+        }
+    }
+
+    private static void writeMethodTestVectors(
+            TreeMap<String, String> properties,
+            java.util.List<IrGpuMethodTestVectorMetadata> testVectors
+    ) {
+        java.util.List<IrGpuMethodTestVectorMetadata> values = testVectors == null ? java.util.List.of() : testVectors;
+        properties.put("methodTestVector.count", Integer.toString(values.size()));
+        for (int index = 0; index < values.size(); index++) {
+            IrGpuMethodTestVectorMetadata testVector = values.get(index);
+            String prefix = "methodTestVector." + index + ".";
+            properties.put(prefix + "methodName", testVector.methodName());
+            properties.put(prefix + "emittedName", testVector.emittedName());
+            properties.put(prefix + "testId", testVector.testId());
+            writeStringList(properties, prefix + "inputRef", testVector.inputRefs());
+            writeStringList(properties, prefix + "expectedOutputRef", testVector.expectedOutputRefs());
+            properties.put(prefix + "tolerance", testVector.tolerance());
+            writeStringList(properties, prefix + "tag", testVector.tags());
+            properties.put(prefix + "selectionProbe", Boolean.toString(testVector.selectionProbe()));
+            properties.put(prefix + "source", testVector.source());
         }
     }
 

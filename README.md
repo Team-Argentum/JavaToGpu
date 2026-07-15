@@ -92,6 +92,7 @@ Start here:
 - [Docs Home](docs/Home.md)
 - [Getting Started](docs/Getting-Started.md)
 - [Cookbook](docs/Cookbook.md)
+- [Method Tests](docs/Method-Tests.md)
 - [Runtime Guide](docs/Runtime-Guide.md)
 - [API Overview](docs/API-Overview.md)
 - [Known Limitations](docs/Known-Limitations.md)
@@ -143,6 +144,65 @@ Run the optional IR optimizer journal example:
 ```
 
 The example is documented in [examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md](examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md) and shows how to opt into the optimizer module while dumping original and optimized IR artifacts plus the optional ServiceLoader-backed runtime lifecycle event journal for review. It also includes a small custom `GpuRuntimeLifecycleService` example so downstream modules can add tracing or metrics without manual callback registration.
+
+Show backend catalog and selection explanations without running a kernel:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendSelectionExample --console=plain
+```
+
+This prints the standard backend catalog, planned CUDA/Vulkan/Metal diagnostics, and a combined backend/device
+selection explanation. The multi-backend discovery catalog includes real OpenCL device evidence plus explicit planned
+CUDA/Vulkan/Metal discovery states. OpenCL discovery is fail-soft: if OpenCL cannot be queried on the current machine,
+the example prints the discovery blocker instead of running a kernel. When discovery succeeds, it also shows OpenCL
+platform grouping, selected device ranking, and runtime self-test summary.
+
+Inspect `@GPUTest` metadata and fixture readiness without running a kernel:
+
+```powershell
+.\gradlew.bat :examples-app:runMethodTestProbeExample --console=plain
+```
+
+This prints the generated `IrGpu` test-vector metadata, selection-probe count, classpath fixture-resource readiness,
+fixture byte size/SHA-256 evidence, a top-level JSON payload-shape preview, numeric and `@GPUStruct` value bindings to
+descriptor parameters, read-only Java invocation argument materialization, explicit CPU-reference comparison, and first blocker or
+failure if a fixture reference is missing, malformed, or mismatched. The example stays preflight-only and does not
+allocate GPU buffers or invoke OpenCL. Runtime tooling also exposes an opt-in bounded GPU probe executor for callers
+that have installed a backend and want to run the same materialized fixtures through the real runtime path; pass a
+separate CPU reference callback because rewritten `@GPU` methods may already route to the GPU launcher instead of
+retaining their original CPU body. GPU probe executions expose a stable evidence-key hash so later selection caches can
+avoid rerunning unchanged method/device/fixture combinations. `GpuRuntimeMethodTestGpuProbeOptions.cached()` enables the
+current process-local cache; `persistentCached(path)` enables an opt-in disk-backed cache with fail-closed
+corrupt/mismatch/expiry handling. The method-test pipeline also publishes ServiceLoader-friendly lifecycle events,
+including GPU probe cache hit/miss events, so tracing or journal services can observe the preflight and probe flow
+without manual listener registration. Device selection can also opt into cache-only method-test probe evidence ranking
+with `GpuRuntimeCompileOptions.withPersistentMethodTestProbeEvidenceRanking(path)`: passed cached evidence boosts a
+candidate, failed cached evidence rejects it, and missing evidence stays neutral. Runtime compile artifact dumps also
+write `runtime-method-test-evidence.properties`; the OpenCL validation report aggregates those artifacts under
+`Method Test Evidence` so CI archives show which kernels carried `@GPUTest` metadata and whether cached probe evidence
+participated in device ranking.
+
+For the same flow with `@GPUStruct[]` fixtures, run:
+
+```powershell
+.\gradlew.bat :examples-app:runMethodTestStructProbeExample --console=plain
+```
+
+This uses `Vec2[]` JSON object arrays for input and expected output fixtures, materializes Java struct arrays, and
+compares flattened field paths such as `[0].x` and `[0].y` in the CPU-reference preflight.
+
+Run the portable cache-only ranking walkthrough:
+
+```powershell
+.\gradlew.bat :examples-app:runMethodTestProbeEvidenceRankingExample --console=plain
+```
+
+This example uses `GpuRuntimeMethodTestProbeEvidenceWarmup.warmSelectionProbeEvidence(...)` to record one `@GPUTest`
+GPU-probe result into a persistent cache through a synthetic reference backend, then reruns backend/device selection
+with `withPersistentMethodTestProbeEvidenceRanking(path)`. It does not require a real OpenCL device: the point is to
+show that warm-up is an explicit opt-in step, while the ranking policy remains cache-only. Passed cached selection
+evidence boosts one candidate; missing evidence for another candidate stays neutral. Pass
+`-Pjavatogpu.methodTestProbeEvidenceCacheDir=...` to choose the cache folder.
 
 ## Project Layout
 

@@ -87,31 +87,7 @@ public final class GpuRuntimeBackendPolicy {
      * miss reason and decide what to do next without relying on exception-based control flow.
      */
     public GpuRuntimeSelectionResult trySelect() {
-        List<String> failures = new ArrayList<>();
-        for (int index = 0; index < candidateFactories.size(); index++) {
-            GpuRuntimeBackendFactory factory = candidateFactories.get(index);
-            GpuRuntimeBackendOwnership ownership = candidateOwnerships.get(index);
-            GpuRuntimeBackend candidate;
-            try {
-                candidate = factory.create();
-            } catch (RuntimeException exception) {
-                failures.add("Failed to create backend candidate: " + exception.getMessage());
-                continue;
-            }
-
-            GpuRuntimeBackendReport report = GpuRuntime.describeBackend(candidate);
-            List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
-            if (reasons.isEmpty()) {
-                return new GpuRuntimeSelectionResult(new GpuRuntimeBackendSelection(candidate, report, ownership), failures);
-            }
-
-            failures.add(report.backendName() + ": " + String.join("; ", reasons));
-            if (ownership == GpuRuntimeBackendOwnership.OWNED) {
-                closeCandidateQuietly(candidate);
-            }
-        }
-
-        return new GpuRuntimeSelectionResult(null, failures);
+        return GpuRuntimeBackendSelectionOrchestrator.select(this);
     }
 
     /**
@@ -120,16 +96,6 @@ public final class GpuRuntimeBackendPolicy {
      */
     public GpuRuntimeScope use() {
         return select().install();
-    }
-
-    private static void closeCandidateQuietly(GpuRuntimeBackend candidate) {
-        if (candidate instanceof AutoCloseable closeable) {
-            try {
-                closeable.close();
-            } catch (Exception ignored) {
-                // Best effort cleanup for rejected candidates.
-            }
-        }
     }
 
     /**
@@ -150,6 +116,62 @@ public final class GpuRuntimeBackendPolicy {
         public Builder require(GpuRuntimeRequirement requirement) {
             requirements.add(Objects.requireNonNull(requirement, "requirement"));
             return this;
+        }
+
+        /**
+         * Requires the selected backend to belong to the given backend target family.
+         */
+        public Builder requireBackendTarget(GpuBackendTarget backendTarget) {
+            return require(GpuRuntimeRequirements.requireBackendTarget(backendTarget));
+        }
+
+        /**
+         * Alias for {@link #requireBackendTarget(GpuBackendTarget)} for callers that want explicit force semantics.
+         */
+        public Builder forceBackendTarget(GpuBackendTarget backendTarget) {
+            return requireBackendTarget(backendTarget);
+        }
+
+        /**
+         * Rejects backend candidates from the given backend target family.
+         */
+        public Builder excludeBackendTarget(GpuBackendTarget backendTarget) {
+            return require(GpuRuntimeRequirements.excludeBackendTarget(backendTarget));
+        }
+
+        /**
+         * Appends one catalog entry to the fallback chain.
+         */
+        public Builder preferCatalogEntry(GpuRuntimeBackendCatalogEntry entry) {
+            Objects.requireNonNull(entry, "entry");
+            candidateFactories.add(entry.factory());
+            candidateOwnerships.add(entry.ownership());
+            return this;
+        }
+
+        /**
+         * Appends catalog entries to the fallback chain in the order provided.
+         */
+        public Builder preferCatalog(List<GpuRuntimeBackendCatalogEntry> entries) {
+            Objects.requireNonNull(entries, "entries");
+            for (GpuRuntimeBackendCatalogEntry entry : entries) {
+                preferCatalogEntry(entry);
+            }
+            return this;
+        }
+
+        /**
+         * Appends the standard production-ready runtime backend catalog.
+         */
+        public Builder preferStandardBackends() {
+            return preferCatalog(GpuRuntimeBackendCatalog.standard());
+        }
+
+        /**
+         * Appends standard production-ready backends plus explicit unsupported placeholders for planned backends.
+         */
+        public Builder preferStandardBackendsWithPlannedDiagnostics() {
+            return preferCatalog(GpuRuntimeBackendCatalog.standardWithPlannedBackends());
         }
 
         /**

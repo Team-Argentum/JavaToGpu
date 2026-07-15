@@ -154,23 +154,7 @@ public final class GpuRuntime {
     ) {
         Objects.requireNonNull(requirements, "requirements");
         Objects.requireNonNull(candidates, "candidates");
-        if (candidates.length == 0) {
-            return new GpuRuntimeSelectionResult(null, List.of("no backend candidates were provided"));
-        }
-        List<String> failures = new ArrayList<>();
-        for (int index = 0; index < candidates.length; index++) {
-            GpuRuntimeBackend candidate = Objects.requireNonNull(candidates[index], "candidates[" + index + "]");
-            GpuRuntimeBackendReport report = describeBackend(candidate);
-            List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
-            if (reasons.isEmpty()) {
-                return new GpuRuntimeSelectionResult(
-                        new GpuRuntimeBackendSelection(candidate, report, GpuRuntimeBackendOwnership.BORROWED),
-                        failures
-                );
-            }
-            failures.add(report.backendName() + ": " + String.join("; ", reasons));
-        }
-        return new GpuRuntimeSelectionResult(null, failures);
+        return GpuRuntimeBackendSelectionOrchestrator.selectBorrowed(requirements, candidates);
     }
 
     /**
@@ -185,6 +169,40 @@ public final class GpuRuntime {
      */
     public static GpuRuntimeSelectionResult trySelectFirstAvailable(GpuRuntimeBackend... candidates) {
         return trySelectFirstMatching(List.of(), candidates);
+    }
+
+    /**
+     * Attempts to select from the standard production-ready backend catalog.
+     */
+    public static GpuRuntimeSelectionResult trySelectStandardBackends(List<GpuRuntimeRequirement> requirements) {
+        Objects.requireNonNull(requirements, "requirements");
+        GpuRuntimeBackendPolicy.Builder builder = GpuRuntimeBackendPolicy.builder().preferStandardBackends();
+        requirements.forEach(builder::require);
+        return builder.build().trySelect();
+    }
+
+    /**
+     * Attempts to select from the standard production-ready backend catalog without additional requirements.
+     */
+    public static GpuRuntimeSelectionResult trySelectStandardBackends() {
+        return trySelectStandardBackends(List.of());
+    }
+
+    /**
+     * Installs the first matching backend from the standard production-ready backend catalog.
+     */
+    public static GpuRuntimeScope useStandardBackends(List<GpuRuntimeRequirement> requirements) {
+        Objects.requireNonNull(requirements, "requirements");
+        GpuRuntimeBackendPolicy.Builder builder = GpuRuntimeBackendPolicy.builder().preferStandardBackends();
+        requirements.forEach(builder::require);
+        return builder.build().use();
+    }
+
+    /**
+     * Installs the first available backend from the standard production-ready backend catalog.
+     */
+    public static GpuRuntimeScope useStandardBackends() {
+        return useStandardBackends(List.of());
     }
 
     /**
@@ -213,37 +231,13 @@ public final class GpuRuntime {
     ) {
         Objects.requireNonNull(requirements, "requirements");
         Objects.requireNonNull(candidateFactories, "candidateFactories");
-        if (candidateFactories.length == 0) {
-            throw new UnsupportedOperationException(
-                    "No GPU runtime backend satisfies the requested requirements: no backend candidates were provided"
-            );
-        }
-        List<String> failures = new ArrayList<>();
+        ArrayList<GpuRuntimeBackendFactory> factories = new ArrayList<>(candidateFactories.length);
+        ArrayList<GpuRuntimeBackendOwnership> ownerships = new ArrayList<>(candidateFactories.length);
         for (int index = 0; index < candidateFactories.length; index++) {
-            GpuRuntimeBackendFactory factory = Objects.requireNonNull(
-                    candidateFactories[index],
-                    "candidateFactories[" + index + "]"
-            );
-            GpuRuntimeBackend candidate;
-            try {
-                candidate = factory.create();
-            } catch (RuntimeException exception) {
-                failures.add("Failed to create backend candidate: " + exception.getMessage());
-                continue;
-            }
-
-            GpuRuntimeBackendReport report = describeBackend(candidate);
-            List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
-            if (reasons.isEmpty()) {
-                return useOwnedBackend(candidate);
-            }
-
-            failures.add(report.backendName() + ": " + String.join("; ", reasons));
-            closeCandidateQuietly(candidate);
+            factories.add(Objects.requireNonNull(candidateFactories[index], "candidateFactories[" + index + "]"));
+            ownerships.add(GpuRuntimeBackendOwnership.OWNED);
         }
-        throw new UnsupportedOperationException(
-                "No GPU runtime backend satisfies the requested requirements: " + String.join(" | ", failures)
-        );
+        return GpuRuntimeBackendSelectionOrchestrator.select(requirements, factories, ownerships).install();
     }
 
     /**
@@ -448,13 +442,4 @@ public final class GpuRuntime {
         return new GpuRuntimeScope(previousBackend, newBackend, closeInstalledBackend);
     }
 
-    private static void closeCandidateQuietly(GpuRuntimeBackend candidate) {
-        if (candidate instanceof AutoCloseable closeable) {
-            try {
-                closeable.close();
-            } catch (Exception ignored) {
-                // Best effort cleanup for rejected candidates.
-            }
-        }
-    }
 }

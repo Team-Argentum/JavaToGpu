@@ -19,8 +19,50 @@ public record IrGpuArtifact(
         String runtimeOptimizationProfile,
         List<IrGpuMethodDeviceConstraint> methodDeviceConstraints,
         List<IrGpuMethodFallbackVariant> methodFallbackVariants,
-        List<IrGpuExtensionParticipationMetadata> extensionParticipationMetadata
+        List<IrGpuExtensionParticipationMetadata> extensionParticipationMetadata,
+        List<IrGpuMethodTestVectorMetadata> methodTestVectors
 ) {
+
+    public IrGpuArtifact(
+            IrGpuArtifactHeader header,
+            IrGpuModule module,
+            List<IrGpuEntryParameter> entryParameters,
+            IrGpuLaunchMetadata launchMetadata,
+            IrGpuValidationMetadata validationMetadata,
+            IrGpuFeatureMetadata featureMetadata,
+            IrGpuOptimizerPolicyMetadata optimizerPolicyMetadata,
+            IrGpuRegenerationMetadata regenerationMetadata,
+            List<IrGpuStructMetadata> structMetadata,
+            List<IrGpuConstantMetadata> constants,
+            List<IrGpuConstantDataMetadata> constantData,
+            List<IrGpuBackendOutput> backendOutputs,
+            String runtimeDefaultBackend,
+            String runtimeOptimizationProfile,
+            List<IrGpuMethodDeviceConstraint> methodDeviceConstraints,
+            List<IrGpuMethodFallbackVariant> methodFallbackVariants,
+            List<IrGpuExtensionParticipationMetadata> extensionParticipationMetadata
+    ) {
+        this(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                methodDeviceConstraints,
+                methodFallbackVariants,
+                extensionParticipationMetadata,
+                List.of()
+        );
+    }
 
     public IrGpuArtifact(
             IrGpuArtifactHeader header,
@@ -57,6 +99,7 @@ public record IrGpuArtifact(
                 runtimeOptimizationProfile,
                 methodDeviceConstraints,
                 methodFallbackVariants,
+                List.of(),
                 List.of()
         );
     }
@@ -94,6 +137,7 @@ public record IrGpuArtifact(
                 runtimeDefaultBackend,
                 runtimeOptimizationProfile,
                 methodDeviceConstraints,
+                List.of(),
                 List.of(),
                 List.of()
         );
@@ -302,6 +346,7 @@ public record IrGpuArtifact(
         extensionParticipationMetadata = extensionParticipationMetadata == null
                 ? List.of()
                 : List.copyOf(extensionParticipationMetadata);
+        methodTestVectors = methodTestVectors == null ? List.of() : List.copyOf(methodTestVectors);
     }
 
     public String derivedOpenClResource() {
@@ -327,6 +372,13 @@ public record IrGpuArtifact(
                 .findFirst();
     }
 
+    public List<IrGpuMethodTestVectorMetadata> entryTestVectors() {
+        return methodTestVectors.stream()
+                .filter(testVector -> testVector.methodName().equals(module.entryMethod())
+                        || testVector.emittedName().equals(module.entryEmittedName()))
+                .toList();
+    }
+
     public IrGpuArtifact withMethodDeviceConstraints(List<IrGpuMethodDeviceConstraint> constraints) {
         return new IrGpuArtifact(
                 header,
@@ -345,7 +397,8 @@ public record IrGpuArtifact(
                 runtimeOptimizationProfile,
                 constraints,
                 methodFallbackVariants,
-                extensionParticipationMetadata
+                extensionParticipationMetadata,
+                methodTestVectors
         );
     }
 
@@ -367,7 +420,31 @@ public record IrGpuArtifact(
                 runtimeOptimizationProfile,
                 methodDeviceConstraints,
                 variants,
-                extensionParticipationMetadata
+                extensionParticipationMetadata,
+                methodTestVectors
+        );
+    }
+
+    public IrGpuArtifact withMethodTestVectors(List<IrGpuMethodTestVectorMetadata> testVectors) {
+        return new IrGpuArtifact(
+                header,
+                module,
+                entryParameters,
+                launchMetadata,
+                validationMetadata,
+                featureMetadata,
+                optimizerPolicyMetadata,
+                regenerationMetadata,
+                structMetadata,
+                constants,
+                constantData,
+                backendOutputs,
+                runtimeDefaultBackend,
+                runtimeOptimizationProfile,
+                methodDeviceConstraints,
+                methodFallbackVariants,
+                extensionParticipationMetadata,
+                testVectors
         );
     }
 
@@ -391,7 +468,8 @@ public record IrGpuArtifact(
                 runtimeOptimizationProfile,
                 methodDeviceConstraints,
                 methodFallbackVariants,
-                participationMetadata
+                participationMetadata,
+                methodTestVectors
         );
     }
 }
