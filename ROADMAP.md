@@ -78,6 +78,29 @@ Older files remain useful as detailed references, but this file is the primary e
 - [x] Keep docs aligned as API/runtime behavior changes.
   Public docs now reflect the current alpha/release posture: NVIDIA RTX 3060, NVIDIA RTX 5070, and AMD RX 7800 XT are operationally validated for repo-local confidence, Intel remains the future cross-vendor gate, and Maven publishing covers both `javatogpu` and the optional `javatogpu-ir-validation` artifact with matching release-readiness checks.
 
+### A6. OpenCL practical 90% release track
+
+Goal: make the OpenCL path feel complete for most practical alpha users before the next public release. This track prioritizes user-facing runtime control, debuggability, examples, and polished common workflows over broad low-level OpenCL API symmetry.
+
+- [ ] Add user-facing OpenCL device selection controls.
+  Expose backend-neutral controls for forcing a device, preferring a vendor/device class, excluding CPU OpenCL or iGPU devices, and configuring startup self-tests. These controls should reuse the existing runtime device-selection/profile machinery, be recorded in compile provenance and runtime artifacts, and avoid enabling automatic Multi-GPU partitioning by default.
+- [ ] Add an OpenCL device discovery and selection explanation API.
+  Provide a small API/CLI/example that lists detected platforms/devices, capability facts, self-test state, rejection reasons, ranking adjustments, and the final selected device. The goal is for users to answer "why this GPU?" without opening raw validation artifacts.
+- [ ] Add an optional compile/runtime lifecycle journal end-to-end.
+  Record descriptor loading, `IrGpu` loading, validation, optimizer-provider discovery, proposal execution, runtime-equivalence/review-package state, backend source selection, OpenCL build, fallback/rollback, invocation, and shutdown. The journal must stay opt-in, ServiceLoader-friendly, and safe for normal applications.
+- [ ] Polish common image host-helper workflows.
+  Keep the existing kernel image coverage, but improve the user-facing host API and examples for the common 2D/3D float/int/uint/RGBA8 workflows, including create/upload/readback helpers, format diagnostics, and vendor-validation coverage. Unsupported image families should remain explicitly documented rather than partially hidden behind confusing helpers.
+- [ ] Add a friendlier launch configuration layer.
+  Wrap the existing 1D/2D/3D `GpuExecutionConfig` support in a more discoverable public API and examples for global sizes, local sizes, work-group attributes, generated launcher helpers, and common validation failures such as oversized local groups or non-preferred multiples.
+- [ ] Evaluate a narrow `@GPU` return-value convenience layer.
+  Keep real entry-point lowering output-buffer based, but explore a small source/API convenience for scalar or single-output kernels that lowers to an explicit output holder/buffer. Do not generalize this into arbitrary non-`void` GPU entry semantics until helper reuse, launcher ABI, and diagnostics stay simple.
+- [ ] Add a practical OpenCL release example suite.
+  Build a curated examples-app path that covers arrays, scalar parameters, vectors, structs, packed/root-blob views, images/samplers, device selection, lifecycle journal, optimizer artifact dumps, and CPU-reference checks. This should become the user-facing proof that the common OpenCL path is coherent.
+- [ ] Keep Intel OpenCL bring-up as the remaining 90% confidence gate.
+  NVIDIA and AMD are the active alpha confidence lanes. Intel should remain a separate hardware-runner track; once hardware exists, run the same operational routine and record quirks before claiming broad cross-vendor OpenCL confidence.
+- [ ] Avoid expanding OpenCL surface symmetry without workload evidence.
+  New builtins, image families, vector widths, or low-level qualifiers should be added when a real workload, example, or diagnostic gap requires them. The next release should feel better because common paths are easier to use and debug, not because every OpenCL C corner has a Java facade.
+
 ## B. Current Language/Core Coverage
 
 ### B1. Already done baseline
@@ -789,25 +812,27 @@ Current rule: keep the existing alpha materializers useful and conservative. The
 
 If the goal is to move forward pragmatically from the current state, the best order is now:
 
-1. `A1/A2 NVIDIA/AMD interim operational validation`
-   Keep repeating `:processor:openClOperationalRoutine --rerun-tasks` on the available RTX 3060, RTX 5070, and RX 7800 XT stacks until Intel hardware exists, preserving validation history, workload summaries, long-running summaries, and benchmark output.
-2. `A3/A4 Diagnostics and runtime-stability fixes from real failures`
-   Treat any repeated NVIDIA/AMD failure, skipped workload, resource leak, or diagnostic gap as the next concrete implementation target.
-3. `I3 Production IR pipeline foundation`
+1. `A6 OpenCL practical 90% release track`
+   Start with user-facing device controls and device-selection explanation, then add the compile/runtime lifecycle journal, friendly launch helpers, image-host helper polish, and a curated examples-app release suite. This should make the current OpenCL backend feel coherent for normal alpha users before broadening compiler intelligence again.
+2. `A1/A2 NVIDIA/AMD interim operational validation`
+   Keep repeating `:processor:openClOperationalRoutine --rerun-tasks` on the available RTX 3060, RTX 5070, and RX 7800 XT stacks while A6 changes land, preserving validation history, workload summaries, long-running summaries, benchmark output, and device-specific quirks. Intel remains the remaining hardware confidence gate.
+3. `A3/A4 Diagnostics and runtime-stability fixes from real failures`
+   Treat any repeated NVIDIA/AMD failure, skipped workload, resource leak, confusing device-selection result, image helper failure, launch-shape issue, or lifecycle-journal gap as the next concrete implementation target.
+4. `I3 Production IR pipeline foundation`
    Start with the non-mutating foundation: canonical `IrGpu` artifact, dual output beside current OpenCL source, OpenCL-from-`IrGpu` parity, runtime compile request/options, backend-lowering boundary, and source/ASM frontends feeding the same IR storage path. Keep runtime optimization profile `off` by default.
-4. `I4 Optional IR optimizer module split`
+5. `I4 Optional IR optimizer module split`
    Before implementing real optimizer transforms, freeze the module boundary: validator stays read-only, backend-neutral optimizer contracts live behind optional dependencies, vendor optimizers are separate providers, and all mutation remains proposal/opt-in/fail-closed until proof and rollback are present.
-5. `I3.7 Core extension hooks, lifecycle events, JavaDocs, and QOL`
+6. `I3.7 Core extension hooks, lifecycle events, JavaDocs, and QOL`
    Before adding more optimizer complexity, harden the Core extension surface: lifecycle event bus, safe hook points, extension patch packs, example modules, JavaDocs, test harnesses, and friendlier diagnostics. This lets users observe, customize, and replace parts of the library deliberately without maintaining forks.
-6. `I4.2 IR-Optimizer v2 e-graph core`
+7. `I4.2 IR-Optimizer v2 e-graph core`
    After the current alpha optimizer remains useful in review/apply mode, start the v2 algebraic core on pure expression regions only: typed-IR extraction, guarded rewrite catalog, bounded equality saturation, backend-aware cost model, review evidence, and immutable proposal lowering. Keep existing peephole materializers as fallback/regression fixtures until each family migrates safely.
-7. `A1 Intel runner bring-up when hardware exists`
+8. `A1 Intel runner bring-up when hardware exists`
    The remaining cross-vendor production gate stays open until an Intel OpenCL stack can run the same bucket set.
-8. `Improved ASM parser/frontend`
+9. `Improved ASM parser/frontend`
    Broader ASM ingestion should lower into `IrGpu` first, then reuse the same runtime compile request, validation, backend lowering, and future optimizer path instead of growing a separate pipeline. The first broader-ASM diagnostics layer is already in place through `asmFailure.*` metadata and public preflight APIs.
-9. `I3/I4 prototype runtime optimization`
+10. `I3/I4 prototype runtime optimization`
    After `IrGpu` storage and OpenCL parity are stable, add opt-in prototype optimization with rollback, pre/post runtime-equivalence artifacts, and NVIDIA/AMD evidence first. Keep production mutation disabled until A1/A2 confidence and the future Intel gate are satisfied.
-10. `H Lower-priority backend/optimization work`
+11. `H Lower-priority backend/optimization work`
 
 ## Current Working Conclusion
 
@@ -815,7 +840,7 @@ JavaToGpu is already beyond the "toy compiler" stage.
 
 The broad repetitive intrinsic-family generation detour is now closed for current priorities, so the active focus returns to production-core/runtime validation rather than expanding optional API symmetry.
 
-After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence now includes NVIDIA and AMD lanes; Intel remains the remaining hardware validation gap. The next major architecture frontier is the I3 Production IR pipeline plus the I4 optional optimizer split: `IrGpu` should become the stored backend-neutral artifact, OpenCL/CUDA/Vulkan/Metal should become backend lowerers selected at runtime from compile options and device profile, `ir-validation` must remain read-only, and future `ir-optimizer` / `ir-vendor-optimizer` modules should plug in as optional proposal/opt-in/fail-closed providers. Before adding another wave of optimizer logic, the Core extension surface should become a first-class product feature: lifecycle events, safe hook points, extension packs, JavaDocs, examples, and QOL diagnostics should let users observe and customize the library without maintaining forks. The current rule-based IR-Optimizer alpha is a useful evidence/materialization layer, but the long-term v2 core should become an e-graph / equality-saturation optimizer for pure algebraic expression regions so broad generated-form optimization does not devolve into ordering-sensitive hand-written tree conditions. Broader ASM ingestion should feed that same `IrGpu` path instead of creating a second compiler pipeline.
+After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence now includes NVIDIA and AMD lanes; Intel remains the remaining hardware validation gap. The next release should therefore focus on A6: user-facing OpenCL device controls, device-selection explanation, lifecycle/compile journaling, friendlier launch helpers, common image-host helper polish, and curated examples that prove the common OpenCL path end-to-end. After that practical OpenCL 90% track is solid, the next major architecture frontier remains the I3 Production IR pipeline plus the I4 optional optimizer split: `IrGpu` should become the stored backend-neutral artifact, OpenCL/CUDA/Vulkan/Metal should become backend lowerers selected at runtime from compile options and device profile, `ir-validation` must remain read-only, and future `ir-optimizer` / `ir-vendor-optimizer` modules should plug in as optional proposal/opt-in/fail-closed providers. Before adding another wave of optimizer logic, the Core extension surface should become a first-class product feature: lifecycle events, safe hook points, extension packs, JavaDocs, examples, and QOL diagnostics should let users observe, customize, and replace parts of the library deliberately without maintaining forks. The current rule-based IR-Optimizer alpha is a useful evidence/materialization layer, but the long-term v2 core should become an e-graph / equality-saturation optimizer for pure algebraic expression regions so broad generated-form optimization does not devolve into ordering-sensitive hand-written tree conditions. Broader ASM ingestion should feed that same `IrGpu` path instead of creating a second compiler pipeline.
 
 Latest I2/L2 reconciliation: the current CI contract layer is closed for present priorities. Direct contract coverage now pins current readiness CI summaries, optimizer-gate consistency/acceptance, optimizer CI gate-index consistency/acceptance, regression/baseline CI summaries, nested artifact-field composition, and opt-in real-example dogfooding reports for `examples-app` / `test-app`. The dogfooding contract keeps safety fail-fast while treating optimizer readiness as a read-only stability artifact: production mutation must remain disabled, rewrite applicability must stay false, known CSE policy blockers are counted, and no-candidate CSE literal-promotion / auto-vectorization blockers are accepted as the current baseline. The remaining I2 items are intentionally broader frontier work: deeper transformation-safety proofs, stronger canonicalization/common-computation detection, runtime-equivalence evidence for selected optimizer families, and eventual production rewrite promotion after A1/A2 runtime confidence is stable. These should stay open until backed by runtime evidence rather than being marked complete from read-only artifact coverage alone.
 
