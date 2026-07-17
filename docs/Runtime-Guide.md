@@ -319,6 +319,15 @@ GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
         .withPersistentMethodTestProbeEvidenceRanking(Path.of(".javatogpu/method-test-probes"));
 ```
 
+This convenience method enables `GpuRuntimeMethodTestProbeMode.CACHE_ONLY` and configures the persistent evidence cache.
+You can also set the mode explicitly when the cache path is configured separately:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode.CACHE_ONLY);
+```
+
 The ranking policy is cache-only: it does not compile or execute probes during device selection. For each candidate it
 recomputes the stable evidence hash for selection-probe vectors, reads the configured cache, gives passed evidence a
 ranking boost, rejects failed cached evidence, and treats missing evidence as neutral. This keeps startup predictable
@@ -346,6 +355,33 @@ runtime backend, writes successful or failed executions through the configured c
 warm-up boundary plus the existing metadata/fixture/materialization/GPU-probe/cache stages. Selection can then consume
 the warmed cache through `withPersistentMethodTestProbeEvidenceRanking(path)` while staying read-only.
 
+When you want the explicit warm-up and the cache-only selection as one auditable operation, use the selection helper:
+
+```java
+GpuRuntimeMethodTestProbeEvidenceSelectionPlan placement =
+        GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                MyKernel.class.getClassLoader(),
+                warmupCandidates,
+                GpuRuntimeDeviceDiscovery.discoverOpenCl(baseOptions),
+                GpuRuntimeMethodTestGpuProbeOptions
+                        .persistentCached(Path.of(".javatogpu/method-test-probes"))
+                        .withCompileOptions(baseOptions),
+                baseOptions,
+                Optional.empty(),
+                GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
+                GpuRuntimeLifecycleEventBus.loadFromServiceLoader()
+        );
+
+GpuRuntimeDeviceProfile selected = placement.selectedDevice().orElseThrow();
+System.out.println(placement.toMarkdown());
+```
+
+`warmAndSelect(...)` can consume the `GpuRuntimeDeviceDiscoveryResult` returned by OpenCL discovery, normalizes missing
+probe cache options to the shared cache, carries persistent cache directories and expiry into the cache-only selection
+compile options, and keeps warm-up candidates separate from the full discovered device list. That makes partially warmed
+evidence visible: warmed devices can be `passed` or `failed`, while devices not warmed remain `missing` and neutral.
+
 Runtime compile artifact dumps include `runtime-method-test-evidence.properties` for each compiled kernel. That artifact
 records entry-method `@GPUTest` metadata counts, selection-probe counts, and cache-only probe-evidence ranking facts
 when the ranking policy participated. `openClValidationReport` aggregates those per-kernel artifacts into a `Method Test
@@ -360,6 +396,18 @@ entry, then demonstrates cache-only ranking without requiring OpenCL hardware:
 ```
 
 Use `-Pjavatogpu.methodTestProbeEvidenceCacheDir=...` when you want to inspect or reuse the generated cache directory.
+
+When you want to test the same flow against actual OpenCL discovery and backend execution, run:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClMethodTestProbeEvidenceSelectionExample --console=plain
+```
+
+That example calls `GpuRuntimeDeviceDiscovery.discoverOpenCl(baseOptions)`, turns discovered GPU profiles into owned
+`OpenClGpuRuntimeBackend` warm-up candidates, pins each probe run to the candidate device id, and then prints the
+`warmAndSelect(...)` markdown report. The selection phase remains `CACHE_ONLY`; only the explicit warm-up phase may
+execute the tiny method-test probe kernels. Use `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` to control the
+persistent cache directory and `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap the number of warmed devices.
 
 ## Explicit Launch Sizes
 

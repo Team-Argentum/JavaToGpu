@@ -134,6 +134,10 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
         return persistentDirectory;
     }
 
+    public Duration maxEntryAge() {
+        return maxEntryAge;
+    }
+
     private static void validateKey(
             GpuRuntimeMethodTestGpuProbeEvidenceKey requestedKey,
             GpuRuntimeMethodTestGpuProbeExecution execution

@@ -155,6 +155,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(evidence.contains("metadata.selectionProbe.count=1"));
         assertTrue(evidence.contains("original.entryTestVector.0.testId=selection-smoke"));
         assertTrue(evidence.contains("cacheEvidence.status=active"));
+        assertTrue(evidence.contains("cacheEvidence.mode=cache-only"));
+        assertTrue(evidence.contains("cacheEvidence.execution=cache-only"));
         assertTrue(evidence.contains("cacheEvidence.candidate.count=1"));
         assertTrue(evidence.contains("cacheEvidence.passed.count=1"));
         assertTrue(evidence.contains("cacheEvidence.missing.count=0"));
@@ -4086,7 +4088,8 @@ class GpuRuntimeCompileArtifactDumperTest {
                 java.util.Set.of(),
                 Map.ofEntries(
                         Map.entry("methodTestProbeEvidence.status", "active"),
-                        Map.entry("methodTestProbeEvidence.mode", "cached"),
+                        Map.entry("methodTestProbeEvidence.mode", "cache-only"),
+                        Map.entry("methodTestProbeEvidence.execution", "cache-only"),
                         Map.entry("methodTestProbeEvidence.cache.persistent", "true"),
                         Map.entry("methodTestProbeEvidence.cache.path", ".javatogpu/method-test-probes"),
                         Map.entry(deviceKey + ".methodTestProbeEvidence.status", "passed"),

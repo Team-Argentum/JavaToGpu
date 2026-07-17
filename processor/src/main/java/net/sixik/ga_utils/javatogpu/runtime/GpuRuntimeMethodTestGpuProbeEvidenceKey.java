@@ -271,7 +271,8 @@ public record GpuRuntimeMethodTestGpuProbeEvidenceKey(
     }
 
     private static boolean methodTestProbeEvidenceRankingProperty(String propertyName) {
-        return GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY.equals(propertyName)
+        return GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY.equals(propertyName)
+                || GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY.equals(propertyName)
                 || GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY.equals(propertyName)
                 || GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY.equals(propertyName);
     }

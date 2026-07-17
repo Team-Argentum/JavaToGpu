@@ -292,6 +292,80 @@ GpuRuntimeCompileOptions rankingOptions =
 
 The ranking policy is cache-only. It does not secretly run probes during device selection.
 
+For application code, the safer high-level helper is `warmAndSelect(...)`. It keeps the same boundary, but returns one
+auditable report containing both the explicit warm-up and the follow-up cache-only device selection:
+
+```java
+GpuRuntimeMethodTestProbeEvidenceSelectionPlan selection =
+        GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(
+                descriptor,
+                MyKernel.class.getClassLoader(),
+                warmupCandidates,
+                discoveryResult,
+                GpuRuntimeMethodTestGpuProbeOptions
+                        .persistentCached(Path.of(".javatogpu/method-test-probes"))
+                        .withCompileOptions(baseOptions),
+                baseOptions,
+                Optional.empty(),
+                GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
+                GpuRuntimeLifecycleEventBus.loadFromServiceLoader()
+        );
+
+System.out.println(selection.toMarkdown());
+```
+
+`warmupCandidates` are backend/device pairs that may execute the tiny selection probes. `discoveryResult` is normally
+the output from `GpuRuntimeDeviceDiscovery.discoverOpenCl(...)` and supplies the full device list that should be ranked.
+This split lets you warm evidence for one device while still reporting the others as `missing` instead of pretending
+they were tested. If you already have profiles from another discovery layer, there is also an overload that accepts the
+plain `List<GpuRuntimeDeviceProfile>`.
+
+Warm-up candidates are pinned to their `deviceProfile.deviceId` while the probe runs. That means a real OpenCL warm-up
+candidate records evidence for the same device that later appears in cache-only ranking, instead of accidentally using
+whatever device the native runtime would have selected by default.
+
+For a real OpenCL walkthrough, run:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClMethodTestProbeEvidenceSelectionExample --console=plain
+```
+
+The example discovers OpenCL devices, creates owned OpenCL backend candidates for discovered GPU devices, warms only
+those explicit candidates, and then prints the cache-only selection report. Use
+`-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` for a persistent cache path and
+`-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` when you want to warm only the first eligible GPU.
+
+## Runtime Opt-In Modes
+
+Runtime method-test integration is intentionally off by default. This keeps ordinary application startup predictable:
+`@GPUTest` metadata can exist in generated artifacts without changing backend or device selection.
+
+The first runtime integration mode is `CACHE_ONLY`:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode.CACHE_ONLY);
+```
+
+`CACHE_ONLY` means: use already-recorded selection-probe evidence if it is present, but never compile or execute a
+probe during device selection. In most apps you will use the convenience method instead, because it also points the
+runtime at the persistent cache directory:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withPersistentMethodTestProbeEvidenceRanking(Path.of(".javatogpu/method-test-probes"));
+```
+
+This is enough for runtime selection to consume a warmed cache. Legacy `withMethodTestProbeEvidenceRankingCached()` and
+`runtime.methodTestProbeEvidenceRanking=cached` still map to the same `CACHE_ONLY` behavior. Unknown mode values fail
+closed instead of being ignored, so a future typo such as `run-before-first-invoke` will reject compile options with a
+clear diagnostic rather than unexpectedly running or trusting probes.
+
+Automatic modes such as "run probe before first invoke" are deliberately future work. They need stronger guardrails for
+latency, cache invalidation, backend ownership, and user consent.
+
 ## Common Blockers
 
 Most failures are intentionally plain strings so they can be logged and stored in CI artifacts.
@@ -315,6 +389,7 @@ Most failures are intentionally plain strings so they can be logged and stored i
 - Struct example: `examples-app/src/main/java/net/sixik/ga_utils/examples/MethodTestStructProbeExample.java`
 - Struct fixtures: `examples-app/src/main/resources/fixtures/method-test-struct-probe/`
 - Ranking example: `examples-app/src/main/java/net/sixik/ga_utils/examples/MethodTestProbeEvidenceRankingExample.java`
+- Real OpenCL ranking example: `examples-app/src/main/java/net/sixik/ga_utils/examples/OpenClMethodTestProbeEvidenceSelectionExample.java`
 - Lower-level runtime details: [Runtime Guide](Runtime-Guide.md#method-test-vector-metadata-preview)
 
 ## Recommended Workflow

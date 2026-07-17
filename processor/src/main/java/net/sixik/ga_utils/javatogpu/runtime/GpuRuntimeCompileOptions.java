@@ -274,11 +274,15 @@ public record GpuRuntimeCompileOptions(
     }
 
     public GpuRuntimeCompileOptions withMethodTestProbeEvidenceRankingCached() {
+        return withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode.CACHE_ONLY);
+    }
+
+    public GpuRuntimeCompileOptions withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode mode) {
         return new GpuRuntimeCompileOptions(
                 backendTarget,
                 compileArgs,
                 optimizationProfile,
-                backendOptions.withMethodTestProbeEvidenceRankingCached(),
+                backendOptions.withMethodTestProbeMode(mode),
                 deviceOverride,
                 devicePreference
         );

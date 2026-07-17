@@ -344,6 +344,7 @@ class GpuRuntimeDevicePolicyRegistryTest {
                 recordProbeEvidence(cacheDirectory, descriptor, invocation, integrated, baseOptions, true);
 
                 GpuRuntimeCompileOptions rankingOptions = baseOptions.withPersistentMethodTestProbeEvidenceRanking(cacheDirectory);
+                assertEquals(GpuRuntimeMethodTestProbeMode.CACHE_ONLY, rankingOptions.backendOptions().methodTestProbeMode());
                 GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
                         new GpuRuntimeDevicePolicyContext(
                                 descriptor,
@@ -361,12 +362,50 @@ class GpuRuntimeDevicePolicyRegistryTest {
 
                 assertEquals("Intel Integrated", selection.selectedDevice().orElseThrow().deviceLabel());
                 assertTrue(decision.scoreAdjustments().get(integratedKey) > 0);
+                assertEquals("cache-only", decision.capabilityFacts().get("methodTestProbeEvidence.mode"));
+                assertEquals("cache-only", decision.capabilityFacts().get("methodTestProbeEvidence.execution"));
                 assertEquals("passed", decision.capabilityFacts().get(integratedKey + ".methodTestProbeEvidence.status"));
                 assertEquals("missing", decision.capabilityFacts().get(discreteKey + ".methodTestProbeEvidence.status"));
             } finally {
                 Thread.currentThread().setContextClassLoader(previousClassLoader);
             }
         }
+    }
+
+    @Test
+    void invalidMethodTestProbeModeRejectsCompileOptions() {
+        GpuRuntimeDeviceProfile device = classifiedDevice(
+                "opencl-gpu",
+                "NVIDIA RTX",
+                "NVIDIA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                false
+        );
+        GpuRuntimeCompileOptions options = new GpuRuntimeCompileOptions(
+                GpuBackendTarget.OPENCL,
+                List.of(),
+                "off",
+                GpuBackendCompileOptions.openCl(List.of(), Map.of(
+                        GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY,
+                        "run-before-first-invoke"
+                ))
+        );
+
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                new GpuRuntimeDevicePolicyContext(descriptor(), options, List.of(device))
+        );
+        GpuRuntimeDevicePolicyDecision decision = decision(
+                selection,
+                GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_ID
+        );
+
+        assertFalse(selection.selectedDevice().isPresent());
+        assertFalse(selection.compileOptionsValid());
+        assertEquals("compile-options-rejected-by-device-policy", selection.firstBlocker());
+        assertEquals("compile-options-invalid", decision.capabilityFacts().get("methodTestProbeEvidence.status"));
+        assertEquals("runtime-method-test-probe-mode-invalid", decision.capabilityFacts().get("methodTestProbeEvidence.firstBlocker"));
+        assertTrue(decision.compileOptionDiagnostics().get(0).contains("method-test probe mode is invalid"));
     }
 
     @Test

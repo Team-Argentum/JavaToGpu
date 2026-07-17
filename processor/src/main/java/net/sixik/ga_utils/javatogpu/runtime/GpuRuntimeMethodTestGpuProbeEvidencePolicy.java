@@ -30,9 +30,29 @@ public final class GpuRuntimeMethodTestGpuProbeEvidencePolicy implements GpuRunt
     @Override
     public GpuRuntimeDevicePolicyDecision evaluate(GpuRuntimeDevicePolicyContext context) {
         Objects.requireNonNull(context, "context");
+        Optional<String> modeBlocker = context.compileOptions().backendOptions().methodTestProbeModeBlocker();
+        if (modeBlocker.isPresent()) {
+            return new GpuRuntimeDevicePolicyDecision(
+                    policyId(),
+                    policyVersion(),
+                    Map.of(),
+                    Set.of(),
+                    Map.of(
+                            "methodTestProbeEvidence.status", "compile-options-invalid",
+                            "methodTestProbeEvidence.firstBlocker", modeBlocker.orElseThrow(),
+                            "methodTestProbeEvidence.mode", "invalid"
+                    ),
+                    List.of(),
+                    false,
+                    List.of("method-test probe mode is invalid: " + modeBlocker.orElseThrow()),
+                    List.of()
+            );
+        }
         if (!context.compileOptions().backendOptions().requestsMethodTestProbeEvidenceRanking()) {
             return GpuRuntimeDevicePolicyDecision.noChange(this);
         }
+
+        GpuRuntimeMethodTestProbeMode mode = context.compileOptions().backendOptions().methodTestProbeMode();
 
         GpuRuntimeMethodTestGpuProbeCache cache;
         try {
@@ -55,7 +75,8 @@ public final class GpuRuntimeMethodTestGpuProbeEvidencePolicy implements GpuRunt
         LinkedHashMap<String, Integer> scoreAdjustments = new LinkedHashMap<>();
         LinkedHashSet<String> rejected = new LinkedHashSet<>();
         ArrayList<String> diagnostics = new ArrayList<>();
-        facts.put("methodTestProbeEvidence.mode", GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED);
+        facts.put("methodTestProbeEvidence.mode", mode.optionValue());
+        facts.put("methodTestProbeEvidence.execution", "cache-only");
         facts.put("methodTestProbeEvidence.cache.persistent", Boolean.toString(cache.persistent()));
         facts.put("methodTestProbeEvidence.cache.path", cache.persistentDirectory() == null
                 ? "process-local"

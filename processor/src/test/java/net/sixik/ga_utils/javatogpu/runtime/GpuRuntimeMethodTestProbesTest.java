@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -934,9 +935,18 @@ class GpuRuntimeMethodTestProbesTest {
             );
             GpuRuntimeCompileOptions baseOptions = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
                     .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED);
+            GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscoveryResult.available(
+                    GpuBackendTarget.OPENCL,
+                    "OpenCL synthetic",
+                    List.of(integrated, discrete),
+                    null
+            );
             java.util.concurrent.atomic.AtomicInteger backendCalls = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicReference<GpuRuntimeCompileOptions> invocationCompileOptions =
+                    new java.util.concurrent.atomic.AtomicReference<>();
             GpuRuntimeBackend referenceBackend = invocationRequest -> {
                 backendCalls.incrementAndGet();
+                invocationCompileOptions.set(invocationRequest.compileOptions());
                 float[] input = (float[]) invocationRequest.arguments()[0];
                 float scale = (Float) invocationRequest.arguments()[1];
                 float[] output = (float[]) invocationRequest.arguments()[2];
@@ -977,6 +987,8 @@ class GpuRuntimeMethodTestProbesTest {
             assertEquals("passed", warmup.status());
             assertEquals(1, warmup.candidatePassedCount());
             assertEquals(1, backendCalls.get());
+            assertTrue(invocationCompileOptions.get() != null);
+            assertEquals("opencl-igpu", invocationCompileOptions.get().deviceOverride().deviceId());
             assertFalse(execution.cacheHit());
             assertTrue(Files.isRegularFile(cacheDirectory.resolve(execution.evidenceKey().stableHash() + ".properties")));
             assertEquals(integrated, selection.selectedDevice().orElseThrow());
@@ -988,6 +1000,113 @@ class GpuRuntimeMethodTestProbesTest {
             assertTrue(kinds.contains(GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_WARMUP_COMPLETED));
             assertEquals("passed", lastEvent(events, GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_WARMUP_COMPLETED)
                     .fields().get("status"));
+        }
+    }
+
+    @Test
+    void warmAndSelectUsesWarmedEvidenceThroughCacheOnlyPolicy() throws Exception {
+        IrGpuArtifact artifact = artifact(List.of(new IrGpuMethodTestVectorMetadata(
+                "kernel",
+                "jtg_kernel",
+                "warm-select-smoke",
+                List.of("fixtures/warm-select-smoke.inputs.json"),
+                List.of("fixtures/warm-select-smoke.outputs.json"),
+                "abs=1e-5",
+                List.of("selection"),
+                true,
+                "GPUTest"
+        )));
+        Path root = Files.createTempDirectory("javatogpu-method-test-warm-select-fixtures");
+        Files.writeString(root.resolve("demo.irgpu.properties"), IrGpuArtifactSerializer.serialize(artifact));
+        Files.createDirectories(root.resolve("fixtures"));
+        Files.writeString(root.resolve("fixtures/warm-select-smoke.inputs.json"), "{\"input\":[1.0,2.0],\"scale\":2.5}");
+        Files.writeString(root.resolve("fixtures/warm-select-smoke.outputs.json"), "{\"output\":[2.5,5.0]}");
+        Path cacheDirectory = Files.createTempDirectory("javatogpu-method-test-warm-select-cache");
+
+        try (URLClassLoader classLoader = new URLClassLoader(new java.net.URL[]{root.toUri().toURL()})) {
+            GpuKernelDescriptor descriptor = descriptorWithInputScaleOutput("demo.irgpu.properties");
+            GpuRuntimeDeviceProfile integrated = syntheticOpenClDevice(
+                    "opencl-igpu",
+                    "Intel Integrated",
+                    "Intel",
+                    GpuDeviceClassTarget.IGPU,
+                    8,
+                    true
+            );
+            GpuRuntimeDeviceProfile discrete = syntheticOpenClDevice(
+                    "opencl-dgpu",
+                    "NVIDIA RTX",
+                    "NVIDIA",
+                    GpuDeviceClassTarget.DGPU,
+                    48,
+                    false
+            );
+            GpuRuntimeCompileOptions baseOptions = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                    .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED);
+            GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscoveryResult.available(
+                    GpuBackendTarget.OPENCL,
+                    "OpenCL synthetic",
+                    List.of(integrated, discrete),
+                    null
+            );
+            java.util.concurrent.atomic.AtomicInteger backendCalls = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicReference<GpuRuntimeCompileOptions> selectionInvocationCompileOptions =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            GpuRuntimeBackend referenceBackend = invocationRequest -> {
+                backendCalls.incrementAndGet();
+                selectionInvocationCompileOptions.set(invocationRequest.compileOptions());
+                float[] input = (float[]) invocationRequest.arguments()[0];
+                float scale = (Float) invocationRequest.arguments()[1];
+                float[] output = (float[]) invocationRequest.arguments()[2];
+                for (int index = 0; index < input.length; index++) {
+                    output[index] = input[index] * scale;
+                }
+            };
+
+            ClassLoader previousContextClassLoader = Thread.currentThread().getContextClassLoader();
+            GpuRuntimeMethodTestProbeEvidenceSelectionPlan selectionPlan;
+            Thread.currentThread().setContextClassLoader(classLoader);
+            try {
+                selectionPlan = GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(
+                        descriptor,
+                        classLoader,
+                        List.of(GpuRuntimeMethodTestProbeEvidenceWarmupCandidate.borrowed(integrated, referenceBackend)),
+                        discovery,
+                        GpuRuntimeMethodTestGpuProbeOptions.persistentCached(cacheDirectory).withCompileOptions(baseOptions),
+                        baseOptions,
+                        Optional.of(artifact),
+                        GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
+                        GpuRuntimeLifecycleEventBus.empty()
+                );
+            } finally {
+                Thread.currentThread().setContextClassLoader(previousContextClassLoader);
+            }
+
+            GpuRuntimeDevicePolicyDecision evidenceDecision = selectionPlan.deviceSelection().policyDecisions().stream()
+                    .filter(decision -> decision.policyId().equals(GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_ID))
+                    .findFirst()
+                    .orElseThrow();
+            String integratedKey = GpuRuntimeDevicePolicyContext.deviceKey(integrated);
+            String discreteKey = GpuRuntimeDevicePolicyContext.deviceKey(discrete);
+
+            assertEquals("selected", selectionPlan.status());
+            assertTrue(selectionPlan.selectionReady());
+            assertTrue(selectionPlan.warmupPlan().warmupPassed());
+            assertEquals(1, backendCalls.get());
+            assertTrue(selectionInvocationCompileOptions.get() != null);
+            assertEquals("opencl-igpu", selectionInvocationCompileOptions.get().deviceOverride().deviceId());
+            assertEquals(GpuRuntimeDeviceSelfTestMode.DISABLED, selectionInvocationCompileOptions.get()
+                    .backendOptions()
+                    .deviceSelfTestMode());
+            assertEquals(GpuRuntimeMethodTestProbeMode.CACHE_ONLY, selectionPlan.selectionCompileOptions()
+                    .backendOptions()
+                    .methodTestProbeMode());
+            assertEquals(integrated, selectionPlan.selectedDevice().orElseThrow());
+            assertEquals("passed", evidenceDecision.capabilityFacts().get(integratedKey + ".methodTestProbeEvidence.status"));
+            assertEquals("missing", evidenceDecision.capabilityFacts().get(discreteKey + ".methodTestProbeEvidence.status"));
+            assertTrue(selectionPlan.toMarkdown().contains("Method test probe evidence selection: selected"));
+            assertEquals("selected", selectionPlan.artifactFields("selection").get("selection.status"));
+            assertEquals("OPENCL:opencl-igpu", selectionPlan.artifactFields("selection").get("selection.selectedDeviceKey"));
         }
     }
 

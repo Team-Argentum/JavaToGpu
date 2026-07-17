@@ -20,6 +20,8 @@ class MethodTestProbeEvidenceRankingExampleTest {
         assertTrue(output.contains("Warm-up status: passed"));
         assertTrue(output.contains("Recorded probe passed: true"));
         assertTrue(output.contains("Recorded probe cache hit: false"));
+        assertTrue(output.contains("Selection helper status: selected"));
+        assertTrue(output.contains("Runtime method-test probe mode: cache-only"));
         assertTrue(output.contains("Selected device: Intel Integrated"));
         assertTrue(output.contains("Policy status: active"));
         assertTrue(output.contains("Integrated evidence: passed"));

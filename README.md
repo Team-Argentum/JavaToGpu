@@ -181,6 +181,11 @@ candidate, failed cached evidence rejects it, and missing evidence stays neutral
 write `runtime-method-test-evidence.properties`; the OpenCL validation report aggregates those artifacts under
 `Method Test Evidence` so CI archives show which kernels carried `@GPUTest` metadata and whether cached probe evidence
 participated in device ranking.
+This runtime path is explicitly `GpuRuntimeMethodTestProbeMode.CACHE_ONLY`: it reads warmed evidence only and never runs
+method-test GPU probes during device selection.
+Applications that want a single explicit operation can use
+`GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(...)`: it runs the caller-approved warm-up first, then invokes
+normal device selection with cache-only evidence ranking and returns one markdown/artifact-friendly report.
 
 For the same flow with `@GPUStruct[]` fixtures, run:
 
@@ -199,10 +204,22 @@ Run the portable cache-only ranking walkthrough:
 
 This example uses `GpuRuntimeMethodTestProbeEvidenceWarmup.warmSelectionProbeEvidence(...)` to record one `@GPUTest`
 GPU-probe result into a persistent cache through a synthetic reference backend, then reruns backend/device selection
-with `withPersistentMethodTestProbeEvidenceRanking(path)`. It does not require a real OpenCL device: the point is to
-show that warm-up is an explicit opt-in step, while the ranking policy remains cache-only. Passed cached selection
+through the higher-level `GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(...)` helper. It does not require a
+real OpenCL device: the point is to show that warm-up is an explicit opt-in step, while the ranking policy remains
+`cache-only`. Passed cached selection
 evidence boosts one candidate; missing evidence for another candidate stays neutral. Pass
 `-Pjavatogpu.methodTestProbeEvidenceCacheDir=...` to choose the cache folder.
+
+Run the same boundary against real discovered OpenCL devices:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClMethodTestProbeEvidenceSelectionExample --console=plain
+```
+
+This example calls `GpuRuntimeDeviceDiscovery.discoverOpenCl(...)`, builds owned OpenCL warm-up candidates for discovered
+GPU devices, runs tiny `@GPUTest` selection probes only during the explicit warm-up phase, and then prints the cache-only
+selection report. Pass `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` to choose the persistent evidence cache
+and `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap how many discovered devices are warmed.
 
 ## Project Layout
 

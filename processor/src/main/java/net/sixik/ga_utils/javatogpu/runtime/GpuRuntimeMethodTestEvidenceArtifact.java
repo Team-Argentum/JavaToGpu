@@ -114,6 +114,7 @@ public final class GpuRuntimeMethodTestEvidenceArtifact {
         Map<String, String> facts = decision.orElseThrow().capabilityFacts();
         fields.put("cacheEvidence.status", facts.getOrDefault("methodTestProbeEvidence.status", "unknown"));
         fields.put("cacheEvidence.mode", facts.getOrDefault("methodTestProbeEvidence.mode", "unknown"));
+        fields.put("cacheEvidence.execution", facts.getOrDefault("methodTestProbeEvidence.execution", "unknown"));
         fields.put("cacheEvidence.cache.persistent", facts.getOrDefault("methodTestProbeEvidence.cache.persistent", "false"));
         fields.put("cacheEvidence.cache.path", facts.getOrDefault("methodTestProbeEvidence.cache.path", "not-recorded"));
         List<String> deviceKeys = deviceKeys(facts);

@@ -29,6 +29,9 @@ public record GpuBackendCompileOptions(
     public static final String PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY = "productionPromotion.decisionMode";
     public static final String PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY = "productionPromotion.operatorAccepted";
     public static final String RUNTIME_DEVICE_SELF_TEST_PROPERTY = "runtime.deviceSelfTest";
+    public static final String RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY = "runtime.methodTestProbeMode";
+    public static final String RUNTIME_METHOD_TEST_PROBE_MODE_DISABLED = "disabled";
+    public static final String RUNTIME_METHOD_TEST_PROBE_MODE_CACHE_ONLY = "cache-only";
     public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY = "runtime.methodTestProbeEvidenceRanking";
     public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_DISABLED = "disabled";
     public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED = "cached";
@@ -146,10 +149,41 @@ public record GpuBackendCompileOptions(
         return GpuRuntimeDeviceSelfTestMode.parse(properties.get(RUNTIME_DEVICE_SELF_TEST_PROPERTY));
     }
 
-    public boolean requestsMethodTestProbeEvidenceRanking() {
-        return RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED.equals(
+    public GpuRuntimeMethodTestProbeMode methodTestProbeMode() {
+        if (methodTestProbeModeBlocker().isPresent()) {
+            return GpuRuntimeMethodTestProbeMode.DISABLED;
+        }
+        String explicitMode = properties.get(RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY);
+        if (explicitMode != null && !explicitMode.isBlank()) {
+            return GpuRuntimeMethodTestProbeMode.parse(explicitMode)
+                    .orElse(GpuRuntimeMethodTestProbeMode.DISABLED);
+        }
+        if (RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED.equals(
                 properties.get(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY)
-        );
+        )) {
+            return GpuRuntimeMethodTestProbeMode.CACHE_ONLY;
+        }
+        return GpuRuntimeMethodTestProbeMode.DISABLED;
+    }
+
+    public Optional<String> methodTestProbeModeBlocker() {
+        String explicitMode = properties.get(RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY);
+        if (explicitMode != null && !explicitMode.isBlank()
+                && GpuRuntimeMethodTestProbeMode.parse(explicitMode).isEmpty()) {
+            return Optional.of("runtime-method-test-probe-mode-invalid");
+        }
+        String legacyRanking = properties.get(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY);
+        if (legacyRanking != null && !legacyRanking.isBlank()
+                && !RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED.equals(legacyRanking)
+                && !RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_DISABLED.equals(legacyRanking)) {
+            return Optional.of("runtime-method-test-probe-evidence-ranking-invalid");
+        }
+        return Optional.empty();
+    }
+
+    public boolean requestsMethodTestProbeEvidenceRanking() {
+        return methodTestProbeMode() == GpuRuntimeMethodTestProbeMode.CACHE_ONLY
+                && methodTestProbeModeBlocker().isEmpty();
     }
 
     public Optional<String> methodTestProbeEvidenceCachePath() {
@@ -218,11 +252,22 @@ public record GpuBackendCompileOptions(
     }
 
     public GpuBackendCompileOptions withMethodTestProbeEvidenceRankingCached() {
+        return withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode.CACHE_ONLY);
+    }
+
+    public GpuBackendCompileOptions withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode mode) {
+        GpuRuntimeMethodTestProbeMode normalized = mode == null ? GpuRuntimeMethodTestProbeMode.DISABLED : mode;
         Map<String, String> updated = new LinkedHashMap<>(properties);
-        updated.put(
-                RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY,
-                RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED
-        );
+        if (normalized == GpuRuntimeMethodTestProbeMode.DISABLED) {
+            updated.put(RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY, RUNTIME_METHOD_TEST_PROBE_MODE_DISABLED);
+            updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY);
+        } else {
+            updated.put(RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY, normalized.optionValue());
+            updated.put(
+                    RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY,
+                    RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED
+            );
+        }
         return new GpuBackendCompileOptions(backendTarget, flags, updated);
     }
 
@@ -230,7 +275,7 @@ public record GpuBackendCompileOptions(
             java.nio.file.Path cacheDirectory,
             Duration maxEntryAge
     ) {
-        Map<String, String> updated = new LinkedHashMap<>(withMethodTestProbeEvidenceRankingCached().properties());
+        Map<String, String> updated = new LinkedHashMap<>(withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode.CACHE_ONLY).properties());
         if (cacheDirectory != null) {
             updated.put(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY, cacheDirectory.toString());
         }
@@ -245,6 +290,7 @@ public record GpuBackendCompileOptions(
 
     public GpuBackendCompileOptions withoutMethodTestProbeEvidenceRanking() {
         Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.remove(RUNTIME_METHOD_TEST_PROBE_MODE_PROPERTY);
         updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_PROPERTY);
         updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY);
         updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY);

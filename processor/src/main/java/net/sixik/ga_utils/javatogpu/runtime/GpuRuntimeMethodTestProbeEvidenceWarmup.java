@@ -257,11 +257,22 @@ public final class GpuRuntimeMethodTestProbeEvidenceWarmup {
             GpuRuntimeMethodTestGpuProbeOptions options,
             GpuRuntimeDeviceProfile deviceProfile
     ) {
-        if (options.compileOptions() != null) {
-            return options.compileOptions();
-        }
         GpuBackendTarget backendTarget = deviceProfile == null ? GpuBackendTarget.UNKNOWN : deviceProfile.backendTarget();
-        return GpuRuntimeCompileOptions.defaults(backendTarget);
+        GpuRuntimeCompileOptions baseOptions = options.compileOptions() == null
+                ? GpuRuntimeCompileOptions.defaults(backendTarget)
+                : options.compileOptions();
+        return compileOptionsPinnedToCandidate(baseOptions, deviceProfile);
+    }
+
+    private static GpuRuntimeCompileOptions compileOptionsPinnedToCandidate(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeDeviceProfile deviceProfile
+    ) {
+        String deviceId = deviceProfile == null ? "" : deviceProfile.deviceId();
+        if (compileOptions == null || deviceId.isBlank() || "unknown".equalsIgnoreCase(deviceId)) {
+            return compileOptions;
+        }
+        return compileOptions.withDeviceOverride(GpuRuntimeDeviceOverride.byDeviceId(deviceId));
     }
 
     private static GpuRuntimeMethodTestProbeEvidenceWarmupPlan blocked(

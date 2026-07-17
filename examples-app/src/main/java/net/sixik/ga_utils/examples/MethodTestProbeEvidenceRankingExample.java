@@ -13,9 +13,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackend;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyDecision;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestMode;
@@ -24,7 +24,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestGpuProbeEvidence
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestGpuProbeOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestGpuProbePlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestInvocationMaterializationPlan;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmup;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeMode;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceSelection;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceSelectionPlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidate;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupPlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbePlan;
@@ -36,6 +38,7 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Shows cache-only {@code @GPUTest} evidence ranking without requiring a real OpenCL device.
@@ -74,18 +77,27 @@ public final class MethodTestProbeEvidenceRankingExample {
         );
         GpuRuntimeCompileOptions baseOptions = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
                 .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED);
+        GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscoveryResult.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL synthetic",
+                List.of(integrated, discrete),
+                null
+        );
 
-        GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmup = GpuRuntimeMethodTestProbeEvidenceWarmup.warmSelectionProbeEvidence(
+        GpuRuntimeMethodTestProbeEvidenceSelectionPlan selectionPlan = GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(
                 descriptor,
                 classLoader,
                 List.of(GpuRuntimeMethodTestProbeEvidenceWarmupCandidate.borrowed(integrated, referenceBackend())),
-                GpuRuntimeMethodTestGpuProbeOptions.persistentCached(cacheDirectory).withCompileOptions(baseOptions)
+                discovery,
+                GpuRuntimeMethodTestGpuProbeOptions.persistentCached(cacheDirectory).withCompileOptions(baseOptions),
+                baseOptions,
+                Optional.empty(),
+                null,
+                null
         );
+        GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmup = selectionPlan.warmupPlan();
         GpuRuntimeMethodTestGpuProbePlan recordedProbe = warmup.candidateResults().get(0).gpuProbePlan();
-        GpuRuntimeCompileOptions rankingOptions = baseOptions.withPersistentMethodTestProbeEvidenceRanking(cacheDirectory);
-        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
-                new GpuRuntimeDevicePolicyContext(descriptor, rankingOptions, List.of(integrated, discrete))
-        );
+        GpuRuntimeDeviceSelection selection = selectionPlan.deviceSelection();
         GpuRuntimeDevicePolicyDecision evidenceDecision = selection.policyDecisions().stream()
                 .filter(decision -> decision.policyId().equals(GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_ID))
                 .findFirst()
@@ -100,6 +112,9 @@ public final class MethodTestProbeEvidenceRankingExample {
                 + "Recorded probe passed: " + recordedProbe.gpuProbePassed() + System.lineSeparator()
                 + "Recorded probe cache hit: " + recordedProbe.executions().get(0).cacheHit() + System.lineSeparator()
                 + "Evidence hash: " + recordedProbe.executions().get(0).evidenceKey().stableHash() + System.lineSeparator()
+                + "Selection helper status: " + selectionPlan.status() + System.lineSeparator()
+                + "Runtime method-test probe mode: " + GpuRuntimeMethodTestProbeMode.CACHE_ONLY.optionValue()
+                + System.lineSeparator()
                 + "Selected device: " + selection.selectedDevice()
                 .map(device -> device.deviceLabel() + " (`" + GpuRuntimeDevicePolicyContext.deviceKey(device) + "`)")
                 .orElse("none") + System.lineSeparator()
