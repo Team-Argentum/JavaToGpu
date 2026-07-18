@@ -311,6 +311,39 @@ execution, and GPU probe cache lookup now publish standard `GpuRuntimeLifecycleE
 them through ServiceLoader `GpuRuntimeLifecycleService` implementations or pass an explicit `GpuRuntimeLifecycleEventBus`
 to the overloads that accept one.
 
+Lifecycle events can also be routed into a pluggable logging backend through `GpuRuntimeLogService`. The built-in
+`GpuRuntimeLifecycleLoggingService` bridges lifecycle events into the runtime logging bus, but it stays silent until a
+log sink is present. For local console output, enable the built-in system stream sink:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClPracticalReleaseExample --console=plain "-Pjavatogpu.runtimeLog=system-out"
+```
+
+For application logging, provide a ServiceLoader implementation instead of depending on JavaToGpu internals:
+
+```java
+public final class Log4jGpuRuntimeLogService implements GpuRuntimeLogService {
+    private static final org.apache.logging.log4j.Logger LOG =
+            org.apache.logging.log4j.LogManager.getLogger("JavaToGpu");
+
+    @Override
+    public void log(GpuRuntimeLogRecord record) {
+        String text = record.message() + " " + record.fields();
+        switch (record.level()) {
+            case TRACE -> LOG.trace(text, record.throwable());
+            case DEBUG -> LOG.debug(text, record.throwable());
+            case INFO -> LOG.info(text, record.throwable());
+            case WARN -> LOG.warn(text, record.throwable());
+            case ERROR -> LOG.error(text, record.throwable());
+        }
+    }
+}
+```
+
+Register that class in `META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLogService`. JavaToGpu sorts
+log services by extension order/id/version and isolates failures, so a broken logging sink cannot control runtime
+selection, compilation, or invocation.
+
 To let device selection consume already-recorded probe evidence, opt in through compile options:
 
 ```java
@@ -430,7 +463,8 @@ cache-only placement, launch-shape guidance, vector/struct/packed-root-blob/imag
 optimizer artifact review guidance, and lifecycle trace output in one report. Use
 `-Pjavatogpu.practicalOpenClEvidenceCacheDir=...` to choose the evidence and journal directory.
 The image helper section points to `OpenClImageWorkflow.rgbaIntToFloat2D(...)`, which bundles the common 2D RGBA image
-input/output/sampler/readback path while keeping the OpenCL resources explicit.
+input/output/sampler/readback path while keeping the OpenCL resources explicit. It also exposes a natural
+`images.executionConfig()` for one-work-item-per-pixel 2D kernels plus shape helpers for logs and validation.
 The optimizer review section points to `runOptimizationJournalExample`, the default journal root, the before/after
 OpenCL files (`original.backend.opencl-c` and `optimized.backend.opencl-c`), the selected compiled file
 (`backend.opencl-c`), and the handoff/evidence files that explain why the default path stays review-only.

@@ -260,6 +260,10 @@ public final class OpenClPracticalReleaseExample {
             float[] writtenPixels = images.readOutputRgbaFloat();
             builder.append("- imageExample: passed output[0]=")
                     .append(output[0])
+                    .append(", ")
+                    .append(images.summary())
+                    .append(", launch=")
+                    .append(images.executionConfig().summary())
                     .append(", writtenPixel[0..3]=")
                     .append(formatFloat(writtenPixels[0]))
                     .append(",")
@@ -280,6 +284,8 @@ public final class OpenClPracticalReleaseExample {
                 + "- create common 2D resources: OpenClImageWorkflow.rgbaIntToFloat2D(backend, width, height, rgba)"
                 + System.lineSeparator()
                 + "- pass images.input(), images.output(), and images.sampler() to the generated kernel"
+                + System.lineSeparator()
+                + "- use images.executionConfig() for one-work-item-per-pixel 2D kernels"
                 + System.lineSeparator()
                 + "- read output with images.readOutputRgbaFloat(); close the workflow with try-with-resources"
                 + System.lineSeparator();

@@ -240,6 +240,8 @@ Use `-Pjavatogpu.practicalOpenClEvidenceCacheDir=...` to choose the evidence/jou
 shows the common `OpenClImageWorkflow.rgbaIntToFloat2D(...)` host helper, then points to
 `runOptimizationJournalExample` and the before/after files to compare: `original.backend.opencl-c`,
 `optimized.backend.opencl-c`, selected `backend.opencl-c`, and `runtime-ir-optimizer-evidence.properties`.
+Use `"-Pjavatogpu.runtimeLog=system-out"` or provide a `GpuRuntimeLogService` through ServiceLoader to route lifecycle
+logs into System.out, Log4J, SLF4J, or another application logging backend without manual listener registration.
 
 ## Project Layout
 

@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
 
@@ -71,12 +72,46 @@ public final class OpenClImageWorkflow {
 
     static int requireRgbaElementCount(String label, int width, int height, int actualLength) {
         String name = label == null || label.isBlank() ? "rgba" : label;
-        if (width <= 0 || height <= 0) {
+        int expectedLength = rgbaElementCount(name, width, height);
+        if (actualLength != expectedLength) {
             throw new IllegalArgumentException(
-                    name + " image dimensions must be positive: width=" + width + ", height=" + height
+                    name
+                            + " must contain width * height * 4 RGBA elements: expected "
+                            + expectedLength
+                            + " but found "
+                            + actualLength
             );
         }
-        long pixelCount = (long) width * height;
+        return expectedLength;
+    }
+
+    /**
+     * Returns the number of pixels for a positive 2D image shape.
+     */
+    public static long pixelCount(int width, int height) {
+        return pixelCount("image", width, height);
+    }
+
+    /**
+     * Returns the Java array element count for an RGBA image backed by four scalar channels per pixel.
+     */
+    public static int rgbaElementCount(int width, int height) {
+        return rgbaElementCount("rgba", width, height);
+    }
+
+    private static long pixelCount(String label, int width, int height) {
+        String name = label == null || label.isBlank() ? "image" : label;
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException(
+                    name + " dimensions must be positive: width=" + width + ", height=" + height
+            );
+        }
+        return (long) width * height;
+    }
+
+    private static int rgbaElementCount(String label, int width, int height) {
+        String name = label == null || label.isBlank() ? "rgba" : label;
+        long pixelCount = pixelCount(name + " image", width, height);
         long expectedLength = pixelCount * 4L;
         if (expectedLength > Integer.MAX_VALUE) {
             throw new IllegalArgumentException(
@@ -86,15 +121,6 @@ public final class OpenClImageWorkflow {
                             + height
                             + ", expectedElements="
                             + expectedLength
-            );
-        }
-        if (actualLength != (int) expectedLength) {
-            throw new IllegalArgumentException(
-                    name
-                            + " must contain width * height * 4 RGBA elements: expected "
-                            + expectedLength
-                            + " but found "
-                            + actualLength
             );
         }
         return (int) expectedLength;
@@ -176,6 +202,32 @@ public final class OpenClImageWorkflow {
 
         public int height() {
             return height;
+        }
+
+        public long pixelCount() {
+            return OpenClImageWorkflow.pixelCount(width, height);
+        }
+
+        public int rgbaElementCount() {
+            return OpenClImageWorkflow.rgbaElementCount(width, height);
+        }
+
+        /**
+         * Returns the natural 2D launch shape for image kernels that process one work-item per pixel.
+         */
+        public GpuExecutionConfig executionConfig() {
+            return GpuExecutionConfig.twoDimensional(width, height);
+        }
+
+        public String summary() {
+            return "2D RGBA int->float image "
+                    + width
+                    + "x"
+                    + height
+                    + ", pixels="
+                    + pixelCount()
+                    + ", rgbaElements="
+                    + rgbaElementCount();
         }
 
         public Image2DReadOnly input() {

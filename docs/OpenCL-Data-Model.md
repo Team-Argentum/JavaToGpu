@@ -127,8 +127,10 @@ Image support is still alpha-level, so validate on the target GPU and driver bef
 
 For the common 2D RGBA signed-int input to RGBA float output workflow, `OpenClImageWorkflow.rgbaIntToFloat2D(...)`
 bundles the host-side input image, output image, nearest clamp-to-edge sampler, readback helper, shape validation, and
-cleanup into one try-with-resources object. Use the lower-level `createReadOnly...`, `createWriteOnly...`, and `read...`
-methods when you need a less common image family or custom sampler behavior.
+cleanup into one try-with-resources object. The workflow also exposes `pixelCount()`, `rgbaElementCount()`, `summary()`,
+and `executionConfig()` for one-work-item-per-pixel 2D kernels, so examples and diagnostics do not need to duplicate the
+`width * height * 4` math. Use the lower-level `createReadOnly...`, `createWriteOnly...`, and `read...` methods when you
+need a less common image family or custom sampler behavior.
 
 ## Choosing A Data Shape
 

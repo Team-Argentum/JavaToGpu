@@ -154,3 +154,10 @@ tasks.withType(JavaCompile).configureEach {
         ]
     }
 }
+
+tasks.withType(JavaExec).configureEach {
+    def runtimeLog = providers.gradleProperty('javatogpu.runtimeLog')
+    if (runtimeLog.isPresent()) {
+        systemProperty 'javatogpu.runtime.log', runtimeLog.get()
+    }
+}

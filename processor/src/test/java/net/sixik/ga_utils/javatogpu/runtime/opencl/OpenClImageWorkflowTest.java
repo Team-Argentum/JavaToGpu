@@ -14,6 +14,8 @@ class OpenClImageWorkflowTest {
                 8,
                 OpenClImageWorkflow.requireRgbaElementCount("rgbaInput", 2, 1, 8)
         );
+        assertEquals(2L, OpenClImageWorkflow.pixelCount(2, 1));
+        assertEquals(8, OpenClImageWorkflow.rgbaElementCount(2, 1));
     }
 
     @Test
@@ -34,5 +36,15 @@ class OpenClImageWorkflowTest {
         );
 
         assertTrue(exception.getMessage().contains("expected 8 but found 7"), exception.getMessage());
+    }
+
+    @Test
+    void rejectsRgbaElementCountOverflow() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenClImageWorkflow.rgbaElementCount(30_000, 30_000)
+        );
+
+        assertTrue(exception.getMessage().contains("too large for a Java array-backed RGBA workflow"), exception.getMessage());
     }
 }

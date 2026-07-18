@@ -154,7 +154,8 @@ try (OpenClImageWorkflow.RgbaIntToFloat2D images = OpenClImageWorkflow.rgbaIntTo
         height,
         rgbaPixels
 )) {
-    ImageKernel.run(images.input(), images.output(), images.sampler(), sums);
+    GpuExecutionConfig config = images.executionConfig();
+    ImageKernel_run_GpuLauncher.invokeWithConfig(config, images.input(), images.output(), images.sampler(), sums);
     float[] rgbaOutput = images.readOutputRgbaFloat();
 }
 ```
