@@ -126,6 +126,7 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 String.valueOf(countKernelBooleanProperty(
                         properties,
                         kernelCount,
+                        "runtime.backend.source.productionPromotionOperatorAccepted",
                         "sourceSwitching.productionPromotionOperatorAccepted"
                 ))
         ));
@@ -601,16 +602,23 @@ public record GpuBackendSourcePromotionWorkloadSummary(
     }
 
     private static String summarizeSourcePromotionFirstBlockerFamilies(Properties properties, int kernelCount) {
-        int familyCount = parsePositiveInt(properties.getProperty(
+        int portableFamilyCount = parsePositiveInt(properties.getProperty(
+                "runtime.backend.source.promotionFirstBlockerFamily.count",
+                "0"
+        ));
+        if (portableFamilyCount > 0) {
+            return summarizeIndexed(properties, "runtime.backend.source.promotionFirstBlockerFamily", portableFamilyCount);
+        }
+        int legacyFamilyCount = parsePositiveInt(properties.getProperty(
                 "sourceSwitching.sourcePromotionFirstBlockerFamily.count",
                 "0"
         ));
-        if (familyCount > 0) {
-            return summarizeIndexed(properties, "sourceSwitching.sourcePromotionFirstBlockerFamily", familyCount);
+        if (legacyFamilyCount > 0) {
+            return summarizeIndexed(properties, "sourceSwitching.sourcePromotionFirstBlockerFamily", legacyFamilyCount);
         }
         Map<String, Integer> familyCounts = new LinkedHashMap<>();
         for (int index = 0; index < kernelCount; index++) {
-            String blocker = properties.getProperty("kernel." + index + ".sourceSwitching.sourcePromotionFirstBlocker", "");
+            String blocker = sourcePromotionFirstBlocker(properties, index);
             if (blocker.isBlank() || "none".equals(blocker) || "unknown".equals(blocker)) {
                 continue;
             }
@@ -621,13 +629,23 @@ public record GpuBackendSourcePromotionWorkloadSummary(
     }
 
     private static String summarizeSourcePromotionFirstBlockers(Properties properties, int kernelCount) {
-        int blockerCount = parsePositiveInt(properties.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count", "0"));
-        if (blockerCount > 0) {
-            return summarizeIndexed(properties, "sourceSwitching.sourcePromotionFirstBlocker", blockerCount);
+        int portableBlockerCount = parsePositiveInt(properties.getProperty(
+                "runtime.backend.source.promotionFirstBlocker.count",
+                "0"
+        ));
+        if (portableBlockerCount > 0) {
+            return summarizeIndexed(properties, "runtime.backend.source.promotionFirstBlocker", portableBlockerCount);
+        }
+        int legacyBlockerCount = parsePositiveInt(properties.getProperty(
+                "sourceSwitching.sourcePromotionFirstBlocker.count",
+                "0"
+        ));
+        if (legacyBlockerCount > 0) {
+            return summarizeIndexed(properties, "sourceSwitching.sourcePromotionFirstBlocker", legacyBlockerCount);
         }
         Map<String, Integer> blockerCounts = new LinkedHashMap<>();
         for (int index = 0; index < kernelCount; index++) {
-            String blocker = properties.getProperty("kernel." + index + ".sourceSwitching.sourcePromotionFirstBlocker", "");
+            String blocker = sourcePromotionFirstBlocker(properties, index);
             if (blocker.isBlank() || "none".equals(blocker) || "unknown".equals(blocker)) {
                 continue;
             }
@@ -639,13 +657,45 @@ public record GpuBackendSourcePromotionWorkloadSummary(
     private static String summarizeSourceSwitchingDecisions(Properties properties, int kernelCount) {
         Map<String, Integer> decisionCounts = new LinkedHashMap<>();
         for (int index = 0; index < kernelCount; index++) {
-            String decision = properties.getProperty("kernel." + index + ".sourceSwitching.decision", "");
+            String decision = sourceSwitchingDecision(properties, index);
             if (decision.isBlank() || "not-recorded".equals(decision)) {
                 continue;
             }
             decisionCounts.merge(decision, 1, Integer::sum);
         }
         return summarizeCounts(decisionCounts);
+    }
+
+    private static String sourceSwitchingDecision(Properties properties, int index) {
+        return sourceSwitchingDecision(properties, index, "");
+    }
+
+    private static String sourceSwitchingDecision(Properties properties, int index, String fallback) {
+        String prefix = "kernel." + index + ".";
+        return properties.getProperty(
+                prefix + "runtime.backend.source.decision",
+                properties.getProperty(prefix + "sourceSwitching.decision", fallback)
+        );
+    }
+
+    private static String sourcePromotionFirstBlocker(Properties properties, int index) {
+        return sourcePromotionFirstBlocker(properties, index, "");
+    }
+
+    private static String sourcePromotionFirstBlocker(Properties properties, int index, String fallback) {
+        String prefix = "kernel." + index + ".";
+        return properties.getProperty(
+                prefix + "runtime.backend.source.promotionFirstBlocker",
+                properties.getProperty(prefix + "sourceSwitching.sourcePromotionFirstBlocker", fallback)
+        );
+    }
+
+    private static String sourcePromotionOperatorAccepted(Properties properties, int index) {
+        String prefix = "kernel." + index + ".";
+        return properties.getProperty(
+                prefix + "runtime.backend.source.productionPromotionOperatorAccepted",
+                properties.getProperty(prefix + "sourceSwitching.productionPromotionOperatorAccepted", "false")
+        );
     }
 
     private static int runtimeExtensionParticipationRecordedKernelCount(Properties properties, int kernelCount) {
@@ -724,14 +774,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append("[diagnostics=")
                     .append(properties.getProperty("kernel." + index + ".diagnostic.count", "0"))
                     .append(", sourceSwitching=")
-                    .append(properties.getProperty("kernel." + index + ".sourceSwitching.decision", "not-recorded"))
+                    .append(sourceSwitchingDecision(properties, index, "not-recorded"))
                     .append("/operatorAccepted=")
-                    .append(properties.getProperty(
-                            "kernel." + index + ".sourceSwitching.productionPromotionOperatorAccepted",
-                            "false"
-                    ))
+                    .append(sourcePromotionOperatorAccepted(properties, index))
                     .append("/sourcePromotionFirstBlocker=")
-                    .append(properties.getProperty("kernel." + index + ".sourceSwitching.sourcePromotionFirstBlocker", "unknown"))
+                    .append(sourcePromotionFirstBlocker(properties, index, "unknown"))
                     .append(", runtimeIr=")
                     .append(properties.getProperty("kernel." + index + ".runtimeIrHandoff.selectedStage", "unknown"))
                     .append(", optimizerDrift=")
@@ -979,14 +1026,23 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return sum;
     }
 
-    private static int countKernelBooleanProperty(Properties properties, int kernelCount, String propertyName) {
+    private static int countKernelBooleanProperty(Properties properties, int kernelCount, String... propertyNames) {
         int count = 0;
         for (int index = 0; index < kernelCount; index++) {
-            if ("true".equals(properties.getProperty("kernel." + index + "." + propertyName))) {
+            if (kernelBooleanProperty(properties, index, propertyNames)) {
                 count++;
             }
         }
         return count;
+    }
+
+    private static boolean kernelBooleanProperty(Properties properties, int index, String... propertyNames) {
+        for (String propertyName : propertyNames) {
+            if ("true".equals(properties.getProperty("kernel." + index + "." + propertyName))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String allKernelBooleanProperty(Properties properties, int kernelCount, String propertyName) {

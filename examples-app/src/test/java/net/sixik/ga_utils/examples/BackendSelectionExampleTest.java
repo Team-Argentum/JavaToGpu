@@ -1,10 +1,12 @@
 package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendPolicy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeSelectionResult;
 import org.junit.jupiter.api.Test;
 
@@ -74,5 +76,48 @@ class BackendSelectionExampleTest {
         assertTrue(combined.contains("Device discoveries:"));
         assertTrue(combined.contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
         assertTrue(combined.contains("First blocker: opencl-device-discovery-failed"));
+    }
+
+    @Test
+    void rendersAutomaticBackendDevicePreflightGuideWithoutNativeBackendProbe() {
+        String guide = BackendSelectionExample.renderAutomaticBackendDevicePreflightGuide();
+
+        assertTrue(guide.contains("Automatic backend/device preflight profile:"));
+        assertTrue(guide.contains("withStandardBackendDevicePreflight()"));
+        assertTrue(guide.contains("DemoKernel_GpuLauncher.invokeWithCompileOptions(options, ...)"));
+        assertTrue(guide.contains("mode: standard"));
+        assertTrue(guide.contains("requested: true"));
+        assertTrue(guide.contains("only when no backend is already installed"));
+    }
+
+    @Test
+    void rendersCudaInventoryFactsWithoutNativeBackendProbe() {
+        GpuRuntimeDeviceProfile cudaDevice = GpuRuntimeDeviceProfile.cuda(
+                "GPU-test",
+                "NVIDIA GeForce RTX 3060",
+                "NVIDIA",
+                "551.86",
+                "CUDA 12.4, compute capability 8.6",
+                GpuDeviceClassTarget.DGPU,
+                12_884_901_888L,
+                "NVIDIA CUDA",
+                "driver 551.86, CUDA 12.4"
+        );
+        GpuRuntimeDeviceDiscoveryResult result = GpuRuntimeDeviceDiscoveryResult.available(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                List.of(cudaDevice),
+                null
+        );
+
+        String facts = BackendSelectionExample.renderCudaInventoryFacts(
+                GpuRuntimeDeviceDiscoveryCatalog.of(List.of(result))
+        );
+
+        assertTrue(facts.contains("CUDA inventory facts:"));
+        assertTrue(facts.contains("NVIDIA GeForce RTX 3060"));
+        assertTrue(facts.contains("runtime=12.4"));
+        assertTrue(facts.contains("computeCapability=8.6"));
+        assertTrue(facts.contains("memoryBytes=12884901888"));
     }
 }

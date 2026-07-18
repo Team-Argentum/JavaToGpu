@@ -26,6 +26,9 @@ public record GpuBackendCompileOptions(
     public static final String RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY = "runtime.irOptimizerSelection";
     public static final String RUNTIME_IR_OPTIMIZER_SELECTION_REVIEW_ONLY = "review-only";
     public static final String RUNTIME_IR_OPTIMIZER_SELECTION_EXPERIMENTAL_APPLY = "experimental-apply";
+    public static final String RUNTIME_BACKEND_DEVICE_PREFLIGHT_PROPERTY = "runtime.backendDevicePreflight";
+    public static final String RUNTIME_BACKEND_DEVICE_PREFLIGHT_DISABLED = "disabled";
+    public static final String RUNTIME_BACKEND_DEVICE_PREFLIGHT_STANDARD = "standard";
     public static final String PRODUCTION_PROMOTION_DECISION_MODE_PROPERTY = "productionPromotion.decisionMode";
     public static final String PRODUCTION_PROMOTION_OPERATOR_ACCEPTED_PROPERTY = "productionPromotion.operatorAccepted";
     public static final String RUNTIME_DEVICE_SELF_TEST_PROPERTY = "runtime.deviceSelfTest";
@@ -107,6 +110,41 @@ public record GpuBackendCompileOptions(
         return RUNTIME_IR_OPTIMIZER_SELECTION_EXPERIMENTAL_APPLY.equals(
                 properties.get(RUNTIME_IR_OPTIMIZER_SELECTION_PROPERTY)
         );
+    }
+
+    public String backendDevicePreflightMode() {
+        if (backendDevicePreflightModeBlocker().isPresent()) {
+            return RUNTIME_BACKEND_DEVICE_PREFLIGHT_DISABLED;
+        }
+        String value = properties.get(RUNTIME_BACKEND_DEVICE_PREFLIGHT_PROPERTY);
+        return value == null || value.isBlank() ? RUNTIME_BACKEND_DEVICE_PREFLIGHT_DISABLED : value;
+    }
+
+    public Optional<String> backendDevicePreflightModeBlocker() {
+        String value = properties.get(RUNTIME_BACKEND_DEVICE_PREFLIGHT_PROPERTY);
+        if (value == null || value.isBlank()
+                || RUNTIME_BACKEND_DEVICE_PREFLIGHT_DISABLED.equals(value)
+                || RUNTIME_BACKEND_DEVICE_PREFLIGHT_STANDARD.equals(value)) {
+            return Optional.empty();
+        }
+        return Optional.of("runtime-backend-device-preflight-mode-invalid");
+    }
+
+    public boolean requestsStandardBackendDevicePreflight() {
+        return backendDevicePreflightModeBlocker().isEmpty()
+                && RUNTIME_BACKEND_DEVICE_PREFLIGHT_STANDARD.equals(backendDevicePreflightMode());
+    }
+
+    public GpuBackendCompileOptions withStandardBackendDevicePreflight() {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(RUNTIME_BACKEND_DEVICE_PREFLIGHT_PROPERTY, RUNTIME_BACKEND_DEVICE_PREFLIGHT_STANDARD);
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withoutBackendDevicePreflight() {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.remove(RUNTIME_BACKEND_DEVICE_PREFLIGHT_PROPERTY);
+        return new GpuBackendCompileOptions(backendTarget, flags, updated);
     }
 
     public GpuBackendCompileOptions withRuntimeIrOptimizerSelection(String selection) {

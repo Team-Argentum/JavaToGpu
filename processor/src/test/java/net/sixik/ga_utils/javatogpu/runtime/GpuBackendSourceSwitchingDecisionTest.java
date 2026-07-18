@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +34,18 @@ class GpuBackendSourceSwitchingDecisionTest {
         assertFalse(decision.irGpuSourceRequested());
         assertFalse(decision.productionProfileRequested());
         assertTrue(decision.toPropertiesText().contains("diagnostic.0=descriptor source remains selected"));
+        assertTrue(decision.toPropertiesText().contains("runtime.backend.source.status=descriptor-default"));
+
+        Map<String, String> fields = decision.artifactFields("sourceSwitching");
+        assertEquals("descriptor-default", fields.get("sourceSwitching.status"));
+        assertEquals("compile-descriptor-source", fields.get("sourceSwitching.decision"));
+        assertEquals("true", fields.get("sourceSwitching.runtime.backend.source.selection.present"));
+        assertEquals("descriptor-default", fields.get("sourceSwitching.runtime.backend.source.status"));
+        assertEquals("compile-descriptor-source", fields.get("sourceSwitching.runtime.backend.source.decision"));
+        assertEquals("descriptor", fields.get("sourceSwitching.runtime.backend.source.selection"));
+        assertEquals("false", fields.get("sourceSwitching.runtime.backend.source.irgpuRequested"));
+        assertEquals(decision.runtimeLoadMode(), fields.get("sourceSwitching.runtime.backend.source.runtimeLoadMode"));
+        assertEquals("descriptor-default", fields.get("sourceSwitching.runtime.status"));
     }
 
     @Test

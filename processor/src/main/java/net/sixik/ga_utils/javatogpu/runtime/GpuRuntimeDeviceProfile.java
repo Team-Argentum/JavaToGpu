@@ -3,6 +3,10 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 public record GpuRuntimeDeviceProfile(
         GpuBackendTarget backendTarget,
         String backendName,
@@ -24,6 +28,15 @@ public record GpuRuntimeDeviceProfile(
         String platformName,
         String platformVersion
 ) {
+
+    private static final Pattern CUDA_RUNTIME_VERSION = Pattern.compile(
+            "\\bCUDA\\s+([0-9]+(?:\\.[0-9]+)*|unknown)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CUDA_COMPUTE_CAPABILITY = Pattern.compile(
+            "\\bcompute\\s+capability\\s+([0-9]+(?:\\.[0-9]+)*|unknown)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
 
     public GpuRuntimeDeviceProfile(
             GpuBackendTarget backendTarget,
@@ -292,6 +305,40 @@ public record GpuRuntimeDeviceProfile(
         );
     }
 
+    public static GpuRuntimeDeviceProfile cuda(
+            String deviceId,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            GpuDeviceClassTarget deviceClass,
+            long globalMemoryBytes,
+            String platformName,
+            String platformVersion
+    ) {
+        return new GpuRuntimeDeviceProfile(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                deviceId,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                deviceClass,
+                -1L,
+                globalMemoryBytes,
+                -1L,
+                -1L,
+                -1L,
+                false,
+                false,
+                false,
+                false,
+                platformName,
+                platformVersion
+        );
+    }
+
     public GpuRuntimeDeviceProfile withBackendName(String value) {
         return new GpuRuntimeDeviceProfile(
                 backendTarget,
@@ -316,6 +363,23 @@ public record GpuRuntimeDeviceProfile(
         );
     }
 
+    public String cudaRuntimeVersion() {
+        if (backendTarget != GpuBackendTarget.CUDA) {
+            return "not-cuda";
+        }
+        String fromApiText = firstMatch(CUDA_RUNTIME_VERSION, apiVersionText);
+        return "unknown".equals(fromApiText)
+                ? firstMatch(CUDA_RUNTIME_VERSION, platformVersion)
+                : fromApiText;
+    }
+
+    public String cudaComputeCapability() {
+        if (backendTarget != GpuBackendTarget.CUDA) {
+            return "not-cuda";
+        }
+        return firstMatch(CUDA_COMPUTE_CAPABILITY, apiVersionText);
+    }
+
     private static String normalize(String value) {
         return value == null || value.isBlank() ? "unknown" : value;
     }
@@ -328,5 +392,11 @@ public record GpuRuntimeDeviceProfile(
         return value == null || value == GpuDeviceClassTarget.ANY
                 ? GpuDeviceClassTarget.UNKNOWN
                 : value;
+    }
+
+    private static String firstMatch(Pattern pattern, String value) {
+        String text = normalize(value);
+        Matcher matcher = pattern.matcher(text);
+        return matcher.find() ? matcher.group(1).toLowerCase(Locale.ROOT) : "unknown";
     }
 }

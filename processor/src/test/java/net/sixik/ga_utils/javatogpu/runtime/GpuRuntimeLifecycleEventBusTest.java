@@ -113,6 +113,34 @@ class GpuRuntimeLifecycleEventBusTest {
         assertTrue(properties.contains("runtimeLifecycle.event.field.0.value=build/out\\nnext-line"));
     }
 
+    @Test
+    void lifecycleEventArtifactFieldsExposeRuntimeFieldsDirectly() {
+        GpuRuntimeLifecycleEvent event = new GpuRuntimeLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.DEVICE_DISCOVERY_COMPLETED,
+                GpuBackendTarget.CUDA,
+                "runtime-device-discovery",
+                "selection",
+                "CUDA discovery completed",
+                Map.of(
+                        "runtime.backend.target", "CUDA",
+                        "runtime.backend.name", "CUDA",
+                        "runtime.device.discovery.available", "true",
+                        "deviceDiscovery.precomputed", "false"
+                )
+        );
+
+        GpuRuntimeLifecycleEventReport report = new GpuRuntimeLifecycleEventReport(event, List.of());
+        Map<String, String> fields = report.artifactFields("runtimeLifecycle");
+        String properties = report.toPropertiesText();
+
+        assertEquals("3", fields.get("runtimeLifecycle.event.runtimeField.count"));
+        assertEquals("CUDA", fields.get("runtimeLifecycle.event.runtime.backend.target"));
+        assertEquals("CUDA", fields.get("runtimeLifecycle.event.runtime.backend.name"));
+        assertEquals("true", fields.get("runtimeLifecycle.event.runtime.device.discovery.available"));
+        assertTrue(properties.contains("runtimeLifecycle.event.runtime.backend.target=CUDA"));
+        assertTrue(properties.contains("runtimeLifecycle.event.runtime.device.discovery.available=true"));
+    }
+
     private static GpuRuntimeLifecycleEventListener listener(
             String id,
             int order,

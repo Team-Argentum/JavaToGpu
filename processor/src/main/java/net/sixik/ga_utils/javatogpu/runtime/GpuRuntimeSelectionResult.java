@@ -85,12 +85,33 @@ public record GpuRuntimeSelectionResult(
     }
 
     /**
+     * Returns a structured backend+device selection snapshot when native device discovery evidence is available.
+     */
+    public GpuRuntimeBackendDeviceSelection withDeviceDiscovery(
+            GpuRuntimeDeviceDiscoveryResult deviceDiscovery
+    ) {
+        GpuRuntimeDeviceDiscoveryCatalog catalog = deviceDiscovery == null
+                ? GpuRuntimeDeviceDiscoveryCatalog.empty()
+                : GpuRuntimeDeviceDiscoveryCatalog.of(List.of(deviceDiscovery));
+        return withDeviceDiscovery(catalog);
+    }
+
+    /**
      * Returns a combined backend/device explanation for a multi-backend discovery catalog.
      */
     public GpuRuntimeBackendDeviceSelectionExplanation explainWithDeviceDiscovery(
             GpuRuntimeDeviceDiscoveryCatalog deviceDiscoveryCatalog
     ) {
         return GpuRuntimeBackendDeviceSelectionExplanation.from(this, deviceDiscoveryCatalog);
+    }
+
+    /**
+     * Returns a structured backend+device selection snapshot for a multi-backend discovery catalog.
+     */
+    public GpuRuntimeBackendDeviceSelection withDeviceDiscovery(
+            GpuRuntimeDeviceDiscoveryCatalog deviceDiscoveryCatalog
+    ) {
+        return new GpuRuntimeBackendDeviceSelection(this, deviceDiscoveryCatalog);
     }
 
     /**

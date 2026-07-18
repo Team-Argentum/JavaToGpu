@@ -178,6 +178,103 @@ public final class GpuGeneratedLauncherInvoker {
         return castReturningFirstValue(resultType, expectedWrapper, ownerClass, methodName, value);
     }
 
+    public static Object invokeReturningFirstWithStandardBackendAndDevice(
+            Class<?> ownerClass,
+            String methodName,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(compileOptions)) {
+            return invokeReturningFirstWithCompileOptions(ownerClass, methodName, compileOptions, arguments);
+        }
+    }
+
+    public static <T> T invokeReturningFirstWithStandardBackendAndDeviceAs(
+            Class<T> resultType,
+            Class<?> ownerClass,
+            String methodName,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        Class<?> expectedWrapper = validateReturningFirstResultType(resultType, ownerClass, methodName);
+        Object value = invokeReturningFirstWithStandardBackendAndDevice(ownerClass, methodName, compileOptions, arguments);
+        return castReturningFirstValue(resultType, expectedWrapper, ownerClass, methodName, value);
+    }
+
+    public static Object invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDevice(
+            Class<?> ownerClass,
+            String methodName,
+            long globalWorkSize,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(compileOptions)) {
+            return invokeReturningFirstWithGlobalWorkSizeAndCompileOptions(
+                    ownerClass,
+                    methodName,
+                    globalWorkSize,
+                    compileOptions,
+                    arguments
+            );
+        }
+    }
+
+    public static <T> T invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDeviceAs(
+            Class<T> resultType,
+            Class<?> ownerClass,
+            String methodName,
+            long globalWorkSize,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        Class<?> expectedWrapper = validateReturningFirstResultType(resultType, ownerClass, methodName);
+        Object value = invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDevice(
+                ownerClass,
+                methodName,
+                globalWorkSize,
+                compileOptions,
+                arguments
+        );
+        return castReturningFirstValue(resultType, expectedWrapper, ownerClass, methodName, value);
+    }
+
+    public static Object invokeReturningFirstWithConfigAndStandardBackendAndDevice(
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(compileOptions)) {
+            return invokeReturningFirstWithConfigAndCompileOptions(
+                    ownerClass,
+                    methodName,
+                    executionConfig,
+                    compileOptions,
+                    arguments
+            );
+        }
+    }
+
+    public static <T> T invokeReturningFirstWithConfigAndStandardBackendAndDeviceAs(
+            Class<T> resultType,
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        Class<?> expectedWrapper = validateReturningFirstResultType(resultType, ownerClass, methodName);
+        Object value = invokeReturningFirstWithConfigAndStandardBackendAndDevice(
+                ownerClass,
+                methodName,
+                executionConfig,
+                compileOptions,
+                arguments
+        );
+        return castReturningFirstValue(resultType, expectedWrapper, ownerClass, methodName, value);
+    }
+
     public static Object invokeWith3DWorkSize(
             Class<?> ownerClass,
             String methodName,
@@ -263,6 +360,71 @@ public final class GpuGeneratedLauncherInvoker {
                 arguments
         );
         return null;
+    }
+
+    public static Object invokeWithStandardBackendAndDevice(
+            Class<?> ownerClass,
+            String methodName,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(compileOptions)) {
+            return invokeWithCompileOptions(ownerClass, methodName, compileOptions, arguments);
+        }
+    }
+
+    public static Object invokeWithGlobalWorkSizeAndStandardBackendAndDevice(
+            Class<?> ownerClass,
+            String methodName,
+            long globalWorkSize,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(compileOptions)) {
+            return invokeWithGlobalWorkSizeAndCompileOptions(
+                    ownerClass,
+                    methodName,
+                    globalWorkSize,
+                    compileOptions,
+                    arguments
+            );
+        }
+    }
+
+    public static Object invokeWith3DWorkSizeAndStandardBackendAndDevice(
+            Class<?> ownerClass,
+            String methodName,
+            long globalX,
+            long globalY,
+            long globalZ,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        return invokeWithConfigAndStandardBackendAndDevice(
+                ownerClass,
+                methodName,
+                GpuExecutionConfig.threeDimensional(globalX, globalY, globalZ),
+                compileOptions,
+                arguments
+        );
+    }
+
+    public static Object invokeWithConfigAndStandardBackendAndDevice(
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(compileOptions)) {
+            return invokeWithConfigAndCompileOptions(
+                    ownerClass,
+                    methodName,
+                    executionConfig,
+                    compileOptions,
+                    arguments
+            );
+        }
     }
 
     public static GpuKernelDescriptor descriptor(Class<?> ownerClass, String methodName) {
@@ -463,6 +625,64 @@ public final class GpuGeneratedLauncherInvoker {
             return invokeGenerated("invokeWithConfigAndCompileOptions", fullArguments);
         }
 
+        public Object invokeWithStandardBackendAndDevice(
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeWithStandardBackendAndDevice(
+                    ownerClass,
+                    methodName,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public Object invokeWithGlobalWorkSizeAndStandardBackendAndDevice(
+                long globalWorkSize,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeWithGlobalWorkSizeAndStandardBackendAndDevice(
+                    ownerClass,
+                    methodName,
+                    globalWorkSize,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public Object invokeWith3DWorkSizeAndStandardBackendAndDevice(
+                long globalX,
+                long globalY,
+                long globalZ,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeWith3DWorkSizeAndStandardBackendAndDevice(
+                    ownerClass,
+                    methodName,
+                    globalX,
+                    globalY,
+                    globalZ,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public Object invokeWithConfigAndStandardBackendAndDevice(
+                GpuExecutionConfig executionConfig,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeWithConfigAndStandardBackendAndDevice(
+                    ownerClass,
+                    methodName,
+                    executionConfig,
+                    compileOptions,
+                    arguments
+            );
+        }
+
         public Object invokeReturningFirst(Object... arguments) {
             return invokeGenerated("invokeReturningFirst", arguments);
         }
@@ -601,6 +821,92 @@ public final class GpuGeneratedLauncherInvoker {
             );
             Object value = invokeReturningFirstWithConfigAndCompileOptions(executionConfig, compileOptions, arguments);
             return castReturningFirstValue(resultType, expectedWrapper, ownerClass, methodName, value);
+        }
+
+        public Object invokeReturningFirstWithStandardBackendAndDevice(
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeReturningFirstWithStandardBackendAndDevice(
+                    ownerClass,
+                    methodName,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public <T> T invokeReturningFirstWithStandardBackendAndDeviceAs(
+                Class<T> resultType,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeReturningFirstWithStandardBackendAndDeviceAs(
+                    resultType,
+                    ownerClass,
+                    methodName,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public Object invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDevice(
+                long globalWorkSize,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDevice(
+                    ownerClass,
+                    methodName,
+                    globalWorkSize,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public <T> T invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDeviceAs(
+                Class<T> resultType,
+                long globalWorkSize,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDeviceAs(
+                    resultType,
+                    ownerClass,
+                    methodName,
+                    globalWorkSize,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public Object invokeReturningFirstWithConfigAndStandardBackendAndDevice(
+                GpuExecutionConfig executionConfig,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeReturningFirstWithConfigAndStandardBackendAndDevice(
+                    ownerClass,
+                    methodName,
+                    executionConfig,
+                    compileOptions,
+                    arguments
+            );
+        }
+
+        public <T> T invokeReturningFirstWithConfigAndStandardBackendAndDeviceAs(
+                Class<T> resultType,
+                GpuExecutionConfig executionConfig,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.invokeReturningFirstWithConfigAndStandardBackendAndDeviceAs(
+                    resultType,
+                    ownerClass,
+                    methodName,
+                    executionConfig,
+                    compileOptions,
+                    arguments
+            );
         }
 
         public GpuKernelDescriptor descriptor() {

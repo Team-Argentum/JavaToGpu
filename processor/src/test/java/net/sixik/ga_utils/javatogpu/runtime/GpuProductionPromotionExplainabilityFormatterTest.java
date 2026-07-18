@@ -88,6 +88,8 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("productionSourceSwitchingEnabled.all=true"));
         assertTrue(formatted.contains("productionPromotionDecisionMode.productionEnabled.count=2"));
         assertTrue(formatted.contains("productionPromotionDecisionMode.productionEnabled.all=true"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.count=2"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.all=true"));
         assertTrue(formatted.contains("sourceSwitching.productionDecision.count=2"));
         assertTrue(formatted.contains("sourceSwitching.productionDecision.all=true"));
         assertTrue(formatted.contains("i3SourceReady.count=2"));
@@ -103,6 +105,25 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("contract.violation.count=0"));
         assertTrue(formatted.contains("decision.mode=production-enabled"));
         assertTrue(formatted.contains("decision.productionMutationAllowed=true"));
+    }
+
+    @Test
+    void acceptsPortableRuntimeBackendSourceDecisionFieldsWithoutLegacySourceSwitchingFields() {
+        Properties workloadGate = productionReadyGate();
+        workloadGate.remove("sourceSwitching.productionDecision.count");
+        workloadGate.remove("sourceSwitching.productionDecision.all");
+        workloadGate.setProperty("runtime.backend.source.productionDecision.count", "2");
+        workloadGate.setProperty("runtime.backend.source.productionDecision.all", "true");
+
+        String formatted = GpuProductionPromotionExplainabilityFormatter.format(workloadGate, productionReadyReadiness());
+
+        assertTrue(formatted.contains("status=production-ready"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.count=2"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.all=true"));
+        assertTrue(formatted.contains("sourceSwitching.productionDecision.count=2"));
+        assertTrue(formatted.contains("sourceSwitching.productionDecision.all=true"));
+        assertTrue(formatted.contains("contract.status=valid"));
+        assertTrue(formatted.contains("decision.mode=production-enabled"));
     }
 
     @Test

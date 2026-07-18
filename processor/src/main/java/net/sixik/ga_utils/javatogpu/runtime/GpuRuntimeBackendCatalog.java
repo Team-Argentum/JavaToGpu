@@ -21,19 +21,14 @@ public final class GpuRuntimeBackendCatalog {
      * Returns the standard production-ready backend catalog entries.
      */
     public static List<GpuRuntimeBackendCatalogEntry> standard() {
-        return List.of(openClSharedCache());
+        return GpuRuntimeBackendAdapters.catalogEntries(GpuRuntimeBackendAdapters.standard());
     }
 
     /**
      * Returns standard entries plus explicit planned-backend placeholders for diagnostics and UI discovery.
      */
     public static List<GpuRuntimeBackendCatalogEntry> standardWithPlannedBackends() {
-        return List.of(
-                openClSharedCache(),
-                plannedUnsupported(GpuBackendTarget.CUDA),
-                plannedUnsupported(GpuBackendTarget.VULKAN),
-                plannedUnsupported(GpuBackendTarget.METAL)
-        );
+        return GpuRuntimeBackendAdapters.catalogEntries(GpuRuntimeBackendAdapters.standardWithPlannedBackends());
     }
 
     /**

@@ -93,7 +93,7 @@ public record GpuRuntimeBackendSelectionExplanation(
      */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "backendSelection" : prefix.trim();
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.backendSelectionFields(this);
         fields.put(normalizedPrefix + ".matched", Boolean.toString(matched));
         fields.put(normalizedPrefix + ".selected.backendTarget", selectedBackendTarget.name());
         fields.put(normalizedPrefix + ".selected.backendName", selectedBackendName);

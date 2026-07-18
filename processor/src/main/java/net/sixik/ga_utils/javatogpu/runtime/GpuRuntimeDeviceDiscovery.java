@@ -1,15 +1,15 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaRuntimeDeviceDiscovery;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClRuntimeDeviceDiscovery;
-
-import java.util.List;
 
 /**
  * Public entry point for backend/device discovery snapshots.
  *
- * <p>Today only OpenCL can perform real native device discovery. The API shape is intentionally backend-neutral so
- * CUDA, Vulkan/SPIR-V, Metal, or custom backend adapters can later return the same result type.</p>
+ * <p>OpenCL can perform native runtime discovery and CUDA can perform inventory discovery through {@code nvidia-smi}.
+ * The API shape is intentionally backend-neutral so Vulkan/SPIR-V, Metal, or custom backend adapters can later return
+ * the same result type.</p>
  */
 public final class GpuRuntimeDeviceDiscovery {
 
@@ -41,25 +41,48 @@ public final class GpuRuntimeDeviceDiscovery {
     }
 
     /**
+     * Discovers CUDA-visible NVIDIA devices using default compile options and built-in device policies.
+     */
+    public static GpuRuntimeDeviceDiscoveryResult discoverCuda() {
+        return discoverCuda(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA));
+    }
+
+    /**
+     * Discovers CUDA-visible NVIDIA devices and previews deterministic device selection for the supplied controls.
+     */
+    public static GpuRuntimeDeviceDiscoveryResult discoverCuda(GpuRuntimeCompileOptions compileOptions) {
+        return discoverCuda(compileOptions, GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns());
+    }
+
+    /**
+     * Discovers CUDA-visible NVIDIA devices and previews deterministic device selection with an explicit policy registry.
+     */
+    public static GpuRuntimeDeviceDiscoveryResult discoverCuda(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry
+    ) {
+        return CudaRuntimeDeviceDiscovery.discover(compileOptions, devicePolicyRegistry);
+    }
+
+    /**
      * Discovers the standard backend device inventory shape.
      *
-     * <p>OpenCL is queried through the native adapter. Planned CUDA, Vulkan/SPIR-V, and Metal backends are returned as
-     * explicit unavailable discovery states until real adapters land.</p>
+     * <p>OpenCL is queried through the native adapter, CUDA is queried through {@code nvidia-smi} when available, and
+     * planned Vulkan/SPIR-V and Metal backends are returned as explicit unavailable discovery states until real adapters
+     * land.</p>
      */
     public static GpuRuntimeDeviceDiscoveryCatalog discoverStandardBackends() {
         return discoverStandardBackends(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL));
     }
 
     /**
-     * Discovers the standard backend device inventory shape using caller-provided OpenCL controls.
+     * Discovers the standard backend device inventory shape using caller-provided device-selection controls.
      */
-    public static GpuRuntimeDeviceDiscoveryCatalog discoverStandardBackends(GpuRuntimeCompileOptions openClOptions) {
-        return GpuRuntimeDeviceDiscoveryCatalog.of(List.of(
-                discoverOpenCl(openClOptions),
-                plannedUnavailable(GpuBackendTarget.CUDA),
-                plannedUnavailable(GpuBackendTarget.VULKAN),
-                plannedUnavailable(GpuBackendTarget.METAL)
-        ));
+    public static GpuRuntimeDeviceDiscoveryCatalog discoverStandardBackends(GpuRuntimeCompileOptions compileOptions) {
+        return GpuRuntimeBackendAdapters.discoverDevices(
+                GpuRuntimeBackendAdapters.standardWithPlannedBackends(),
+                compileOptions
+        );
     }
 
     /**

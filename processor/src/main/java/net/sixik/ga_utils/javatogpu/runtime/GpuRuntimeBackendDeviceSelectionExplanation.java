@@ -98,7 +98,7 @@ public record GpuRuntimeBackendDeviceSelectionExplanation(
 
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtimeSelection" : prefix.trim();
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.backendDeviceSelectionFields(this);
         fields.put(normalizedPrefix + ".status", status);
         fields.put(normalizedPrefix + ".summary", summary());
         fields.put(normalizedPrefix + ".backend.matched", Boolean.toString(backendSelection.matched()));
@@ -124,6 +124,7 @@ public record GpuRuntimeBackendDeviceSelectionExplanation(
         for (int index = 0; index < diagnostics.size(); index++) {
             fields.put(normalizedPrefix + ".diagnostic." + index, diagnostics.get(index));
         }
+        fields.putAll(GpuRuntimeLifecycleFields.backendDeviceSelectionFields(this));
         return Collections.unmodifiableMap(fields);
     }
 

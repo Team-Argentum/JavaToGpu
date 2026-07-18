@@ -172,6 +172,60 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
     }
 
     @Test
+    void summarizesPortableRuntimeBackendSourceFieldsWhenLegacySourceSwitchingFieldsAreMissing() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("kernel.0.runtime.backend.source.decision", "compile-irgpu-source-review");
+        properties.setProperty("kernel.0.runtime.backend.source.promotionFirstBlocker", "none");
+        properties.setProperty("kernel.0.runtime.backend.source.productionPromotionOperatorAccepted", "true");
+        properties.setProperty("kernel.1.runtime.backend.source.decision", "reject-production-irgpu-source");
+        properties.setProperty(
+                "kernel.1.runtime.backend.source.promotionFirstBlocker",
+                "runtime equivalence must execute and pass before backend source promotion"
+        );
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+
+        assertEquals("compile-irgpu-source-review=1, reject-production-irgpu-source=1", summary.sourceSwitchingDecisions());
+        assertEquals(
+                "runtime equivalence must execute and pass before backend source promotion=1",
+                summary.sourcePromotionFirstBlockers()
+        );
+        assertEquals("runtime-equivalence=1", summary.sourcePromotionFirstBlockerFamilies());
+        assertEquals(1, summary.productionPromotionOperatorAcceptedCount());
+        assertEquals("false", summary.productionPromotionOperatorAcceptedAll());
+        assertTrue(summary.historyStatus().contains("sourceSwitching=compile-irgpu-source-review=1, reject-production-irgpu-source=1"));
+        assertTrue(summary.historyStatus().contains("sourceSwitching=compile-irgpu-source-review/operatorAccepted=true/sourcePromotionFirstBlocker=none"));
+    }
+
+    @Test
+    void summarizesPortableAggregateSourcePromotionBlockersWhenLegacyAggregatesAreMissing() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("runtime.backend.source.promotionFirstBlocker.count", "1");
+        properties.setProperty(
+                "runtime.backend.source.promotionFirstBlocker.0.name",
+                "runtime equivalence must execute and pass before backend source promotion"
+        );
+        properties.setProperty("runtime.backend.source.promotionFirstBlocker.0.count", "2");
+        properties.setProperty("runtime.backend.source.promotionFirstBlockerFamily.count", "1");
+        properties.setProperty("runtime.backend.source.promotionFirstBlockerFamily.0.name", "runtime-equivalence");
+        properties.setProperty("runtime.backend.source.promotionFirstBlockerFamily.0.count", "2");
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+
+        assertEquals(
+                "runtime equivalence must execute and pass before backend source promotion=2",
+                summary.sourcePromotionFirstBlockers()
+        );
+        assertEquals("runtime-equivalence=2", summary.sourcePromotionFirstBlockerFamilies());
+    }
+
+    @Test
     void aggregatesOptimizerFamilyReadinessAcrossMultipleKernels() {
         Properties properties = new Properties();
         properties.setProperty("status", "blocked");

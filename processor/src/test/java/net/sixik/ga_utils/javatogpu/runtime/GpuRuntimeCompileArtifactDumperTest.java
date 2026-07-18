@@ -560,6 +560,16 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=descriptor"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("irGpuSourceRequested=false"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
+                "runtime.backend.source.status=descriptor-default"
+        ));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
+                "runtime.backend.source.decision=compile-descriptor-source"
+        ));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
+                "runtime.backend.source.selection=descriptor"
+        ));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("runtime.status=descriptor-default"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendTarget=OPENCL"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendResource=runtime/lowered/kernel.cl"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("sourceLocation.count=1"));

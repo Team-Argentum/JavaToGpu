@@ -52,11 +52,35 @@ public record GpuRuntimeDeviceDiscoveryCatalog(List<GpuRuntimeDeviceDiscoveryRes
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "deviceDiscoveryCatalog" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        fields.put("runtime.device.discovery.catalog.present", Boolean.toString(!discoveries.isEmpty()));
+        fields.put("runtime.device.discovery.catalog.backend.count", Integer.toString(discoveries.size()));
+        representativeDiscovery().ifPresent(discovery -> fields.putAll(
+                GpuRuntimeLifecycleFields.deviceDiscoveryFields(discovery)
+        ));
         fields.put(normalizedPrefix + ".backend.count", Integer.toString(discoveries.size()));
         for (int index = 0; index < discoveries.size(); index++) {
-            fields.putAll(discoveries.get(index).artifactFields(normalizedPrefix + ".backend." + index));
+            putNonRuntimeFields(fields, discoveries.get(index).artifactFields(normalizedPrefix + ".backend." + index));
         }
         return Collections.unmodifiableMap(fields);
+    }
+
+    private Optional<GpuRuntimeDeviceDiscoveryResult> representativeDiscovery() {
+        return discoveries.stream()
+                .filter(discovery -> discovery.selectedDevice().isPresent())
+                .findFirst()
+                .or(() -> discoveries.stream().filter(GpuRuntimeDeviceDiscoveryResult::discoveryAvailable).findFirst())
+                .or(() -> discoveries.stream().findFirst());
+    }
+
+    private static void putNonRuntimeFields(
+            LinkedHashMap<String, String> fields,
+            Map<String, String> additions
+    ) {
+        additions.forEach((key, value) -> {
+            if (!key.startsWith("runtime.")) {
+                fields.put(key, value);
+            }
+        });
     }
 
     public String toMarkdown() {

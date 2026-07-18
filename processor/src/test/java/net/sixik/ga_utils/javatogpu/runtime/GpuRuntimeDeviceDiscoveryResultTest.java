@@ -59,6 +59,17 @@ class GpuRuntimeDeviceDiscoveryResultTest {
         assertTrue(markdown.contains("platform=NVIDIA CUDA (`OpenCL 3.0 CUDA`)"));
         assertTrue(markdown.contains("score="));
         Map<String, String> fields = result.artifactFields("openclDiscovery");
+        assertEquals("OPENCL", fields.get("runtime.backend.target"));
+        assertEquals("OpenCL", fields.get("runtime.backend.name"));
+        assertEquals("true", fields.get("runtime.device.discovery.present"));
+        assertEquals("true", fields.get("runtime.device.discovery.available"));
+        assertEquals("2", fields.get("runtime.device.discovery.device.count"));
+        assertEquals("OPENCL:opencl-1", fields.get("runtime.device.discovery.selectedDeviceKey"));
+        assertEquals("true", fields.get("runtime.device.selected"));
+        assertEquals("opencl-1", fields.get("runtime.device.id"));
+        assertEquals("NVIDIA RTX", fields.get("runtime.device.label"));
+        assertEquals("NVIDIA", fields.get("runtime.device.vendor"));
+        assertEquals("DGPU", fields.get("runtime.device.class"));
         assertEquals("OPENCL", fields.get("openclDiscovery.backendTarget"));
         assertEquals("true", fields.get("openclDiscovery.available"));
         assertEquals("2", fields.get("openclDiscovery.device.count"));
@@ -123,6 +134,9 @@ class GpuRuntimeDeviceDiscoveryResultTest {
         assertTrue(markdown.contains("Backend device discovery: CUDA (`CUDA`)"));
         assertTrue(markdown.contains("backend-device-discovery-not-implemented"));
         assertEquals("2", fields.get("catalog.backend.count"));
+        assertEquals("OPENCL", fields.get("runtime.backend.target"));
+        assertEquals("OpenCL", fields.get("runtime.backend.name"));
+        assertEquals("NVIDIA RTX", fields.get("runtime.device.label"));
         assertEquals("OPENCL", fields.get("catalog.backend.0.backendTarget"));
         assertEquals("CUDA", fields.get("catalog.backend.1.backendTarget"));
         assertEquals("false", fields.get("catalog.backend.1.available"));

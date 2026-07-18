@@ -438,6 +438,50 @@ public final class OpenClValidationReporter {
         return value.replace('\r', ' ').replace('\n', ' ');
     }
 
+    private static String firstProperty(java.util.Properties properties, String fallback, String... keys) {
+        for (String key : keys) {
+            String value = properties.getProperty(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return fallback;
+    }
+
+    private static String backendSourceProperty(
+            java.util.Properties properties,
+            String prefix,
+            String runtimeKey,
+            String legacyKey,
+            String fallback
+    ) {
+        return firstProperty(
+                properties,
+                fallback,
+                prefix + "runtime.backend.source." + runtimeKey,
+                prefix + "sourceSwitching." + legacyKey
+        );
+    }
+
+    private static String backendSourceDiagnostic(java.util.Properties properties, String prefix) {
+        String diagnostic = firstProperty(
+                properties,
+                "",
+                prefix + "runtime.backend.source.diagnostic",
+                prefix + "sourceSwitching.diagnostic.0"
+        );
+        return "unknown".equals(diagnostic) || "not-recorded".equals(diagnostic) ? "" : diagnostic;
+    }
+
+    private static String backendSourceOptimizationProfile(java.util.Properties properties, String prefix) {
+        return firstProperty(
+                properties,
+                "unknown",
+                prefix + "runtime.compile.optimizationProfile",
+                prefix + "sourceSwitching.optimizationProfile"
+        );
+    }
+
     private static void appendLongRunningSummary(StringBuilder markdown) {
         String summaryPath = System.getProperty(LONG_RUNNING_SUMMARY_FILE_PROPERTY);
         if (summaryPath == null || summaryPath.isBlank()) {
@@ -987,10 +1031,19 @@ public final class OpenClValidationReporter {
                 .append("`, runtimeEquivalence=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "runtimeEquivalencePassed", "unknown")))
                 .append("`, sourceSwitching=`")
-                .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.decision", "not-recorded")))
+                .append(sanitizeInline(backendSourceProperty(
+                        properties,
+                        prefix,
+                        "decision",
+                        "decision",
+                        "not-recorded"
+                )))
                 .append("`, operatorAccepted=`")
-                .append(sanitizeInline(properties.getProperty(
-                        prefix + "sourceSwitching.productionPromotionOperatorAccepted",
+                .append(sanitizeInline(backendSourceProperty(
+                        properties,
+                        prefix,
+                        "productionPromotionOperatorAccepted",
+                        "productionPromotionOperatorAccepted",
                         "false"
                 )))
                 .append("`, runtimeIr=`")
@@ -1002,19 +1055,34 @@ public final class OpenClValidationReporter {
                 .append("`, i3=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.status", "unknown")))
                 .append("`\n");
-        String sourceSwitchingDiagnostic = properties.getProperty(prefix + "sourceSwitching.diagnostic.0", "");
+        String sourceSwitchingDiagnostic = backendSourceDiagnostic(properties, prefix);
         if (!sourceSwitchingDiagnostic.isBlank()) {
             markdown.append("- Kernel `")
                     .append(index)
                     .append("` source switching: status=`")
-                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.status", "not-recorded")))
+                    .append(sanitizeInline(backendSourceProperty(
+                            properties,
+                            prefix,
+                            "status",
+                            "status",
+                            "not-recorded"
+                    )))
                     .append("`, profile=`")
-                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.optimizationProfile", "unknown")))
+                    .append(sanitizeInline(backendSourceOptimizationProfile(properties, prefix)))
                     .append("`, sourcePromotionFirstBlocker=`")
-                    .append(sanitizeInline(properties.getProperty(prefix + "sourceSwitching.sourcePromotionFirstBlocker", "unknown")))
+                    .append(sanitizeInline(backendSourceProperty(
+                            properties,
+                            prefix,
+                            "promotionFirstBlocker",
+                            "sourcePromotionFirstBlocker",
+                            "unknown"
+                    )))
                     .append("`, operatorAccepted=`")
-                    .append(sanitizeInline(properties.getProperty(
-                            prefix + "sourceSwitching.productionPromotionOperatorAccepted",
+                    .append(sanitizeInline(backendSourceProperty(
+                            properties,
+                            prefix,
+                            "productionPromotionOperatorAccepted",
+                            "productionPromotionOperatorAccepted",
                             "false"
                     )))
                     .append("`, first=`")

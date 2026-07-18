@@ -52,6 +52,12 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("decision.mode=").append(summary.decisionMode()).append('\n');
         builder.append("productionSourceSwitchingAllowed=").append(summary.productionSourceSwitchingAllowed()).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(summary.productionSourceSwitchingEnabled()).append('\n');
+        builder.append("runtime.backend.source.productionDecision.count=")
+                .append(summary.productionSourceDecisionCount())
+                .append('\n');
+        builder.append("runtime.backend.source.productionDecision.all=")
+                .append(summary.productionSourceDecisionAll())
+                .append('\n');
         builder.append("productionMutationAllowed=").append(summary.productionMutationAllowed()).append('\n');
         builder.append("productionMutationEnabled=").append(summary.productionMutationEnabled()).append('\n');
         builder.append("blocker.count=").append(summary.blockerCount()).append('\n');

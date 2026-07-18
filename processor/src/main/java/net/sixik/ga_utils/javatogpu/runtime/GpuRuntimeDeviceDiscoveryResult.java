@@ -133,7 +133,7 @@ public record GpuRuntimeDeviceDiscoveryResult(
      */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "deviceDiscovery" : prefix.trim();
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.deviceDiscoveryFields(this);
         fields.put(normalizedPrefix + ".backendTarget", backendTarget.name());
         fields.put(normalizedPrefix + ".backendName", backendName);
         fields.put(normalizedPrefix + ".available", Boolean.toString(discoveryAvailable));
@@ -158,6 +158,10 @@ public record GpuRuntimeDeviceDiscoveryResult(
             fields.put(devicePrefix + ".computeUnits", Long.toString(profile.computeUnits()));
             fields.put(devicePrefix + ".globalMemoryBytes", Long.toString(profile.globalMemoryBytes()));
             fields.put(devicePrefix + ".maxWorkGroupSize", Long.toString(profile.maxWorkGroupSize()));
+            if (profile.backendTarget() == GpuBackendTarget.CUDA) {
+                fields.put(devicePrefix + ".cuda.runtimeVersion", profile.cudaRuntimeVersion());
+                fields.put(devicePrefix + ".cuda.computeCapability", profile.cudaComputeCapability());
+            }
         }
         appendPlatformFields(fields, normalizedPrefix);
         appendSelfTestFields(fields, normalizedPrefix);

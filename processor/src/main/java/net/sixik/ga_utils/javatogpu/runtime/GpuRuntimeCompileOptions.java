@@ -147,6 +147,28 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    public GpuRuntimeCompileOptions withStandardBackendDevicePreflight() {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withStandardBackendDevicePreflight(),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withoutBackendDevicePreflight() {
+        return new GpuRuntimeCompileOptions(
+                backendTarget,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withoutBackendDevicePreflight(),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
     public GpuRuntimeCompileOptions withProductionPromotionDecision(GpuProductionPromotionDecision decision) {
         return new GpuRuntimeCompileOptions(
                 backendTarget,

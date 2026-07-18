@@ -166,6 +166,8 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("contract.valid=true\n"));
         assertTrue(formatted.contains("decision.mode=diagnostic-only\n"));
         assertTrue(formatted.contains("productionSourceSwitchingAllowed=false\n"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.count=0\n"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.all=false\n"));
         assertTrue(formatted.contains("productionMutationEnabled=false\n"));
         assertTrue(formatted.contains("optimizerFamily.count=2\n"));
         assertTrue(formatted.contains("optimizerFamily.promotionReady.count=1\n"));
@@ -218,6 +220,40 @@ class GpuProductionPromotionExplainabilitySummaryTest {
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=production-source-switching-enabled\n"));
         assertTrue(formatted.contains("blocker.0=production-mutation-disabled\n"));
         assertTrue(formatted.contains("historyStatus=blocked"));
+    }
+
+    @Test
+    void summaryKeepsPortableProductionSourceDecisionEvidence() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "production-ready");
+        properties.setProperty("decision.mode", GpuProductionPromotionDecision.PRODUCTION_ENABLED);
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("i3ReviewReady.count", "2");
+        properties.setProperty("i3Blocked.count", "0");
+        properties.setProperty("i3SourceReady.count", "2");
+        properties.setProperty("productionSourceSwitchingAllowed", "true");
+        properties.setProperty("productionSourceSwitchingEnabled", "true");
+        properties.setProperty("productionSourceSwitchingEnabled.count", "2");
+        properties.setProperty("productionSourceSwitchingEnabled.all", "true");
+        properties.setProperty("productionPromotionDecisionMode.productionEnabled.count", "2");
+        properties.setProperty("productionPromotionDecisionMode.productionEnabled.all", "true");
+        properties.setProperty("runtime.backend.source.productionDecision.count", "2");
+        properties.setProperty("runtime.backend.source.productionDecision.all", "true");
+        properties.setProperty("productionMutationAllowed", "true");
+        properties.setProperty("productionMutationEnabled", "true");
+        properties.setProperty("backendPromotionArtifactSupport.complete", "true");
+        properties.setProperty("blocker.count", "0");
+
+        GpuProductionPromotionExplainabilitySummary summary =
+                GpuProductionPromotionExplainabilitySummary.fromProperties(properties);
+        String formatted = GpuProductionPromotionExplainabilitySummaryCli.format(summary);
+
+        assertEquals(2, summary.productionSourceDecisionCount());
+        assertEquals("true", summary.productionSourceDecisionAll());
+        assertTrue(summary.historyStatus().contains("productionSourceDecisions=2"));
+        assertTrue(summary.historyStatus().contains("productionSourceDecisionAll=true"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.count=2\n"));
+        assertTrue(formatted.contains("runtime.backend.source.productionDecision.all=true\n"));
     }
 
     @Test

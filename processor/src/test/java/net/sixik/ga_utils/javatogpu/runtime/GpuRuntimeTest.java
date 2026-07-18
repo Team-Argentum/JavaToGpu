@@ -9,6 +9,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -228,6 +229,294 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void compileOptionsExposeOptInStandardBackendDevicePreflight() {
+        GpuRuntimeCompileOptions defaults = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL);
+
+        assertEquals(
+                GpuBackendCompileOptions.RUNTIME_BACKEND_DEVICE_PREFLIGHT_DISABLED,
+                defaults.backendOptions().backendDevicePreflightMode()
+        );
+        assertFalse(defaults.backendOptions().requestsStandardBackendDevicePreflight());
+
+        GpuRuntimeCompileOptions preflight = defaults.withStandardBackendDevicePreflight();
+
+        assertEquals(GpuBackendTarget.OPENCL, preflight.backendTarget());
+        assertEquals(
+                GpuBackendCompileOptions.RUNTIME_BACKEND_DEVICE_PREFLIGHT_STANDARD,
+                preflight.backendOptions().backendDevicePreflightMode()
+        );
+        assertEquals(
+                GpuBackendCompileOptions.RUNTIME_BACKEND_DEVICE_PREFLIGHT_STANDARD,
+                preflight.backendOptions().properties().get(
+                        GpuBackendCompileOptions.RUNTIME_BACKEND_DEVICE_PREFLIGHT_PROPERTY
+                )
+        );
+        assertTrue(preflight.backendOptions().requestsStandardBackendDevicePreflight());
+        assertFalse(preflight.withoutBackendDevicePreflight()
+                .backendOptions()
+                .requestsStandardBackendDevicePreflight());
+    }
+
+    @Test
+    void backendDevicePreflightPropertyRejectsUnknownMode() {
+        GpuBackendCompileOptions backendOptions = GpuBackendCompileOptions.openCl(
+                List.of(),
+                Map.of(GpuBackendCompileOptions.RUNTIME_BACKEND_DEVICE_PREFLIGHT_PROPERTY, "standrad")
+        );
+
+        assertEquals(
+                Optional.of("runtime-backend-device-preflight-mode-invalid"),
+                backendOptions.backendDevicePreflightModeBlocker()
+        );
+        assertEquals(
+                GpuBackendCompileOptions.RUNTIME_BACKEND_DEVICE_PREFLIGHT_DISABLED,
+                backendOptions.backendDevicePreflightMode()
+        );
+        assertFalse(backendOptions.requestsStandardBackendDevicePreflight());
+    }
+
+    @Test
+    void invokeWithCompileOptionsCanAutoInstallStandardBackendDeviceWhenExplicitlyRequested() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of()
+        );
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .withStandardBackendDevicePreflight();
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger scopeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.resetBackend();
+        GpuRuntime.setAutomaticBackendDevicePreflightScopeFactoryForTesting(options -> {
+            scopeCalls.incrementAndGet();
+            assertSame(compileOptions, options);
+            return GpuRuntime.useBackend(capturedInvocation::set);
+        });
+
+        try {
+            GpuExecutionConfig executionConfig = GpuExecutionConfig.oneDimensional(13L);
+
+            GpuRuntime.invokeWithCompileOptions(executionConfig, compileOptions, descriptor, new Object[0]);
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals(1, scopeCalls.get());
+            assertSame(compileOptions, invocation.compileOptions());
+            assertSame(executionConfig, invocation.executionConfig());
+            assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetAutomaticBackendDevicePreflightScopeFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void invokeWithCompileOptionsPublishesAutomaticBackendDevicePreflightLifecycleEvents() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of()
+        );
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .withStandardBackendDevicePreflight();
+        ArrayList<GpuRuntimeLifecycleEvent> events = new ArrayList<>();
+        GpuRuntimeLifecycleEventBus eventBus = GpuRuntimeLifecycleEventBus.of(List.of(events::add));
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger scopeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.resetBackend();
+        GpuRuntime.setAutomaticBackendDevicePreflightLifecycleEventBusFactoryForTesting(() -> eventBus);
+        GpuRuntime.setAutomaticBackendDevicePreflightScopeFactoryForTesting((options, lifecycleEventBus) -> {
+            scopeCalls.incrementAndGet();
+            assertSame(compileOptions, options);
+            assertSame(eventBus, lifecycleEventBus);
+            return GpuRuntime.useBackend(capturedInvocation::set);
+        });
+
+        try {
+            GpuRuntime.invokeWithCompileOptions(
+                    GpuExecutionConfig.oneDimensional(5L),
+                    compileOptions,
+                    descriptor,
+                    new Object[0]
+            );
+
+            assertEquals(1, scopeCalls.get());
+            assertSame(compileOptions, capturedInvocation.get().compileOptions());
+            assertEquals(List.of(
+                    GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_STARTED,
+                    GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_COMPLETED
+            ), events.stream().map(GpuRuntimeLifecycleEvent::kind).toList());
+            assertEquals(GpuBackendTarget.OPENCL, events.get(0).backendTarget());
+            assertEquals("javatogpu/sample/Demo/kernel.cl", events.get(0).kernelResource());
+            assertEquals("runtime-backend-device-preflight", events.get(0).fields().get("pipeline"));
+            assertEquals("compile-options", events.get(0).fields().get("trigger"));
+            assertEquals("started", events.get(0).fields().get("status"));
+            assertEquals("success", events.get(1).fields().get("status"));
+            assertEquals("standard", events.get(0).fields().get("backendDevicePreflight.mode"));
+            assertEquals("true", events.get(0).fields().get("backendDevicePreflight.requested"));
+            assertEquals("kernel", events.get(0).fields().get("kernel.name"));
+            assertEquals("1", events.get(0).fields().get("execution.dimensions"));
+            assertEquals("5", events.get(0).fields().get("execution.globalShape"));
+            assertEquals("started", events.get(0).fields().get("runtime.status"));
+            assertEquals("success", events.get(1).fields().get("runtime.status"));
+            assertEquals("kernel", events.get(0).fields().get("runtime.kernel.name"));
+            assertEquals("javatogpu/sample/Demo/kernel.cl", events.get(0).fields().get("runtime.kernel.resource"));
+            assertEquals("OPENCL", events.get(0).fields().get("runtime.backend.target"));
+            assertEquals("off", events.get(0).fields().get("runtime.compile.optimizationProfile"));
+            assertEquals("standard", events.get(0).fields().get("runtime.backendDevicePreflight.mode"));
+            assertEquals("true", events.get(0).fields().get("runtime.backendDevicePreflight.requested"));
+            assertEquals("1", events.get(0).fields().get("runtime.work.dimensions"));
+            assertEquals("5", events.get(0).fields().get("runtime.work.globalShape"));
+            assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetAutomaticBackendDevicePreflightScopeFactoryForTesting();
+            GpuRuntime.resetAutomaticBackendDevicePreflightLifecycleEventBusFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void invokeWithCompileOptionsPublishesFailedAutomaticBackendDevicePreflightLifecycleEvent() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of()
+        );
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .withStandardBackendDevicePreflight();
+        RuntimeException failure = new IllegalStateException("preflight backend failed");
+        ArrayList<GpuRuntimeLifecycleEvent> events = new ArrayList<>();
+        GpuRuntimeLifecycleEventBus eventBus = GpuRuntimeLifecycleEventBus.of(List.of(events::add));
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.resetBackend();
+        GpuRuntime.setAutomaticBackendDevicePreflightLifecycleEventBusFactoryForTesting(() -> eventBus);
+        GpuRuntime.setAutomaticBackendDevicePreflightScopeFactoryForTesting((options, lifecycleEventBus) -> {
+            assertSame(compileOptions, options);
+            assertSame(eventBus, lifecycleEventBus);
+            return GpuRuntime.useBackend(runtimeInvocation -> {
+                throw failure;
+            });
+        });
+
+        try {
+            RuntimeException thrown = assertThrows(IllegalStateException.class, () -> GpuRuntime.invokeWithCompileOptions(
+                    GpuExecutionConfig.oneDimensional(9L),
+                    compileOptions,
+                    descriptor,
+                    new Object[0]
+            ));
+
+            assertSame(failure, thrown);
+            assertEquals(List.of(
+                    GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_STARTED,
+                    GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_COMPLETED
+            ), events.stream().map(GpuRuntimeLifecycleEvent::kind).toList());
+            Map<String, String> failedFields = events.get(1).fields();
+            assertEquals("failed", failedFields.get("status"));
+            assertEquals("failed", failedFields.get("runtime.status"));
+            assertEquals(IllegalStateException.class.getName(), failedFields.get("error.type"));
+            assertEquals("preflight backend failed", failedFields.get("error.message"));
+            assertEquals(IllegalStateException.class.getName(), failedFields.get("runtime.failure.type"));
+            assertEquals("preflight backend failed", failedFields.get("runtime.failure.message"));
+            assertEquals("kernel", failedFields.get("runtime.kernel.name"));
+            assertEquals("OPENCL", failedFields.get("runtime.backend.target"));
+            assertEquals("standard", failedFields.get("runtime.backendDevicePreflight.mode"));
+            assertEquals("9", failedFields.get("runtime.work.globalShape"));
+            assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetAutomaticBackendDevicePreflightScopeFactoryForTesting();
+            GpuRuntime.resetAutomaticBackendDevicePreflightLifecycleEventBusFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void invokeWithCompileOptionsDoesNotOverrideConfiguredBackendForPreflightProfile() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of()
+        );
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .withStandardBackendDevicePreflight();
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntimeBackend configuredBackend = capturedInvocation::set;
+        GpuRuntime.setBackend(configuredBackend);
+        GpuRuntime.setAutomaticBackendDevicePreflightScopeFactoryForTesting(options -> {
+            throw new AssertionError("preflight scope factory should not run when a backend is already configured");
+        });
+
+        try {
+            GpuRuntime.invokeWithCompileOptions(compileOptions, descriptor, new Object[0]);
+
+            assertSame(compileOptions, capturedInvocation.get().compileOptions());
+            assertSame(configuredBackend, GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetAutomaticBackendDevicePreflightScopeFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void invokeVariantsFromGeneratedLauncherUsesAutoBackendDevicePreflightProfile() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of()
+        );
+        GpuKernelDescriptor fallback = new GpuKernelDescriptor(
+                "kernel_fallback",
+                "javatogpu/sample/Demo/kernel_fallback.cl",
+                "__kernel void kernel_fallback(__global int* output) { output[0] = 2; }",
+                java.util.List.of()
+        );
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .withStandardBackendDevicePreflight();
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntime.resetBackend();
+        GpuRuntime.setAutomaticBackendDevicePreflightScopeFactoryForTesting(options -> GpuRuntime.useBackend(capturedInvocation::set));
+
+        try {
+            GpuExecutionConfig executionConfig = GpuExecutionConfig.oneDimensional(7L);
+
+            GpuRuntime.invokeVariantsFromGeneratedLauncher(
+                    FixtureOwner.class,
+                    executionConfig,
+                    compileOptions,
+                    descriptor,
+                    List.of(fallback),
+                    new Object[0]
+            );
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertSame(compileOptions, invocation.compileOptions());
+            assertSame(executionConfig, invocation.executionConfig());
+            assertSame(FixtureOwner.class.getClassLoader(), invocation.artifactClassLoader());
+            assertEquals(List.of(fallback), invocation.fallbackDescriptors());
+        } finally {
+            GpuRuntime.resetAutomaticBackendDevicePreflightScopeFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
     void invokeWithExecutionConfigPassesConfigIntoKernelInvocation() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
@@ -379,6 +668,172 @@ class GpuRuntimeTest {
             assertSame(compileOptions, invocation.compileOptions());
             assertSame(output, invocation.arguments()[0]);
         } finally {
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherInvokerWithStandardBackendAndDeviceUsesScopedSelection() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger scopeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .preferDeviceVendor("NVIDIA");
+        GpuRuntime.setStandardBackendDeviceScopeFactoryForTesting(options -> {
+            scopeCalls.incrementAndGet();
+            assertSame(compileOptions, options);
+            return GpuRuntime.useBackend(capturedInvocation::set);
+        });
+        GpuRuntime.resetBackend();
+
+        try {
+            int[] output = new int[4];
+            GpuExecutionConfig config = GpuExecutionConfig.twoDimensional(4L, 2L);
+
+            GpuGeneratedLauncherInvoker.invokeWithConfigAndStandardBackendAndDevice(
+                    FixtureOwner.class,
+                    "kernel",
+                    config,
+                    compileOptions,
+                    output
+            );
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals(1, scopeCalls.get());
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertSame(config, invocation.executionConfig());
+            assertSame(compileOptions, invocation.compileOptions());
+            assertSame(output, invocation.arguments()[0]);
+            assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetStandardBackendDeviceScopeFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherHandleWithStandardBackendAndDeviceUsesScopedSelection() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger scopeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .excludeCpuDevices();
+        GpuRuntime.setStandardBackendDeviceScopeFactoryForTesting(options -> {
+            scopeCalls.incrementAndGet();
+            assertSame(compileOptions, options);
+            return GpuRuntime.useBackend(capturedInvocation::set);
+        });
+        GpuRuntime.resetBackend();
+
+        try {
+            int[] output = new int[4];
+            GpuGeneratedLauncherInvoker.GeneratedLauncher launcher = GpuGeneratedLauncherInvoker.launcher(
+                    FixtureOwner.class,
+                    "kernel"
+            );
+
+            launcher.invokeWithGlobalWorkSizeAndStandardBackendAndDevice(17L, compileOptions, output);
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals(1, scopeCalls.get());
+            assertEquals("fixture_kernel", invocation.descriptor().kernelName());
+            assertEquals(17L, invocation.globalWorkSize());
+            assertSame(compileOptions, invocation.compileOptions());
+            assertSame(output, invocation.arguments()[0]);
+            assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetStandardBackendDeviceScopeFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherInvokerReturningFirstWithStandardBackendAndDeviceUsesScopedSelection() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger scopeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .preferDeviceClass(GpuDeviceClassTarget.DGPU);
+        GpuRuntime.setStandardBackendDeviceScopeFactoryForTesting(options -> {
+            scopeCalls.incrementAndGet();
+            assertSame(compileOptions, options);
+            return GpuRuntime.useBackend(invocation -> {
+                capturedInvocation.set(invocation);
+                ((int[]) invocation.arguments()[0])[0] = invocation.globalWorkSize().intValue();
+            });
+        });
+        GpuRuntime.resetBackend();
+
+        try {
+            Integer value = GpuGeneratedLauncherInvoker.invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDeviceAs(
+                    Integer.class,
+                    FixtureOwner.class,
+                    "kernel",
+                    19L,
+                    compileOptions
+            );
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals(1, scopeCalls.get());
+            assertEquals(19, value.intValue());
+            assertEquals(19L, invocation.globalWorkSize());
+            assertSame(compileOptions, invocation.compileOptions());
+            assertEquals(1, invocation.arguments().length);
+            assertEquals(19, ((int[]) invocation.arguments()[0])[0]);
+            assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetStandardBackendDeviceScopeFactoryForTesting();
+            GpuRuntime.setBackend(previousBackend);
+        }
+    }
+
+    @Test
+    void generatedLauncherHandleReturningFirstWithStandardBackendAndDeviceUsesScopedSelection() {
+        java.util.concurrent.atomic.AtomicReference<GpuKernelInvocation> capturedInvocation =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger scopeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .defaults(GpuBackendTarget.OPENCL)
+                .excludeIntegratedAndCpuDevices();
+        GpuRuntime.setStandardBackendDeviceScopeFactoryForTesting(options -> {
+            scopeCalls.incrementAndGet();
+            assertSame(compileOptions, options);
+            return GpuRuntime.useBackend(invocation -> {
+                capturedInvocation.set(invocation);
+                ((int[]) invocation.arguments()[0])[0] = invocation.globalWorkSize().intValue();
+            });
+        });
+        GpuRuntime.resetBackend();
+
+        try {
+            GpuGeneratedLauncherInvoker.GeneratedLauncher launcher = GpuGeneratedLauncherInvoker.launcher(
+                    FixtureOwner.class,
+                    "kernel"
+            );
+
+            Integer value = launcher.invokeReturningFirstWithConfigAndStandardBackendAndDeviceAs(
+                    Integer.class,
+                    GpuExecutionConfig.oneDimensional(23L),
+                    compileOptions
+            );
+
+            GpuKernelInvocation invocation = capturedInvocation.get();
+            assertEquals(1, scopeCalls.get());
+            assertEquals(23, value.intValue());
+            assertEquals(23L, invocation.globalWorkSize());
+            assertSame(compileOptions, invocation.compileOptions());
+            assertEquals(1, invocation.arguments().length);
+            assertEquals(23, ((int[]) invocation.arguments()[0])[0]);
+            assertSame(GpuRuntime.defaultBackend(), GpuRuntime.backend());
+        } finally {
+            GpuRuntime.resetStandardBackendDeviceScopeFactoryForTesting();
             GpuRuntime.setBackend(previousBackend);
         }
     }
@@ -1032,6 +1487,11 @@ class GpuRuntimeTest {
         assertEquals("Explanation GPU", explanation.selectedDeviceLabel());
         assertEquals(result.explanationSummary(), explanation.summary());
         assertTrue(explanation.toMarkdown().contains("Selected: OpenCL (`OPENCL`) on Explanation GPU"));
+        assertEquals("backend-selected", fields.get("runtime.status"));
+        assertEquals("true", fields.get("runtime.backend.selection.present"));
+        assertEquals("true", fields.get("runtime.backend.selection.matched"));
+        assertEquals("OPENCL", fields.get("runtime.backend.target"));
+        assertEquals("OpenCL", fields.get("runtime.backend.name"));
         assertEquals("true", fields.get("backendSelection.matched"));
         assertEquals("OPENCL", fields.get("backendSelection.selected.backendTarget"));
         assertEquals("2", fields.get("backendSelection.candidate.count"));
@@ -1103,6 +1563,14 @@ class GpuRuntimeTest {
         assertTrue(explanation.toMarkdown().contains("Runtime selection: backend-and-device-selected"));
         assertTrue(explanation.toMarkdown().contains("Device discoveries:"));
         assertTrue(explanation.toMarkdown().contains("Backend device discovery: CUDA (`CUDA`)"));
+        assertEquals("backend-and-device-selected", fields.get("runtime.status"));
+        assertEquals("backend-and-device-selected", fields.get("runtime.selection.status"));
+        assertEquals("OPENCL", fields.get("runtime.backend.target"));
+        assertEquals("OpenCL", fields.get("runtime.backend.name"));
+        assertEquals("NVIDIA RTX", fields.get("runtime.device.label"));
+        assertEquals("NVIDIA", fields.get("runtime.device.vendor"));
+        assertEquals("DGPU", fields.get("runtime.device.class"));
+        assertEquals("OPENCL:opencl-0", fields.get("runtime.device.discovery.selectedDeviceKey"));
         assertEquals("backend-and-device-selected", fields.get("runtimeSelection.status"));
         assertEquals("OPENCL", fields.get("runtimeSelection.backend.selected.backendTarget"));
         assertEquals("OPENCL:opencl-0", fields.get("runtimeSelection.device.selected.deviceKey"));
@@ -1110,6 +1578,179 @@ class GpuRuntimeTest {
         assertEquals("true", fields.get("runtimeSelection.deviceDiscovery.present"));
         assertEquals("2", fields.get("runtimeSelection.deviceDiscoveryCatalog.backend.count"));
         assertEquals("CUDA", fields.get("runtimeSelection.deviceDiscoveryCatalog.backend.1.backendTarget"));
+    }
+
+    @Test
+    void backendDeviceSelectionResultExposesConcreteBackendAndDevice() {
+        GpuRuntimeBackend openClBackend = new ReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Selected Backend GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 Selected Backend GPU",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+        GpuRuntimeSelectionResult backendResult = GpuRuntimeBackendPolicy.builder()
+                .preferBorrowedBackend(openClBackend)
+                .build()
+                .trySelect();
+        GpuRuntimeDeviceProfile device = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-selected-0",
+                "Selected Device GPU",
+                "NVIDIA",
+                "selected-driver",
+                "OpenCL 3.0 Selected Device GPU",
+                "NVIDIA CUDA",
+                "OpenCL 3.0 CUDA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                8L * 1024L * 1024L * 1024L,
+                64L * 1024L,
+                1024L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceSelection deviceSelection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                                .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED),
+                        List.of(device)
+                )
+        );
+        GpuRuntimeDeviceDiscoveryCatalog catalog = GpuRuntimeDeviceDiscoveryCatalog.of(List.of(
+                GpuRuntimeDeviceDiscoveryResult.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        List.of(device),
+                        deviceSelection
+                ),
+                GpuRuntimeDeviceDiscovery.plannedUnavailable(GpuBackendTarget.CUDA)
+        ));
+
+        GpuRuntimeBackendDeviceSelection selection = backendResult.withDeviceDiscovery(catalog);
+        Map<String, String> fields = selection.artifactFields("runtimeSelection");
+
+        assertTrue(selection.backendMatched());
+        assertTrue(selection.deviceMatched());
+        assertTrue(selection.matched());
+        assertSame(openClBackend, selection.selectedBackend().orElseThrow().backend());
+        assertEquals("Selected Device GPU", selection.selectedDevice().orElseThrow().deviceLabel());
+        assertEquals("backend-and-device-selected", selection.status());
+        assertTrue(selection.summary().contains("selected OpenCL on Selected Device GPU"));
+        assertTrue(selection.toMarkdown().contains("Runtime selection: backend-and-device-selected"));
+        assertEquals("backend-and-device-selected", fields.get("runtime.status"));
+        assertEquals("backend-and-device-selected", fields.get("runtime.selection.status"));
+        assertEquals("Selected Device GPU", fields.get("runtime.device.label"));
+        assertEquals("OPENCL:opencl-selected-0", fields.get("runtime.device.discovery.selectedDeviceKey"));
+        assertEquals("backend-and-device-selected", fields.get("runtimeSelection.status"));
+        assertEquals("OPENCL:opencl-selected-0", fields.get("runtimeSelection.device.selected.deviceKey"));
+    }
+
+    @Test
+    void backendDeviceSelectionPublishesLifecycleEvents() {
+        GpuRuntimeBackend openClBackend = new ReportingBackend(
+                GpuRuntimeBackendReport.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "Lifecycle Backend GPU",
+                        new GpuRuntimeApiVersion(3, 0),
+                        "OpenCL 3.0 Lifecycle Backend GPU",
+                        java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                        16_384L,
+                        128L,
+                        null
+                )
+        );
+        GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+                .preferBorrowedBackend(openClBackend)
+                .build();
+        GpuRuntimeDeviceProfile device = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-lifecycle-0",
+                "Lifecycle Device GPU",
+                "NVIDIA",
+                "lifecycle-driver",
+                "OpenCL 3.0 Lifecycle Device GPU",
+                "NVIDIA CUDA",
+                "OpenCL 3.0 CUDA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                8L * 1024L * 1024L * 1024L,
+                64L * 1024L,
+                1024L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceSelection deviceSelection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                                .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED),
+                        List.of(device)
+                )
+        );
+        GpuRuntimeDeviceDiscoveryCatalog catalog = GpuRuntimeDeviceDiscoveryCatalog.of(List.of(
+                GpuRuntimeDeviceDiscoveryResult.available(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        List.of(device),
+                        deviceSelection
+                )
+        ));
+        ArrayList<GpuRuntimeLifecycleEvent> events = new ArrayList<>();
+        GpuRuntimeLifecycleEventBus eventBus = GpuRuntimeLifecycleEventBus.of(List.of(
+                new GpuRuntimeLifecycleEventListener() {
+                    @Override
+                    public void onRuntimeLifecycleEvent(GpuRuntimeLifecycleEvent event) {
+                        events.add(event);
+                    }
+
+                    @Override
+                    public String extensionId() {
+                        return "test.backend-device-selection.lifecycle";
+                    }
+                }
+        ));
+
+        GpuRuntimeBackendDeviceSelection selection = GpuRuntime.trySelectWithDeviceDiscovery(
+                policy,
+                catalog,
+                eventBus
+        );
+
+        assertTrue(selection.matched());
+        assertEquals(List.of(
+                GpuRuntimeLifecycleEventKind.BACKEND_SELECTION_STARTED,
+                GpuRuntimeLifecycleEventKind.BACKEND_SELECTION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.DEVICE_DISCOVERY_COMPLETED
+        ), events.stream().map(GpuRuntimeLifecycleEvent::kind).toList());
+        assertEquals("backend-device-selection", events.get(0).fields().get("pipeline"));
+        assertEquals("started", events.get(0).fields().get("runtime.status"));
+        assertEquals("UNKNOWN", events.get(0).fields().get("runtime.backend.target"));
+        assertEquals("true", events.get(1).fields().get("backendSelection.matched"));
+        assertEquals("backend-selected", events.get(1).fields().get("runtime.status"));
+        assertEquals("OPENCL", events.get(1).fields().get("runtime.backend.target"));
+        assertEquals("OpenCL", events.get(1).fields().get("runtime.backend.name"));
+        assertEquals("true", events.get(2).fields().get("deviceDiscovery.precomputed"));
+        assertEquals("backend-and-device-selected", events.get(2).fields().get("runtimeSelection.status"));
+        assertEquals("backend-and-device-selected", events.get(2).fields().get("runtime.status"));
+        assertEquals("OPENCL", events.get(2).fields().get("runtime.backend.target"));
+        assertEquals("OpenCL", events.get(2).fields().get("runtime.backend.name"));
+        assertEquals("Lifecycle Device GPU", events.get(2).fields().get("runtime.device.label"));
+        assertEquals("NVIDIA", events.get(2).fields().get("runtime.device.vendor"));
+        assertEquals("DGPU", events.get(2).fields().get("runtime.device.class"));
+        assertEquals("OPENCL:opencl-lifecycle-0", events.get(2).fields().get("runtime.device.discovery.selectedDeviceKey"));
     }
 
     @Test
@@ -1193,6 +1834,44 @@ class GpuRuntimeTest {
         assertEquals(GpuBackendTarget.CUDA, result.candidateDecisions().get(0).backendTarget());
         assertTrue(result.failureSummary().contains("Runtime backend adapter is not implemented for CUDA"));
         assertTrue(result.explanation().toMarkdown().contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
+    }
+
+    @Test
+    void backendAdaptersExposeCatalogDiscoveryAndLowererContract() {
+        List<GpuRuntimeBackendAdapter> adapters = GpuRuntimeBackendAdapters.standardWithPlannedBackends();
+        GpuRuntimeBackendAdapter openClAdapter = GpuRuntimeBackendAdapters.requireTarget(GpuBackendTarget.OPENCL);
+        GpuRuntimeBackendAdapter cudaAdapter = GpuRuntimeBackendAdapters.requireTarget(GpuBackendTarget.CUDA);
+
+        assertEquals(4, adapters.size());
+        assertEquals(GpuBackendTarget.OPENCL, openClAdapter.backendTarget());
+        assertEquals("OpenCL", openClAdapter.backendName());
+        assertTrue(openClAdapter.catalogEntry().productionAdapter());
+        assertEquals(GpuBackendTarget.OPENCL, openClAdapter.lowerer().backendTarget());
+        assertEquals(GpuBackendTarget.CUDA, cudaAdapter.backendTarget());
+        assertFalse(cudaAdapter.catalogEntry().productionAdapter());
+        assertEquals(GpuBackendTarget.CUDA, cudaAdapter.lowerer().backendTarget());
+
+        List<GpuRuntimeBackendCatalogEntry> entries = GpuRuntimeBackendAdapters.catalogEntries(adapters);
+        GpuRuntimeDeviceDiscoveryCatalog discoveryCatalog = GpuRuntimeBackendAdapters.discoverDevices(
+                List.of(cudaAdapter),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+        );
+        Map<String, String> fields = cudaAdapter.artifactFields("adapter");
+
+        assertEquals(4, entries.size());
+        assertEquals(GpuBackendTarget.CUDA, entries.get(1).backendTarget());
+        assertEquals(GpuBackendTarget.CUDA, discoveryCatalog.forBackend(GpuBackendTarget.CUDA).orElseThrow().backendTarget());
+        assertEquals("CUDA", discoveryCatalog.forBackend(GpuBackendTarget.CUDA).orElseThrow().backendName());
+        assertEquals("CUDA", fields.get("adapter.backendTarget"));
+        assertEquals("false", fields.get("adapter.productionAdapter"));
+        assertEquals("backend-lowerer:cuda", fields.get("adapter.lowerer.id"));
+        assertEquals("non-production-adapter", fields.get("runtime.status"));
+        assertEquals("true", fields.get("runtime.backend.adapter.present"));
+        assertEquals("CUDA", fields.get("runtime.backend.target"));
+        assertEquals("CUDA", fields.get("runtime.backend.name"));
+        assertEquals("false", fields.get("runtime.backend.adapter.productionAdapter"));
+        assertEquals("backend-lowerer:cuda", fields.get("runtime.backend.lowerer.id"));
+        assertEquals("CUDA", fields.get("runtime.backend.lowerer.target"));
     }
 
     @Test
@@ -1411,6 +2090,69 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void backendDeviceSelectionInstallPreselectsDeviceAwareBackend() {
+        PreselectingBackend backend = new PreselectingBackend(GpuRuntimeBackendReport.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                "Preselected Backend GPU",
+                new GpuRuntimeApiVersion(3, 0),
+                "OpenCL 3.0 Preselected Backend GPU",
+                java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                16_384L,
+                128L,
+                null
+        ));
+        GpuRuntimeSelectionResult backendResult = GpuRuntimeBackendPolicy.builder()
+                .preferBorrowedBackend(backend)
+                .build()
+                .trySelect();
+        GpuRuntimeDeviceProfile device = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-preselected-0",
+                "Preselected Device GPU",
+                "NVIDIA",
+                "preselected-driver",
+                "OpenCL 3.0 Preselected Device GPU",
+                "NVIDIA CUDA",
+                "OpenCL 3.0 CUDA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                8L * 1024L * 1024L * 1024L,
+                64L * 1024L,
+                1024L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceSelection deviceSelection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                                .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED),
+                        List.of(device)
+                )
+        );
+        GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscoveryResult.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                List.of(device),
+                deviceSelection
+        );
+        GpuRuntimeBackendDeviceSelection selection = backendResult.withDeviceDiscovery(
+                GpuRuntimeDeviceDiscoveryCatalog.of(List.of(discovery))
+        );
+        GpuRuntimeBackend previousBackend = GpuRuntime.backend();
+
+        try (GpuRuntimeScope ignored = GpuRuntime.use(selection)) {
+            assertSame(backend, GpuRuntime.backend());
+            assertSame(discovery, backend.preselectedDiscovery);
+        }
+
+        assertSame(previousBackend, GpuRuntime.backend());
+    }
+
+    @Test
     void openClReportExposesApiVersionAndFeatures() {
         net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend backend =
                 new net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend(
@@ -1510,6 +2252,34 @@ class GpuRuntimeTest {
         @Override
         public void close() {
             closeCalls++;
+        }
+    }
+
+    private static final class PreselectingBackend implements GpuRuntimeBackend, GpuRuntimeBackendDevicePreselector {
+        private final GpuRuntimeBackendReport report;
+        private GpuRuntimeDeviceDiscoveryResult preselectedDiscovery;
+
+        private PreselectingBackend(GpuRuntimeBackendReport report) {
+            this.report = report;
+        }
+
+        @Override
+        public GpuBackendTarget backendTarget() {
+            return report.backendTarget();
+        }
+
+        @Override
+        public GpuRuntimeBackendReport describeCapabilities() {
+            return report;
+        }
+
+        @Override
+        public void preselectDevice(GpuRuntimeDeviceDiscoveryResult discoveryResult) {
+            this.preselectedDiscovery = discoveryResult;
+        }
+
+        @Override
+        public void invoke(GpuKernelInvocation invocation) {
         }
     }
 

@@ -15,6 +15,8 @@ public record GpuProductionPromotionExplainabilitySummary(
         String decisionMode,
         String productionSourceSwitchingAllowed,
         String productionSourceSwitchingEnabled,
+        int productionSourceDecisionCount,
+        String productionSourceDecisionAll,
         String productionMutationAllowed,
         String productionMutationEnabled,
         int kernelCount,
@@ -98,6 +100,8 @@ public record GpuProductionPromotionExplainabilitySummary(
                 "not-recorded",
                 GpuProductionPromotionDecision.DIAGNOSTIC_ONLY,
                 "false",
+                "false",
+                0,
                 "false",
                 "false",
                 "false",
@@ -190,6 +194,8 @@ public record GpuProductionPromotionExplainabilitySummary(
                 properties.getProperty("decision.mode", "unknown"),
                 properties.getProperty("productionSourceSwitchingAllowed", Boolean.toString(contract.sourceSwitchingAllowed())),
                 properties.getProperty("productionSourceSwitchingEnabled", Boolean.toString(contract.sourceSwitchingEnabled())),
+                contract.productionSourceDecisionCount(),
+                Boolean.toString(contract.allProductionSourceDecisions()),
                 properties.getProperty("productionMutationAllowed", Boolean.toString(contract.mutationAllowed())),
                 properties.getProperty("productionMutationEnabled", Boolean.toString(contract.mutationEnabled())),
                 contract.kernelCount(),
@@ -328,6 +334,8 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + ", decisionMode=" + decisionMode
                 + ", sourceSwitchingAllowed=" + productionSourceSwitchingAllowed
                 + ", sourceSwitchingEnabled=" + productionSourceSwitchingEnabled
+                + ", productionSourceDecisions=" + productionSourceDecisionCount
+                + ", productionSourceDecisionAll=" + productionSourceDecisionAll
                 + ", mutationAllowed=" + productionMutationAllowed
                 + ", mutationEnabled=" + productionMutationEnabled
                 + ", blockers=" + blockerCount

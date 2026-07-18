@@ -11,6 +11,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendDeviceSelectionExpl
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscovery;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestMode;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeSelectionResult;
 
@@ -30,6 +31,7 @@ public final class BackendSelectionExample {
         System.out.println(renderCatalog(GpuRuntimeBackendCatalog.standardWithPlannedBackends()));
         System.out.println(renderPlannedBackendDiagnostics(GpuBackendTarget.CUDA));
         System.out.println(renderStandardBackendDeviceSelectionAttempt());
+        System.out.println(renderAutomaticBackendDevicePreflightGuide());
     }
 
     static String renderCatalog(List<GpuRuntimeBackendCatalogEntry> entries) {
@@ -79,7 +81,9 @@ public final class BackendSelectionExample {
             GpuRuntimeDeviceDiscoveryCatalog deviceDiscoveryCatalog = GpuRuntimeDeviceDiscovery.discoverStandardBackends(
                     openClDiscoveryOptions()
             );
-            return renderBackendDeviceSelection(backendSelection, deviceDiscoveryCatalog);
+            return renderBackendDeviceSelection(backendSelection, deviceDiscoveryCatalog)
+                    + System.lineSeparator()
+                    + renderCudaInventoryFacts(deviceDiscoveryCatalog);
         } catch (RuntimeException exception) {
             return "Combined backend/device selection:" + System.lineSeparator()
                     + "Backend or device probing failed before a selection result was produced: "
@@ -92,9 +96,59 @@ public final class BackendSelectionExample {
         return renderDeviceDiscovery(GpuRuntimeDeviceDiscovery.discoverOpenCl(openClDiscoveryOptions()));
     }
 
+    static String renderAutomaticBackendDevicePreflightGuide() {
+        GpuRuntimeCompileOptions options = openClDiscoveryOptions().withStandardBackendDevicePreflight();
+        return "Automatic backend/device preflight profile:" + System.lineSeparator()
+                + "- enable with: GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)"
+                + ".preferDeviceClass(GpuDeviceClassTarget.DGPU)"
+                + ".excludeCpuDevices()"
+                + ".withStandardBackendDevicePreflight()" + System.lineSeparator()
+                + "- call through: DemoKernel_GpuLauncher.invokeWithCompileOptions(options, ...)"
+                + System.lineSeparator()
+                + "- mode: " + options.backendOptions().backendDevicePreflightMode() + System.lineSeparator()
+                + "- requested: " + options.backendOptions().requestsStandardBackendDevicePreflight()
+                + System.lineSeparator()
+                + "- behavior: opens the standard backend+device scope only when no backend is already installed"
+                + System.lineSeparator();
+    }
+
     static String renderDeviceDiscovery(GpuRuntimeDeviceDiscoveryResult result) {
         return "OpenCL device discovery:" + System.lineSeparator()
                 + result.toMarkdown();
+    }
+
+    static String renderCudaInventoryFacts(GpuRuntimeDeviceDiscoveryCatalog catalog) {
+        return catalog.forBackend(GpuBackendTarget.CUDA)
+                .map(BackendSelectionExample::renderCudaInventoryFacts)
+                .orElse("CUDA inventory facts:" + System.lineSeparator()
+                        + "- CUDA discovery was not part of this catalog" + System.lineSeparator());
+    }
+
+    static String renderCudaInventoryFacts(GpuRuntimeDeviceDiscoveryResult result) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("CUDA inventory facts:").append(System.lineSeparator());
+        if (!result.discoveryAvailable()) {
+            builder.append("- unavailable: ")
+                    .append(result.firstBlocker())
+                    .append(System.lineSeparator());
+            return builder.toString();
+        }
+        if (result.discoveredDevices().isEmpty()) {
+            builder.append("- no CUDA devices reported").append(System.lineSeparator());
+            return builder.toString();
+        }
+        for (GpuRuntimeDeviceProfile profile : result.discoveredDevices()) {
+            builder.append("- ")
+                    .append(profile.deviceLabel())
+                    .append(": runtime=")
+                    .append(profile.cudaRuntimeVersion())
+                    .append(", computeCapability=")
+                    .append(profile.cudaComputeCapability())
+                    .append(", memoryBytes=")
+                    .append(profile.globalMemoryBytes())
+                    .append(System.lineSeparator());
+        }
+        return builder.toString();
     }
 
     static String renderBackendDeviceSelection(

@@ -149,10 +149,16 @@ public final class GpuProductionPromotionExplainabilityFormatter {
                 productionPromotionDecisionEnabledCount == kernelCount && productionPromotionDecisionEnabledCount > 0
         );
         int productionSourceDecisionCount = parsePositiveInt(
-                gate.getProperty("sourceSwitching.productionDecision.count", productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0")
+                firstProperty(
+                        gate,
+                        productionSourceSwitchingEnabled ? Integer.toString(kernelCount) : "0",
+                        "runtime.backend.source.productionDecision.count",
+                        "sourceSwitching.productionDecision.count"
+                )
         );
         boolean allProductionSourceDecisions = propertyIsTrue(
                 gate,
+                "runtime.backend.source.productionDecision.all",
                 "sourceSwitching.productionDecision.all",
                 productionSourceDecisionCount == kernelCount && productionSourceDecisionCount > 0
         );
@@ -586,6 +592,8 @@ public final class GpuProductionPromotionExplainabilityFormatter {
         builder.append("productionSourceSwitchingEnabled.all=").append(effectiveAllProductionSourceSwitchingEnabled).append('\n');
         builder.append("productionPromotionDecisionMode.productionEnabled.count=").append(effectiveProductionPromotionDecisionEnabledCount).append('\n');
         builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(effectiveAllProductionPromotionDecisionsEnabled).append('\n');
+        builder.append("runtime.backend.source.productionDecision.count=").append(effectiveProductionSourceDecisionCount).append('\n');
+        builder.append("runtime.backend.source.productionDecision.all=").append(effectiveAllProductionSourceDecisions).append('\n');
         builder.append("sourceSwitching.productionDecision.count=").append(effectiveProductionSourceDecisionCount).append('\n');
         builder.append("sourceSwitching.productionDecision.all=").append(effectiveAllProductionSourceDecisions).append('\n');
         builder.append("productionMutationAllowed=").append(effectiveProductionMutationEnabled && blockers.isEmpty()).append('\n');
@@ -1208,6 +1216,21 @@ public final class GpuProductionPromotionExplainabilityFormatter {
     private static boolean propertyIsTrue(Properties properties, String key, boolean fallback) {
         String value = properties.getProperty(key);
         return value == null || value.isBlank() ? fallback : "true".equals(value);
+    }
+
+    private static boolean propertyIsTrue(Properties properties, String primaryKey, String fallbackKey, boolean fallback) {
+        String value = firstProperty(properties, null, primaryKey, fallbackKey);
+        return value == null || value.isBlank() ? fallback : "true".equals(value);
+    }
+
+    private static String firstProperty(Properties properties, String fallback, String... keys) {
+        for (String key : keys) {
+            String value = properties.getProperty(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return fallback;
     }
 
     private static Properties completePromotionArtifactSupport() {

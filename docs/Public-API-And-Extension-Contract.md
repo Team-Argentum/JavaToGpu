@@ -121,6 +121,44 @@ The core runtime emits immutable `GpuRuntimeLogRecord` values and does not depen
 ## Runtime Lifecycle
 
 Use `GpuRuntimeLifecycleService` when you want a journal, metrics, tracing, or test instrumentation around runtime stages.
+For normal generated-launcher calls with `withStandardBackendDevicePreflight()`, lifecycle services can already observe
+facade preflight start/completion, backend selection, device discovery, backend compilation, invocation, artifact dumps,
+and shutdown where the active backend emits them.
+For lifecycle tooling, prefer stable `runtime.*` fields such as `runtime.kernel.name`, `runtime.backend.target`,
+`runtime.device.label`, `runtime.irgpu.present`, `runtime.module.format`, `runtime.ir.selectedStage`,
+`runtime.ir.fallbackDecision`, `runtime.fallback.decision`, `runtime.work.globalShape`, and `runtime.status`;
+backend-specific legacy fields may exist, but they are not the portable trace contract.
+Compile, invocation, and shutdown events also expose portable backend state counters such as
+`runtime.backend.cache.mode`, `runtime.backend.cache.compiledKernel.count`,
+`runtime.backend.cache.compileHit.count`, `runtime.backend.compile.count`, and
+`runtime.backend.invocation.count`.
+Backend source-selection events expose portable `runtime.backend.source.*` fields such as
+`runtime.backend.source.status`, `runtime.backend.source.decision`, `runtime.backend.source.selection`,
+`runtime.backend.source.available`, `runtime.backend.source.promotionFirstBlocker`, and
+`runtime.backend.source.runtimeLoadMode`. Use these fields to understand why a backend compiled descriptor source,
+selected reconstructed `IrGpu` source, or failed closed before native compilation.
+Workload source-promotion artifacts mirror the same vocabulary under `kernel.N.runtime.backend.source.*`, while legacy
+`kernel.N.sourceSwitching.*` fields remain available for compatibility. Report and history readers prefer the portable
+fields first, so new backend adapters can emit `kernel.N.runtime.backend.source.*` without copying OpenCL-specific
+`sourceSwitching.*` keys.
+Workload-level blocker aggregates should use `runtime.backend.source.promotionFirstBlocker.*` and
+`runtime.backend.source.promotionFirstBlockerFamily.*`; legacy `sourceSwitching.sourcePromotionFirstBlocker.*` and
+`sourceSwitching.sourcePromotionFirstBlockerFamily.*` keys are compatibility mirrors for older OpenCL tooling.
+Aggregate production source-decision evidence follows the same rule: emit `runtime.backend.source.productionDecision.*`
+for workload/explainability artifacts, keep `sourceSwitching.productionDecision.*` only as a compatibility mirror, and
+read the portable fields first when both are present.
+Automatic backend/device preflight events use that same vocabulary and add `runtime.backendDevicePreflight.*` plus
+`runtime.failure.*` when the scoped preflight backend fails.
+Selection/discovery events also expose portable fields such as `runtime.selection.status`,
+`runtime.backend.selection.matched`, `runtime.device.discovery.available`, and selected `runtime.device.*` facts.
+CUDA inventory-only discovery additionally exposes `runtime.device.cuda.runtimeVersion` and
+`runtime.device.cuda.computeCapability` when those facts are available from `nvidia-smi`.
+Backend adapter artifact maps use the same convention with `runtime.backend.adapter.*` and
+`runtime.backend.lowerer.*`, allowing tools to inspect OpenCL, CUDA inventory-only, and planned adapters uniformly.
+Backend selection, device discovery, and combined runtime-selection artifact maps carry those portable fields beside
+their older prefixed compatibility keys.
+Lifecycle event reports preserve indexed event fields and additionally copy `runtime.*` fields to direct
+`runtimeLifecycle.event.runtime.*` properties for simpler journal consumers.
 
 ```java
 package com.example.gpu;

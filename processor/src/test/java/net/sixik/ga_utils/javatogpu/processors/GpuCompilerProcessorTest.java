@@ -262,6 +262,11 @@ class GpuCompilerProcessorTest {
         assertTrue(launcherSource.contains("public static void invokeWithCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWithGlobalWorkSizeAndCompileOptions(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWithConfigAndCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithGlobalWorkSizeAndStandardBackendAndDevice(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWith3DWorkSizeAndStandardBackendAndDevice(long globalX, long globalY, long globalZ, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithConfigAndStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("GpuRuntime.useStandardBackendAndDevice(compileOptions)"));
         assertTrue(launcherSource.contains("public static void invokeWith3DWorkSize(long globalX, long globalY, long globalZ, float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static float invokeReturningFirst(float[] input)"));
         assertTrue(launcherSource.contains("public static float invokeReturningFirst(long globalWorkSize, float[] input)"));
@@ -269,6 +274,9 @@ class GpuCompilerProcessorTest {
         assertTrue(launcherSource.contains("public static float invokeReturningFirstWithCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
         assertTrue(launcherSource.contains("public static float invokeReturningFirstWithGlobalWorkSizeAndCompileOptions(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
         assertTrue(launcherSource.contains("public static float invokeReturningFirstWithConfigAndCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDevice(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithConfigAndStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
 
         Path launcherClassPath = classOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.class");
         assertTrue(Files.exists(launcherClassPath));

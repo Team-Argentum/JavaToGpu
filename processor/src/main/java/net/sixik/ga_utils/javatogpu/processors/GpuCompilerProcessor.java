@@ -1773,6 +1773,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + emitExplicitCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicitWorkSizeCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicitExecutionConfigCompileOptionsLauncher(method, parameterSignature)
+                + emitStandardBackendDeviceLaunchers(method, parameterSignature)
                 + emitExplicit3DWorkSizeLauncher(method, parameterSignature)
                 + emitReturnValueConvenienceLaunchers(method, returnValueConvenience)
                 + "}\n";
@@ -2111,6 +2112,49 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "    }\n";
     }
 
+    private String emitStandardBackendDeviceLaunchers(ExecutableElement method, String parameterSignature) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return "";
+        }
+
+        String compileOptionsSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        String globalSignature = parameterSignature.isEmpty()
+                ? "long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        String global3DSignature = parameterSignature.isEmpty()
+                ? "long globalX, long globalY, long globalZ, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "long globalX, long globalY, long globalZ, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        String configSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        String arguments = method.getParameters().stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        String argumentSuffix = arguments.isEmpty() ? "" : ", " + arguments;
+
+        return "\n"
+                + "    public static void invokeWithStandardBackendAndDevice(" + compileOptionsSignature + ") {\n"
+                + "        try (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope ignored = net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.useStandardBackendAndDevice(compileOptions)) {\n"
+                + "            invokeWithCompileOptions(compileOptions" + argumentSuffix + ");\n"
+                + "        }\n"
+                + "    }\n\n"
+                + "    public static void invokeWithGlobalWorkSizeAndStandardBackendAndDevice(" + globalSignature + ") {\n"
+                + "        try (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope ignored = net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.useStandardBackendAndDevice(compileOptions)) {\n"
+                + "            invokeWithGlobalWorkSizeAndCompileOptions(globalWorkSize, compileOptions" + argumentSuffix + ");\n"
+                + "        }\n"
+                + "    }\n\n"
+                + "    public static void invokeWith3DWorkSizeAndStandardBackendAndDevice(" + global3DSignature + ") {\n"
+                + "        invokeWithConfigAndStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.threeDimensional(globalX, globalY, globalZ), compileOptions" + argumentSuffix + ");\n"
+                + "    }\n\n"
+                + "    public static void invokeWithConfigAndStandardBackendAndDevice(" + configSignature + ") {\n"
+                + "        try (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope ignored = net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.useStandardBackendAndDevice(compileOptions)) {\n"
+                + "            invokeWithConfigAndCompileOptions(executionConfig, compileOptions" + argumentSuffix + ");\n"
+                + "        }\n"
+                + "    }\n";
+    }
+
     private String emitReturnValueConvenienceMetadata(ReturnValueConvenienceAnalysis analysis) {
         ReturnValueOutputParameter output = analysis.output();
         return "    public static final boolean RETURN_VALUE_CONVENIENCE_AVAILABLE = " + analysis.available() + ";\n"
@@ -2190,6 +2234,21 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "        " + outputArrayType + " " + outputLocal + " = new " + returnType + "[__javatogpu$returnOutputLength(executionConfig)];\n"
                 + "        invokeWithConfigAndCompileOptions(executionConfig, compileOptions" + (invokeArguments.isEmpty() ? "" : ", " + invokeArguments) + ");\n"
                 + "        return " + outputLocal + "[0];\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirstWithStandardBackendAndDevice(" + compileOptionsSignature + ") {\n"
+                + "        try (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope ignored = net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.useStandardBackendAndDevice(compileOptions)) {\n"
+                + "            return invokeReturningFirstWithCompileOptions(compileOptions" + noOutputArguments + ");\n"
+                + "        }\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDevice(" + globalCompileOptionsSignature + ") {\n"
+                + "        try (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope ignored = net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.useStandardBackendAndDevice(compileOptions)) {\n"
+                + "            return invokeReturningFirstWithGlobalWorkSizeAndCompileOptions(globalWorkSize, compileOptions" + noOutputArguments + ");\n"
+                + "        }\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirstWithConfigAndStandardBackendAndDevice(" + configCompileOptionsSignature + ") {\n"
+                + "        try (net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope ignored = net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.useStandardBackendAndDevice(compileOptions)) {\n"
+                + "            return invokeReturningFirstWithConfigAndCompileOptions(executionConfig, compileOptions" + noOutputArguments + ");\n"
+                + "        }\n"
                 + "    }\n\n"
                 + "    private static int __javatogpu$returnOutputLength(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig) {\n"
                 + "        java.util.Objects.requireNonNull(executionConfig, \"executionConfig\");\n"

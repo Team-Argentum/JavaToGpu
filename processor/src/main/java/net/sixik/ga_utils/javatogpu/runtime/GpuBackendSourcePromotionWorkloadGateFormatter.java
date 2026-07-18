@@ -18,6 +18,7 @@ import java.util.Properties;
 public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
     private static final String RUNTIME_OPTIMIZER_DRIFT_PREFIX = "runtimeOptimizerDrift.";
+    private static final String RUNTIME_BACKEND_SOURCE_PREFIX = "runtime.backend.source.";
 
     private static final DriftProperty[] RUNTIME_OPTIMIZER_DRIFT_PROPERTIES = {
             driftProperty("pass.count", "0", "unknown"),
@@ -451,6 +452,8 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         if (source == null || source.isEmpty()) {
             target.setProperty("sourceSwitching.status", "not-recorded");
             target.setProperty("sourceSwitching.decision", "not-recorded");
+            target.setProperty("sourceSwitching.sourcePromotionStatus", "not-recorded");
+            target.setProperty("sourceSwitching.sourcePromotionReviewReady", "false");
             target.setProperty("sourceSwitching.productionProfileRequested", "unknown");
             target.setProperty("sourceSwitching.sourceSelection", "unknown");
             target.setProperty("sourceSwitching.irGpuSourceRequested", "unknown");
@@ -460,6 +463,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             target.setProperty("sourceSwitching.productionPromotionOperatorAccepted", "false");
             target.setProperty("sourceSwitching.sourcePromotionFirstBlocker", "source-switching-decision-not-recorded");
             target.setProperty("sourceSwitching.diagnostic.count", "0");
+            putRuntimeBackendSourceFallbackFields(target, false);
             return;
         }
         copySourceSwitchingProperty(source, target, "status");
@@ -468,16 +472,101 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copySourceSwitchingProperty(source, target, "productionProfileRequested");
         copySourceSwitchingProperty(source, target, "sourceSelection");
         copySourceSwitchingProperty(source, target, "irGpuSourceRequested");
+        copySourceSwitchingProperty(source, target, "sourcePromotionStatus", target.getProperty("status", "unknown"));
+        copySourceSwitchingProperty(source, target, "sourcePromotionReviewReady", target.getProperty("reviewReady", "unknown"));
         copySourceSwitchingProperty(source, target, "productionSourceSwitching");
         copySourceSwitchingProperty(source, target, "productionSourceSwitchingEnabled");
         copySourceSwitchingProperty(source, target, "productionPromotionDecisionMode");
         copySourceSwitchingProperty(source, target, "productionPromotionOperatorAccepted");
         copySourceSwitchingProperty(source, target, "sourcePromotionFirstBlocker");
         copyIndexedProperties(source, target, "sourceSwitching.diagnostic", "diagnostic");
+        copyRuntimeBackendSourceDecisionProperties(source, target);
     }
 
     private static void copySourceSwitchingProperty(Properties source, Properties target, String key) {
-        target.setProperty("sourceSwitching." + key, source.getProperty(key, "unknown"));
+        copySourceSwitchingProperty(source, target, key, "unknown");
+    }
+
+    private static void copySourceSwitchingProperty(
+            Properties source,
+            Properties target,
+            String key,
+            String fallback
+    ) {
+        target.setProperty("sourceSwitching." + key, source.getProperty(key, fallback));
+    }
+
+    private static void copyRuntimeBackendSourceDecisionProperties(Properties source, Properties target) {
+        target.setProperty(
+                RUNTIME_BACKEND_SOURCE_PREFIX + "selection.present",
+                source.getProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "selection.present", "true")
+        );
+        copyRuntimeBackendSourceProperty(source, target, "status", "sourceSwitching.status", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "decision", "sourceSwitching.decision", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "selection", "sourceSwitching.sourceSelection", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "irgpuRequested", "sourceSwitching.irGpuSourceRequested", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "ready", "ready", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "reconstructed", "reconstructed", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "available", "sourceAvailable", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "parityChecked", "sourceParityChecked", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "parityMatched", "sourceParityMatched", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "promotionStatus", "sourceSwitching.sourcePromotionStatus", target.getProperty("status", "unknown"));
+        copyRuntimeBackendSourceProperty(source, target, "promotionReviewReady", "sourceSwitching.sourcePromotionReviewReady", target.getProperty("reviewReady", "unknown"));
+        copyRuntimeBackendSourceProperty(source, target, "promotionFirstBlocker", "sourceSwitching.sourcePromotionFirstBlocker", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "productionProfileRequested", "sourceSwitching.productionProfileRequested", "unknown");
+        copyRuntimeBackendSourceProperty(source, target, "productionSwitching", "sourceSwitching.productionSourceSwitching", "false");
+        copyRuntimeBackendSourceProperty(source, target, "productionSwitchingEnabled", "sourceSwitching.productionSourceSwitchingEnabled", "false");
+        copyRuntimeBackendSourceProperty(source, target, "productionPromotionDecisionMode", "sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY);
+        copyRuntimeBackendSourceProperty(source, target, "productionPromotionOperatorAccepted", "sourceSwitching.productionPromotionOperatorAccepted", "false");
+        copyRuntimeBackendSourceProperty(source, target, "runtimeLoadMode", "runtimeLoadMode", "unknown");
+        target.setProperty(
+                RUNTIME_BACKEND_SOURCE_PREFIX + "diagnostic",
+                source.getProperty(
+                        RUNTIME_BACKEND_SOURCE_PREFIX + "diagnostic",
+                        target.getProperty("sourceSwitching.diagnostic.0", source.getProperty("diagnostic.0", "unknown"))
+                )
+        );
+        target.setProperty("runtime.status", source.getProperty("runtime.status", target.getProperty("sourceSwitching.status", "unknown")));
+    }
+
+    private static void copyRuntimeBackendSourceProperty(
+            Properties source,
+            Properties target,
+            String runtimeKey,
+            String fallbackKey,
+            String fallbackValue
+    ) {
+        target.setProperty(
+                RUNTIME_BACKEND_SOURCE_PREFIX + runtimeKey,
+                source.getProperty(
+                        RUNTIME_BACKEND_SOURCE_PREFIX + runtimeKey,
+                        target.getProperty(fallbackKey, source.getProperty(fallbackKey, fallbackValue))
+                )
+        );
+    }
+
+    private static void putRuntimeBackendSourceFallbackFields(Properties target, boolean present) {
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "selection.present", Boolean.toString(present));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "status", target.getProperty("sourceSwitching.status", "not-recorded"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "decision", target.getProperty("sourceSwitching.decision", "not-recorded"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "selection", target.getProperty("sourceSwitching.sourceSelection", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "irgpuRequested", target.getProperty("sourceSwitching.irGpuSourceRequested", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "ready", target.getProperty("ready", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "reconstructed", target.getProperty("reconstructed", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "available", target.getProperty("sourceAvailable", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "parityChecked", target.getProperty("sourceParityChecked", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "parityMatched", target.getProperty("sourceParityMatched", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "promotionStatus", target.getProperty("sourceSwitching.sourcePromotionStatus", target.getProperty("status", "not-recorded")));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "promotionReviewReady", target.getProperty("sourceSwitching.sourcePromotionReviewReady", target.getProperty("reviewReady", "unknown")));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "promotionFirstBlocker", target.getProperty("sourceSwitching.sourcePromotionFirstBlocker", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionProfileRequested", target.getProperty("sourceSwitching.productionProfileRequested", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionSwitching", target.getProperty("sourceSwitching.productionSourceSwitching", "false"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionSwitchingEnabled", target.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionPromotionDecisionMode", target.getProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionPromotionOperatorAccepted", target.getProperty("sourceSwitching.productionPromotionOperatorAccepted", "false"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "runtimeLoadMode", target.getProperty("runtimeLoadMode", "unknown"));
+        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "diagnostic", target.getProperty("sourceSwitching.diagnostic.0", "unknown"));
+        target.setProperty("runtime.status", target.getProperty("sourceSwitching.status", "not-recorded"));
     }
 
     private static void copyRuntimeIrHandoffProperties(Properties source, Properties target) {
@@ -809,20 +898,28 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(allProductionPromotionEnabled).append('\n');
         builder.append("productionPromotionOperatorAccepted.count=").append(productionPromotionOperatorAcceptedCount).append('\n');
         builder.append("productionPromotionOperatorAccepted.all=").append(allProductionPromotionOperatorAccepted).append('\n');
+        builder.append("runtime.backend.source.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
+        builder.append("runtime.backend.source.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
         builder.append("sourceSwitching.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
         builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
         appendAggregateRuntimeExtensionParticipation(builder, kernels);
         builder.append("sourceSwitching.count=").append(kernels.size()).append('\n');
+        builder.append("runtime.backend.source.promotionFirstBlocker.count=").append(aggregateSourcePromotionFirstBlockers.size()).append('\n');
         builder.append("sourceSwitching.sourcePromotionFirstBlocker.count=").append(aggregateSourcePromotionFirstBlockers.size()).append('\n');
         int sourcePromotionBlockerIndex = 0;
         for (Map.Entry<String, Integer> blocker : aggregateSourcePromotionFirstBlockers.entrySet()) {
+            builder.append("runtime.backend.source.promotionFirstBlocker.").append(sourcePromotionBlockerIndex).append(".name=").append(blocker.getKey()).append('\n');
+            builder.append("runtime.backend.source.promotionFirstBlocker.").append(sourcePromotionBlockerIndex).append(".count=").append(blocker.getValue()).append('\n');
             builder.append("sourceSwitching.sourcePromotionFirstBlocker.").append(sourcePromotionBlockerIndex).append(".name=").append(blocker.getKey()).append('\n');
             builder.append("sourceSwitching.sourcePromotionFirstBlocker.").append(sourcePromotionBlockerIndex).append(".count=").append(blocker.getValue()).append('\n');
             sourcePromotionBlockerIndex++;
         }
+        builder.append("runtime.backend.source.promotionFirstBlockerFamily.count=").append(aggregateSourcePromotionFirstBlockerFamilies.size()).append('\n');
         builder.append("sourceSwitching.sourcePromotionFirstBlockerFamily.count=").append(aggregateSourcePromotionFirstBlockerFamilies.size()).append('\n');
         int sourcePromotionBlockerFamilyIndex = 0;
         for (Map.Entry<String, Integer> family : aggregateSourcePromotionFirstBlockerFamilies.entrySet()) {
+            builder.append("runtime.backend.source.promotionFirstBlockerFamily.").append(sourcePromotionBlockerFamilyIndex).append(".name=").append(family.getKey()).append('\n');
+            builder.append("runtime.backend.source.promotionFirstBlockerFamily.").append(sourcePromotionBlockerFamilyIndex).append(".count=").append(family.getValue()).append('\n');
             builder.append("sourceSwitching.sourcePromotionFirstBlockerFamily.").append(sourcePromotionBlockerFamilyIndex).append(".name=").append(family.getKey()).append('\n');
             builder.append("sourceSwitching.sourcePromotionFirstBlockerFamily.").append(sourcePromotionBlockerFamilyIndex).append(".count=").append(family.getValue()).append('\n');
             sourcePromotionBlockerFamilyIndex++;
@@ -909,18 +1006,83 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     }
 
     private static void appendSourceSwitchingDecision(StringBuilder builder, String prefix, Properties entry) {
-        builder.append(prefix).append("sourceSwitching.status=").append(entry.getProperty("sourceSwitching.status", "not-recorded")).append('\n');
-        builder.append(prefix).append("sourceSwitching.decision=").append(entry.getProperty("sourceSwitching.decision", "not-recorded")).append('\n');
+        builder.append(prefix).append("sourceSwitching.status=")
+                .append(runtimeBackendSourceProperty(entry, "status", "sourceSwitching.status", "not-recorded"))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.decision=")
+                .append(runtimeBackendSourceProperty(entry, "decision", "sourceSwitching.decision", "not-recorded"))
+                .append('\n');
         builder.append(prefix).append("sourceSwitching.optimizationProfile=").append(entry.getProperty("sourceSwitching.optimizationProfile", "unknown")).append('\n');
-        builder.append(prefix).append("sourceSwitching.productionProfileRequested=").append(entry.getProperty("sourceSwitching.productionProfileRequested", "unknown")).append('\n');
-        builder.append(prefix).append("sourceSwitching.sourceSelection=").append(entry.getProperty("sourceSwitching.sourceSelection", "unknown")).append('\n');
-        builder.append(prefix).append("sourceSwitching.irGpuSourceRequested=").append(entry.getProperty("sourceSwitching.irGpuSourceRequested", "unknown")).append('\n');
-        builder.append(prefix).append("sourceSwitching.productionSourceSwitching=").append(entry.getProperty("sourceSwitching.productionSourceSwitching", "false")).append('\n');
-        builder.append(prefix).append("sourceSwitching.productionSourceSwitchingEnabled=").append(entry.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false")).append('\n');
-        builder.append(prefix).append("sourceSwitching.productionPromotionDecisionMode=").append(entry.getProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY)).append('\n');
-        builder.append(prefix).append("sourceSwitching.productionPromotionOperatorAccepted=").append(entry.getProperty("sourceSwitching.productionPromotionOperatorAccepted", "false")).append('\n');
-        builder.append(prefix).append("sourceSwitching.sourcePromotionFirstBlocker=").append(entry.getProperty("sourceSwitching.sourcePromotionFirstBlocker", "unknown")).append('\n');
+        builder.append(prefix).append("sourceSwitching.productionProfileRequested=")
+                .append(runtimeBackendSourceProperty(entry, "productionProfileRequested", "sourceSwitching.productionProfileRequested", "unknown"))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.sourceSelection=")
+                .append(runtimeBackendSourceProperty(entry, "selection", "sourceSwitching.sourceSelection", "unknown"))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.irGpuSourceRequested=")
+                .append(runtimeBackendSourceProperty(entry, "irgpuRequested", "sourceSwitching.irGpuSourceRequested", "unknown"))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.productionSourceSwitching=")
+                .append(runtimeBackendSourceProperty(entry, "productionSwitching", "sourceSwitching.productionSourceSwitching", "false"))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.productionSourceSwitchingEnabled=")
+                .append(runtimeBackendSourceProperty(entry, "productionSwitchingEnabled", "sourceSwitching.productionSourceSwitchingEnabled", "false"))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.productionPromotionDecisionMode=")
+                .append(runtimeBackendSourceProperty(entry, "productionPromotionDecisionMode", "sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.productionPromotionOperatorAccepted=")
+                .append(runtimeBackendSourceProperty(entry, "productionPromotionOperatorAccepted", "sourceSwitching.productionPromotionOperatorAccepted", "false"))
+                .append('\n');
+        builder.append(prefix).append("sourceSwitching.sourcePromotionFirstBlocker=")
+                .append(runtimeBackendSourceProperty(entry, "promotionFirstBlocker", "sourceSwitching.sourcePromotionFirstBlocker", "unknown"))
+                .append('\n');
         appendIndexedProperties(builder, prefix, entry, "sourceSwitching.diagnostic");
+        appendRuntimeBackendSourceDecision(builder, prefix, entry);
+    }
+
+    private static String runtimeBackendSourceProperty(
+            Properties entry,
+            String runtimeKey,
+            String legacyKey,
+            String fallback
+    ) {
+        return entry.getProperty(RUNTIME_BACKEND_SOURCE_PREFIX + runtimeKey, entry.getProperty(legacyKey, fallback));
+    }
+
+    private static void appendRuntimeBackendSourceDecision(StringBuilder builder, String prefix, Properties entry) {
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "selection.present", "false");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "status", "not-recorded");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "decision", "not-recorded");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "selection", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "irgpuRequested", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "ready", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "reconstructed", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "available", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "parityChecked", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "parityMatched", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "promotionStatus", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "promotionReviewReady", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "promotionFirstBlocker", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "productionProfileRequested", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "productionSwitching", "false");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "productionSwitchingEnabled", "false");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY);
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "productionPromotionOperatorAccepted", "false");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "runtimeLoadMode", "unknown");
+        appendRuntimeBackendSourceProperty(builder, prefix, entry, "diagnostic", "unknown");
+        builder.append(prefix).append("runtime.status=").append(entry.getProperty("runtime.status", "not-recorded")).append('\n');
+    }
+
+    private static void appendRuntimeBackendSourceProperty(
+            StringBuilder builder,
+            String prefix,
+            Properties entry,
+            String key,
+            String fallback
+    ) {
+        String propertyName = RUNTIME_BACKEND_SOURCE_PREFIX + key;
+        builder.append(prefix).append(propertyName).append('=').append(entry.getProperty(propertyName, fallback)).append('\n');
     }
 
     private static void appendRuntimeIrHandoff(StringBuilder builder, String prefix, Properties entry) {
@@ -1185,7 +1347,12 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     private static LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockers(LinkedHashMap<String, Properties> kernels) {
         LinkedHashMap<String, Integer> blockers = new LinkedHashMap<>();
         for (Properties entry : kernels.values()) {
-            String blocker = entry.getProperty("sourceSwitching.sourcePromotionFirstBlocker", "unknown");
+            String blocker = runtimeBackendSourceProperty(
+                    entry,
+                    "promotionFirstBlocker",
+                    "sourceSwitching.sourcePromotionFirstBlocker",
+                    "unknown"
+            );
             if (blocker.isBlank() || "none".equals(blocker) || "unknown".equals(blocker)) {
                 continue;
             }
@@ -1214,22 +1381,48 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     }
 
     private static boolean entryProductionSourceSwitchingEnabled(Properties entry) {
-        return "true".equals(entry.getProperty("sourceSwitching.productionSourceSwitchingEnabled"))
-                || "enabled".equals(entry.getProperty("sourceSwitching.productionSourceSwitching"));
+        String switchingEnabled = runtimeBackendSourceProperty(
+                entry,
+                "productionSwitchingEnabled",
+                "sourceSwitching.productionSourceSwitchingEnabled",
+                "false"
+        );
+        String switching = runtimeBackendSourceProperty(
+                entry,
+                "productionSwitching",
+                "sourceSwitching.productionSourceSwitching",
+                "false"
+        );
+        return "true".equals(switchingEnabled) || "enabled".equals(switching);
     }
 
     private static boolean entryProductionPromotionEnabled(Properties entry) {
         return GpuProductionPromotionDecision.PRODUCTION_ENABLED.equals(
-                entry.getProperty("sourceSwitching.productionPromotionDecisionMode")
+                runtimeBackendSourceProperty(
+                        entry,
+                        "productionPromotionDecisionMode",
+                        "sourceSwitching.productionPromotionDecisionMode",
+                        GpuProductionPromotionDecision.DIAGNOSTIC_ONLY
+                )
         );
     }
 
     private static boolean entryProductionPromotionOperatorAccepted(Properties entry) {
-        return "true".equals(entry.getProperty("sourceSwitching.productionPromotionOperatorAccepted"));
+        return "true".equals(runtimeBackendSourceProperty(
+                entry,
+                "productionPromotionOperatorAccepted",
+                "sourceSwitching.productionPromotionOperatorAccepted",
+                "false"
+        ));
     }
 
     private static boolean entryProductionSourceDecision(Properties entry) {
-        return "compile-irgpu-source-production".equals(entry.getProperty("sourceSwitching.decision"));
+        return "compile-irgpu-source-production".equals(runtimeBackendSourceProperty(
+                entry,
+                "decision",
+                "sourceSwitching.decision",
+                "not-recorded"
+        ));
     }
 
     private static int parsePositiveInt(String value) {

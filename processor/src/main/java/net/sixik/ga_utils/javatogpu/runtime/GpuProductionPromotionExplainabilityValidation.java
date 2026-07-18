@@ -30,12 +30,21 @@ public final class GpuProductionPromotionExplainabilityValidation {
         int blockerCount = parseInt(properties.getProperty("blocker.count"));
         int productionSourceSwitchingEnabledCount = parseInt(properties.getProperty("productionSourceSwitchingEnabled.count"));
         int productionPromotionDecisionEnabledCount = parseInt(properties.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
-        int productionSourceDecisionCount = parseInt(properties.getProperty("sourceSwitching.productionDecision.count"));
+        int productionSourceDecisionCount = parseInt(firstProperty(
+                properties,
+                "0",
+                "runtime.backend.source.productionDecision.count",
+                "sourceSwitching.productionDecision.count"
+        ));
         boolean sourceSwitchingAllowed = propertyIsTrue(properties, "productionSourceSwitchingAllowed");
         boolean sourceSwitchingEnabled = propertyIsTrue(properties, "productionSourceSwitchingEnabled");
         boolean allSourceSwitchingEnabled = propertyIsTrue(properties, "productionSourceSwitchingEnabled.all");
         boolean allPromotionDecisionsEnabled = propertyIsTrue(properties, "productionPromotionDecisionMode.productionEnabled.all");
-        boolean allProductionSourceDecisions = propertyIsTrue(properties, "sourceSwitching.productionDecision.all");
+        boolean allProductionSourceDecisions = propertyIsTrue(
+                properties,
+                "runtime.backend.source.productionDecision.all",
+                "sourceSwitching.productionDecision.all"
+        );
         boolean mutationAllowed = propertyIsTrue(properties, "productionMutationAllowed");
         boolean mutationEnabled = propertyIsTrue(properties, "productionMutationEnabled");
         boolean backendPromotionArtifactSupportComplete = propertyIsTrue(
@@ -187,9 +196,23 @@ public final class GpuProductionPromotionExplainabilityValidation {
         return "true".equals(properties.getProperty(key, "false"));
     }
 
+    private static boolean propertyIsTrue(Properties properties, String primaryKey, String fallbackKey) {
+        return "true".equals(firstProperty(properties, "false", primaryKey, fallbackKey));
+    }
+
     private static boolean propertyIsTrue(Properties properties, String key, boolean fallback) {
         String value = properties.getProperty(key);
         return value == null || value.isBlank() ? fallback : "true".equals(value);
+    }
+
+    private static String firstProperty(Properties properties, String fallback, String... keys) {
+        for (String key : keys) {
+            String value = properties.getProperty(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return fallback;
     }
 
     private static int parseInt(String value) {

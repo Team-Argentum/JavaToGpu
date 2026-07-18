@@ -104,10 +104,23 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             GpuRuntimeCompileOptions compileOptions,
             Optional<IrGpuArtifact> irGpuArtifact
     ) {
+        return createDefault(devicePolicyRegistry, descriptor, compileOptions, irGpuArtifact, Optional.empty());
+    }
+
+    public static OpenClRuntimeSession createDefault(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            Optional<IrGpuArtifact> irGpuArtifact,
+            Optional<GpuRuntimeDeviceSelection> preselectedDeviceSelection
+    ) {
         Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
         GpuRuntimeCompileOptions resolvedCompileOptions = compileOptions == null
                 ? GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
                 : compileOptions;
+        Optional<GpuRuntimeDeviceSelection> resolvedPreselection = preselectedDeviceSelection == null
+                ? Optional.empty()
+                : preselectedDeviceSelection;
         List<OpenClDevice> devices = OpenClDevices.list(CL10.CL_DEVICE_TYPE_ALL);
         if (devices.isEmpty()) {
             throw new IllegalStateException("No OpenCL device found");
@@ -118,13 +131,13 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             profiles.add(deviceProfile(devices.get(index), index));
         }
         prepareDeviceSelfTests(devicePolicyRegistry, devices, profiles, resolvedCompileOptions);
-        GpuRuntimeDeviceSelection selection = selectDevice(
+        GpuRuntimeDeviceSelection selection = resolvedPreselection.orElseGet(() -> selectDevice(
                 devicePolicyRegistry,
                 profiles,
                 descriptor,
                 resolvedCompileOptions,
                 irGpuArtifact
-        );
+        ));
         int selectedIndex = selectedDeviceIndex(profiles, selection);
         OpenClDevice device = devices.get(selectedIndex);
 

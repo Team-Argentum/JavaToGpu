@@ -54,6 +54,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendUnavailableExceptio
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCapabilityException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSiteResolver;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptionsException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceCaseEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
@@ -762,6 +763,60 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void preselectedDiscoveryProvidesCompileProfileWithoutNativeCapabilityProbe() {
+        GpuRuntimeDeviceProfile device = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-preflight-0",
+                "Preflight OpenCL GPU",
+                "NVIDIA",
+                "preflight-driver",
+                "OpenCL 3.0 Preflight",
+                "NVIDIA CUDA",
+                "OpenCL 3.0 CUDA",
+                GpuDeviceClassTarget.DGPU,
+                48,
+                8L * 1024L * 1024L * 1024L,
+                64L * 1024L,
+                1024L,
+                1L,
+                false,
+                true,
+                true,
+                false
+        );
+        GpuRuntimeDeviceSelection selection = GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns().select(
+                GpuRuntimeDevicePolicyContext.forBackendDiscovery(
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                        List.of(device)
+                )
+        );
+        GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscoveryResult.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                List.of(device),
+                selection
+        );
+        AtomicInteger nativeCapabilityCalls = new AtomicInteger();
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                nativeCapabilityCalls.incrementAndGet();
+                throw new AssertionError("preselected compile profile should not touch native capabilities");
+            }
+        };
+
+        backend.preselectDevice(discovery);
+        GpuRuntimeDeviceProfile compileProfile = backend.compileDeviceProfile();
+
+        assertEquals("Preflight OpenCL GPU", compileProfile.deviceLabel());
+        assertEquals("OpenCL", compileProfile.backendName());
+        assertEquals("opencl-preflight-0", compileProfile.deviceId());
+        assertEquals(0, nativeCapabilityCalls.get());
+        assertSame(selection, backend.preselectedDeviceSelection().orElseThrow());
+        assertSame(selection, backend.runtimeDeviceSelection().orElseThrow());
+    }
+
+    @Test
     void publishesLifecycleEventsAroundCompileArtifactDumpInvocationAndClose() throws java.io.IOException {
         String property = "javatogpu.opencl.runtimeCompileArtifactDirectory";
         String previousArtifactRoot = System.getProperty(property);
@@ -848,6 +903,7 @@ class OpenClGpuRuntimeBackendTest {
                 GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
                 GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_STARTED,
                 GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
+                GpuRuntimeLifecycleEventKind.FALLBACK_OR_ROLLBACK_SELECTED,
                 GpuRuntimeLifecycleEventKind.SOURCE_SELECTION_DECIDED,
                 GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_STARTED,
                 GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_COMPLETED,
@@ -859,16 +915,57 @@ class OpenClGpuRuntimeBackendTest {
                 GpuRuntimeLifecycleEventKind.RUNTIME_SHUTDOWN_COMPLETED
         ), kinds);
         assertEquals("javatogpu/sample/Demo/kernel.cl", events.get(0).kernelResource());
+        assertEquals("kernel", events.get(0).fields().get("runtime.kernel.name"));
+        assertEquals("javatogpu/sample/Demo/kernel.cl", events.get(0).fields().get("runtime.kernel.resource"));
+        assertEquals("OPENCL", events.get(0).fields().get("runtime.backend.target"));
+        assertEquals("off", events.get(0).fields().get("runtime.compile.optimizationProfile"));
         assertEquals("primary", events.get(1).fields().get("loadRole"));
+        assertEquals("false", events.get(1).fields().get("runtime.irgpu.present"));
         assertEquals("runtime-capabilities", events.get(8).fields().get("validation.stage"));
+        assertEquals("kernel", events.get(8).fields().get("runtime.kernel.name"));
         assertEquals("succeeded", events.get(13).fields().get("status"));
+        assertEquals("succeeded", events.get(13).fields().get("runtime.status"));
+        assertEquals("0", events.get(13).fields().get("runtime.compile.arg.count"));
         assertEquals("test-lifecycle-lowerer", events.get(15).fields().get("module.lowererVersion"));
-        assertEquals("descriptor-default", events.get(18).fields().get("status"));
-        assertEquals("succeeded", events.get(20).fields().get("status"));
-        assertEquals("compiled:lifecycle", events.get(20).fields().get("cacheKey"));
-        assertEquals("4", events.get(23).fields().get("work.globalX"));
-        assertEquals("succeeded", events.get(24).fields().get("status"));
-        assertEquals("INSTANCE", events.get(26).fields().get("cacheMode"));
+        assertEquals("test-lifecycle-lowerer", events.get(15).fields().get("runtime.module.lowererVersion"));
+        assertEquals("missing", events.get(18).fields().get("status"));
+        assertEquals("missing", events.get(18).fields().get("runtime.status"));
+        assertEquals("missing", events.get(18).fields().get("runtime.ir.selectedStage"));
+        assertEquals("none", events.get(18).fields().get("runtime.ir.fallbackDecision"));
+        assertEquals("none", events.get(18).fields().get("runtime.fallback.decision"));
+        assertEquals("true", events.get(18).fields().get("runtime.ir.productionGate.accepted"));
+        assertEquals("descriptor-default", events.get(19).fields().get("status"));
+        assertEquals("opencl-c", events.get(19).fields().get("runtime.module.format"));
+        assertEquals("descriptor-default", events.get(19).fields().get("runtime.backend.source.status"));
+        assertEquals("compile-descriptor-source", events.get(19).fields().get("runtime.backend.source.decision"));
+        assertEquals("descriptor", events.get(19).fields().get("runtime.backend.source.selection"));
+        assertEquals("false", events.get(19).fields().get("runtime.backend.source.irgpuRequested"));
+        assertEquals("false", events.get(19).fields().get("runtime.backend.source.available"));
+        assertEquals("opencl-source-compile", events.get(19).fields().get("runtime.backend.source.runtimeLoadMode"));
+        assertEquals("succeeded", events.get(21).fields().get("status"));
+        assertEquals("compiled:lifecycle", events.get(21).fields().get("cacheKey"));
+        assertEquals("succeeded", events.get(21).fields().get("runtime.status"));
+        assertEquals("OPENCL", events.get(21).fields().get("runtime.backend.target"));
+        assertEquals("OpenCL", events.get(21).fields().get("runtime.backend.name"));
+        assertEquals("Mock GPU", events.get(21).fields().get("runtime.device.label"));
+        assertEquals("opencl-c", events.get(21).fields().get("runtime.module.format"));
+        assertEquals("test-lifecycle-lowerer", events.get(21).fields().get("runtime.module.lowererVersion"));
+        assertEquals("compiled:lifecycle", events.get(21).fields().get("runtime.cache.key"));
+        assertEquals("INSTANCE", events.get(21).fields().get("runtime.backend.cache.mode"));
+        assertEquals("1", events.get(21).fields().get("runtime.backend.compile.count"));
+        assertEquals("0", events.get(21).fields().get("runtime.backend.cache.compileHit.count"));
+        assertEquals("4", events.get(24).fields().get("work.globalX"));
+        assertEquals("4", events.get(24).fields().get("runtime.work.globalShape"));
+        assertEquals("auto", events.get(24).fields().get("runtime.work.localShape"));
+        assertEquals("1", events.get(24).fields().get("runtime.backend.cache.compiledKernel.count"));
+        assertEquals("1", events.get(24).fields().get("runtime.backend.invocation.count"));
+        assertEquals("1", events.get(24).fields().get("runtime.backend.compile.count"));
+        assertEquals("succeeded", events.get(25).fields().get("status"));
+        assertEquals("opencl-c", events.get(25).fields().get("runtime.module.format"));
+        assertEquals("INSTANCE", events.get(27).fields().get("cacheMode"));
+        assertEquals("INSTANCE", events.get(27).fields().get("runtime.backend.cache.mode"));
+        assertEquals("1", events.get(27).fields().get("runtime.backend.invocation.count"));
+        assertEquals("1", events.get(27).fields().get("runtime.backend.compile.count"));
     }
 
     @Test

@@ -32,6 +32,21 @@ class GpuProductionPromotionExplainabilityValidationTest {
     }
 
     @Test
+    void acceptsProductionReadyArtifactWithPortableRuntimeBackendSourceDecisionFields() {
+        Properties properties = productionReadyArtifact();
+        properties.remove("sourceSwitching.productionDecision.count");
+        properties.remove("sourceSwitching.productionDecision.all");
+        properties.setProperty("runtime.backend.source.productionDecision.count", "2");
+        properties.setProperty("runtime.backend.source.productionDecision.all", "true");
+
+        GpuProductionPromotionExplainabilityValidation.Result result =
+                GpuProductionPromotionExplainabilityValidation.validate(properties);
+
+        assertTrue(result.valid());
+        assertTrue(result.summary().contains("productionDecisions=2"));
+    }
+
+    @Test
     void rejectsBlockedArtifactWithProductionMutationEnabled() {
         Properties properties = blockedArtifact();
         properties.setProperty("productionMutationAllowed", "true");

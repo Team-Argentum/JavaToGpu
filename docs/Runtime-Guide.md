@@ -69,8 +69,84 @@ System.out.println(result.explanationSummary());
 
 `GpuRuntimeBackendCatalog.standard()` is lazy and inspectable: listing entries does not initialize OpenCL or any native
 driver. Today the production catalog contains the OpenCL shared-cache adapter. `standardWithPlannedBackends()` also
-adds explicit unsupported CUDA, Vulkan/SPIR-V, and Metal placeholders so tools can show planned backend families with
-clear diagnostics instead of silently hiding them.
+adds CUDA, Vulkan/SPIR-V, and Metal to the same adapter list for diagnostics. CUDA can already contribute
+inventory-only device discovery through `nvidia-smi` when available, but its runtime catalog entry is still explicitly
+unsupported until CUDA execution lands. Vulkan/SPIR-V and Metal remain planned placeholders with clear diagnostics
+instead of being silently hidden.
+CUDA inventory exposes driver, memory, CUDA runtime version, and compute capability through the same artifact/lifecycle
+field vocabulary; tooling can read selected-device fields such as `runtime.device.cuda.runtimeVersion` and
+`runtime.device.cuda.computeCapability` or per-device fields such as `deviceDiscovery.device.0.cuda.computeCapability`.
+
+When you want one scope that selects both the backend and the device, use `GpuRuntime.useStandardBackendAndDevice(...)`:
+
+```java
+try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA")
+)) {
+    DemoKernel.transform(input, output);
+}
+```
+
+Generated launchers also expose scoped helpers when you want the generated call itself to open the backend+device scope:
+
+```java
+DemoKernel_transform_GpuLauncher.invokeWithStandardBackendAndDevice(
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input,
+        output
+);
+
+DemoKernel_transform_GpuLauncher.invokeWith3DWorkSizeAndStandardBackendAndDevice(
+        width,
+        height,
+        depth,
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input,
+        output
+);
+```
+
+The reflection-style helper has the same shape when you do not want to reference the generated launcher class directly:
+
+```java
+GpuGeneratedLauncherInvoker.invokeWithStandardBackendAndDevice(
+        DemoKernel.class,
+        "transform",
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input,
+        output
+);
+```
+
+If you prefer the normal `invokeWithCompileOptions(...)` shape, opt in through the compile options instead:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .preferDeviceVendor("NVIDIA")
+        .withStandardBackendDevicePreflight();
+
+DemoKernel_transform_GpuLauncher.invokeWithCompileOptions(options, input, output);
+```
+
+This profile only opens the standard backend+device preflight when no backend is already installed. Existing
+`GpuRuntime.useOpenCl...`, custom backend scopes, and default launcher calls are not overridden, so applications avoid
+surprise startup device scans unless they explicitly request them.
+The raw property form is `runtime.backendDevicePreflight=standard`; the only valid values are `disabled` and
+`standard`, and unknown values are treated as disabled with a `runtime-backend-device-preflight-mode-invalid` blocker.
+When automatic preflight runs, ServiceLoader lifecycle services receive `BACKEND_DEVICE_PREFLIGHT_STARTED` and
+`BACKEND_DEVICE_PREFLIGHT_COMPLETED` events around the facade scope. The same lifecycle bus is passed into backend
+selection and device discovery, so a trace service can show the path from launcher call to selected backend/device
+before backend compilation starts. These facade events include portable fields such as `runtime.kernel.name`,
+`runtime.kernel.resource`, `runtime.backend.target`, `runtime.compile.optimizationProfile`,
+`runtime.backendDevicePreflight.mode`, `runtime.work.globalShape`, `runtime.status`, and, on failures,
+`runtime.failure.type` / `runtime.failure.message`.
+
+For diagnostics without installing anything, call `GpuRuntime.trySelectStandardBackendAndDevice(...)` first and print
+`selection.toMarkdown()` when `selection.matched()` is false. `GpuRuntime.use(selection)` / `installSelectedBackend()`
+passes the selected discovery result into device-aware runtime backends before installing them. OpenCL uses that
+preselected device for its first native session and compile provenance, then still performs final per-method validation
+before launching a kernel.
 
 ### Capability Precheck
 
@@ -310,6 +386,34 @@ Method-test metadata, fixture readiness, value binding, invocation materializati
 execution, and GPU probe cache lookup now publish standard `GpuRuntimeLifecycleEvent` entries. Applications can observe
 them through ServiceLoader `GpuRuntimeLifecycleService` implementations or pass an explicit `GpuRuntimeLifecycleEventBus`
 to the overloads that accept one.
+IR loading, validation, optimizer, fallback/rollback selection, lowerer/source-selection, compile, invocation, and artifact-dump events also carry
+backend-neutral `runtime.*` fields such as `runtime.kernel.name`, `runtime.backend.target`, `runtime.backend.name`,
+`runtime.device.label`, `runtime.irgpu.present`, `runtime.module.format`, `runtime.module.lowererVersion`,
+`runtime.ir.selectedStage`, `runtime.ir.fallbackDecision`, `runtime.fallback.decision`,
+`runtime.work.globalShape`, `runtime.work.localShape`, `runtime.cache.key`, and `runtime.status`. Older
+OpenCL-specific fields remain present for compatibility, but new tooling should prefer the `runtime.*` vocabulary so
+CUDA/Vulkan/Metal traces can use the same parser later.
+Compile, invocation, and shutdown events also expose portable backend runtime-state fields such as
+`runtime.backend.cache.mode`, `runtime.backend.cache.compiledKernel.count`,
+`runtime.backend.cache.compileHit.count`, `runtime.backend.compile.count`,
+`runtime.backend.invocation.count`, and `runtime.backend.buffer.native.count`.
+Backend source-selection events expose the same backend-neutral shape through `runtime.backend.source.*` fields.
+The most useful fields for logs are `runtime.backend.source.status`, `runtime.backend.source.decision`,
+`runtime.backend.source.selection`, `runtime.backend.source.available`,
+`runtime.backend.source.promotionFirstBlocker`, `runtime.backend.source.productionSwitchingEnabled`, and
+`runtime.backend.source.runtimeLoadMode`. They explain whether the runtime compiled descriptor source, selected
+reconstructed `IrGpu` source, or failed closed before backend compilation.
+Backend/device selection lifecycle events use the same vocabulary: `runtime.selection.status`,
+`runtime.backend.selection.matched`, `runtime.device.discovery.available`, and selected `runtime.device.*` fields show
+whether a backend and concrete device were chosen before backend compilation begins.
+Automatic backend/device preflight events use the same descriptor/options/work vocabulary and add
+`runtime.backendDevicePreflight.*` plus `runtime.failure.*` when the scoped preflight backend fails.
+Backend adapter artifact fields also include portable `runtime.backend.adapter.*` and `runtime.backend.lowerer.*` keys,
+so OpenCL, CUDA inventory-only, and planned adapters can be rendered by the same diagnostics tooling.
+Backend selection, device discovery, and combined runtime-selection artifact maps include the same portable fields,
+while their older prefixed keys remain available for compatibility.
+Lifecycle event reports keep the indexed `field.N.key/value` representation, but also copy any `runtime.*` event field
+to a direct `runtimeLifecycle.event.runtime.*` property so journals can be queried without unpacking the indexed list.
 
 Lifecycle events can also be routed into a pluggable logging backend through `GpuRuntimeLogService`. The built-in
 `GpuRuntimeLifecycleLoggingService` bridges lifecycle events into the runtime logging bus, but it stays silent until a
@@ -548,6 +652,17 @@ float first = launcher.invokeReturningFirstWithGlobalWorkSizeAs(
 );
 ```
 
+The same convenience can open a standard backend+device scope for one call:
+
+```java
+float first = launcher.invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDeviceAs(
+        Float.class,
+        itemCount,
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input
+);
+```
+
 Keep the `GeneratedLauncher` handle when you call the same kernel repeatedly. It resolves the generated launcher class,
 descriptor, and return-first metadata once, while still invoking the generated overloads so fallback/variant routing stays
 intact.
@@ -672,6 +787,8 @@ High and critical estimates add optimizer diagnostics with the hottest method, e
 Artifact dumps store the complete result in `runtime-ir-analysis.properties`. Per-method fields include total parameter/local/private-array storage, `peakLiveRegisters`, expression-temporary peak, scoped-variable count, shadowed-variable count, unresolved-reference count, budget, utilization, level, and typed-node counts. Per-call fields include resolution state, inline/recursive flags, caller-live values, argument/result pressure, callee pressure, additional frame pressure, and combined estimate.
 
 Set `-Djavatogpu.opencl.runtimeCompileArtifactDirectory=<directory>` to dump the full runtime compile artifact bundle for each OpenCL kernel invocation without enabling the operational validation report path. Each kernel gets a sanitized subdirectory under that root. When IR artifacts are available, the bundle includes `original.irgpu.properties` and `optimized.irgpu.properties` so the pre/post optimizer IR can be compared directly, plus `original.backend.opencl-c` and `optimized.backend.opencl-c` for before/after generated OpenCL backend source. `backend.opencl-c` remains the selected OpenCL source that the backend actually compiles. In the default `GpuRuntimeCompileOptions.openCl(...)` path this remains the original/pass-through source; in explicit `GpuRuntimeCompileOptions.openClIrOptimizerExperimentalApply(...)` runs it can become the optimized source if runtime-equivalence and production gates do not reject the selected optimized IR. The bundle also includes `runtime-ir-handoff.properties`, `optimizer-report.txt` when reports exist, backend source artifacts, provenance, and diagnostics. The dump itself is diagnostic-only and does not enable production mutation or source switching.
+
+Workload-level source-promotion gates mirror per-kernel source-selection decisions as both legacy `kernel.N.sourceSwitching.*` fields and portable `kernel.N.runtime.backend.source.*` fields. New report tooling should prefer the portable fields for status, decision, selected source, production-switching state, first blocker, and runtime load mode. Workload gates also mirror aggregate blocker evidence under portable `runtime.backend.source.promotionFirstBlocker.*` and `runtime.backend.source.promotionFirstBlockerFamily.*` fields while retaining legacy `sourceSwitching.sourcePromotionFirstBlocker.*` keys. Workload gates and production-promotion explainability artifacts also mirror aggregate production source-decision evidence from legacy `sourceSwitching.productionDecision.*` into portable `runtime.backend.source.productionDecision.*` fields, and the compact production-promotion summary preserves those portable aggregate fields for CI. The OpenCL validation report, history, formatter, validator, summary, and production-decision reader already read these portable fields first, then fall back to legacy `sourceSwitching.*` keys for older artifacts.
 
 OpenCL isolated runtime-equivalence checks write raw pipeline comparison cases into `runtime-equivalence.properties` when invocation arguments use supported array shapes. Each case records the comparison mode, original invocation inputs, descriptor-source reference outputs, reconstructed-source candidate outputs, exact tolerance metadata, per-output equivalence flags, and diagnostics. Primitive arrays are written as readable vectors, vector and struct arrays as deterministic packed Base64, scalar values as literals, and opaque image/sampler/runtime objects as stable type tags without process-specific handles. This evidence validates source reconstruction and remains separate from per-family optimizer proof.
 
