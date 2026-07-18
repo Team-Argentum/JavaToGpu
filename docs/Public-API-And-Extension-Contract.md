@@ -131,7 +131,15 @@ backend-specific legacy fields may exist, but they are not the portable trace co
 Compile, invocation, and shutdown events also expose portable backend state counters such as
 `runtime.backend.cache.mode`, `runtime.backend.cache.compiledKernel.count`,
 `runtime.backend.cache.compileHit.count`, `runtime.backend.compile.count`, and
-`runtime.backend.invocation.count`.
+`runtime.backend.invocation.count`; `runtime.backend.state.present` marks events that carry this typed runtime-state
+summary. Backend-compilation events expose `runtime.compilation.*` summaries for cache-key presence, module
+presence/format, compile-log presence, binary-artifact count, and validation-evidence count.
+Invocation events additionally expose backend-neutral binding summaries under
+`runtime.invocation.binding.*`, including `runtime.invocation.binding.buffer.count`,
+`runtime.invocation.binding.local.count`, `runtime.invocation.binding.scalar.count`, and
+`runtime.invocation.binding.argument.count`; OpenCL keeps older `bufferBinding.count` / `argumentBinding.count`
+aliases only for compatibility. Artifact-dump events expose `runtime.artifactDump.*` summaries for planned output
+directories and completed text/binary/source-location artifact counts.
 Backend source-selection events expose portable `runtime.backend.source.*` fields such as
 `runtime.backend.source.status`, `runtime.backend.source.decision`, `runtime.backend.source.selection`,
 `runtime.backend.source.available`, `runtime.backend.source.promotionFirstBlocker`, and
@@ -141,14 +149,48 @@ Workload source-promotion artifacts mirror the same vocabulary under `kernel.N.r
 `kernel.N.sourceSwitching.*` fields remain available for compatibility. Report and history readers prefer the portable
 fields first, so new backend adapters can emit `kernel.N.runtime.backend.source.*` without copying OpenCL-specific
 `sourceSwitching.*` keys.
+Workload-level source-decision aggregates should use indexed `runtime.backend.source.decision.*` fields; compact CI
+summaries expose the same aggregate as `runtime.backend.source.decisions` while retaining `sourceSwitching.decisions`
+for older consumers. Compact summaries also expose `runtime.backend.source.promotionFirstBlockers` and
+`runtime.backend.source.promotionFirstBlockerFamilies` alongside the unprefixed compatibility summaries.
 Workload-level blocker aggregates should use `runtime.backend.source.promotionFirstBlocker.*` and
 `runtime.backend.source.promotionFirstBlockerFamily.*`; legacy `sourceSwitching.sourcePromotionFirstBlocker.*` and
 `sourceSwitching.sourcePromotionFirstBlockerFamily.*` keys are compatibility mirrors for older OpenCL tooling.
-Aggregate production source-decision evidence follows the same rule: emit `runtime.backend.source.productionDecision.*`
-for workload/explainability artifacts, keep `sourceSwitching.productionDecision.*` only as a compatibility mirror, and
+Aggregate production source-readiness evidence follows the same rule: emit
+`runtime.backend.source.productionSwitchingEnabled.*`,
+`runtime.backend.source.productionPromotionDecisionMode.productionEnabled.*`,
+`runtime.backend.source.productionPromotionOperatorAccepted.*`, and
+`runtime.backend.source.productionDecision.*` for workload/explainability artifacts. Keep
+`productionSourceSwitchingEnabled.*`, `productionPromotionDecisionMode.productionEnabled.*`,
+`productionPromotionOperatorAccepted.*`, and `sourceSwitching.productionDecision.*` only as compatibility mirrors, and
 read the portable fields first when both are present.
+Runtime IR production-mutation evidence uses `runtime.ir.productionMutation.*`. The most useful fields are
+`runtime.ir.productionMutation.enabled`, `runtime.ir.productionMutation.status`,
+`runtime.ir.productionMutation.productionGateStatus`, `runtime.ir.productionMutation.selectedStage`,
+`runtime.ir.productionMutation.optimizedSelected`, `runtime.ir.productionMutation.optimizedDiffersFromOriginal`,
+`runtime.ir.productionMutation.optimizedIrRejected`, `runtime.ir.productionMutation.fallbackDecision`, and
+`runtime.ir.productionMutation.diagnostic`. New reports should read those fields before falling back to the older
+`runtimeProductionMutationSafety.*` keys.
+Controlled production validation evidence uses `runtime.production.*`. Source-switching readiness lives under
+`runtime.production.sourceSwitching.controlled.*`, mutation-readiness lives under
+`runtime.production.mutation.controlled.*`, activation-token smoke lives under
+`runtime.production.activationToken.smoke.*`, and negative controls live under
+`runtime.production.activationToken.negative.*`. Older `controlledProductionSourceSwitching.*`,
+`controlledProductionMutation.*`, `controlledProductionActivationTokenSmoke.*`, and
+`controlledProductionActivationTokenNegative.*` keys are compatibility mirrors.
+Controlled activation-gate artifacts use `runtime.production.activationGate.*` for the gate status, readiness, scope,
+safe default switches, approval/device identity, kernel coverage, operator acceptance, blockers, and diagnostics. The
+runtime token loader reads those portable fields first and falls back to the older unprefixed activation-gate fields.
+Production-candidate and manual-approval artifacts follow the same rule with `runtime.production.candidateGate.*` and
+`runtime.production.manifest.*`; manifest, activation-gate, and validation-report readers prefer those portable fields
+before falling back to legacy unprefixed, `binding.*`, or `authorization.*` keys.
+New runtime artifact readers and writers should use `GpuRuntimeArtifactProperties` for portable-first lookup,
+`StringBuilder` property writing, `Properties` artifacts, and map field writing instead of hand-rolling
+backend-specific fallback order.
 Automatic backend/device preflight events use that same vocabulary and add `runtime.backendDevicePreflight.*` plus
-`runtime.failure.*` when the scoped preflight backend fails.
+`runtime.failure.*` when the scoped preflight backend fails. Failure fields keep the legacy `type` / `message` keys and
+also expose backend-neutral `code`, `phase`, `category`, `summary`, `catchable`, `cause.*`, `suppressed.count`, optional
+`help.*`, and `context.*` facts when the failure is a `GpuRuntimeException`.
 Selection/discovery events also expose portable fields such as `runtime.selection.status`,
 `runtime.backend.selection.matched`, `runtime.device.discovery.available`, and selected `runtime.device.*` facts.
 CUDA inventory-only discovery additionally exposes `runtime.device.cuda.runtimeVersion` and
@@ -157,6 +199,10 @@ Backend adapter artifact maps use the same convention with `runtime.backend.adap
 `runtime.backend.lowerer.*`, allowing tools to inspect OpenCL, CUDA inventory-only, and planned adapters uniformly.
 Backend selection, device discovery, and combined runtime-selection artifact maps carry those portable fields beside
 their older prefixed compatibility keys.
+Backend compile, invocation, runtime-state, and artifact-dump lifecycle events should be composed through
+`GpuRuntimeLifecycleFields` so adapters share the same `runtime.cache.*`, `runtime.module.*`, `runtime.work.*`,
+`runtime.compilation.*`, `runtime.invocation.binding.*`, `runtime.artifactDump.*`, `runtime.backend.state.*`,
+`runtime.backend.*`, and `runtime.failure.*` contract while keeping any backend-specific compatibility aliases separate.
 Lifecycle event reports preserve indexed event fields and additionally copy `runtime.*` fields to direct
 `runtimeLifecycle.event.runtime.*` properties for simpler journal consumers.
 
@@ -374,6 +420,7 @@ When artifact dumping is enabled, runtime and optimizer stages write properties-
 | `runtime-ir-analysis.properties` | Analysis-only IR evidence such as register-pressure estimates. |
 | `backend-compiler-feedback.properties` | Parsed compiler feedback and selected resource metrics. |
 | `runtime-equivalence.properties` | Pipeline-level reference/pre/post comparison evidence. |
+| `runtime-production-mutation-safety.properties` | Fail-closed answer for whether optimized runtime IR may affect production code. |
 | `optimizer-report.txt` | Human-readable optimizer diagnostics. |
 | `runtime-optimizer-family-equivalence-payload.properties` | Per-family optimizer proof payload index. |
 

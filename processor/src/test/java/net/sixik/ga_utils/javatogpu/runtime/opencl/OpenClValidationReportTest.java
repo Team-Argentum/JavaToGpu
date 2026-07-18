@@ -1078,7 +1078,10 @@ class OpenClValidationReportTest {
                 "kernel.0.runtime.backend.source.productionPromotionOperatorAccepted=true",
                 "kernel.0.runtime.backend.source.diagnostic=production-like profile requested IrGpu source but runtime equivalence is not accepted",
                 "kernel.0.runtimeIrHandoff.selectedStage=original",
-                "kernel.0.runtimeProductionMutationSafety.productionMutationEnabled=false",
+                "kernel.0.runtime.ir.productionMutation.enabled=false",
+                "kernel.0.runtime.ir.productionMutation.productionGateStatus=blocked",
+                "kernel.0.runtime.ir.productionMutation.productionProfileRequested=true",
+                "kernel.0.runtime.ir.productionMutation.diagnostic=production mutation remains fail-closed for portable-only test evidence",
                 "kernel.0.i3Readiness.sourceReady=false",
                 "kernel.0.i3Readiness.status=blocked",
                 ""
@@ -1098,6 +1101,7 @@ class OpenClValidationReportTest {
             assertTrue(reportMarkdown.contains("- Source switching first blocker families: `runtime-equivalence=1`"));
             assertTrue(reportMarkdown.contains("- Kernel `0`: `inline://portable/source-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`, operatorAccepted=`true`, runtimeIr=`original`, productionMutation=`false`, sourceReady=`false`, i3=`blocked`"));
             assertTrue(reportMarkdown.contains("- Kernel `0` source switching: status=`blocked`, profile=`vendor-tuned`, sourcePromotionFirstBlocker=`runtime equivalence must execute and pass before backend source promotion`, operatorAccepted=`true`, first=`production-like profile requested IrGpu source but runtime equivalence is not accepted`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` production mutation safety: enabled=`false`, gate=`blocked`, profileRequested=`true`, first=`production mutation remains fail-closed for portable-only test evidence`"));
             assertFalse(reportMarkdown.contains("sourceSwitching=`not-recorded`"));
         } finally {
             restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);

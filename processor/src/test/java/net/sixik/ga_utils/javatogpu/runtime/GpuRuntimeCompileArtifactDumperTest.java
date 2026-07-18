@@ -648,10 +648,14 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("diagnostic.0=optimized IrGpu is selected for backend lowering after runtime optimizer passes"));
         assertTrue(dump.hasArtifact("runtime-production-mutation-safety.properties"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=disabled"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.status=disabled"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.enabled=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionGateStatus=not-requested"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.productionGateStatus=not-requested"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionProfileRequested=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=optimized"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.selectedStage=optimized"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedDiffersFromOriginal=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("fallbackDecision=none"));
@@ -1961,9 +1965,13 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.accepted=true"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.decisionMode=production-enabled"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=enabled"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.status=enabled"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.enabled=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionGateStatus=accepted"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.productionGateStatus=accepted"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=optimized"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.selectedStage=optimized"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("diagnostic.0=production runtime IR mutation is enabled because all production optimizer gates passed"));
         assertTrue(dump.artifact("i3-readiness-summary.properties").contains("status=production-enabled"));

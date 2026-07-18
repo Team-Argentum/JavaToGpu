@@ -47,6 +47,43 @@ class GpuProductionPromotionExplainabilityValidationTest {
     }
 
     @Test
+    void acceptsProductionReadyArtifactWithPortableProductionReadinessFields() {
+        Properties properties = productionReadyArtifact();
+        properties.remove("productionSourceSwitchingEnabled.count");
+        properties.remove("productionSourceSwitchingEnabled.all");
+        properties.remove("productionPromotionDecisionMode.productionEnabled.count");
+        properties.remove("productionPromotionDecisionMode.productionEnabled.all");
+        properties.remove("productionPromotionOperatorAccepted.count");
+        properties.remove("productionPromotionOperatorAccepted.all");
+        properties.setProperty("runtime.backend.source.productionSwitchingEnabled.count", "2");
+        properties.setProperty("runtime.backend.source.productionSwitchingEnabled.all", "true");
+        properties.setProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count", "2");
+        properties.setProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all", "true");
+        properties.setProperty("runtime.backend.source.productionPromotionOperatorAccepted.count", "2");
+        properties.setProperty("runtime.backend.source.productionPromotionOperatorAccepted.all", "true");
+
+        GpuProductionPromotionExplainabilityValidation.Result result =
+                GpuProductionPromotionExplainabilityValidation.validate(properties);
+
+        assertTrue(result.valid());
+        assertTrue(result.summary().contains("sourceSwitchingEnabled=2"));
+        assertTrue(result.summary().contains("operatorAccepted=2"));
+    }
+
+    @Test
+    void rejectsProductionReadyArtifactMissingOperatorAcceptance() {
+        Properties properties = productionReadyArtifact();
+        properties.remove("productionPromotionOperatorAccepted.count");
+        properties.remove("productionPromotionOperatorAccepted.all");
+
+        GpuProductionPromotionExplainabilityValidation.Result result =
+                GpuProductionPromotionExplainabilityValidation.validate(properties);
+
+        assertFalse(result.valid());
+        assertTrue(result.violations().stream().anyMatch(value -> value.contains("operator acceptance")));
+    }
+
+    @Test
     void rejectsBlockedArtifactWithProductionMutationEnabled() {
         Properties properties = blockedArtifact();
         properties.setProperty("productionMutationAllowed", "true");
@@ -167,6 +204,8 @@ class GpuProductionPromotionExplainabilityValidationTest {
         properties.setProperty("productionSourceSwitchingEnabled.all", "true");
         properties.setProperty("productionPromotionDecisionMode.productionEnabled.count", "2");
         properties.setProperty("productionPromotionDecisionMode.productionEnabled.all", "true");
+        properties.setProperty("productionPromotionOperatorAccepted.count", "2");
+        properties.setProperty("productionPromotionOperatorAccepted.all", "true");
         properties.setProperty("sourceSwitching.productionDecision.count", "2");
         properties.setProperty("sourceSwitching.productionDecision.all", "true");
         properties.setProperty("productionMutationAllowed", "true");

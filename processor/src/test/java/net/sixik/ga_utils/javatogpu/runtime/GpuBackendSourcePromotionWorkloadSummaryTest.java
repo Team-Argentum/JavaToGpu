@@ -226,6 +226,26 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
     }
 
     @Test
+    void summarizesPortableAggregateSourceDecisionsWhenPerKernelLegacyFieldsAreMissing() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("runtime.backend.source.decision.count", "2");
+        properties.setProperty("runtime.backend.source.decision.0.name", "compile-irgpu-source-review");
+        properties.setProperty("runtime.backend.source.decision.0.count", "1");
+        properties.setProperty("runtime.backend.source.decision.1.name", "reject-production-irgpu-source");
+        properties.setProperty("runtime.backend.source.decision.1.count", "1");
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+        String formatted = GpuBackendSourcePromotionWorkloadSummaryCli.format(summary);
+
+        assertEquals("compile-irgpu-source-review=1, reject-production-irgpu-source=1", summary.sourceSwitchingDecisions());
+        assertTrue(formatted.contains("runtime.backend.source.decisions=compile-irgpu-source-review=1, reject-production-irgpu-source=1\n"));
+        assertTrue(formatted.contains("sourceSwitching.decisions=compile-irgpu-source-review=1, reject-production-irgpu-source=1\n"));
+    }
+
+    @Test
     void aggregatesOptimizerFamilyReadinessAcrossMultipleKernels() {
         Properties properties = new Properties();
         properties.setProperty("status", "blocked");
@@ -365,9 +385,16 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(formatted.contains("reviewReady=false\n"));
         assertTrue(formatted.contains("sourceParityMatched=true\n"));
         assertTrue(formatted.contains("runtimeEquivalencePassed=true\n"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionOperatorAccepted.count=0\n"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionOperatorAccepted.all=false\n"));
         assertTrue(formatted.contains("productionPromotionOperatorAccepted.count=0\n"));
         assertTrue(formatted.contains("productionPromotionOperatorAccepted.all=false\n"));
+        assertTrue(formatted.contains("runtime.backend.source.decisions=compile-descriptor-source=1\n"));
         assertTrue(formatted.contains("sourceSwitching.decisions=compile-descriptor-source=1\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockers=backend source must be reconstructed from IrGpu before promotion review=1\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockerFamilies=reconstruction=1\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockerFamily.0.name=reconstruction\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockerFamily.0.count=1\n"));
         assertTrue(formatted.contains("sourcePromotionFirstBlockerFamily.0.name=reconstruction\n"));
         assertTrue(formatted.contains("sourcePromotionFirstBlockerFamily.0.count=1\n"));
         assertTrue(formatted.contains("optimizerProofArtifact.count=0\n"));

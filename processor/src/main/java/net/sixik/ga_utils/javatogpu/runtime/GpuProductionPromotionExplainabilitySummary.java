@@ -15,6 +15,12 @@ public record GpuProductionPromotionExplainabilitySummary(
         String decisionMode,
         String productionSourceSwitchingAllowed,
         String productionSourceSwitchingEnabled,
+        int productionSourceSwitchingEnabledCount,
+        String productionSourceSwitchingEnabledAll,
+        int productionPromotionDecisionEnabledCount,
+        String productionPromotionDecisionEnabledAll,
+        int productionPromotionOperatorAcceptedCount,
+        String productionPromotionOperatorAcceptedAll,
         int productionSourceDecisionCount,
         String productionSourceDecisionAll,
         String productionMutationAllowed,
@@ -100,6 +106,12 @@ public record GpuProductionPromotionExplainabilitySummary(
                 "not-recorded",
                 GpuProductionPromotionDecision.DIAGNOSTIC_ONLY,
                 "false",
+                "false",
+                0,
+                "false",
+                0,
+                "false",
+                0,
                 "false",
                 0,
                 "false",
@@ -194,6 +206,12 @@ public record GpuProductionPromotionExplainabilitySummary(
                 properties.getProperty("decision.mode", "unknown"),
                 properties.getProperty("productionSourceSwitchingAllowed", Boolean.toString(contract.sourceSwitchingAllowed())),
                 properties.getProperty("productionSourceSwitchingEnabled", Boolean.toString(contract.sourceSwitchingEnabled())),
+                contract.productionSourceSwitchingEnabledCount(),
+                Boolean.toString(contract.allSourceSwitchingEnabled()),
+                contract.productionPromotionDecisionEnabledCount(),
+                Boolean.toString(contract.allPromotionDecisionsEnabled()),
+                contract.productionPromotionOperatorAcceptedCount(),
+                Boolean.toString(contract.allPromotionOperatorsAccepted()),
                 contract.productionSourceDecisionCount(),
                 Boolean.toString(contract.allProductionSourceDecisions()),
                 properties.getProperty("productionMutationAllowed", Boolean.toString(contract.mutationAllowed())),
@@ -236,75 +254,186 @@ public record GpuProductionPromotionExplainabilitySummary(
                 properties.getProperty("optimizerFamily.promotionPreflightReady", "true"),
                 properties.getProperty("backendPromotionArtifactSupport.complete", "unknown"),
                 parsePositiveInt(properties.getProperty("backendPromotionArtifactSupport.missing.count", "0")),
-                properties.getProperty("controlledProductionSourceSwitching.status", "not-recorded"),
-                parsePositiveInt(properties.getProperty("controlledProductionSourceSwitching.kernel.count", "0")),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionSourceSwitching.realWorkload.covered.count",
-                        "0"
-                )),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionSourceSwitching.realWorkload.total.count",
-                        "0"
-                )),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionSourceSwitching.realWorkload.uncovered.count",
-                        "0"
-                )),
-                properties.getProperty("controlledProductionSourceSwitching.realWorkload.covered.all", "false"),
-                properties.getProperty("controlledProductionMutation.status", "not-recorded"),
-                properties.getProperty("controlledProductionMutation.reviewReady", "false"),
-                properties.getProperty("controlledProductionMutation.productionMutation", "disabled"),
-                properties.getProperty("controlledProductionMutation.defaultProductionMutation", "unknown"),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionMutation.realWorkload.covered.count",
-                        "0"
-                )),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionMutation.realWorkload.total.count",
-                        "0"
-                )),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionMutation.realWorkload.uncovered.count",
-                        "0"
-                )),
-                properties.getProperty("controlledProductionMutation.realWorkload.covered.all", "false"),
-                properties.getProperty("controlledProductionMutation.passed", "false"),
-                properties.getProperty("controlledProductionActivationTokenSmoke.status", "not-recorded"),
-                properties.getProperty("controlledProductionActivationTokenSmoke.tokenLoaded", "false"),
-                properties.getProperty(
-                        "controlledProductionActivationTokenSmoke.approvedKernelExecuted",
-                        "false"
+                firstProperty(
+                        properties,
+                        "not-recorded",
+                        "runtime.production.sourceSwitching.controlled.status",
+                        "controlledProductionSourceSwitching.status"
                 ),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionActivationTokenSmoke.realWorkload.covered.count",
-                        "0"
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.sourceSwitching.controlled.kernel.count",
+                        "controlledProductionSourceSwitching.kernel.count"
                 )),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionActivationTokenSmoke.realWorkload.total.count",
-                        "0"
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.sourceSwitching.controlled.realWorkload.covered.count",
+                        "controlledProductionSourceSwitching.realWorkload.covered.count"
                 )),
-                parsePositiveInt(properties.getProperty(
-                        "controlledProductionActivationTokenSmoke.realWorkload.uncovered.count",
-                        "0"
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.sourceSwitching.controlled.realWorkload.total.count",
+                        "controlledProductionSourceSwitching.realWorkload.total.count"
                 )),
-                properties.getProperty(
-                        "controlledProductionActivationTokenSmoke.realWorkload.covered.all",
-                        "false"
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.sourceSwitching.controlled.realWorkload.uncovered.count",
+                        "controlledProductionSourceSwitching.realWorkload.uncovered.count"
+                )),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.sourceSwitching.controlled.realWorkload.covered.all",
+                        "controlledProductionSourceSwitching.realWorkload.covered.all"
                 ),
-                properties.getProperty("controlledProductionActivationTokenSmoke.safeDefaults", "false"),
-                properties.getProperty("controlledProductionActivationTokenSmoke.passed", "false"),
-                properties.getProperty("controlledProductionActivationTokenNegative.status", "not-recorded"),
-                properties.getProperty(
-                        "controlledProductionActivationTokenNegative.digestMismatchRejected",
-                        "false"
+                firstProperty(
+                        properties,
+                        "not-recorded",
+                        "runtime.production.mutation.controlled.status",
+                        "controlledProductionMutation.status"
                 ),
-                properties.getProperty(
-                        "controlledProductionActivationTokenNegative.unapprovedKernelRejected",
-                        "false"
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.mutation.controlled.reviewReady",
+                        "controlledProductionMutation.reviewReady"
                 ),
-                properties.getProperty("controlledProductionActivationTokenNegative.outputUnchanged", "false"),
-                properties.getProperty("controlledProductionActivationTokenNegative.safeDefaults", "false"),
-                properties.getProperty("controlledProductionActivationTokenNegative.passed", "false"),
+                firstProperty(
+                        properties,
+                        "disabled",
+                        "runtime.production.mutation.controlled.productionMutation",
+                        "controlledProductionMutation.productionMutation"
+                ),
+                firstProperty(
+                        properties,
+                        "unknown",
+                        "runtime.production.mutation.controlled.defaultProductionMutation",
+                        "controlledProductionMutation.defaultProductionMutation"
+                ),
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.mutation.controlled.realWorkload.covered.count",
+                        "controlledProductionMutation.realWorkload.covered.count"
+                )),
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.mutation.controlled.realWorkload.total.count",
+                        "controlledProductionMutation.realWorkload.total.count"
+                )),
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.mutation.controlled.realWorkload.uncovered.count",
+                        "controlledProductionMutation.realWorkload.uncovered.count"
+                )),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.mutation.controlled.realWorkload.covered.all",
+                        "controlledProductionMutation.realWorkload.covered.all"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.mutation.controlled.passed",
+                        "controlledProductionMutation.passed"
+                ),
+                firstProperty(
+                        properties,
+                        "not-recorded",
+                        "runtime.production.activationToken.smoke.status",
+                        "controlledProductionActivationTokenSmoke.status"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.smoke.tokenLoaded",
+                        "controlledProductionActivationTokenSmoke.tokenLoaded"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.smoke.approvedKernelExecuted",
+                        "controlledProductionActivationTokenSmoke.approvedKernelExecuted"
+                ),
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.activationToken.smoke.realWorkload.covered.count",
+                        "controlledProductionActivationTokenSmoke.realWorkload.covered.count"
+                )),
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.activationToken.smoke.realWorkload.total.count",
+                        "controlledProductionActivationTokenSmoke.realWorkload.total.count"
+                )),
+                parsePositiveInt(firstProperty(
+                        properties,
+                        "0",
+                        "runtime.production.activationToken.smoke.realWorkload.uncovered.count",
+                        "controlledProductionActivationTokenSmoke.realWorkload.uncovered.count"
+                )),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.smoke.realWorkload.covered.all",
+                        "controlledProductionActivationTokenSmoke.realWorkload.covered.all"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.smoke.safeDefaults",
+                        "controlledProductionActivationTokenSmoke.safeDefaults"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.smoke.passed",
+                        "controlledProductionActivationTokenSmoke.passed"
+                ),
+                firstProperty(
+                        properties,
+                        "not-recorded",
+                        "runtime.production.activationToken.negative.status",
+                        "controlledProductionActivationTokenNegative.status"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.negative.digestMismatchRejected",
+                        "controlledProductionActivationTokenNegative.digestMismatchRejected"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.negative.unapprovedKernelRejected",
+                        "controlledProductionActivationTokenNegative.unapprovedKernelRejected"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.negative.outputUnchanged",
+                        "controlledProductionActivationTokenNegative.outputUnchanged"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.negative.safeDefaults",
+                        "controlledProductionActivationTokenNegative.safeDefaults"
+                ),
+                firstProperty(
+                        properties,
+                        "false",
+                        "runtime.production.activationToken.negative.passed",
+                        "controlledProductionActivationTokenNegative.passed"
+                ),
                 parsePositiveInt(properties.getProperty("readinessChecklist.ready.count", "0")),
                 parsePositiveInt(properties.getProperty("readinessChecklist.blocked.count", "0")),
                 properties.getProperty("readinessChecklist.ready.all", "false"),
@@ -334,6 +463,12 @@ public record GpuProductionPromotionExplainabilitySummary(
                 + ", decisionMode=" + decisionMode
                 + ", sourceSwitchingAllowed=" + productionSourceSwitchingAllowed
                 + ", sourceSwitchingEnabled=" + productionSourceSwitchingEnabled
+                + ", sourceSwitchingEnabledCount=" + productionSourceSwitchingEnabledCount
+                + ", sourceSwitchingEnabledAll=" + productionSourceSwitchingEnabledAll
+                + ", productionPromotionDecisionEnabled=" + productionPromotionDecisionEnabledCount
+                + ", productionPromotionDecisionEnabledAll=" + productionPromotionDecisionEnabledAll
+                + ", operatorAccepted=" + productionPromotionOperatorAcceptedCount
+                + ", operatorAcceptedAll=" + productionPromotionOperatorAcceptedAll
                 + ", productionSourceDecisions=" + productionSourceDecisionCount
                 + ", productionSourceDecisionAll=" + productionSourceDecisionAll
                 + ", mutationAllowed=" + productionMutationAllowed
@@ -551,5 +686,9 @@ public record GpuProductionPromotionExplainabilitySummary(
         } catch (NumberFormatException ignored) {
             return 0;
         }
+    }
+
+    private static String firstProperty(Properties properties, String fallback, String... keys) {
+        return GpuRuntimeArtifactProperties.first(properties, fallback, keys);
     }
 }

@@ -1,10 +1,12 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionCandidateGate;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadSummary;
 import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityFormatter;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilitySummary;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeArtifactProperties;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -473,6 +475,35 @@ public final class OpenClValidationReporter {
         return "unknown".equals(diagnostic) || "not-recorded".equals(diagnostic) ? "" : diagnostic;
     }
 
+    private static String productionMutationProperty(
+            java.util.Properties properties,
+            String prefix,
+            String runtimeKey,
+            String legacyKey,
+            String fallback
+    ) {
+        return firstProperty(
+                properties,
+                fallback,
+                prefix + "runtime.ir.productionMutation." + runtimeKey,
+                prefix + "runtimeProductionMutationSafety." + legacyKey
+        );
+    }
+
+    private static String productionMutationDiagnostic(java.util.Properties properties, String prefix) {
+        String diagnostic = productionMutationProperty(properties, prefix, "diagnostic", "diagnostic.0", "");
+        return "unknown".equals(diagnostic) || "not-recorded".equals(diagnostic) ? "" : diagnostic;
+    }
+
+    private static String candidateGateProperty(java.util.Properties properties, String key, String fallback) {
+        return GpuRuntimeArtifactProperties.portable(
+                properties,
+                GpuBackendSourcePromotionCandidateGate.PORTABLE_PREFIX,
+                key,
+                fallback
+        );
+    }
+
     private static String backendSourceOptimizationProfile(java.util.Properties properties, String prefix) {
         return firstProperty(
                 properties,
@@ -787,75 +818,75 @@ public final class OpenClValidationReporter {
                 markdown.append("- Gate file: `").append(gatePath).append("`\n\n");
                 return;
             }
-            int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
-            int candidateReadyCount = parsePositiveInt(properties.getProperty("candidateReady.count", "0"));
-            int acceptedCount = parsePositiveInt(properties.getProperty("operatorAcceptance.accepted.count", "0"));
-            int boundCount = parsePositiveInt(properties.getProperty("operatorAcceptance.bound.count", "0"));
-            int blockerCount = parsePositiveInt(properties.getProperty("blocker.count", "0"));
+            int kernelCount = parsePositiveInt(candidateGateProperty(properties, "kernel.count", "0"));
+            int candidateReadyCount = parsePositiveInt(candidateGateProperty(properties, "candidateReady.count", "0"));
+            int acceptedCount = parsePositiveInt(candidateGateProperty(properties, "operatorAcceptance.accepted.count", "0"));
+            int boundCount = parsePositiveInt(candidateGateProperty(properties, "operatorAcceptance.bound.count", "0"));
+            int blockerCount = parsePositiveInt(candidateGateProperty(properties, "blocker.count", "0"));
             markdown.append("- Status: `")
-                    .append(sanitizeInline(properties.getProperty("status", "unknown")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "status", "unknown")))
                     .append("`\n");
             markdown.append("- Review ready: `")
-                    .append(sanitizeInline(properties.getProperty("reviewReady", "unknown")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "reviewReady", "unknown")))
                     .append("`\n");
             markdown.append("- Candidate ready: `")
                     .append(candidateReadyCount)
                     .append("/")
                     .append(kernelCount)
                     .append("`, all=`")
-                    .append(sanitizeInline(properties.getProperty("candidateReady.all", "false")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "candidateReady.all", "false")))
                     .append("`\n");
             markdown.append("- Source parity matched: `")
-                    .append(sanitizeInline(properties.getProperty("sourceParityMatched", "unknown")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "sourceParityMatched", "unknown")))
                     .append("`\n");
             markdown.append("- Runtime equivalence passed: `")
-                    .append(sanitizeInline(properties.getProperty("runtimeEquivalencePassed", "unknown")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "runtimeEquivalencePassed", "unknown")))
                     .append("`\n");
             markdown.append("- Controlled source switching: `")
-                    .append(sanitizeInline(properties.getProperty("controlledSourceSwitching.status", "not-recorded")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "controlledSourceSwitching.status", "not-recorded")))
                     .append("`\n");
             markdown.append("- Operator acceptance mode: `")
-                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.mode", "not-recorded")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "operatorAcceptance.mode", "not-recorded")))
                     .append("`\n");
             markdown.append("- Operator accepted: `")
                     .append(acceptedCount)
                     .append("/")
                     .append(kernelCount)
                     .append("`, all=`")
-                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.accepted.all", "false")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "operatorAcceptance.accepted.all", "false")))
                     .append("`\n");
             markdown.append("- Operator bound: `")
                     .append(boundCount)
                     .append("/")
                     .append(kernelCount)
                     .append("`, all=`")
-                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.bound.all", "false")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "operatorAcceptance.bound.all", "false")))
                     .append("`\n");
             markdown.append("- Device vendor: `")
-                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.deviceVendor", "unknown")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "operatorAcceptance.deviceVendor", "unknown")))
                     .append("`\n");
             markdown.append("- Device label: `")
-                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.deviceLabel", "unknown")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "operatorAcceptance.deviceLabel", "unknown")))
                     .append("`\n");
             markdown.append("- Driver version: `")
-                    .append(sanitizeInline(properties.getProperty("operatorAcceptance.driverVersion", "unknown")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "operatorAcceptance.driverVersion", "unknown")))
                     .append("`\n");
             markdown.append("- Default production source switching: `")
-                    .append(sanitizeInline(properties.getProperty("defaultProductionSourceSwitching", "disabled")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "defaultProductionSourceSwitching", "disabled")))
                     .append("`\n");
             markdown.append("- Candidate production source switching: `")
-                    .append(sanitizeInline(properties.getProperty("candidateProductionSourceSwitching", "blocked")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "candidateProductionSourceSwitching", "blocked")))
                     .append("`\n");
             markdown.append("- Production mutation: `")
-                    .append(sanitizeInline(properties.getProperty("productionMutation", "disabled")))
+                    .append(sanitizeInline(candidateGateProperty(properties, "productionMutation", "disabled")))
                     .append("`\n");
             markdown.append("- Blocker count: `").append(blockerCount).append("`\n");
             if (blockerCount > 0) {
                 markdown.append("- First blocker: `")
-                        .append(sanitizeInline(properties.getProperty("blocker.0", "unknown")))
+                        .append(sanitizeInline(candidateGateProperty(properties, "blocker.0", "unknown")))
                         .append("`\n");
             }
-            String diagnostic = properties.getProperty("diagnostic", "");
+            String diagnostic = candidateGateProperty(properties, "diagnostic", "");
             if (!diagnostic.isBlank()) {
                 markdown.append("- Diagnostic: `").append(sanitizeInline(diagnostic)).append("`\n");
             }
@@ -1049,7 +1080,7 @@ public final class OpenClValidationReporter {
                 .append("`, runtimeIr=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "runtimeIrHandoff.selectedStage", "unknown")))
                 .append("`, productionMutation=`")
-                .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionMutationEnabled", "unknown")))
+                .append(sanitizeInline(productionMutationProperty(properties, prefix, "enabled", "productionMutationEnabled", "unknown")))
                 .append("`, sourceReady=`")
                 .append(sanitizeInline(properties.getProperty(prefix + "i3Readiness.sourceReady", "unknown")))
                 .append("`, i3=`")
@@ -1107,16 +1138,16 @@ public final class OpenClValidationReporter {
                     .append(sanitizeInline(runtimeIrHandoffDiagnostic))
                     .append("`\n");
         }
-        String productionMutationDiagnostic = properties.getProperty(prefix + "runtimeProductionMutationSafety.diagnostic.0", "");
+        String productionMutationDiagnostic = productionMutationDiagnostic(properties, prefix);
         if (!productionMutationDiagnostic.isBlank()) {
             markdown.append("- Kernel `")
                     .append(index)
                     .append("` production mutation safety: enabled=`")
-                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionMutationEnabled", "unknown")))
+                    .append(sanitizeInline(productionMutationProperty(properties, prefix, "enabled", "productionMutationEnabled", "unknown")))
                     .append("`, gate=`")
-                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionGateStatus", "unknown")))
+                    .append(sanitizeInline(productionMutationProperty(properties, prefix, "productionGateStatus", "productionGateStatus", "unknown")))
                     .append("`, profileRequested=`")
-                    .append(sanitizeInline(properties.getProperty(prefix + "runtimeProductionMutationSafety.productionProfileRequested", "unknown")))
+                    .append(sanitizeInline(productionMutationProperty(properties, prefix, "productionProfileRequested", "productionProfileRequested", "unknown")))
                     .append("`, first=`")
                     .append(sanitizeInline(productionMutationDiagnostic))
                     .append("`\n");

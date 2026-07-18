@@ -52,15 +52,31 @@ public final class GpuBackendSourcePromotionWorkloadSummaryCli {
         builder.append("runtimeEquivalencePassed=").append(summary.runtimeEquivalencePassed()).append('\n');
         builder.append("realWorkloadEvidence=").append(summary.realWorkloadEvidence()).append('\n');
         builder.append("productionSourceSwitching=").append(summary.productionSourceSwitching()).append('\n');
+        builder.append("runtime.backend.source.productionPromotionOperatorAccepted.count=")
+                .append(summary.productionPromotionOperatorAcceptedCount())
+                .append('\n');
+        builder.append("runtime.backend.source.productionPromotionOperatorAccepted.all=")
+                .append(summary.productionPromotionOperatorAcceptedAll())
+                .append('\n');
         builder.append("productionPromotionOperatorAccepted.count=")
                 .append(summary.productionPromotionOperatorAcceptedCount())
                 .append('\n');
         builder.append("productionPromotionOperatorAccepted.all=")
                 .append(summary.productionPromotionOperatorAcceptedAll())
                 .append('\n');
+        builder.append("runtime.backend.source.decisions=").append(summary.sourceSwitchingDecisions()).append('\n');
         builder.append("sourceSwitching.decisions=").append(summary.sourceSwitchingDecisions()).append('\n');
+        builder.append("runtime.backend.source.promotionFirstBlockers=").append(summary.sourcePromotionFirstBlockers()).append('\n');
         builder.append("sourcePromotionFirstBlockers=").append(summary.sourcePromotionFirstBlockers()).append('\n');
+        builder.append("runtime.backend.source.promotionFirstBlockerFamilies=")
+                .append(summary.sourcePromotionFirstBlockerFamilies())
+                .append('\n');
         builder.append("sourcePromotionFirstBlockerFamilies=").append(summary.sourcePromotionFirstBlockerFamilies()).append('\n');
+        appendFirstCount(
+                builder,
+                "runtime.backend.source.promotionFirstBlockerFamily",
+                summary.sourcePromotionFirstBlockerFamilies()
+        );
         appendFirstCount(builder, "sourcePromotionFirstBlockerFamily", summary.sourcePromotionFirstBlockerFamilies());
         builder.append("optimizerProofArtifact.count=").append(summary.optimizerProofArtifactCount()).append('\n');
         builder.append("optimizerProofArtifact.accepted.count=")

@@ -52,6 +52,24 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("decision.mode=").append(summary.decisionMode()).append('\n');
         builder.append("productionSourceSwitchingAllowed=").append(summary.productionSourceSwitchingAllowed()).append('\n');
         builder.append("productionSourceSwitchingEnabled=").append(summary.productionSourceSwitchingEnabled()).append('\n');
+        builder.append("runtime.backend.source.productionSwitchingEnabled.count=")
+                .append(summary.productionSourceSwitchingEnabledCount())
+                .append('\n');
+        builder.append("runtime.backend.source.productionSwitchingEnabled.all=")
+                .append(summary.productionSourceSwitchingEnabledAll())
+                .append('\n');
+        builder.append("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count=")
+                .append(summary.productionPromotionDecisionEnabledCount())
+                .append('\n');
+        builder.append("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all=")
+                .append(summary.productionPromotionDecisionEnabledAll())
+                .append('\n');
+        builder.append("runtime.backend.source.productionPromotionOperatorAccepted.count=")
+                .append(summary.productionPromotionOperatorAcceptedCount())
+                .append('\n');
+        builder.append("runtime.backend.source.productionPromotionOperatorAccepted.all=")
+                .append(summary.productionPromotionOperatorAcceptedAll())
+                .append('\n');
         builder.append("runtime.backend.source.productionDecision.count=")
                 .append(summary.productionSourceDecisionCount())
                 .append('\n');
@@ -169,6 +187,51 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
         builder.append("backendPromotionArtifactSupport.missing.count=")
                 .append(summary.backendPromotionArtifactSupportMissingCount())
                 .append('\n');
+        builder.append("runtime.production.sourceSwitching.controlled.status=")
+                .append(summary.controlledProductionSourceSwitchingStatus())
+                .append('\n');
+        builder.append("runtime.production.sourceSwitching.controlled.kernel.count=")
+                .append(summary.controlledProductionSourceSwitchingKernelCount())
+                .append('\n');
+        builder.append("runtime.production.sourceSwitching.controlled.realWorkload.covered.count=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadCoveredCount())
+                .append('\n');
+        builder.append("runtime.production.sourceSwitching.controlled.realWorkload.total.count=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadTotalCount())
+                .append('\n');
+        builder.append("runtime.production.sourceSwitching.controlled.realWorkload.uncovered.count=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadUncoveredCount())
+                .append('\n');
+        builder.append("runtime.production.sourceSwitching.controlled.realWorkload.covered.all=")
+                .append(summary.controlledProductionSourceSwitchingRealWorkloadCoveredAll())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.status=")
+                .append(summary.controlledProductionMutationStatus())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.reviewReady=")
+                .append(summary.controlledProductionMutationReviewReady())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.productionMutation=")
+                .append(summary.controlledProductionMutationProductionMutation())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.defaultProductionMutation=")
+                .append(summary.controlledProductionMutationDefaultProductionMutation())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.realWorkload.covered.count=")
+                .append(summary.controlledProductionMutationRealWorkloadCoveredCount())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.realWorkload.total.count=")
+                .append(summary.controlledProductionMutationRealWorkloadTotalCount())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.realWorkload.uncovered.count=")
+                .append(summary.controlledProductionMutationRealWorkloadUncoveredCount())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.realWorkload.covered.all=")
+                .append(summary.controlledProductionMutationRealWorkloadCoveredAll())
+                .append('\n');
+        builder.append("runtime.production.mutation.controlled.passed=")
+                .append(summary.controlledProductionMutationPassed())
+                .append('\n');
         builder.append("controlledProductionSourceSwitching.status=")
                 .append(summary.controlledProductionSourceSwitchingStatus())
                 .append('\n');
@@ -213,6 +276,51 @@ public final class GpuProductionPromotionExplainabilitySummaryCli {
                 .append('\n');
         builder.append("controlledProductionMutation.passed=")
                 .append(summary.controlledProductionMutationPassed())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.status=")
+                .append(summary.controlledProductionActivationTokenSmokeStatus())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.tokenLoaded=")
+                .append(summary.controlledProductionActivationTokenLoaded())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.approvedKernelExecuted=")
+                .append(summary.controlledProductionActivationTokenApprovedKernelExecuted())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.realWorkload.covered.count=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadCoveredCount())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.realWorkload.total.count=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadTotalCount())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.realWorkload.uncovered.count=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadUncoveredCount())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.realWorkload.covered.all=")
+                .append(summary.controlledProductionActivationTokenRealWorkloadCoveredAll())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.safeDefaults=")
+                .append(summary.controlledProductionActivationTokenSafeDefaults())
+                .append('\n');
+        builder.append("runtime.production.activationToken.smoke.passed=")
+                .append(summary.controlledProductionActivationTokenSmokePassed())
+                .append('\n');
+        builder.append("runtime.production.activationToken.negative.status=")
+                .append(summary.controlledProductionActivationTokenNegativeStatus())
+                .append('\n');
+        builder.append("runtime.production.activationToken.negative.digestMismatchRejected=")
+                .append(summary.controlledProductionActivationTokenDigestMismatchRejected())
+                .append('\n');
+        builder.append("runtime.production.activationToken.negative.unapprovedKernelRejected=")
+                .append(summary.controlledProductionActivationTokenUnapprovedKernelRejected())
+                .append('\n');
+        builder.append("runtime.production.activationToken.negative.outputUnchanged=")
+                .append(summary.controlledProductionActivationTokenNegativeOutputUnchanged())
+                .append('\n');
+        builder.append("runtime.production.activationToken.negative.safeDefaults=")
+                .append(summary.controlledProductionActivationTokenNegativeSafeDefaults())
+                .append('\n');
+        builder.append("runtime.production.activationToken.negative.passed=")
+                .append(summary.controlledProductionActivationTokenNegativePassed())
                 .append('\n');
         builder.append("controlledProductionActivationTokenSmoke.status=")
                 .append(summary.controlledProductionActivationTokenSmokeStatus())

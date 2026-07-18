@@ -224,7 +224,8 @@ explicit warm-up phase, and then prints the cache-only selection report. Pass
 The helper also emits service-based lifecycle events for discovery, candidate selection, warm-up, and final placement,
 so a `GpuRuntimeLifecycleService` can journal the flow without manual listener wiring.
 By default the runnable OpenCL example writes `runtime-lifecycle.jsonl` and `opencl-evidence-selection.trace` next to the
-method-test evidence cache, then prints a short `warmAndSelectOpenCl(...)` trace preview. Override those paths with
+method-test evidence cache, then prints a short `warmAndSelectOpenCl(...)` trace preview. Compact trace lines include
+`summary=` when portable runtime-state, compilation, invocation-binding, or artifact-dump fields are available. Override those paths with
 `-Pjavatogpu.lifecycleJournalFile=...` and `-Pjavatogpu.exampleLifecycleTraceFile=...` when needed.
 
 For a curated end-to-end OpenCL walkthrough that combines backend/device explanation, portable `@GPUTest` preflight,

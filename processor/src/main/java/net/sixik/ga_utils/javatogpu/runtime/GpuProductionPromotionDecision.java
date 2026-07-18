@@ -74,6 +74,7 @@ public record GpuProductionPromotionDecision(
                     && contract.sourceSwitchingEnabled()
                     && contract.allSourceSwitchingEnabled()
                     && contract.allPromotionDecisionsEnabled()
+                    && contract.allPromotionOperatorsAccepted()
                     && contract.allProductionSourceDecisions()
                     && !contract.mutationAllowed()
                     && !contract.mutationEnabled()) {

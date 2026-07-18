@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuAttributeMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
@@ -299,6 +300,76 @@ class OpenClIrGpuSourceReconstructorTest {
         assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
         assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
         assertTrue(result.diagnostics().contains("OpenCL source assembler emitted 1 struct typedef(s)"));
+    }
+
+    @Test
+    void reconstructsPackedStructIrGpuSourceAndRecordsParityMatch() {
+        String descriptorSource = """
+                typedef struct __attribute__((packed)) {
+                    int offset;
+                    int bias;
+                } PackedView;
+
+                __kernel void jtg_kernel(PackedView view, __global int* output) {
+                    output[0] = (view.offset + view.bias);
+                    return;
+                }
+                """;
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(),
+                        List.of("PackedView"),
+                        List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "jtg_kernel",
+                                """
+                                        body
+                                          set output[0] = (view.offset + view.bias)
+                                          return
+                                        """,
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("view", "PackedView", "PRIVATE", false, List.of()),
+                        new IrGpuEntryParameter("output", "int[]", "GLOBAL", false, List.of())
+                ),
+                IrGpuLaunchMetadata.defaultOneDimensional(),
+                IrGpuValidationMetadata.frontendSubset(),
+                IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(new IrGpuStructMetadata(
+                        "sample.PackedView",
+                        "PackedView",
+                        List.of(
+                                new IrGpuStructFieldMetadata("offset", "int", List.of()),
+                                new IrGpuStructFieldMetadata("bias", "int", List.of())
+                        ),
+                        List.of("packed"),
+                        List.of(new IrGpuAttributeMetadata("packed", "true", "GPUPacked"))
+                )),
+                List.of(),
+                List.of(),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/sample/Demo/kernel.cl")),
+                "opencl",
+                "off"
+        );
+
+        GpuBackendSourceReconstructionResult result = OpenClIrGpuSourceReconstructor.INSTANCE.reconstruct(
+                artifact,
+                "javatogpu/sample/Demo/kernel.cl",
+                descriptorSource
+        );
+
+        assertTrue(result.reconstructed());
+        assertTrue(result.sourceAvailable());
+        assertTrue(result.blockers().isEmpty());
+        assertEquals(descriptorSource, result.source());
+        assertTrue(result.diagnostics().contains("sourceParity.checked=true"));
+        assertTrue(result.diagnostics().contains("sourceParity.matched=true"));
     }
 
     @Test

@@ -18,7 +18,9 @@ import java.util.Properties;
 public final class GpuBackendSourcePromotionWorkloadGateFormatter {
 
     private static final String RUNTIME_OPTIMIZER_DRIFT_PREFIX = "runtimeOptimizerDrift.";
-    private static final String RUNTIME_BACKEND_SOURCE_PREFIX = "runtime.backend.source.";
+    private static final String RUNTIME_BACKEND_SOURCE_PORTABLE_PREFIX = "runtime.backend.source";
+    private static final String RUNTIME_BACKEND_SOURCE_PREFIX = RUNTIME_BACKEND_SOURCE_PORTABLE_PREFIX + ".";
+    private static final String RUNTIME_IR_PRODUCTION_MUTATION_PORTABLE_PREFIX = "runtime.ir.productionMutation";
 
     private static final DriftProperty[] RUNTIME_OPTIMIZER_DRIFT_PROPERTIES = {
             driftProperty("pass.count", "0", "unknown"),
@@ -519,14 +521,20 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         copyRuntimeBackendSourceProperty(source, target, "productionPromotionDecisionMode", "sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY);
         copyRuntimeBackendSourceProperty(source, target, "productionPromotionOperatorAccepted", "sourceSwitching.productionPromotionOperatorAccepted", "false");
         copyRuntimeBackendSourceProperty(source, target, "runtimeLoadMode", "runtimeLoadMode", "unknown");
-        target.setProperty(
-                RUNTIME_BACKEND_SOURCE_PREFIX + "diagnostic",
+        setRuntimeBackendSourceProperty(
+                target,
+                "diagnostic",
                 source.getProperty(
                         RUNTIME_BACKEND_SOURCE_PREFIX + "diagnostic",
                         target.getProperty("sourceSwitching.diagnostic.0", source.getProperty("diagnostic.0", "unknown"))
                 )
         );
-        target.setProperty("runtime.status", source.getProperty("runtime.status", target.getProperty("sourceSwitching.status", "unknown")));
+        GpuRuntimeArtifactProperties.setPortable(
+                target,
+                "runtime",
+                "status",
+                source.getProperty("runtime.status", target.getProperty("sourceSwitching.status", "unknown"))
+        );
     }
 
     private static void copyRuntimeBackendSourceProperty(
@@ -536,8 +544,10 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             String fallbackKey,
             String fallbackValue
     ) {
-        target.setProperty(
-                RUNTIME_BACKEND_SOURCE_PREFIX + runtimeKey,
+        GpuRuntimeArtifactProperties.setPortable(
+                target,
+                RUNTIME_BACKEND_SOURCE_PORTABLE_PREFIX,
+                runtimeKey,
                 source.getProperty(
                         RUNTIME_BACKEND_SOURCE_PREFIX + runtimeKey,
                         target.getProperty(fallbackKey, source.getProperty(fallbackKey, fallbackValue))
@@ -546,27 +556,36 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     }
 
     private static void putRuntimeBackendSourceFallbackFields(Properties target, boolean present) {
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "selection.present", Boolean.toString(present));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "status", target.getProperty("sourceSwitching.status", "not-recorded"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "decision", target.getProperty("sourceSwitching.decision", "not-recorded"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "selection", target.getProperty("sourceSwitching.sourceSelection", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "irgpuRequested", target.getProperty("sourceSwitching.irGpuSourceRequested", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "ready", target.getProperty("ready", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "reconstructed", target.getProperty("reconstructed", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "available", target.getProperty("sourceAvailable", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "parityChecked", target.getProperty("sourceParityChecked", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "parityMatched", target.getProperty("sourceParityMatched", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "promotionStatus", target.getProperty("sourceSwitching.sourcePromotionStatus", target.getProperty("status", "not-recorded")));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "promotionReviewReady", target.getProperty("sourceSwitching.sourcePromotionReviewReady", target.getProperty("reviewReady", "unknown")));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "promotionFirstBlocker", target.getProperty("sourceSwitching.sourcePromotionFirstBlocker", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionProfileRequested", target.getProperty("sourceSwitching.productionProfileRequested", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionSwitching", target.getProperty("sourceSwitching.productionSourceSwitching", "false"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionSwitchingEnabled", target.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionPromotionDecisionMode", target.getProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "productionPromotionOperatorAccepted", target.getProperty("sourceSwitching.productionPromotionOperatorAccepted", "false"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "runtimeLoadMode", target.getProperty("runtimeLoadMode", "unknown"));
-        target.setProperty(RUNTIME_BACKEND_SOURCE_PREFIX + "diagnostic", target.getProperty("sourceSwitching.diagnostic.0", "unknown"));
-        target.setProperty("runtime.status", target.getProperty("sourceSwitching.status", "not-recorded"));
+        setRuntimeBackendSourceProperty(target, "selection.present", present);
+        setRuntimeBackendSourceProperty(target, "status", target.getProperty("sourceSwitching.status", "not-recorded"));
+        setRuntimeBackendSourceProperty(target, "decision", target.getProperty("sourceSwitching.decision", "not-recorded"));
+        setRuntimeBackendSourceProperty(target, "selection", target.getProperty("sourceSwitching.sourceSelection", "unknown"));
+        setRuntimeBackendSourceProperty(target, "irgpuRequested", target.getProperty("sourceSwitching.irGpuSourceRequested", "unknown"));
+        setRuntimeBackendSourceProperty(target, "ready", target.getProperty("ready", "unknown"));
+        setRuntimeBackendSourceProperty(target, "reconstructed", target.getProperty("reconstructed", "unknown"));
+        setRuntimeBackendSourceProperty(target, "available", target.getProperty("sourceAvailable", "unknown"));
+        setRuntimeBackendSourceProperty(target, "parityChecked", target.getProperty("sourceParityChecked", "unknown"));
+        setRuntimeBackendSourceProperty(target, "parityMatched", target.getProperty("sourceParityMatched", "unknown"));
+        setRuntimeBackendSourceProperty(target, "promotionStatus", target.getProperty("sourceSwitching.sourcePromotionStatus", target.getProperty("status", "not-recorded")));
+        setRuntimeBackendSourceProperty(target, "promotionReviewReady", target.getProperty("sourceSwitching.sourcePromotionReviewReady", target.getProperty("reviewReady", "unknown")));
+        setRuntimeBackendSourceProperty(target, "promotionFirstBlocker", target.getProperty("sourceSwitching.sourcePromotionFirstBlocker", "unknown"));
+        setRuntimeBackendSourceProperty(target, "productionProfileRequested", target.getProperty("sourceSwitching.productionProfileRequested", "unknown"));
+        setRuntimeBackendSourceProperty(target, "productionSwitching", target.getProperty("sourceSwitching.productionSourceSwitching", "false"));
+        setRuntimeBackendSourceProperty(target, "productionSwitchingEnabled", target.getProperty("sourceSwitching.productionSourceSwitchingEnabled", "false"));
+        setRuntimeBackendSourceProperty(target, "productionPromotionDecisionMode", target.getProperty("sourceSwitching.productionPromotionDecisionMode", GpuProductionPromotionDecision.DIAGNOSTIC_ONLY));
+        setRuntimeBackendSourceProperty(target, "productionPromotionOperatorAccepted", target.getProperty("sourceSwitching.productionPromotionOperatorAccepted", "false"));
+        setRuntimeBackendSourceProperty(target, "runtimeLoadMode", target.getProperty("runtimeLoadMode", "unknown"));
+        setRuntimeBackendSourceProperty(target, "diagnostic", target.getProperty("sourceSwitching.diagnostic.0", "unknown"));
+        GpuRuntimeArtifactProperties.setPortable(
+                target,
+                "runtime",
+                "status",
+                target.getProperty("sourceSwitching.status", "not-recorded")
+        );
+    }
+
+    private static void setRuntimeBackendSourceProperty(Properties target, String key, Object value) {
+        GpuRuntimeArtifactProperties.setPortable(target, RUNTIME_BACKEND_SOURCE_PORTABLE_PREFIX, key, value);
     }
 
     private static void copyRuntimeIrHandoffProperties(Properties source, Properties target) {
@@ -636,27 +655,126 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
                     "runtimeProductionMutationSafety.diagnostic.0",
                     "production mutation remains disabled because runtime production safety evidence was not recorded"
             );
+            putRuntimeProductionMutationSafetyPortableFields(target);
             return;
         }
-        copyRuntimeProductionMutationSafetyProperty(source, target, "status");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "productionMutationEnabled");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "productionGateStatus");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "productionProfileRequested");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "selectedStage");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedSelected");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedDiffersFromOriginal");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedIrRejected");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "fallbackDecision");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "runtimeEquivalencePassed");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "fallbackClean");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "strategyEvidenceBacked");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "vendorPromotionEligible");
-        copyRuntimeProductionMutationSafetyProperty(source, target, "rollbackClean");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "status", "status");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "productionMutationEnabled", "enabled");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "productionGateStatus", "productionGateStatus");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "productionProfileRequested", "productionProfileRequested");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "selectedStage", "selectedStage");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedSelected", "optimizedSelected");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedDiffersFromOriginal", "optimizedDiffersFromOriginal");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "optimizedIrRejected", "optimizedIrRejected");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "fallbackDecision", "fallbackDecision");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "runtimeEquivalencePassed", "runtimeEquivalencePassed");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "fallbackClean", "fallbackClean");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "strategyEvidenceBacked", "strategyEvidenceBacked");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "vendorPromotionEligible", "vendorPromotionEligible");
+        copyRuntimeProductionMutationSafetyProperty(source, target, "rollbackClean", "rollbackClean");
         copyIndexedProperties(source, target, "runtimeProductionMutationSafety.diagnostic", "diagnostic");
+        if (source.getProperty("runtime.ir.productionMutation.diagnostic") != null) {
+            target.setProperty("runtimeProductionMutationSafety.diagnostic.count", "1");
+            target.setProperty(
+                    "runtimeProductionMutationSafety.diagnostic.0",
+                    source.getProperty("runtime.ir.productionMutation.diagnostic")
+            );
+        }
+        putRuntimeProductionMutationSafetyPortableFields(target);
     }
 
-    private static void copyRuntimeProductionMutationSafetyProperty(Properties source, Properties target, String key) {
-        target.setProperty("runtimeProductionMutationSafety." + key, source.getProperty(key, "unknown"));
+    private static void copyRuntimeProductionMutationSafetyProperty(
+            Properties source,
+            Properties target,
+            String legacyKey,
+            String portableKey
+    ) {
+        target.setProperty(
+                "runtimeProductionMutationSafety." + legacyKey,
+                source.getProperty(legacyKey, source.getProperty("runtime.ir.productionMutation." + portableKey, "unknown"))
+        );
+    }
+
+    private static void putRuntimeProductionMutationSafetyPortableFields(Properties target) {
+        setRuntimeProductionMutationProperty(
+                target,
+                "status",
+                target.getProperty("runtimeProductionMutationSafety.status", "not-recorded")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "enabled",
+                target.getProperty("runtimeProductionMutationSafety.productionMutationEnabled", "false")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "productionGateStatus",
+                target.getProperty("runtimeProductionMutationSafety.productionGateStatus", "not-recorded")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "productionProfileRequested",
+                target.getProperty("runtimeProductionMutationSafety.productionProfileRequested", "unknown")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "selectedStage",
+                target.getProperty("runtimeProductionMutationSafety.selectedStage", "original")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "optimizedSelected",
+                target.getProperty("runtimeProductionMutationSafety.optimizedSelected", "false")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "optimizedDiffersFromOriginal",
+                target.getProperty("runtimeProductionMutationSafety.optimizedDiffersFromOriginal", "false")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "optimizedIrRejected",
+                target.getProperty("runtimeProductionMutationSafety.optimizedIrRejected", "false")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "fallbackDecision",
+                target.getProperty("runtimeProductionMutationSafety.fallbackDecision", "none")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "runtimeEquivalencePassed",
+                target.getProperty("runtimeProductionMutationSafety.runtimeEquivalencePassed", "unknown")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "fallbackClean",
+                target.getProperty("runtimeProductionMutationSafety.fallbackClean", "unknown")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "strategyEvidenceBacked",
+                target.getProperty("runtimeProductionMutationSafety.strategyEvidenceBacked", "false")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "vendorPromotionEligible",
+                target.getProperty("runtimeProductionMutationSafety.vendorPromotionEligible", "false")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "rollbackClean",
+                target.getProperty("runtimeProductionMutationSafety.rollbackClean", "unknown")
+        );
+        setRuntimeProductionMutationProperty(
+                target,
+                "diagnostic",
+                target.getProperty("runtimeProductionMutationSafety.diagnostic.0", "unknown")
+        );
+    }
+
+    private static void setRuntimeProductionMutationProperty(Properties target, String key, Object value) {
+        GpuRuntimeArtifactProperties.setPortable(target, RUNTIME_IR_PRODUCTION_MUTATION_PORTABLE_PREFIX, key, value);
     }
 
     private static void copyI3ReadinessSummaryProperties(Properties source, Properties target) {
@@ -880,6 +998,7 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
                 && allProductionSourceDecisions;
         String status = productionSourceSwitchingEnabled ? "production-enabled" : allReviewReady ? "review-ready" : "blocked";
         LinkedHashMap<String, Integer> aggregateFamilies = aggregatePromotionBlockerFamilies(kernels);
+        LinkedHashMap<String, Integer> aggregateSourceDecisions = aggregateSourceDecisions(kernels);
         LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockers = aggregateSourcePromotionFirstBlockers(kernels);
         LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockerFamilies = aggregateSourcePromotionFirstBlockerFamilies(
                 aggregateSourcePromotionFirstBlockers
@@ -892,10 +1011,16 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append("realWorkloadEvidence=runtime-snapshot\n");
         builder.append("scope=real-workload\n");
         builder.append("productionSourceSwitching=").append(productionSourceSwitchingEnabled ? "enabled" : "false").append('\n');
+        builder.append("runtime.backend.source.productionSwitchingEnabled.count=").append(productionSourceSwitchingEnabledCount).append('\n');
+        builder.append("runtime.backend.source.productionSwitchingEnabled.all=").append(allProductionSourceSwitchingEnabled).append('\n');
         builder.append("productionSourceSwitchingEnabled.count=").append(productionSourceSwitchingEnabledCount).append('\n');
         builder.append("productionSourceSwitchingEnabled.all=").append(allProductionSourceSwitchingEnabled).append('\n');
+        builder.append("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count=").append(productionPromotionEnabledCount).append('\n');
+        builder.append("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all=").append(allProductionPromotionEnabled).append('\n');
         builder.append("productionPromotionDecisionMode.productionEnabled.count=").append(productionPromotionEnabledCount).append('\n');
         builder.append("productionPromotionDecisionMode.productionEnabled.all=").append(allProductionPromotionEnabled).append('\n');
+        builder.append("runtime.backend.source.productionPromotionOperatorAccepted.count=").append(productionPromotionOperatorAcceptedCount).append('\n');
+        builder.append("runtime.backend.source.productionPromotionOperatorAccepted.all=").append(allProductionPromotionOperatorAccepted).append('\n');
         builder.append("productionPromotionOperatorAccepted.count=").append(productionPromotionOperatorAcceptedCount).append('\n');
         builder.append("productionPromotionOperatorAccepted.all=").append(allProductionPromotionOperatorAccepted).append('\n');
         builder.append("runtime.backend.source.productionDecision.count=").append(productionSourceDecisionCount).append('\n');
@@ -904,6 +1029,13 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append("sourceSwitching.productionDecision.all=").append(allProductionSourceDecisions).append('\n');
         appendAggregateRuntimeExtensionParticipation(builder, kernels);
         builder.append("sourceSwitching.count=").append(kernels.size()).append('\n');
+        builder.append("runtime.backend.source.decision.count=").append(aggregateSourceDecisions.size()).append('\n');
+        int sourceDecisionIndex = 0;
+        for (Map.Entry<String, Integer> decision : aggregateSourceDecisions.entrySet()) {
+            builder.append("runtime.backend.source.decision.").append(sourceDecisionIndex).append(".name=").append(decision.getKey()).append('\n');
+            builder.append("runtime.backend.source.decision.").append(sourceDecisionIndex).append(".count=").append(decision.getValue()).append('\n');
+            sourceDecisionIndex++;
+        }
         builder.append("runtime.backend.source.promotionFirstBlocker.count=").append(aggregateSourcePromotionFirstBlockers.size()).append('\n');
         builder.append("sourceSwitching.sourcePromotionFirstBlocker.count=").append(aggregateSourcePromotionFirstBlockers.size()).append('\n');
         int sourcePromotionBlockerIndex = 0;
@@ -1107,6 +1239,21 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
     }
 
     private static void appendRuntimeProductionMutationSafety(StringBuilder builder, String prefix, Properties entry) {
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "status", "not-recorded");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "enabled", "false");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "productionGateStatus", "not-recorded");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "productionProfileRequested", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "selectedStage", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "optimizedSelected", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "optimizedDiffersFromOriginal", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "optimizedIrRejected", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "fallbackDecision", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "runtimeEquivalencePassed", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "fallbackClean", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "strategyEvidenceBacked", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "vendorPromotionEligible", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "rollbackClean", "unknown");
+        appendRuntimeProductionMutationProperty(builder, prefix, entry, "diagnostic", "unknown");
         builder.append(prefix).append("runtimeProductionMutationSafety.status=").append(entry.getProperty("runtimeProductionMutationSafety.status", "not-recorded")).append('\n');
         builder.append(prefix).append("runtimeProductionMutationSafety.productionMutationEnabled=").append(entry.getProperty("runtimeProductionMutationSafety.productionMutationEnabled", "unknown")).append('\n');
         builder.append(prefix).append("runtimeProductionMutationSafety.productionGateStatus=").append(entry.getProperty("runtimeProductionMutationSafety.productionGateStatus", "unknown")).append('\n');
@@ -1122,6 +1269,17 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
         builder.append(prefix).append("runtimeProductionMutationSafety.vendorPromotionEligible=").append(entry.getProperty("runtimeProductionMutationSafety.vendorPromotionEligible", "unknown")).append('\n');
         builder.append(prefix).append("runtimeProductionMutationSafety.rollbackClean=").append(entry.getProperty("runtimeProductionMutationSafety.rollbackClean", "unknown")).append('\n');
         appendIndexedProperties(builder, prefix, entry, "runtimeProductionMutationSafety.diagnostic");
+    }
+
+    private static void appendRuntimeProductionMutationProperty(
+            StringBuilder builder,
+            String prefix,
+            Properties entry,
+            String key,
+            String fallback
+    ) {
+        String propertyName = "runtime.ir.productionMutation." + key;
+        builder.append(prefix).append(propertyName).append('=').append(entry.getProperty(propertyName, fallback)).append('\n');
     }
 
     private static void appendI3ReadinessSummary(StringBuilder builder, String prefix, Properties entry) {
@@ -1342,6 +1500,23 @@ public final class GpuBackendSourcePromotionWorkloadGateFormatter {
             }
         }
         return families;
+    }
+
+    private static LinkedHashMap<String, Integer> aggregateSourceDecisions(LinkedHashMap<String, Properties> kernels) {
+        LinkedHashMap<String, Integer> decisions = new LinkedHashMap<>();
+        for (Properties entry : kernels.values()) {
+            String decision = runtimeBackendSourceProperty(
+                    entry,
+                    "decision",
+                    "sourceSwitching.decision",
+                    "not-recorded"
+            );
+            if (decision.isBlank() || "not-recorded".equals(decision)) {
+                continue;
+            }
+            decisions.merge(decision, 1, Integer::sum);
+        }
+        return decisions;
     }
 
     private static LinkedHashMap<String, Integer> aggregateSourcePromotionFirstBlockers(LinkedHashMap<String, Properties> kernels) {

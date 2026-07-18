@@ -621,10 +621,18 @@ public final class GpuRuntime {
         fields.putAll(GpuRuntimeLifecycleFields.executionConfigFields(invocation.executionConfig()));
         GpuRuntimeLifecycleFields.putStatus(fields, status);
         GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
-        fields.put("runtime.backendDevicePreflight.mode", backendOptions.backendDevicePreflightMode());
-        fields.put("runtime.backendDevicePreflight.requested", Boolean.toString(
+        GpuRuntimeArtifactProperties.putPortable(
+                fields,
+                "runtime.backendDevicePreflight",
+                "mode",
+                backendOptions.backendDevicePreflightMode()
+        );
+        GpuRuntimeArtifactProperties.putPortable(
+                fields,
+                "runtime.backendDevicePreflight",
+                "requested",
                 backendOptions.requestsStandardBackendDevicePreflight()
-        ));
+        );
         fields.put("pipeline", "runtime-backend-device-preflight");
         fields.put("trigger", "compile-options");
         fields.put("status", status);

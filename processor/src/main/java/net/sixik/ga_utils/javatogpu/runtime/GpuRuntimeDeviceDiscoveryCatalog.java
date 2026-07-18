@@ -52,8 +52,18 @@ public record GpuRuntimeDeviceDiscoveryCatalog(List<GpuRuntimeDeviceDiscoveryRes
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "deviceDiscoveryCatalog" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
-        fields.put("runtime.device.discovery.catalog.present", Boolean.toString(!discoveries.isEmpty()));
-        fields.put("runtime.device.discovery.catalog.backend.count", Integer.toString(discoveries.size()));
+        GpuRuntimeArtifactProperties.putPortable(
+                fields,
+                "runtime.device.discovery.catalog",
+                "present",
+                !discoveries.isEmpty()
+        );
+        GpuRuntimeArtifactProperties.putPortable(
+                fields,
+                "runtime.device.discovery.catalog",
+                "backend.count",
+                discoveries.size()
+        );
         representativeDiscovery().ifPresent(discovery -> fields.putAll(
                 GpuRuntimeLifecycleFields.deviceDiscoveryFields(discovery)
         ));

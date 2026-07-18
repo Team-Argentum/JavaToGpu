@@ -148,6 +148,8 @@ class GpuProductionPromotionDecisionTest {
         properties.setProperty("productionSourceSwitchingEnabled.all", "true");
         properties.setProperty("productionPromotionDecisionMode.productionEnabled.count", "2");
         properties.setProperty("productionPromotionDecisionMode.productionEnabled.all", "true");
+        properties.setProperty("productionPromotionOperatorAccepted.count", "2");
+        properties.setProperty("productionPromotionOperatorAccepted.all", "true");
         properties.setProperty("sourceSwitching.productionDecision.count", "2");
         properties.setProperty("sourceSwitching.productionDecision.all", "true");
         properties.setProperty("productionMutationAllowed", "true");

@@ -44,6 +44,7 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("real-workload", gate.getProperty("scope"));
         assertEquals("false", gate.getProperty("productionSourceSwitching"));
         assertEquals("2", gate.getProperty("sourceSwitching.count"));
+        assertEquals("0", gate.getProperty("runtime.backend.source.decision.count"));
         assertEquals("1", gate.getProperty("runtime.backend.source.promotionFirstBlocker.count"));
         assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count"));
         assertEquals(
@@ -91,9 +92,17 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("false", gate.getProperty("kernel.0.runtimeProductionMutationSafety.productionMutationEnabled"));
         assertEquals("not-recorded", gate.getProperty("kernel.0.runtimeProductionMutationSafety.productionGateStatus"));
         assertEquals("original", gate.getProperty("kernel.0.runtimeProductionMutationSafety.selectedStage"));
+        assertEquals("not-recorded", gate.getProperty("kernel.0.runtime.ir.productionMutation.status"));
+        assertEquals("false", gate.getProperty("kernel.0.runtime.ir.productionMutation.enabled"));
+        assertEquals("not-recorded", gate.getProperty("kernel.0.runtime.ir.productionMutation.productionGateStatus"));
+        assertEquals("original", gate.getProperty("kernel.0.runtime.ir.productionMutation.selectedStage"));
         assertEquals(
                 "production mutation remains disabled because runtime production safety evidence was not recorded",
                 gate.getProperty("kernel.0.runtimeProductionMutationSafety.diagnostic.0")
+        );
+        assertEquals(
+                "production mutation remains disabled because runtime production safety evidence was not recorded",
+                gate.getProperty("kernel.0.runtime.ir.productionMutation.diagnostic")
         );
         assertEquals("blocked", gate.getProperty("kernel.0.i3Readiness.status"));
         assertEquals("original", gate.getProperty("kernel.0.i3Readiness.selectedRuntimeIrStage"));
@@ -410,6 +419,11 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         ));
 
         assertEquals("2", gate.getProperty("sourceSwitching.count"));
+        assertEquals("2", gate.getProperty("runtime.backend.source.decision.count"));
+        assertEquals("compile-irgpu-source-review", gate.getProperty("runtime.backend.source.decision.0.name"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.decision.0.count"));
+        assertEquals("reject-production-irgpu-source", gate.getProperty("runtime.backend.source.decision.1.name"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.decision.1.count"));
         assertEquals("1", gate.getProperty("runtime.backend.source.promotionFirstBlocker.count"));
         assertEquals("1", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count"));
         assertEquals(
@@ -665,16 +679,25 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals("production-enabled", gate.getProperty("status"));
         assertEquals("true", gate.getProperty("reviewReady"));
         assertEquals("enabled", gate.getProperty("productionSourceSwitching"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionSwitchingEnabled.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionSwitchingEnabled.all"));
         assertEquals("1", gate.getProperty("productionSourceSwitchingEnabled.count"));
         assertEquals("true", gate.getProperty("productionSourceSwitchingEnabled.all"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all"));
         assertEquals("1", gate.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
         assertEquals("true", gate.getProperty("productionPromotionDecisionMode.productionEnabled.all"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionPromotionOperatorAccepted.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionPromotionOperatorAccepted.all"));
         assertEquals("1", gate.getProperty("productionPromotionOperatorAccepted.count"));
         assertEquals("true", gate.getProperty("productionPromotionOperatorAccepted.all"));
         assertEquals("1", gate.getProperty("runtime.backend.source.productionDecision.count"));
         assertEquals("true", gate.getProperty("runtime.backend.source.productionDecision.all"));
         assertEquals("1", gate.getProperty("sourceSwitching.productionDecision.count"));
         assertEquals("true", gate.getProperty("sourceSwitching.productionDecision.all"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.decision.count"));
+        assertEquals("compile-irgpu-source-production", gate.getProperty("runtime.backend.source.decision.0.name"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.decision.0.count"));
         assertEquals("0", gate.getProperty("runtime.backend.source.promotionFirstBlocker.count"));
         assertEquals("0", gate.getProperty("sourceSwitching.sourcePromotionFirstBlocker.count"));
         assertEquals("0", gate.getProperty("runtime.backend.source.promotionFirstBlockerFamily.count"));
@@ -689,6 +712,10 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         assertEquals(GpuProductionPromotionDecision.PRODUCTION_ENABLED, gate.getProperty("kernel.0.sourceSwitching.productionPromotionDecisionMode"));
         assertEquals("true", gate.getProperty("kernel.0.sourceSwitching.productionPromotionOperatorAccepted"));
         assertEquals("none", gate.getProperty("kernel.0.sourceSwitching.sourcePromotionFirstBlocker"));
+        assertEquals("enabled", gate.getProperty("kernel.0.runtime.ir.productionMutation.status"));
+        assertEquals("true", gate.getProperty("kernel.0.runtime.ir.productionMutation.enabled"));
+        assertEquals("accepted", gate.getProperty("kernel.0.runtime.ir.productionMutation.productionGateStatus"));
+        assertEquals("optimized", gate.getProperty("kernel.0.runtime.ir.productionMutation.selectedStage"));
     }
 
     @Test
@@ -711,14 +738,23 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
         ));
 
         assertEquals("production-enabled", gate.getProperty("status"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionSwitchingEnabled.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionSwitchingEnabled.all"));
         assertEquals("1", gate.getProperty("productionSourceSwitchingEnabled.count"));
         assertEquals("true", gate.getProperty("productionSourceSwitchingEnabled.all"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all"));
         assertEquals("1", gate.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
         assertEquals("true", gate.getProperty("productionPromotionDecisionMode.productionEnabled.all"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionPromotionOperatorAccepted.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionPromotionOperatorAccepted.all"));
         assertEquals("1", gate.getProperty("productionPromotionOperatorAccepted.count"));
         assertEquals("true", gate.getProperty("productionPromotionOperatorAccepted.all"));
         assertEquals("1", gate.getProperty("runtime.backend.source.productionDecision.count"));
         assertEquals("true", gate.getProperty("runtime.backend.source.productionDecision.all"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.decision.count"));
+        assertEquals("compile-irgpu-source-production", gate.getProperty("runtime.backend.source.decision.0.name"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.decision.0.count"));
         assertEquals("compile-irgpu-source-production", gate.getProperty("kernel.0.sourceSwitching.decision"));
         assertEquals("enabled", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitching"));
         assertEquals("true", gate.getProperty("kernel.0.sourceSwitching.productionSourceSwitchingEnabled"));
@@ -789,10 +825,16 @@ class GpuBackendSourcePromotionWorkloadGateFormatterTest {
 
         assertEquals("review-ready", gate.getProperty("status"));
         assertEquals("false", gate.getProperty("productionSourceSwitching"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionSwitchingEnabled.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionSwitchingEnabled.all"));
         assertEquals("1", gate.getProperty("productionSourceSwitchingEnabled.count"));
         assertEquals("true", gate.getProperty("productionSourceSwitchingEnabled.all"));
+        assertEquals("1", gate.getProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count"));
+        assertEquals("true", gate.getProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all"));
         assertEquals("1", gate.getProperty("productionPromotionDecisionMode.productionEnabled.count"));
         assertEquals("true", gate.getProperty("productionPromotionDecisionMode.productionEnabled.all"));
+        assertEquals("0", gate.getProperty("runtime.backend.source.productionPromotionOperatorAccepted.count"));
+        assertEquals("false", gate.getProperty("runtime.backend.source.productionPromotionOperatorAccepted.all"));
         assertEquals("0", gate.getProperty("productionPromotionOperatorAccepted.count"));
         assertEquals("false", gate.getProperty("productionPromotionOperatorAccepted.all"));
         assertEquals("0", gate.getProperty("runtime.backend.source.productionDecision.count"));

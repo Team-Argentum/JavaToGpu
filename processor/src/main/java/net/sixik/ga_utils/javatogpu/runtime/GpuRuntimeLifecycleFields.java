@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -17,16 +18,16 @@ public final class GpuRuntimeLifecycleFields {
     public static LinkedHashMap<String, String> compileRequestFields(GpuRuntimeCompileRequest compileRequest) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (compileRequest == null) {
-            fields.put("runtime.backend.target", "UNKNOWN");
-            fields.put("runtime.backend.name", "unknown");
-            fields.put("runtime.compile.optimizationProfile", "off");
+            putRuntimeBackendField(fields, "target", "UNKNOWN");
+            putRuntimeBackendField(fields, "name", "unknown");
+            putRuntimeCompileField(fields, "optimizationProfile", "off");
             return fields;
         }
         putKernelFields(fields, compileRequest.descriptor());
         putCompileOptionsFields(fields, compileRequest.options());
         putDeviceProfileFields(fields, compileRequest.deviceProfile());
-        fields.put("runtime.irgpu.present", Boolean.toString(compileRequest.irGpuArtifact().isPresent()));
-        fields.put("runtime.irgpu.identity", IrGpuArtifactIdentity.stableIdentity(compileRequest.irGpuArtifact()));
+        putRuntimeIrGpuField(fields, "present", compileRequest.irGpuArtifact().isPresent());
+        putRuntimeIrGpuField(fields, "identity", IrGpuArtifactIdentity.stableIdentity(compileRequest.irGpuArtifact()));
         return fields;
     }
 
@@ -56,52 +57,64 @@ public final class GpuRuntimeLifecycleFields {
     ) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (artifactSnapshot == null) {
-            fields.put("runtime.artifact.snapshot.present", "false");
+            putRuntimeArtifactSnapshotField(fields, "present", false);
             return fields;
         }
-        fields.put("runtime.artifact.snapshot.present", "true");
+        putRuntimeArtifactSnapshotField(fields, "present", true);
         fields.putAll(moduleArtifactFields(artifactSnapshot.backendModuleArtifact()));
         GpuRuntimeCompileProvenance provenance = artifactSnapshot.compileProvenance();
-        fields.put("runtime.backend.target", provenance.backendTarget().name());
-        fields.put("runtime.backend.name", provenance.backendName());
-        fields.put("runtime.device.label", provenance.deviceLabel());
-        fields.put("runtime.device.vendor", provenance.vendor());
-        fields.put("runtime.device.driverVersion", provenance.driverVersion());
-        fields.put("runtime.device.apiVersionText", provenance.apiVersionText());
-        fields.put("runtime.compile.optimizationProfile", provenance.optimizationProfile());
-        fields.put("runtime.compile.arg.count", Integer.toString(provenance.compileArgs().size()));
-        fields.put("runtime.compile.deviceOverride", provenance.deviceOverride());
-        fields.put("runtime.compile.devicePreference", provenance.devicePreference());
+        putRuntimeBackendField(fields, "target", provenance.backendTarget().name());
+        putRuntimeBackendField(fields, "name", provenance.backendName());
+        putRuntimeDeviceField(fields, "label", provenance.deviceLabel());
+        putRuntimeDeviceField(fields, "vendor", provenance.vendor());
+        putRuntimeDeviceField(fields, "driverVersion", provenance.driverVersion());
+        putRuntimeDeviceField(fields, "apiVersionText", provenance.apiVersionText());
+        putRuntimeCompileField(fields, "optimizationProfile", provenance.optimizationProfile());
+        putRuntimeCompileField(fields, "arg.count", provenance.compileArgs().size());
+        putRuntimeCompileField(fields, "deviceOverride", provenance.deviceOverride());
+        putRuntimeCompileField(fields, "devicePreference", provenance.devicePreference());
         fields.putAll(runtimeIrSelectionFields(artifactSnapshot.runtimeIrSelection()));
         fields.putAll(fallbackEvidenceFields(artifactSnapshot.fallbackEvidence()));
-        fields.put("runtime.compile.log.present", Boolean.toString(!artifactSnapshot.compileLog().isBlank()));
-        fields.put("runtime.binaryArtifact.count", Integer.toString(artifactSnapshot.binaryArtifacts().size()));
-        fields.put("runtime.validationEvidence.count", Integer.toString(artifactSnapshot.runtimeValidationEvidence().size()));
+        putRuntimeCompileField(fields, "log.present", !artifactSnapshot.compileLog().isBlank());
+        putRuntimeBinaryArtifactField(fields, "count", artifactSnapshot.binaryArtifacts().size());
+        putRuntimeValidationEvidenceField(fields, "count", artifactSnapshot.runtimeValidationEvidence().size());
         return fields;
     }
 
     public static LinkedHashMap<String, String> runtimeIrSelectionFields(GpuRuntimeIrSelection runtimeIrSelection) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (runtimeIrSelection == null) {
-            fields.put("runtime.ir.selection.present", "false");
-            fields.put("runtime.ir.selectedStage", "missing");
-            fields.put("runtime.ir.fallbackDecision", GpuRuntimeCompileProvenance.NO_FALLBACK);
+            putRuntimeIrSelectionField(fields, "present", false);
+            putRuntimeIrField(fields, "selectedStage", "missing");
+            putRuntimeIrField(fields, "fallbackDecision", GpuRuntimeCompileProvenance.NO_FALLBACK);
             return fields;
         }
-        fields.put("runtime.ir.selection.present", "true");
-        fields.put("runtime.ir.selectedStage", runtimeIrSelection.selectedStage());
-        fields.put("runtime.ir.originalIdentity", runtimeIrSelection.originalIdentity());
-        fields.put("runtime.ir.optimizedIdentity", runtimeIrSelection.optimizedIdentity());
-        fields.put("runtime.ir.selectedIdentity", runtimeIrSelection.selectedIdentity());
-        fields.put("runtime.ir.transformed", Boolean.toString(runtimeIrSelection.transformed()));
-        fields.put("runtime.ir.optimizedRejected", Boolean.toString(runtimeIrSelection.optimizedRejected()));
-        fields.put("runtime.ir.fallbackDecision", runtimeIrSelection.fallbackDecision());
-        fields.put("runtime.ir.diagnostic", runtimeIrSelection.diagnostic());
+        putRuntimeIrSelectionField(fields, "present", true);
+        putRuntimeIrField(fields, "selectedStage", runtimeIrSelection.selectedStage());
+        putRuntimeIrField(fields, "originalIdentity", runtimeIrSelection.originalIdentity());
+        putRuntimeIrField(fields, "optimizedIdentity", runtimeIrSelection.optimizedIdentity());
+        putRuntimeIrField(fields, "selectedIdentity", runtimeIrSelection.selectedIdentity());
+        putRuntimeIrField(fields, "transformed", runtimeIrSelection.transformed());
+        putRuntimeIrField(fields, "optimizedRejected", runtimeIrSelection.optimizedRejected());
+        putRuntimeIrField(fields, "fallbackDecision", runtimeIrSelection.fallbackDecision());
+        putRuntimeIrField(fields, "diagnostic", runtimeIrSelection.diagnostic());
         GpuProductionIrAcceptanceGate.Result productionIrGate = runtimeIrSelection.productionIrGate();
-        fields.put("runtime.ir.productionGate.accepted", Boolean.toString(productionIrGate.accepted()));
-        fields.put("runtime.ir.productionGate.status", productionIrGate.status());
-        fields.put("runtime.ir.productionGate.decisionMode", productionIrGate.decisionMode());
-        fields.put("runtime.ir.productionGate.diagnostic", productionIrGate.diagnostic());
+        putRuntimeIrProductionGateField(fields, "accepted", productionIrGate.accepted());
+        putRuntimeIrProductionGateField(fields, "status", productionIrGate.status());
+        putRuntimeIrProductionGateField(fields, "decisionMode", productionIrGate.decisionMode());
+        putRuntimeIrProductionGateField(fields, "diagnostic", productionIrGate.diagnostic());
+        boolean optimizedSelected = "optimized".equals(runtimeIrSelection.selectedStage());
+        boolean productionMutationEnabled = productionIrGate.accepted()
+                && optimizedSelected
+                && runtimeIrSelection.transformed();
+        putRuntimeIrProductionMutationField(fields, "status", productionMutationEnabled ? "enabled" : "disabled");
+        putRuntimeIrProductionMutationField(fields, "enabled", productionMutationEnabled);
+        putRuntimeIrProductionMutationField(fields, "productionGateStatus", productionIrGate.status());
+        putRuntimeIrProductionMutationField(fields, "selectedStage", runtimeIrSelection.selectedStage());
+        putRuntimeIrProductionMutationField(fields, "optimizedSelected", optimizedSelected);
+        putRuntimeIrProductionMutationField(fields, "optimizedDiffersFromOriginal", runtimeIrSelection.transformed());
+        putRuntimeIrProductionMutationField(fields, "optimizedIrRejected", runtimeIrSelection.optimizedRejected());
+        putRuntimeIrProductionMutationField(fields, "fallbackDecision", runtimeIrSelection.fallbackDecision());
         return fields;
     }
 
@@ -110,13 +123,13 @@ public final class GpuRuntimeLifecycleFields {
         GpuRuntimeFallbackEvidence fallback = fallbackEvidence == null
                 ? GpuRuntimeFallbackEvidence.none()
                 : fallbackEvidence;
-        fields.put("runtime.fallback.decision", fallback.decision());
-        fields.put("runtime.fallback.reason", fallback.reason());
-        fields.put("runtime.fallback.originalIrSelected", Boolean.toString(fallback.originalIrSelected()));
-        fields.put("runtime.fallback.optimizedIrRejected", Boolean.toString(fallback.optimizedIrRejected()));
-        fields.put("runtime.fallback.diagnostic.count", Integer.toString(fallback.diagnostics().size()));
+        putRuntimeFallbackField(fields, "decision", fallback.decision());
+        putRuntimeFallbackField(fields, "reason", fallback.reason());
+        putRuntimeFallbackField(fields, "originalIrSelected", fallback.originalIrSelected());
+        putRuntimeFallbackField(fields, "optimizedIrRejected", fallback.optimizedIrRejected());
+        putRuntimeFallbackField(fields, "diagnostic.count", fallback.diagnostics().size());
         for (int index = 0; index < fallback.diagnostics().size(); index++) {
-            fields.put("runtime.fallback.diagnostic." + index, fallback.diagnostics().get(index));
+            putRuntimeFallbackDiagnosticField(fields, Integer.toString(index), fallback.diagnostics().get(index));
         }
         return fields;
     }
@@ -126,19 +139,19 @@ public final class GpuRuntimeLifecycleFields {
     ) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (backendSelection == null) {
-            fields.put("runtime.backend.selection.present", "false");
-            fields.put("runtime.backend.selection.matched", "false");
-            fields.put("runtime.backend.target", "UNKNOWN");
-            fields.put("runtime.backend.name", "unknown");
+            putRuntimeBackendSelectionField(fields, "present", false);
+            putRuntimeBackendSelectionField(fields, "matched", false);
+            putRuntimeBackendField(fields, "target", "UNKNOWN");
+            putRuntimeBackendField(fields, "name", "unknown");
             putStatus(fields, "backend-selection-not-recorded");
             return fields;
         }
-        fields.put("runtime.backend.selection.present", "true");
-        fields.put("runtime.backend.selection.matched", Boolean.toString(backendSelection.matched()));
-        fields.put("runtime.backend.target", backendSelection.selectedBackendTarget().name());
-        fields.put("runtime.backend.name", backendSelection.selectedBackendName());
-        fields.put("runtime.backend.selection.summary", backendSelection.summary());
-        fields.put("runtime.backend.selection.failure.count", Integer.toString(backendSelection.failureReasons().size()));
+        putRuntimeBackendSelectionField(fields, "present", true);
+        putRuntimeBackendSelectionField(fields, "matched", backendSelection.matched());
+        putRuntimeBackendField(fields, "target", backendSelection.selectedBackendTarget().name());
+        putRuntimeBackendField(fields, "name", backendSelection.selectedBackendName());
+        putRuntimeBackendSelectionField(fields, "summary", backendSelection.summary());
+        putRuntimeBackendSelectionField(fields, "failure.count", backendSelection.failureReasons().size());
         putStatus(fields, backendSelection.matched() ? "backend-selected" : "backend-not-selected");
         return fields;
     }
@@ -146,26 +159,26 @@ public final class GpuRuntimeLifecycleFields {
     public static LinkedHashMap<String, String> backendAdapterFields(GpuRuntimeBackendAdapter adapter) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (adapter == null) {
-            fields.put("runtime.backend.adapter.present", "false");
-            fields.put("runtime.backend.target", "UNKNOWN");
-            fields.put("runtime.backend.name", "unknown");
-            fields.put("runtime.backend.adapter.productionAdapter", "false");
-            fields.put("runtime.backend.adapter.ownership", "UNKNOWN");
-            fields.put("runtime.backend.adapter.diagnostic", "backend adapter was not recorded");
+            putRuntimeBackendAdapterField(fields, "present", false);
+            putRuntimeBackendField(fields, "target", "UNKNOWN");
+            putRuntimeBackendField(fields, "name", "unknown");
+            putRuntimeBackendAdapterField(fields, "productionAdapter", false);
+            putRuntimeBackendAdapterField(fields, "ownership", "UNKNOWN");
+            putRuntimeBackendAdapterField(fields, "diagnostic", "backend adapter was not recorded");
             putStatus(fields, "backend-adapter-not-recorded");
             return fields;
         }
         GpuRuntimeBackendCatalogEntry entry = adapter.catalogEntry();
         GpuBackendLowerer lowerer = adapter.lowerer();
-        fields.put("runtime.backend.adapter.present", "true");
-        fields.put("runtime.backend.target", adapter.backendTarget().name());
-        fields.put("runtime.backend.name", adapter.backendName());
-        fields.put("runtime.backend.adapter.productionAdapter", Boolean.toString(entry.productionAdapter()));
-        fields.put("runtime.backend.adapter.ownership", entry.ownership().name());
-        fields.put("runtime.backend.adapter.diagnostic", adapter.diagnostic());
-        fields.put("runtime.backend.lowerer.id", lowerer.extensionId());
-        fields.put("runtime.backend.lowerer.version", lowerer.lowererVersion());
-        fields.put("runtime.backend.lowerer.target", lowerer.backendTarget().name());
+        putRuntimeBackendAdapterField(fields, "present", true);
+        putRuntimeBackendField(fields, "target", adapter.backendTarget().name());
+        putRuntimeBackendField(fields, "name", adapter.backendName());
+        putRuntimeBackendAdapterField(fields, "productionAdapter", entry.productionAdapter());
+        putRuntimeBackendAdapterField(fields, "ownership", entry.ownership().name());
+        putRuntimeBackendAdapterField(fields, "diagnostic", adapter.diagnostic());
+        putRuntimeBackendLowererField(fields, "id", lowerer.extensionId());
+        putRuntimeBackendLowererField(fields, "version", lowerer.lowererVersion());
+        putRuntimeBackendLowererField(fields, "target", lowerer.backendTarget().name());
         putStatus(fields, entry.productionAdapter() ? "production-adapter" : "non-production-adapter");
         return fields;
     }
@@ -175,21 +188,21 @@ public final class GpuRuntimeLifecycleFields {
     ) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (deviceDiscovery == null) {
-            fields.put("runtime.device.discovery.present", "false");
-            fields.put("runtime.device.selected", "false");
+            putRuntimeDeviceDiscoveryField(fields, "present", false);
+            putRuntimeDeviceField(fields, "selected", false);
             return fields;
         }
-        fields.put("runtime.device.discovery.present", "true");
-        fields.put("runtime.backend.target", deviceDiscovery.backendTarget().name());
-        fields.put("runtime.backend.name", deviceDiscovery.backendName());
-        fields.put("runtime.device.discovery.available", Boolean.toString(deviceDiscovery.discoveryAvailable()));
-        fields.put("runtime.device.discovery.device.count", Integer.toString(deviceDiscovery.discoveredDevices().size()));
-        fields.put("runtime.device.discovery.selection.present", Boolean.toString(deviceDiscovery.deviceSelection().isPresent()));
-        fields.put("runtime.device.discovery.selectedDeviceKey", deviceDiscovery.selectedDevice()
+        putRuntimeDeviceDiscoveryField(fields, "present", true);
+        putRuntimeBackendField(fields, "target", deviceDiscovery.backendTarget().name());
+        putRuntimeBackendField(fields, "name", deviceDiscovery.backendName());
+        putRuntimeDeviceDiscoveryField(fields, "available", deviceDiscovery.discoveryAvailable());
+        putRuntimeDeviceDiscoveryField(fields, "device.count", deviceDiscovery.discoveredDevices().size());
+        putRuntimeDeviceDiscoveryField(fields, "selection.present", deviceDiscovery.deviceSelection().isPresent());
+        putRuntimeDeviceDiscoveryField(fields, "selectedDeviceKey", deviceDiscovery.selectedDevice()
                 .map(GpuRuntimeDevicePolicyContext::deviceKey)
                 .orElse("none"));
-        fields.put("runtime.device.discovery.firstBlocker", deviceDiscovery.firstBlocker());
-        fields.put("runtime.device.selected", Boolean.toString(deviceDiscovery.selectedDevice().isPresent()));
+        putRuntimeDeviceDiscoveryField(fields, "firstBlocker", deviceDiscovery.firstBlocker());
+        putRuntimeDeviceField(fields, "selected", deviceDiscovery.selectedDevice().isPresent());
         deviceDiscovery.selectedDevice().ifPresent(profile -> putDeviceProfileFields(fields, profile));
         return fields;
     }
@@ -201,14 +214,14 @@ public final class GpuRuntimeLifecycleFields {
         if (selection == null) {
             fields.putAll(backendSelectionFields(null));
             fields.putAll(deviceDiscoveryFields(null));
-            fields.put("runtime.selection.status", "not-recorded");
-            fields.put("runtime.selection.summary", "runtime backend/device selection was not recorded");
+            putRuntimeSelectionField(fields, "status", "not-recorded");
+            putRuntimeSelectionField(fields, "summary", "runtime backend/device selection was not recorded");
             return fields;
         }
         fields.putAll(backendSelectionFields(selection.backendSelection()));
-        fields.put("runtime.selection.status", selection.status());
-        fields.put("runtime.selection.summary", selection.summary());
-        fields.put("runtime.device.discovery.catalog.present", Boolean.toString(!selection.deviceDiscoveryCatalog().emptyCatalog()));
+        putRuntimeSelectionField(fields, "status", selection.status());
+        putRuntimeSelectionField(fields, "summary", selection.summary());
+        putRuntimeDeviceDiscoveryCatalogField(fields, "present", !selection.deviceDiscoveryCatalog().emptyCatalog());
         selection.deviceDiscoveryCatalog()
                 .forBackendSelection(selection.backendSelection())
                 .ifPresentOrElse(
@@ -222,20 +235,20 @@ public final class GpuRuntimeLifecycleFields {
     public static LinkedHashMap<String, String> moduleArtifactFields(GpuBackendModuleArtifact moduleArtifact) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (moduleArtifact == null) {
-            fields.put("runtime.module.present", "false");
+            putRuntimeModuleField(fields, "present", false);
             return fields;
         }
-        fields.put("runtime.module.present", "true");
-        fields.put("runtime.module.backendTarget", moduleArtifact.backendTarget().name());
-        fields.put("runtime.module.kind", moduleArtifact.kind());
-        fields.put("runtime.module.format", moduleArtifact.format());
-        fields.put("runtime.module.resource", normalize(moduleArtifact.resource(), "unknown"));
-        fields.put("runtime.module.artifactVersion", moduleArtifact.artifactVersion());
-        fields.put("runtime.module.lowererVersion", moduleArtifact.lowererVersion());
-        fields.put("runtime.module.sourceOrigin", moduleArtifact.sourceOrigin());
-        fields.put("runtime.module.runtimeLoadMode", moduleArtifact.runtimeLoadMode());
-        fields.put("runtime.module.sourceAvailable", Boolean.toString(moduleArtifact.sourceAvailable()));
-        fields.put("runtime.module.binaryAvailable", Boolean.toString(moduleArtifact.binaryAvailable()));
+        putRuntimeModuleField(fields, "present", true);
+        putRuntimeModuleField(fields, "backendTarget", moduleArtifact.backendTarget().name());
+        putRuntimeModuleField(fields, "kind", moduleArtifact.kind());
+        putRuntimeModuleField(fields, "format", moduleArtifact.format());
+        putRuntimeModuleField(fields, "resource", normalize(moduleArtifact.resource(), "unknown"));
+        putRuntimeModuleField(fields, "artifactVersion", moduleArtifact.artifactVersion());
+        putRuntimeModuleField(fields, "lowererVersion", moduleArtifact.lowererVersion());
+        putRuntimeModuleField(fields, "sourceOrigin", moduleArtifact.sourceOrigin());
+        putRuntimeModuleField(fields, "runtimeLoadMode", moduleArtifact.runtimeLoadMode());
+        putRuntimeModuleField(fields, "sourceAvailable", moduleArtifact.sourceAvailable());
+        putRuntimeModuleField(fields, "binaryAvailable", moduleArtifact.binaryAvailable());
         return fields;
     }
 
@@ -245,32 +258,32 @@ public final class GpuRuntimeLifecycleFields {
     ) {
         LinkedHashMap<String, String> fields = moduleArtifactFields(moduleArtifact);
         if (sourceSwitchingDecision == null) {
-            fields.put("runtime.backend.source.selection.present", "false");
-            fields.put("runtime.backend.source.status", "not-recorded");
-            fields.put("runtime.backend.source.decision", "not-recorded");
+            putRuntimeBackendSourceField(fields, "selection.present", false);
+            putRuntimeBackendSourceField(fields, "status", "not-recorded");
+            putRuntimeBackendSourceField(fields, "decision", "not-recorded");
             putStatus(fields, "source-selection-not-recorded");
             return fields;
         }
-        fields.put("runtime.backend.source.selection.present", "true");
-        fields.put("runtime.backend.source.status", sourceSwitchingDecision.status());
-        fields.put("runtime.backend.source.decision", sourceSwitchingDecision.decision());
-        fields.put("runtime.backend.source.selection", sourceSwitchingDecision.sourceSelection());
-        fields.put("runtime.backend.source.irgpuRequested", Boolean.toString(sourceSwitchingDecision.irGpuSourceRequested()));
-        fields.put("runtime.backend.source.ready", Boolean.toString(sourceSwitchingDecision.sourceReady()));
-        fields.put("runtime.backend.source.reconstructed", Boolean.toString(sourceSwitchingDecision.sourceReconstructed()));
-        fields.put("runtime.backend.source.available", Boolean.toString(sourceSwitchingDecision.sourceAvailable()));
-        fields.put("runtime.backend.source.parityChecked", Boolean.toString(sourceSwitchingDecision.sourceParityChecked()));
-        fields.put("runtime.backend.source.parityMatched", Boolean.toString(sourceSwitchingDecision.sourceParityMatched()));
-        fields.put("runtime.backend.source.promotionStatus", sourceSwitchingDecision.sourcePromotionStatus());
-        fields.put("runtime.backend.source.promotionReviewReady", Boolean.toString(sourceSwitchingDecision.sourcePromotionReviewReady()));
-        fields.put("runtime.backend.source.promotionFirstBlocker", sourceSwitchingDecision.sourcePromotionFirstBlocker());
-        fields.put("runtime.backend.source.productionProfileRequested", Boolean.toString(sourceSwitchingDecision.productionProfileRequested()));
-        fields.put("runtime.backend.source.productionSwitching", sourceSwitchingDecision.productionSourceSwitching());
-        fields.put("runtime.backend.source.productionSwitchingEnabled", Boolean.toString(sourceSwitchingDecision.productionSourceSwitchingEnabled()));
-        fields.put("runtime.backend.source.productionPromotionDecisionMode", sourceSwitchingDecision.productionPromotionDecisionMode());
-        fields.put("runtime.backend.source.productionPromotionOperatorAccepted", Boolean.toString(sourceSwitchingDecision.productionPromotionOperatorAccepted()));
-        fields.put("runtime.backend.source.runtimeLoadMode", sourceSwitchingDecision.runtimeLoadMode());
-        fields.put("runtime.backend.source.diagnostic", sourceSwitchingDecision.diagnostic());
+        putRuntimeBackendSourceField(fields, "selection.present", true);
+        putRuntimeBackendSourceField(fields, "status", sourceSwitchingDecision.status());
+        putRuntimeBackendSourceField(fields, "decision", sourceSwitchingDecision.decision());
+        putRuntimeBackendSourceField(fields, "selection", sourceSwitchingDecision.sourceSelection());
+        putRuntimeBackendSourceField(fields, "irgpuRequested", sourceSwitchingDecision.irGpuSourceRequested());
+        putRuntimeBackendSourceField(fields, "ready", sourceSwitchingDecision.sourceReady());
+        putRuntimeBackendSourceField(fields, "reconstructed", sourceSwitchingDecision.sourceReconstructed());
+        putRuntimeBackendSourceField(fields, "available", sourceSwitchingDecision.sourceAvailable());
+        putRuntimeBackendSourceField(fields, "parityChecked", sourceSwitchingDecision.sourceParityChecked());
+        putRuntimeBackendSourceField(fields, "parityMatched", sourceSwitchingDecision.sourceParityMatched());
+        putRuntimeBackendSourceField(fields, "promotionStatus", sourceSwitchingDecision.sourcePromotionStatus());
+        putRuntimeBackendSourceField(fields, "promotionReviewReady", sourceSwitchingDecision.sourcePromotionReviewReady());
+        putRuntimeBackendSourceField(fields, "promotionFirstBlocker", sourceSwitchingDecision.sourcePromotionFirstBlocker());
+        putRuntimeBackendSourceField(fields, "productionProfileRequested", sourceSwitchingDecision.productionProfileRequested());
+        putRuntimeBackendSourceField(fields, "productionSwitching", sourceSwitchingDecision.productionSourceSwitching());
+        putRuntimeBackendSourceField(fields, "productionSwitchingEnabled", sourceSwitchingDecision.productionSourceSwitchingEnabled());
+        putRuntimeBackendSourceField(fields, "productionPromotionDecisionMode", sourceSwitchingDecision.productionPromotionDecisionMode());
+        putRuntimeBackendSourceField(fields, "productionPromotionOperatorAccepted", sourceSwitchingDecision.productionPromotionOperatorAccepted());
+        putRuntimeBackendSourceField(fields, "runtimeLoadMode", sourceSwitchingDecision.runtimeLoadMode());
+        putRuntimeBackendSourceField(fields, "diagnostic", sourceSwitchingDecision.diagnostic());
         putStatus(fields, sourceSwitchingDecision.status());
         return fields;
     }
@@ -278,22 +291,70 @@ public final class GpuRuntimeLifecycleFields {
     public static LinkedHashMap<String, String> executionConfigFields(GpuExecutionConfig executionConfig) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (executionConfig == null) {
-            fields.put("runtime.work.present", "false");
+            putRuntimeWorkField(fields, "present", false);
             return fields;
         }
-        fields.put("runtime.work.present", "true");
-        fields.put("runtime.work.dimensions", Integer.toString(executionConfig.dimensions()));
-        fields.put("runtime.work.globalShape", executionConfig.globalShape());
-        fields.put("runtime.work.localShape", executionConfig.localShape());
-        fields.put("runtime.work.globalX", Long.toString(executionConfig.globalX()));
-        fields.put("runtime.work.globalY", Long.toString(executionConfig.globalY()));
-        fields.put("runtime.work.globalZ", Long.toString(executionConfig.globalZ()));
-        fields.put("runtime.work.localX", Long.toString(executionConfig.localX()));
-        fields.put("runtime.work.localY", Long.toString(executionConfig.localY()));
-        fields.put("runtime.work.localZ", Long.toString(executionConfig.localZ()));
-        fields.put("runtime.work.globalItemCount", Long.toString(executionConfig.globalItemCount()));
-        fields.put("runtime.work.localItemCount", Long.toString(executionConfig.localItemCount()));
-        fields.put("runtime.work.explicitLocal", Boolean.toString(executionConfig.hasExplicitLocalSize()));
+        putRuntimeWorkField(fields, "present", true);
+        putRuntimeWorkField(fields, "dimensions", executionConfig.dimensions());
+        putRuntimeWorkField(fields, "globalShape", executionConfig.globalShape());
+        putRuntimeWorkField(fields, "localShape", executionConfig.localShape());
+        putRuntimeWorkField(fields, "globalX", executionConfig.globalX());
+        putRuntimeWorkField(fields, "globalY", executionConfig.globalY());
+        putRuntimeWorkField(fields, "globalZ", executionConfig.globalZ());
+        putRuntimeWorkField(fields, "localX", executionConfig.localX());
+        putRuntimeWorkField(fields, "localY", executionConfig.localY());
+        putRuntimeWorkField(fields, "localZ", executionConfig.localZ());
+        putRuntimeWorkField(fields, "globalItemCount", executionConfig.globalItemCount());
+        putRuntimeWorkField(fields, "localItemCount", executionConfig.localItemCount());
+        putRuntimeWorkField(fields, "explicitLocal", executionConfig.hasExplicitLocalSize());
+        return fields;
+    }
+
+    public static LinkedHashMap<String, String> invocationBindingFields(
+            GpuRuntimeInvocationBindingSummary bindingSummary
+    ) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        if (bindingSummary == null) {
+            putRuntimeInvocationBindingField(fields, "present", false);
+            return fields;
+        }
+        fields.putAll(bindingSummary.artifactFields("runtime.invocation.binding"));
+        return fields;
+    }
+
+    public static LinkedHashMap<String, String> artifactDumpSummaryFields(
+            GpuRuntimeArtifactDumpSummary dumpSummary
+    ) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        if (dumpSummary == null) {
+            putRuntimeArtifactDumpField(fields, "present", false);
+            return fields;
+        }
+        fields.putAll(dumpSummary.artifactFields("runtime.artifactDump"));
+        return fields;
+    }
+
+    public static LinkedHashMap<String, String> backendCompilationSummaryFields(
+            GpuRuntimeBackendCompilationSummary compilationSummary
+    ) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        if (compilationSummary == null) {
+            putRuntimeCompilationField(fields, "present", false);
+            return fields;
+        }
+        fields.putAll(compilationSummary.artifactFields("runtime.compilation"));
+        return fields;
+    }
+
+    public static LinkedHashMap<String, String> backendRuntimeStateFields(
+            GpuRuntimeBackendStateSummary stateSummary
+    ) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        if (stateSummary == null) {
+            putRuntimeBackendStateField(fields, "present", false);
+            return fields;
+        }
+        fields.putAll(stateSummary.artifactFields("runtime.backend.state"));
         return fields;
     }
 
@@ -307,25 +368,152 @@ public final class GpuRuntimeLifecycleFields {
             long sessionCreationCount,
             long deviceBufferCreationCount
     ) {
+        return backendRuntimeStateFields(new GpuRuntimeBackendStateSummary(
+                cacheMode,
+                compiledKernelCount,
+                nativeBufferCount,
+                invocationCount,
+                compileCount,
+                compileCacheHitCount,
+                sessionCreationCount,
+                deviceBufferCreationCount
+        ));
+    }
+
+    public static LinkedHashMap<String, String> runtimeStateEventFields(
+            GpuRuntimeBackendStateSummary stateSummary,
+            String status,
+            RuntimeException failure
+    ) {
+        return runtimeStateEventFields(backendRuntimeStateFields(stateSummary), status, failure);
+    }
+
+    public static LinkedHashMap<String, String> runtimeStateEventFields(
+            Map<String, String> backendRuntimeStateFields,
+            String status,
+            RuntimeException failure
+    ) {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
-        fields.put("runtime.backend.cache.mode", normalize(cacheMode, "unknown"));
-        fields.put("runtime.backend.cache.compiledKernel.count", Long.toString(normalizeCounter(compiledKernelCount)));
-        fields.put("runtime.backend.cache.compileHit.count", Long.toString(normalizeCounter(compileCacheHitCount)));
-        fields.put("runtime.backend.compile.count", Long.toString(normalizeCounter(compileCount)));
-        fields.put("runtime.backend.invocation.count", Long.toString(normalizeCounter(invocationCount)));
-        fields.put("runtime.backend.session.creation.count", Long.toString(normalizeCounter(sessionCreationCount)));
-        fields.put("runtime.backend.buffer.native.count", Long.toString(normalizeCounter(nativeBufferCount)));
-        fields.put("runtime.backend.buffer.device.creation.count", Long.toString(normalizeCounter(deviceBufferCreationCount)));
+        if (backendRuntimeStateFields != null) {
+            fields.putAll(backendRuntimeStateFields);
+        }
+        putStatus(fields, status);
+        putFailureFields(fields, failure);
+        return fields;
+    }
+
+    public static LinkedHashMap<String, String> backendCompilationFields(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            Map<String, String> backendRuntimeStateFields,
+            String status,
+            String cacheKey,
+            RuntimeException failure
+    ) {
+        return backendCompilationFields(
+                compileRequest,
+                moduleArtifact,
+                artifactSnapshot,
+                backendRuntimeStateFields,
+                null,
+                status,
+                cacheKey,
+                failure
+        );
+    }
+
+    public static LinkedHashMap<String, String> backendCompilationFields(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            Map<String, String> backendRuntimeStateFields,
+            GpuRuntimeBackendCompilationSummary compilationSummary,
+            String status,
+            String cacheKey,
+            RuntimeException failure
+    ) {
+        LinkedHashMap<String, String> fields = compileRequestFields(compileRequest);
+        if (backendRuntimeStateFields != null) {
+            fields.putAll(backendRuntimeStateFields);
+        }
+        fields.putAll(backendCompilationSummaryFields(compilationSummary));
+        putStatus(fields, status);
+        putCacheKey(fields, cacheKey);
+        putAllMissing(fields, moduleArtifactFields(moduleArtifact));
+        putAllMissing(fields, artifactSnapshotFields(artifactSnapshot));
+        putFailureFields(fields, failure);
+        return fields;
+    }
+
+    public static LinkedHashMap<String, String> invocationFields(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            Map<String, String> backendRuntimeStateFields,
+            GpuExecutionConfig executionConfig,
+            String status,
+            String cacheKey,
+            RuntimeException failure
+    ) {
+        return invocationFields(
+                artifactSnapshot,
+                backendRuntimeStateFields,
+                executionConfig,
+                null,
+                status,
+                cacheKey,
+                failure
+        );
+    }
+
+    public static LinkedHashMap<String, String> invocationFields(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            Map<String, String> backendRuntimeStateFields,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeInvocationBindingSummary bindingSummary,
+            String status,
+            String cacheKey,
+            RuntimeException failure
+    ) {
+        LinkedHashMap<String, String> fields = artifactSnapshotFields(artifactSnapshot);
+        if (backendRuntimeStateFields != null) {
+            fields.putAll(backendRuntimeStateFields);
+        }
+        fields.putAll(executionConfigFields(executionConfig));
+        fields.putAll(invocationBindingFields(bindingSummary));
+        putStatus(fields, status);
+        putCacheKey(fields, cacheKey);
+        putFailureFields(fields, failure);
+        return fields;
+    }
+
+    public static LinkedHashMap<String, String> artifactDumpFields(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            String status,
+            RuntimeException failure
+    ) {
+        return artifactDumpFields(artifactSnapshot, null, status, failure);
+    }
+
+    public static LinkedHashMap<String, String> artifactDumpFields(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            GpuRuntimeArtifactDumpSummary dumpSummary,
+            String status,
+            RuntimeException failure
+    ) {
+        LinkedHashMap<String, String> fields = artifactSnapshotFields(artifactSnapshot);
+        fields.putAll(artifactDumpSummaryFields(dumpSummary));
+        putStatus(fields, status);
+        putFailureFields(fields, failure);
         return fields;
     }
 
     public static void putStatus(LinkedHashMap<String, String> fields, String status) {
-        fields.put("runtime.status", normalize(status, "unknown"));
+        putRuntimeField(fields, "runtime", "status", normalize(status, "unknown"));
     }
 
     public static void putCacheKey(LinkedHashMap<String, String> fields, String cacheKey) {
         if (cacheKey != null && !cacheKey.isBlank()) {
-            fields.put("runtime.cache.key", cacheKey);
+            putRuntimeField(fields, "runtime.cache", "key", cacheKey);
         }
     }
 
@@ -333,8 +521,43 @@ public final class GpuRuntimeLifecycleFields {
         if (failure == null) {
             return;
         }
-        fields.put("runtime.failure.type", failure.getClass().getName());
-        fields.put("runtime.failure.message", normalize(failure.getMessage(), ""));
+        fields.putAll(failureFields(failure));
+    }
+
+    public static LinkedHashMap<String, String> failureFields(Throwable failure) {
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        if (failure == null) {
+            return fields;
+        }
+        GpuRuntimeFailurePhase phase = failurePhase(failure);
+        putRuntimeFailureField(fields, "present", true);
+        putRuntimeFailureField(fields, "type", failure.getClass().getName());
+        putRuntimeFailureField(fields, "simpleType", failure.getClass().getSimpleName());
+        putRuntimeFailureField(fields, "message", normalize(failure.getMessage(), ""));
+        putRuntimeFailureField(fields, "phase", phase.name());
+        putRuntimeFailureField(fields, "category", failureCategory(phase));
+        putRuntimeFailureField(fields, "code", failureCode(failure));
+        putRuntimeFailureField(fields, "summary", failureSummary(failure));
+        putRuntimeFailureField(fields, "catchable", failure instanceof GpuRuntimeException);
+        putRuntimeFailureField(fields, "suppressed.count", failure.getSuppressed().length);
+        Throwable cause = failure.getCause();
+        if (cause != null) {
+            putRuntimeFailureCauseField(fields, "type", cause.getClass().getName());
+            putRuntimeFailureCauseField(fields, "simpleType", cause.getClass().getSimpleName());
+            putRuntimeFailureCauseField(fields, "message", normalize(cause.getMessage(), ""));
+        }
+        if (failure instanceof GpuRuntimeException runtimeFailure) {
+            putRuntimeFailureField(fields, "diagnostic.present", true);
+            putRuntimeFailureField(fields, "help.count", runtimeFailure.helpMessages().size());
+            for (int index = 0; index < runtimeFailure.helpMessages().size(); index++) {
+                putRuntimeFailureHelpField(fields, Integer.toString(index), runtimeFailure.helpMessages().get(index));
+            }
+            fields.putAll(runtimeFailure.context().artifactFields("runtime.failure.context"));
+        } else {
+            putRuntimeFailureField(fields, "diagnostic.present", false);
+            putRuntimeFailureField(fields, "help.count", 0);
+        }
+        return fields;
     }
 
     public static void putAllMissing(LinkedHashMap<String, String> fields, Map<String, String> additions) {
@@ -344,16 +567,205 @@ public final class GpuRuntimeLifecycleFields {
         additions.forEach(fields::putIfAbsent);
     }
 
+    private static void putRuntimeBackendField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend", key, value);
+    }
+
+    private static void putRuntimeBackendSelectionField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.selection", key, value);
+    }
+
+    private static void putRuntimeBackendAdapterField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.adapter", key, value);
+    }
+
+    private static void putRuntimeBackendLowererField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.lowerer", key, value);
+    }
+
+    private static void putRuntimeDeviceField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.device", key, value);
+    }
+
+    private static void putRuntimeDeviceDiscoveryField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.device.discovery", key, value);
+    }
+
+    private static void putRuntimeDeviceDiscoveryCatalogField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.device.discovery.catalog", key, value);
+    }
+
+    private static void putRuntimeSelectionField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.selection", key, value);
+    }
+
+    private static void putRuntimeArtifactSnapshotField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.artifact.snapshot", key, value);
+    }
+
+    private static void putRuntimeArtifactDumpField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.artifactDump", key, value);
+    }
+
+    private static void putRuntimeIrGpuField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.irgpu", key, value);
+    }
+
+    private static void putRuntimeIrField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.ir", key, value);
+    }
+
+    private static void putRuntimeIrSelectionField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.ir.selection", key, value);
+    }
+
+    private static void putRuntimeIrProductionGateField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.ir.productionGate", key, value);
+    }
+
+    private static void putRuntimeIrProductionMutationField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.ir.productionMutation", key, value);
+    }
+
+    private static void putRuntimeFallbackField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.fallback", key, value);
+    }
+
+    private static void putRuntimeFallbackDiagnosticField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.fallback.diagnostic", key, value);
+    }
+
+    private static void putRuntimeBinaryArtifactField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.binaryArtifact", key, value);
+    }
+
+    private static void putRuntimeValidationEvidenceField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.validationEvidence", key, value);
+    }
+
+    private static void putRuntimeModuleField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.module", key, value);
+    }
+
+    private static void putRuntimeBackendSourceField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.source", key, value);
+    }
+
+    private static void putRuntimeWorkField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.work", key, value);
+    }
+
+    private static void putRuntimeInvocationBindingField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.invocation.binding", key, value);
+    }
+
+    private static void putRuntimeBackendCacheField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.cache", key, value);
+    }
+
+    private static void putRuntimeBackendStateField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.state", key, value);
+    }
+
+    private static void putRuntimeBackendCompileField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.compile", key, value);
+    }
+
+    private static void putRuntimeBackendInvocationField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.backend.invocation", key, value);
+    }
+
+    private static void putRuntimeBackendSessionField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.session", key, value);
+    }
+
+    private static void putRuntimeBackendBufferField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.backend.buffer", key, value);
+    }
+
+    private static void putRuntimeFailureField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.failure", key, value);
+    }
+
+    private static void putRuntimeFailureCauseField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.failure.cause", key, value);
+    }
+
+    private static void putRuntimeFailureHelpField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.failure.help", key, value);
+    }
+
+    private static void putRuntimeKernelField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.kernel", key, value);
+    }
+
+    private static void putRuntimeCompileField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.compile", key, value);
+    }
+
+    private static void putRuntimeCompilationField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.compilation", key, value);
+    }
+
+    private static void putRuntimeCompileBackendOptionField(
+            LinkedHashMap<String, String> fields,
+            String key,
+            Object value
+    ) {
+        putRuntimeField(fields, "runtime.compile.backendOption", key, value);
+    }
+
+    private static void putRuntimeDeviceCudaField(LinkedHashMap<String, String> fields, String key, Object value) {
+        putRuntimeField(fields, "runtime.device.cuda", key, value);
+    }
+
+    private static void putRuntimeField(
+            LinkedHashMap<String, String> fields,
+            String portablePrefix,
+            String key,
+            Object value
+    ) {
+        GpuRuntimeArtifactProperties.putPortable(fields, portablePrefix, key, value);
+    }
+
     private static void putKernelFields(LinkedHashMap<String, String> fields, GpuKernelDescriptor descriptor) {
         if (descriptor == null) {
-            fields.put("runtime.kernel.name", "unknown");
-            fields.put("runtime.kernel.resource", "unknown");
-            fields.put("runtime.kernel.irgpuResource", "unknown");
+            putRuntimeKernelField(fields, "name", "unknown");
+            putRuntimeKernelField(fields, "resource", "unknown");
+            putRuntimeKernelField(fields, "irgpuResource", "unknown");
             return;
         }
-        fields.put("runtime.kernel.name", normalize(descriptor.kernelName(), "unknown"));
-        fields.put("runtime.kernel.resource", normalize(descriptor.kernelResource(), "unknown"));
-        fields.put("runtime.kernel.irgpuResource", normalize(descriptor.irGpuResource(), "unknown"));
+        putRuntimeKernelField(fields, "name", normalize(descriptor.kernelName(), "unknown"));
+        putRuntimeKernelField(fields, "resource", normalize(descriptor.kernelResource(), "unknown"));
+        putRuntimeKernelField(fields, "irgpuResource", normalize(descriptor.irGpuResource(), "unknown"));
     }
 
     private static void putCompileOptionsFields(
@@ -363,15 +775,13 @@ public final class GpuRuntimeLifecycleFields {
         GpuRuntimeCompileOptions options = compileOptions == null
                 ? GpuRuntimeCompileOptions.defaults(null)
                 : compileOptions;
-        fields.put("runtime.backend.target", options.backendTarget().name());
-        fields.put("runtime.compile.optimizationProfile", options.optimizationProfile());
-        fields.put("runtime.compile.arg.count", Integer.toString(options.compileArgs().size()));
-        fields.put("runtime.compile.backendOption.flag.count", Integer.toString(options.backendOptions().flags().size()));
-        fields.put("runtime.compile.backendOption.property.count", Integer.toString(
-                options.backendOptions().stableProperties().size()
-        ));
-        fields.put("runtime.compile.deviceOverride", options.deviceOverride().describe());
-        fields.put("runtime.compile.devicePreference", options.devicePreference().describe());
+        putRuntimeBackendField(fields, "target", options.backendTarget().name());
+        putRuntimeCompileField(fields, "optimizationProfile", options.optimizationProfile());
+        putRuntimeCompileField(fields, "arg.count", options.compileArgs().size());
+        putRuntimeCompileBackendOptionField(fields, "flag.count", options.backendOptions().flags().size());
+        putRuntimeCompileBackendOptionField(fields, "property.count", options.backendOptions().stableProperties().size());
+        putRuntimeCompileField(fields, "deviceOverride", options.deviceOverride().describe());
+        putRuntimeCompileField(fields, "devicePreference", options.devicePreference().describe());
     }
 
     private static void putDeviceProfileFields(
@@ -381,28 +791,28 @@ public final class GpuRuntimeLifecycleFields {
         GpuRuntimeDeviceProfile profile = deviceProfile == null
                 ? GpuRuntimeDeviceProfile.generic(null, "unknown")
                 : deviceProfile;
-        fields.put("runtime.backend.target", profile.backendTarget().name());
-        fields.put("runtime.backend.name", profile.backendName());
-        fields.put("runtime.device.id", profile.deviceId());
-        fields.put("runtime.device.label", profile.deviceLabel());
-        fields.put("runtime.device.vendor", profile.vendor());
-        fields.put("runtime.device.class", profile.deviceClass().name());
-        fields.put("runtime.device.driverVersion", profile.driverVersion());
-        fields.put("runtime.device.apiVersionText", profile.apiVersionText());
-        fields.put("runtime.device.platformName", profile.platformName());
-        fields.put("runtime.device.platformVersion", profile.platformVersion());
-        fields.put("runtime.device.computeUnits", Long.toString(profile.computeUnits()));
-        fields.put("runtime.device.globalMemoryBytes", Long.toString(profile.globalMemoryBytes()));
-        fields.put("runtime.device.localMemoryBytes", Long.toString(profile.localMemoryBytes()));
-        fields.put("runtime.device.maxWorkGroupSize", Long.toString(profile.maxWorkGroupSize()));
-        fields.put("runtime.device.preferredVectorWidthFloat", Long.toString(profile.preferredVectorWidthFloat()));
-        fields.put("runtime.device.unifiedMemory", Boolean.toString(profile.unifiedMemory()));
-        fields.put("runtime.device.supportsDoublePrecision", Boolean.toString(profile.supportsDoublePrecision()));
-        fields.put("runtime.device.supportsImages", Boolean.toString(profile.supportsImages()));
-        fields.put("runtime.device.supportsSubgroups", Boolean.toString(profile.supportsSubgroups()));
+        putRuntimeBackendField(fields, "target", profile.backendTarget().name());
+        putRuntimeBackendField(fields, "name", profile.backendName());
+        putRuntimeDeviceField(fields, "id", profile.deviceId());
+        putRuntimeDeviceField(fields, "label", profile.deviceLabel());
+        putRuntimeDeviceField(fields, "vendor", profile.vendor());
+        putRuntimeDeviceField(fields, "class", profile.deviceClass().name());
+        putRuntimeDeviceField(fields, "driverVersion", profile.driverVersion());
+        putRuntimeDeviceField(fields, "apiVersionText", profile.apiVersionText());
+        putRuntimeDeviceField(fields, "platformName", profile.platformName());
+        putRuntimeDeviceField(fields, "platformVersion", profile.platformVersion());
+        putRuntimeDeviceField(fields, "computeUnits", profile.computeUnits());
+        putRuntimeDeviceField(fields, "globalMemoryBytes", profile.globalMemoryBytes());
+        putRuntimeDeviceField(fields, "localMemoryBytes", profile.localMemoryBytes());
+        putRuntimeDeviceField(fields, "maxWorkGroupSize", profile.maxWorkGroupSize());
+        putRuntimeDeviceField(fields, "preferredVectorWidthFloat", profile.preferredVectorWidthFloat());
+        putRuntimeDeviceField(fields, "unifiedMemory", profile.unifiedMemory());
+        putRuntimeDeviceField(fields, "supportsDoublePrecision", profile.supportsDoublePrecision());
+        putRuntimeDeviceField(fields, "supportsImages", profile.supportsImages());
+        putRuntimeDeviceField(fields, "supportsSubgroups", profile.supportsSubgroups());
         if (profile.backendTarget() == GpuBackendTarget.CUDA) {
-            fields.put("runtime.device.cuda.runtimeVersion", profile.cudaRuntimeVersion());
-            fields.put("runtime.device.cuda.computeCapability", profile.cudaComputeCapability());
+            putRuntimeDeviceCudaField(fields, "runtimeVersion", profile.cudaRuntimeVersion());
+            putRuntimeDeviceCudaField(fields, "computeCapability", profile.cudaComputeCapability());
         }
     }
 
@@ -410,7 +820,36 @@ public final class GpuRuntimeLifecycleFields {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private static long normalizeCounter(long value) {
-        return value < 0L ? 0L : value;
+    private static GpuRuntimeFailurePhase failurePhase(Throwable failure) {
+        if (failure instanceof GpuRuntimeException runtimeFailure) {
+            return runtimeFailure.phase();
+        }
+        if (failure instanceof IllegalArgumentException) {
+            return GpuRuntimeFailurePhase.COMPILE_OPTIONS;
+        }
+        if (failure instanceof UnsupportedOperationException) {
+            return GpuRuntimeFailurePhase.BACKEND_INITIALIZATION;
+        }
+        return GpuRuntimeFailurePhase.RUNTIME_SETUP;
     }
+
+    private static String failureCategory(GpuRuntimeFailurePhase phase) {
+        GpuRuntimeFailurePhase resolvedPhase = phase == null ? GpuRuntimeFailurePhase.RUNTIME_SETUP : phase;
+        return resolvedPhase.name().toLowerCase(Locale.ROOT).replace('_', '-');
+    }
+
+    private static String failureCode(Throwable failure) {
+        if (failure instanceof GpuRuntimeException runtimeFailure) {
+            return runtimeFailure.code();
+        }
+        return "JTG-RUNTIME-UNCLASSIFIED";
+    }
+
+    private static String failureSummary(Throwable failure) {
+        if (failure instanceof GpuRuntimeException runtimeFailure) {
+            return runtimeFailure.summary();
+        }
+        return normalize(failure.getMessage(), failure.getClass().getSimpleName());
+    }
+
 }

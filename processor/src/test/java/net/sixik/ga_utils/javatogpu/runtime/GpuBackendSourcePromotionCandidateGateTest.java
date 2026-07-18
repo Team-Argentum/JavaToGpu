@@ -25,6 +25,9 @@ class GpuBackendSourcePromotionCandidateGateTest {
         assertTrue(gate.blockers().isEmpty());
         assertTrue(gate.toPropertiesText().contains("defaultProductionSourceSwitching=disabled"));
         assertTrue(gate.toPropertiesText().contains("candidateProductionSourceSwitching=review-ready"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.candidateGate.status=review-ready"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.candidateGate.candidateReady.all=true"));
+        assertTrue(gate.toPropertiesText().contains("kernel.0.runtime.production.candidateGate.resource=kernel-a.cl"));
     }
 
     @Test

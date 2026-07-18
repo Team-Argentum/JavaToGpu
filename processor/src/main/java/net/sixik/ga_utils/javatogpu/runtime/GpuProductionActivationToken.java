@@ -92,21 +92,21 @@ public final class GpuProductionActivationToken {
         if (!blockers.isEmpty()) {
             throw new IllegalStateException("Controlled activation gate cannot issue a token: " + blockers.get(0));
         }
-        int kernelCount = parseInt(properties.getProperty("kernel.count"), 0);
+        int kernelCount = parseInt(activationGateProperty(properties, "kernel.count"), 0);
         ArrayList<String> kernelResources = new ArrayList<>();
         for (int index = 0; index < kernelCount; index++) {
-            kernelResources.add(properties.getProperty("kernel." + index + ".resource"));
+            kernelResources.add(activationGateKernelProperty(properties, index, "resource"));
         }
         return new GpuProductionActivationToken(
                 "activation:" + actualSha256.substring(0, 16),
                 actualSha256,
-                properties.getProperty("manifest.approval.id"),
-                properties.getProperty("manifest.candidateGitSha"),
-                parseBackendTarget(properties.getProperty("backendTarget")),
-                properties.getProperty("deviceVendor"),
-                properties.getProperty("deviceLabel"),
-                properties.getProperty("driverVersion"),
-                properties.getProperty("activationScope"),
+                activationGateProperty(properties, "manifest.approval.id"),
+                activationGateProperty(properties, "manifest.candidateGitSha"),
+                parseBackendTarget(activationGateProperty(properties, "backendTarget")),
+                activationGateProperty(properties, "deviceVendor"),
+                activationGateProperty(properties, "deviceLabel"),
+                activationGateProperty(properties, "driverVersion"),
+                activationGateProperty(properties, "activationScope"),
                 kernelResources
         );
     }
@@ -277,27 +277,26 @@ public final class GpuProductionActivationToken {
         requireNonBlank(blockers, properties, "deviceVendor", "activation-artifact-device-vendor-missing");
         requireNonBlank(blockers, properties, "deviceLabel", "activation-artifact-device-label-missing");
         requireNonBlank(blockers, properties, "driverVersion", "activation-artifact-driver-version-missing");
-        if (!normalize(properties.getProperty("manifest.candidateGitSha"), "unknown")
+        if (!normalize(activationGateProperty(properties, "manifest.candidateGitSha"), "unknown")
                 .matches("[0-9a-fA-F]{40,64}")) {
             blockers.add("activation-artifact-candidate-git-sha-invalid");
         }
-        if (parseInt(properties.getProperty("blocker.count"), -1) != 0) {
+        if (parseInt(activationGateProperty(properties, "blocker.count"), -1) != 0) {
             blockers.add("activation-artifact-has-blockers");
         }
-        int kernelCount = parseInt(properties.getProperty("kernel.count"), 0);
+        int kernelCount = parseInt(activationGateProperty(properties, "kernel.count"), 0);
         if (kernelCount <= 0) {
             blockers.add("activation-artifact-kernels-missing");
         }
         LinkedHashSet<String> resources = new LinkedHashSet<>();
         for (int index = 0; index < kernelCount; index++) {
-            String prefix = "kernel." + index + ".";
-            String resource = properties.getProperty(prefix + "resource", "");
+            String resource = activationGateKernelProperty(properties, index, "resource");
             if (resource.isBlank()) {
                 blockers.add("activation-artifact-kernel-resource-missing-" + index);
             } else if (!resources.add(resource)) {
                 blockers.add("activation-artifact-kernel-resource-duplicate-" + index);
             }
-            if (!Boolean.parseBoolean(properties.getProperty(prefix + "activationReady"))) {
+            if (!Boolean.parseBoolean(activationGateKernelProperty(properties, index, "activationReady"))) {
                 blockers.add("activation-artifact-kernel-not-ready-" + index);
             }
         }
@@ -311,22 +310,43 @@ public final class GpuProductionActivationToken {
             String expected,
             String blocker
     ) {
-        if (!expected.equals(properties.getProperty(key))) {
+        if (!expected.equals(activationGateProperty(properties, key))) {
             blockers.add(blocker);
         }
     }
 
     private static void requireTrue(List<String> blockers, Properties properties, String key, String blocker) {
-        if (!Boolean.parseBoolean(properties.getProperty(key))) {
+        if (!Boolean.parseBoolean(activationGateProperty(properties, key))) {
             blockers.add(blocker);
         }
     }
 
     private static void requireNonBlank(List<String> blockers, Properties properties, String key, String blocker) {
-        String value = properties.getProperty(key);
+        String value = activationGateProperty(properties, key);
         if (value == null || value.isBlank() || "unknown".equals(value) || "missing".equals(value)) {
             blockers.add(blocker);
         }
+    }
+
+    private static String activationGateProperty(Properties properties, String key) {
+        String portableKey = switch (key) {
+            case "activationReady" -> "runtime.production.activationGate.ready";
+            case "activationScope" -> "runtime.production.activationGate.scope";
+            case "manifest.approval.id" -> "runtime.production.activationGate.approvalId";
+            case "manifest.candidateGitSha" -> "runtime.production.activationGate.candidateGitSha";
+            default -> "runtime.production.activationGate." + key;
+        };
+        return GpuRuntimeArtifactProperties.first(properties, "", portableKey, key);
+    }
+
+    private static String activationGateKernelProperty(Properties properties, int index, String key) {
+        String legacyKey = "kernel." + index + "." + key;
+        String portableSuffix = switch (key) {
+            case "activationReady" -> "ready";
+            default -> key;
+        };
+        String portableKey = "kernel." + index + ".runtime.production.activationGate." + portableSuffix;
+        return GpuRuntimeArtifactProperties.first(properties, "", portableKey, legacyKey);
     }
 
     private static int parseInt(String value, int fallback) {

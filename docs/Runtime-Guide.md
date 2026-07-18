@@ -396,7 +396,20 @@ CUDA/Vulkan/Metal traces can use the same parser later.
 Compile, invocation, and shutdown events also expose portable backend runtime-state fields such as
 `runtime.backend.cache.mode`, `runtime.backend.cache.compiledKernel.count`,
 `runtime.backend.cache.compileHit.count`, `runtime.backend.compile.count`,
-`runtime.backend.invocation.count`, and `runtime.backend.buffer.native.count`.
+`runtime.backend.invocation.count`, and `runtime.backend.buffer.native.count`. Events with typed backend-state
+payloads also include `runtime.backend.state.present=true`, which lets journal consumers distinguish explicit runtime
+state from older ad-hoc counter maps. Backend-compilation events carry a
+`runtime.compilation.*` result summary for cache-key presence, module presence/format, compile-log presence,
+binary-artifact count, and validation-evidence count. Invocation events also carry a
+backend-neutral binding summary under `runtime.invocation.binding.*`: buffer, local, scalar, and total argument binding
+counts are available as `runtime.invocation.binding.buffer.count`, `runtime.invocation.binding.local.count`,
+`runtime.invocation.binding.scalar.count`, and `runtime.invocation.binding.argument.count`. Artifact-dump events expose
+`runtime.artifactDump.*` fields so journals can tell how many output directories were planned and how many text,
+binary, and source-location artifacts were written after a successful dump.
+Runtime IR selection and production-mutation safety use portable `runtime.ir.*` fields. Prefer
+`runtime.ir.selectedStage`, `runtime.ir.fallbackDecision`, `runtime.ir.productionGate.status`,
+`runtime.ir.productionMutation.enabled`, `runtime.ir.productionMutation.productionGateStatus`, and
+`runtime.ir.productionMutation.diagnostic` over older `runtimeProductionMutationSafety.*` report fields.
 Backend source-selection events expose the same backend-neutral shape through `runtime.backend.source.*` fields.
 The most useful fields for logs are `runtime.backend.source.status`, `runtime.backend.source.decision`,
 `runtime.backend.source.selection`, `runtime.backend.source.available`,
@@ -408,10 +421,23 @@ Backend/device selection lifecycle events use the same vocabulary: `runtime.sele
 whether a backend and concrete device were chosen before backend compilation begins.
 Automatic backend/device preflight events use the same descriptor/options/work vocabulary and add
 `runtime.backendDevicePreflight.*` plus `runtime.failure.*` when the scoped preflight backend fails.
+The failure block keeps `runtime.failure.type` and `runtime.failure.message` for older tooling, then adds stable
+`runtime.failure.code`, `runtime.failure.phase`, `runtime.failure.category`, `runtime.failure.summary`,
+`runtime.failure.catchable`, `runtime.failure.cause.*`, and `runtime.failure.context.*` facts for structured runtime
+exceptions.
 Backend adapter artifact fields also include portable `runtime.backend.adapter.*` and `runtime.backend.lowerer.*` keys,
 so OpenCL, CUDA inventory-only, and planned adapters can be rendered by the same diagnostics tooling.
+Production candidate gates and manual promotion manifest artifacts mirror their evidence under
+`runtime.production.candidateGate.*` and `runtime.production.manifest.*`; the manifest, activation-gate, and validation
+report readers consume those portable keys first and keep the older unprefixed / `binding.*` / `authorization.*` keys as
+compatibility mirrors only.
 Backend selection, device discovery, and combined runtime-selection artifact maps include the same portable fields,
 while their older prefixed keys remain available for compatibility.
+Backend compile, invocation, runtime-state, and artifact-dump events use the same shared field composer, so logs can
+follow `runtime.cache.key`, `runtime.module.*`, `runtime.work.*`, `runtime.backend.cache.*`,
+`runtime.backend.compile.*`, `runtime.backend.invocation.*`, `runtime.compilation.*`,
+`runtime.invocation.binding.*`, `runtime.artifactDump.*`, and `runtime.backend.state.*` across OpenCL now and future
+execution adapters later.
 Lifecycle event reports keep the indexed `field.N.key/value` representation, but also copy any `runtime.*` event field
 to a direct `runtimeLifecycle.event.runtime.*` property so journals can be queried without unpacking the indexed list.
 
@@ -553,8 +579,16 @@ method-test probe kernels. Use `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDi
 directory and `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap the number of warmed devices.
 The same runnable also enables lifecycle output through services: a full `runtime-lifecycle.jsonl` journal and a compact
 `opencl-evidence-selection.trace` are written next to the evidence cache by default, and the console prints only the
-`warmAndSelectOpenCl(...)` trace lines. Use `-Pjavatogpu.lifecycleJournalFile=...`,
+`warmAndSelectOpenCl(...)` trace lines. The compact example trace includes a `summary=` segment when backend-state,
+compilation, invocation-binding, or artifact-dump portable fields are present, so users can inspect runtime behavior
+without opening the full JSONL journal. Use `-Pjavatogpu.lifecycleJournalFile=...`,
 `-Pjavatogpu.lifecycleJournalFormat=properties`, or `-Pjavatogpu.exampleLifecycleTraceFile=...` to override the outputs.
+
+Example compact trace line:
+
+```text
+BACKEND_COMPILATION_COMPLETED | backend=OPENCL | kernel=javatogpu/demo.cl | profile=off | status=completed | summary=compilation module=opencl-c cacheKey=true log=false binaries=0 | message=OpenCL program compiled
+```
 
 When you want one user-facing walkthrough instead of separate example commands, run:
 
@@ -788,7 +822,7 @@ Artifact dumps store the complete result in `runtime-ir-analysis.properties`. Pe
 
 Set `-Djavatogpu.opencl.runtimeCompileArtifactDirectory=<directory>` to dump the full runtime compile artifact bundle for each OpenCL kernel invocation without enabling the operational validation report path. Each kernel gets a sanitized subdirectory under that root. When IR artifacts are available, the bundle includes `original.irgpu.properties` and `optimized.irgpu.properties` so the pre/post optimizer IR can be compared directly, plus `original.backend.opencl-c` and `optimized.backend.opencl-c` for before/after generated OpenCL backend source. `backend.opencl-c` remains the selected OpenCL source that the backend actually compiles. In the default `GpuRuntimeCompileOptions.openCl(...)` path this remains the original/pass-through source; in explicit `GpuRuntimeCompileOptions.openClIrOptimizerExperimentalApply(...)` runs it can become the optimized source if runtime-equivalence and production gates do not reject the selected optimized IR. The bundle also includes `runtime-ir-handoff.properties`, `optimizer-report.txt` when reports exist, backend source artifacts, provenance, and diagnostics. The dump itself is diagnostic-only and does not enable production mutation or source switching.
 
-Workload-level source-promotion gates mirror per-kernel source-selection decisions as both legacy `kernel.N.sourceSwitching.*` fields and portable `kernel.N.runtime.backend.source.*` fields. New report tooling should prefer the portable fields for status, decision, selected source, production-switching state, first blocker, and runtime load mode. Workload gates also mirror aggregate blocker evidence under portable `runtime.backend.source.promotionFirstBlocker.*` and `runtime.backend.source.promotionFirstBlockerFamily.*` fields while retaining legacy `sourceSwitching.sourcePromotionFirstBlocker.*` keys. Workload gates and production-promotion explainability artifacts also mirror aggregate production source-decision evidence from legacy `sourceSwitching.productionDecision.*` into portable `runtime.backend.source.productionDecision.*` fields, and the compact production-promotion summary preserves those portable aggregate fields for CI. The OpenCL validation report, history, formatter, validator, summary, and production-decision reader already read these portable fields first, then fall back to legacy `sourceSwitching.*` keys for older artifacts.
+Workload-level source-promotion gates mirror per-kernel source-selection decisions as both legacy `kernel.N.sourceSwitching.*` fields and portable `kernel.N.runtime.backend.source.*` fields. New report tooling should prefer the portable fields for status, decision, selected source, production-switching state, first blocker, and runtime load mode. Workload gates also mirror aggregate source decisions under indexed `runtime.backend.source.decision.*` fields and expose compact `runtime.backend.source.decisions`, `runtime.backend.source.promotionFirstBlockers`, and `runtime.backend.source.promotionFirstBlockerFamilies` summaries for CI, while keeping `sourceSwitching.decisions` and unprefixed blocker summaries for compatibility. Aggregate blocker evidence is mirrored under portable `runtime.backend.source.promotionFirstBlocker.*` and `runtime.backend.source.promotionFirstBlockerFamily.*` fields while retaining legacy `sourceSwitching.sourcePromotionFirstBlocker.*` keys. Workload gates and production-promotion explainability artifacts also mirror aggregate production readiness under portable `runtime.backend.source.productionSwitchingEnabled.*`, `runtime.backend.source.productionPromotionDecisionMode.productionEnabled.*`, `runtime.backend.source.productionPromotionOperatorAccepted.*`, and `runtime.backend.source.productionDecision.*` fields, while retaining older unprefixed and `sourceSwitching.productionDecision.*` compatibility keys. Controlled production validation evidence is mirrored under portable `runtime.production.sourceSwitching.controlled.*`, `runtime.production.mutation.controlled.*`, `runtime.production.activationToken.smoke.*`, and `runtime.production.activationToken.negative.*` fields while retaining legacy `controlledProductionSourceSwitching.*`, `controlledProductionMutation.*`, `controlledProductionActivationTokenSmoke.*`, and `controlledProductionActivationTokenNegative.*` keys. Candidate-gate and manual manifest artifacts now mirror their evidence under `runtime.production.candidateGate.*` and `runtime.production.manifest.*`, while keeping unprefixed, `binding.*`, and `authorization.*` compatibility keys. The compact workload and production-promotion summaries preserve those portable aggregate fields for CI. The OpenCL validation report, history, formatter, validator, summary, manifest, activation-gate, and production-decision readers already read these portable fields first, then fall back to legacy `sourceSwitching.*` / unprefixed / controlled-production / manifest-binding keys for older artifacts.
 
 OpenCL isolated runtime-equivalence checks write raw pipeline comparison cases into `runtime-equivalence.properties` when invocation arguments use supported array shapes. Each case records the comparison mode, original invocation inputs, descriptor-source reference outputs, reconstructed-source candidate outputs, exact tolerance metadata, per-output equivalence flags, and diagnostics. Primitive arrays are written as readable vectors, vector and struct arrays as deterministic packed Base64, scalar values as literals, and opaque image/sampler/runtime objects as stable type tags without process-specific handles. This evidence validates source reconstruction and remains separate from per-family optimizer proof.
 
@@ -991,7 +1025,7 @@ The next operational boundary combines the approved manifest validation, the pro
   --console=plain --no-daemon
 ```
 
-The task writes `backend-source-promotion-activation-gate.properties` and `backend-source-promotion-activation-gate.properties.sha256`. A successful result is `controlled-activation-ready` with full kernel coverage and accepted/bound operator evidence. It explicitly records `activationScope=controlled-opt-in-only`, `defaultRuntimeActivation=false`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`.
+The task writes `backend-source-promotion-activation-gate.properties` and `backend-source-promotion-activation-gate.properties.sha256`. A successful result is `controlled-activation-ready` with full kernel coverage and accepted/bound operator evidence. It explicitly records `activationScope=controlled-opt-in-only`, `defaultRuntimeActivation=false`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`. New tooling should prefer the portable `runtime.production.activationGate.*` mirrors for gate status, scope, backend, default-disabled switches, approval identity, device identity, kernel coverage, operator acceptance, blockers, and diagnostics; the unprefixed fields remain compatibility keys.
 
 This gate does not modify `GpuRuntimeCompileOptions`, does not enable the default source path, and is not consumed automatically by application runtime code. A controlled caller must load the exact artifact and expected digest, then attach the resulting token alongside the identity-bound operator acceptance:
 
@@ -1035,7 +1069,7 @@ Run the hardware negative controls against the same activation artifact:
 
 This task verifies that `GpuProductionActivationToken.fromArtifact(...)` rejects a mismatched SHA-256 and that a valid token rejects an unapproved kernel resource before GPU output changes. It writes `production-activation-token-negative.properties` with the rejection and safe-default states.
 
-The OpenCL validation reporter includes both activation-token artifacts in `production-promotion-explainability.properties` and its compact CI summary. Separate readiness items require full real-workload coverage and successful negative controls. Neither item sets `productionSourceSwitchingAllowed`, enables the default source path, or authorizes production mutation.
+The OpenCL validation reporter includes controlled source-switching, mutation-readiness, and activation-token artifacts in `production-promotion-explainability.properties` and its compact CI summary. New tooling should read `runtime.production.sourceSwitching.controlled.*`, `runtime.production.mutation.controlled.*`, `runtime.production.activationToken.smoke.*`, and `runtime.production.activationToken.negative.*`; older `controlledProductionSourceSwitching.*`, `controlledProductionMutation.*`, `controlledProductionActivationTokenSmoke.*`, and `controlledProductionActivationTokenNegative.*` keys remain compatibility mirrors. Separate readiness items require full real-workload coverage and successful negative controls. Neither item sets `productionSourceSwitchingAllowed`, enables the default source path, or authorizes production mutation.
 
 ## ABI Debug
 

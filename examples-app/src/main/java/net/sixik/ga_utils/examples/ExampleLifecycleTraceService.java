@@ -13,7 +13,9 @@ import java.nio.file.StandardOpenOption;
  * Example runtime lifecycle hook discovered through ServiceLoader.
  *
  * <p>The service is intentionally a no-op until {@value #TRACE_FILE_PROPERTY} is set, so adding the example module to a
- * classpath does not create files unless the application opts into this particular trace output.</p>
+ * classpath does not create files unless the application opts into this particular trace output. When runtime events
+ * carry portable lifecycle summaries, the trace line prints a compact {@code summary=} segment that is safe to parse
+ * across OpenCL now and future backends later.</p>
  */
 public final class ExampleLifecycleTraceService implements GpuRuntimeLifecycleService {
 
@@ -67,11 +69,89 @@ public final class ExampleLifecycleTraceService implements GpuRuntimeLifecycleSe
                 + " | kernel=" + event.kernelResource()
                 + " | profile=" + event.optimizationProfile()
                 + " | status=" + status
+                + portableSummary(event)
                 + " | message=" + event.message();
     }
 
+    private static String portableSummary(GpuRuntimeLifecycleEvent event) {
+        StringBuilder builder = new StringBuilder();
+        appendBackendStateSummary(builder, event);
+        appendCompilationSummary(builder, event);
+        appendInvocationBindingSummary(builder, event);
+        appendArtifactDumpSummary(builder, event);
+        return builder.length() == 0 ? "" : " | summary=" + builder;
+    }
+
+    private static void appendBackendStateSummary(StringBuilder builder, GpuRuntimeLifecycleEvent event) {
+        if (!"true".equals(event.fields().get("runtime.backend.state.present"))) {
+            return;
+        }
+        appendSummaryPart(
+                builder,
+                "state cache=" + firstPresentField(event, "runtime.backend.cache.mode")
+                        + " compiled=" + firstPresentField(event, "runtime.backend.cache.compiledKernel.count")
+                        + " compile=" + firstPresentField(event, "runtime.backend.compile.count")
+                        + " invoke=" + firstPresentField(event, "runtime.backend.invocation.count")
+                        + " buffers=" + firstPresentField(event, "runtime.backend.buffer.native.count")
+        );
+    }
+
+    private static void appendCompilationSummary(StringBuilder builder, GpuRuntimeLifecycleEvent event) {
+        if (!"true".equals(event.fields().get("runtime.compilation.present"))) {
+            return;
+        }
+        appendSummaryPart(
+                builder,
+                "compilation module=" + firstPresentField(event, "runtime.compilation.module.format")
+                        + " cacheKey=" + firstPresentField(event, "runtime.compilation.cacheKey.present")
+                        + " log=" + firstPresentField(event, "runtime.compilation.compileLog.present")
+                        + " binaries=" + firstPresentField(event, "runtime.compilation.binaryArtifact.count")
+        );
+    }
+
+    private static void appendInvocationBindingSummary(StringBuilder builder, GpuRuntimeLifecycleEvent event) {
+        if (!"true".equals(event.fields().get("runtime.invocation.binding.present"))) {
+            return;
+        }
+        appendSummaryPart(
+                builder,
+                "bindings args=" + firstPresentField(event, "runtime.invocation.binding.argument.count")
+                        + " buffers=" + firstPresentField(event, "runtime.invocation.binding.buffer.count")
+                        + " locals=" + firstPresentField(event, "runtime.invocation.binding.local.count")
+                        + " scalars=" + firstPresentField(event, "runtime.invocation.binding.scalar.count")
+        );
+    }
+
+    private static void appendArtifactDumpSummary(StringBuilder builder, GpuRuntimeLifecycleEvent event) {
+        if (!"true".equals(event.fields().get("runtime.artifactDump.present"))) {
+            return;
+        }
+        appendSummaryPart(
+                builder,
+                "dump dirs=" + firstPresentField(event, "runtime.artifactDump.directory.count")
+                        + " artifacts=" + firstPresentField(event, "runtime.artifactDump.artifact.count")
+                        + " binaries=" + firstPresentField(event, "runtime.artifactDump.binaryArtifact.count")
+        );
+    }
+
+    private static void appendSummaryPart(StringBuilder builder, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append("; ");
+        }
+        builder.append(value);
+    }
+
     private static String eventStatus(GpuRuntimeLifecycleEvent event) {
-        String explicitStatus = firstPresentField(event, "status", "selection.status", "warmup.status");
+        String explicitStatus = firstPresentField(
+                event,
+                "runtime.status",
+                "status",
+                "selection.status",
+                "warmup.status"
+        );
         if (!explicitStatus.isBlank()) {
             return explicitStatus;
         }

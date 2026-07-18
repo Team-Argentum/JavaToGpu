@@ -245,27 +245,45 @@ public final class GpuRuntimeCompileArtifactDumper {
 
         StringBuilder builder = new StringBuilder();
         builder.append("status=").append(productionMutationEnabled ? "enabled" : "disabled").append('\n');
+        builder.append("runtime.ir.productionMutation.status=").append(productionMutationEnabled ? "enabled" : "disabled").append('\n');
         builder.append("productionMutationEnabled=").append(productionMutationEnabled).append('\n');
+        builder.append("runtime.ir.productionMutation.enabled=").append(productionMutationEnabled).append('\n');
         builder.append("productionGateStatus=").append(gate.status()).append('\n');
+        builder.append("runtime.ir.productionMutation.productionGateStatus=").append(gate.status()).append('\n');
         builder.append("productionProfileRequested=").append(gate.productionProfileRequested()).append('\n');
+        builder.append("runtime.ir.productionMutation.productionProfileRequested=").append(gate.productionProfileRequested()).append('\n');
         builder.append("selectedStage=").append(selection.selectedStage()).append('\n');
+        builder.append("runtime.ir.productionMutation.selectedStage=").append(selection.selectedStage()).append('\n');
         builder.append("optimizedSelected=").append(optimizedSelected).append('\n');
+        builder.append("runtime.ir.productionMutation.optimizedSelected=").append(optimizedSelected).append('\n');
         builder.append("optimizedDiffersFromOriginal=").append(transformed).append('\n');
+        builder.append("runtime.ir.productionMutation.optimizedDiffersFromOriginal=").append(transformed).append('\n');
         builder.append("optimizedIrRejected=").append(selection.optimizedRejected()).append('\n');
+        builder.append("runtime.ir.productionMutation.optimizedIrRejected=").append(selection.optimizedRejected()).append('\n');
         builder.append("fallbackDecision=").append(selection.fallbackDecision()).append('\n');
-        builder.append("runtimeEquivalencePassed=").append(snapshot.runtimeEquivalenceEvidence().executed()
-                && snapshot.runtimeEquivalenceEvidence().equivalent()).append('\n');
-        builder.append("fallbackClean=").append(GpuRuntimeFallbackEvidence.NONE.equals(snapshot.fallbackEvidence().decision())).append('\n');
+        builder.append("runtime.ir.productionMutation.fallbackDecision=").append(selection.fallbackDecision()).append('\n');
+        boolean runtimeEquivalencePassed = snapshot.runtimeEquivalenceEvidence().executed()
+                && snapshot.runtimeEquivalenceEvidence().equivalent();
+        boolean fallbackClean = GpuRuntimeFallbackEvidence.NONE.equals(snapshot.fallbackEvidence().decision());
+        builder.append("runtimeEquivalencePassed=").append(runtimeEquivalencePassed).append('\n');
+        builder.append("runtime.ir.productionMutation.runtimeEquivalencePassed=").append(runtimeEquivalencePassed).append('\n');
+        builder.append("fallbackClean=").append(fallbackClean).append('\n');
+        builder.append("runtime.ir.productionMutation.fallbackClean=").append(fallbackClean).append('\n');
         builder.append("strategyEvidenceBacked=").append(gate.strategyEvidenceBacked()).append('\n');
+        builder.append("runtime.ir.productionMutation.strategyEvidenceBacked=").append(gate.strategyEvidenceBacked()).append('\n');
         builder.append("vendorPromotionEligible=").append(gate.vendorPromotionEligible()).append('\n');
+        builder.append("runtime.ir.productionMutation.vendorPromotionEligible=").append(gate.vendorPromotionEligible()).append('\n');
         builder.append("rollbackClean=").append(gate.rollbackClean()).append('\n');
+        builder.append("runtime.ir.productionMutation.rollbackClean=").append(gate.rollbackClean()).append('\n');
         builder.append("diagnostic.count=1\n");
-        builder.append("diagnostic.0=").append(productionMutationSafetyDiagnostic(
+        String diagnostic = productionMutationSafetyDiagnostic(
                 productionMutationEnabled,
                 gate,
                 optimizedSelected,
                 transformed
-        )).append('\n');
+        );
+        builder.append("diagnostic.0=").append(diagnostic).append('\n');
+        builder.append("runtime.ir.productionMutation.diagnostic=").append(diagnostic).append('\n');
         return builder.toString();
     }
 

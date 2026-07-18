@@ -84,10 +84,18 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("status=production-ready"));
         assertTrue(formatted.contains("productionSourceSwitchingAllowed=true"));
         assertTrue(formatted.contains("productionMutationAllowed=true"));
+        assertTrue(formatted.contains("runtime.backend.source.productionSwitchingEnabled.count=2"));
+        assertTrue(formatted.contains("runtime.backend.source.productionSwitchingEnabled.all=true"));
         assertTrue(formatted.contains("productionSourceSwitchingEnabled.count=2"));
         assertTrue(formatted.contains("productionSourceSwitchingEnabled.all=true"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count=2"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all=true"));
         assertTrue(formatted.contains("productionPromotionDecisionMode.productionEnabled.count=2"));
         assertTrue(formatted.contains("productionPromotionDecisionMode.productionEnabled.all=true"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionOperatorAccepted.count=2"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionOperatorAccepted.all=true"));
+        assertTrue(formatted.contains("productionPromotionOperatorAccepted.count=2"));
+        assertTrue(formatted.contains("productionPromotionOperatorAccepted.all=true"));
         assertTrue(formatted.contains("runtime.backend.source.productionDecision.count=2"));
         assertTrue(formatted.contains("runtime.backend.source.productionDecision.all=true"));
         assertTrue(formatted.contains("sourceSwitching.productionDecision.count=2"));
@@ -97,6 +105,10 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("readinessChecklist.ready.count=8"));
         assertTrue(formatted.contains("readinessChecklist.blocked.count=3"));
         assertTrue(formatted.contains("readinessChecklist.firstBlocked=controlled-source-switching-covered"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.status=not-recorded"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.passed=false"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.status=not-recorded"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.passed=false"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=not-recorded"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=false"));
         assertTrue(formatted.contains("controlledProductionActivationTokenNegative.status=not-recorded"));
@@ -110,14 +122,29 @@ class GpuProductionPromotionExplainabilityFormatterTest {
     @Test
     void acceptsPortableRuntimeBackendSourceDecisionFieldsWithoutLegacySourceSwitchingFields() {
         Properties workloadGate = productionReadyGate();
+        workloadGate.remove("productionSourceSwitchingEnabled.count");
+        workloadGate.remove("productionSourceSwitchingEnabled.all");
+        workloadGate.remove("productionPromotionDecisionMode.productionEnabled.count");
+        workloadGate.remove("productionPromotionDecisionMode.productionEnabled.all");
+        workloadGate.remove("productionPromotionOperatorAccepted.count");
+        workloadGate.remove("productionPromotionOperatorAccepted.all");
         workloadGate.remove("sourceSwitching.productionDecision.count");
         workloadGate.remove("sourceSwitching.productionDecision.all");
+        workloadGate.setProperty("runtime.backend.source.productionSwitchingEnabled.count", "2");
+        workloadGate.setProperty("runtime.backend.source.productionSwitchingEnabled.all", "true");
+        workloadGate.setProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count", "2");
+        workloadGate.setProperty("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.all", "true");
+        workloadGate.setProperty("runtime.backend.source.productionPromotionOperatorAccepted.count", "2");
+        workloadGate.setProperty("runtime.backend.source.productionPromotionOperatorAccepted.all", "true");
         workloadGate.setProperty("runtime.backend.source.productionDecision.count", "2");
         workloadGate.setProperty("runtime.backend.source.productionDecision.all", "true");
 
         String formatted = GpuProductionPromotionExplainabilityFormatter.format(workloadGate, productionReadyReadiness());
 
         assertTrue(formatted.contains("status=production-ready"));
+        assertTrue(formatted.contains("runtime.backend.source.productionSwitchingEnabled.count=2"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionDecisionMode.productionEnabled.count=2"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionOperatorAccepted.count=2"));
         assertTrue(formatted.contains("runtime.backend.source.productionDecision.count=2"));
         assertTrue(formatted.contains("runtime.backend.source.productionDecision.all=true"));
         assertTrue(formatted.contains("sourceSwitching.productionDecision.count=2"));
@@ -156,6 +183,16 @@ class GpuProductionPromotionExplainabilityFormatterTest {
 
         assertTrue(formatted.contains("status=blocked"));
         assertTrue(formatted.contains("productionSourceSwitchingAllowed=false"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.status=passed"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.kernel.count=7"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.productionSourceSwitching=enabled"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.productionPromotionDecisionMode=production-enabled"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.realWorkload.covered.count=1"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.realWorkload.total.count=2"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.realWorkload.uncovered.count=1"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.realWorkload.covered.all=false"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.realWorkload.covered.0.resource=kernel-a.cl"));
+        assertTrue(formatted.contains("runtime.production.sourceSwitching.controlled.realWorkload.uncovered.0.resource=kernel-b.cl"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.status=passed"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.kernel.count=7"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.productionSourceSwitching=enabled"));
@@ -166,6 +203,15 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.all=false"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.covered.0.resource=kernel-a.cl"));
         assertTrue(formatted.contains("controlledProductionSourceSwitching.realWorkload.uncovered.0.resource=kernel-b.cl"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.status=passed"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.tokenLoaded=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.approvedKernelExecuted=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.realWorkload.covered.count=2"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.realWorkload.total.count=2"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.realWorkload.uncovered.count=0"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.realWorkload.covered.all=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.safeDefaults=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.smoke.passed=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.status=passed"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.tokenLoaded=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.approvedKernelExecuted=true"));
@@ -175,6 +221,12 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.realWorkload.covered.all=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.safeDefaults=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenSmoke.passed=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.status=passed"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.digestMismatchRejected=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.unapprovedKernelRejected=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.outputUnchanged=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.safeDefaults=true"));
+        assertTrue(formatted.contains("runtime.production.activationToken.negative.passed=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenNegative.status=passed"));
         assertTrue(formatted.contains("controlledProductionActivationTokenNegative.digestMismatchRejected=true"));
         assertTrue(formatted.contains("controlledProductionActivationTokenNegative.unapprovedKernelRejected=true"));
@@ -209,6 +261,15 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         assertTrue(formatted.contains("productionSourceSwitchingEnabled=true"));
         assertTrue(formatted.contains("productionMutationAllowed=true"));
         assertTrue(formatted.contains("productionMutationEnabled=true"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.status=passed"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.reviewReady=true"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.productionMutation=enabled"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.defaultProductionMutation=disabled"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.realWorkload.covered.count=2"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.realWorkload.total.count=2"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.realWorkload.uncovered.count=0"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.realWorkload.covered.all=true"));
+        assertTrue(formatted.contains("runtime.production.mutation.controlled.passed=true"));
         assertTrue(formatted.contains("controlledProductionMutation.status=passed"));
         assertTrue(formatted.contains("controlledProductionMutation.reviewReady=true"));
         assertTrue(formatted.contains("controlledProductionMutation.productionMutation=enabled"));
@@ -267,6 +328,8 @@ class GpuProductionPromotionExplainabilityFormatterTest {
         properties.setProperty("productionSourceSwitchingEnabled.all", "true");
         properties.setProperty("productionPromotionDecisionMode.productionEnabled.count", "2");
         properties.setProperty("productionPromotionDecisionMode.productionEnabled.all", "true");
+        properties.setProperty("productionPromotionOperatorAccepted.count", "2");
+        properties.setProperty("productionPromotionOperatorAccepted.all", "true");
         properties.setProperty("sourceSwitching.productionDecision.count", "2");
         properties.setProperty("sourceSwitching.productionDecision.all", "true");
         properties.setProperty("realWorkloadEvidence", "runtime-snapshot");

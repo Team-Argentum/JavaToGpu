@@ -121,14 +121,17 @@ public record GpuBackendSourcePromotionWorkloadSummary(
             return notRecorded();
         }
         int kernelCount = parsePositiveInt(properties.getProperty("kernel.count", "0"));
-        int productionPromotionOperatorAcceptedCount = parsePositiveInt(properties.getProperty(
-                "productionPromotionOperatorAccepted.count",
-                String.valueOf(countKernelBooleanProperty(
-                        properties,
-                        kernelCount,
-                        "runtime.backend.source.productionPromotionOperatorAccepted",
-                        "sourceSwitching.productionPromotionOperatorAccepted"
-                ))
+        String productionPromotionOperatorAcceptedFallback = String.valueOf(countKernelBooleanProperty(
+                properties,
+                kernelCount,
+                "runtime.backend.source.productionPromotionOperatorAccepted",
+                "sourceSwitching.productionPromotionOperatorAccepted"
+        ));
+        int productionPromotionOperatorAcceptedCount = parsePositiveInt(firstProperty(
+                properties,
+                productionPromotionOperatorAcceptedFallback,
+                "runtime.backend.source.productionPromotionOperatorAccepted.count",
+                "productionPromotionOperatorAccepted.count"
         ));
         return new GpuBackendSourcePromotionWorkloadSummary(
                 properties.getProperty("status", "unknown"),
@@ -138,9 +141,11 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                 properties.getProperty("realWorkloadEvidence", "not-wired"),
                 properties.getProperty("productionSourceSwitching", "disabled"),
                 productionPromotionOperatorAcceptedCount,
-                properties.getProperty(
-                        "productionPromotionOperatorAccepted.all",
-                        String.valueOf(kernelCount > 0 && productionPromotionOperatorAcceptedCount == kernelCount)
+                firstProperty(
+                        properties,
+                        String.valueOf(kernelCount > 0 && productionPromotionOperatorAcceptedCount == kernelCount),
+                        "runtime.backend.source.productionPromotionOperatorAccepted.all",
+                        "productionPromotionOperatorAccepted.all"
                 ),
                 properties.getProperty("sourceKernelResource", ""),
                 kernelCount,
@@ -655,6 +660,13 @@ public record GpuBackendSourcePromotionWorkloadSummary(
     }
 
     private static String summarizeSourceSwitchingDecisions(Properties properties, int kernelCount) {
+        int portableDecisionCount = parsePositiveInt(properties.getProperty(
+                "runtime.backend.source.decision.count",
+                "0"
+        ));
+        if (portableDecisionCount > 0) {
+            return summarizeIndexed(properties, "runtime.backend.source.decision", portableDecisionCount);
+        }
         Map<String, Integer> decisionCounts = new LinkedHashMap<>();
         for (int index = 0; index < kernelCount; index++) {
             String decision = sourceSwitchingDecision(properties, index);
@@ -695,6 +707,20 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         return properties.getProperty(
                 prefix + "runtime.backend.source.productionPromotionOperatorAccepted",
                 properties.getProperty(prefix + "sourceSwitching.productionPromotionOperatorAccepted", "false")
+        );
+    }
+
+    private static String productionMutationProperty(
+            Properties properties,
+            int index,
+            String runtimeKey,
+            String legacyKey,
+            String fallback
+    ) {
+        String prefix = "kernel." + index + ".";
+        return properties.getProperty(
+                prefix + "runtime.ir.productionMutation." + runtimeKey,
+                properties.getProperty(prefix + "runtimeProductionMutationSafety." + legacyKey, fallback)
         );
     }
 
@@ -951,10 +977,7 @@ public record GpuBackendSourcePromotionWorkloadSummary(
                     .append("/fallback=")
                     .append(properties.getProperty("kernel." + index + ".runtimeOptimizerDrift.fallbackDecision", "unknown"))
                     .append(", productionMutation=")
-                    .append(properties.getProperty(
-                            "kernel." + index + ".runtimeProductionMutationSafety.productionMutationEnabled",
-                            "unknown"
-                    ))
+                    .append(productionMutationProperty(properties, index, "enabled", "productionMutationEnabled", "unknown"))
                     .append(", sourceReady=")
                     .append(properties.getProperty("kernel." + index + ".i3Readiness.sourceReady", "unknown"))
                     .append(", i3=")
@@ -1016,6 +1039,10 @@ public record GpuBackendSourcePromotionWorkloadSummary(
         } catch (NumberFormatException exception) {
             return 0;
         }
+    }
+
+    private static String firstProperty(Properties properties, String fallback, String... keys) {
+        return GpuRuntimeArtifactProperties.first(properties, fallback, keys);
     }
 
     private static int sumKernelProperty(Properties properties, int kernelCount, String propertyName) {
