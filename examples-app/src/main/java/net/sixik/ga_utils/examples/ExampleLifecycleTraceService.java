@@ -61,13 +61,37 @@ public final class ExampleLifecycleTraceService implements GpuRuntimeLifecycleSe
     }
 
     static String toTraceLine(GpuRuntimeLifecycleEvent event) {
-        String status = event.fields().getOrDefault("status", "unknown");
+        String status = eventStatus(event);
         return event.kind().name()
                 + " | backend=" + event.backendTarget().name()
                 + " | kernel=" + event.kernelResource()
                 + " | profile=" + event.optimizationProfile()
                 + " | status=" + status
                 + " | message=" + event.message();
+    }
+
+    private static String eventStatus(GpuRuntimeLifecycleEvent event) {
+        String explicitStatus = firstPresentField(event, "status", "selection.status", "warmup.status");
+        if (!explicitStatus.isBlank()) {
+            return explicitStatus;
+        }
+        if (event.fields().containsKey("discovery.available")) {
+            return Boolean.parseBoolean(event.fields().get("discovery.available")) ? "available" : "unavailable";
+        }
+        if (event.fields().containsKey("candidate.count")) {
+            return "candidates=" + event.fields().get("candidate.count");
+        }
+        return "unknown";
+    }
+
+    private static String firstPresentField(GpuRuntimeLifecycleEvent event, String... keys) {
+        for (String key : keys) {
+            String value = event.fields().get(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private static Path parentOrCurrent(Path path) {

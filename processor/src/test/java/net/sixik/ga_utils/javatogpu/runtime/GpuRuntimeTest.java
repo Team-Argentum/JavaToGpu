@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -391,6 +392,12 @@ class GpuRuntimeTest {
         assertEquals(8L, config.globalY());
         assertEquals(4L, config.localX());
         assertEquals(2L, config.localY());
+        assertEquals("16x8", config.globalShape());
+        assertEquals("4x2", config.localShape());
+        assertTrue(config.hasExplicitLocalSize());
+        assertEquals(128L, config.globalItemCount());
+        assertEquals(8L, config.localItemCount());
+        assertEquals("2D global=16x8, local=4x2", config.summary());
     }
 
     @Test
@@ -405,6 +412,24 @@ class GpuRuntimeTest {
         assertEquals(2L, config.localY());
         assertEquals(1L, config.localZ());
         assertEquals(16L, config.globalWorkSize());
+        assertEquals("16x8x4", config.globalShape());
+        assertEquals("4x2x1", config.localShape());
+        assertTrue(config.hasExplicitLocalSize());
+        assertEquals(512L, config.globalItemCount());
+        assertEquals(8L, config.localItemCount());
+        assertEquals("3D global=16x8x4, local=4x2x1", config.summary());
+    }
+
+    @Test
+    void executionConfigSummarizesAutomaticLocalSizing() {
+        GpuExecutionConfig config = GpuExecutionConfig.threeDimensional(8L, 4L, 2L);
+
+        assertEquals("8x4x2", config.globalShape());
+        assertEquals("auto", config.localShape());
+        assertFalse(config.hasExplicitLocalSize());
+        assertEquals(64L, config.globalItemCount());
+        assertEquals(0L, config.localItemCount());
+        assertEquals("3D global=8x4x2, local=auto", config.summary());
     }
 
     @Test

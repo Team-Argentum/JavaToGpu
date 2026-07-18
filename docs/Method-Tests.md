@@ -292,33 +292,41 @@ GpuRuntimeCompileOptions rankingOptions =
 
 The ranking policy is cache-only. It does not secretly run probes during device selection.
 
-For application code, the safer high-level helper is `warmAndSelect(...)`. It keeps the same boundary, but returns one
-auditable report containing both the explicit warm-up and the follow-up cache-only device selection:
+For application code on the built-in OpenCL runtime, the shortest high-level helper is `warmAndSelectOpenCl(...)`. It
+keeps the same boundary, but returns one auditable report containing discovery, explicit warm-up, and follow-up
+cache-only device selection:
 
 ```java
 GpuRuntimeMethodTestProbeEvidenceSelectionPlan selection =
-        GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(
+        GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelectOpenCl(
                 descriptor,
                 MyKernel.class.getClassLoader(),
-                warmupCandidates,
-                discoveryResult,
                 GpuRuntimeMethodTestGpuProbeOptions
                         .persistentCached(Path.of(".javatogpu/method-test-probes"))
                         .withCompileOptions(baseOptions),
                 baseOptions,
-                Optional.empty(),
-                GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
-                GpuRuntimeLifecycleEventBus.loadFromServiceLoader()
+                2
         );
 
 System.out.println(selection.toMarkdown());
 ```
 
-`warmupCandidates` are backend/device pairs that may execute the tiny selection probes. `discoveryResult` is normally
-the output from `GpuRuntimeDeviceDiscovery.discoverOpenCl(...)` and supplies the full device list that should be ranked.
-This split lets you warm evidence for one device while still reporting the others as `missing` instead of pretending
-they were tested. If you already have profiles from another discovery layer, there is also an overload that accepts the
-plain `List<GpuRuntimeDeviceProfile>`.
+`warmAndSelectOpenCl(...)` discovers OpenCL devices, creates warm-up candidates with
+`GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.openClGpuDevices(...)`, runs only caller-approved warm-up probes, and
+then performs cache-only device selection. Devices that were discovered but not warmed still appear as `missing` and
+neutral, instead of pretending they were tested.
+
+During that one-call flow the runtime emits lifecycle events for the selection boundary, OpenCL discovery, chosen
+warm-up candidates, and final cache-only selection result. This is meant for optional journal/trace services: implement
+`GpuRuntimeLifecycleService`, register it through `META-INF/services`, and the application can observe what happened
+without switching to manual listener registration or letting a listener mutate placement.
+
+`GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.openClGpuDevices(...)` is the convenience path for the built-in
+OpenCL runtime: it orders discovered devices by the policy ranking when available, skips CPU devices, caps the candidate
+count, and creates owned OpenCL backends lazily for the explicit warm-up phase.
+
+If you already have profiles from another discovery layer, use the lower-level `warmAndSelect(...)` overload that accepts
+either a `GpuRuntimeDeviceDiscoveryResult` plus explicit warm-up candidates or a plain `List<GpuRuntimeDeviceProfile>`.
 
 Warm-up candidates are pinned to their `deviceProfile.deviceId` while the probe runs. That means a real OpenCL warm-up
 candidate records evidence for the same device that later appears in cache-only ranking, instead of accidentally using
@@ -334,6 +342,27 @@ The example discovers OpenCL devices, creates owned OpenCL backend candidates fo
 those explicit candidates, and then prints the cache-only selection report. Use
 `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` for a persistent cache path and
 `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` when you want to warm only the first eligible GPU.
+It also enables service-based lifecycle output by default: `runtime-lifecycle.jsonl` contains the full runtime event
+journal, while `opencl-evidence-selection.trace` is a short human-readable trace. The console output filters that trace
+to the `warmAndSelectOpenCl(...)` boundary so you can see discovery, candidate selection, and final placement without
+reading the whole JSONL file. Override paths with `-Pjavatogpu.lifecycleJournalFile=...` and
+`-Pjavatogpu.exampleLifecycleTraceFile=...`.
+
+For the curated OpenCL release walkthrough, run:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClPracticalReleaseExample --console=plain
+```
+
+That walkthrough stitches together backend/device explanation, portable `@GPUTest` CPU-reference preflight, real OpenCL
+probe evidence warm-up, cache-only placement, launch-shape guidance, vector/struct/packed-root-blob/image workload
+smoke, image-helper guidance, optimizer artifact review guidance, and lifecycle trace output. Use
+`-Pjavatogpu.practicalOpenClEvidenceCacheDir=...` to choose where the evidence cache and journals are written.
+It also points to `OpenClImageWorkflow.rgbaIntToFloat2D(...)` as the short host-side path for the common 2D RGBA image
+case.
+The optimizer review section points to the separate `runOptimizationJournalExample` command and explains which
+`original.backend.opencl-c`, `optimized.backend.opencl-c`, selected `backend.opencl-c`, and
+`runtime-ir-optimizer-evidence.properties` files to inspect.
 
 ## Runtime Opt-In Modes
 

@@ -97,6 +97,44 @@ tasks.register('runOpenClMethodTestProbeEvidenceSelectionExample', JavaExec) {
     if (warmupLimit.isPresent()) {
         systemProperty 'javatogpu.methodTestProbeOpenClWarmupLimit', warmupLimit.get()
     }
+    def lifecycleJournalFile = providers.gradleProperty('javatogpu.lifecycleJournalFile')
+    if (lifecycleJournalFile.isPresent()) {
+        systemProperty 'javatogpu.runtime.lifecycleJournalFile', lifecycleJournalFile.get()
+    }
+    def lifecycleJournalFormat = providers.gradleProperty('javatogpu.lifecycleJournalFormat')
+    if (lifecycleJournalFormat.isPresent()) {
+        systemProperty 'javatogpu.runtime.lifecycleJournalFormat', lifecycleJournalFormat.get()
+    }
+    def exampleLifecycleTraceFile = providers.gradleProperty('javatogpu.exampleLifecycleTraceFile')
+    if (exampleLifecycleTraceFile.isPresent()) {
+        systemProperty 'javatogpu.examples.lifecycleTraceFile', exampleLifecycleTraceFile.get()
+    }
+}
+
+tasks.register('runOpenClPracticalReleaseExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.OpenClPracticalReleaseExample'
+    def cacheDir = providers.gradleProperty('javatogpu.practicalOpenClEvidenceCacheDir')
+    if (cacheDir.isPresent()) {
+        args cacheDir.get()
+    }
+    def warmupLimit = providers.gradleProperty('javatogpu.methodTestProbeOpenClWarmupLimit')
+    if (warmupLimit.isPresent()) {
+        systemProperty 'javatogpu.methodTestProbeOpenClWarmupLimit', warmupLimit.get()
+    }
+    def lifecycleJournalFile = providers.gradleProperty('javatogpu.lifecycleJournalFile')
+    if (lifecycleJournalFile.isPresent()) {
+        systemProperty 'javatogpu.runtime.lifecycleJournalFile', lifecycleJournalFile.get()
+    }
+    def lifecycleJournalFormat = providers.gradleProperty('javatogpu.lifecycleJournalFormat')
+    if (lifecycleJournalFormat.isPresent()) {
+        systemProperty 'javatogpu.runtime.lifecycleJournalFormat', lifecycleJournalFormat.get()
+    }
+    def exampleLifecycleTraceFile = providers.gradleProperty('javatogpu.exampleLifecycleTraceFile')
+    if (exampleLifecycleTraceFile.isPresent()) {
+        systemProperty 'javatogpu.examples.lifecycleTraceFile', exampleLifecycleTraceFile.get()
+    }
 }
 
 tasks.named('classes') {

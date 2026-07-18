@@ -28,6 +28,34 @@ GpuRuntime.invoke(
 );
 ```
 
+## Return The First Output Value
+
+Use this for scalar-style kernels that still follow the real `void + output buffer` GPU ABI. The generated helper exists only when the kernel has exactly one primitive read-write output array:
+
+```java
+GpuGeneratedLauncherInvoker.GeneratedLauncher launcher =
+        GpuGeneratedLauncherInvoker.launcher(DemoKernel.class, "transform");
+
+float first = launcher.invokeReturningFirstWithGlobalWorkSizeAs(
+        Float.class,
+        itemCount,
+        input
+);
+```
+
+Keep the handle around for repeated calls: it caches the generated launcher class, descriptor, and return-first metadata.
+The launcher allocates the output array, runs the normal kernel path, and returns `output[0]`. Use an explicit output buffer when you need the full result array or multiple outputs.
+
+If the helper is not generated, ask the generated launcher for a short reason:
+
+```java
+System.out.println(
+        launcher.returnValueConvenience().summary()
+);
+```
+
+Compile-time notes for skipped helpers can be disabled with `-Ajavatogpu.returnValueConvenienceDiagnostics=quiet`.
+
 ## Smoke-Test Reconstructed IrGpu Source
 
 This is a review/smoke path. It does not enable production source switching.
@@ -113,5 +141,20 @@ try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
      Image2DWriteOnly output = backend.createWriteOnlyRgbaFloatImage(2, 1);
      Sampler sampler = backend.createNearestClampToEdgeSampler()) {
     ImageKernel.run(input, output, sampler, sums);
+}
+```
+
+For the common 2D RGBA signed-int input to RGBA float output path, use the helper workflow so the input image, output
+image, sampler, shape validation, capability check, readback, and cleanup stay together:
+
+```java
+try (OpenClImageWorkflow.RgbaIntToFloat2D images = OpenClImageWorkflow.rgbaIntToFloat2D(
+        backend,
+        width,
+        height,
+        rgbaPixels
+)) {
+    ImageKernel.run(images.input(), images.output(), images.sampler(), sums);
+    float[] rgbaOutput = images.readOutputRgbaFloat();
 }
 ```

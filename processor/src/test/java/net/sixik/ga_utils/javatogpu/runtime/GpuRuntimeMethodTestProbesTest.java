@@ -1111,6 +1111,63 @@ class GpuRuntimeMethodTestProbesTest {
     }
 
     @Test
+    void warmAndSelectOpenClBlocksWhenDiscoveryIsUnavailable() throws Exception {
+        Path cacheDirectory = Files.createTempDirectory("javatogpu-method-test-opencl-selection-cache");
+        GpuKernelDescriptor descriptor = descriptorWithInputScaleOutput("demo.irgpu.properties");
+        GpuRuntimeCompileOptions baseOptions = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
+                .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED);
+        GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscoveryResult.unavailable(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                "opencl-device-discovery-failed",
+                new IllegalStateException("No OpenCL device found")
+        );
+        ArrayList<GpuRuntimeLifecycleEvent> events = new ArrayList<>();
+        GpuRuntimeLifecycleEventBus lifecycleBus = GpuRuntimeLifecycleEventBus.of(List.of(events::add));
+
+        GpuRuntimeMethodTestProbeEvidenceSelectionPlan selectionPlan =
+                GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelectOpenCl(
+                        descriptor,
+                        getClass().getClassLoader(),
+                        discovery,
+                        GpuRuntimeMethodTestGpuProbeOptions.persistentCached(cacheDirectory).withCompileOptions(baseOptions),
+                        baseOptions,
+                        Optional.empty(),
+                        GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
+                        lifecycleBus,
+                        2
+                );
+
+        assertEquals("blocked", selectionPlan.status());
+        assertFalse(selectionPlan.selectionReady());
+        assertEquals("opencl-device-discovery-failed", selectionPlan.firstBlocker());
+        assertTrue(selectionPlan.selectedDevice().isEmpty());
+        assertEquals(GpuRuntimeMethodTestProbeMode.CACHE_ONLY, selectionPlan.selectionCompileOptions()
+                .backendOptions()
+                .methodTestProbeMode());
+        assertTrue(selectionPlan.toMarkdown().contains("Method test probe evidence selection: blocked"));
+
+        List<GpuRuntimeLifecycleEventKind> kinds = events.stream().map(GpuRuntimeLifecycleEvent::kind).toList();
+        assertTrue(kinds.contains(GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_CANDIDATES_SELECTED));
+        assertTrue(kinds.contains(GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_COMPLETED));
+        GpuRuntimeLifecycleEvent candidatesSelected = lastEvent(
+                events,
+                GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_CANDIDATES_SELECTED
+        );
+        GpuRuntimeLifecycleEvent selectionCompleted = lastEvent(
+                events,
+                GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_COMPLETED
+        );
+        assertEquals("0", candidatesSelected.fields().get("candidate.count"));
+        assertEquals("2", candidatesSelected.fields().get("candidate.max"));
+        assertEquals("blocked", selectionCompleted.fields().get("selection.status"));
+        assertEquals("false", selectionCompleted.fields().get("selection.ready"));
+        assertEquals("opencl-device-discovery-failed", selectionCompleted.fields().get("selection.firstBlocker"));
+        assertEquals("not-run", selectionCompleted.fields().get("warmup.status"));
+        assertEquals("0", selectionCompleted.fields().get("warmup.candidate.count"));
+    }
+
+    @Test
     void blocksFixtureValueBindingWhenJsonShapeDoesNotMatchDescriptorType() throws Exception {
         IrGpuArtifact artifact = artifact(List.of(new IrGpuMethodTestVectorMetadata(
                 "kernel",

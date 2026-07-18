@@ -6,9 +6,11 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidate;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidates;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -58,10 +60,29 @@ class OpenClMethodTestProbeEvidenceSelectionExampleTest {
         );
 
         List<GpuRuntimeMethodTestProbeEvidenceWarmupCandidate> candidates =
-                OpenClMethodTestProbeEvidenceSelectionExample.openClWarmupCandidates(discovery, 1);
+                GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.openClGpuDevices(discovery, 1);
 
         assertEquals(1, candidates.size());
         assertEquals("opencl-igpu", candidates.get(0).deviceProfile().deviceId());
+    }
+
+    @Test
+    void filtersOpenClEvidenceSelectionLifecycleTracePreview() throws IOException {
+        Path traceFile = Files.createTempFile("javatogpu-opencl-selection", ".trace");
+        Files.writeString(
+                traceFile,
+                "BACKEND_COMPILATION_STARTED | backend=OPENCL" + System.lineSeparator()
+                        + "METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_STARTED | backend=OPENCL" + System.lineSeparator()
+                        + "METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_COMPLETED | backend=OPENCL | status=selected"
+                        + System.lineSeparator(),
+                StandardCharsets.UTF_8
+        );
+
+        List<String> lines = OpenClMethodTestProbeEvidenceSelectionExample.openClSelectionTraceLines(traceFile);
+
+        assertEquals(2, lines.size());
+        assertTrue(lines.get(0).contains("METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_STARTED"));
+        assertTrue(lines.get(1).contains("status=selected"));
     }
 
     private static GpuRuntimeDeviceProfile device(

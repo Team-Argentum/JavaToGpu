@@ -77,7 +77,7 @@ Use `GpuRuntime.useOpenCl()` for one-off calls. Use `GpuRuntime.useOpenClSharedC
 
 ## Important Alpha Limits
 
-- `@GPU` entry methods return `void`; write results to output buffers.
+- `@GPU` entry methods return `void`; write results to output buffers. For the narrow single-output case, generated launchers can expose `invokeReturningFirst*` helpers that allocate one primitive output array and return `output[0]`; `GpuGeneratedLauncherInvoker.launcher(...)`, typed `invokeReturningFirst*As(...)`, `returnValueConvenience(...)`, and compile-time notes explain whether that helper is available. Use `-Ajavatogpu.returnValueConvenienceDiagnostics=quiet` to suppress those notes.
 - General object allocation, virtual dispatch, exceptions, recursion, monitors, and heap object graphs are not supported inside kernels.
 - Arrays inside `@GPUStruct` fields are not supported in the current alpha.
 - OpenCL is the active backend today. CUDA, Vulkan, and Metal are future directions.
@@ -216,10 +216,30 @@ Run the same boundary against real discovered OpenCL devices:
 .\gradlew.bat :examples-app:runOpenClMethodTestProbeEvidenceSelectionExample --console=plain
 ```
 
-This example calls `GpuRuntimeDeviceDiscovery.discoverOpenCl(...)`, builds owned OpenCL warm-up candidates for discovered
-GPU devices, runs tiny `@GPUTest` selection probes only during the explicit warm-up phase, and then prints the cache-only
-selection report. Pass `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` to choose the persistent evidence cache
-and `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap how many discovered devices are warmed.
+This example calls `GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelectOpenCl(...)`, which discovers OpenCL,
+builds owned warm-up candidates for discovered GPU devices, runs tiny `@GPUTest` selection probes only during the
+explicit warm-up phase, and then prints the cache-only selection report. Pass
+`-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` to choose the persistent evidence cache and
+`-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap how many discovered devices are warmed.
+The helper also emits service-based lifecycle events for discovery, candidate selection, warm-up, and final placement,
+so a `GpuRuntimeLifecycleService` can journal the flow without manual listener wiring.
+By default the runnable OpenCL example writes `runtime-lifecycle.jsonl` and `opencl-evidence-selection.trace` next to the
+method-test evidence cache, then prints a short `warmAndSelectOpenCl(...)` trace preview. Override those paths with
+`-Pjavatogpu.lifecycleJournalFile=...` and `-Pjavatogpu.exampleLifecycleTraceFile=...` when needed.
+
+For a curated end-to-end OpenCL walkthrough that combines backend/device explanation, portable `@GPUTest` preflight,
+real OpenCL evidence warm-up, cache-only placement, launch-shape guidance, vector/struct/packed-root-blob/image workload
+smoke, generated return-first launcher convenience, image-helper guidance, optimizer artifact review guidance, and lifecycle
+trace output, run:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClPracticalReleaseExample --console=plain
+```
+
+Use `-Pjavatogpu.practicalOpenClEvidenceCacheDir=...` to choose the evidence/journal directory. The walkthrough also
+shows the common `OpenClImageWorkflow.rgbaIntToFloat2D(...)` host helper, then points to
+`runOptimizationJournalExample` and the before/after files to compare: `original.backend.opencl-c`,
+`optimized.backend.opencl-c`, selected `backend.opencl-c`, and `runtime-ir-optimizer-evidence.properties`.
 
 ## Project Layout
 

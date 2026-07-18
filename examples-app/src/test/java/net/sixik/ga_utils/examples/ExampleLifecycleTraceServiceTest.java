@@ -47,6 +47,23 @@ class ExampleLifecycleTraceServiceTest {
     }
 
     @Test
+    void traceLineUsesSelectionStatusWhenGenericStatusIsMissing() {
+        GpuRuntimeLifecycleEvent event = new GpuRuntimeLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_COMPLETED,
+                GpuBackendTarget.OPENCL,
+                "javatogpu/sample/Kernel.cl",
+                "off",
+                "selection completed",
+                Map.of("selection.status", "selected")
+        );
+
+        String line = ExampleLifecycleTraceService.toTraceLine(event);
+
+        assertTrue(line.contains("METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_COMPLETED"), line);
+        assertTrue(line.contains("status=selected"), line);
+    }
+
+    @Test
     void serviceLoaderBusCanWriteThroughExampleLifecycleTraceService() throws Exception {
         Path traceFile = temporaryDirectory.resolve("service-loader-example-lifecycle.trace");
 

@@ -97,4 +97,59 @@ public record GpuExecutionConfig(
     public long globalWorkSize() {
         return globalX;
     }
+
+    /**
+     * Returns the global launch shape in the same dimensionality that will be submitted to the backend.
+     */
+    public String globalShape() {
+        return switch (dimensions) {
+            case 1 -> Long.toString(globalX);
+            case 2 -> globalX + "x" + globalY;
+            case 3 -> globalX + "x" + globalY + "x" + globalZ;
+            default -> throw new IllegalStateException("unsupported execution dimensions: " + dimensions);
+        };
+    }
+
+    /**
+     * Returns the explicit local shape, or {@code auto} when the backend should choose it.
+     */
+    public String localShape() {
+        if (!hasExplicitLocalSize()) {
+            return "auto";
+        }
+        return switch (dimensions) {
+            case 1 -> Long.toString(localX);
+            case 2 -> localX + "x" + localY;
+            case 3 -> localX + "x" + localY + "x" + localZ;
+            default -> throw new IllegalStateException("unsupported execution dimensions: " + dimensions);
+        };
+    }
+
+    /**
+     * Returns whether this config asks the backend to use an explicit local work-group size.
+     */
+    public boolean hasExplicitLocalSize() {
+        return localX > 0L;
+    }
+
+    /**
+     * Returns the total number of global work-items addressed by this launch.
+     */
+    public long globalItemCount() {
+        return globalX * globalY * globalZ;
+    }
+
+    /**
+     * Returns the total explicit local work-group size, or {@code 0} when local sizing is automatic.
+     */
+    public long localItemCount() {
+        return hasExplicitLocalSize() ? localX * Math.max(1L, localY) * Math.max(1L, localZ) : 0L;
+    }
+
+    /**
+     * Human-readable summary suitable for examples, diagnostics, and lifecycle journal fields.
+     */
+    public String summary() {
+        return dimensions + "D global=" + globalShape() + ", local=" + localShape();
+    }
 }

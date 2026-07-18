@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.api.Float4;
 import net.sixik.ga_utils.javatogpu.api.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
+import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
 import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
 import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
@@ -154,6 +155,21 @@ public final class GpuShowcase {
         int id = GPU.get_global_id(0);
         output[id].x = input[id].x + 1.0;
         output[id].y = input[id].y + 2.0;
+    }
+
+    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+    public static void packedBlobViewExample(
+            @GPUGlobal byte[] blob,
+            PackedBlobView view,
+            @GPUGlobal int[] output
+    ) {
+        int id = GPU.get_global_id(0);
+        if (id < view.itemCount) {
+            GlobalBytePtr root = GPU.global(blob);
+            int primary = root.readIntAt(view.primaryOffset + id * 4);
+            int secondary = root.readIntAt(view.secondaryOffset + id * 4);
+            output[id] = primary + secondary + view.bias;
+        }
     }
 
     @net.sixik.ga_utils.javatogpu.api.annotations.GPU

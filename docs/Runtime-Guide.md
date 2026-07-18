@@ -355,32 +355,38 @@ runtime backend, writes successful or failed executions through the configured c
 warm-up boundary plus the existing metadata/fixture/materialization/GPU-probe/cache stages. Selection can then consume
 the warmed cache through `withPersistentMethodTestProbeEvidenceRanking(path)` while staying read-only.
 
-When you want the explicit warm-up and the cache-only selection as one auditable operation, use the selection helper:
+When you want OpenCL discovery, explicit warm-up, and cache-only selection as one auditable operation, use the OpenCL
+selection helper:
 
 ```java
 GpuRuntimeMethodTestProbeEvidenceSelectionPlan placement =
-        GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(
+        GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelectOpenCl(
                 MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
                 MyKernel.class.getClassLoader(),
-                warmupCandidates,
-                GpuRuntimeDeviceDiscovery.discoverOpenCl(baseOptions),
                 GpuRuntimeMethodTestGpuProbeOptions
                         .persistentCached(Path.of(".javatogpu/method-test-probes"))
                         .withCompileOptions(baseOptions),
                 baseOptions,
-                Optional.empty(),
-                GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
-                GpuRuntimeLifecycleEventBus.loadFromServiceLoader()
+                2
         );
 
 GpuRuntimeDeviceProfile selected = placement.selectedDevice().orElseThrow();
 System.out.println(placement.toMarkdown());
 ```
 
-`warmAndSelect(...)` can consume the `GpuRuntimeDeviceDiscoveryResult` returned by OpenCL discovery, normalizes missing
-probe cache options to the shared cache, carries persistent cache directories and expiry into the cache-only selection
-compile options, and keeps warm-up candidates separate from the full discovered device list. That makes partially warmed
-evidence visible: warmed devices can be `passed` or `failed`, while devices not warmed remain `missing` and neutral.
+`warmAndSelectOpenCl(...)` discovers devices, creates OpenCL warm-up candidates, normalizes missing probe cache options
+to the shared cache, carries persistent cache directories and expiry into the cache-only selection compile options, and
+keeps warm-up candidates separate from the full discovered device list. That makes partially warmed evidence visible:
+warmed devices can be `passed` or `failed`, while devices not warmed remain `missing` and neutral.
+`GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.openClGpuDevices(...)` is the built-in OpenCL convenience helper for
+that candidate list: it uses policy-ranked discovery order when available, skips CPU devices, and lazily creates owned
+OpenCL backends only when the explicit warm-up phase actually runs.
+
+The helper also publishes lifecycle events around the high-level operation: selection start, OpenCL discovery start/end,
+warm-up candidate selection, and final selection completion. A `GpuRuntimeLifecycleService` can record those events for
+logs or a journal without changing the selection result. This keeps the future runtime journal path service-based: put a
+listener implementation on the classpath, and `warmAndSelectOpenCl(...)` becomes visible from discovery through
+cache-only placement.
 
 Runtime compile artifact dumps include `runtime-method-test-evidence.properties` for each compiled kernel. That artifact
 records entry-method `@GPUTest` metadata counts, selection-probe counts, and cache-only probe-evidence ranking facts
@@ -403,11 +409,31 @@ When you want to test the same flow against actual OpenCL discovery and backend 
 .\gradlew.bat :examples-app:runOpenClMethodTestProbeEvidenceSelectionExample --console=plain
 ```
 
-That example calls `GpuRuntimeDeviceDiscovery.discoverOpenCl(baseOptions)`, turns discovered GPU profiles into owned
+That example calls `warmAndSelectOpenCl(...)`, which discovers OpenCL, turns discovered GPU profiles into owned
 `OpenClGpuRuntimeBackend` warm-up candidates, pins each probe run to the candidate device id, and then prints the
-`warmAndSelect(...)` markdown report. The selection phase remains `CACHE_ONLY`; only the explicit warm-up phase may
-execute the tiny method-test probe kernels. Use `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` to control the
-persistent cache directory and `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap the number of warmed devices.
+markdown report. The selection phase remains `CACHE_ONLY`; only the explicit warm-up phase may execute the tiny
+method-test probe kernels. Use `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` to control the persistent cache
+directory and `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap the number of warmed devices.
+The same runnable also enables lifecycle output through services: a full `runtime-lifecycle.jsonl` journal and a compact
+`opencl-evidence-selection.trace` are written next to the evidence cache by default, and the console prints only the
+`warmAndSelectOpenCl(...)` trace lines. Use `-Pjavatogpu.lifecycleJournalFile=...`,
+`-Pjavatogpu.lifecycleJournalFormat=properties`, or `-Pjavatogpu.exampleLifecycleTraceFile=...` to override the outputs.
+
+When you want one user-facing walkthrough instead of separate example commands, run:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClPracticalReleaseExample --console=plain
+```
+
+It combines backend/device explanation, method-test fixture/reference preflight, real OpenCL probe warm-up,
+cache-only placement, launch-shape guidance, vector/struct/packed-root-blob/image workload smoke, image-helper guidance,
+optimizer artifact review guidance, and lifecycle trace output in one report. Use
+`-Pjavatogpu.practicalOpenClEvidenceCacheDir=...` to choose the evidence and journal directory.
+The image helper section points to `OpenClImageWorkflow.rgbaIntToFloat2D(...)`, which bundles the common 2D RGBA image
+input/output/sampler/readback path while keeping the OpenCL resources explicit.
+The optimizer review section points to `runOptimizationJournalExample`, the default journal root, the before/after
+OpenCL files (`original.backend.opencl-c` and `optimized.backend.opencl-c`), the selected compiled file
+(`backend.opencl-c`), and the handoff/evidence files that explain why the default path stays review-only.
 
 ## Explicit Launch Sizes
 
@@ -448,6 +474,16 @@ GpuRuntime.invoke(
 
 Explicit local sizes are also supported by the matching config factory overloads. After OpenCL compiles the selected kernel, JavaToGpu validates the total explicit local work-group size against that kernel's `CL_KERNEL_WORK_GROUP_SIZE` limit. For multidimensional launches, the validated size is the product of the local dimensions. An oversized explicit group fails before enqueue with `GpuRuntimeCapabilityException`. If no local size is specified, JavaToGpu leaves work-group selection to the OpenCL driver.
 
+For logs, examples, or diagnostics, `GpuExecutionConfig` exposes readable launch-shape helpers:
+
+```java
+GpuExecutionConfig config = GpuExecutionConfig.twoDimensional(16, 8, 4, 2);
+
+System.out.println(config.summary());      // 2D global=16x8, local=4x2
+System.out.println(config.globalShape());  // 16x8
+System.out.println(config.localShape());   // 4x2, or auto when local sizing is driver-selected
+```
+
 ## Generated Launcher Helpers
 
 For packed/blob workloads where logical item count does not match raw buffer length:
@@ -464,6 +500,42 @@ GpuGeneratedLauncherInvoker.invokeWithGlobalWorkSize(
 ```
 
 For explicit multidimensional configs, use generated launcher config entry points or `GpuGeneratedLauncherInvoker.invokeWithConfig(...)` where applicable.
+
+For a narrow scalar-style result, keep the kernel ABI as `void + output buffer`, but let the generated launcher allocate the single primitive output array for you:
+
+```java
+GpuGeneratedLauncherInvoker.GeneratedLauncher launcher =
+        GpuGeneratedLauncherInvoker.launcher(OwnerClass.class, "kernel");
+
+float first = launcher.invokeReturningFirstWithGlobalWorkSizeAs(
+        Float.class,
+        itemCount,
+        input
+);
+```
+
+Keep the `GeneratedLauncher` handle when you call the same kernel repeatedly. It resolves the generated launcher class,
+descriptor, and return-first metadata once, while still invoking the generated overloads so fallback/variant routing stays
+intact.
+
+This helper is generated only when the `@GPU` method has exactly one primitive `@GPUGlobal` read-write output array. The helper allocates that output array using the launch item count, invokes the normal generated launcher, and returns `output[0]`. The `*As(...)` reflection helpers validate the generated return type before launching, so asking for `Integer.class` from a float-return helper fails before the kernel runs. If a kernel has multiple mutable primitive output arrays, object/struct outputs, or a different result shape, use the explicit output-buffer form instead. This is not arbitrary non-`void` `@GPU` support; it is a small convenience adapter over the existing launcher ABI.
+
+To see whether the helper exists, and why it was skipped, inspect the generated launcher metadata through the reflection helper:
+
+```java
+GpuGeneratedLauncherReturnValueConvenienceReport report =
+        launcher.returnValueConvenience();
+
+System.out.println(report.summary());
+```
+
+Common skip reasons are `no-read-write-output-array`, `multiple-read-write-output-arrays`, `output-array-component-not-supported`, and `method-return-type-not-void`.
+
+During annotation processing, JavaToGpu also emits a non-failing `NOTE` for almost-matching kernels where the helper was skipped, such as kernels with multiple primitive read-write output arrays. Suppress those compile-time notes with:
+
+```groovy
+options.compilerArgs += '-Ajavatogpu.returnValueConvenienceDiagnostics=quiet'
+```
 
 ## Runtime Compile Options
 

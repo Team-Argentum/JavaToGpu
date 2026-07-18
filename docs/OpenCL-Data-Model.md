@@ -125,6 +125,11 @@ Typical image use cases:
 
 Image support is still alpha-level, so validate on the target GPU and driver before relying on a specific image format in production-like tests.
 
+For the common 2D RGBA signed-int input to RGBA float output workflow, `OpenClImageWorkflow.rgbaIntToFloat2D(...)`
+bundles the host-side input image, output image, nearest clamp-to-edge sampler, readback helper, shape validation, and
+cleanup into one try-with-resources object. Use the lower-level `createReadOnly...`, `createWriteOnly...`, and `read...`
+methods when you need a less common image family or custom sampler behavior.
+
 ## Choosing A Data Shape
 
 - Use annotated arrays for most numeric workloads.

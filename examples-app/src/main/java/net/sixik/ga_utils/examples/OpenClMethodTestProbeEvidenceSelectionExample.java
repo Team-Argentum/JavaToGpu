@@ -1,23 +1,21 @@
 package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscovery;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestMode;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventBus;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestGpuProbeOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceSelection;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceSelectionPlan;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidate;
-import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidates;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupPlan;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -29,7 +27,10 @@ import java.util.Optional;
 public final class OpenClMethodTestProbeEvidenceSelectionExample {
 
     public static final String WARMUP_LIMIT_PROPERTY = "javatogpu.methodTestProbeOpenClWarmupLimit";
-    private static final int DEFAULT_WARMUP_LIMIT = 4;
+
+    private static final String LIFECYCLE_JOURNAL_FILE_PROPERTY = "javatogpu.runtime.lifecycleJournalFile";
+    private static final String LIFECYCLE_JOURNAL_FORMAT_PROPERTY = "javatogpu.runtime.lifecycleJournalFormat";
+    private static final String EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY = ExampleLifecycleTraceService.TRACE_FILE_PROPERTY;
 
     private OpenClMethodTestProbeEvidenceSelectionExample() {
     }
@@ -42,14 +43,40 @@ public final class OpenClMethodTestProbeEvidenceSelectionExample {
     }
 
     static String renderRealOpenClEvidenceSelection(Path cacheDirectory) {
+        Path resolvedCacheDirectory = normalizeCacheDirectory(cacheDirectory);
+        String previousLifecycleJournalFile = System.getProperty(LIFECYCLE_JOURNAL_FILE_PROPERTY);
+        String previousLifecycleJournalFormat = System.getProperty(LIFECYCLE_JOURNAL_FORMAT_PROPERTY);
+        String previousExampleLifecycleTraceFile = System.getProperty(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY);
+        boolean ownsLifecycleJournalFile = isBlank(previousLifecycleJournalFile);
+        boolean ownsLifecycleJournalFormat = isBlank(previousLifecycleJournalFormat);
+        boolean ownsExampleLifecycleTraceFile = isBlank(previousExampleLifecycleTraceFile);
+        if (ownsLifecycleJournalFile) {
+            Path lifecycleJournalFile = resolveLifecycleJournalFile(resolvedCacheDirectory);
+            clearGeneratedFile(lifecycleJournalFile);
+            System.setProperty(LIFECYCLE_JOURNAL_FILE_PROPERTY, lifecycleJournalFile.toString());
+        }
+        if (ownsLifecycleJournalFormat) {
+            System.setProperty(LIFECYCLE_JOURNAL_FORMAT_PROPERTY, "jsonl");
+        }
+        if (ownsExampleLifecycleTraceFile) {
+            Path exampleLifecycleTraceFile = resolveExampleLifecycleTraceFile(resolvedCacheDirectory);
+            clearGeneratedFile(exampleLifecycleTraceFile);
+            System.setProperty(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY, exampleLifecycleTraceFile.toString());
+        }
+
         GpuRuntimeCompileOptions baseOptions = baseOpenClOptions();
-        return renderOpenClEvidenceSelection(
-                cacheDirectory,
-                MethodTestProbeExample.descriptor(),
-                OpenClMethodTestProbeEvidenceSelectionExample.class.getClassLoader(),
-                GpuRuntimeDeviceDiscovery.discoverOpenCl(baseOptions),
-                baseOptions
-        );
+        try {
+            return renderOpenClEvidenceSelectionOneCall(
+                    resolvedCacheDirectory,
+                    MethodTestProbeExample.descriptor(),
+                    OpenClMethodTestProbeEvidenceSelectionExample.class.getClassLoader(),
+                    baseOptions
+            );
+        } finally {
+            restoreProperty(LIFECYCLE_JOURNAL_FILE_PROPERTY, previousLifecycleJournalFile);
+            restoreProperty(LIFECYCLE_JOURNAL_FORMAT_PROPERTY, previousLifecycleJournalFormat);
+            restoreProperty(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY, previousExampleLifecycleTraceFile);
+        }
     }
 
     static String renderOpenClEvidenceSelection(
@@ -69,14 +96,10 @@ public final class OpenClMethodTestProbeEvidenceSelectionExample {
                 new IllegalStateException("OpenCL device discovery result is missing")
         )
                 : discovery;
-        List<GpuRuntimeMethodTestProbeEvidenceWarmupCandidate> warmupCandidates = openClWarmupCandidates(
-                resolvedDiscovery,
-                warmupLimit()
-        );
         GpuRuntimeMethodTestProbeEvidenceSelectionPlan selectionPlan = GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(
                 descriptor,
                 classLoader,
-                warmupCandidates,
+                GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.openClGpuDevices(resolvedDiscovery, warmupLimit()),
                 resolvedDiscovery,
                 GpuRuntimeMethodTestGpuProbeOptions
                         .persistentCached(resolvedCacheDirectory)
@@ -91,15 +114,7 @@ public final class OpenClMethodTestProbeEvidenceSelectionExample {
         builder.append("Real OpenCL method-test probe evidence selection example").append(System.lineSeparator());
         builder.append("Cache directory: ").append(resolvedCacheDirectory.toAbsolutePath().normalize())
                 .append(System.lineSeparator());
-        builder.append("Warm-up candidate count: ").append(warmupCandidates.size()).append(System.lineSeparator());
-        for (GpuRuntimeMethodTestProbeEvidenceWarmupCandidate candidate : warmupCandidates) {
-            builder.append("- ")
-                    .append(candidate.deviceProfile().deviceLabel())
-                    .append(" (`")
-                    .append(GpuRuntimeDevicePolicyContext.deviceKey(candidate.deviceProfile()))
-                    .append("`)")
-                    .append(System.lineSeparator());
-        }
+        appendWarmupCandidates(builder, selectionPlan.warmupPlan());
         builder.append(System.lineSeparator()).append("Discovery").append(System.lineSeparator());
         builder.append(resolvedDiscovery.toMarkdown());
         builder.append(System.lineSeparator()).append("Selection").append(System.lineSeparator());
@@ -110,31 +125,53 @@ public final class OpenClMethodTestProbeEvidenceSelectionExample {
         return builder.toString();
     }
 
-    static List<GpuRuntimeMethodTestProbeEvidenceWarmupCandidate> openClWarmupCandidates(
-            GpuRuntimeDeviceDiscoveryResult discovery,
-            int limit
+    static String renderOpenClEvidenceSelectionOneCall(
+            Path cacheDirectory,
+            GpuKernelDescriptor descriptor,
+            ClassLoader classLoader,
+            GpuRuntimeCompileOptions baseOptions
     ) {
-        if (discovery == null || !discovery.discoveryAvailable()) {
-            return List.of();
+        Path resolvedCacheDirectory = normalizeCacheDirectory(cacheDirectory);
+        GpuRuntimeCompileOptions resolvedBaseOptions = baseOptions == null ? baseOpenClOptions() : baseOptions;
+        GpuRuntimeMethodTestProbeEvidenceSelectionPlan selectionPlan = GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelectOpenCl(
+                descriptor,
+                classLoader,
+                GpuRuntimeMethodTestGpuProbeOptions
+                        .persistentCached(resolvedCacheDirectory)
+                        .withCompileOptions(resolvedBaseOptions),
+                resolvedBaseOptions,
+                warmupLimit()
+        );
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("Real OpenCL method-test probe evidence selection example").append(System.lineSeparator());
+        builder.append("Cache directory: ").append(resolvedCacheDirectory.toAbsolutePath().normalize())
+                .append(System.lineSeparator());
+        appendWarmupCandidates(builder, selectionPlan.warmupPlan());
+        builder.append(System.lineSeparator()).append("Selection").append(System.lineSeparator());
+        builder.append(selectionPlan.toMarkdown());
+        appendLifecycleOutputs(builder);
+        builder.append(System.lineSeparator())
+                .append("Rule: warmAndSelectOpenCl discovers OpenCL first, warms explicit candidates, then selects cache-only.")
+                .append(System.lineSeparator());
+        return builder.toString();
+    }
+
+    private static void appendWarmupCandidates(
+            StringBuilder builder,
+            GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmupPlan
+    ) {
+        if (warmupPlan == null) {
+            builder.append("Warm-up candidate count: 0").append(System.lineSeparator());
+            return;
         }
-        int resolvedLimit = limit <= 0 ? DEFAULT_WARMUP_LIMIT : limit;
-        List<GpuRuntimeDeviceProfile> gpuDevices = discovery.discoveredDevices().stream()
-                .filter(profile -> profile.backendTarget() == GpuBackendTarget.OPENCL)
-                .filter(profile -> profile.deviceClass() != GpuDeviceClassTarget.CPU)
-                .limit(resolvedLimit)
-                .toList();
-        List<GpuRuntimeDeviceProfile> selectedDevices = gpuDevices.isEmpty()
-                ? discovery.discoveredDevices().stream()
-                .filter(profile -> profile.backendTarget() == GpuBackendTarget.OPENCL)
-                .limit(resolvedLimit)
-                .toList()
-                : gpuDevices;
-        return selectedDevices.stream()
-                .map(profile -> GpuRuntimeMethodTestProbeEvidenceWarmupCandidate.owned(
-                        profile,
-                        OpenClGpuRuntimeBackend::new
-                ))
-                .toList();
+        builder.append("Warm-up candidate count: ").append(warmupPlan.candidateResults().size()).append(System.lineSeparator());
+        warmupPlan.candidateResults().forEach(candidate -> builder.append("- ")
+                .append(candidate.deviceProfile().deviceLabel())
+                .append(" (`")
+                .append(GpuRuntimeDevicePolicyContext.deviceKey(candidate.deviceProfile()))
+                .append("`)")
+                .append(System.lineSeparator()));
     }
 
     private static GpuRuntimeCompileOptions baseOpenClOptions() {
@@ -142,6 +179,88 @@ public final class OpenClMethodTestProbeEvidenceSelectionExample {
                 .defaults(GpuBackendTarget.OPENCL)
                 .excludeCpuDevices()
                 .withDeviceSelfTestMode(GpuRuntimeDeviceSelfTestMode.DISABLED);
+    }
+
+    static Path resolveLifecycleJournalFile(Path cacheDirectory) {
+        Path root = cacheDirectory == null
+                ? Path.of("build", "method-test-probe-opencl-evidence")
+                : cacheDirectory;
+        return root.resolve("runtime-lifecycle.jsonl");
+    }
+
+    static Path resolveExampleLifecycleTraceFile(Path cacheDirectory) {
+        Path root = cacheDirectory == null
+                ? Path.of("build", "method-test-probe-opencl-evidence")
+                : cacheDirectory;
+        return root.resolve("opencl-evidence-selection.trace");
+    }
+
+    static List<String> openClSelectionTraceLines(Path traceFile) throws IOException {
+        if (traceFile == null || !Files.isRegularFile(traceFile)) {
+            return List.of();
+        }
+        return Files.readAllLines(traceFile, StandardCharsets.UTF_8)
+                .stream()
+                .filter(line -> line.startsWith("METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_"))
+                .toList();
+    }
+
+    private static void appendLifecycleOutputs(StringBuilder builder) {
+        Path lifecycleJournalFile = configuredPath(LIFECYCLE_JOURNAL_FILE_PROPERTY);
+        Path exampleLifecycleTraceFile = configuredPath(EXAMPLE_LIFECYCLE_TRACE_FILE_PROPERTY);
+        if (lifecycleJournalFile == null && exampleLifecycleTraceFile == null) {
+            return;
+        }
+        builder.append(System.lineSeparator()).append("Lifecycle journal").append(System.lineSeparator());
+        if (lifecycleJournalFile != null) {
+            builder.append("JSONL journal: ")
+                    .append(lifecycleJournalFile.toAbsolutePath().normalize())
+                    .append(System.lineSeparator());
+        }
+        if (exampleLifecycleTraceFile == null) {
+            return;
+        }
+        builder.append("Service trace: ")
+                .append(exampleLifecycleTraceFile.toAbsolutePath().normalize())
+                .append(System.lineSeparator());
+        try {
+            List<String> traceLines = openClSelectionTraceLines(exampleLifecycleTraceFile);
+            if (traceLines.isEmpty()) {
+                builder.append("Lifecycle trace preview: no warmAndSelectOpenCl events were written yet")
+                        .append(System.lineSeparator());
+                return;
+            }
+            builder.append("Lifecycle trace preview:").append(System.lineSeparator());
+            traceLines.forEach(line -> builder.append("- ").append(line).append(System.lineSeparator()));
+        } catch (IOException exception) {
+            builder.append("Lifecycle trace preview failed: ").append(exception.getMessage()).append(System.lineSeparator());
+        }
+    }
+
+    private static Path configuredPath(String property) {
+        String value = System.getProperty(property);
+        return isBlank(value) ? null : Path.of(value.trim());
+    }
+
+    private static void clearGeneratedFile(Path file) {
+        try {
+            Files.createDirectories(file.toAbsolutePath().normalize().getParent());
+            Files.deleteIfExists(file);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not reset generated lifecycle file: " + file, exception);
+        }
+    }
+
+    private static void restoreProperty(String property, String previousValue) {
+        if (previousValue == null) {
+            System.clearProperty(property);
+        } else {
+            System.setProperty(property, previousValue);
+        }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static Path normalizeCacheDirectory(Path cacheDirectory) {
@@ -159,12 +278,12 @@ public final class OpenClMethodTestProbeEvidenceSelectionExample {
     private static int warmupLimit() {
         String value = System.getProperty(WARMUP_LIMIT_PROPERTY);
         if (value == null || value.isBlank()) {
-            return DEFAULT_WARMUP_LIMIT;
+            return GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.DEFAULT_OPENCL_GPU_WARMUP_LIMIT;
         }
         try {
             return Math.max(1, Integer.parseInt(value.trim()));
         } catch (NumberFormatException ignored) {
-            return DEFAULT_WARMUP_LIMIT;
+            return GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.DEFAULT_OPENCL_GPU_WARMUP_LIMIT;
         }
     }
 }

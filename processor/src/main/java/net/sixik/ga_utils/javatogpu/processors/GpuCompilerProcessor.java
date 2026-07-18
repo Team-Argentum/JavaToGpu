@@ -89,6 +89,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
     private final Set<String> writtenIntrinsicMetadata = new HashSet<>();
     private final Set<String> writtenFallbackVariantProviders = new HashSet<>();
     private final Set<String> writtenCallSiteMetadata = new HashSet<>();
+    private final Set<String> reportedReturnValueConvenienceDiagnostics = new HashSet<>();
     private final Map<String, String> exportedHelperLibraries = new LinkedHashMap<>();
     private final Map<String, String> exportedIntrinsicLibraries = new LinkedHashMap<>();
     private final List<GpuIrValidationReportEntry> irValidationReportEntries = new ArrayList<>();
@@ -118,7 +119,8 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 "javatogpu.debugAbi",
                 "javatogpu.irValidation",
                 "javatogpu.irValidationDiagnostics",
-                "javatogpu.irValidationReport"
+                "javatogpu.irValidationReport",
+                "javatogpu.returnValueConvenienceDiagnostics"
         );
     }
 
@@ -229,6 +231,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 String kernelSource = compilationResult.openClSource();
                 writeFrontendArtifacts(method, compilationResult);
                 writeLauncherSource(method, kernelSource, gpuMethods);
+                emitReturnValueConvenienceDiagnostic(method);
             } catch (RuntimeException | IOException exception) {
                 processingEnv.getMessager().printMessage(
                         Diagnostic.Kind.ERROR,
@@ -1734,6 +1737,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         String fallbackDescriptors = fallbackMethodsFor(method, gpuMethods).stream()
                 .map(this::toFallbackDescriptorSource)
                 .collect(Collectors.joining(",\n                    "));
+        ReturnValueConvenienceAnalysis returnValueConvenience = returnValueConvenienceAnalysis(method);
 
         return "package " + packageName + ";\n\n"
                 + "public final class " + className + " {\n"
@@ -1741,6 +1745,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "    public static final String KERNEL_RESOURCE = " + toJavaStringLiteral(resourcePath) + ";\n"
                 + "    public static final String IRGPU_RESOURCE = " + toJavaStringLiteral(irGpuResourcePath) + ";\n"
                 + "    public static final String KERNEL_SOURCE = " + toJavaStringLiteral(kernelSource) + ";\n"
+                + emitReturnValueConvenienceMetadata(returnValueConvenience)
                 + "    public static final net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor KERNEL_DESCRIPTOR =\n"
                 + "            new net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor(\n"
                 + "                    KERNEL_NAME,\n"
@@ -1769,6 +1774,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + emitExplicitWorkSizeCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicitExecutionConfigCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicit3DWorkSizeLauncher(method, parameterSignature)
+                + emitReturnValueConvenienceLaunchers(method, returnValueConvenience)
                 + "}\n";
     }
 
@@ -2105,6 +2111,221 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "    }\n";
     }
 
+    private String emitReturnValueConvenienceMetadata(ReturnValueConvenienceAnalysis analysis) {
+        ReturnValueOutputParameter output = analysis.output();
+        return "    public static final boolean RETURN_VALUE_CONVENIENCE_AVAILABLE = " + analysis.available() + ";\n"
+                + "    public static final String RETURN_VALUE_CONVENIENCE_STATUS = " + toJavaStringLiteral(analysis.status()) + ";\n"
+                + "    public static final String RETURN_VALUE_CONVENIENCE_REASON = " + toJavaStringLiteral(analysis.reason()) + ";\n"
+                + "    public static final String RETURN_VALUE_CONVENIENCE_OUTPUT_PARAMETER = "
+                + toJavaStringLiteral(output == null ? "" : output.parameter().getSimpleName().toString()) + ";\n"
+                + "    public static final String RETURN_VALUE_CONVENIENCE_OUTPUT_TYPE = "
+                + toJavaStringLiteral(output == null ? "" : output.arrayType()) + ";\n"
+                + "    public static final String RETURN_VALUE_CONVENIENCE_RETURN_TYPE = "
+                + toJavaStringLiteral(output == null ? "" : output.componentType()) + ";\n";
+    }
+
+    private String emitReturnValueConvenienceLaunchers(
+            ExecutableElement method,
+            ReturnValueConvenienceAnalysis analysis
+    ) {
+        if (!analysis.available()) {
+            return "";
+        }
+        ReturnValueOutputParameter output = analysis.output();
+
+        List<? extends VariableElement> parameters = method.getParameters();
+        List<? extends VariableElement> parametersWithoutOutput = parameters.stream()
+                .filter(parameter -> parameter != output.parameter())
+                .toList();
+        String parameterSignature = parametersWithoutOutput.stream()
+                .map(this::toParameterDeclaration)
+                .collect(Collectors.joining(", "));
+        String argumentList = parametersWithoutOutput.stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        String outputLocal = uniqueGeneratedLocalName(method, "__javatogpu$returnOutput");
+        String invokeArguments = parameters.stream()
+                .map(parameter -> parameter == output.parameter() ? outputLocal : parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        String returnType = output.componentType();
+        String outputArrayType = returnType + "[]";
+
+        String noOutputArguments = argumentList.isEmpty() ? "" : ", " + argumentList;
+        String noOutputSignature = parameterSignature.isEmpty() ? "" : parameterSignature;
+        String globalSignature = parameterSignature.isEmpty()
+                ? "long globalWorkSize"
+                : "long globalWorkSize, " + parameterSignature;
+        String configSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, " + parameterSignature;
+        String compileOptionsSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        String globalCompileOptionsSignature = parameterSignature.isEmpty()
+                ? "long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        String configCompileOptionsSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+
+        return "\n"
+                + "    public static " + returnType + " invokeReturningFirst(" + noOutputSignature + ") {\n"
+                + "        return invokeReturningFirst(1L" + noOutputArguments + ");\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirst(" + globalSignature + ") {\n"
+                + "        return invokeReturningFirstWithConfig(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(globalWorkSize)" + noOutputArguments + ");\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirstWithConfig(" + configSignature + ") {\n"
+                + "        " + outputArrayType + " " + outputLocal + " = new " + returnType + "[__javatogpu$returnOutputLength(executionConfig)];\n"
+                + "        invokeWithConfig(executionConfig" + (invokeArguments.isEmpty() ? "" : ", " + invokeArguments) + ");\n"
+                + "        return " + outputLocal + "[0];\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirstWithCompileOptions(" + compileOptionsSignature + ") {\n"
+                + "        return invokeReturningFirstWithGlobalWorkSizeAndCompileOptions(1L, compileOptions" + noOutputArguments + ");\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirstWithGlobalWorkSizeAndCompileOptions(" + globalCompileOptionsSignature + ") {\n"
+                + "        return invokeReturningFirstWithConfigAndCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(globalWorkSize), compileOptions" + noOutputArguments + ");\n"
+                + "    }\n\n"
+                + "    public static " + returnType + " invokeReturningFirstWithConfigAndCompileOptions(" + configCompileOptionsSignature + ") {\n"
+                + "        " + outputArrayType + " " + outputLocal + " = new " + returnType + "[__javatogpu$returnOutputLength(executionConfig)];\n"
+                + "        invokeWithConfigAndCompileOptions(executionConfig, compileOptions" + (invokeArguments.isEmpty() ? "" : ", " + invokeArguments) + ");\n"
+                + "        return " + outputLocal + "[0];\n"
+                + "    }\n\n"
+                + "    private static int __javatogpu$returnOutputLength(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig) {\n"
+                + "        java.util.Objects.requireNonNull(executionConfig, \"executionConfig\");\n"
+                + "        long itemCount = executionConfig.globalItemCount();\n"
+                + "        if (itemCount <= 0L || itemCount > Integer.MAX_VALUE) {\n"
+                + "            throw new IllegalArgumentException(\"Return-value convenience output length must be between 1 and Integer.MAX_VALUE: \" + itemCount);\n"
+                + "        }\n"
+                + "        return (int) itemCount;\n"
+                + "    }\n";
+    }
+
+    private ReturnValueConvenienceAnalysis returnValueConvenienceAnalysis(ExecutableElement method) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return ReturnValueConvenienceAnalysis.unavailable("method-return-type-not-void", true);
+        }
+
+        ArrayList<ReturnValueOutputParameter> readWriteArrays = new ArrayList<>();
+        for (VariableElement parameter : method.getParameters()) {
+            if (!"READ_WRITE".equals(resolveParameterAccess(parameter)) || parameter.asType().getKind() != TypeKind.ARRAY) {
+                continue;
+            }
+            TypeMirror componentType = ((ArrayType) parameter.asType()).getComponentType();
+            readWriteArrays.add(new ReturnValueOutputParameter(
+                    parameter,
+                    parameter.asType().toString(),
+                    componentType.toString(),
+                    isSupportedReturnValueOutputComponent(componentType)
+            ));
+        }
+
+        if (readWriteArrays.isEmpty()) {
+            return ReturnValueConvenienceAnalysis.unavailable("no-read-write-output-array", false);
+        }
+        if (readWriteArrays.size() > 1) {
+            return ReturnValueConvenienceAnalysis.unavailable(
+                    "multiple-read-write-output-arrays",
+                    readWriteArrays.stream().allMatch(output -> looksLikeOutputParameter(output.parameter()))
+            );
+        }
+
+        ReturnValueOutputParameter output = readWriteArrays.get(0);
+        if (!output.supportedPrimitive()) {
+            return ReturnValueConvenienceAnalysis.unavailable("output-array-component-not-supported", true);
+        }
+
+        return ReturnValueConvenienceAnalysis.available(output);
+    }
+
+    private void emitReturnValueConvenienceDiagnostic(ExecutableElement method) {
+        if (!returnValueConvenienceDiagnosticsEnabled()) {
+            return;
+        }
+        ReturnValueConvenienceAnalysis analysis = returnValueConvenienceAnalysis(method);
+        if (analysis.available() || !analysis.shouldReportDiagnostic()) {
+            return;
+        }
+        String diagnosticKey = buildLauncherPackageName(method) + "." + buildLauncherClassName(method);
+        if (!reportedReturnValueConvenienceDiagnostics.add(diagnosticKey)) {
+            return;
+        }
+        processingEnv.getMessager().printMessage(
+                Diagnostic.Kind.NOTE,
+                "Return-first launcher helper was not generated for "
+                        + method.getEnclosingElement()
+                        + "#"
+                        + method.getSimpleName()
+                        + ": "
+                        + analysis.reason()
+                        + ". Keep exactly one primitive @GPUGlobal read-write output array, or use explicit output-buffer launchers. "
+                        + "Runtime code can inspect this via GpuGeneratedLauncherInvoker.returnValueConvenience(...).",
+                method
+        );
+    }
+
+    private boolean looksLikeOutputParameter(VariableElement parameter) {
+        String name = parameter.getSimpleName().toString().toLowerCase(java.util.Locale.ROOT);
+        return name.equals("out")
+                || name.equals("output")
+                || name.startsWith("out")
+                || name.endsWith("out")
+                || name.startsWith("output")
+                || name.endsWith("output");
+    }
+
+    private boolean isSupportedReturnValueOutputComponent(TypeMirror componentType) {
+        return switch (componentType.toString()) {
+            case "byte", "short", "int", "long", "float", "double", "char" -> true;
+            default -> false;
+        };
+    }
+
+    private String uniqueGeneratedLocalName(ExecutableElement method, String baseName) {
+        Set<String> parameterNames = method.getParameters().stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.toSet());
+        String candidate = baseName;
+        int suffix = 0;
+        while (parameterNames.contains(candidate)) {
+            suffix++;
+            candidate = baseName + suffix;
+        }
+        return candidate;
+    }
+
+    private record ReturnValueConvenienceAnalysis(
+            boolean available,
+            String reason,
+            boolean reportDiagnostic,
+            ReturnValueOutputParameter output
+    ) {
+
+        private static ReturnValueConvenienceAnalysis available(ReturnValueOutputParameter output) {
+            return new ReturnValueConvenienceAnalysis(true, "single-primitive-output-array", false, output);
+        }
+
+        private static ReturnValueConvenienceAnalysis unavailable(String reason, boolean reportDiagnostic) {
+            return new ReturnValueConvenienceAnalysis(false, reason, reportDiagnostic, null);
+        }
+
+        private String status() {
+            return available ? "available" : "unavailable";
+        }
+
+        private boolean shouldReportDiagnostic() {
+            return reportDiagnostic;
+        }
+    }
+
+    private record ReturnValueOutputParameter(
+            VariableElement parameter,
+            String arrayType,
+            String componentType,
+            boolean supportedPrimitive
+    ) {
+    }
+
     private String emitLauncherInvokeBody(ExecutableElement method) {
         String arguments = method.getParameters().stream()
                 .map(parameter -> parameter.getSimpleName().toString())
@@ -2294,6 +2515,17 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
 
     private boolean debugAbiEnabled() {
         return Boolean.parseBoolean(processingEnv.getOptions().getOrDefault("javatogpu.debugAbi", "false"));
+    }
+
+    private boolean returnValueConvenienceDiagnosticsEnabled() {
+        String value = processingEnv.getOptions().getOrDefault("javatogpu.returnValueConvenienceDiagnostics", "summary");
+        if (value == null) {
+            return true;
+        }
+        return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "quiet", "off", "false", "none" -> false;
+            default -> true;
+        };
     }
 
     private GpuIrValidationMode irValidationMode() {
