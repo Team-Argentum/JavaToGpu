@@ -5,6 +5,7 @@ import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Built-in runtime backend catalog.
@@ -35,13 +36,13 @@ public final class GpuRuntimeBackendCatalog {
      * Returns the default OpenCL shared-cache backend entry.
      */
     public static GpuRuntimeBackendCatalogEntry openClSharedCache() {
-        return GpuRuntimeBackendCatalogEntry.owned(
+        return attachBuiltInExecutionSupport(GpuRuntimeBackendCatalogEntry.owned(
                 GpuBackendTarget.OPENCL,
                 "OpenCL (shared cache)",
                 OpenClGpuRuntimeBackend::sharedCache,
                 true,
                 "production runtime adapter"
-        );
+        ));
     }
 
     /**
@@ -53,13 +54,13 @@ public final class GpuRuntimeBackendCatalog {
         String diagnostic = "Runtime backend adapter is not implemented for "
                 + target
                 + "; keep using OPENCL or provide a custom runtime backend";
-        return GpuRuntimeBackendCatalogEntry.owned(
+        return attachBuiltInExecutionSupport(GpuRuntimeBackendCatalogEntry.owned(
                 target,
                 backendName,
                 () -> new UnsupportedGpuRuntimeBackend(target, backendName, diagnostic),
                 false,
                 diagnostic
-        );
+        ));
     }
 
     /**
@@ -75,5 +76,23 @@ public final class GpuRuntimeBackendCatalog {
             builder.preferCatalogEntry(entry);
         }
         return builder;
+    }
+
+    private static GpuRuntimeBackendCatalogEntry attachBuiltInExecutionSupport(GpuRuntimeBackendCatalogEntry entry) {
+        return builtInExecutionSupportFor(entry.backendTarget())
+                .map(entry::withExecutionSupport)
+                .orElse(entry);
+    }
+
+    private static Optional<GpuRuntimeBackendExecutionSupport> builtInExecutionSupportFor(GpuBackendTarget target) {
+        return switch (target == null ? GpuBackendTarget.UNKNOWN : target) {
+            case OPENCL -> Optional.of(new OpenClRuntimeBackendProvider().executionSupport());
+            case CUDA -> Optional.of(new CudaRuntimeBackendProvider().executionSupport());
+            case VULKAN -> Optional.of(new PlannedGpuRuntimeBackendProvider(GpuBackendTarget.VULKAN, 200)
+                    .executionSupport());
+            case METAL -> Optional.of(new PlannedGpuRuntimeBackendProvider(GpuBackendTarget.METAL, 300)
+                    .executionSupport());
+            default -> Optional.empty();
+        };
     }
 }

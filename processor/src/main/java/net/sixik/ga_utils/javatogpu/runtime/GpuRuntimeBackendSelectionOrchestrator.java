@@ -1,12 +1,14 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Backend-neutral runtime selection orchestrator.
@@ -25,7 +27,20 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
      */
     public static GpuRuntimeSelectionResult select(GpuRuntimeBackendPolicy policy) {
         Objects.requireNonNull(policy, "policy");
-        return select(policy.requirements(), policy.candidateFactories(), policy.candidateOwnerships());
+        return select(
+                policy.requirements(),
+                policy.backendRequirements(),
+                policy.candidateFactories(),
+                policy.candidateOwnerships(),
+                policy.candidateMetadata(),
+                policy.candidateOrdering(),
+                policy.scoreContributors(),
+                policy.scoreCompileOptions(),
+                policy.scoreDescriptor(),
+                policy.scoreIrGpuArtifact(),
+                policy.scoreDeviceProfile(),
+                policy.scoreCompilerFeedbackReport()
+        );
     }
 
     /**
@@ -147,12 +162,14 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
         Objects.requireNonNull(candidates, "candidates");
         ArrayList<GpuRuntimeBackendFactory> factories = new ArrayList<>(candidates.length);
         ArrayList<GpuRuntimeBackendOwnership> ownerships = new ArrayList<>(candidates.length);
+        ArrayList<GpuRuntimeBackendCandidateMetadata> metadata = new ArrayList<>(candidates.length);
         for (int index = 0; index < candidates.length; index++) {
             GpuRuntimeBackend candidate = Objects.requireNonNull(candidates[index], "candidates[" + index + "]");
             factories.add(() -> candidate);
             ownerships.add(GpuRuntimeBackendOwnership.BORROWED);
+            metadata.add(GpuRuntimeBackendCandidateMetadata.unknown());
         }
-        return select(requirements, factories, ownerships);
+        return select(requirements, factories, ownerships, metadata);
     }
 
     /**
@@ -163,11 +180,163 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
             List<GpuRuntimeBackendFactory> candidateFactories,
             List<GpuRuntimeBackendOwnership> candidateOwnerships
     ) {
+        return select(
+                requirements,
+                List.of(),
+                candidateFactories,
+                candidateOwnerships,
+                List.of(),
+                GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER,
+                List.of(),
+                null,
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty()
+        );
+    }
+
+    /**
+     * Selects a backend from factories and records catalog/provider metadata for every candidate when available.
+     */
+    public static GpuRuntimeSelectionResult select(
+            List<GpuRuntimeRequirement> requirements,
+            List<GpuRuntimeBackendFactory> candidateFactories,
+            List<GpuRuntimeBackendOwnership> candidateOwnerships,
+            List<GpuRuntimeBackendCandidateMetadata> candidateMetadata
+    ) {
+        return select(
+                requirements,
+                List.of(),
+                candidateFactories,
+                candidateOwnerships,
+                candidateMetadata,
+                GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER,
+                List.of(),
+                null,
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty()
+        );
+    }
+
+    /**
+     * Selects a backend from factories and records catalog/provider metadata for every candidate when available.
+     */
+    public static GpuRuntimeSelectionResult select(
+            List<GpuRuntimeRequirement> requirements,
+            List<GpuRuntimeBackendRequirement> backendRequirements,
+            List<GpuRuntimeBackendFactory> candidateFactories,
+            List<GpuRuntimeBackendOwnership> candidateOwnerships,
+            List<GpuRuntimeBackendCandidateMetadata> candidateMetadata
+    ) {
+        return select(
+                requirements,
+                backendRequirements,
+                candidateFactories,
+                candidateOwnerships,
+                candidateMetadata,
+                GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER,
+                List.of(),
+                null,
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty()
+        );
+    }
+
+    /**
+     * Selects a backend from factories and records catalog/provider metadata for every candidate when available.
+     */
+    public static GpuRuntimeSelectionResult select(
+            List<GpuRuntimeRequirement> requirements,
+            List<GpuRuntimeBackendRequirement> backendRequirements,
+            List<GpuRuntimeBackendFactory> candidateFactories,
+            List<GpuRuntimeBackendOwnership> candidateOwnerships,
+            List<GpuRuntimeBackendCandidateMetadata> candidateMetadata,
+            GpuRuntimeBackendCandidateOrdering candidateOrdering
+    ) {
+        return select(
+                requirements,
+                backendRequirements,
+                candidateFactories,
+                candidateOwnerships,
+                candidateMetadata,
+                candidateOrdering,
+                List.of(),
+                null,
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty()
+        );
+    }
+
+    /**
+     * Selects a backend from factories and records catalog/provider metadata for every candidate when available.
+     */
+    public static GpuRuntimeSelectionResult select(
+            List<GpuRuntimeRequirement> requirements,
+            List<GpuRuntimeBackendRequirement> backendRequirements,
+            List<GpuRuntimeBackendFactory> candidateFactories,
+            List<GpuRuntimeBackendOwnership> candidateOwnerships,
+            List<GpuRuntimeBackendCandidateMetadata> candidateMetadata,
+            GpuRuntimeBackendCandidateOrdering candidateOrdering,
+            List<GpuRuntimeBackendScoreContributor> scoreContributors,
+            GpuRuntimeCompileOptions scoreCompileOptions
+    ) {
+        return select(
+                requirements,
+                backendRequirements,
+                candidateFactories,
+                candidateOwnerships,
+                candidateMetadata,
+                candidateOrdering,
+                scoreContributors,
+                scoreCompileOptions,
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty()
+        );
+    }
+
+    /**
+     * Selects a backend from factories and records catalog/provider metadata for every candidate when available.
+     */
+    public static GpuRuntimeSelectionResult select(
+            List<GpuRuntimeRequirement> requirements,
+            List<GpuRuntimeBackendRequirement> backendRequirements,
+            List<GpuRuntimeBackendFactory> candidateFactories,
+            List<GpuRuntimeBackendOwnership> candidateOwnerships,
+            List<GpuRuntimeBackendCandidateMetadata> candidateMetadata,
+            GpuRuntimeBackendCandidateOrdering candidateOrdering,
+            List<GpuRuntimeBackendScoreContributor> scoreContributors,
+            GpuRuntimeCompileOptions scoreCompileOptions,
+            Optional<GpuKernelDescriptor> scoreDescriptor,
+            Optional<IrGpuArtifact> scoreIrGpuArtifact,
+            Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
+    ) {
         Objects.requireNonNull(requirements, "requirements");
+        Objects.requireNonNull(backendRequirements, "backendRequirements");
         Objects.requireNonNull(candidateFactories, "candidateFactories");
         Objects.requireNonNull(candidateOwnerships, "candidateOwnerships");
+        Objects.requireNonNull(candidateMetadata, "candidateMetadata");
+        Objects.requireNonNull(scoreContributors, "scoreContributors");
+        Optional<GpuKernelDescriptor> descriptor = scoreDescriptor == null ? Optional.empty() : scoreDescriptor;
+        Optional<IrGpuArtifact> irGpuArtifact = scoreIrGpuArtifact == null ? Optional.empty() : scoreIrGpuArtifact;
+        Optional<GpuRuntimeDeviceProfile> deviceProfile = scoreDeviceProfile == null ? Optional.empty() : scoreDeviceProfile;
+        Optional<GpuBackendCompilerFeedbackReport> compilerFeedbackReport = scoreCompilerFeedbackReport == null
+                ? Optional.empty()
+                : scoreCompilerFeedbackReport;
         if (candidateFactories.size() != candidateOwnerships.size()) {
             throw new IllegalArgumentException("candidate factory and ownership counts must match");
+        }
+        if (!candidateMetadata.isEmpty() && candidateFactories.size() != candidateMetadata.size()) {
+            throw new IllegalArgumentException("candidate factory and metadata counts must match");
         }
         if (candidateFactories.isEmpty()) {
             return new GpuRuntimeSelectionResult(
@@ -179,6 +348,10 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
 
         ArrayList<String> failures = new ArrayList<>();
         ArrayList<GpuRuntimeBackendCandidateDecision> decisions = new ArrayList<>();
+        ArrayList<ViableBackendCandidate> viableCandidates = new ArrayList<>();
+        GpuRuntimeBackendCandidateOrdering ordering = candidateOrdering == null
+                ? GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER
+                : candidateOrdering;
         for (int index = 0; index < candidateFactories.size(); index++) {
             GpuRuntimeBackendFactory factory = Objects.requireNonNull(
                     candidateFactories.get(index),
@@ -187,6 +360,9 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
             GpuRuntimeBackendOwnership ownership = candidateOwnerships.get(index) == null
                     ? GpuRuntimeBackendOwnership.BORROWED
                     : candidateOwnerships.get(index);
+            GpuRuntimeBackendCandidateMetadata metadata = candidateMetadata.isEmpty()
+                    ? GpuRuntimeBackendCandidateMetadata.unknown()
+                    : candidateMetadata.get(index);
             GpuRuntimeBackend candidate;
             try {
                 candidate = factory.create();
@@ -194,6 +370,7 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 GpuRuntimeBackendCandidateDecision decision = GpuRuntimeBackendCandidateDecision.creationFailed(
                         index,
                         ownership,
+                        metadata,
                         exception
                 );
                 decisions.add(decision);
@@ -202,9 +379,26 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
             }
 
             GpuRuntimeBackendReport report = GpuRuntime.describeBackend(candidate);
-            List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
+            List<String> reasons = new ArrayList<>(GpuRuntimeRequirements.failureReasons(report, requirements));
+            reasons.addAll(GpuRuntimeRequirements.failureReasons(report, metadata, backendRequirements));
+            GpuRuntimeBackendCandidateScore score = scoreForCandidate(
+                    index,
+                    report,
+                    metadata,
+                    !reasons.isEmpty(),
+                    scoreContributors,
+                    scoreCompileOptions,
+                    descriptor,
+                    irGpuArtifact,
+                    deviceProfile,
+                    compilerFeedbackReport
+            );
             if (reasons.isEmpty()) {
-                decisions.add(GpuRuntimeBackendCandidateDecision.selected(index, report, ownership));
+                if (ordering == GpuRuntimeBackendCandidateOrdering.SCORE_DESCENDING) {
+                    viableCandidates.add(new ViableBackendCandidate(index, candidate, report, ownership, metadata, score));
+                    continue;
+                }
+                decisions.add(GpuRuntimeBackendCandidateDecision.selected(index, report, ownership, metadata, score));
                 return new GpuRuntimeSelectionResult(
                         new GpuRuntimeBackendSelection(candidate, report, ownership),
                         failures,
@@ -221,13 +415,173 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                     report,
                     ownership,
                     reasons,
-                    closed
+                    closed,
+                    metadata,
+                    score
             );
             decisions.add(decision);
             failures.add(report.backendName() + ": " + String.join("; ", reasons));
         }
 
+        if (ordering == GpuRuntimeBackendCandidateOrdering.SCORE_DESCENDING && !viableCandidates.isEmpty()) {
+            ViableBackendCandidate selected = highestScoringCandidate(viableCandidates);
+            for (ViableBackendCandidate candidate : viableCandidates) {
+                if (candidate == selected) {
+                    decisions.add(GpuRuntimeBackendCandidateDecision.selected(
+                            candidate.index,
+                            candidate.report,
+                            candidate.ownership,
+                            candidate.metadata,
+                            candidate.score
+                    ));
+                    continue;
+                }
+                boolean closed = candidate.ownership == GpuRuntimeBackendOwnership.OWNED
+                        && closeCandidateQuietly(candidate.backend);
+                decisions.add(GpuRuntimeBackendCandidateDecision.notSelected(
+                        candidate.index,
+                        candidate.report,
+                        candidate.ownership,
+                        closed,
+                        candidate.metadata,
+                        "not selected: score below selected candidate " + selected.report.backendName(),
+                        candidate.score
+                ));
+            }
+            decisions.sort(java.util.Comparator.comparingInt(GpuRuntimeBackendCandidateDecision::candidateIndex));
+            return new GpuRuntimeSelectionResult(
+                    new GpuRuntimeBackendSelection(selected.backend, selected.report, selected.ownership),
+                    failures,
+                    decisions
+            );
+        }
+
         return new GpuRuntimeSelectionResult(null, failures, decisions);
+    }
+
+    private static ViableBackendCandidate highestScoringCandidate(List<ViableBackendCandidate> candidates) {
+        return candidates.stream()
+                .max(java.util.Comparator
+                        .comparingInt((ViableBackendCandidate candidate) -> candidate.score.totalScore())
+                        .thenComparing(candidate -> -candidate.index))
+                .orElseThrow();
+    }
+
+    private static GpuRuntimeBackendCandidateScore scoreForCandidate(
+            int candidateIndex,
+            GpuRuntimeBackendReport report,
+            GpuRuntimeBackendCandidateMetadata metadata,
+            boolean rejected,
+            List<GpuRuntimeBackendScoreContributor> scoreContributors,
+            GpuRuntimeCompileOptions scoreCompileOptions,
+            Optional<GpuKernelDescriptor> scoreDescriptor,
+            Optional<IrGpuArtifact> scoreIrGpuArtifact,
+            Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
+    ) {
+        List<GpuRuntimeBackendScoreContribution> contributions = scoreContributionsForCandidate(
+                candidateIndex,
+                report,
+                metadata,
+                scoreContributors,
+                scoreCompileOptions,
+                scoreDescriptor,
+                scoreIrGpuArtifact,
+                scoreDeviceProfile,
+                scoreCompilerFeedbackReport
+        );
+        return GpuRuntimeBackendCandidateScore.estimate(
+                candidateIndex,
+                report,
+                metadata,
+                true,
+                rejected,
+                contributions
+        );
+    }
+
+    private static List<GpuRuntimeBackendScoreContribution> scoreContributionsForCandidate(
+            int candidateIndex,
+            GpuRuntimeBackendReport report,
+            GpuRuntimeBackendCandidateMetadata metadata,
+            List<GpuRuntimeBackendScoreContributor> scoreContributors,
+            GpuRuntimeCompileOptions scoreCompileOptions,
+            Optional<GpuKernelDescriptor> scoreDescriptor,
+            Optional<IrGpuArtifact> scoreIrGpuArtifact,
+            Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
+    ) {
+        if (scoreContributors == null || scoreContributors.isEmpty()) {
+            return List.of();
+        }
+        ArrayList<GpuRuntimeBackendScoreContribution> contributions = new ArrayList<>();
+        GpuRuntimeBackendScoreContext context = new GpuRuntimeBackendScoreContext(
+                candidateIndex,
+                report,
+                metadata,
+                scoreCompileOptions,
+                scoreDescriptor,
+                scoreIrGpuArtifact,
+                scoreDeviceProfile,
+                scoreCompilerFeedbackReport
+        );
+        for (GpuRuntimeBackendScoreContributor contributor : scoreContributors) {
+            if (contributor == null || !contributor.appliesTo(report.backendTarget())) {
+                continue;
+            }
+            try {
+                GpuRuntimeBackendScoreContribution contribution = contributor.scoreCandidate(context);
+                if (contribution != null && (contribution.adjustment() != 0 || !contribution.diagnostics().isEmpty())) {
+                    contributions.add(annotateContribution(contributor, contribution));
+                }
+            } catch (RuntimeException exception) {
+                contributions.add(GpuRuntimeBackendScoreContribution.of(
+                        0,
+                        "policy score contributor " + contributor.extensionId() + " failed: " + exceptionMessage(exception)
+                ));
+            }
+        }
+        return List.copyOf(contributions);
+    }
+
+    private static GpuRuntimeBackendScoreContribution annotateContribution(
+            GpuRuntimeBackendScoreContributor contributor,
+            GpuRuntimeBackendScoreContribution contribution
+    ) {
+        String prefix = "policy score contributor " + contributor.extensionId();
+        if (contribution.diagnostics().isEmpty()) {
+            return GpuRuntimeBackendScoreContribution.of(
+                    contribution.adjustment(),
+                    prefix + " " + signed(contribution.adjustment())
+            );
+        }
+        return GpuRuntimeBackendScoreContribution.of(
+                contribution.adjustment(),
+                contribution.diagnostics().stream()
+                        .map(diagnostic -> prefix + ": " + diagnostic)
+                        .toList()
+        );
+    }
+
+    private static String signed(int value) {
+        return value >= 0 ? "+" + value : Integer.toString(value);
+    }
+
+    private static String exceptionMessage(RuntimeException exception) {
+        if (exception == null || exception.getMessage() == null || exception.getMessage().isBlank()) {
+            return "score-contributor-failed";
+        }
+        return exception.getMessage();
+    }
+
+    private record ViableBackendCandidate(
+            int index,
+            GpuRuntimeBackend backend,
+            GpuRuntimeBackendReport report,
+            GpuRuntimeBackendOwnership ownership,
+            GpuRuntimeBackendCandidateMetadata metadata,
+            GpuRuntimeBackendCandidateScore score
+    ) {
     }
 
     private static boolean closeCandidateQuietly(GpuRuntimeBackend candidate) {

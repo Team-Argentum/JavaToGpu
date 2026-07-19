@@ -242,6 +242,10 @@ public final class GpuRuntimeLifecycleFields {
         putRuntimeModuleField(fields, "backendTarget", moduleArtifact.backendTarget().name());
         putRuntimeModuleField(fields, "kind", moduleArtifact.kind());
         putRuntimeModuleField(fields, "format", moduleArtifact.format());
+        putRuntimeModuleField(fields, "format.canonical", moduleArtifact.moduleFormat().key());
+        putRuntimeModuleField(fields, "format.sourceLike", moduleArtifact.sourceLikeFormat());
+        putRuntimeModuleField(fields, "format.binaryLike", moduleArtifact.binaryLikeFormat());
+        putRuntimeModuleField(fields, "format.matchesBackendTarget", moduleArtifact.formatMatchesBackendTarget());
         putRuntimeModuleField(fields, "resource", normalize(moduleArtifact.resource(), "unknown"));
         putRuntimeModuleField(fields, "artifactVersion", moduleArtifact.artifactVersion());
         putRuntimeModuleField(fields, "lowererVersion", moduleArtifact.lowererVersion());
@@ -810,6 +814,13 @@ public final class GpuRuntimeLifecycleFields {
         putRuntimeDeviceField(fields, "supportsDoublePrecision", profile.supportsDoublePrecision());
         putRuntimeDeviceField(fields, "supportsImages", profile.supportsImages());
         putRuntimeDeviceField(fields, "supportsSubgroups", profile.supportsSubgroups());
+        putRuntimeDeviceField(fields, "capability.count", profile.runtimeCapabilities().size());
+        int capabilityIndex = 0;
+        for (GpuRuntimeCapability capability : profile.runtimeCapabilities()) {
+            putRuntimeDeviceField(fields, "capability." + capabilityIndex, capability.key());
+            putRuntimeDeviceField(fields, "capability." + capability.key(), true);
+            capabilityIndex++;
+        }
         if (profile.backendTarget() == GpuBackendTarget.CUDA) {
             putRuntimeDeviceCudaField(fields, "runtimeVersion", profile.cudaRuntimeVersion());
             putRuntimeDeviceCudaField(fields, "computeCapability", profile.cudaComputeCapability());

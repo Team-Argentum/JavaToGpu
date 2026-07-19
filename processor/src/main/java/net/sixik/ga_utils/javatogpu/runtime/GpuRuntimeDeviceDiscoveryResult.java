@@ -158,6 +158,13 @@ public record GpuRuntimeDeviceDiscoveryResult(
             fields.put(devicePrefix + ".computeUnits", Long.toString(profile.computeUnits()));
             fields.put(devicePrefix + ".globalMemoryBytes", Long.toString(profile.globalMemoryBytes()));
             fields.put(devicePrefix + ".maxWorkGroupSize", Long.toString(profile.maxWorkGroupSize()));
+            fields.put(devicePrefix + ".capability.count", Integer.toString(profile.runtimeCapabilities().size()));
+            int capabilityIndex = 0;
+            for (GpuRuntimeCapability capability : profile.runtimeCapabilities()) {
+                fields.put(devicePrefix + ".capability." + capabilityIndex, capability.key());
+                fields.put(devicePrefix + ".capability." + capability.key(), "true");
+                capabilityIndex++;
+            }
             if (profile.backendTarget() == GpuBackendTarget.CUDA) {
                 fields.put(devicePrefix + ".cuda.runtimeVersion", profile.cudaRuntimeVersion());
                 fields.put(devicePrefix + ".cuda.computeCapability", profile.cudaComputeCapability());

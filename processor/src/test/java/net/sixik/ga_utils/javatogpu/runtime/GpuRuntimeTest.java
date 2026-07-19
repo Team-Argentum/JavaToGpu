@@ -6,13 +6,20 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodTestVectorMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -1818,6 +1825,9 @@ class GpuRuntimeTest {
         assertEquals(GpuRuntimeBackendOwnership.OWNED, entry.ownership());
         assertTrue(entry.productionAdapter());
         assertEquals("production runtime adapter", entry.diagnostic());
+        assertTrue(entry.executionSupport().isPresent());
+        assertEquals("opencl-c", entry.executionSupport().orElseThrow().moduleFormatKeys());
+        assertTrue(entry.executionSupport().orElseThrow().declaresCapability(GpuRuntimeCapability.LOCAL_MEMORY));
     }
 
     @Test
@@ -1832,16 +1842,97 @@ class GpuRuntimeTest {
         assertTrue(!result.matched());
         assertEquals(1, result.candidateDecisions().size());
         assertEquals(GpuBackendTarget.CUDA, result.candidateDecisions().get(0).backendTarget());
+        assertTrue(result.candidateDecisions().get(0).metadata().executionSupportPresent());
+        assertEquals("cuda-c,ptx", result.candidateDecisions().get(0).metadata().moduleFormatKeys());
+        assertTrue(result.candidateDecisions().get(0).artifactFields("candidate")
+                .get("candidate.executionSupport.capabilities")
+                .contains("compute-capability"));
         assertTrue(result.failureSummary().contains("Runtime backend adapter is not implemented for CUDA"));
         assertTrue(result.explanation().toMarkdown().contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
+        assertTrue(result.explanation().toMarkdown().contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(result.explanation().toMarkdown().contains("executionPipeline: available=false"));
     }
 
     @Test
     void backendAdaptersExposeCatalogDiscoveryAndLowererContract() {
+        List<GpuRuntimeBackendProvider> providers = GpuRuntimeBackendProviders.standardWithPlannedBackends();
         List<GpuRuntimeBackendAdapter> adapters = GpuRuntimeBackendAdapters.standardWithPlannedBackends();
+        GpuRuntimeBackendProviderCatalog providerCatalog = GpuRuntimeBackendProviderCatalog.of(providers);
+        GpuRuntimeBackendProvider openClProvider = providers.get(0);
+        GpuRuntimeBackendProvider cudaProvider = providers.get(1);
         GpuRuntimeBackendAdapter openClAdapter = GpuRuntimeBackendAdapters.requireTarget(GpuBackendTarget.OPENCL);
         GpuRuntimeBackendAdapter cudaAdapter = GpuRuntimeBackendAdapters.requireTarget(GpuBackendTarget.CUDA);
 
+        assertEquals(4, providers.size());
+        assertEquals(4, providerCatalog.providers().size());
+        assertTrue(providerCatalog.forTarget(GpuBackendTarget.OPENCL).orElseThrow().executionAvailability()
+                .sharedPipelineRunnerAvailable());
+        assertEquals(cudaProvider, providerCatalog.forProviderId("backend-provider:cuda").orElseThrow());
+        assertEquals(1, providerCatalog.sharedPipelineRunnerAvailableCount());
+        assertEquals(3, providerCatalog.executionUnavailableCount());
+        assertTrue(providerCatalog.anySharedPipelineRunnerAvailable());
+        assertTrue(providerCatalog.toMarkdown().contains("OPENCL: status=execution-pipeline-available"));
+        assertTrue(providerCatalog.toMarkdown().contains("CUDA: status=execution-unavailable"));
+        Map<String, String> providerCatalogFields = providerCatalog.artifactFields("providerCatalog");
+        assertEquals("true", providerCatalogFields.get("runtime.backend.providerCatalog.present"));
+        assertEquals("4", providerCatalogFields.get("providerCatalog.provider.count"));
+        assertEquals("1", providerCatalogFields.get("providerCatalog.sharedRunner.available.count"));
+        assertEquals("3", providerCatalogFields.get("providerCatalog.executionUnavailable.count"));
+        assertEquals("backend-provider:opencl", providerCatalogFields.get("providerCatalog.provider.0.providerId"));
+        assertEquals(
+                "execution-pipeline-available",
+                providerCatalogFields.get("providerCatalog.provider.0.executionAvailability.status")
+        );
+        assertEquals("backend-provider:opencl", openClProvider.providerId());
+        assertEquals("backend-provider:cuda", cudaProvider.providerId());
+        assertEquals(GpuBackendTarget.OPENCL, openClProvider.createAdapter().backendTarget());
+        assertTrue(openClProvider.executionSupport().productionExecution());
+        assertTrue(openClProvider.executionSupport().executionPipelineAvailable());
+        assertEquals("opencl-c", openClProvider.executionSupport().moduleFormatKeys());
+        assertTrue(openClProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.OPENCL_C));
+        assertTrue(openClProvider.executionSupport().declaresCapability(GpuRuntimeCapability.LOCAL_MEMORY));
+        assertTrue(openClProvider.executionSupport().declaresCapability(GpuRuntimeCapability.MAX_WORK_GROUP_SIZE));
+        assertTrue(openClProvider.executionPipelineFactory().isPresent());
+        assertEquals("execution-pipeline-available", openClProvider.executionAvailability().status());
+        assertTrue(openClProvider.executionAvailability().sharedPipelineRunnerAvailable());
+        assertFalse(cudaProvider.executionSupport().productionExecution());
+        assertFalse(cudaProvider.executionSupport().executionPipelineAvailable());
+        assertEquals("cuda-c,ptx", cudaProvider.executionSupport().moduleFormatKeys());
+        assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C));
+        assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX));
+        assertTrue(cudaProvider.executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY));
+        assertTrue(cudaProvider.executionSupport().declaresCapability(GpuRuntimeCapability.GLOBAL_MEMORY));
+        assertTrue(cudaProvider.executionPipelineFactory().isEmpty());
+        assertEquals("execution-unavailable", cudaProvider.executionAvailability().status());
+        assertTrue(cudaProvider.executionAvailability().blockers().contains("backend-execution-stage-missing:compile"));
+        assertTrue(cudaProvider.executionAvailability().toMarkdown().contains("CUDA execution unavailable"));
+        Map<String, String> openClProviderFields = openClProvider.artifactFields("provider");
+        assertEquals("true", openClProviderFields.get("runtime.backend.provider.present"));
+        assertEquals("backend-provider:opencl", openClProviderFields.get("provider.providerId"));
+        assertEquals("true", openClProviderFields.get("runtime.backend.executionPipeline.available"));
+        assertEquals("true", openClProviderFields.get("runtime.backend.executionPipeline.factory.present"));
+        assertEquals("opencl-c", openClProviderFields.get("runtime.backend.executionSupport.moduleFormats"));
+        assertTrue(openClProviderFields.get("runtime.backend.executionSupport.capabilities").contains("local-memory"));
+        assertEquals(
+                "execution-pipeline-available",
+                openClProviderFields.get("runtime.backend.executionAvailability.status")
+        );
+        assertEquals("compile", openClProviderFields.get("provider.executionSupport.supportedStages").split(",")[3]);
+        Map<String, String> cudaProviderFields = cudaProvider.artifactFields("provider");
+        assertEquals("execution-unavailable", cudaProviderFields.get("runtime.backend.executionAvailability.status"));
+        assertEquals("false", cudaProviderFields.get("runtime.backend.executionAvailability.sharedRunner.available"));
+        assertEquals("3", cudaProviderFields.get("runtime.backend.executionAvailability.blocker.count"));
+        assertEquals("cuda-c,ptx", cudaProviderFields.get("runtime.backend.executionSupport.moduleFormats"));
+        assertTrue(cudaProviderFields.get("runtime.backend.executionSupport.capabilities").contains("compute-capability"));
+        GpuBackendExecutionPipelineFactory<?, ?, ?> openClPipelineFactory = openClProvider
+                .executionPipelineFactory()
+                .orElseThrow();
+        assertEquals("backend-execution-pipeline:opencl", openClPipelineFactory.factoryId());
+        try (net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend backend =
+                     new net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend()) {
+            assertTrue(openClPipelineFactory.supportsBackend(backend));
+            assertEquals(GpuBackendTarget.OPENCL, openClPipelineFactory.createPipeline(backend).backendTarget());
+        }
         assertEquals(4, adapters.size());
         assertEquals(GpuBackendTarget.OPENCL, openClAdapter.backendTarget());
         assertEquals("OpenCL", openClAdapter.backendName());
@@ -1860,6 +1951,9 @@ class GpuRuntimeTest {
 
         assertEquals(4, entries.size());
         assertEquals(GpuBackendTarget.CUDA, entries.get(1).backendTarget());
+        assertTrue(entries.get(0).executionSupport().orElseThrow().executionPipelineAvailable());
+        assertEquals("opencl-c", entries.get(0).executionSupport().orElseThrow().moduleFormatKeys());
+        assertEquals("cuda-c,ptx", entries.get(1).executionSupport().orElseThrow().moduleFormatKeys());
         assertEquals(GpuBackendTarget.CUDA, discoveryCatalog.forBackend(GpuBackendTarget.CUDA).orElseThrow().backendTarget());
         assertEquals("CUDA", discoveryCatalog.forBackend(GpuBackendTarget.CUDA).orElseThrow().backendName());
         assertEquals("CUDA", fields.get("adapter.backendTarget"));
@@ -1872,6 +1966,240 @@ class GpuRuntimeTest {
         assertEquals("false", fields.get("runtime.backend.adapter.productionAdapter"));
         assertEquals("backend-lowerer:cuda", fields.get("runtime.backend.lowerer.id"));
         assertEquals("CUDA", fields.get("runtime.backend.lowerer.target"));
+
+        GpuBackendLoweringResult cudaLoweringResult = GpuBackendLoweringResult.succeeded(
+                new GpuBackendModuleArtifact(
+                        GpuBackendTarget.CUDA,
+                        "source",
+                        "cuda-c",
+                        "",
+                        "javatogpu/sample/Demo/kernel.cu",
+                        "cuda:source:cuda-c:v1",
+                        "test-cuda-lowerer"
+                ),
+                GpuBackendSourceSelectionPlan.descriptorSource(
+                        GpuBackendTarget.CUDA,
+                        "cuda-c",
+                        "CUDA descriptor source preview"
+                ),
+                List.of("CUDA lowering preview only")
+        );
+        GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> unsupportedExecution =
+                cudaProvider.unsupportedExecutionResult(cudaLoweringResult);
+
+        assertTrue(!unsupportedExecution.succeeded());
+        assertEquals(GpuBackendStageStatus.UNSUPPORTED, unsupportedExecution.compilationResult().stageResult().status());
+        assertEquals(GpuBackendStageStatus.SKIPPED, unsupportedExecution.preparationResult().stageResult().status());
+        assertEquals(GpuBackendStageStatus.SKIPPED, unsupportedExecution.invocationResult().stageResult().status());
+        assertEquals(
+                "backend-execution-stage-missing:compile",
+                unsupportedExecution.compilationResult().stageResult().blockers().get(0)
+        );
+    }
+
+    @Test
+    void backendModuleFormatVocabularyNormalizesCommonBackendFormats() {
+        GpuBackendModuleArtifact openCl = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel() {}",
+                "generated/kernel.cl",
+                "test-opencl-lowerer"
+        );
+        GpuBackendModuleArtifact cuda = GpuBackendModuleArtifact.cudaSource(
+                "extern \"C\" __global__ void kernel() {}",
+                "generated/kernel.cu",
+                "test-cuda-lowerer"
+        );
+        GpuBackendModuleArtifact spirV = new GpuBackendModuleArtifact(
+                GpuBackendTarget.VULKAN,
+                "binary",
+                "spirv",
+                "",
+                "generated/kernel.spv",
+                "vulkan:binary:spir-v:v1",
+                "test-vulkan-lowerer",
+                "derived-spir-v",
+                false,
+                true,
+                "",
+                "",
+                "binary-load"
+        );
+
+        assertEquals("opencl-c", openCl.format());
+        assertEquals(GpuBackendModuleFormat.OPENCL_C, openCl.moduleFormat());
+        assertTrue(openCl.sourceLikeFormat());
+        assertFalse(openCl.binaryLikeFormat());
+        assertTrue(openCl.formatMatchesBackendTarget());
+        assertEquals("cuda-c", cuda.format());
+        assertEquals(GpuBackendModuleFormat.CUDA_C, cuda.moduleFormat());
+        assertTrue(cuda.sourceLikeFormat());
+        assertTrue(cuda.formatMatchesBackendTarget());
+        assertEquals("spir-v", spirV.format());
+        assertEquals(GpuBackendModuleFormat.SPIR_V, spirV.moduleFormat());
+        assertFalse(spirV.sourceLikeFormat());
+        assertTrue(spirV.binaryLikeFormat());
+        assertTrue(spirV.formatMatchesBackendTarget());
+    }
+
+    @Test
+    void runtimeDeviceProfilesExposeBackendNeutralCapabilityFacts() {
+        GpuRuntimeDeviceProfile profile = GpuRuntimeDeviceProfile.openCl(
+                "OpenCL",
+                "opencl-0",
+                "Capability GPU",
+                "NVIDIA Corporation",
+                "595.97",
+                "OpenCL 3.0 CUDA 13.2.73",
+                "NVIDIA CUDA",
+                "OpenCL 3.0 CUDA 13.2.73",
+                GpuDeviceClassTarget.DGPU,
+                48L,
+                12_000_000_000L,
+                65_536L,
+                1_024L,
+                1L,
+                false,
+                true,
+                true,
+                true
+        );
+        Map<String, String> facts = profile.capabilityFacts();
+
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.FP64));
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.IMAGES));
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.SUBGROUPS));
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.LOCAL_MEMORY));
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.MAX_WORK_GROUP_SIZE));
+        assertEquals("true", facts.get("capability.fp64"));
+        assertEquals("true", facts.get("capability.images"));
+        assertEquals("65536", facts.get("localMemoryBytes"));
+        assertEquals("1024", facts.get("maxWorkGroupSize"));
+    }
+
+    @Test
+    void backendReportsCanBeCheckedWithRuntimeCapabilityVocabulary() {
+        GpuRuntimeBackendReport report = GpuRuntimeBackendReport.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                "Capability GPU",
+                new GpuRuntimeApiVersion(3, 0),
+                "OpenCL 3.0 Capability GPU",
+                Set.of(GpuRuntimeFeature.DOUBLE_PRECISION, GpuRuntimeFeature.IMAGES),
+                65_536L,
+                1_024L,
+                null
+        );
+
+        assertTrue(report.supports(GpuRuntimeCapability.FP64));
+        assertTrue(report.supports(GpuRuntimeCapability.IMAGES));
+        assertTrue(report.supports(GpuRuntimeCapability.LOCAL_MEMORY));
+        assertTrue(GpuRuntimeRequirements.isSatisfied(
+                report,
+                List.of(
+                        GpuRuntimeRequirements.requireCapability(GpuRuntimeCapability.FP64),
+                        GpuRuntimeRequirements.requireCapability(GpuRuntimeCapability.MAX_WORK_GROUP_SIZE)
+                )
+        ));
+        assertEquals(List.of("missing capability subgroups"), GpuRuntimeRequirements.failureReasons(
+                report,
+                List.of(GpuRuntimeRequirements.requireCapability(GpuRuntimeCapability.SUBGROUPS))
+        ));
+    }
+
+    @Test
+    void backendProviderRegistryRejectsDuplicateProviderIds() {
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> GpuRuntimeBackendProviders.adapters(List.of(
+                        new CudaRuntimeBackendProvider(),
+                        new CudaRuntimeBackendProvider()
+                ))
+        );
+
+        assertTrue(exception.getMessage().contains("Duplicate GPU runtime backend provider id 'backend-provider:cuda'"));
+    }
+
+    @Test
+    void backendProviderRegistryRejectsMismatchedExecutionSupportTarget() {
+        GpuRuntimeBackendProvider provider = new GpuRuntimeBackendProvider() {
+            @Override
+            public GpuBackendTarget backendTarget() {
+                return GpuBackendTarget.CUDA;
+            }
+
+            @Override
+            public String providerId() {
+                return "test.mismatched-execution-support";
+            }
+
+            @Override
+            public String providerVersion() {
+                return "1";
+            }
+
+            @Override
+            public int providerOrder() {
+                return 1_000;
+            }
+
+            @Override
+            public GpuRuntimeBackendAdapter createAdapter() {
+                return new CudaRuntimeBackendAdapter();
+            }
+
+            @Override
+            public GpuRuntimeBackendExecutionSupport executionSupport() {
+                return GpuRuntimeBackendExecutionSupport.productionPipeline(
+                        GpuBackendTarget.OPENCL,
+                        providerId(),
+                        "intentionally mismatched for registry validation"
+                );
+            }
+        };
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> GpuRuntimeBackendProviders.adapters(List.of(provider))
+        );
+
+        assertTrue(exception.getMessage().contains("execution support reports OPENCL"));
+    }
+
+    @Test
+    void backendProviderRegistryLoadsExternalProvidersFromServiceLoader(@TempDir Path tempDir) throws Exception {
+        Path serviceFile = tempDir.resolve("META-INF/services/" + GpuRuntimeBackendProvider.class.getName());
+        Files.createDirectories(serviceFile.getParent());
+        Files.writeString(
+                serviceFile,
+                TestServiceLoadedRuntimeBackendProvider.class.getName() + System.lineSeparator(),
+                StandardCharsets.UTF_8
+        );
+
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new java.net.URL[]{tempDir.toUri().toURL()},
+                GpuRuntimeTest.class.getClassLoader()
+        )) {
+            GpuRuntimeBackendProviderCatalog providerCatalog = GpuRuntimeBackendProviderCatalog
+                    .standardWithPlannedBackends(classLoader);
+            List<GpuRuntimeBackendProvider> providers = providerCatalog.providers();
+            GpuRuntimeBackendProvider serviceLoadedProvider = providers.stream()
+                    .filter(provider -> provider.providerId().equals("test.backend-provider:service-loaded"))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertEquals(GpuBackendTarget.UNKNOWN, serviceLoadedProvider.backendTarget());
+            assertEquals("test-1", serviceLoadedProvider.providerVersion());
+            assertEquals("execution-unavailable", serviceLoadedProvider.executionAvailability().status());
+            assertTrue(serviceLoadedProvider.executionAvailability().diagnostics()
+                    .contains("test provider loaded from a temporary ServiceLoader descriptor"));
+            assertSame(serviceLoadedProvider, providers.get(providers.size() - 1));
+            assertSame(serviceLoadedProvider, providerCatalog.forTarget(GpuBackendTarget.UNKNOWN).orElseThrow());
+            assertTrue(providerCatalog.toMarkdown().contains("UNKNOWN: status=execution-unavailable"));
+
+            List<GpuRuntimeBackendAdapter> adapters = GpuRuntimeBackendProviders.adapters(providers);
+
+            assertTrue(adapters.stream().anyMatch(adapter -> adapter.backendTarget() == GpuBackendTarget.UNKNOWN));
+        }
     }
 
     @Test
@@ -1921,6 +2249,625 @@ class GpuRuntimeTest {
         assertEquals(2, result.candidateDecisions().size());
         assertEquals("CUDA fixture unavailable", result.candidateDecisions().get(0).firstBlocker());
         assertTrue(result.candidateDecisions().get(1).selected());
+    }
+
+    @Test
+    void backendPolicyCanUseCatalogMetadataRequirements() {
+        CloseCountingBackend openClForPtxCheck = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+        CloseCountingBackend cudaForPtxCheck = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+        GpuRuntimeBackendCatalogEntry openClEntry = metadataBackedCatalogEntry(
+                GpuBackendTarget.OPENCL,
+                "OpenCL metadata fixture",
+                openClForPtxCheck,
+                GpuRuntimeBackendExecutionSupport.productionPipeline(
+                        GpuBackendTarget.OPENCL,
+                        "test.opencl.execution-support",
+                        Set.of(GpuBackendModuleFormat.OPENCL_C),
+                        Set.of(GpuRuntimeCapability.LOCAL_MEMORY),
+                        "test OpenCL production fixture"
+                )
+        );
+        GpuRuntimeBackendCatalogEntry cudaDiscoveryEntry = metadataBackedCatalogEntry(
+                GpuBackendTarget.CUDA,
+                "CUDA discovery fixture",
+                cudaForPtxCheck,
+                GpuRuntimeBackendExecutionSupport.discoveryOnly(
+                        GpuBackendTarget.CUDA,
+                        "test.cuda.execution-support",
+                        Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                        Set.of(GpuRuntimeCapability.COMPUTE_CAPABILITY),
+                        "test CUDA discovery fixture"
+                )
+        );
+
+        GpuRuntimeSelectionResult ptxSelection = GpuRuntimeBackendPolicy.builder()
+                .requireDeclaredModuleFormat(GpuBackendModuleFormat.PTX)
+                .preferCatalog(List.of(openClEntry, cudaDiscoveryEntry))
+                .build()
+                .trySelect();
+
+        assertTrue(ptxSelection.matched());
+        assertSame(cudaForPtxCheck, ptxSelection.requireSelection().backend());
+        assertEquals("missing declared module format ptx (declared: opencl-c)",
+                ptxSelection.candidateDecisions().get(0).firstBlocker());
+        assertEquals("cuda-c,ptx", ptxSelection.candidateDecisions().get(1).metadata().moduleFormatKeys());
+        assertEquals(1_000_000, ptxSelection.candidateDecisions().get(0).score().preferenceScore());
+        assertTrue(ptxSelection.candidateDecisions().get(0).score().rejected());
+        assertEquals(999_000, ptxSelection.candidateDecisions().get(1).score().preferenceScore());
+        assertTrue(!ptxSelection.candidateDecisions().get(1).score().rejected());
+        assertTrue(ptxSelection.candidateDecisions().get(1).score().diagnostics()
+                .contains("discovery-only support +250"));
+        assertTrue(ptxSelection.candidateDecisions().get(1).score().runtimeScoreAdjustment() > 0);
+        assertTrue(ptxSelection.candidateDecisions().get(1).score().diagnostics()
+                .contains("runtime local memory +64"));
+        assertTrue(ptxSelection.explanation().toMarkdown().contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(ptxSelection.explanation().toMarkdown().contains("score: preference=999000"));
+        assertTrue(ptxSelection.explanation().toMarkdown().contains("runtimeAdjustment="));
+
+        CloseCountingBackend openClForExecutionCheck = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+        CloseCountingBackend cudaForExecutionCheck = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+
+        GpuRuntimeSelectionResult executionSelection = GpuRuntimeBackendPolicy.builder()
+                .requireExecutionPipelineAvailable()
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA discovery fixture",
+                                cudaForExecutionCheck,
+                                cudaDiscoveryEntry.executionSupport().orElseThrow()
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL metadata fixture",
+                                openClForExecutionCheck,
+                                openClEntry.executionSupport().orElseThrow()
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(executionSelection.matched());
+        assertSame(openClForExecutionCheck, executionSelection.requireSelection().backend());
+        assertEquals("backend execution pipeline is not available (declared stages: discover)",
+                executionSelection.candidateDecisions().get(0).firstBlocker());
+        assertTrue(executionSelection.candidateDecisions().get(0).closed());
+        assertEquals("true", executionSelection.candidateDecisions().get(0).artifactFields("candidate")
+                .get("candidate.score.rejected"));
+        assertTrue(executionSelection.candidateDecisions().get(1).score().diagnostics()
+                .contains("compile/prepare/invoke pipeline available +5000"));
+        assertEquals(1, cudaForExecutionCheck.closeCalls);
+        assertTrue(executionSelection.candidateDecisions().get(1).selected());
+        assertTrue(executionSelection.explanation().toMarkdown().contains("executionPipeline: available=true"));
+    }
+
+    @Test
+    void backendPolicyCanOptIntoScoreBasedCandidateRanking() {
+        CloseCountingBackend defaultCuda = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+        CloseCountingBackend defaultOpenCl = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+        GpuRuntimeBackendExecutionSupport cudaDiscoverySupport = GpuRuntimeBackendExecutionSupport.discoveryOnly(
+                GpuBackendTarget.CUDA,
+                "test.cuda.discovery-ranking",
+                Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                Set.of(GpuRuntimeCapability.COMPUTE_CAPABILITY),
+                "test CUDA discovery fixture"
+        );
+        GpuRuntimeBackendExecutionSupport openClExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.OPENCL,
+                "test.opencl.production-ranking",
+                Set.of(GpuBackendModuleFormat.OPENCL_C),
+                Set.of(GpuRuntimeCapability.LOCAL_MEMORY),
+                "test OpenCL production fixture"
+        );
+
+        GpuRuntimeSelectionResult fallbackSelection = GpuRuntimeBackendPolicy.builder()
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA discovery fixture",
+                                defaultCuda,
+                                cudaDiscoverySupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL production fixture",
+                                defaultOpenCl,
+                                openClExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(fallbackSelection.matched());
+        assertSame(defaultCuda, fallbackSelection.requireSelection().backend());
+        assertEquals(GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER,
+                GpuRuntimeBackendPolicy.builder()
+                        .preferCatalogEntry(metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA discovery fixture",
+                                defaultCuda,
+                                cudaDiscoverySupport
+                        ))
+                        .build()
+                        .candidateOrdering());
+        assertEquals(1, fallbackSelection.candidateDecisions().size());
+        assertEquals(0, defaultOpenCl.closeCalls);
+
+        CloseCountingBackend rankedCuda = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+        CloseCountingBackend rankedOpenCl = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+
+        GpuRuntimeSelectionResult rankedSelection = GpuRuntimeBackendPolicy.builder()
+                .rankCandidatesByScore()
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA discovery fixture",
+                                rankedCuda,
+                                cudaDiscoverySupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL production fixture",
+                                rankedOpenCl,
+                                openClExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(rankedSelection.matched());
+        assertSame(rankedOpenCl, rankedSelection.requireSelection().backend());
+        assertEquals(2, rankedSelection.candidateDecisions().size());
+        assertTrue(!rankedSelection.candidateDecisions().get(0).selected());
+        assertTrue(rankedSelection.candidateDecisions().get(0).closed());
+        assertTrue(rankedSelection.candidateDecisions().get(0).diagnostics().get(0)
+                .contains("not selected: score below selected candidate OpenCL"));
+        assertTrue(rankedSelection.candidateDecisions().get(1).selected());
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().totalScore()
+                > rankedSelection.candidateDecisions().get(0).score().totalScore());
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics()
+                .contains("runtime max work-group size +1024"));
+        assertEquals(1, rankedCuda.closeCalls);
+        assertEquals(0, rankedOpenCl.closeCalls);
+    }
+
+    @Test
+    void backendPolicyCanApplyExplicitScoreContributorsWithoutChangingFallbackDefault() {
+        GpuRuntimeBackendExecutionSupport openClExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.OPENCL,
+                "test.opencl.score-contributor",
+                Set.of(GpuBackendModuleFormat.OPENCL_C),
+                Set.of(GpuRuntimeCapability.LOCAL_MEMORY),
+                "test OpenCL production fixture"
+        );
+        GpuRuntimeBackendExecutionSupport cudaExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.CUDA,
+                "test.cuda.score-contributor",
+                Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                Set.of(GpuRuntimeCapability.COMPUTE_CAPABILITY),
+                "test CUDA production fixture"
+        );
+        GpuRuntimeBackendScoreContributor cudaWorkloadScore = new GpuRuntimeBackendScoreContributor() {
+            @Override
+            public String extensionId() {
+                return "test.backend-score:cuda-workload";
+            }
+
+            @Override
+            public GpuRuntimeBackendScoreContribution scoreCandidate(GpuRuntimeBackendScoreContext context) {
+                if (context.report().backendTarget() != GpuBackendTarget.CUDA) {
+                    return GpuRuntimeBackendScoreContribution.none();
+                }
+                if (!"cuda-score-test".equals(context.compileOptions().optimizationProfile())) {
+                    return GpuRuntimeBackendScoreContribution.none();
+                }
+                return GpuRuntimeBackendScoreContribution.of(50_000, "cached workload evidence +50000");
+            }
+        };
+
+        CloseCountingBackend fallbackOpenCl = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+        CloseCountingBackend fallbackCuda = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+
+        GpuRuntimeSelectionResult fallbackSelection = GpuRuntimeBackendPolicy.builder()
+                .scoreCandidatesWith(cudaWorkloadScore)
+                .scoreCandidatesForCompileOptions(GpuRuntimeCompileOptions.cuda(List.of(), Map.of(), "cuda-score-test"))
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                fallbackOpenCl,
+                                openClExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                fallbackCuda,
+                                cudaExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(fallbackSelection.matched());
+        assertSame(fallbackOpenCl, fallbackSelection.requireSelection().backend());
+        assertEquals(1, fallbackSelection.candidateDecisions().size());
+        assertEquals(0, fallbackCuda.closeCalls);
+
+        CloseCountingBackend rankedOpenCl = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+        CloseCountingBackend rankedCuda = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+
+        GpuRuntimeSelectionResult rankedSelection = GpuRuntimeBackendPolicy.builder()
+                .rankCandidatesByScore()
+                .scoreCandidatesWith(cudaWorkloadScore)
+                .scoreCandidatesForCompileOptions(GpuRuntimeCompileOptions.cuda(List.of(), Map.of(), "cuda-score-test"))
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                rankedOpenCl,
+                                openClExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                rankedCuda,
+                                cudaExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(rankedSelection.matched());
+        assertSame(rankedCuda, rankedSelection.requireSelection().backend());
+        assertTrue(!rankedSelection.candidateDecisions().get(0).selected());
+        assertTrue(rankedSelection.candidateDecisions().get(0).closed());
+        assertTrue(rankedSelection.candidateDecisions().get(1).selected());
+        assertEquals(50_000, rankedSelection.candidateDecisions().get(1).score().policyScoreAdjustment());
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics()
+                .contains("policy score contributor test.backend-score:cuda-workload: cached workload evidence +50000"));
+        assertTrue(rankedSelection.explanation().toMarkdown().contains("policyAdjustment=50000"));
+        assertEquals(1, rankedOpenCl.closeCalls);
+        assertEquals(0, rankedCuda.closeCalls);
+    }
+
+    @Test
+    void backendPolicyCanRankWithPrecomputedCompilerFeedback() {
+        GpuRuntimeBackendExecutionSupport openClExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.OPENCL,
+                "test.opencl.compiler-feedback-score",
+                Set.of(GpuBackendModuleFormat.OPENCL_C),
+                Set.of(GpuRuntimeCapability.LOCAL_MEMORY),
+                "test OpenCL production fixture"
+        );
+        GpuRuntimeBackendExecutionSupport cudaExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.CUDA,
+                "test.cuda.compiler-feedback-score",
+                Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                Set.of(GpuRuntimeCapability.COMPUTE_CAPABILITY),
+                "test CUDA production fixture"
+        );
+        GpuBackendCompilerFeedbackReport cudaFeedbackReport = new GpuBackendCompilerFeedbackReport(
+                new GpuBackendCompilerFeedbackRequest(
+                        GpuBackendTarget.CUDA,
+                        "ptx",
+                        "javatogpu/runtime/backend-score.ptx",
+                        "Used 24 registers; 0 bytes stack frame; 0 bytes spill stores; 0 bytes spill loads"
+                ),
+                List.of(new GpuBackendCompilerFeedback(
+                        "compiler-feedback:test",
+                        "1",
+                        "jtg_backend_score_kernel",
+                        24,
+                        GpuBackendCompilerFeedback.UNKNOWN,
+                        GpuBackendCompilerFeedback.UNKNOWN,
+                        0,
+                        0,
+                        0,
+                        512,
+                        750,
+                        Map.of("source", "unit-test"),
+                        List.of()
+                )),
+                List.of()
+        );
+
+        CloseCountingBackend fallbackOpenCl = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+        CloseCountingBackend fallbackCuda = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+
+        GpuRuntimeSelectionResult fallbackSelection = GpuRuntimeBackendPolicy.builder()
+                .scoreCandidatesWithCompilerFeedback(cudaFeedbackReport)
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                fallbackOpenCl,
+                                openClExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                fallbackCuda,
+                                cudaExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(fallbackSelection.matched());
+        assertSame(fallbackOpenCl, fallbackSelection.requireSelection().backend());
+        assertEquals(1, fallbackSelection.candidateDecisions().size());
+        assertEquals(0, fallbackCuda.closeCalls);
+
+        CloseCountingBackend rankedOpenCl = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                new GpuRuntimeApiVersion(3, 0)
+        ));
+        CloseCountingBackend rankedCuda = new CloseCountingBackend(availableBackendReport(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                new GpuRuntimeApiVersion(12, 0)
+        ));
+
+        GpuRuntimeSelectionResult rankedSelection = GpuRuntimeBackendPolicy.builder()
+                .rankCandidatesByScore()
+                .scoreCandidatesWithCompilerFeedback(cudaFeedbackReport)
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                rankedOpenCl,
+                                openClExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                rankedCuda,
+                                cudaExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(rankedSelection.matched());
+        assertSame(rankedCuda, rankedSelection.requireSelection().backend());
+        assertTrue(rankedSelection.candidateDecisions().get(0).closed());
+        assertTrue(rankedSelection.candidateDecisions().get(1).selected());
+        assertEquals(223_000, rankedSelection.candidateDecisions().get(1).score().policyScoreAdjustment());
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("compiler feedback target=CUDA")));
+        assertTrue(rankedSelection.explanation().toMarkdown().contains("policyAdjustment=223000"));
+        assertEquals(1, rankedOpenCl.closeCalls);
+        assertEquals(0, rankedCuda.closeCalls);
+    }
+
+    @Test
+    void backendPolicyCanRankWithCachedMethodTestProbeEvidence(@TempDir Path tempDir) throws Exception {
+        Path fixtureRoot = tempDir.resolve("fixture-root");
+        Files.createDirectories(fixtureRoot.resolve("fixtures"));
+        Files.writeString(fixtureRoot.resolve("fixtures/backend-score.inputs.json"), "{\"input\":[1.0,2.0]}");
+        Files.writeString(fixtureRoot.resolve("fixtures/backend-score.outputs.json"), "{\"output\":[2.0,4.0]}");
+        Path cacheDirectory = tempDir.resolve("method-test-cache");
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "jtg_backend_score_kernel",
+                "javatogpu/runtime/backend-score.cl",
+                "__kernel void jtg_backend_score_kernel(__global const float* input, __global float* output) { }",
+                "javatogpu/runtime/backend-score.irgpu.properties",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule("backendScoreKernel", "jtg_backend_score_kernel", List.of(), List.of(), List.of()),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/runtime/backend-score.cl")),
+                "cuda",
+                "probe-ranked"
+        ).withMethodTestVectors(List.of(new IrGpuMethodTestVectorMetadata(
+                "backendScoreKernel",
+                "jtg_backend_score_kernel",
+                "backend-score-smoke",
+                List.of("fixtures/backend-score.inputs.json"),
+                List.of("fixtures/backend-score.outputs.json"),
+                "abs=1e-5",
+                List.of("selection", "backend-score"),
+                true,
+                "GPUTest"
+        )));
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
+                .cuda(List.of(), Map.of(), "probe-ranked")
+                .withPersistentMethodTestProbeEvidenceRanking(cacheDirectory);
+        GpuRuntimeDeviceProfile cudaProfile = GpuRuntimeDeviceProfile.cuda(
+                "cuda-score-device-0",
+                "CUDA score GPU",
+                "NVIDIA",
+                "test-driver",
+                "CUDA 12.0 compute capability 9.0",
+                GpuDeviceClassTarget.DGPU,
+                16L * 1024L * 1024L * 1024L,
+                "NVIDIA CUDA",
+                "driver 999, CUDA 12.0"
+        );
+        GpuRuntimeBackendReport cudaReport = GpuRuntimeBackendReport.available(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                cudaProfile.deviceLabel(),
+                new GpuRuntimeApiVersion(12, 0),
+                cudaProfile.apiVersionText(),
+                java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                null,
+                null,
+                "synthetic CUDA backend score fixture"
+        );
+
+        ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+        try (URLClassLoader classLoader = new URLClassLoader(
+                new java.net.URL[]{fixtureRoot.toUri().toURL()},
+                previousClassLoader
+        )) {
+            Thread.currentThread().setContextClassLoader(classLoader);
+            GpuRuntimeMethodTestProbePlan probePlan = GpuRuntimeMethodTestProbes.plan(descriptor, artifact);
+            GpuRuntimeMethodTestFixtureValueBindingPlan bindings = GpuRuntimeMethodTestProbes.fixtureValueBindings(
+                    descriptor,
+                    probePlan,
+                    classLoader
+            );
+            GpuRuntimeMethodTestInvocationMaterializationPlan materialization =
+                    GpuRuntimeMethodTestProbes.fixtureInvocationMaterialization(descriptor, bindings);
+            GpuRuntimeMethodTestInvocationMaterialization invocation = materialization.invocations().get(0);
+            GpuExecutionConfig executionConfig = GpuExecutionConfig.oneDimensional(2L);
+            GpuRuntimeMethodTestGpuProbeEvidenceKey evidenceKey = GpuRuntimeMethodTestGpuProbeEvidenceKey.from(
+                    descriptor,
+                    invocation,
+                    executionConfig,
+                    compileOptions,
+                    cudaReport,
+                    cudaProfile
+            );
+            GpuRuntimeMethodTestGpuProbeCache.persistent(cacheDirectory).record(new GpuRuntimeMethodTestGpuProbeExecution(
+                    "backend-score-smoke",
+                    evidenceKey,
+                    false,
+                    true,
+                    true,
+                    executionConfig,
+                    List.of(new GpuRuntimeMethodTestReferenceComparison(
+                            "backend-score-smoke",
+                            1,
+                            "output",
+                            "float[]",
+                            GpuKernelParameterAccess.READ_WRITE,
+                            true,
+                            true,
+                            "java-float-array",
+                            2,
+                            List.of("2.0", "4.0"),
+                            "java-float-array",
+                            2,
+                            List.of("2.0", "4.0"),
+                            1.0e-5d,
+                            0.0d,
+                            "none",
+                            "none",
+                            "cached backend score fixture"
+                    )),
+                    List.of(),
+                    List.of("cached backend score fixture")
+            ));
+
+            CloseCountingBackend rankedOpenCl = new CloseCountingBackend(availableBackendReport(
+                    GpuBackendTarget.OPENCL,
+                    "OpenCL",
+                    new GpuRuntimeApiVersion(3, 0)
+            ));
+            CloseCountingBackend rankedCuda = new CloseCountingBackend(cudaReport);
+            GpuRuntimeSelectionResult rankedSelection = GpuRuntimeBackendPolicy.builder()
+                    .rankCandidatesByScore()
+                    .scoreCandidatesForCompileRequest(new GpuRuntimeCompileRequest(
+                            descriptor,
+                            compileOptions,
+                            cudaProfile,
+                            Optional.of(artifact)
+                    ))
+                    .scoreCandidatesWithCachedMethodTestProbeEvidence()
+                    .preferCatalog(List.of(
+                            metadataBackedCatalogEntry(
+                                    GpuBackendTarget.OPENCL,
+                                    "OpenCL score fixture",
+                                    rankedOpenCl,
+                                    GpuRuntimeBackendExecutionSupport.productionPipeline(
+                                            GpuBackendTarget.OPENCL,
+                                            "test.opencl.method-test-score",
+                                            Set.of(GpuBackendModuleFormat.OPENCL_C),
+                                            Set.of(GpuRuntimeCapability.LOCAL_MEMORY),
+                                            "test OpenCL production fixture"
+                                    )
+                            ),
+                            metadataBackedCatalogEntry(
+                                    GpuBackendTarget.CUDA,
+                                    "CUDA score fixture",
+                                    rankedCuda,
+                                    GpuRuntimeBackendExecutionSupport.productionPipeline(
+                                            GpuBackendTarget.CUDA,
+                                            "test.cuda.method-test-score",
+                                            Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                                            Set.of(GpuRuntimeCapability.COMPUTE_CAPABILITY),
+                                            "test CUDA production fixture"
+                                    )
+                            )
+                    ))
+                    .build()
+                    .trySelect();
+
+            assertTrue(rankedSelection.matched());
+            assertSame(rankedCuda, rankedSelection.requireSelection().backend());
+            assertTrue(rankedSelection.candidateDecisions().get(0).closed());
+            assertTrue(rankedSelection.candidateDecisions().get(1).selected());
+            assertEquals(1_600_000_000, rankedSelection.candidateDecisions().get(1).score().policyScoreAdjustment());
+            assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                    .anyMatch(diagnostic -> diagnostic.contains("passed cached method-test backend evidence")));
+            assertTrue(rankedSelection.explanation().toMarkdown().contains("policyAdjustment=1600000000"));
+            assertEquals(1, rankedOpenCl.closeCalls);
+            assertEquals(0, rankedCuda.closeCalls);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousClassLoader);
+        }
     }
 
     @Test
@@ -2253,6 +3200,40 @@ class GpuRuntimeTest {
         public void close() {
             closeCalls++;
         }
+    }
+
+    private static GpuRuntimeBackendReport availableBackendReport(
+            GpuBackendTarget backendTarget,
+            String backendName,
+            GpuRuntimeApiVersion apiVersion
+    ) {
+        return GpuRuntimeBackendReport.available(
+                backendTarget,
+                backendName,
+                backendName + " metadata GPU",
+                apiVersion,
+                backendName + ' ' + apiVersion,
+                java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                65_536L,
+                1_024L,
+                null
+        );
+    }
+
+    private static GpuRuntimeBackendCatalogEntry metadataBackedCatalogEntry(
+            GpuBackendTarget backendTarget,
+            String backendName,
+            CloseCountingBackend backend,
+            GpuRuntimeBackendExecutionSupport executionSupport
+    ) {
+        return GpuRuntimeBackendCatalogEntry.owned(
+                backendTarget,
+                backendName,
+                () -> backend,
+                executionSupport.productionExecution(),
+                executionSupport,
+                "test metadata fixture"
+        );
     }
 
     private static final class PreselectingBackend implements GpuRuntimeBackend, GpuRuntimeBackendDevicePreselector {

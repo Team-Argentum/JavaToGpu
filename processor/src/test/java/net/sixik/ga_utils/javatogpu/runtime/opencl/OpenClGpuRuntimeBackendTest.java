@@ -27,8 +27,17 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompiledKernel;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendExecutionPipeline;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendExecutionPipelineResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelCompiler;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelInvoker;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelPreparer;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLoweringResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
+import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationVendorBaseline;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
@@ -69,12 +78,14 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInvocationException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeKernelCompilationException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeKernelExecutionException;
+import net.sixik.ga_utils.javatogpu.runtime.GpuPreparedKernel;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -669,6 +680,123 @@ class OpenClGpuRuntimeBackendTest {
     }
 
     @Test
+    void openClExecutionHandlesExposeBackendNeutralSpi() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "javatogpu/sample/Demo/kernel.cl",
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                java.util.List.of(
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        OpenClCompiledKernel compiledKernel = new OpenClCompiledKernel(descriptor, "compiled:spi");
+        GpuBackendCompiledKernel backendCompiledKernel = compiledKernel;
+        Map<String, String> compiledFields = backendCompiledKernel.artifactFields("compiled");
+        GpuBackendKernelPreparer<OpenClCompiledKernel, OpenClPreparedExecution, OpenClExecutionPlan> preparer =
+                new OpenClExecutionPreparer(null);
+        OpenClPreparedExecution preparedExecution = preparer.prepare(
+                compiledKernel,
+                new OpenClExecutionPlan(List.of(), List.of(), List.of(), List.of())
+        );
+        GpuPreparedKernel preparedKernel = new OpenClPreparedExecution(
+                preparedExecution.compiledKernel(),
+                preparedExecution.bufferBindings(),
+                preparedExecution.localBindings(),
+                preparedExecution.scalarBindings(),
+                preparedExecution.argumentBindings(),
+                GpuExecutionConfig.oneDimensional(4L)
+        );
+        Map<String, String> preparedFields = preparedKernel.artifactFields("prepared");
+
+        assertEquals(GpuBackendTarget.OPENCL, backendCompiledKernel.backendTarget());
+        assertEquals("opencl-kernel", backendCompiledKernel.compiledKernelKind());
+        assertEquals("opencl-c", backendCompiledKernel.moduleArtifact().format());
+        assertEquals("true", compiledFields.get("runtime.backend.compiledKernel.present"));
+        assertEquals("opencl-kernel", compiledFields.get("runtime.backend.compiledKernel.kind"));
+        assertEquals("opencl-c", compiledFields.get("runtime.backend.compiledKernel.module.format"));
+        assertEquals("OPENCL", compiledFields.get("runtime.backend.target"));
+        assertEquals(GpuBackendTarget.OPENCL, preparer.backendTarget());
+        assertSame(compiledKernel, preparedKernel.compiledKernel());
+        assertEquals("opencl-kernel", preparedKernel.preparedKernelKind());
+        assertEquals(0, preparedKernel.readbackRequiredCount());
+        assertEquals(0, preparedKernel.bindingSummary().argumentBindingCount());
+        assertEquals("true", preparedFields.get("runtime.backend.preparedKernel.present"));
+        assertEquals("opencl-kernel", preparedFields.get("runtime.backend.preparedKernel.kind"));
+        assertEquals("0", preparedFields.get("runtime.backend.preparedKernel.readback.required.count"));
+        assertEquals("OPENCL", preparedFields.get("runtime.backend.target"));
+        assertEquals("4", preparedKernel.explicitExecutionConfig().globalShape());
+
+        AtomicInteger compileCalls = new AtomicInteger();
+        AtomicInteger invokeCalls = new AtomicInteger();
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                compileCalls.incrementAndGet();
+                return new OpenClCompiledKernel(
+                        compileRequest.descriptor(),
+                        "compiled:adapter-spi",
+                        GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact),
+                        null,
+                        null
+                );
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                invokeCalls.incrementAndGet();
+                assertEquals("compiled:adapter-spi", execution.compiledKernel().cacheKey());
+                assertEquals("4", execution.explicitExecutionConfig().globalShape());
+            }
+        };
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL")
+        );
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendModuleArtifact.openClSource(
+                descriptor.kernelSource(),
+                descriptor.kernelResource(),
+                "test-opencl-spi"
+        );
+        GpuBackendLoweringResult loweringResult = GpuBackendLoweringResult.succeeded(
+                moduleArtifact,
+                GpuBackendSourceSelectionPlan.descriptorSource(
+                        GpuBackendTarget.OPENCL,
+                        "opencl-c",
+                        "OpenCL SPI test source"
+                ),
+                List.of("OpenCL SPI test module is lowered")
+        );
+        GpuBackendKernelCompiler<OpenClCompiledKernel> compiler = backend.kernelCompiler();
+        GpuBackendKernelPreparer<OpenClCompiledKernel, OpenClPreparedExecution, OpenClExecutionPlan> backendPreparer =
+                backend.kernelPreparer();
+        GpuBackendKernelInvoker<OpenClPreparedExecution> invoker = backend.kernelInvoker();
+        GpuBackendExecutionPipeline<OpenClCompiledKernel, OpenClPreparedExecution, OpenClExecutionPlan> pipeline =
+                new GpuBackendExecutionPipeline<>(compiler, backendPreparer, invoker);
+        GpuBackendExecutionPipelineResult<OpenClCompiledKernel, OpenClPreparedExecution> pipelineResult = pipeline.execute(
+                compileRequest,
+                loweringResult,
+                moduleArtifact,
+                new OpenClExecutionPlan(List.of(), List.of(), List.of(), List.of()),
+                GpuExecutionConfig.oneDimensional(4L)
+        );
+        OpenClCompiledKernel compiledViaAdapter = pipelineResult.compiledKernel();
+
+        assertEquals(GpuBackendTarget.OPENCL, compiler.backendTarget());
+        assertEquals(GpuBackendTarget.OPENCL, backendPreparer.backendTarget());
+        assertEquals(GpuBackendTarget.OPENCL, invoker.backendTarget());
+        assertTrue(pipelineResult.succeeded());
+        assertEquals("true", pipelineResult.artifactFields("pipeline").get("runtime.backend.executionPipeline.succeeded"));
+        assertEquals(1, compileCalls.get());
+        assertEquals(1, invokeCalls.get());
+        assertEquals("compiled:adapter-spi", compiledViaAdapter.cacheKey());
+        assertEquals("opencl-c", compiledViaAdapter.moduleArtifact().format());
+    }
+
+    @Test
     void cachesCompiledKernelAcrossInvocations() {
         GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
                 "kernel",
@@ -957,6 +1085,11 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals("opencl-c", events.get(21).fields().get("runtime.compilation.module.format"));
         assertEquals("false", events.get(21).fields().get("runtime.compilation.compileLog.present"));
         assertEquals("0", events.get(21).fields().get("runtime.compilation.binaryArtifact.count"));
+        assertEquals("true", events.get(21).fields().get("runtime.backend.compilation.present"));
+        assertEquals("SUCCEEDED", events.get(21).fields().get("runtime.backend.compilation.status"));
+        assertEquals("true", events.get(21).fields().get("runtime.backend.compilation.compiled"));
+        assertEquals("compile", events.get(21).fields().get("runtime.backend.compilation.stage.key"));
+        assertEquals("SUCCEEDED", events.get(21).fields().get("runtime.backend.compilation.stage.status"));
         assertEquals("true", events.get(21).fields().get("runtime.backend.state.present"));
         assertEquals("INSTANCE", events.get(21).fields().get("runtime.backend.cache.mode"));
         assertEquals("1", events.get(21).fields().get("runtime.backend.compile.count"));
@@ -971,6 +1104,14 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals("4", events.get(24).fields().get("work.globalX"));
         assertEquals("4", events.get(24).fields().get("runtime.work.globalShape"));
         assertEquals("auto", events.get(24).fields().get("runtime.work.localShape"));
+        assertEquals("true", events.get(24).fields().get("runtime.backend.prepare.present"));
+        assertEquals("SUCCEEDED", events.get(24).fields().get("runtime.backend.prepare.status"));
+        assertEquals("true", events.get(24).fields().get("runtime.backend.prepare.prepared"));
+        assertEquals("opencl-kernel", events.get(24).fields().get("runtime.backend.prepare.kernel.kind"));
+        assertEquals("true", events.get(24).fields().get("runtime.backend.invoke.present"));
+        assertEquals("NOT_STARTED", events.get(24).fields().get("runtime.backend.invoke.status"));
+        assertEquals("false", events.get(24).fields().get("runtime.backend.invoke.invoked"));
+        assertEquals("invoke", events.get(24).fields().get("runtime.backend.invoke.stage.key"));
         assertEquals("true", events.get(24).fields().get("runtime.invocation.binding.present"));
         assertEquals("1", events.get(24).fields().get("runtime.invocation.binding.buffer.count"));
         assertEquals("0", events.get(24).fields().get("runtime.invocation.binding.local.count"));
@@ -983,6 +1124,9 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals("1", events.get(24).fields().get("runtime.backend.invocation.count"));
         assertEquals("1", events.get(24).fields().get("runtime.backend.compile.count"));
         assertEquals("succeeded", events.get(25).fields().get("status"));
+        assertEquals("SUCCEEDED", events.get(25).fields().get("runtime.backend.invoke.status"));
+        assertEquals("true", events.get(25).fields().get("runtime.backend.invoke.invoked"));
+        assertEquals("true", events.get(25).fields().get("runtime.backend.invoke.readback.complete"));
         assertEquals("opencl-c", events.get(25).fields().get("runtime.module.format"));
         assertEquals("INSTANCE", events.get(27).fields().get("cacheMode"));
         assertEquals("true", events.get(27).fields().get("runtime.backend.state.present"));

@@ -1,8 +1,14 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelPreparer;
+
 import java.util.List;
 
-public final class OpenClExecutionPreparer {
+public final class OpenClExecutionPreparer implements GpuBackendKernelPreparer<
+        OpenClCompiledKernel,
+        OpenClPreparedExecution,
+        OpenClExecutionPlan> {
 
     private final OpenClDeviceBufferRegistry registry;
 
@@ -10,6 +16,12 @@ public final class OpenClExecutionPreparer {
         this.registry = registry;
     }
 
+    @Override
+    public GpuBackendTarget backendTarget() {
+        return GpuBackendTarget.OPENCL;
+    }
+
+    @Override
     public OpenClPreparedExecution prepare(OpenClCompiledKernel compiledKernel, OpenClExecutionPlan plan) {
         List<OpenClPreparedBufferBinding> preparedBuffers = plan.bufferBindings().stream()
                 .map(binding -> new OpenClPreparedBufferBinding(binding, registry.acquire(binding)))

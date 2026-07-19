@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendPolicy;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProviders;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
@@ -25,6 +26,9 @@ class BackendSelectionExampleTest {
         assertTrue(catalog.contains("CUDA (`CUDA`)"));
         assertTrue(catalog.contains("VULKAN (`VULKAN`)"));
         assertTrue(catalog.contains("METAL (`METAL`)"));
+        assertTrue(catalog.contains("moduleFormats: opencl-c"));
+        assertTrue(catalog.contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(catalog.contains("capabilityVocabulary: compute-capability"));
         assertTrue(catalog.contains("Runtime backend adapter is not implemented for CUDA"));
     }
 
@@ -35,6 +39,30 @@ class BackendSelectionExampleTest {
         assertTrue(diagnostic.contains("Planned backend diagnostic:"));
         assertTrue(diagnostic.contains("Backend selection: not matched"));
         assertTrue(diagnostic.contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
+        assertTrue(diagnostic.contains("score: preference=1000000"));
+        assertTrue(diagnostic.contains("rejected=true"));
+        assertTrue(diagnostic.contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(diagnostic.contains("executionPipeline: available=false"));
+    }
+
+    @Test
+    void rendersBackendExecutionAvailabilityWithoutNativeBackendProbe() {
+        String availability = BackendSelectionExample.renderBackendExecutionAvailability(
+                GpuRuntimeBackendProviders.standardWithPlannedBackends()
+        );
+
+        assertTrue(availability.contains("Backend execution availability:"));
+        assertTrue(availability.contains("OPENCL: status=execution-pipeline-available"));
+        assertTrue(availability.contains("sharedRunner=true"));
+        assertTrue(availability.contains("moduleFormats: opencl-c"));
+        assertTrue(availability.contains("CUDA: status=execution-unavailable"));
+        assertTrue(availability.contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(availability.contains("VULKAN: status=execution-unavailable"));
+        assertTrue(availability.contains("METAL: status=execution-unavailable"));
+        assertTrue(availability.contains("sharedRunner=false"));
+        assertTrue(availability.contains("backend-execution-stage-missing:compile"));
+        assertTrue(availability.contains("backend-execution-stage-missing:prepare"));
+        assertTrue(availability.contains("backend-execution-stage-missing:invoke"));
     }
 
     @Test
@@ -75,6 +103,7 @@ class BackendSelectionExampleTest {
         assertTrue(combined.contains("Backend:"));
         assertTrue(combined.contains("Device discoveries:"));
         assertTrue(combined.contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
+        assertTrue(combined.contains("score: preference=1000000"));
         assertTrue(combined.contains("First blocker: opencl-device-discovery-failed"));
     }
 
@@ -88,6 +117,16 @@ class BackendSelectionExampleTest {
         assertTrue(guide.contains("mode: standard"));
         assertTrue(guide.contains("requested: true"));
         assertTrue(guide.contains("only when no backend is already installed"));
+    }
+
+    @Test
+    void rendersScoreBasedRankingGuideWithoutNativeBackendProbe() {
+        String guide = BackendSelectionExample.renderScoreBasedRankingGuide();
+
+        assertTrue(guide.contains("Score-based backend ranking profile:"));
+        assertTrue(guide.contains("rankCandidatesByScore()"));
+        assertTrue(guide.contains("mode: score-descending"));
+        assertTrue(guide.contains("fallback-order remains the safe behavior"));
     }
 
     @Test

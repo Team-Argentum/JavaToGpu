@@ -151,11 +151,44 @@ Show backend catalog and selection explanations without running a kernel:
 .\gradlew.bat :examples-app:runBackendSelectionExample --console=plain
 ```
 
-This prints the standard backend catalog, planned CUDA/Vulkan/Metal diagnostics, and a combined backend/device
-selection explanation. The multi-backend discovery catalog includes real OpenCL device evidence plus explicit planned
-CUDA/Vulkan/Metal discovery states. OpenCL discovery is fail-soft: if OpenCL cannot be queried on the current machine,
-the example prints the discovery blocker instead of running a kernel. When discovery succeeds, it also shows OpenCL
-platform grouping, selected device ranking, and runtime self-test summary.
+This prints the standard backend catalog, `GpuRuntimeBackendProviderCatalog` execution availability, planned
+CUDA/Vulkan/Metal diagnostics, and a combined backend/device selection explanation. The execution availability block
+makes the current alpha boundary explicit: OpenCL has a shared compile/prepare/invoke runner, while CUDA/Vulkan/Metal are
+inventory/planned-only until execution stages land. The multi-backend discovery catalog includes real OpenCL device
+evidence plus explicit planned CUDA/Vulkan/Metal discovery states. OpenCL discovery is fail-soft: if OpenCL cannot be
+queried on the current machine, the example prints the discovery blocker instead of running a kernel. When discovery
+succeeds, it also shows OpenCL platform grouping, selected device ranking, and runtime self-test summary.
+Catalog-backed selection explanations also include provider-declared module formats and capability vocabulary, so users
+can see why OpenCL is executable today and why CUDA/PTX is currently inventory-only before any native session is opened.
+Policies can require that metadata with helpers such as `requireDeclaredModuleFormat(...)`,
+`requireDeclaredCapability(...)`, and `requireExecutionPipelineAvailable()` when an application wants to reject
+inventory-only or wrong-artifact-family candidates explicitly.
+Candidate explanations also include an audit-only backend score (`preference`, `metadataAdjustment`,
+`runtimeAdjustment`, `policyAdjustment`, and `total`). Runtime adjustment currently reflects capability-report facts such
+as API version, feature flags, local memory, max work-group size, and portable runtime capability count. Default selection
+still respects explicit fallback order and hard requirements, but applications can opt into score-based candidate ordering
+with `rankCandidatesByScore()` when they want the most ready candidate to win after hard checks pass. Advanced users can
+attach explicit read-only workload evidence with `scoreCandidatesWith(...)`; those contributors fill the
+`policyAdjustment` bucket and only affect the winner when score-based ranking is enabled. Built-in bridges can also
+consume warmed cache-only `@GPUTest` evidence or precomputed compiler feedback through
+`scoreCandidatesWithCachedMethodTestProbeEvidence()` and `scoreCandidatesWithCompilerFeedback(report)`.
+
+Preview the provider-authoring path for a future backend without touching native APIs:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendProviderAuthoringExample --console=plain
+```
+
+This shows the intended progression for a third-party backend provider: discovery-only, lowering-only, then production
+pipeline with a shared compile/prepare/invoke runner and structured unsupported receipts for incomplete stages. External
+providers use the same ServiceLoader-backed registry path as built-in providers and can be inspected without opening
+native runtime sessions.
+
+Backend authors should use the shared `GpuBackendModuleFormat` and `GpuRuntimeCapability` vocabulary for module formats
+and device facts, and declare that vocabulary through `GpuRuntimeBackendExecutionSupport`. This keeps OpenCL-C, CUDA-C,
+PTX, SPIR-V, and future backend diagnostics comparable in reports and CI while still leaving CUDA execution disabled
+until its compile/prepare/invoke stages exist. The same metadata flows into catalog entries and backend-selection
+candidate explanations when a policy is built from the catalog.
 
 Inspect `@GPUTest` metadata and fixture readiness without running a kernel:
 
@@ -183,6 +216,14 @@ write `runtime-method-test-evidence.properties`; the OpenCL validation report ag
 participated in device ranking.
 This runtime path is explicitly `GpuRuntimeMethodTestProbeMode.CACHE_ONLY`: it reads warmed evidence only and never runs
 method-test GPU probes during device selection.
+Backend selection can consume the same warmed cache through the opt-in backend score bridge:
+`GpuRuntimeBackendPolicy.builder().rankCandidatesByScore().scoreCandidatesForCompileRequest(request)` plus
+`.scoreCandidatesWithCachedMethodTestProbeEvidence()`. This fills the backend `policyAdjustment` score bucket from
+cached `@GPUTest` evidence and still never executes probes during selection.
+Precomputed compiler feedback can participate in the same score bucket with
+`.scoreCandidatesWithCompilerFeedback(report)`. This is advisory resource evidence only: it reads an already-created
+feedback report, never compiles candidates during selection, and remains lower priority than method-test correctness
+evidence.
 Applications that want a single explicit operation can use
 `GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(...)`: it runs the caller-approved warm-up first, then invokes
 normal device selection with cache-only evidence ranking and returns one markdown/artifact-friendly report.

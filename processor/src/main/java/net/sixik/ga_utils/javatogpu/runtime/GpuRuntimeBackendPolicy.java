@@ -1,11 +1,14 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Immutable backend selection policy that combines capability requirements with an ordered fallback chain.
@@ -28,17 +31,50 @@ import java.util.Objects;
 public final class GpuRuntimeBackendPolicy {
 
     private final List<GpuRuntimeRequirement> requirements;
+    private final List<GpuRuntimeBackendRequirement> backendRequirements;
     private final List<GpuRuntimeBackendFactory> candidateFactories;
     private final List<GpuRuntimeBackendOwnership> candidateOwnerships;
+    private final List<GpuRuntimeBackendCandidateMetadata> candidateMetadata;
+    private final GpuRuntimeBackendCandidateOrdering candidateOrdering;
+    private final List<GpuRuntimeBackendScoreContributor> scoreContributors;
+    private final GpuRuntimeCompileOptions scoreCompileOptions;
+    private final Optional<GpuKernelDescriptor> scoreDescriptor;
+    private final Optional<IrGpuArtifact> scoreIrGpuArtifact;
+    private final Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile;
+    private final Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport;
 
     private GpuRuntimeBackendPolicy(
             List<GpuRuntimeRequirement> requirements,
+            List<GpuRuntimeBackendRequirement> backendRequirements,
             List<GpuRuntimeBackendFactory> candidateFactories,
-            List<GpuRuntimeBackendOwnership> candidateOwnerships
+            List<GpuRuntimeBackendOwnership> candidateOwnerships,
+            List<GpuRuntimeBackendCandidateMetadata> candidateMetadata,
+            GpuRuntimeBackendCandidateOrdering candidateOrdering,
+            List<GpuRuntimeBackendScoreContributor> scoreContributors,
+            GpuRuntimeCompileOptions scoreCompileOptions,
+            Optional<GpuKernelDescriptor> scoreDescriptor,
+            Optional<IrGpuArtifact> scoreIrGpuArtifact,
+            Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
     ) {
         this.requirements = List.copyOf(requirements);
+        this.backendRequirements = List.copyOf(backendRequirements);
         this.candidateFactories = List.copyOf(candidateFactories);
         this.candidateOwnerships = List.copyOf(candidateOwnerships);
+        this.candidateMetadata = List.copyOf(candidateMetadata);
+        this.candidateOrdering = candidateOrdering == null
+                ? GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER
+                : candidateOrdering;
+        this.scoreContributors = scoreContributors == null ? List.of() : List.copyOf(scoreContributors);
+        this.scoreCompileOptions = scoreCompileOptions == null
+                ? GpuRuntimeCompileOptions.defaults(GpuBackendTarget.UNKNOWN)
+                : scoreCompileOptions;
+        this.scoreDescriptor = scoreDescriptor == null ? Optional.empty() : scoreDescriptor;
+        this.scoreIrGpuArtifact = scoreIrGpuArtifact == null ? Optional.empty() : scoreIrGpuArtifact;
+        this.scoreDeviceProfile = scoreDeviceProfile == null ? Optional.empty() : scoreDeviceProfile;
+        this.scoreCompilerFeedbackReport = scoreCompilerFeedbackReport == null
+                ? Optional.empty()
+                : scoreCompilerFeedbackReport;
     }
 
     /**
@@ -56,6 +92,13 @@ public final class GpuRuntimeBackendPolicy {
     }
 
     /**
+     * Returns candidate requirements that can inspect provider/catalog metadata in addition to runtime reports.
+     */
+    public List<GpuRuntimeBackendRequirement> backendRequirements() {
+        return backendRequirements;
+    }
+
+    /**
      * Returns the ordered fallback chain used for backend creation and selection.
      */
     public List<GpuRuntimeBackendFactory> candidateFactories() {
@@ -67,6 +110,62 @@ public final class GpuRuntimeBackendPolicy {
      */
     public List<GpuRuntimeBackendOwnership> candidateOwnerships() {
         return candidateOwnerships;
+    }
+
+    /**
+     * Returns optional catalog/provider metadata for each candidate in the fallback chain.
+     */
+    public List<GpuRuntimeBackendCandidateMetadata> candidateMetadata() {
+        return candidateMetadata;
+    }
+
+    /**
+     * Returns how candidates are ordered after hard requirements are applied.
+     */
+    public GpuRuntimeBackendCandidateOrdering candidateOrdering() {
+        return candidateOrdering;
+    }
+
+    /**
+     * Returns explicit read-only score contributors attached to this policy.
+     */
+    public List<GpuRuntimeBackendScoreContributor> scoreContributors() {
+        return scoreContributors;
+    }
+
+    /**
+     * Returns compile options exposed to score contributors as workload context.
+     */
+    public GpuRuntimeCompileOptions scoreCompileOptions() {
+        return scoreCompileOptions;
+    }
+
+    /**
+     * Returns optional kernel descriptor exposed to workload-aware score contributors.
+     */
+    public Optional<GpuKernelDescriptor> scoreDescriptor() {
+        return scoreDescriptor;
+    }
+
+    /**
+     * Returns optional IrGpu artifact exposed to workload-aware score contributors.
+     */
+    public Optional<IrGpuArtifact> scoreIrGpuArtifact() {
+        return scoreIrGpuArtifact;
+    }
+
+    /**
+     * Returns optional device profile exposed to workload-aware score contributors.
+     */
+    public Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile() {
+        return scoreDeviceProfile;
+    }
+
+    /**
+     * Returns optional precomputed compiler feedback exposed to score contributors.
+     */
+    public Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport() {
+        return scoreCompilerFeedbackReport;
     }
 
     /**
@@ -104,8 +203,17 @@ public final class GpuRuntimeBackendPolicy {
     public static final class Builder {
 
         private final List<GpuRuntimeRequirement> requirements = new ArrayList<>();
+        private final List<GpuRuntimeBackendRequirement> backendRequirements = new ArrayList<>();
         private final List<GpuRuntimeBackendFactory> candidateFactories = new ArrayList<>();
         private final List<GpuRuntimeBackendOwnership> candidateOwnerships = new ArrayList<>();
+        private final List<GpuRuntimeBackendCandidateMetadata> candidateMetadata = new ArrayList<>();
+        private final List<GpuRuntimeBackendScoreContributor> scoreContributors = new ArrayList<>();
+        private GpuRuntimeBackendCandidateOrdering candidateOrdering = GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER;
+        private GpuRuntimeCompileOptions scoreCompileOptions = GpuRuntimeCompileOptions.defaults(GpuBackendTarget.UNKNOWN);
+        private Optional<GpuKernelDescriptor> scoreDescriptor = Optional.empty();
+        private Optional<IrGpuArtifact> scoreIrGpuArtifact = Optional.empty();
+        private Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile = Optional.empty();
+        private Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport = Optional.empty();
 
         private Builder() {
         }
@@ -116,6 +224,110 @@ public final class GpuRuntimeBackendPolicy {
         public Builder require(GpuRuntimeRequirement requirement) {
             requirements.add(Objects.requireNonNull(requirement, "requirement"));
             return this;
+        }
+
+        /**
+         * Adds one candidate requirement that can inspect catalog/provider metadata.
+         */
+        public Builder requireBackend(GpuRuntimeBackendRequirement requirement) {
+            backendRequirements.add(Objects.requireNonNull(requirement, "requirement"));
+            return this;
+        }
+
+        /**
+         * Sets the candidate ordering mode used after hard requirements are evaluated.
+         */
+        public Builder candidateOrdering(GpuRuntimeBackendCandidateOrdering ordering) {
+            candidateOrdering = Objects.requireNonNull(ordering, "ordering");
+            return this;
+        }
+
+        /**
+         * Opts into selecting the highest-scoring candidate instead of the first matching fallback candidate.
+         */
+        public Builder rankCandidatesByScore() {
+            return candidateOrdering(GpuRuntimeBackendCandidateOrdering.SCORE_DESCENDING);
+        }
+
+        /**
+         * Adds one read-only candidate score contributor. It affects score evidence immediately, but candidate order
+         * changes only when {@link #rankCandidatesByScore()} is enabled.
+         */
+        public Builder scoreCandidatesWith(GpuRuntimeBackendScoreContributor contributor) {
+            scoreContributors.add(Objects.requireNonNull(contributor, "contributor"));
+            return this;
+        }
+
+        /**
+         * Adds read-only candidate score contributors in deterministic caller-provided order.
+         */
+        public Builder scoreCandidatesWith(Collection<? extends GpuRuntimeBackendScoreContributor> contributors) {
+            Objects.requireNonNull(contributors, "contributors");
+            for (GpuRuntimeBackendScoreContributor contributor : contributors) {
+                scoreCandidatesWith(contributor);
+            }
+            return this;
+        }
+
+        /**
+         * Attaches compile options as workload context for score contributors.
+         */
+        public Builder scoreCandidatesForCompileOptions(GpuRuntimeCompileOptions compileOptions) {
+            scoreCompileOptions = Objects.requireNonNull(compileOptions, "compileOptions");
+            return this;
+        }
+
+        /**
+         * Attaches a kernel descriptor as workload context for score contributors.
+         */
+        public Builder scoreCandidatesForKernel(GpuKernelDescriptor descriptor) {
+            scoreDescriptor = Optional.of(Objects.requireNonNull(descriptor, "descriptor"));
+            scoreIrGpuArtifact = Optional.empty();
+            return this;
+        }
+
+        /**
+         * Attaches a kernel descriptor and preloaded IrGpu artifact as workload context for score contributors.
+         */
+        public Builder scoreCandidatesForKernel(GpuKernelDescriptor descriptor, IrGpuArtifact irGpuArtifact) {
+            scoreDescriptor = Optional.of(Objects.requireNonNull(descriptor, "descriptor"));
+            scoreIrGpuArtifact = Optional.ofNullable(irGpuArtifact);
+            return this;
+        }
+
+        /**
+         * Attaches a full compile request as workload context for score contributors.
+         */
+        public Builder scoreCandidatesForCompileRequest(GpuRuntimeCompileRequest request) {
+            GpuRuntimeCompileRequest value = Objects.requireNonNull(request, "request");
+            scoreDescriptor = Optional.of(value.descriptor());
+            scoreCompileOptions = value.options();
+            scoreDeviceProfile = Optional.of(value.deviceProfile());
+            scoreIrGpuArtifact = value.irGpuArtifact();
+            return this;
+        }
+
+        /**
+         * Attaches precomputed compiler feedback as advisory score evidence.
+         */
+        public Builder scoreCandidatesForCompilerFeedback(GpuBackendCompilerFeedbackReport report) {
+            scoreCompilerFeedbackReport = Optional.of(Objects.requireNonNull(report, "report"));
+            return this;
+        }
+
+        /**
+         * Adds the standard compiler-feedback score bridge for a precomputed feedback report.
+         */
+        public Builder scoreCandidatesWithCompilerFeedback(GpuBackendCompilerFeedbackReport report) {
+            scoreCandidatesForCompilerFeedback(report);
+            return scoreCandidatesWith(GpuBackendCompilerFeedbackScoreContributor.fromContext());
+        }
+
+        /**
+         * Adds the standard cache-only {@code @GPUTest} backend score bridge.
+         */
+        public Builder scoreCandidatesWithCachedMethodTestProbeEvidence() {
+            return scoreCandidatesWith(GpuRuntimeMethodTestBackendScoreContributor.cacheOnly());
         }
 
         /**
@@ -146,6 +358,7 @@ public final class GpuRuntimeBackendPolicy {
             Objects.requireNonNull(entry, "entry");
             candidateFactories.add(entry.factory());
             candidateOwnerships.add(entry.ownership());
+            candidateMetadata.add(GpuRuntimeBackendCandidateMetadata.from(entry));
             return this;
         }
 
@@ -186,6 +399,54 @@ public final class GpuRuntimeBackendPolicy {
          */
         public Builder requireFeature(GpuBackendTarget backendTarget, GpuRuntimeFeature feature) {
             return require(GpuRuntimeRequirements.requireFeature(backendTarget, feature));
+        }
+
+        /**
+         * Requires candidates to declare that they can emit or consume the given module format.
+         */
+        public Builder requireDeclaredModuleFormat(GpuBackendModuleFormat moduleFormat) {
+            return requireBackend(GpuRuntimeRequirements.requireDeclaredModuleFormat(moduleFormat));
+        }
+
+        /**
+         * Requires candidates from one backend family to declare the given module format.
+         */
+        public Builder requireDeclaredModuleFormat(
+                GpuBackendTarget backendTarget,
+                GpuBackendModuleFormat moduleFormat
+        ) {
+            return requireBackend(GpuRuntimeRequirements.requireDeclaredModuleFormat(backendTarget, moduleFormat));
+        }
+
+        /**
+         * Requires candidates to declare that they expose the given backend-neutral capability fact.
+         */
+        public Builder requireDeclaredCapability(GpuRuntimeCapability capability) {
+            return requireBackend(GpuRuntimeRequirements.requireDeclaredCapability(capability));
+        }
+
+        /**
+         * Requires candidates from one backend family to declare the given backend-neutral capability fact.
+         */
+        public Builder requireDeclaredCapability(
+                GpuBackendTarget backendTarget,
+                GpuRuntimeCapability capability
+        ) {
+            return requireBackend(GpuRuntimeRequirements.requireDeclaredCapability(backendTarget, capability));
+        }
+
+        /**
+         * Requires candidates to declare a complete compile/prepare/invoke execution pipeline.
+         */
+        public Builder requireExecutionPipelineAvailable() {
+            return requireBackend(GpuRuntimeRequirements.requireExecutionPipelineAvailable());
+        }
+
+        /**
+         * Requires candidates from one backend family to declare a complete compile/prepare/invoke pipeline.
+         */
+        public Builder requireExecutionPipelineAvailable(GpuBackendTarget backendTarget) {
+            return requireBackend(GpuRuntimeRequirements.requireExecutionPipelineAvailable(backendTarget));
         }
 
         /**
@@ -232,6 +493,7 @@ public final class GpuRuntimeBackendPolicy {
         public Builder preferFactory(GpuRuntimeBackendFactory factory) {
             candidateFactories.add(Objects.requireNonNull(factory, "factory"));
             candidateOwnerships.add(GpuRuntimeBackendOwnership.OWNED);
+            candidateMetadata.add(GpuRuntimeBackendCandidateMetadata.unknown());
             return this;
         }
 
@@ -242,6 +504,7 @@ public final class GpuRuntimeBackendPolicy {
             Objects.requireNonNull(backend, "backend");
             candidateFactories.add(() -> backend);
             candidateOwnerships.add(GpuRuntimeBackendOwnership.OWNED);
+            candidateMetadata.add(GpuRuntimeBackendCandidateMetadata.unknown());
             return this;
         }
 
@@ -255,6 +518,7 @@ public final class GpuRuntimeBackendPolicy {
             Objects.requireNonNull(backend, "backend");
             candidateFactories.add(() -> backend);
             candidateOwnerships.add(GpuRuntimeBackendOwnership.BORROWED);
+            candidateMetadata.add(GpuRuntimeBackendCandidateMetadata.unknown());
             return this;
         }
 
@@ -269,7 +533,7 @@ public final class GpuRuntimeBackendPolicy {
          * Appends a shared-cache OpenCL backend to the fallback chain.
          */
         public Builder preferOpenClSharedCache() {
-            return preferFactory(OpenClGpuRuntimeBackend::sharedCache);
+            return preferCatalogEntry(GpuRuntimeBackendCatalog.openClSharedCache());
         }
 
         /**
@@ -279,7 +543,20 @@ public final class GpuRuntimeBackendPolicy {
             if (candidateFactories.isEmpty()) {
                 throw new IllegalStateException("GPU runtime backend policy requires at least one candidate backend");
             }
-            return new GpuRuntimeBackendPolicy(requirements, candidateFactories, candidateOwnerships);
+            return new GpuRuntimeBackendPolicy(
+                    requirements,
+                    backendRequirements,
+                    candidateFactories,
+                    candidateOwnerships,
+                    candidateMetadata,
+                    candidateOrdering,
+                    scoreContributors,
+                    scoreCompileOptions,
+                    scoreDescriptor,
+                    scoreIrGpuArtifact,
+                    scoreDeviceProfile,
+                    scoreCompilerFeedbackReport
+            );
         }
     }
 }

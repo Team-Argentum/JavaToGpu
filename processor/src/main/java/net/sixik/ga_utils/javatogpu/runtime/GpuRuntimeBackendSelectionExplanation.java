@@ -134,6 +134,34 @@ public record GpuRuntimeBackendSelectionExplanation(
             builder.append('\n').append("Candidates:").append('\n');
             for (GpuRuntimeBackendCandidateDecision decision : candidateDecisions) {
                 builder.append("- ").append(decision.summary()).append('\n');
+                GpuRuntimeBackendCandidateScore score = decision.score();
+                builder.append("  score: preference=")
+                        .append(score.preferenceScore())
+                        .append(", metadataAdjustment=")
+                        .append(score.metadataScoreAdjustment())
+                        .append(", runtimeAdjustment=")
+                        .append(score.runtimeScoreAdjustment())
+                        .append(", policyAdjustment=")
+                        .append(score.policyScoreAdjustment())
+                        .append(", total=")
+                        .append(score.totalScore())
+                        .append(", rejected=")
+                        .append(score.rejected())
+                        .append('\n');
+                GpuRuntimeBackendCandidateMetadata metadata = decision.metadata();
+                if (metadata.executionSupportPresent()) {
+                    builder.append("  moduleFormats: ")
+                            .append(metadata.moduleFormatKeys())
+                            .append('\n');
+                    builder.append("  capabilityVocabulary: ")
+                            .append(metadata.capabilityKeys())
+                            .append('\n');
+                    builder.append("  executionPipeline: available=")
+                            .append(metadata.executionSupport()
+                                    .map(GpuRuntimeBackendExecutionSupport::executionPipelineAvailable)
+                                    .orElse(false))
+                            .append('\n');
+                }
             }
         }
         return builder.toString();

@@ -34,6 +34,24 @@ public final class GpuRuntimeRequirements {
         return List.copyOf(reasons);
     }
 
+    public static List<String> failureReasons(
+            GpuRuntimeBackendReport report,
+            GpuRuntimeBackendCandidateMetadata metadata,
+            List<GpuRuntimeBackendRequirement> requirements
+    ) {
+        List<String> reasons = new ArrayList<>();
+        GpuRuntimeBackendCandidateMetadata candidateMetadata = metadata == null
+                ? GpuRuntimeBackendCandidateMetadata.unknown()
+                : metadata;
+        for (GpuRuntimeBackendRequirement requirement : requirements) {
+            String reason = requirement.failureReason(report, candidateMetadata);
+            if (reason != null && !reason.isBlank()) {
+                reasons.add(reason);
+            }
+        }
+        return List.copyOf(reasons);
+    }
+
     public static GpuRuntimeRequirement requireBackendTarget(GpuBackendTarget backendTarget) {
         Objects.requireNonNull(backendTarget, "backendTarget");
         return report -> report.backendTarget() == backendTarget
@@ -58,6 +76,78 @@ public final class GpuRuntimeRequirements {
         return report -> report.backendTarget() != backendTarget
                 ? null
                 : requireFeature(feature).failureReason(report);
+    }
+
+    public static GpuRuntimeRequirement requireCapability(GpuRuntimeCapability capability) {
+        Objects.requireNonNull(capability, "capability");
+        return report -> report.supports(capability)
+                ? null
+                : "missing capability " + capability.key();
+    }
+
+    public static GpuRuntimeRequirement requireCapability(
+            GpuBackendTarget backendTarget,
+            GpuRuntimeCapability capability
+    ) {
+        Objects.requireNonNull(backendTarget, "backendTarget");
+        return report -> report.backendTarget() != backendTarget
+                ? null
+                : requireCapability(capability).failureReason(report);
+    }
+
+    public static GpuRuntimeBackendRequirement requireDeclaredModuleFormat(GpuBackendModuleFormat moduleFormat) {
+        Objects.requireNonNull(moduleFormat, "moduleFormat");
+        return (report, metadata) -> metadata.declaresModuleFormat(moduleFormat)
+                ? null
+                : "missing declared module format " + moduleFormat.key() + declaredSuffix(metadata.moduleFormatKeys());
+    }
+
+    public static GpuRuntimeBackendRequirement requireDeclaredModuleFormat(
+            GpuBackendTarget backendTarget,
+            GpuBackendModuleFormat moduleFormat
+    ) {
+        Objects.requireNonNull(backendTarget, "backendTarget");
+        return (report, metadata) -> report.backendTarget() != backendTarget
+                ? null
+                : requireDeclaredModuleFormat(moduleFormat).failureReason(report, metadata);
+    }
+
+    public static GpuRuntimeBackendRequirement requireDeclaredCapability(GpuRuntimeCapability capability) {
+        Objects.requireNonNull(capability, "capability");
+        return (report, metadata) -> metadata.declaresCapability(capability)
+                ? null
+                : "missing declared capability " + capability.key() + declaredSuffix(metadata.capabilityKeys());
+    }
+
+    public static GpuRuntimeBackendRequirement requireDeclaredCapability(
+            GpuBackendTarget backendTarget,
+            GpuRuntimeCapability capability
+    ) {
+        Objects.requireNonNull(backendTarget, "backendTarget");
+        return (report, metadata) -> report.backendTarget() != backendTarget
+                ? null
+                : requireDeclaredCapability(capability).failureReason(report, metadata);
+    }
+
+    public static GpuRuntimeBackendRequirement requireExecutionPipelineAvailable() {
+        return (report, metadata) -> {
+            if (metadata.executionSupport().isEmpty()) {
+                return "missing backend execution support metadata";
+            }
+            GpuRuntimeBackendExecutionSupport support = metadata.executionSupport().orElseThrow();
+            return support.executionPipelineAvailable()
+                    ? null
+                    : "backend execution pipeline is not available (declared stages: "
+                            + declaredKeysOrNone(support.supportedStageKeys())
+                            + ')';
+        };
+    }
+
+    public static GpuRuntimeBackendRequirement requireExecutionPipelineAvailable(GpuBackendTarget backendTarget) {
+        Objects.requireNonNull(backendTarget, "backendTarget");
+        return (report, metadata) -> report.backendTarget() != backendTarget
+                ? null
+                : requireExecutionPipelineAvailable().failureReason(report, metadata);
     }
 
     public static GpuRuntimeRequirement minimumApiVersion(GpuBackendTarget backendTarget, int major, int minor) {
@@ -107,5 +197,15 @@ public final class GpuRuntimeRequirements {
         return report -> report.backendTarget() != backendTarget
                 ? null
                 : minimumMaxWorkGroupSize(size).failureReason(report);
+    }
+
+    private static String declaredSuffix(String declaredKeys) {
+        return declaredKeys == null || declaredKeys.isBlank()
+                ? " (declared: none)"
+                : " (declared: " + declaredKeys + ')';
+    }
+
+    private static String declaredKeysOrNone(String declaredKeys) {
+        return declaredKeys == null || declaredKeys.isBlank() ? "none" : declaredKeys;
     }
 }

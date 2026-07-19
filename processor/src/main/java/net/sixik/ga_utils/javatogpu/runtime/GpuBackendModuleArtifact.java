@@ -80,7 +80,7 @@ public record GpuBackendModuleArtifact(
     public GpuBackendModuleArtifact {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
         kind = normalize(kind, "source");
-        format = normalize(format, "unknown");
+        format = GpuBackendModuleFormat.normalizeKey(format);
         source = source == null ? "" : source;
         resource = resource == null ? "" : resource;
         artifactVersion = normalize(artifactVersion, backendTarget.name().toLowerCase(java.util.Locale.ROOT) + ":" + kind + ":" + format);
@@ -124,6 +124,72 @@ public record GpuBackendModuleArtifact(
         );
     }
 
+    public static GpuBackendModuleArtifact cudaSource(
+            String source,
+            String resource,
+            String lowererVersion
+    ) {
+        return new GpuBackendModuleArtifact(
+                GpuBackendTarget.CUDA,
+                "source",
+                GpuBackendModuleFormat.CUDA_C.key(),
+                source,
+                resource,
+                "cuda:source:cuda-c:v1",
+                lowererVersion,
+                "derived-cuda-source",
+                source != null && !source.isBlank(),
+                false,
+                "",
+                "",
+                "source-compile"
+        );
+    }
+
+    public static GpuBackendModuleArtifact ptx(
+            String source,
+            String resource,
+            String lowererVersion
+    ) {
+        return new GpuBackendModuleArtifact(
+                GpuBackendTarget.CUDA,
+                "intermediate",
+                GpuBackendModuleFormat.PTX.key(),
+                source,
+                resource,
+                "cuda:intermediate:ptx:v1",
+                lowererVersion,
+                "derived-ptx",
+                source != null && !source.isBlank(),
+                true,
+                "",
+                "",
+                "binary-or-ptx-load"
+        );
+    }
+
+    public static GpuBackendModuleArtifact spirV(
+            String resource,
+            String lowererVersion,
+            boolean binaryAvailable
+    ) {
+        return new GpuBackendModuleArtifact(
+                GpuBackendTarget.VULKAN,
+                "binary",
+                GpuBackendModuleFormat.SPIR_V.key(),
+                "",
+                resource,
+                "vulkan:binary:spir-v:v1",
+                lowererVersion,
+                "derived-spir-v",
+                false,
+                binaryAvailable,
+                "",
+                "",
+                "binary-load"
+        );
+    }
+
     public static GpuBackendModuleArtifact unknown() {
         return new GpuBackendModuleArtifact(
                 GpuBackendTarget.UNKNOWN,
@@ -149,6 +215,22 @@ public record GpuBackendModuleArtifact(
             );
         }
         return source;
+    }
+
+    public GpuBackendModuleFormat moduleFormat() {
+        return GpuBackendModuleFormat.fromKey(format);
+    }
+
+    public boolean sourceLikeFormat() {
+        return moduleFormat().sourceLike();
+    }
+
+    public boolean binaryLikeFormat() {
+        return moduleFormat().binaryLike();
+    }
+
+    public boolean formatMatchesBackendTarget() {
+        return moduleFormat().hasDefaultTarget(backendTarget);
     }
 
     private static String normalize(String value, String fallback) {

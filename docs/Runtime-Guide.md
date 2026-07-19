@@ -496,6 +496,47 @@ recomputes the stable evidence hash for selection-probe vectors, reads the confi
 ranking boost, rejects failed cached evidence, and treats missing evidence as neutral. This keeps startup predictable
 while allowing applications and future tools to warm evidence ahead of backend/device selection.
 
+Backend selection can read the same warmed cache when score-based ranking is explicitly enabled:
+
+```java
+GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+        MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+        options,
+        deviceProfile,
+        Optional.of(irGpuArtifact)
+);
+
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesForCompileRequest(request)
+        .scoreCandidatesWithCachedMethodTestProbeEvidence()
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+This bridge is also cache-only. Passed cached selection-probe evidence fills the backend `policyAdjustment` score bucket,
+failed cached evidence applies a large negative adjustment, and missing evidence stays neutral. Use hard `require...`
+helpers when a backend must be rejected rather than merely ranked lower.
+
+Precomputed compiler feedback can also be used as advisory backend score evidence:
+
+```java
+GpuBackendCompilerFeedbackReport compilerFeedback =
+        GpuBackendCompilerFeedbackRegistry.loadWithBuiltIns().inspect(snapshot);
+
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithCompilerFeedback(compilerFeedback)
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithCompilerFeedback(report)` reads only the supplied report. It does not compile candidates during
+selection. The score bridge applies only to a matching backend target, rewards available resource evidence and healthy
+metrics such as low register pressure, zero spills, zero stack frame, and known occupancy, and applies bounded penalties
+for high register pressure, spills, stack frame bytes, or heavy local-memory use. Treat this as placement evidence, not a
+correctness gate; `@GPUTest` probe evidence has much stronger score weight.
+
 Warm evidence explicitly before selection when you want stronger placement confidence without making the selection
 policy execute kernels:
 

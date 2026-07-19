@@ -82,6 +82,162 @@ class GpuBackendLowerersTest {
     }
 
     @Test
+    void openClLowererProducesTypedLoweringStageResult() {
+        GpuKernelDescriptor descriptor = sampleDescriptor();
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL")
+        );
+
+        GpuBackendLoweringResult result = GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL)
+                .lowerWithStageResult(compileRequest);
+        java.util.Map<String, String> fields = result.artifactFields("lowering");
+
+        assertTrue(result.lowered());
+        assertEquals(GpuBackendPipelineStage.LOWER, result.stageResult().stage());
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, result.stageResult().status());
+        assertEquals(GpuBackendTarget.OPENCL, result.stageResult().backendTarget());
+        assertEquals("descriptor-opencl-source", result.sourceSelectionPlan().selectedSource());
+        assertEquals("opencl-c", result.moduleArtifact().format());
+        assertEquals("true", fields.get("runtime.backend.lowering.present"));
+        assertEquals("SUCCEEDED", fields.get("runtime.backend.lowering.status"));
+        assertEquals("true", fields.get("runtime.backend.lowering.lowered"));
+        assertEquals("opencl-c", fields.get("runtime.backend.lowering.module.format"));
+        assertEquals("descriptor-opencl-source", fields.get("runtime.backend.lowering.selectedSource"));
+        assertEquals("OPENCL", fields.get("runtime.backend.target"));
+    }
+
+    @Test
+    void backendStageResultExposesPortableUnsupportedFields() {
+        GpuBackendSourceSelectionPlan plan = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA)
+                .sourceSelectionPlan(new GpuRuntimeCompileRequest(
+                        sampleDescriptor(),
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                        GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA")
+                ));
+
+        GpuBackendLoweringResult result = GpuBackendLoweringResult.unsupported(
+                GpuBackendTarget.CUDA,
+                plan,
+                List.of("cuda-lowerer-not-implemented"),
+                List.of("CUDA stays discovery-only until the execution backend lands")
+        );
+        java.util.Map<String, String> stageFields = result.stageResult().artifactFields("runtime.backend.stage");
+        java.util.Map<String, String> loweringFields = result.artifactFields("lowering");
+
+        assertTrue(!result.lowered());
+        assertTrue(result.stageResult().blocked());
+        assertEquals(GpuBackendPipelineStage.LOWER, result.stageResult().stage());
+        assertEquals(GpuBackendStageStatus.UNSUPPORTED, result.stageResult().status());
+        assertEquals("lower", stageFields.get("runtime.backend.stage.key"));
+        assertEquals("UNSUPPORTED", stageFields.get("runtime.backend.stage.status"));
+        assertEquals("CUDA", stageFields.get("runtime.backend.target"));
+        assertEquals("lower-unsupported", stageFields.get("runtime.status"));
+        assertEquals("UNSUPPORTED", loweringFields.get("runtime.backend.lowering.status"));
+        assertEquals("false", loweringFields.get("runtime.backend.lowering.lowered"));
+        assertEquals("cuda-lowerer-unavailable", loweringFields.get("runtime.backend.lowering.selectedSource"));
+        assertEquals("CUDA", loweringFields.get("runtime.backend.target"));
+    }
+
+    @Test
+    void backendCompilationPreparationAndInvocationResultsExposePortableFields() {
+        GpuKernelDescriptor descriptor = sampleDescriptor();
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL")
+        );
+        GpuBackendLoweringResult loweringResult = GpuBackendLowerers.forTarget(GpuBackendTarget.OPENCL)
+                .lowerWithStageResult(compileRequest);
+        GpuRuntimeBackendCompilationSummary compilationSummary = new GpuRuntimeBackendCompilationSummary(
+                true,
+                true,
+                "opencl-c",
+                true,
+                1,
+                2
+        );
+        GpuBackendCompilationResult compilationResult = GpuBackendCompilationResult.succeeded(
+                loweringResult,
+                compilationSummary,
+                "test-cache-key",
+                List.of("compiled from lowered OpenCL source")
+        );
+        GpuRuntimeInvocationBindingSummary bindingSummary = new GpuRuntimeInvocationBindingSummary(2, 1, 3, 6);
+        GpuBackendPreparationResult preparationResult = GpuBackendPreparationResult.prepared(
+                compilationResult,
+                "opencl-kernel",
+                bindingSummary,
+                List.of("kernel arguments prepared")
+        );
+        GpuBackendInvocationResult invocationResult = GpuBackendInvocationResult.invoked(
+                preparationResult,
+                GpuExecutionConfig.twoDimensional(8, 4, 2, 2),
+                2,
+                2,
+                List.of("kernel submitted")
+        );
+
+        java.util.Map<String, String> compilationFields = compilationResult.artifactFields("compile");
+        java.util.Map<String, String> preparationFields = preparationResult.artifactFields("prepare");
+        java.util.Map<String, String> invocationFields = invocationResult.artifactFields("invoke");
+
+        assertTrue(compilationResult.compiled());
+        assertEquals(GpuBackendPipelineStage.COMPILE, compilationResult.stageResult().stage());
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, compilationResult.stageResult().status());
+        assertEquals("true", compilationFields.get("runtime.backend.compilation.compiled"));
+        assertEquals("opencl-c", compilationFields.get("runtime.compilation.module.format"));
+        assertEquals("true", compilationFields.get("compile.cacheKey.present"));
+        assertEquals("OPENCL", compilationFields.get("runtime.backend.target"));
+        assertTrue(preparationResult.prepared());
+        assertEquals(GpuBackendPipelineStage.PREPARE, preparationResult.stageResult().stage());
+        assertEquals("true", preparationFields.get("runtime.backend.prepare.prepared"));
+        assertEquals("opencl-kernel", preparationFields.get("runtime.backend.prepare.kernel.kind"));
+        assertEquals("6", preparationFields.get("prepare.binding.argument.count"));
+        assertTrue(invocationResult.invoked());
+        assertTrue(invocationResult.readbackComplete());
+        assertEquals(GpuBackendPipelineStage.INVOKE, invocationResult.stageResult().stage());
+        assertEquals("true", invocationFields.get("runtime.backend.invoke.invoked"));
+        assertEquals("true", invocationFields.get("runtime.backend.invoke.readback.complete"));
+        assertEquals("true", invocationFields.get("runtime.backend.prepare.present"));
+        assertEquals("SUCCEEDED", invocationFields.get("runtime.backend.prepare.status"));
+        assertEquals("true", invocationFields.get("runtime.backend.prepare.prepared"));
+        assertEquals("opencl-kernel", invocationFields.get("runtime.backend.prepare.kernel.kind"));
+        assertEquals("2", invocationFields.get("runtime.invocation.binding.buffer.count"));
+        assertEquals("1", invocationFields.get("runtime.invocation.binding.local.count"));
+        assertEquals("3", invocationFields.get("runtime.invocation.binding.scalar.count"));
+        assertEquals("6", invocationFields.get("runtime.invocation.binding.argument.count"));
+        assertEquals("2", invocationFields.get("invoke.work.dimensions"));
+        assertEquals("8x4", invocationFields.get("invoke.work.globalShape"));
+        assertEquals("2x2", invocationFields.get("invoke.work.localShape"));
+        assertEquals("32", invocationFields.get("invoke.work.globalItem.count"));
+        assertEquals("4", invocationFields.get("invoke.work.localItem.count"));
+    }
+
+    @Test
+    void unsupportedBackendCompilationResultStaysBlockedAndPortable() {
+        GpuBackendCompilationResult result = GpuBackendCompilationResult.unsupported(
+                GpuBackendTarget.CUDA,
+                null,
+                List.of("cuda-compiler-not-implemented"),
+                List.of("CUDA remains discovery-only until the execution adapter lands")
+        );
+        java.util.Map<String, String> fields = result.artifactFields("compile");
+
+        assertTrue(!result.compiled());
+        assertTrue(result.stageResult().blocked());
+        assertEquals(GpuBackendPipelineStage.COMPILE, result.stageResult().stage());
+        assertEquals(GpuBackendStageStatus.UNSUPPORTED, result.stageResult().status());
+        assertEquals(GpuBackendTarget.CUDA, result.stageResult().backendTarget());
+        assertEquals("UNSUPPORTED", fields.get("runtime.backend.compilation.status"));
+        assertEquals("false", fields.get("runtime.backend.compilation.compiled"));
+        assertEquals("unknown", fields.get("runtime.backend.compilation.module.format"));
+        assertEquals("CUDA", fields.get("runtime.backend.target"));
+        assertEquals("cuda-compiler-not-implemented", fields.get("compile.stage.blocker.0"));
+    }
+
+    @Test
     void openClLowererAcceptsIrGpuWhenDerivedResourceMatchesDescriptorSource() {
         GpuKernelDescriptor descriptor = sampleDescriptor();
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(

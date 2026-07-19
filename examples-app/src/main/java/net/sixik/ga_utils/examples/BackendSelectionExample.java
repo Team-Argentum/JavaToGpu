@@ -6,6 +6,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendCatalogEntry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendPolicy;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProviderCatalog;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProvider;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProviders;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendDeviceSelectionExplanation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscovery;
@@ -29,8 +32,10 @@ public final class BackendSelectionExample {
         System.out.println("Backend selection example");
         System.out.println();
         System.out.println(renderCatalog(GpuRuntimeBackendCatalog.standardWithPlannedBackends()));
+        System.out.println(renderBackendExecutionAvailability());
         System.out.println(renderPlannedBackendDiagnostics(GpuBackendTarget.CUDA));
         System.out.println(renderStandardBackendDeviceSelectionAttempt());
+        System.out.println(renderScoreBasedRankingGuide());
         System.out.println(renderAutomaticBackendDevicePreflightGuide());
     }
 
@@ -48,8 +53,24 @@ public final class BackendSelectionExample {
                     .append(entry.ownership())
                     .append('\n');
             builder.append("  diagnostic: ").append(entry.diagnostic()).append('\n');
+            entry.executionSupport().ifPresent(support -> {
+                builder.append("  moduleFormats: ")
+                        .append(support.moduleFormatKeys())
+                        .append('\n');
+                builder.append("  capabilityVocabulary: ")
+                        .append(support.capabilityKeys())
+                        .append('\n');
+            });
         }
         return builder.toString();
+    }
+
+    static String renderBackendExecutionAvailability() {
+        return renderBackendExecutionAvailability(GpuRuntimeBackendProviders.standardWithPlannedBackends());
+    }
+
+    static String renderBackendExecutionAvailability(List<GpuRuntimeBackendProvider> providers) {
+        return GpuRuntimeBackendProviderCatalog.of(providers).toMarkdown();
     }
 
     static String renderPlannedBackendDiagnostics(GpuBackendTarget backendTarget) {
@@ -83,6 +104,8 @@ public final class BackendSelectionExample {
             );
             return renderBackendDeviceSelection(backendSelection, deviceDiscoveryCatalog)
                     + System.lineSeparator()
+                    + renderBackendExecutionAvailability()
+                    + System.lineSeparator()
                     + renderCudaInventoryFacts(deviceDiscoveryCatalog);
         } catch (RuntimeException exception) {
             return "Combined backend/device selection:" + System.lineSeparator()
@@ -109,6 +132,21 @@ public final class BackendSelectionExample {
                 + "- requested: " + options.backendOptions().requestsStandardBackendDevicePreflight()
                 + System.lineSeparator()
                 + "- behavior: opens the standard backend+device scope only when no backend is already installed"
+                + System.lineSeparator();
+    }
+
+    static String renderScoreBasedRankingGuide() {
+        GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+                .rankCandidatesByScore()
+                .preferStandardBackendsWithPlannedDiagnostics()
+                .build();
+        return "Score-based backend ranking profile:" + System.lineSeparator()
+                + "- enable with: GpuRuntimeBackendPolicy.builder().rankCandidatesByScore()"
+                + System.lineSeparator()
+                + "- mode: " + policy.candidateOrdering().key() + System.lineSeparator()
+                + "- behavior: evaluates all candidates, applies hard requirements first, then selects highest score"
+                + System.lineSeparator()
+                + "- default: fallback-order remains the safe behavior unless rankCandidatesByScore() is used"
                 + System.lineSeparator();
     }
 

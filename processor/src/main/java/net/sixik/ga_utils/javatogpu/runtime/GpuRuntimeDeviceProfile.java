@@ -4,6 +4,11 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 
 import java.util.Locale;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -378,6 +383,97 @@ public record GpuRuntimeDeviceProfile(
             return "not-cuda";
         }
         return firstMatch(CUDA_COMPUTE_CAPABILITY, apiVersionText);
+    }
+
+    public Set<GpuRuntimeCapability> runtimeCapabilities() {
+        EnumSet<GpuRuntimeCapability> capabilities = EnumSet.noneOf(GpuRuntimeCapability.class);
+        if (deviceClass != GpuDeviceClassTarget.UNKNOWN) {
+            capabilities.add(GpuRuntimeCapability.DEVICE_CLASS);
+        }
+        if (!"unknown".equals(driverVersion)) {
+            capabilities.add(GpuRuntimeCapability.DRIVER_VERSION);
+        }
+        if (!"unknown".equals(apiVersionText)) {
+            capabilities.add(GpuRuntimeCapability.RUNTIME_VERSION);
+        }
+        if (computeUnits > 0L) {
+            capabilities.add(GpuRuntimeCapability.COMPUTE_UNITS);
+        }
+        if (globalMemoryBytes > 0L) {
+            capabilities.add(GpuRuntimeCapability.GLOBAL_MEMORY);
+        }
+        if (localMemoryBytes > 0L) {
+            capabilities.add(GpuRuntimeCapability.LOCAL_MEMORY);
+        }
+        if (maxWorkGroupSize > 0L) {
+            capabilities.add(GpuRuntimeCapability.MAX_WORK_GROUP_SIZE);
+        }
+        if (preferredVectorWidthFloat > 0L) {
+            capabilities.add(GpuRuntimeCapability.PREFERRED_FLOAT_VECTOR_WIDTH);
+            capabilities.add(GpuRuntimeCapability.VECTOR_TYPES);
+        }
+        if (unifiedMemory) {
+            capabilities.add(GpuRuntimeCapability.UNIFIED_MEMORY);
+        }
+        if (supportsDoublePrecision) {
+            capabilities.add(GpuRuntimeCapability.FP64);
+        }
+        if (supportsImages) {
+            capabilities.add(GpuRuntimeCapability.IMAGES);
+            capabilities.add(GpuRuntimeCapability.IMAGE_ABI);
+        }
+        if (supportsSubgroups) {
+            capabilities.add(GpuRuntimeCapability.SUBGROUPS);
+        }
+        if (backendTarget == GpuBackendTarget.CUDA && !"unknown".equals(cudaComputeCapability())) {
+            capabilities.add(GpuRuntimeCapability.COMPUTE_CAPABILITY);
+        }
+        if (backendTarget == GpuBackendTarget.OPENCL || backendTarget == GpuBackendTarget.CUDA) {
+            capabilities.add(GpuRuntimeCapability.ADDRESS_SPACE_GLOBAL);
+            capabilities.add(GpuRuntimeCapability.ADDRESS_SPACE_LOCAL);
+            capabilities.add(GpuRuntimeCapability.ADDRESS_SPACE_CONSTANT);
+            capabilities.add(GpuRuntimeCapability.STRUCT_ABI);
+        }
+        return capabilities.isEmpty() ? Set.of() : Collections.unmodifiableSet(capabilities);
+    }
+
+    public boolean supportsCapability(GpuRuntimeCapability capability) {
+        return capability != null && runtimeCapabilities().contains(capability);
+    }
+
+    public Map<String, String> capabilityFacts() {
+        LinkedHashMap<String, String> facts = new LinkedHashMap<>();
+        facts.put("backendTarget", backendTarget.name());
+        facts.put("backendName", backendName);
+        facts.put("deviceId", deviceId);
+        facts.put("deviceLabel", deviceLabel);
+        facts.put("vendor", vendor);
+        facts.put("driverVersion", driverVersion);
+        facts.put("apiVersionText", apiVersionText);
+        facts.put("deviceClass", deviceClass.name().toLowerCase(Locale.ROOT));
+        facts.put("platformName", platformName);
+        facts.put("platformVersion", platformVersion);
+        facts.put("computeUnits", Long.toString(computeUnits));
+        facts.put("globalMemoryBytes", Long.toString(globalMemoryBytes));
+        facts.put("localMemoryBytes", Long.toString(localMemoryBytes));
+        facts.put("maxWorkGroupSize", Long.toString(maxWorkGroupSize));
+        facts.put("preferredVectorWidthFloat", Long.toString(preferredVectorWidthFloat));
+        facts.put("unifiedMemory", Boolean.toString(unifiedMemory));
+        facts.put("supportsDoublePrecision", Boolean.toString(supportsDoublePrecision));
+        facts.put("supportsImages", Boolean.toString(supportsImages));
+        facts.put("supportsSubgroups", Boolean.toString(supportsSubgroups));
+        if (backendTarget == GpuBackendTarget.CUDA) {
+            facts.put("cuda.runtimeVersion", cudaRuntimeVersion());
+            facts.put("cuda.computeCapability", cudaComputeCapability());
+        }
+        int index = 0;
+        for (GpuRuntimeCapability capability : runtimeCapabilities()) {
+            facts.put("capability." + index, capability.key());
+            facts.put("capability." + capability.key(), "true");
+            index++;
+        }
+        facts.put("capability.count", Integer.toString(index));
+        return Collections.unmodifiableMap(facts);
     }
 
     private static String normalize(String value) {
