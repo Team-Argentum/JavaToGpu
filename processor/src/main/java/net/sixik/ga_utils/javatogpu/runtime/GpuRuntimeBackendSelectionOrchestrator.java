@@ -39,7 +39,8 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 policy.scoreDescriptor(),
                 policy.scoreIrGpuArtifact(),
                 policy.scoreDeviceProfile(),
-                policy.scoreCompilerFeedbackReport()
+                policy.scoreCompilerFeedbackReport(),
+                policy.scoreWorkloadHints()
         );
     }
 
@@ -192,6 +193,7 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
+                Optional.empty(),
                 Optional.empty()
         );
     }
@@ -214,6 +216,7 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER,
                 List.of(),
                 null,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -240,6 +243,7 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 GpuRuntimeBackendCandidateOrdering.FALLBACK_ORDER,
                 List.of(),
                 null,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -267,6 +271,7 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 candidateOrdering,
                 List.of(),
                 null,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -299,6 +304,7 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
+                Optional.empty(),
                 Optional.empty()
         );
     }
@@ -318,7 +324,8 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
             Optional<GpuKernelDescriptor> scoreDescriptor,
             Optional<IrGpuArtifact> scoreIrGpuArtifact,
             Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
-            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport,
+            Optional<GpuRuntimeWorkloadHints> scoreWorkloadHints
     ) {
         Objects.requireNonNull(requirements, "requirements");
         Objects.requireNonNull(backendRequirements, "backendRequirements");
@@ -332,6 +339,9 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
         Optional<GpuBackendCompilerFeedbackReport> compilerFeedbackReport = scoreCompilerFeedbackReport == null
                 ? Optional.empty()
                 : scoreCompilerFeedbackReport;
+        Optional<GpuRuntimeWorkloadHints> workloadHints = scoreWorkloadHints == null
+                ? Optional.empty()
+                : scoreWorkloadHints;
         if (candidateFactories.size() != candidateOwnerships.size()) {
             throw new IllegalArgumentException("candidate factory and ownership counts must match");
         }
@@ -391,7 +401,8 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                     descriptor,
                     irGpuArtifact,
                     deviceProfile,
-                    compilerFeedbackReport
+                    compilerFeedbackReport,
+                    workloadHints
             );
             if (reasons.isEmpty()) {
                 if (ordering == GpuRuntimeBackendCandidateOrdering.SCORE_DESCENDING) {
@@ -477,7 +488,8 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
             Optional<GpuKernelDescriptor> scoreDescriptor,
             Optional<IrGpuArtifact> scoreIrGpuArtifact,
             Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
-            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport,
+            Optional<GpuRuntimeWorkloadHints> scoreWorkloadHints
     ) {
         List<GpuRuntimeBackendScoreContribution> contributions = scoreContributionsForCandidate(
                 candidateIndex,
@@ -488,7 +500,8 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 scoreDescriptor,
                 scoreIrGpuArtifact,
                 scoreDeviceProfile,
-                scoreCompilerFeedbackReport
+                scoreCompilerFeedbackReport,
+                scoreWorkloadHints
         );
         return GpuRuntimeBackendCandidateScore.estimate(
                 candidateIndex,
@@ -509,7 +522,8 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
             Optional<GpuKernelDescriptor> scoreDescriptor,
             Optional<IrGpuArtifact> scoreIrGpuArtifact,
             Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
-            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport,
+            Optional<GpuRuntimeWorkloadHints> scoreWorkloadHints
     ) {
         if (scoreContributors == null || scoreContributors.isEmpty()) {
             return List.of();
@@ -523,7 +537,8 @@ public final class GpuRuntimeBackendSelectionOrchestrator {
                 scoreDescriptor,
                 scoreIrGpuArtifact,
                 scoreDeviceProfile,
-                scoreCompilerFeedbackReport
+                scoreCompilerFeedbackReport,
+                scoreWorkloadHints
         );
         for (GpuRuntimeBackendScoreContributor contributor : scoreContributors) {
             if (contributor == null || !contributor.appliesTo(report.backendTarget())) {

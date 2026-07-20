@@ -287,10 +287,12 @@ GpuRuntimeMethodTestProbeEvidenceWarmup.warmSelectionProbeEvidence(
 
 GpuRuntimeCompileOptions rankingOptions =
         GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
-                .withPersistentMethodTestProbeEvidenceRanking(cacheDirectory);
+                .withPersistentMethodTestProbeEvidenceRanking(cacheDirectory, Duration.ofDays(7));
 ```
 
-The ranking policy is cache-only. It does not secretly run probes during device selection.
+The ranking policy is cache-only. It does not secretly run probes during device selection. `maxEntryAge` has two effects:
+expired entries become cache misses, and old-but-still-valid entries are down-weighted in backend/device score
+diagnostics before they expire.
 
 For application code on the built-in OpenCL runtime, the shortest high-level helper is `warmAndSelectOpenCl(...)`. It
 keeps the same boundary, but returns one auditable report containing discovery, explicit warm-up, and follow-up
@@ -391,6 +393,10 @@ This is enough for runtime selection to consume a warmed cache. Legacy `withMeth
 `runtime.methodTestProbeEvidenceRanking=cached` still map to the same `CACHE_ONLY` behavior. Unknown mode values fail
 closed instead of being ignored, so a future typo such as `run-before-first-invoke` will reject compile options with a
 clear diagnostic rather than unexpectedly running or trusting probes.
+
+Pass `withPersistentMethodTestProbeEvidenceRanking(path, maxEntryAge)` when stale evidence should lose score weight or
+expire. Candidate diagnostics include freshness fields such as `freshnessPermille`, `ageLimited`, `oldestAgeMillis`, and
+`maxAgeMillis`.
 
 Automatic modes such as "run probe before first invoke" are deliberately future work. They need stronger guardrails for
 latency, cache invalidation, backend ownership, and user consent.

@@ -13,13 +13,16 @@ import org.junit.jupiter.api.io.TempDir;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuBackendHookContractTest {
@@ -137,6 +140,339 @@ class GpuBackendHookContractTest {
     }
 
     @Test
+    void hookRegistryExecutesReadOnlyStageHooksFailSoftAndIgnoresReplacementResults() {
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel() {}",
+                "kernel.cl",
+                "test-lowerer"
+        );
+        GpuBackendLoweringResult loweringResult = GpuBackendLoweringResult.succeeded(
+                moduleArtifact,
+                GpuBackendSourceSelectionPlan.descriptorSource(GpuBackendTarget.OPENCL, "opencl-c", "test source"),
+                List.of("lowered")
+        );
+        GpuBackendCompilationResult compilationResult = GpuBackendCompilationResult.succeeded(
+                loweringResult,
+                GpuRuntimeBackendCompilationSummary.from(moduleArtifact, null, "compiled:test"),
+                "compiled:test",
+                List.of("compiled")
+        );
+        GpuBackendInvocationResult invocationResult = GpuBackendInvocationResult.invoked(
+                GpuBackendPreparationResult.prepared(
+                        compilationResult,
+                        "test-kernel",
+                        GpuRuntimeInvocationBindingSummary.empty(),
+                        List.of("prepared")
+                ),
+                GpuExecutionConfig.oneDimensional(1L),
+                0,
+                0,
+                List.of("invoked")
+        );
+        GpuRuntimeDeviceDiscoveryResult discoveryResult = GpuRuntimeDeviceDiscoveryResult.unavailable(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                "test-discovery-unavailable",
+                null
+        );
+        AtomicInteger discoveryCalls = new AtomicInteger();
+        AtomicInteger loweringCalls = new AtomicInteger();
+        AtomicInteger compilationCalls = new AtomicInteger();
+        AtomicInteger invocationCalls = new AtomicInteger();
+        AtomicInteger artifactCalls = new AtomicInteger();
+
+        GpuBackendDiscoveryContributor replacingDiscoveryHook = new GpuBackendDiscoveryContributor() {
+            @Override
+            public String extensionId() {
+                return "test.hook.replacing-discovery";
+            }
+
+            @Override
+            public GpuRuntimeDeviceDiscoveryResult afterDiscovery(
+                    GpuRuntimeCompileOptions compileOptions,
+                    GpuRuntimeDeviceDiscoveryResult observedResult
+            ) {
+                discoveryCalls.incrementAndGet();
+                return GpuRuntimeDeviceDiscoveryResult.unavailable(
+                        GpuBackendTarget.OPENCL,
+                        "OpenCL",
+                        "replacement-must-be-ignored",
+                        null
+                );
+            }
+
+            @Override
+            public Map<String, String> discoveryFacts(GpuRuntimeDeviceDiscoveryResult observedResult) {
+                return Map.of("test.discovery.available", Boolean.toString(observedResult.discoveryAvailable()));
+            }
+        };
+        GpuBackendLoweringHook replacingLoweringHook = new GpuBackendLoweringHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.replacing-lowering";
+            }
+
+            @Override
+            public GpuBackendLoweringResult afterLowering(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendLoweringResult observedResult
+            ) {
+                loweringCalls.incrementAndGet();
+                return GpuBackendLoweringResult.unsupported(
+                        GpuBackendTarget.OPENCL,
+                        observedResult.sourceSelectionPlan(),
+                        List.of("replacement-must-be-ignored"),
+                        List.of()
+                );
+            }
+        };
+        GpuBackendCompilationHook replacingCompilationHook = new GpuBackendCompilationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.replacing-compilation";
+            }
+
+            @Override
+            public GpuBackendCompilationResult afterCompilation(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendCompilationResult observedResult
+            ) {
+                compilationCalls.incrementAndGet();
+                return GpuBackendCompilationResult.unsupported(
+                        GpuBackendTarget.OPENCL,
+                        loweringResult,
+                        List.of("replacement-must-be-ignored"),
+                        List.of()
+                );
+            }
+        };
+        GpuBackendInvocationHook failingInvocationHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.failing-invocation";
+            }
+
+            @Override
+            public GpuBackendInvocationResult afterInvocation(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendInvocationResult observedResult
+            ) {
+                invocationCalls.incrementAndGet();
+                throw new IllegalStateException("simulated hook failure");
+            }
+        };
+        GpuBackendArtifactHook artifactHook = new GpuBackendArtifactHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.artifact";
+            }
+
+            @Override
+            public Map<String, String> contributeArtifactFields(
+                    GpuRuntimeCompileRequest compileRequest,
+                    Map<String, String> currentFields
+            ) {
+                artifactCalls.incrementAndGet();
+                return Map.of("test.artifact.field", currentFields.getOrDefault("status", "missing"));
+            }
+        };
+        GpuBackendInvocationHook productionAffectingHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.production-affecting";
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return GpuExtensionPermission.PRODUCTION_AFFECTING;
+            }
+        };
+
+        GpuBackendHookRegistry registry = GpuBackendHookRegistry.of(List.of(
+                replacingDiscoveryHook,
+                replacingLoweringHook,
+                replacingCompilationHook,
+                failingInvocationHook,
+                artifactHook,
+                productionAffectingHook
+        ));
+        Map<String, String> discoveryFields = registry.observeDiscovery(
+                GpuBackendTarget.OPENCL,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                discoveryResult,
+                "hook.discovery"
+        );
+        Map<String, String> loweringFields = registry.observeLowering(
+                GpuBackendTarget.OPENCL,
+                null,
+                loweringResult,
+                "hook.lowering"
+        );
+        Map<String, String> compilationFields = registry.observeCompilation(
+                GpuBackendTarget.OPENCL,
+                null,
+                compilationResult,
+                "hook.compilation"
+        );
+        Map<String, String> invocationFields = registry.observeInvocation(
+                GpuBackendTarget.OPENCL,
+                null,
+                invocationResult,
+                "hook.invocation"
+        );
+        Map<String, String> artifactFields = registry.contributeArtifactFields(
+                GpuBackendTarget.OPENCL,
+                null,
+                Map.of("status", "succeeded"),
+                "hook.artifact"
+        );
+
+        assertEquals(1, discoveryCalls.get());
+        assertEquals(1, loweringCalls.get());
+        assertEquals(1, compilationCalls.get());
+        assertEquals(1, invocationCalls.get());
+        assertEquals(1, artifactCalls.get());
+        assertEquals("1", discoveryFields.get("hook.discovery.mutationIgnored.count"));
+        assertEquals("mutation-ignored", discoveryFields.get("hook.discovery.hook.0.status"));
+        assertEquals("test.discovery.available", discoveryFields.get("hook.discovery.hook.0.contribution.0.key"));
+        assertEquals("false", discoveryFields.get("hook.discovery.hook.0.contribution.0.value"));
+        assertEquals("1", loweringFields.get("hook.lowering.mutationIgnored.count"));
+        assertEquals("mutation-ignored", loweringFields.get("hook.lowering.hook.0.status"));
+        assertEquals("1", compilationFields.get("hook.compilation.mutationIgnored.count"));
+        assertEquals("mutation-ignored", compilationFields.get("hook.compilation.hook.0.status"));
+        assertEquals("1", invocationFields.get("hook.invocation.failed.count"));
+        assertEquals("failed", invocationFields.get("hook.invocation.hook.0.status"));
+        assertEquals("skipped", invocationFields.get("hook.invocation.hook.1.status"));
+        assertEquals("non-read-only-permission", invocationFields.get("hook.invocation.hook.1.skipReason"));
+        assertTrue(invocationFields.get("hook.invocation.hook.1.diagnostic")
+                .contains("current backend hook execution only runs READ_ONLY hooks"));
+        assertEquals("1", artifactFields.get("hook.artifact.contributionField.count"));
+        assertEquals("test.artifact.field", artifactFields.get("hook.artifact.hook.0.contribution.0.key"));
+        assertEquals("succeeded", artifactFields.get("hook.artifact.hook.0.contribution.0.value"));
+    }
+
+    @Test
+    void hookRegistryRejectsDuplicateBackendHookIdsWithActionableDiagnostic() {
+        GpuBackendLoweringHook firstHook = new GpuBackendLoweringHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.duplicate";
+            }
+        };
+        GpuBackendCompilationHook secondHook = new GpuBackendCompilationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.duplicate";
+            }
+        };
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuBackendHookRegistry.of(List.of(firstHook, secondHook))
+        );
+
+        assertTrue(exception.getMessage().contains("Duplicate backend hook extension id 'test.hook.duplicate'"));
+        assertTrue(exception.getMessage().contains("unique extensionId()"));
+    }
+
+    @Test
+    void hookRegistryRejectsConcreteHookPhaseAndCapabilityMismatches() {
+        GpuBackendLoweringHook wrongPhaseHook = new GpuBackendLoweringHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.wrong-phase";
+            }
+
+            @Override
+            public GpuExtensionPhase extensionPhase() {
+                return GpuExtensionPhase.BACKEND_COMPILATION;
+            }
+        };
+        GpuBackendLoweringHook wrongCapabilityHook = new GpuBackendLoweringHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.wrong-capability";
+            }
+
+            @Override
+            public Set<GpuExtensionCapability> extensionCapabilities() {
+                return Set.of(GpuExtensionCapability.BACKEND_COMPILATION_HOOK);
+            }
+        };
+
+        IllegalArgumentException phaseException = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuBackendHookRegistry.of(List.of(wrongPhaseHook))
+        );
+        IllegalArgumentException capabilityException = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuBackendHookRegistry.of(List.of(wrongCapabilityHook))
+        );
+
+        assertTrue(phaseException.getMessage().contains("Expected phase: BACKEND_LOWERING"));
+        assertTrue(capabilityException.getMessage().contains("expected capability BACKEND_LOWERING_HOOK"));
+    }
+
+    @Test
+    void hookRegistryRejectsNullBackendTargetFilters() {
+        GpuBackendArtifactHook hook = new GpuBackendArtifactHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.null-target";
+            }
+
+            @Override
+            public Set<GpuBackendTarget> backendTargets() {
+                return Collections.singleton(null);
+            }
+        };
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> GpuBackendHookRegistry.of(List.of(hook))
+        );
+
+        assertTrue(exception.getMessage().contains("backendTargets() must not contain null"));
+    }
+
+    @Test
+    void discoveryHelpersStoreReadOnlyHookExecutionFieldsOnDiscoveryResults() {
+        AtomicInteger discoveryCalls = new AtomicInteger();
+        GpuBackendHookRegistry registry = GpuBackendHookRegistry.of(List.of(new GpuBackendDiscoveryContributor() {
+            @Override
+            public String extensionId() {
+                return "test.hook.planned-discovery";
+            }
+
+            @Override
+            public GpuRuntimeDeviceDiscoveryResult afterDiscovery(
+                    GpuRuntimeCompileOptions compileOptions,
+                    GpuRuntimeDeviceDiscoveryResult discoveryResult
+            ) {
+                discoveryCalls.incrementAndGet();
+                return discoveryResult;
+            }
+
+            @Override
+            public Map<String, String> discoveryFacts(GpuRuntimeDeviceDiscoveryResult discoveryResult) {
+                return Map.of("test.discovery.backend", discoveryResult.backendTarget().name());
+            }
+        }));
+
+        GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscovery.plannedUnavailable(
+                GpuBackendTarget.CUDA,
+                registry
+        );
+        Map<String, String> fields = discovery.artifactFields("cudaDiscovery");
+
+        assertEquals(1, discoveryCalls.get());
+        assertEquals("true", fields.get("runtime.backend.hookExecution.discovery.present"));
+        assertEquals("1", fields.get("runtime.backend.hookExecution.discovery.hook.count"));
+        assertEquals("test.discovery.backend", fields.get("runtime.backend.hookExecution.discovery.hook.0.contribution.0.key"));
+        assertEquals("CUDA", fields.get("runtime.backend.hookExecution.discovery.hook.0.contribution.0.value"));
+    }
+
+    @Test
     void hookMetadataCanBeValidatedByTheCommonExtensionRegistry() {
         GpuBackendInvocationHook hook = new GpuBackendInvocationHook() {
             @Override
@@ -205,8 +541,126 @@ class GpuBackendHookContractTest {
         assertEquals(List.of(laterOpenClHook), registry.forCapability(GpuExtensionCapability.BACKEND_LOWERING_HOOK));
         assertEquals("true", fields.get("runtime.backend.hookRegistry.present"));
         assertEquals("2", fields.get("runtime.backend.hookRegistry.hook.count"));
+        assertEquals("true", fields.get("runtime.backend.hookRegistry.contract.present"));
+        assertEquals("0", fields.get("runtime.backend.hookRegistry.contract.warning.count"));
         assertEquals("test.hook.all-artifacts", fields.get("hooks.hook.0.id"));
         assertTrue(registry.toMarkdown().contains("test.hook.opencl-lowering"));
+    }
+
+    @Test
+    void hookRegistryContractDiagnosticsExposeAuthorizationWarnings() {
+        GpuBackendInvocationHook productionHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.production-invocation";
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return GpuExtensionPermission.PRODUCTION_AFFECTING;
+            }
+        };
+
+        GpuBackendHookRegistry registry = GpuBackendHookRegistry.of(List.of(productionHook));
+        Map<String, String> fields = registry.contractDiagnosticFields("contracts");
+
+        assertEquals("1", fields.get("contracts.warning.count"));
+        assertEquals("1", fields.get("contracts.nonReadOnly.count"));
+        assertEquals("authorization-required", fields.get("contracts.hook.0.status"));
+        assertTrue(fields.get("contracts.hook.0.diagnostic").contains("explicit production authorization"));
+    }
+
+    @Test
+    void hookAuthorizationReportBlocksNonReadOnlyHooksByDefault() {
+        GpuBackendInvocationHook readOnlyHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.read-only-invocation";
+            }
+        };
+        GpuBackendInvocationHook productionHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.production-invocation";
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return GpuExtensionPermission.PRODUCTION_AFFECTING;
+            }
+        };
+
+        GpuBackendHookAuthorizationReport report = GpuBackendHookRegistry.of(List.of(readOnlyHook, productionHook))
+                .authorizationReport(GpuBackendTarget.OPENCL, GpuExtensionPhase.BACKEND_INVOCATION);
+        GpuBackendHookAuthorizationDecision readOnlyDecision = decisionById(report, "test.hook.read-only-invocation");
+        GpuBackendHookAuthorizationDecision productionDecision = decisionById(report, "test.hook.production-invocation");
+
+        assertEquals("blocked", report.status());
+        assertEquals(1, report.currentRegistryExecutableCount());
+        assertEquals(1, report.blockedCount());
+        assertEquals(0, report.authorizationRequiredCount());
+        assertEquals(GpuBackendHookAuthorizationStatus.READ_ONLY_AUTHORIZED, readOnlyDecision.status());
+        assertTrue(readOnlyDecision.currentRegistryExecutable());
+        assertEquals(GpuBackendHookAuthorizationStatus.PERMISSION_EXCEEDS_POLICY, productionDecision.status());
+        assertFalse(productionDecision.currentRegistryExecutable());
+        assertEquals("blocked", report.artifactFields("auth").get("auth.status"));
+        assertEquals("1", report.artifactFields("auth").get("auth.blocked.count"));
+    }
+
+    @Test
+    void hookAuthorizationReportCanPreviewExplicitAuthorizationWithoutEnablingExecution() {
+        GpuBackendInvocationHook productionHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.production-invocation";
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return GpuExtensionPermission.PRODUCTION_AFFECTING;
+            }
+        };
+        GpuBackendHookAuthorizationPolicy policy = GpuBackendHookAuthorizationPolicy.previewExplicitAuthorization(
+                GpuExtensionPermission.PRODUCTION_AFFECTING,
+                List.of("test.hook.production-invocation")
+        );
+
+        GpuBackendHookAuthorizationReport report = GpuBackendHookRegistry.of(List.of(productionHook))
+                .authorizationReport(GpuBackendTarget.OPENCL, GpuExtensionPhase.BACKEND_INVOCATION, policy);
+        GpuBackendHookAuthorizationDecision decision = decisionById(report, "test.hook.production-invocation");
+
+        assertEquals("future-authorized-execution-disabled", report.status());
+        assertEquals(0, report.blockedCount());
+        assertEquals(1, report.futureAuthorizedButDisabledCount());
+        assertEquals(GpuBackendHookAuthorizationStatus.AUTHORIZED_BUT_EXECUTION_DISABLED, decision.status());
+        assertTrue(decision.policyAuthorized());
+        assertFalse(decision.currentRegistryExecutable());
+        assertTrue(report.toMarkdown().contains("currentRegistryExecutable=false"));
+    }
+
+    @Test
+    void hookAuthorizationReportExplainsTargetAndPhaseFilters() {
+        GpuBackendLoweringHook cudaLoweringHook = new GpuBackendLoweringHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.cuda-lowering";
+            }
+
+            @Override
+            public Set<GpuBackendTarget> backendTargets() {
+                return Set.of(GpuBackendTarget.CUDA);
+            }
+        };
+
+        GpuBackendHookAuthorizationReport openClLoweringReport = GpuBackendHookRegistry.of(List.of(cudaLoweringHook))
+                .authorizationReport(GpuBackendTarget.OPENCL, GpuExtensionPhase.BACKEND_LOWERING);
+        GpuBackendHookAuthorizationReport cudaCompilationReport = GpuBackendHookRegistry.of(List.of(cudaLoweringHook))
+                .authorizationReport(GpuBackendTarget.CUDA, GpuExtensionPhase.BACKEND_COMPILATION);
+
+        assertEquals(GpuBackendHookAuthorizationStatus.TARGET_FILTERED,
+                decisionById(openClLoweringReport, "test.hook.cuda-lowering").status());
+        assertEquals(GpuBackendHookAuthorizationStatus.PHASE_FILTERED,
+                decisionById(cudaCompilationReport, "test.hook.cuda-lowering").status());
     }
 
     @Test
@@ -246,5 +700,15 @@ class GpuBackendHookContractTest {
         assertEquals(GpuExtensionFailurePolicy.CONTINUE, hook.failurePolicy());
         assertTrue(hook.appliesTo(GpuBackendTarget.OPENCL));
         assertTrue(hook.appliesTo(GpuBackendTarget.CUDA));
+    }
+
+    private static GpuBackendHookAuthorizationDecision decisionById(
+            GpuBackendHookAuthorizationReport report,
+            String hookId
+    ) {
+        return report.decisions().stream()
+                .filter(decision -> decision.hookId().equals(hookId))
+                .findFirst()
+                .orElseThrow();
     }
 }

@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -100,15 +101,17 @@ public final class GpuRuntimeMethodTestBackendScoreContributor implements GpuRun
                 selectionInvocations
         );
         if (counts.failedCount > 0) {
+            int failedScore = scaledScore(FAILED_PROBE_SCORE, counts.freshnessPermille);
             return GpuRuntimeBackendScoreContribution.of(
-                    FAILED_PROBE_SCORE,
-                    counts.diagnostic("failed cached method-test backend evidence " + signed(FAILED_PROBE_SCORE))
+                    failedScore,
+                    counts.diagnostic("failed cached method-test backend evidence " + signed(failedScore))
             );
         }
         if (counts.passedCount > 0 && counts.missingCount == 0 && counts.blockedCount == 0) {
+            int passedScore = scaledScore(PASSED_PROBE_SCORE, counts.freshnessPermille);
             return GpuRuntimeBackendScoreContribution.of(
-                    PASSED_PROBE_SCORE,
-                    counts.diagnostic("passed cached method-test backend evidence " + signed(PASSED_PROBE_SCORE))
+                    passedScore,
+                    counts.diagnostic("passed cached method-test backend evidence " + signed(passedScore))
             );
         }
         if (counts.blockedCount > 0) {
@@ -148,6 +151,10 @@ public final class GpuRuntimeMethodTestBackendScoreContributor implements GpuRun
         int failedCount = 0;
         int missingCount = 0;
         int blockedCount = 0;
+        int freshnessPermille = 1_000;
+        int ageLimitedCount = 0;
+        long oldestAgeMillis = -1L;
+        Duration maxEntryAge = context.compileOptions().backendOptions().methodTestProbeEvidenceMaxAge().orElse(null);
         ArrayList<String> hashes = new ArrayList<>();
         GpuRuntimeDeviceProfile deviceProfile = deviceProfile(context);
         for (GpuRuntimeMethodTestInvocationMaterialization invocation : invocations) {
@@ -170,11 +177,55 @@ public final class GpuRuntimeMethodTestBackendScoreContributor implements GpuRun
                 missingCount++;
             } else if (entry.execution().executionPassed()) {
                 passedCount++;
+                int entryFreshness = freshnessPermille(entry, maxEntryAge);
+                freshnessPermille = Math.min(freshnessPermille, entryFreshness);
+                ageLimitedCount += entryFreshness < 1_000 ? 1 : 0;
+                oldestAgeMillis = Math.max(oldestAgeMillis, entry.ageMillis());
             } else {
                 failedCount++;
+                int entryFreshness = freshnessPermille(entry, maxEntryAge);
+                freshnessPermille = Math.min(freshnessPermille, entryFreshness);
+                ageLimitedCount += entryFreshness < 1_000 ? 1 : 0;
+                oldestAgeMillis = Math.max(oldestAgeMillis, entry.ageMillis());
             }
         }
-        return new EvidenceCounts(invocations.size(), passedCount, failedCount, missingCount, blockedCount, hashes);
+        return new EvidenceCounts(
+                invocations.size(),
+                passedCount,
+                failedCount,
+                missingCount,
+                blockedCount,
+                hashes,
+                freshnessPermille,
+                ageLimitedCount,
+                oldestAgeMillis,
+                maxEntryAge == null ? -1L : maxEntryAge.toMillis()
+        );
+    }
+
+    private static int freshnessPermille(
+            GpuRuntimeMethodTestGpuProbeCacheEntry entry,
+            Duration maxEntryAge
+    ) {
+        if (entry == null || maxEntryAge == null || maxEntryAge.isZero() || maxEntryAge.isNegative()) {
+            return 1_000;
+        }
+        long maxAgeMillis = maxEntryAge.toMillis();
+        if (maxAgeMillis <= 0L) {
+            return 1_000;
+        }
+        long ageMillis = entry.ageMillis();
+        long fullWeightWindow = maxAgeMillis / 2L;
+        if (ageMillis <= fullWeightWindow) {
+            return 1_000;
+        }
+        if (ageMillis >= maxAgeMillis) {
+            return 250;
+        }
+        long decayWindow = Math.max(1L, maxAgeMillis - fullWeightWindow);
+        long remainingMillis = maxAgeMillis - ageMillis;
+        long decayed = 250L + remainingMillis * 750L / decayWindow;
+        return (int) Math.max(250L, Math.min(1_000L, decayed));
     }
 
     private static GpuRuntimeDeviceProfile deviceProfile(GpuRuntimeBackendScoreContext context) {
@@ -246,6 +297,11 @@ public final class GpuRuntimeMethodTestBackendScoreContributor implements GpuRun
         return value >= 0 ? "+" + value : Integer.toString(value);
     }
 
+    private static int scaledScore(int score, int freshnessPermille) {
+        int boundedFreshness = Math.max(0, Math.min(1_000, freshnessPermille));
+        return (int) ((long) score * boundedFreshness / 1_000L);
+    }
+
     private static String exceptionMessage(RuntimeException exception) {
         return exception == null || exception.getMessage() == null || exception.getMessage().isBlank()
                 ? "unknown"
@@ -258,7 +314,11 @@ public final class GpuRuntimeMethodTestBackendScoreContributor implements GpuRun
             int failedCount,
             int missingCount,
             int blockedCount,
-            List<String> hashes
+            List<String> hashes,
+            int freshnessPermille,
+            int ageLimitedCount,
+            long oldestAgeMillis,
+            long maxAgeMillis
     ) {
 
         private String diagnostic(String status) {
@@ -268,7 +328,15 @@ public final class GpuRuntimeMethodTestBackendScoreContributor implements GpuRun
                     + ", failed=" + failedCount
                     + ", missing=" + missingCount
                     + ", blocked=" + blockedCount
+                    + ", freshnessPermille=" + freshnessPermille
+                    + ", ageLimited=" + ageLimitedCount
+                    + ", oldestAgeMillis=" + metricText(oldestAgeMillis)
+                    + ", maxAgeMillis=" + metricText(maxAgeMillis)
                     + ", hashes=" + String.join(",", hashes);
+        }
+
+        private static String metricText(long value) {
+            return value < 0L ? "unknown" : Long.toString(value);
         }
     }
 }

@@ -34,7 +34,7 @@ For normal application code, you usually only need annotations, runtime options,
 | One peephole pattern | `GpuRuntimeIrPeepholeRule` | Mutation proposal | Runs inside the built-in peephole host. |
 | Compiler log parser | `GpuBackendCompilerFeedbackProvider` | Read-only | Resource metrics are advisory. |
 | Backend family registration | `GpuRuntimeBackendProvider` | Stage-specific | Discovery can be read-only; compile/invoke becomes production-affecting. |
-| Backend policy/discovery/stage hooks | `GpuBackendPolicyContributor`, `GpuRuntimeBackendScoreContributor`, `GpuBackendDiscoveryContributor`, `GpuBackendLoweringHook`, `GpuBackendCompilationHook`, `GpuBackendInvocationHook`, `GpuBackendArtifactHook` | Read-only by default | Passive contracts for future ServiceLoader registries; production-affecting hooks must opt into stronger permission explicitly. |
+| Backend policy/discovery/stage hooks | `GpuBackendPolicyContributor`, `GpuRuntimeBackendScoreContributor`, `GpuBackendDiscoveryContributor`, `GpuBackendLoweringHook`, `GpuBackendCompilationHook`, `GpuBackendInvocationHook`, `GpuBackendArtifactHook` | Read-only by default | Observer/enricher contracts for backend receipts; production-affecting hooks must opt into stronger permission explicitly. |
 | Device ranking facts | `GpuRuntimeDevicePolicy` | Read-only | Rejections are hard; score changes are evidence. |
 | Backend source generation | `GpuBackendLowerer` | Production-affecting | Must stay auditable and fail closed. |
 
@@ -342,7 +342,8 @@ return GpuRuntimeBackendExecutionSupport.discoveryOnly(
 ```
 
 This still does not mean every device supports every optional feature. Device-specific truth stays on
-`GpuRuntimeDeviceProfile` and runtime capability checks. Provider metadata answers a different question: which module
+`GpuRuntimeDeviceProfile` and runtime capability checks, including OpenCL-discovered facts such as image support,
+3D image writes, int32 atomics, subgroups, local memory, and vector width. Provider metadata answers a different question: which module
 formats and capability facts this backend family knows how to expose through the shared API.
 
 When a policy is built from `GpuRuntimeBackendCatalog` entries, this provider metadata is attached to every backend
@@ -422,7 +423,9 @@ GpuRuntimeBackendPolicy rankedPolicy = GpuRuntimeBackendPolicy.builder()
 ```
 
 `scoreCandidatesWithCachedMethodTestProbeEvidence()` reads only the configured method-test probe cache from the compile
-options stored in `request`. It never compiles or executes probes during backend selection.
+options stored in `request`. It never compiles or executes probes during backend selection. If the request uses
+`withPersistentMethodTestProbeEvidenceRanking(path, maxEntryAge)`, expired entries are treated as misses and old but
+still-valid entries are down-weighted in `policyAdjustment`; candidate diagnostics include freshness and age-limit facts.
 
 For compiler-resource evidence that was already produced by a compile artifact/log, use the built-in compiler feedback
 bridge:
@@ -444,10 +447,54 @@ resource diagnostics to `policyAdjustment`. Use it for ranking hints such as low
 frame, known local-memory usage, and occupancy. It is not a hard requirement and intentionally has much lower weight than
 cached `@GPUTest` correctness evidence.
 
+For caller-owned workload intent, use `GpuRuntimeWorkloadHints` and the built-in workload-hints bridge:
+
+```java
+GpuRuntimeWorkloadHints hints = GpuRuntimeWorkloadHints.builder()
+        .expectedItemCount(1_000_000L)
+        .preferredWorkGroupSize(256)
+        .memoryIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+        .arithmeticIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+        .requireCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)
+        .preferModuleFormat(GpuBackendModuleFormat.PTX)
+        .build();
+
+GpuRuntimeBackendPolicy rankedPolicy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithWorkloadHints(hints)
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithWorkloadHints(hints)` fills `policyAdjustment` from expected parallelism, preferred work-group size,
+memory/arithmetic intensity, preferred module formats, and portable capability intent. It can read candidate reports,
+provider metadata, and optional device profile context. It stays advisory and fail-soft; mandatory constraints should use
+the explicit `require...` APIs.
+
+For metadata-derived placement, use the inferred workload bridge instead of duplicating descriptor scanners in user code:
+
+```java
+GpuRuntimeBackendPolicy rankedPolicy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithInferredWorkloadHints(descriptor, irGpuArtifact)
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithInferredWorkloadHints(...)` is implemented as the built-in
+`GpuRuntimeInferredWorkloadHintBackendScoreContributor`. It derives conservative `GpuRuntimeWorkloadHints` from the
+descriptor and optional `IrGpu` artifact, including visible global/local/constant address-space requirements, then routes them through the same workload-hints scoring formula. The bridge is
+read-only, fail-soft, and does not load, compile, or execute backend candidates. Its diagnostics use the `inferred
+workload ...` prefix so reports can distinguish automatic method-derived evidence from caller-owned hints.
+
 If a backend has a real compile -> prepare -> invoke slice, expose it with `executionPipelineFactory()`. OpenCL already
 does this through an `OpenClBackendExecutionPipelineFactory`. CUDA currently stays inventory-only, so its provider does
 not publish a pipeline factory yet. This is deliberate: future CUDA work can add execution stage-by-stage without
 pretending the backend is production-ready before it is.
+
+The factory should bind the shared runner to the concrete backend instance's own compiler, preparer, and invoker. Do not
+create a second buffer registry, native session, cache, or extension-hook path inside the factory; otherwise provider
+execution can diverge from the production backend path.
 
 For catalog UIs, examples, and CI reports, call `executionAvailability()` on the provider. It returns a compact
 `GpuRuntimeBackendExecutionAvailability` card with status, summary, blockers, diagnostics, artifact fields, and Markdown.
@@ -501,6 +548,11 @@ invoke sequence and return `GpuBackendCompilationResult`, `GpuBackendPreparation
 together. A backend may still keep richer orchestration around it for cache lookup, lifecycle events, validation,
 artifact dumping, and fallback decisions.
 
+OpenCL now follows that model in production: the runner is used for compile -> prepare -> invoke, while OpenCL-specific
+wrappers preserve the existing compiled-kernel cache, lifecycle events, artifact dumps, launch validation, and failure
+formatting. New backends should use the same split instead of embedding policy, logging, or cache semantics inside native
+compile/invoke code.
+
 There are two runner modes:
 
 | Method | Behavior |
@@ -515,15 +567,16 @@ compiler or invoker exists.
 
 ### Backend Hook Contracts
 
-Backend hooks are the passive ServiceLoader-facing contracts for A8 adapter hardening. They are not invoked by the
-production runtime yet; this is intentional so the hook vocabulary can stabilize before any OpenCL behavior changes.
+Backend hooks are the ServiceLoader-facing contracts for A8 adapter hardening. Most hooks are still read-only observers,
+but public backend discovery and the OpenCL runtime now execute the first hook families at stable result/lifecycle
+boundaries so tools can observe and enrich backend receipts without changing runtime behavior.
 
 All backend hooks extend `GpuBackendHook`, which provides:
 
 | Contract field | Meaning |
 | --- | --- |
 | `backendTargets()` | Empty means all backend families; otherwise the hook is filtered to explicit targets such as `OPENCL` or `CUDA`. |
-| `failurePolicy()` | Defaults to `CONTINUE`; future registries can use this to decide whether hook failures are isolated or fail the stage. |
+| `failurePolicy()` | Defaults to `CONTINUE`; current OpenCL hook execution is fail-soft and records failures in lifecycle fields. |
 | `artifactFields(...)` / `lifecycleFields(...)` | Stable metadata for catalogs, CI receipts, and lifecycle journals. |
 | `extensionOrder()` | Deterministic ordering when hooks are loaded through ServiceLoader. |
 
@@ -539,15 +592,52 @@ The concrete hook families are:
 | `GpuBackendInvocationHook` | `BACKEND_INVOCATION` | `READ_ONLY` | Observe invocation/readback receipts. |
 | `GpuBackendArtifactHook` | `ARTIFACT_EMISSION` | `READ_ONLY` | Add backend-specific artifact fields. |
 
-Default hook methods are no-ops. If a future hook implementation wants to alter discovery, lowering, compilation,
-invocation, or artifact output, it should override `extensionPermission()` to a production-affecting permission and be
-accepted by the future stage registry explicitly. This keeps the current OpenCL path stable while giving adapter authors
-a compile-time SPI target.
+Default hook methods are no-ops. Today, only hooks whose `extensionPermission()` is `READ_ONLY` are executed. If a hook
+returns a replacement discovery, lowering, compilation, or invocation result, the runtime ignores that replacement,
+records `mutation-ignored`, and continues with the original production result. Hooks with stronger permissions are
+skipped until an explicit production-affecting registry exists.
 
-`GpuBackendHookRegistry` is the inspection layer for these hooks. It can load services registered under either the base
-`GpuBackendHook` interface or the concrete hook interfaces, applies deterministic ordering, validates duplicate
-extension ids through `GpuExtensionRegistry`, filters by backend target/capability, and renders artifact fields or
-Markdown. It is a catalog/validation helper only; it does not wire hooks into OpenCL compilation or invocation.
+`GpuBackendHookRegistry` is both the inspection layer and the read-only execution boundary for these hooks. It can load
+services registered under either the base `GpuBackendHook` interface or the concrete hook interfaces, applies
+deterministic ordering, validates duplicate extension ids and concrete hook family contracts, filters by backend
+target/capability, renders artifact fields or Markdown, and records execution facts under
+`runtime.backend.hookExecution.*`.
+
+Contract validation is fail-fast for setup mistakes that would make ServiceLoader behavior ambiguous: duplicate
+`extensionId()` values, `backendTargets()` containing `null`, and concrete hook implementations that override the wrong
+phase or omit the expected capability. Catalog artifacts also include `runtime.backend.hookRegistry.contract.*` fields.
+Those fields show which hooks are read-only and which hooks are loaded but require future production authorization before
+they can execute.
+
+For authorization diagnostics, use `authorizationReport(...)`. This is a preview/report API, not a mutating execution
+switch: the current runner still executes only read-only hooks.
+
+```java
+GpuBackendHookRegistry registry = GpuBackendHookRegistry.loadWithServiceLoader();
+GpuBackendHookAuthorizationReport report = registry.authorizationReport(
+        GpuBackendTarget.OPENCL,
+        GpuExtensionPhase.BACKEND_INVOCATION
+);
+
+System.out.println(report.toMarkdown());
+```
+
+`GpuBackendHookAuthorizationPolicy.previewExplicitAuthorization(...)` can model a future policy decision for tests and
+review tools. Even when a stronger hook id is explicitly authorized by that policy, the report marks it as
+`AUTHORIZED_BUT_EXECUTION_DISABLED` until a separate production-affecting runner exists.
+
+Current wiring is intentionally narrow:
+
+| Stage | What runs now | Behavior |
+| --- | --- | --- |
+| Backend/device discovery helpers | `GpuBackendDiscoveryContributor.afterDiscovery(...)` and `discoveryFacts(...)` | Read-only observer; receipts are stored on `GpuRuntimeDeviceDiscoveryResult` artifact fields. |
+| OpenCL lowerer selection lifecycle fields | `GpuBackendLoweringHook.afterLowering(...)` | Read-only observer; replacement results are ignored and reported. |
+| Compilation lifecycle fields | `GpuBackendCompilationHook.afterCompilation(...)` | Read-only observer; replacement results are ignored and reported. |
+| Invocation lifecycle fields | `GpuBackendInvocationHook.afterInvocation(...)` | Read-only observer; failures are captured instead of failing the kernel. |
+| Artifact/lifecycle enrichment | `GpuBackendArtifactHook.contributeArtifactFields(...)` | Returned fields are captured as contribution metadata, not merged directly into root fields. |
+
+Discovery helpers also expose explicit overloads that accept a `GpuBackendHookRegistry`, which keeps tests and tools from
+depending on ServiceLoader setup when they need deterministic hook receipts.
 
 Example service file for a policy hook:
 
@@ -560,6 +650,42 @@ Example service file for a score hook that should appear in hook catalogs:
 ```text
 META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendScoreContributor
 ```
+
+Example service files for stage hooks:
+
+```text
+META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuBackendDiscoveryContributor
+META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuBackendLoweringHook
+META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilationHook
+META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuBackendInvocationHook
+META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuBackendArtifactHook
+```
+
+The examples app includes runnable ServiceLoader hook implementations under `net.sixik.ga_utils.examples`:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendHookServiceLoaderExample --console=plain
+```
+
+That example uses discovery/lowering/compilation/invocation hooks as read-only observers and an artifact hook as a
+metadata contributor. It is intentionally hardware-free and uses `GpuBackendHookTestHarness` to generate synthetic
+OpenCL discovery/lowering/compile/invoke/artifact receipts, so extension authors can verify registration and receipt
+fields before touching native runtimes.
+
+For library tests, use the harness directly instead of shelling out to the examples app:
+
+```java
+GpuBackendHookTestHarnessReport report = GpuBackendHookTestHarness
+        .of(List.of(new MyBackendArtifactHook()))
+        .runSyntheticOpenCl();
+
+System.out.println(report.toMarkdown());
+```
+
+The harness also exposes `runSynthetic(GpuBackendTarget)` and static synthetic receipt factories for discovery,
+lowering, compilation, preparation, and invocation. This lets a hook module test target filters, fail-soft behavior,
+`mutation-ignored` reporting, contribution fields, contract diagnostics, and ServiceLoader registration without requiring
+OpenCL hardware.
 
 Catalog inspection:
 
@@ -610,7 +736,8 @@ Map<String, String> facts = profile.capabilityFacts();
 ```
 
 Device profiles now expose indexed capability fields such as `runtime.device.capability.0=fp64` and direct flags such as
-`runtime.device.capability.local-memory=true`. Keep backend-specific facts namespaced, for example
+`runtime.device.capability.local-memory=true`. OpenCL profiles also carry direct normalized flags such as
+`compilerVersion`, `supportsImage3dWrites`, and `supportsAtomics`, which are mirrored into portable capability fields when supported. Keep backend-specific facts namespaced, for example
 `runtime.device.cuda.computeCapability`, rather than replacing the portable capability field.
 
 ## Backend Metadata

@@ -37,7 +37,27 @@ public final class GpuRuntimeDeviceDiscovery {
             GpuRuntimeCompileOptions compileOptions,
             GpuRuntimeDevicePolicyRegistry devicePolicyRegistry
     ) {
-        return OpenClRuntimeDeviceDiscovery.discover(normalizeOpenClOptions(compileOptions), devicePolicyRegistry);
+        return discoverOpenCl(
+                compileOptions,
+                devicePolicyRegistry,
+                GpuBackendHookRegistry.loadWithServiceLoader()
+        );
+    }
+
+    /**
+     * Discovers OpenCL devices with an explicit backend hook registry, primarily for tools and tests.
+     */
+    public static GpuRuntimeDeviceDiscoveryResult discoverOpenCl(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuBackendHookRegistry backendHookRegistry
+    ) {
+        GpuRuntimeCompileOptions normalizedOptions = normalizeOpenClOptions(compileOptions);
+        return observeDiscoveryHooks(
+                normalizedOptions,
+                OpenClRuntimeDeviceDiscovery.discover(normalizedOptions, devicePolicyRegistry),
+                backendHookRegistry
+        );
     }
 
     /**
@@ -61,7 +81,29 @@ public final class GpuRuntimeDeviceDiscovery {
             GpuRuntimeCompileOptions compileOptions,
             GpuRuntimeDevicePolicyRegistry devicePolicyRegistry
     ) {
-        return CudaRuntimeDeviceDiscovery.discover(compileOptions, devicePolicyRegistry);
+        return discoverCuda(
+                compileOptions,
+                devicePolicyRegistry,
+                GpuBackendHookRegistry.loadWithServiceLoader()
+        );
+    }
+
+    /**
+     * Discovers CUDA-visible devices with an explicit backend hook registry, primarily for tools and tests.
+     */
+    public static GpuRuntimeDeviceDiscoveryResult discoverCuda(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuBackendHookRegistry backendHookRegistry
+    ) {
+        GpuRuntimeCompileOptions resolvedOptions = compileOptions == null
+                ? GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA)
+                : compileOptions;
+        return observeDiscoveryHooks(
+                resolvedOptions,
+                CudaRuntimeDeviceDiscovery.discover(resolvedOptions, devicePolicyRegistry),
+                backendHookRegistry
+        );
     }
 
     /**
@@ -89,17 +131,50 @@ public final class GpuRuntimeDeviceDiscovery {
      * Returns an explicit planned/unavailable discovery state for a backend without a native device adapter yet.
      */
     public static GpuRuntimeDeviceDiscoveryResult plannedUnavailable(GpuBackendTarget backendTarget) {
+        return plannedUnavailable(backendTarget, GpuBackendHookRegistry.loadWithServiceLoader());
+    }
+
+    /**
+     * Returns an explicit planned/unavailable discovery state and observes it with an explicit hook registry.
+     */
+    public static GpuRuntimeDeviceDiscoveryResult plannedUnavailable(
+            GpuBackendTarget backendTarget,
+            GpuBackendHookRegistry backendHookRegistry
+    ) {
         GpuBackendTarget target = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
         String backendName = target.name();
         String diagnostic = "Runtime device discovery adapter is not implemented for "
                 + target
                 + "; backend remains planned/unavailable in this alpha";
-        return GpuRuntimeDeviceDiscoveryResult.unavailable(
-                target,
-                backendName,
-                "backend-device-discovery-not-implemented",
-                new UnsupportedOperationException(diagnostic)
+        GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions.defaults(target);
+        return observeDiscoveryHooks(
+                compileOptions,
+                GpuRuntimeDeviceDiscoveryResult.unavailable(
+                        target,
+                        backendName,
+                        "backend-device-discovery-not-implemented",
+                        new UnsupportedOperationException(diagnostic)
+                ),
+                backendHookRegistry
         );
+    }
+
+    private static GpuRuntimeDeviceDiscoveryResult observeDiscoveryHooks(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeDeviceDiscoveryResult discoveryResult,
+            GpuBackendHookRegistry backendHookRegistry
+    ) {
+        GpuBackendHookRegistry registry = backendHookRegistry == null
+                ? GpuBackendHookRegistry.empty()
+                : backendHookRegistry;
+        if (registry.isEmpty() || discoveryResult == null) {
+            return discoveryResult;
+        }
+        return discoveryResult.withHookExecutionFields(registry.observeDiscovery(
+                compileOptions,
+                discoveryResult,
+                "runtime.backend.hookExecution.discovery"
+        ));
     }
 
     private static GpuRuntimeCompileOptions normalizeOpenClOptions(GpuRuntimeCompileOptions compileOptions) {

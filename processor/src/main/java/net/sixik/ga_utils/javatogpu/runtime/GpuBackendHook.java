@@ -14,8 +14,9 @@ import java.util.Set;
  * Common metadata contract for backend SPI hooks.
  *
  * <p>Backend hooks are ServiceLoader-friendly extension points for backend policy, discovery, lowering,
- * compilation, invocation, and artifact reporting. This base contract is intentionally passive: installing a hook does
- * not alter the runtime path unless a concrete hook registry/pipeline explicitly invokes it.</p>
+ * compilation, invocation, and artifact reporting. Installing a hook does not mutate the runtime path by itself:
+ * concrete registries invoke only reviewed hook families, and the current production wiring treats read-only hooks as
+ * fail-soft observers/enrichers.</p>
  */
 public interface GpuBackendHook extends GpuExtension {
 

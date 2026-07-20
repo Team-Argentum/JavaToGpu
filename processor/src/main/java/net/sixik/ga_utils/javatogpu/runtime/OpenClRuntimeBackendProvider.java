@@ -51,6 +51,7 @@ public final class OpenClRuntimeBackendProvider implements GpuRuntimeBackendProv
                         GpuRuntimeCapability.LOCAL_MEMORY,
                         GpuRuntimeCapability.MAX_WORK_GROUP_SIZE,
                         GpuRuntimeCapability.PREFERRED_FLOAT_VECTOR_WIDTH,
+                        GpuRuntimeCapability.ATOMICS,
                         GpuRuntimeCapability.FP64,
                         GpuRuntimeCapability.IMAGES,
                         GpuRuntimeCapability.IMAGE_3D_WRITES,

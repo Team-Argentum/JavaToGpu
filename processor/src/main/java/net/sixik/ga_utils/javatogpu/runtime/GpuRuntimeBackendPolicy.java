@@ -42,6 +42,7 @@ public final class GpuRuntimeBackendPolicy {
     private final Optional<IrGpuArtifact> scoreIrGpuArtifact;
     private final Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile;
     private final Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport;
+    private final Optional<GpuRuntimeWorkloadHints> scoreWorkloadHints;
 
     private GpuRuntimeBackendPolicy(
             List<GpuRuntimeRequirement> requirements,
@@ -55,7 +56,8 @@ public final class GpuRuntimeBackendPolicy {
             Optional<GpuKernelDescriptor> scoreDescriptor,
             Optional<IrGpuArtifact> scoreIrGpuArtifact,
             Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile,
-            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport
+            Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport,
+            Optional<GpuRuntimeWorkloadHints> scoreWorkloadHints
     ) {
         this.requirements = List.copyOf(requirements);
         this.backendRequirements = List.copyOf(backendRequirements);
@@ -75,6 +77,7 @@ public final class GpuRuntimeBackendPolicy {
         this.scoreCompilerFeedbackReport = scoreCompilerFeedbackReport == null
                 ? Optional.empty()
                 : scoreCompilerFeedbackReport;
+        this.scoreWorkloadHints = scoreWorkloadHints == null ? Optional.empty() : scoreWorkloadHints;
     }
 
     /**
@@ -169,6 +172,13 @@ public final class GpuRuntimeBackendPolicy {
     }
 
     /**
+     * Returns optional workload intent exposed to advisory score contributors.
+     */
+    public Optional<GpuRuntimeWorkloadHints> scoreWorkloadHints() {
+        return scoreWorkloadHints;
+    }
+
+    /**
      * Creates backend candidates, returns the first matching backend, and leaves ownership of that backend to the
      * caller.
      *
@@ -214,6 +224,7 @@ public final class GpuRuntimeBackendPolicy {
         private Optional<IrGpuArtifact> scoreIrGpuArtifact = Optional.empty();
         private Optional<GpuRuntimeDeviceProfile> scoreDeviceProfile = Optional.empty();
         private Optional<GpuBackendCompilerFeedbackReport> scoreCompilerFeedbackReport = Optional.empty();
+        private Optional<GpuRuntimeWorkloadHints> scoreWorkloadHints = Optional.empty();
 
         private Builder() {
         }
@@ -321,6 +332,48 @@ public final class GpuRuntimeBackendPolicy {
         public Builder scoreCandidatesWithCompilerFeedback(GpuBackendCompilerFeedbackReport report) {
             scoreCandidatesForCompilerFeedback(report);
             return scoreCandidatesWith(GpuBackendCompilerFeedbackScoreContributor.fromContext());
+        }
+
+        /**
+         * Attaches workload intent as advisory score context.
+         */
+        public Builder scoreCandidatesForWorkloadHints(GpuRuntimeWorkloadHints hints) {
+            scoreWorkloadHints = Optional.of(Objects.requireNonNull(hints, "hints"));
+            return this;
+        }
+
+        /**
+         * Adds the standard workload-hints score bridge for caller-provided workload intent.
+         */
+        public Builder scoreCandidatesWithWorkloadHints(GpuRuntimeWorkloadHints hints) {
+            scoreCandidatesForWorkloadHints(hints);
+            return scoreCandidatesWith(GpuRuntimeWorkloadHintBackendScoreContributor.fromContext());
+        }
+
+        /**
+         * Adds the standard inferred workload-hints score bridge for already-attached descriptor/IrGpu context.
+         */
+        public Builder scoreCandidatesWithInferredWorkloadHints() {
+            return scoreCandidatesWith(GpuRuntimeInferredWorkloadHintBackendScoreContributor.fromContext());
+        }
+
+        /**
+         * Attaches a kernel descriptor and adds the standard inferred workload-hints score bridge.
+         */
+        public Builder scoreCandidatesWithInferredWorkloadHints(GpuKernelDescriptor descriptor) {
+            scoreCandidatesForKernel(descriptor);
+            return scoreCandidatesWithInferredWorkloadHints();
+        }
+
+        /**
+         * Attaches a kernel descriptor plus preloaded IrGpu artifact and adds inferred workload scoring.
+         */
+        public Builder scoreCandidatesWithInferredWorkloadHints(
+                GpuKernelDescriptor descriptor,
+                IrGpuArtifact irGpuArtifact
+        ) {
+            scoreCandidatesForKernel(descriptor, irGpuArtifact);
+            return scoreCandidatesWithInferredWorkloadHints();
         }
 
         /**
@@ -555,7 +608,8 @@ public final class GpuRuntimeBackendPolicy {
                     scoreDescriptor,
                     scoreIrGpuArtifact,
                     scoreDeviceProfile,
-                    scoreCompilerFeedbackReport
+                    scoreCompilerFeedbackReport,
+                    scoreWorkloadHints
             );
         }
     }

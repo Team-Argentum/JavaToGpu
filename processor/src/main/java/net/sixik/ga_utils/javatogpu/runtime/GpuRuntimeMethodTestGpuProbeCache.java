@@ -27,7 +27,7 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
 
     private static final GpuRuntimeMethodTestGpuProbeCache SHARED = new GpuRuntimeMethodTestGpuProbeCache();
 
-    private final ConcurrentHashMap<String, GpuRuntimeMethodTestGpuProbeExecution> executions =
+    private final ConcurrentHashMap<String, StoredExecution> executions =
             new ConcurrentHashMap<>();
     private final Path persistentDirectory;
     private final Duration maxEntryAge;
@@ -59,14 +59,17 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
     ) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(supplier, "supplier");
-        GpuRuntimeMethodTestGpuProbeExecution cached = executions.get(key.stableHash());
+        StoredExecution cached = executions.get(key.stableHash());
         if (cached != null) {
-            return new GpuRuntimeMethodTestGpuProbeCacheEntry(cached, true);
+            return new GpuRuntimeMethodTestGpuProbeCacheEntry(cached.execution(), true, cached.createdEpochMillis());
         }
 
         GpuRuntimeMethodTestGpuProbeCacheEntry persistentEntry = readPersistentEntry(key);
         if (persistentEntry != null) {
-            executions.putIfAbsent(key.stableHash(), persistentEntry.execution().withCacheHit(false));
+            executions.putIfAbsent(
+                    key.stableHash(),
+                    new StoredExecution(persistentEntry.execution().withCacheHit(false), persistentEntry.createdEpochMillis())
+            );
             return persistentEntry;
         }
 
@@ -76,16 +79,17 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
             return new GpuRuntimeMethodTestGpuProbeCacheEntry(produced, false);
         }
 
-        GpuRuntimeMethodTestGpuProbeExecution prior = executions.putIfAbsent(
+        long createdEpochMillis = System.currentTimeMillis();
+        StoredExecution prior = executions.putIfAbsent(
                 key.stableHash(),
-                produced.withCacheHit(false)
+                new StoredExecution(produced.withCacheHit(false), createdEpochMillis)
         );
         if (prior == null) {
-            writePersistentEntry(key, produced.withCacheHit(false));
+            writePersistentEntry(key, produced.withCacheHit(false), createdEpochMillis);
         }
         return prior == null
-                ? new GpuRuntimeMethodTestGpuProbeCacheEntry(produced, false)
-                : new GpuRuntimeMethodTestGpuProbeCacheEntry(prior, true);
+                ? new GpuRuntimeMethodTestGpuProbeCacheEntry(produced, false, createdEpochMillis)
+                : new GpuRuntimeMethodTestGpuProbeCacheEntry(prior.execution(), true, prior.createdEpochMillis());
     }
 
     public void record(GpuRuntimeMethodTestGpuProbeExecution execution) {
@@ -94,26 +98,34 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
         if (!value.executionReady()) {
             throw new IllegalArgumentException("Only executed GPU probe evidence can be cached: " + key.stableHash());
         }
-        executions.put(key.stableHash(), value.withCacheHit(false));
-        writePersistentEntry(key, value.withCacheHit(false));
+        long createdEpochMillis = System.currentTimeMillis();
+        executions.put(key.stableHash(), new StoredExecution(value.withCacheHit(false), createdEpochMillis));
+        writePersistentEntry(key, value.withCacheHit(false), createdEpochMillis);
     }
 
     public GpuRuntimeMethodTestGpuProbeCacheEntry get(GpuRuntimeMethodTestGpuProbeEvidenceKey key) {
         Objects.requireNonNull(key, "key");
-        GpuRuntimeMethodTestGpuProbeExecution execution = executions.get(key.stableHash());
+        StoredExecution execution = executions.get(key.stableHash());
         if (execution != null) {
-            return new GpuRuntimeMethodTestGpuProbeCacheEntry(execution, true);
+            return new GpuRuntimeMethodTestGpuProbeCacheEntry(
+                    execution.execution(),
+                    true,
+                    execution.createdEpochMillis()
+            );
         }
         GpuRuntimeMethodTestGpuProbeCacheEntry persistentEntry = readPersistentEntry(key);
         if (persistentEntry != null) {
-            executions.putIfAbsent(key.stableHash(), persistentEntry.execution().withCacheHit(false));
+            executions.putIfAbsent(
+                    key.stableHash(),
+                    new StoredExecution(persistentEntry.execution().withCacheHit(false), persistentEntry.createdEpochMillis())
+            );
         }
         return persistentEntry;
     }
 
     public List<GpuRuntimeMethodTestGpuProbeExecution> executions() {
         return executions.values().stream()
-                .map(execution -> execution.withCacheHit(false))
+                .map(execution -> execution.execution().withCacheHit(false))
                 .toList();
     }
 
@@ -163,11 +175,12 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             Properties properties = new Properties();
             properties.load(reader);
+            long createdEpochMillis = parseLong(properties, "createdEpochMillis", -1L);
             GpuRuntimeMethodTestGpuProbeExecution execution = readExecution(key, properties);
             if (execution == null) {
                 return null;
             }
-            return new GpuRuntimeMethodTestGpuProbeCacheEntry(execution, true);
+            return new GpuRuntimeMethodTestGpuProbeCacheEntry(execution, true, createdEpochMillis);
         } catch (IOException | RuntimeException exception) {
             return null;
         }
@@ -281,7 +294,8 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
 
     private void writePersistentEntry(
             GpuRuntimeMethodTestGpuProbeEvidenceKey key,
-            GpuRuntimeMethodTestGpuProbeExecution execution
+            GpuRuntimeMethodTestGpuProbeExecution execution,
+            long createdEpochMillis
     ) {
         if (persistentDirectory == null || !execution.executionReady()) {
             return;
@@ -289,7 +303,7 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
         try {
             Files.createDirectories(persistentDirectory);
             Properties properties = new Properties();
-            writeExecution(properties, key, execution.withCacheHit(false));
+            writeExecution(properties, key, execution.withCacheHit(false), createdEpochMillis);
             Path target = persistentEntryPath(key);
             Path temp = persistentDirectory.resolve(target.getFileName() + ".tmp");
             try (Writer writer = Files.newBufferedWriter(temp, StandardCharsets.UTF_8)) {
@@ -304,10 +318,13 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
     private void writeExecution(
             Properties properties,
             GpuRuntimeMethodTestGpuProbeEvidenceKey key,
-            GpuRuntimeMethodTestGpuProbeExecution execution
+            GpuRuntimeMethodTestGpuProbeExecution execution,
+            long createdEpochMillis
     ) {
         properties.setProperty("formatVersion", PERSISTENT_FORMAT_VERSION);
-        properties.setProperty("createdEpochMillis", Long.toString(System.currentTimeMillis()));
+        properties.setProperty("createdEpochMillis", Long.toString(createdEpochMillis <= 0L
+                ? System.currentTimeMillis()
+                : createdEpochMillis));
         properties.setProperty("stableHash", key.stableHash());
         writeEvidenceKey(properties, execution.evidenceKey());
         properties.setProperty("execution.testId", execution.testId());
@@ -474,6 +491,17 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
             return value == null || value.isBlank() ? fallback : Enum.valueOf(enumType, value.trim());
         } catch (IllegalArgumentException exception) {
             return fallback;
+        }
+    }
+
+    private record StoredExecution(
+            GpuRuntimeMethodTestGpuProbeExecution execution,
+            long createdEpochMillis
+    ) {
+
+        private StoredExecution {
+            execution = Objects.requireNonNull(execution, "execution");
+            createdEpochMillis = createdEpochMillis <= 0L ? System.currentTimeMillis() : createdEpochMillis;
         }
     }
 }

@@ -20,6 +20,7 @@ public record GpuRuntimeDeviceProfile(
         String vendor,
         String driverVersion,
         String apiVersionText,
+        String compilerVersion,
         GpuDeviceClassTarget deviceClass,
         long computeUnits,
         long globalMemoryBytes,
@@ -29,6 +30,8 @@ public record GpuRuntimeDeviceProfile(
         boolean unifiedMemory,
         boolean supportsDoublePrecision,
         boolean supportsImages,
+        boolean supportsImage3dWrites,
+        boolean supportsAtomics,
         boolean supportsSubgroups,
         String platformName,
         String platformVersion
@@ -60,6 +63,55 @@ public record GpuRuntimeDeviceProfile(
             boolean unifiedMemory,
             boolean supportsDoublePrecision,
             boolean supportsImages,
+            boolean supportsImage3dWrites,
+            boolean supportsAtomics,
+            boolean supportsSubgroups,
+            String platformName,
+            String platformVersion
+    ) {
+        this(
+                backendTarget,
+                backendName,
+                deviceId,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                "unknown",
+                deviceClass,
+                computeUnits,
+                globalMemoryBytes,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                unifiedMemory,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsImage3dWrites,
+                supportsAtomics,
+                supportsSubgroups,
+                platformName,
+                platformVersion
+        );
+    }
+
+    public GpuRuntimeDeviceProfile(
+            GpuBackendTarget backendTarget,
+            String backendName,
+            String deviceId,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            GpuDeviceClassTarget deviceClass,
+            long computeUnits,
+            long globalMemoryBytes,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean unifiedMemory,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
             boolean supportsSubgroups
     ) {
         this(
@@ -70,6 +122,7 @@ public record GpuRuntimeDeviceProfile(
                 vendor,
                 driverVersion,
                 apiVersionText,
+                "unknown",
                 deviceClass,
                 computeUnits,
                 globalMemoryBytes,
@@ -79,6 +132,8 @@ public record GpuRuntimeDeviceProfile(
                 unifiedMemory,
                 supportsDoublePrecision,
                 supportsImages,
+                false,
+                false,
                 supportsSubgroups,
                 "unknown",
                 "unknown"
@@ -158,6 +213,7 @@ public record GpuRuntimeDeviceProfile(
         vendor = normalize(vendor);
         driverVersion = normalize(driverVersion);
         apiVersionText = normalize(apiVersionText);
+        compilerVersion = normalize(compilerVersion);
         deviceClass = normalizeDeviceClass(deviceClass);
         platformName = normalize(platformName);
         platformVersion = normalize(platformVersion);
@@ -177,12 +233,15 @@ public record GpuRuntimeDeviceProfile(
                 "unknown",
                 "unknown",
                 "unknown",
+                "unknown",
                 GpuDeviceClassTarget.UNKNOWN,
                 -1L,
                 -1L,
                 -1L,
                 -1L,
                 -1L,
+                false,
+                false,
                 false,
                 false,
                 false,
@@ -206,8 +265,41 @@ public record GpuRuntimeDeviceProfile(
             boolean supportsImages,
             boolean supportsSubgroups
     ) {
-        return new GpuRuntimeDeviceProfile(
-                GpuBackendTarget.OPENCL,
+        return openCl(
+                backendName,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                computeUnits,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                supportsDoublePrecision,
+                supportsImages,
+                false,
+                false,
+                supportsSubgroups
+        );
+    }
+
+    public static GpuRuntimeDeviceProfile openCl(
+            String backendName,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            long computeUnits,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsImage3dWrites,
+            boolean supportsAtomics,
+            boolean supportsSubgroups
+    ) {
+        return openCl(
                 backendName,
                 "unknown",
                 deviceLabel,
@@ -223,6 +315,8 @@ public record GpuRuntimeDeviceProfile(
                 false,
                 supportsDoublePrecision,
                 supportsImages,
+                supportsImage3dWrites,
+                supportsAtomics,
                 supportsSubgroups
         );
     }
@@ -274,6 +368,99 @@ public record GpuRuntimeDeviceProfile(
             String vendor,
             String driverVersion,
             String apiVersionText,
+            GpuDeviceClassTarget deviceClass,
+            long computeUnits,
+            long globalMemoryBytes,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean unifiedMemory,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsImage3dWrites,
+            boolean supportsAtomics,
+            boolean supportsSubgroups
+    ) {
+        return openCl(
+                backendName,
+                deviceId,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                "unknown",
+                "unknown",
+                deviceClass,
+                computeUnits,
+                globalMemoryBytes,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                unifiedMemory,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsImage3dWrites,
+                supportsAtomics,
+                supportsSubgroups
+        );
+    }
+
+    public static GpuRuntimeDeviceProfile openCl(
+            String backendName,
+            String deviceId,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            String compilerVersion,
+            String platformName,
+            String platformVersion,
+            GpuDeviceClassTarget deviceClass,
+            long computeUnits,
+            long globalMemoryBytes,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean unifiedMemory,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsImage3dWrites,
+            boolean supportsAtomics,
+            boolean supportsSubgroups
+    ) {
+        return new GpuRuntimeDeviceProfile(
+                GpuBackendTarget.OPENCL,
+                backendName,
+                deviceId,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                compilerVersion,
+                deviceClass,
+                computeUnits,
+                globalMemoryBytes,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                unifiedMemory,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsImage3dWrites,
+                supportsAtomics,
+                supportsSubgroups,
+                platformName,
+                platformVersion
+        );
+    }
+
+    public static GpuRuntimeDeviceProfile openCl(
+            String backendName,
+            String deviceId,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
             String platformName,
             String platformVersion,
             GpuDeviceClassTarget deviceClass,
@@ -287,14 +474,15 @@ public record GpuRuntimeDeviceProfile(
             boolean supportsImages,
             boolean supportsSubgroups
     ) {
-        return new GpuRuntimeDeviceProfile(
-                GpuBackendTarget.OPENCL,
+        return openCl(
                 backendName,
                 deviceId,
                 deviceLabel,
                 vendor,
                 driverVersion,
                 apiVersionText,
+                platformName,
+                platformVersion,
                 deviceClass,
                 computeUnits,
                 globalMemoryBytes,
@@ -304,9 +492,101 @@ public record GpuRuntimeDeviceProfile(
                 unifiedMemory,
                 supportsDoublePrecision,
                 supportsImages,
-                supportsSubgroups,
+                false,
+                false,
+                supportsSubgroups
+        );
+    }
+
+    public static GpuRuntimeDeviceProfile openCl(
+            String backendName,
+            String deviceId,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            String platformName,
+            String platformVersion,
+            GpuDeviceClassTarget deviceClass,
+            long computeUnits,
+            long globalMemoryBytes,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean unifiedMemory,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsImage3dWrites,
+            boolean supportsSubgroups
+    ) {
+        return openCl(
+                backendName,
+                deviceId,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
                 platformName,
-                platformVersion
+                platformVersion,
+                deviceClass,
+                computeUnits,
+                globalMemoryBytes,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                unifiedMemory,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsImage3dWrites,
+                false,
+                supportsSubgroups
+        );
+    }
+
+    public static GpuRuntimeDeviceProfile openCl(
+            String backendName,
+            String deviceId,
+            String deviceLabel,
+            String vendor,
+            String driverVersion,
+            String apiVersionText,
+            String platformName,
+            String platformVersion,
+            GpuDeviceClassTarget deviceClass,
+            long computeUnits,
+            long globalMemoryBytes,
+            long localMemoryBytes,
+            long maxWorkGroupSize,
+            long preferredVectorWidthFloat,
+            boolean unifiedMemory,
+            boolean supportsDoublePrecision,
+            boolean supportsImages,
+            boolean supportsImage3dWrites,
+            boolean supportsAtomics,
+            boolean supportsSubgroups
+    ) {
+        return openCl(
+                backendName,
+                deviceId,
+                deviceLabel,
+                vendor,
+                driverVersion,
+                apiVersionText,
+                "unknown",
+                platformName,
+                platformVersion,
+                deviceClass,
+                computeUnits,
+                globalMemoryBytes,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                preferredVectorWidthFloat,
+                unifiedMemory,
+                supportsDoublePrecision,
+                supportsImages,
+                supportsImage3dWrites,
+                supportsAtomics,
+                supportsSubgroups
         );
     }
 
@@ -329,12 +609,15 @@ public record GpuRuntimeDeviceProfile(
                 vendor,
                 driverVersion,
                 apiVersionText,
+                "unknown",
                 deviceClass,
                 -1L,
                 globalMemoryBytes,
                 -1L,
                 -1L,
                 -1L,
+                false,
+                false,
                 false,
                 false,
                 false,
@@ -353,6 +636,7 @@ public record GpuRuntimeDeviceProfile(
                 vendor,
                 driverVersion,
                 apiVersionText,
+                compilerVersion,
                 deviceClass,
                 computeUnits,
                 globalMemoryBytes,
@@ -362,6 +646,8 @@ public record GpuRuntimeDeviceProfile(
                 unifiedMemory,
                 supportsDoublePrecision,
                 supportsImages,
+                supportsImage3dWrites,
+                supportsAtomics,
                 supportsSubgroups,
                 platformName,
                 platformVersion
@@ -396,6 +682,9 @@ public record GpuRuntimeDeviceProfile(
         if (!"unknown".equals(apiVersionText)) {
             capabilities.add(GpuRuntimeCapability.RUNTIME_VERSION);
         }
+        if (!"unknown".equals(compilerVersion)) {
+            capabilities.add(GpuRuntimeCapability.COMPILER_VERSION);
+        }
         if (computeUnits > 0L) {
             capabilities.add(GpuRuntimeCapability.COMPUTE_UNITS);
         }
@@ -421,6 +710,14 @@ public record GpuRuntimeDeviceProfile(
         if (supportsImages) {
             capabilities.add(GpuRuntimeCapability.IMAGES);
             capabilities.add(GpuRuntimeCapability.IMAGE_ABI);
+        }
+        if (supportsImage3dWrites) {
+            capabilities.add(GpuRuntimeCapability.IMAGES);
+            capabilities.add(GpuRuntimeCapability.IMAGE_ABI);
+            capabilities.add(GpuRuntimeCapability.IMAGE_3D_WRITES);
+        }
+        if (supportsAtomics) {
+            capabilities.add(GpuRuntimeCapability.ATOMICS);
         }
         if (supportsSubgroups) {
             capabilities.add(GpuRuntimeCapability.SUBGROUPS);
@@ -450,6 +747,7 @@ public record GpuRuntimeDeviceProfile(
         facts.put("vendor", vendor);
         facts.put("driverVersion", driverVersion);
         facts.put("apiVersionText", apiVersionText);
+        facts.put("compilerVersion", compilerVersion);
         facts.put("deviceClass", deviceClass.name().toLowerCase(Locale.ROOT));
         facts.put("platformName", platformName);
         facts.put("platformVersion", platformVersion);
@@ -461,6 +759,8 @@ public record GpuRuntimeDeviceProfile(
         facts.put("unifiedMemory", Boolean.toString(unifiedMemory));
         facts.put("supportsDoublePrecision", Boolean.toString(supportsDoublePrecision));
         facts.put("supportsImages", Boolean.toString(supportsImages));
+        facts.put("supportsImage3dWrites", Boolean.toString(supportsImage3dWrites));
+        facts.put("supportsAtomics", Boolean.toString(supportsAtomics));
         facts.put("supportsSubgroups", Boolean.toString(supportsSubgroups));
         if (backendTarget == GpuBackendTarget.CUDA) {
             facts.put("cuda.runtimeVersion", cudaRuntimeVersion());

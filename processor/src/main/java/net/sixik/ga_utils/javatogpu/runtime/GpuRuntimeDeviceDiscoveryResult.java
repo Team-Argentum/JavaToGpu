@@ -23,8 +23,30 @@ public record GpuRuntimeDeviceDiscoveryResult(
         List<GpuRuntimeDeviceProfile> discoveredDevices,
         Optional<GpuRuntimeDeviceSelection> deviceSelection,
         String firstBlocker,
-        List<String> diagnostics
+        List<String> diagnostics,
+        Map<String, String> hookExecutionFields
 ) {
+
+    public GpuRuntimeDeviceDiscoveryResult(
+            GpuBackendTarget backendTarget,
+            String backendName,
+            boolean discoveryAvailable,
+            List<GpuRuntimeDeviceProfile> discoveredDevices,
+            Optional<GpuRuntimeDeviceSelection> deviceSelection,
+            String firstBlocker,
+            List<String> diagnostics
+    ) {
+        this(
+                backendTarget,
+                backendName,
+                discoveryAvailable,
+                discoveredDevices,
+                deviceSelection,
+                firstBlocker,
+                diagnostics,
+                Map.of()
+        );
+    }
 
     public GpuRuntimeDeviceDiscoveryResult {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -33,6 +55,7 @@ public record GpuRuntimeDeviceDiscoveryResult(
         deviceSelection = deviceSelection == null ? Optional.empty() : deviceSelection;
         firstBlocker = firstBlocker == null || firstBlocker.isBlank() ? "none" : firstBlocker;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        hookExecutionFields = hookExecutionFields == null ? Map.of() : Map.copyOf(hookExecutionFields);
     }
 
     /**
@@ -59,7 +82,8 @@ public record GpuRuntimeDeviceDiscoveryResult(
                 devices,
                 Optional.ofNullable(resolvedSelection),
                 resolvedSelection == null ? "device-selection-not-run" : resolvedSelection.firstBlocker(),
-                diagnostics
+                diagnostics,
+                Map.of()
         );
     }
 
@@ -82,7 +106,26 @@ public record GpuRuntimeDeviceDiscoveryResult(
                 List.of(),
                 Optional.empty(),
                 firstBlocker == null || firstBlocker.isBlank() ? "device-discovery-failed" : firstBlocker,
-                List.of(diagnostic)
+                List.of(diagnostic),
+                Map.of()
+        );
+    }
+
+    public GpuRuntimeDeviceDiscoveryResult withHookExecutionFields(Map<String, String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return this;
+        }
+        LinkedHashMap<String, String> mergedFields = new LinkedHashMap<>(hookExecutionFields);
+        mergedFields.putAll(fields);
+        return new GpuRuntimeDeviceDiscoveryResult(
+                backendTarget,
+                backendName,
+                discoveryAvailable,
+                discoveredDevices,
+                deviceSelection,
+                firstBlocker,
+                diagnostics,
+                mergedFields
         );
     }
 
@@ -177,6 +220,7 @@ public record GpuRuntimeDeviceDiscoveryResult(
         for (int index = 0; index < diagnostics.size(); index++) {
             fields.put(normalizedPrefix + ".diagnostic." + index, diagnostics.get(index));
         }
+        GpuRuntimeLifecycleFields.putAllMissing(fields, hookExecutionFields);
         return Collections.unmodifiableMap(fields);
     }
 

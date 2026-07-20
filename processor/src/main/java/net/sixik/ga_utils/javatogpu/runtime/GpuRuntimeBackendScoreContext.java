@@ -16,7 +16,8 @@ public record GpuRuntimeBackendScoreContext(
         Optional<GpuKernelDescriptor> descriptor,
         Optional<IrGpuArtifact> irGpuArtifact,
         Optional<GpuRuntimeDeviceProfile> deviceProfile,
-        Optional<GpuBackendCompilerFeedbackReport> compilerFeedbackReport
+        Optional<GpuBackendCompilerFeedbackReport> compilerFeedbackReport,
+        Optional<GpuRuntimeWorkloadHints> workloadHints
 ) {
 
     public GpuRuntimeBackendScoreContext(
@@ -30,6 +31,7 @@ public record GpuRuntimeBackendScoreContext(
                 report,
                 metadata,
                 compileOptions,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -47,5 +49,6 @@ public record GpuRuntimeBackendScoreContext(
         irGpuArtifact = irGpuArtifact == null ? Optional.empty() : irGpuArtifact;
         deviceProfile = deviceProfile == null ? Optional.empty() : deviceProfile;
         compilerFeedbackReport = compilerFeedbackReport == null ? Optional.empty() : compilerFeedbackReport;
+        workloadHints = workloadHints == null ? Optional.empty() : workloadHints;
     }
 }

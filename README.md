@@ -171,7 +171,12 @@ with `rankCandidatesByScore()` when they want the most ready candidate to win af
 attach explicit read-only workload evidence with `scoreCandidatesWith(...)`; those contributors fill the
 `policyAdjustment` bucket and only affect the winner when score-based ranking is enabled. Built-in bridges can also
 consume warmed cache-only `@GPUTest` evidence or precomputed compiler feedback through
-`scoreCandidatesWithCachedMethodTestProbeEvidence()` and `scoreCandidatesWithCompilerFeedback(report)`.
+`scoreCandidatesWithCachedMethodTestProbeEvidence()` and `scoreCandidatesWithCompilerFeedback(report)`. Applications can
+describe workload intent with `GpuRuntimeWorkloadHints` and `.scoreCandidatesWithWorkloadHints(hints)` when placement
+should consider expected parallelism, memory/arithmetic shape, preferred module formats, or portable capability needs.
+For descriptor/IrGpu-driven placement, `.scoreCandidatesWithInferredWorkloadHints(...)` derives conservative hints from
+method parameters, image/struct/local-memory usage, global/local/constant address-space usage, required IR features, and visible math density without compiling or
+executing any backend candidate.
 
 Preview the provider-authoring path for a future backend without touching native APIs:
 
@@ -183,6 +188,21 @@ This shows the intended progression for a third-party backend provider: discover
 pipeline with a shared compile/prepare/invoke runner and structured unsupported receipts for incomplete stages. External
 providers use the same ServiceLoader-backed registry path as built-in providers and can be inspected without opening
 native runtime sessions.
+
+Preview read-only backend hooks loaded through ServiceLoader without opening native APIs:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendHookServiceLoaderExample --console=plain
+```
+
+This shows example `GpuBackendDiscoveryContributor`, `GpuBackendLoweringHook`, `GpuBackendCompilationHook`,
+`GpuBackendInvocationHook`, and `GpuBackendArtifactHook` implementations registered under `META-INF/services`. The hooks
+observe discovery/lowering/compile/invoke/artifact receipts, contribute namespaced metadata, and keep production results
+unchanged. Extension modules can test the same behavior directly with `GpuBackendHookTestHarness`, which builds synthetic
+receipts without requiring OpenCL/CUDA hardware and reports hook contract diagnostics such as authorization-required
+non-read-only hooks. `GpuBackendHookRegistry.authorizationReport(...)` gives the same fail-closed authorization view for
+a backend target and stage: read-only hooks are executable today, stronger hooks can be preview-authorized for review,
+but remain `AUTHORIZED_BUT_EXECUTION_DISABLED` until a separate production-affecting runner exists.
 
 Backend authors should use the shared `GpuBackendModuleFormat` and `GpuRuntimeCapability` vocabulary for module formats
 and device facts, and declare that vocabulary through `GpuRuntimeBackendExecutionSupport`. This keeps OpenCL-C, CUDA-C,
@@ -210,8 +230,9 @@ corrupt/mismatch/expiry handling. The method-test pipeline also publishes Servic
 including GPU probe cache hit/miss events, so tracing or journal services can observe the preflight and probe flow
 without manual listener registration. Device selection can also opt into cache-only method-test probe evidence ranking
 with `GpuRuntimeCompileOptions.withPersistentMethodTestProbeEvidenceRanking(path)`: passed cached evidence boosts a
-candidate, failed cached evidence rejects it, and missing evidence stays neutral. Runtime compile artifact dumps also
-write `runtime-method-test-evidence.properties`; the OpenCL validation report aggregates those artifacts under
+candidate, failed cached evidence rejects it, missing evidence stays neutral, and the optional `maxEntryAge` lowers the
+score weight for old-but-still-valid entries before they expire into misses. Runtime compile artifact dumps also write
+`runtime-method-test-evidence.properties`; the OpenCL validation report aggregates those artifacts under
 `Method Test Evidence` so CI archives show which kernels carried `@GPUTest` metadata and whether cached probe evidence
 participated in device ranking.
 This runtime path is explicitly `GpuRuntimeMethodTestProbeMode.CACHE_ONLY`: it reads warmed evidence only and never runs
@@ -219,11 +240,19 @@ method-test GPU probes during device selection.
 Backend selection can consume the same warmed cache through the opt-in backend score bridge:
 `GpuRuntimeBackendPolicy.builder().rankCandidatesByScore().scoreCandidatesForCompileRequest(request)` plus
 `.scoreCandidatesWithCachedMethodTestProbeEvidence()`. This fills the backend `policyAdjustment` score bucket from
-cached `@GPUTest` evidence and still never executes probes during selection.
+cached `@GPUTest` evidence and still never executes probes during selection. When ranking options include `maxEntryAge`,
+the backend score diagnostics include freshness and age-limit facts so stale cache entries are explainably down-weighted.
 Precomputed compiler feedback can participate in the same score bucket with
 `.scoreCandidatesWithCompilerFeedback(report)`. This is advisory resource evidence only: it reads an already-created
 feedback report, never compiles candidates during selection, and remains lower priority than method-test correctness
 evidence.
+Workload intent can participate through `.scoreCandidatesWithWorkloadHints(hints)`. This is also advisory: it lets the
+selector explain preferences such as `PTX` output, high arithmetic intensity, large work-groups, or required portable
+capabilities without turning those preferences into hard rejection gates.
+If the application already has a generated descriptor or loaded `IrGpu` artifact, use
+`.scoreCandidatesWithInferredWorkloadHints(descriptor, artifact)` to get the same score path from conservative
+method-derived evidence, including address-space requirements from descriptor source and `IrGpu` entry parameters. The inferred bridge is read-only, fail-soft, and still changes the selected backend only when
+`rankCandidatesByScore()` is enabled.
 Applications that want a single explicit operation can use
 `GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelect(...)`: it runs the caller-approved warm-up first, then invokes
 normal device selection with cache-only evidence ranking and returns one markdown/artifact-friendly report.

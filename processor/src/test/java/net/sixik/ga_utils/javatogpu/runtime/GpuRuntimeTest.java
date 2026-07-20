@@ -5,6 +5,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuBackendOutput;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodTestVectorMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
@@ -15,6 +16,7 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -2050,6 +2052,7 @@ class GpuRuntimeTest {
                 "NVIDIA Corporation",
                 "595.97",
                 "OpenCL 3.0 CUDA 13.2.73",
+                "OpenCL C 3.0 CUDA",
                 "NVIDIA CUDA",
                 "OpenCL 3.0 CUDA 13.2.73",
                 GpuDeviceClassTarget.DGPU,
@@ -2061,17 +2064,28 @@ class GpuRuntimeTest {
                 false,
                 true,
                 true,
+                true,
+                true,
                 true
         );
         Map<String, String> facts = profile.capabilityFacts();
 
         assertTrue(profile.supportsCapability(GpuRuntimeCapability.FP64));
         assertTrue(profile.supportsCapability(GpuRuntimeCapability.IMAGES));
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.IMAGE_3D_WRITES));
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.ATOMICS));
         assertTrue(profile.supportsCapability(GpuRuntimeCapability.SUBGROUPS));
         assertTrue(profile.supportsCapability(GpuRuntimeCapability.LOCAL_MEMORY));
         assertTrue(profile.supportsCapability(GpuRuntimeCapability.MAX_WORK_GROUP_SIZE));
+        assertTrue(profile.supportsCapability(GpuRuntimeCapability.COMPILER_VERSION));
         assertEquals("true", facts.get("capability.fp64"));
         assertEquals("true", facts.get("capability.images"));
+        assertEquals("true", facts.get("capability.image-3d-writes"));
+        assertEquals("true", facts.get("capability.atomics"));
+        assertEquals("true", facts.get("capability.compiler-version"));
+        assertEquals("OpenCL C 3.0 CUDA", facts.get("compilerVersion"));
+        assertEquals("true", facts.get("supportsImage3dWrites"));
+        assertEquals("true", facts.get("supportsAtomics"));
         assertEquals("65536", facts.get("localMemoryBytes"));
         assertEquals("1024", facts.get("maxWorkGroupSize"));
     }
@@ -2578,6 +2592,329 @@ class GpuRuntimeTest {
     }
 
     @Test
+    void backendPolicyCanRankWithWorkloadHints() {
+        GpuRuntimeBackendExecutionSupport openClExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.OPENCL,
+                "test.opencl.workload-hints-score",
+                Set.of(GpuBackendModuleFormat.OPENCL_C),
+                Set.of(GpuRuntimeCapability.LOCAL_MEMORY),
+                "test OpenCL production fixture"
+        );
+        GpuRuntimeBackendExecutionSupport cudaExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.CUDA,
+                "test.cuda.workload-hints-score",
+                Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                Set.of(
+                        GpuRuntimeCapability.COMPUTE_CAPABILITY,
+                        GpuRuntimeCapability.LOCAL_MEMORY,
+                        GpuRuntimeCapability.MAX_WORK_GROUP_SIZE
+                ),
+                "test CUDA production fixture"
+        );
+        GpuRuntimeWorkloadHints hints = GpuRuntimeWorkloadHints.builder()
+                .expectedItemCount(1_000_000L)
+                .preferredWorkGroupSize(256)
+                .memoryIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+                .arithmeticIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+                .requireCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)
+                .preferModuleFormat(GpuBackendModuleFormat.PTX)
+                .build();
+
+        CloseCountingBackend fallbackOpenCl = new CloseCountingBackend(GpuRuntimeBackendReport.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                "OpenCL workload GPU",
+                new GpuRuntimeApiVersion(3, 0),
+                "OpenCL 3.0",
+                java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                16_384L,
+                64L,
+                "synthetic OpenCL workload fixture"
+        ));
+        CloseCountingBackend fallbackCuda = new CloseCountingBackend(GpuRuntimeBackendReport.available(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                "CUDA workload GPU",
+                new GpuRuntimeApiVersion(12, 0),
+                "CUDA 12.0",
+                java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                98_304L,
+                512L,
+                "synthetic CUDA workload fixture"
+        ));
+
+        GpuRuntimeSelectionResult fallbackSelection = GpuRuntimeBackendPolicy.builder()
+                .scoreCandidatesWithWorkloadHints(hints)
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                fallbackOpenCl,
+                                openClExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                fallbackCuda,
+                                cudaExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(fallbackSelection.matched());
+        assertSame(fallbackOpenCl, fallbackSelection.requireSelection().backend());
+        assertEquals(1, fallbackSelection.candidateDecisions().size());
+        assertEquals(0, fallbackCuda.closeCalls);
+
+        CloseCountingBackend rankedOpenCl = new CloseCountingBackend(fallbackOpenCl.report);
+        CloseCountingBackend rankedCuda = new CloseCountingBackend(fallbackCuda.report);
+        GpuRuntimeSelectionResult rankedSelection = GpuRuntimeBackendPolicy.builder()
+                .rankCandidatesByScore()
+                .scoreCandidatesWithWorkloadHints(hints)
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                rankedOpenCl,
+                                openClExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                rankedCuda,
+                                cudaExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(rankedSelection.matched());
+        assertSame(rankedCuda, rankedSelection.requireSelection().backend());
+        assertTrue(rankedSelection.candidateDecisions().get(0).closed());
+        assertTrue(rankedSelection.candidateDecisions().get(1).selected());
+        assertEquals(465_000, rankedSelection.candidateDecisions().get(1).score().policyScoreAdjustment());
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("workload capability compute-capability supported")));
+        assertTrue(rankedSelection.explanation().toMarkdown().contains("policyAdjustment=465000"));
+        assertEquals(1, rankedOpenCl.closeCalls);
+        assertEquals(0, rankedCuda.closeCalls);
+    }
+
+    @Test
+    void workloadHintInferenceCapturesAddressSpaceRequirements() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "jtg_address_space_kernel",
+                "javatogpu/runtime/address-space-inference.cl",
+                "__kernel void jtg_address_space_kernel(__global float* input, "
+                        + "__constant float* lookup, __local float* scratch, __global float* output) { "
+                        + "scratch[0] = input[0] + lookup[0]; output[0] = scratch[0]; }",
+                "javatogpu/runtime/address-space-inference.irgpu.properties",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("lookup", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scratch", "float[]", GpuKernelParameterAccess.LOCAL),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "addressSpaceInference",
+                        "jtg_address_space_kernel",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "addressSpaceInference",
+                                "jtg_address_space_kernel",
+                                "body\n  output[0] = input[0] + lookup[0]\n",
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "float[]", "GLOBAL", true, List.of("const")),
+                        new IrGpuEntryParameter("lookup", "float[]", "CONSTANT", true, List.of("const")),
+                        new IrGpuEntryParameter("scratch", "float[]", "LOCAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())
+                ),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/runtime/address-space-inference.cl")),
+                "opencl",
+                "off"
+        );
+
+        GpuRuntimeInferredWorkloadHints inferred = GpuRuntimeWorkloadHintInference.infer(descriptor, artifact);
+        GpuRuntimeWorkloadHints hints = inferred.hints();
+
+        assertTrue(hints.requiresCapability(GpuRuntimeCapability.ADDRESS_SPACE_GLOBAL));
+        assertTrue(hints.requiresCapability(GpuRuntimeCapability.ADDRESS_SPACE_LOCAL));
+        assertTrue(hints.requiresCapability(GpuRuntimeCapability.ADDRESS_SPACE_CONSTANT));
+        assertTrue(hints.requiresCapability(GpuRuntimeCapability.LOCAL_MEMORY));
+        assertTrue(inferred.diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("address-space-global")));
+    }
+
+    @Test
+    void backendPolicyCanRankWithInferredWorkloadHints() {
+        GpuRuntimeBackendExecutionSupport cudaExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.CUDA,
+                "test.cuda.inferred-workload-hints-score",
+                Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                Set.of(GpuRuntimeCapability.COMPUTE_CAPABILITY),
+                "test CUDA production fixture"
+        );
+        GpuRuntimeBackendExecutionSupport openClExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
+                GpuBackendTarget.OPENCL,
+                "test.opencl.inferred-workload-hints-score",
+                Set.of(GpuBackendModuleFormat.OPENCL_C),
+                Set.of(
+                        GpuRuntimeCapability.FP64,
+                        GpuRuntimeCapability.IMAGES,
+                        GpuRuntimeCapability.IMAGE_ABI,
+                        GpuRuntimeCapability.IMAGE_3D_WRITES,
+                        GpuRuntimeCapability.LOCAL_MEMORY,
+                        GpuRuntimeCapability.STRUCT_ABI,
+                        GpuRuntimeCapability.VECTOR_TYPES,
+                        GpuRuntimeCapability.ADDRESS_SPACE_GLOBAL,
+                        GpuRuntimeCapability.ADDRESS_SPACE_LOCAL,
+                        GpuRuntimeCapability.ADDRESS_SPACE_CONSTANT
+                ),
+                "test OpenCL production fixture"
+        );
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "jtg_inferred_rank_kernel",
+                "javatogpu/runtime/inferred-rank.cl",
+                "__kernel void jtg_inferred_rank_kernel(__global const double* input, "
+                        + "__global float* output, write_only image3d_t volume) { "
+                        + "float value = mad((float)input[0], 2.0f, sqrt(output[0])); "
+                        + "output[0] = sin(value) + cos(value); }",
+                "javatogpu/runtime/inferred-rank.irgpu.properties",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "double[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE),
+                        new GpuKernelParameterDescriptor(
+                                "volume",
+                                "net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly",
+                                GpuKernelParameterAccess.READ_WRITE
+                        ),
+                        new GpuKernelParameterDescriptor("points", "example.Point[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scratch", "float[]", GpuKernelParameterAccess.LOCAL)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "inferredRankKernel",
+                        "jtg_inferred_rank_kernel",
+                        List.of(),
+                        List.of("typedef struct { float x; float y; } Point;"),
+                        List.of(IrGpuMethodBody.entry(
+                                "inferredRankKernel",
+                                "jtg_inferred_rank_kernel",
+                                "body\n  value = mad(value, sqrt(value), sin(value)) + cos(value)\n",
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "double[]", "GLOBAL", true, List.of("const")),
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("scratch", "float[]", "LOCAL", false, List.of())
+                ),
+                List.of(IrGpuBackendOutput.openClSource("javatogpu/runtime/inferred-rank.cl")),
+                "opencl",
+                "off"
+        );
+
+        CloseCountingBackend fallbackCuda = new CloseCountingBackend(GpuRuntimeBackendReport.available(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                "CUDA inferred workload GPU",
+                new GpuRuntimeApiVersion(12, 0),
+                "CUDA 12.0",
+                java.util.EnumSet.noneOf(GpuRuntimeFeature.class),
+                16_384L,
+                64L,
+                "synthetic CUDA inferred workload fixture"
+        ));
+        CloseCountingBackend fallbackOpenCl = new CloseCountingBackend(GpuRuntimeBackendReport.available(
+                GpuBackendTarget.OPENCL,
+                "OpenCL",
+                "OpenCL inferred workload GPU",
+                new GpuRuntimeApiVersion(3, 0),
+                "OpenCL 3.0",
+                java.util.EnumSet.of(
+                        GpuRuntimeFeature.DOUBLE_PRECISION,
+                        GpuRuntimeFeature.IMAGES,
+                        GpuRuntimeFeature.IMAGE3D_WRITES
+                ),
+                98_304L,
+                512L,
+                "synthetic OpenCL inferred workload fixture"
+        ));
+
+        GpuRuntimeSelectionResult fallbackSelection = GpuRuntimeBackendPolicy.builder()
+                .scoreCandidatesWithInferredWorkloadHints(descriptor, artifact)
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                fallbackCuda,
+                                cudaExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                fallbackOpenCl,
+                                openClExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(fallbackSelection.matched());
+        assertSame(fallbackCuda, fallbackSelection.requireSelection().backend());
+        assertEquals(1, fallbackSelection.candidateDecisions().size());
+        assertEquals(0, fallbackOpenCl.closeCalls);
+
+        CloseCountingBackend rankedCuda = new CloseCountingBackend(fallbackCuda.report);
+        CloseCountingBackend rankedOpenCl = new CloseCountingBackend(fallbackOpenCl.report);
+        GpuRuntimeSelectionResult rankedSelection = GpuRuntimeBackendPolicy.builder()
+                .rankCandidatesByScore()
+                .scoreCandidatesWithInferredWorkloadHints(descriptor, artifact)
+                .preferCatalog(List.of(
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.CUDA,
+                                "CUDA score fixture",
+                                rankedCuda,
+                                cudaExecutionSupport
+                        ),
+                        metadataBackedCatalogEntry(
+                                GpuBackendTarget.OPENCL,
+                                "OpenCL score fixture",
+                                rankedOpenCl,
+                                openClExecutionSupport
+                        )
+                ))
+                .build()
+                .trySelect();
+
+        assertTrue(rankedSelection.matched());
+        assertSame(rankedOpenCl, rankedSelection.requireSelection().backend());
+        assertTrue(rankedSelection.candidateDecisions().get(0).closed());
+        assertTrue(rankedSelection.candidateDecisions().get(1).selected());
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().policyScoreAdjustment() > 0);
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("inferred workload capability fp64 supported")));
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("inferred workload memory intensity HIGH")));
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("inferred workload capability address-space-global supported")));
+        assertTrue(rankedSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("javatogpu.backend.inferred-workload-hints-score")));
+        assertEquals(1, rankedCuda.closeCalls);
+        assertEquals(0, rankedOpenCl.closeCalls);
+    }
+
+    @Test
     void backendPolicyCanRankWithPrecomputedCompilerFeedback() {
         GpuRuntimeBackendExecutionSupport openClExecutionSupport = GpuRuntimeBackendExecutionSupport.productionPipeline(
                 GpuBackendTarget.OPENCL,
@@ -2732,7 +3069,7 @@ class GpuRuntimeTest {
         )));
         GpuRuntimeCompileOptions compileOptions = GpuRuntimeCompileOptions
                 .cuda(List.of(), Map.of(), "probe-ranked")
-                .withPersistentMethodTestProbeEvidenceRanking(cacheDirectory);
+                .withPersistentMethodTestProbeEvidenceRanking(cacheDirectory, Duration.ofDays(10));
         GpuRuntimeDeviceProfile cudaProfile = GpuRuntimeDeviceProfile.cuda(
                 "cuda-score-device-0",
                 "CUDA score GPU",
@@ -2865,6 +3202,71 @@ class GpuRuntimeTest {
             assertTrue(rankedSelection.explanation().toMarkdown().contains("policyAdjustment=1600000000"));
             assertEquals(1, rankedOpenCl.closeCalls);
             assertEquals(0, rankedCuda.closeCalls);
+
+            Path cacheEntry = cacheDirectory.resolve(evidenceKey.stableHash() + ".properties");
+            String staleCacheText = Files.readString(cacheEntry, StandardCharsets.UTF_8)
+                    .replaceAll(
+                            "createdEpochMillis=\\d+",
+                            "createdEpochMillis=" + (System.currentTimeMillis() - Duration.ofDays(9).toMillis())
+                    );
+            Files.writeString(cacheEntry, staleCacheText, StandardCharsets.UTF_8);
+
+            CloseCountingBackend staleOpenCl = new CloseCountingBackend(availableBackendReport(
+                    GpuBackendTarget.OPENCL,
+                    "OpenCL",
+                    new GpuRuntimeApiVersion(3, 0)
+            ));
+            CloseCountingBackend staleCuda = new CloseCountingBackend(cudaReport);
+            GpuRuntimeSelectionResult staleSelection = GpuRuntimeBackendPolicy.builder()
+                    .rankCandidatesByScore()
+                    .scoreCandidatesForCompileRequest(new GpuRuntimeCompileRequest(
+                            descriptor,
+                            compileOptions,
+                            cudaProfile,
+                            Optional.of(artifact)
+                    ))
+                    .scoreCandidatesWithCachedMethodTestProbeEvidence()
+                    .preferCatalog(List.of(
+                            metadataBackedCatalogEntry(
+                                    GpuBackendTarget.OPENCL,
+                                    "OpenCL score fixture",
+                                    staleOpenCl,
+                                    GpuRuntimeBackendExecutionSupport.productionPipeline(
+                                            GpuBackendTarget.OPENCL,
+                                            "test.opencl.method-test-score-stale",
+                                            Set.of(GpuBackendModuleFormat.OPENCL_C),
+                                            Set.of(GpuRuntimeCapability.LOCAL_MEMORY),
+                                            "test OpenCL production fixture"
+                                    )
+                            ),
+                            metadataBackedCatalogEntry(
+                                    GpuBackendTarget.CUDA,
+                                    "CUDA score fixture",
+                                    staleCuda,
+                                    GpuRuntimeBackendExecutionSupport.productionPipeline(
+                                            GpuBackendTarget.CUDA,
+                                            "test.cuda.method-test-score-stale",
+                                            Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                                            Set.of(GpuRuntimeCapability.COMPUTE_CAPABILITY),
+                                            "test CUDA production fixture"
+                                    )
+                            )
+                    ))
+                    .build()
+                    .trySelect();
+
+            int staleAdjustment = staleSelection.candidateDecisions().get(1).score().policyScoreAdjustment();
+            assertTrue(staleSelection.matched());
+            assertSame(staleCuda, staleSelection.requireSelection().backend());
+            assertTrue(staleSelection.candidateDecisions().get(0).closed());
+            assertTrue(staleSelection.candidateDecisions().get(1).selected());
+            assertTrue(staleAdjustment > 0 && staleAdjustment < 1_600_000_000);
+            assertTrue(staleSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                    .anyMatch(diagnostic -> diagnostic.contains("ageLimited=1")));
+            assertTrue(staleSelection.candidateDecisions().get(1).score().diagnostics().stream()
+                    .anyMatch(diagnostic -> diagnostic.contains("freshnessPermille=")));
+            assertEquals(1, staleOpenCl.closeCalls);
+            assertEquals(0, staleCuda.closeCalls);
         } finally {
             Thread.currentThread().setContextClassLoader(previousClassLoader);
         }

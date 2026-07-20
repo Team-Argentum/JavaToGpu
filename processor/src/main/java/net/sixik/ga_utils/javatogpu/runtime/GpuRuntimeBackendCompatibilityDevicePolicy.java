@@ -25,6 +25,7 @@ public final class GpuRuntimeBackendCompatibilityDevicePolicy implements GpuRunt
             }
             facts.put(key + ".deviceId", candidate.deviceId());
             facts.put(key + ".deviceClass", candidate.deviceClass().name().toLowerCase(java.util.Locale.ROOT));
+            facts.put(key + ".compilerVersion", candidate.compilerVersion());
             facts.put(key + ".computeUnits", Long.toString(candidate.computeUnits()));
             facts.put(key + ".globalMemoryBytes", Long.toString(candidate.globalMemoryBytes()));
             facts.put(key + ".localMemoryBytes", Long.toString(candidate.localMemoryBytes()));
@@ -33,6 +34,8 @@ public final class GpuRuntimeBackendCompatibilityDevicePolicy implements GpuRunt
             facts.put(key + ".unifiedMemory", Boolean.toString(candidate.unifiedMemory()));
             facts.put(key + ".supportsDoublePrecision", Boolean.toString(candidate.supportsDoublePrecision()));
             facts.put(key + ".supportsImages", Boolean.toString(candidate.supportsImages()));
+            facts.put(key + ".supportsImage3dWrites", Boolean.toString(candidate.supportsImage3dWrites()));
+            facts.put(key + ".supportsAtomics", Boolean.toString(candidate.supportsAtomics()));
             facts.put(key + ".supportsSubgroups", Boolean.toString(candidate.supportsSubgroups()));
         }
         return new GpuRuntimeDevicePolicyDecision(

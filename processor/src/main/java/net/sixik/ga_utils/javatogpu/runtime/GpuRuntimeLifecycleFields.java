@@ -803,6 +803,7 @@ public final class GpuRuntimeLifecycleFields {
         putRuntimeDeviceField(fields, "class", profile.deviceClass().name());
         putRuntimeDeviceField(fields, "driverVersion", profile.driverVersion());
         putRuntimeDeviceField(fields, "apiVersionText", profile.apiVersionText());
+        putRuntimeDeviceField(fields, "compilerVersion", profile.compilerVersion());
         putRuntimeDeviceField(fields, "platformName", profile.platformName());
         putRuntimeDeviceField(fields, "platformVersion", profile.platformVersion());
         putRuntimeDeviceField(fields, "computeUnits", profile.computeUnits());
@@ -813,6 +814,8 @@ public final class GpuRuntimeLifecycleFields {
         putRuntimeDeviceField(fields, "unifiedMemory", profile.unifiedMemory());
         putRuntimeDeviceField(fields, "supportsDoublePrecision", profile.supportsDoublePrecision());
         putRuntimeDeviceField(fields, "supportsImages", profile.supportsImages());
+        putRuntimeDeviceField(fields, "supportsImage3dWrites", profile.supportsImage3dWrites());
+        putRuntimeDeviceField(fields, "supportsAtomics", profile.supportsAtomics());
         putRuntimeDeviceField(fields, "supportsSubgroups", profile.supportsSubgroups());
         putRuntimeDeviceField(fields, "capability.count", profile.runtimeCapabilities().size());
         int capabilityIndex = 0;

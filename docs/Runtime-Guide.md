@@ -381,7 +381,8 @@ Use `GpuRuntimeMethodTestGpuProbeOptions.cached()` or `withCache(...)` to enable
 `GpuRuntimeMethodTestGpuProbeCache`. Use `GpuRuntimeMethodTestGpuProbeOptions.persistentCached(path)` when probe
 evidence should survive a new cache instance, or `persistentCached(path, maxEntryAge)` when old entries should expire.
 Cache entries are keyed by the evidence hash, store only executed probe evidence, reject corrupted/mismatched/expired
-properties files as cache misses, and mark returned executions with `cacheHit=true` when a backend run was skipped.
+properties files as cache misses, carry their creation timestamp, and mark returned executions with `cacheHit=true` when
+a backend run was skipped.
 Method-test metadata, fixture readiness, value binding, invocation materialization, reference comparison, GPU probe
 execution, and GPU probe cache lookup now publish standard `GpuRuntimeLifecycleEvent` entries. Applications can observe
 them through ServiceLoader `GpuRuntimeLifecycleService` implementations or pass an explicit `GpuRuntimeLifecycleEventBus`
@@ -515,8 +516,11 @@ GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
 ```
 
 This bridge is also cache-only. Passed cached selection-probe evidence fills the backend `policyAdjustment` score bucket,
-failed cached evidence applies a large negative adjustment, and missing evidence stays neutral. Use hard `require...`
-helpers when a backend must be rejected rather than merely ranked lower.
+failed cached evidence applies a large negative adjustment, and missing evidence stays neutral. If the compile options
+were created with `withPersistentMethodTestProbeEvidenceRanking(path, maxEntryAge)`, entries older than half of
+`maxEntryAge` are gradually down-weighted before expiry; score diagnostics include `freshnessPermille`, `ageLimited`,
+`oldestAgeMillis`, and `maxAgeMillis`. Use hard `require...` helpers when a backend must be rejected rather than merely
+ranked lower.
 
 Precomputed compiler feedback can also be used as advisory backend score evidence:
 
@@ -536,6 +540,49 @@ selection. The score bridge applies only to a matching backend target, rewards a
 metrics such as low register pressure, zero spills, zero stack frame, and known occupancy, and applies bounded penalties
 for high register pressure, spills, stack frame bytes, or heavy local-memory use. Treat this as placement evidence, not a
 correctness gate; `@GPUTest` probe evidence has much stronger score weight.
+
+When the application knows the shape of the workload before real backend execution exists, pass workload hints:
+
+```java
+GpuRuntimeWorkloadHints hints = GpuRuntimeWorkloadHints.builder()
+        .expectedItemCount(1_000_000L)
+        .preferredWorkGroupSize(256)
+        .memoryIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+        .arithmeticIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+        .requireCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)
+        .preferModuleFormat(GpuBackendModuleFormat.PTX)
+        .build();
+
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithWorkloadHints(hints)
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithWorkloadHints(hints)` is an advisory placement signal. It rewards candidates whose report, device
+profile, or provider metadata match the declared intent and penalizes obvious mismatches, but it does not reject a
+candidate by itself. Use hard `requireDeclaredCapability(...)`, `requireDeclaredModuleFormat(...)`, or
+`requireExecutionPipelineAvailable()` when the application cannot run without a capability or artifact family.
+
+When you do not want to hand-write those hints, let the runtime infer conservative hints from the generated descriptor
+and already-loaded `IrGpu` artifact:
+
+```java
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithInferredWorkloadHints(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                irGpuArtifact
+        )
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithInferredWorkloadHints(...)` looks only at metadata that is already present: parameter types/access
+(`double[]`, images, local buffers, struct arrays), global/local/constant address-space usage, required IrGpu features,
+entry constraints, launch dimensions, and visible math density in descriptor/IrGpu bodies. It never compiles, probes, or executes candidates during selection. The
+result is still advisory; fallback order remains unchanged unless `rankCandidatesByScore()` is enabled.
 
 Warm evidence explicitly before selection when you want stronger placement confidence without making the selection
 policy execute kernels:
