@@ -153,16 +153,20 @@ Show backend catalog and selection explanations without running a kernel:
 
 This prints the standard backend catalog, `GpuRuntimeBackendProviderCatalog` execution availability, planned
 CUDA/Vulkan/Metal diagnostics, and a combined backend/device selection explanation. The execution availability block
-makes the current alpha boundary explicit: OpenCL has a shared compile/prepare/invoke runner, while CUDA/Vulkan/Metal are
-inventory/planned-only until execution stages land. The multi-backend discovery catalog includes real OpenCL device
+makes the current alpha boundary explicit: OpenCL has the production shared compile/prepare/invoke runner, CUDA has a
+non-production fail-closed skeleton runner, and Vulkan/Metal stay planned-only until execution stages land. The
+multi-backend discovery catalog includes real OpenCL device
 evidence plus explicit planned CUDA/Vulkan/Metal discovery states. OpenCL discovery is fail-soft: if OpenCL cannot be
 queried on the current machine, the example prints the discovery blocker instead of running a kernel. When discovery
 succeeds, it also shows OpenCL platform grouping, selected device ranking, and runtime self-test summary.
 Catalog-backed selection explanations also include provider-declared module formats and capability vocabulary, so users
-can see why OpenCL is executable today and why CUDA/PTX is currently inventory-only before any native session is opened.
+can see why OpenCL is executable today and why CUDA/PTX remains an opt-in staged path: `nvcc` can emit PTX, the Driver API
+loader can record driver-version/PTX metadata receipts, reject known PTX ISA versions that need a newer CUDA driver API,
+reject too-new PTX targets before native module load, and keep the driver binder/launcher/readback slices non-production
+until hardware validation covers the vertical path.
 Policies can require that metadata with helpers such as `requireDeclaredModuleFormat(...)`,
 `requireDeclaredCapability(...)`, and `requireExecutionPipelineAvailable()` when an application wants to reject
-inventory-only or wrong-artifact-family candidates explicitly.
+missing-pipeline or wrong-artifact-family candidates explicitly.
 Candidate explanations also include an audit-only backend score (`preference`, `metadataAdjustment`,
 `runtimeAdjustment`, `policyAdjustment`, and `total`). Runtime adjustment currently reflects capability-report facts such
 as API version, feature flags, local memory, max work-group size, and portable runtime capability count. Default selection
@@ -196,8 +200,8 @@ Print a compact backend contract readiness dashboard without touching native API
 ```
 
 This combines the OpenCL SPI contract, CUDA inventory contract, and CUDA execution-readiness gate in one output. It is
-the quickest way to confirm that OpenCL is still the production reference while CUDA remains inventory-only before the
-CUDA vertical slice.
+the quickest way to confirm that OpenCL is still the production reference while CUDA exposes only the non-production
+compile/prepare/invoke runner plus explicitly requested native driver slices before production CUDA execution lands.
 
 Preview read-only backend hooks loaded through ServiceLoader without opening native APIs:
 
@@ -281,7 +285,38 @@ Preview the current CUDA source lowering without opening CUDA, NVRTC, `nvcc`, or
 
 The example builds tiny in-memory `IrGpu` artifacts, prints the generated `cuda-c` source, and shows the diagnostic dump
 sidecar files (`original.preview.backend.cuda-c`, `optimized.preview.backend.cuda-c`, and `cuda-source-preview.properties`)
-while keeping CUDA execution disabled.
+while keeping CUDA execution disabled. It also prints the opt-in shape for the optional native compiler bridge:
+`GpuRuntimeCompileOptions.cudaNvcc(List.of("--gpu-architecture=compute_86"), "nvcc", "off")`, which sets
+`cuda.compilerBridge=nvcc`. Chain `.withCudaDriverModuleLoader()` or set `cuda.moduleLoader=driver` to opt into the next
+PTX module/function boundary. The built-in driver module-loader bridge can load/probe the CUDA Driver API, call `cuInit`,
+load PTX with `cuModuleLoadDataEx`, resolve the entry function with `cuModuleGetFunction`, and unload through
+`CudaDriverLoadedModule.close()`. Chain `.withCudaDriverArgumentBinder()` or set `cuda.argumentBinder=driver` to opt into
+the following native argument-binding boundary. The built-in driver binder currently performs a real preflight: it
+requires a driver module/function handle, prepares an empty `CudaKernelArgumentFrame` for zero-argument kernels, and
+receives shallow-copied invocation values through `CudaExecutionPlan`. It still fails closed with blockers such as
+`cuda-driver-argument-values-missing` when no payload exists, `cuda-driver-argument-count-mismatch` when descriptor and
+payload disagree, `cuda-driver-scalar-value-binding-missing` when scalar payloads are absent, or
+`cuda-driver-local-binding-missing` when `LOCAL` payloads are absent. Non-empty primitive, GPU vector array, and
+`@GPUStruct[]` array
+`READ_ONLY` / `READ_WRITE` arguments allocate CUDA device memory with `cuMemAlloc_v2`, upload host values with
+`cuMemcpyHtoD_v2`, build a host-side kernel parameter table, and release allocations through `cuMemFree_v2` when the
+argument frame closes. Vector arrays use the same storage-width layout as the generated CUDA-C pointer type, including
+padding for 3-wide vectors. Struct arrays use the same packed host layout rules as the OpenCL ABI slice: primitive,
+vector, and nested `@GPUStruct` fields are supported, while array fields remain fail-closed.
+Primitive scalar `VALUE` arguments are stored as native-order host slots in that same parameter table. Primitive array
+`LOCAL` arguments are mapped to CUDA dynamic shared memory and recorded as a `localSharedMemory` layout. A single
+`LOCAL` is omitted from the kernel parameter table. Multiple `LOCAL` arguments share one dynamic allocation; the CUDA
+source gets hidden byte-offset parameters, the driver binder appends those offset slots after visible non-`LOCAL`
+parameters, and launch passes the total layout size as `sharedMemoryBytes`. Chain
+`.withCudaDriverKernelLauncher()` or set `cuda.kernelLauncher=driver` to opt into the built-in Driver API launch
+boundary. That launcher resolves `cuLaunchKernel`, computes CUDA grid/block dimensions from the explicit
+`GpuExecutionConfig`, submits the prepared kernel parameter table, and forwards any prepared dynamic shared-memory byte
+size. Chain `.withCudaDriverReadback()` or set
+`cuda.readback=driver` to opt into the built-in host readback boundary. That readback bridge resolves
+`cuMemcpyDtoH_v2` and copies `READ_WRITE` primitive/vector/struct array device allocations back into the original Java arrays. These paths may
+call `nvcc --ptx`, the built-in driver module loader, built-in driver argument binder, built-in driver launcher, and
+built-in driver readback when explicitly requested, but there is still no built-in production CUDA driver execution path
+because the slice needs hardware validation plus image/sampler and struct-by-value/local coverage first.
 
 Check the metadata-only CUDA inventory/provider contract:
 
@@ -290,8 +325,9 @@ Check the metadata-only CUDA inventory/provider contract:
 ```
 
 This verifies that CUDA is registered through the shared provider-backed adapter path, exposes `cuda-c` / `ptx`
-metadata, keeps the catalog entry non-production, and reports the inventory-only lowerer sample as unavailable when no
-`IrGpu` payload is present. This is separate from the preview source-lowering path above.
+metadata, keeps the catalog entry non-production, publishes the CUDA skeleton execution factory, and reports the
+source-lowering sample as unavailable when no `IrGpu` payload is present. This is separate from the preview
+source-lowering path above.
 
 Check the metadata-only CUDA execution green-light gate before starting CUDA kernel execution work:
 
@@ -299,11 +335,13 @@ Check the metadata-only CUDA execution green-light gate before starting CUDA ker
 .\gradlew.bat :processor:validateCudaExecutionReadiness --console=plain
 ```
 
-This verifies that OpenCL remains the production SPI reference, CUDA is visible as an inventory/provider candidate with
-`cuda-c` / `ptx` metadata, and CUDA compile/prepare/invoke still returns structured unsupported/skipped receipts until
-the real CUDA vertical slice is deliberately enabled. The output also includes machine-readable `checklist.*` lines,
-including `cuda-execution-disabled-before-vertical-slice` and `cuda-unsupported-receipt-structured`, so CI can detect
-whether CUDA execution was enabled accidentally instead of as part of the planned vertical slice.
+This verifies that OpenCL remains the production SPI reference, CUDA is visible as a provider candidate with `cuda-c` /
+`ptx` metadata, the CUDA skeleton compile/prepare/invoke pipeline is present, compile-preview can produce a typed CUDA
+artifact, and the default no-bridge CUDA receipt still returns structured unsupported/skipped stages unless real driver
+stages are deliberately enabled. The output also includes machine-readable `checklist.*` lines, including
+`cuda-vertical-slice-skeleton-present`,
+`cuda-native-bridge-fail-closed`, and `cuda-unsupported-receipt-structured`, so CI can detect whether CUDA native
+execution was enabled accidentally instead of as part of the planned vertical slice.
 
 This shows example `GpuBackendDiscoveryContributor`, `GpuBackendLoweringHook`, `GpuBackendCompilationHook`,
 `GpuBackendInvocationHook`, and `GpuBackendArtifactHook` implementations registered under `META-INF/services`. The hooks
@@ -320,8 +358,8 @@ review, but remain `AUTHORIZED_BUT_EXECUTION_DISABLED` until a separate producti
 
 Backend authors should use the shared `GpuBackendModuleFormat` and `GpuRuntimeCapability` vocabulary for module formats
 and device facts, and declare that vocabulary through `GpuRuntimeBackendExecutionSupport`. This keeps OpenCL-C, CUDA-C,
-PTX, SPIR-V, and future backend diagnostics comparable in reports and CI while still leaving CUDA execution disabled
-until its compile/prepare/invoke stages exist. The same metadata flows into catalog entries and backend-selection
+PTX, SPIR-V, and future backend diagnostics comparable in reports and CI while still leaving CUDA native execution
+fail-closed until its real compile/prepare/invoke stages exist. The same metadata flows into catalog entries and backend-selection
 candidate explanations when a policy is built from the catalog.
 
 Inspect `@GPUTest` metadata and fixture readiness without running a kernel:

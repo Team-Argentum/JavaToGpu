@@ -69,10 +69,59 @@ System.out.println(result.explanationSummary());
 
 `GpuRuntimeBackendCatalog.standard()` is lazy and inspectable: listing entries does not initialize OpenCL or any native
 driver. Today the production catalog contains the OpenCL shared-cache adapter. `standardWithPlannedBackends()` also
-adds CUDA, Vulkan/SPIR-V, and Metal to the same adapter list for diagnostics. CUDA can already contribute
-inventory-only device discovery through `nvidia-smi` when available, but its runtime catalog entry is still explicitly
-unsupported until CUDA execution lands. Vulkan/SPIR-V and Metal remain planned placeholders with clear diagnostics
-instead of being silently hidden.
+adds CUDA, Vulkan/SPIR-V, and Metal to the same adapter list for diagnostics. CUDA can already contribute device
+inventory through `nvidia-smi` when available, publish `cuda-c`/`ptx` metadata, and expose a non-production
+compile/prepare/invoke skeleton whose real driver stages stay explicit opt-ins until production CUDA is validated.
+When callers pass a `GpuRuntimeLifecycleEventBus` into the shared execution pipeline, the CUDA staged path now emits
+`BACKEND_COMPILATION_*`, `MODULE_LOAD_*`, and `INVOCATION_*` events with portable `runtime.backend.*` fields plus
+CUDA-specific `runtime.cuda.*` receipts for native bridge stages.
+Vulkan/SPIR-V and Metal remain planned
+placeholders with clear diagnostics instead of being silently hidden.
+When CUDA options use `GpuRuntimeCompileOptions.cudaNvcc(...)`, the optional built-in process bridge may invoke
+`nvcc --ptx` to materialize a PTX artifact. That still remains a compile-only step; CUDA module loading, argument
+binding, launch, and readback are separate stages. Add `.withCudaDriverModuleLoader()` to opt into the built-in
+CUDA Driver API module loader. Today that bridge can load the driver library, resolve required module-loader symbols,
+call `cuInit`, read `cuDriverGetVersion`, parse PTX `.version` / `.target` metadata, reject known PTX ISA versions that
+need a newer CUDA driver API, reject a PTX target that is newer than the selected CUDA device compute capability, load
+compatible PTX with `cuModuleLoadDataEx`, resolve the entry function with `cuModuleGetFunction`, and unload the module
+through `CudaDriverLoadedModule.close()`. Missing driver/symbol/PTX/function/version/target cases return structured
+blockers such as `cuda-driver-library-unavailable`, `cuda-driver-symbol-missing:*`,
+`cuda-driver-cuDriverGetVersion-failed:*`, `cuda-driver-ptx-version-unsupported:*`, `cuda-ptx-target-too-new:*`,
+`cuda-driver-cuModuleLoadDataEx-failed:*`, or `cuda-driver-cuModuleGetFunction-failed:*`. Successful module-load receipts
+include `runtime.cuda.loadedModule.driver.version.*`, `runtime.cuda.ptxCompatibility.*`,
+`runtime.cuda.ptxDriverCompatibility.*`, and `runtime.cuda.ptxDeviceCompatibility.*` fields. Add
+`.withCudaDriverArgumentBinder()` to enter the built-in driver argument-binding preflight. It requires a real driver
+module/function handle, prepares an empty `CudaKernelArgumentFrame` for zero-argument kernels, and receives shallow-copied
+Java invocation values through `CudaExecutionPlan`. Successful preflight updates the portable
+`runtime.backend.prepare.binding.*` counts plus CUDA-specific `runtime.cuda.argumentBinding.*`,
+`runtime.cuda.argumentFrame.*`, and `runtime.cuda.executionPlan.*` receipt fields. Blocked preflight reports
+`cuda-driver-argument-values-missing` when no payload exists, `cuda-driver-argument-count-mismatch` when descriptor and
+payload disagree, `cuda-driver-buffer-binding-missing` / `cuda-driver-scalar-value-binding-missing` when no invocation
+payload exists, or `cuda-driver-local-binding-missing` when a `LOCAL` payload is absent. The current native binding slice
+supports non-empty primitive array `READ_ONLY` / `READ_WRITE` buffers
+(`byte[]`, `short[]`, `char[]`, `int[]`, `long[]`, `float[]`, `double[]`), GPU vector array buffers,
+`@GPUStruct[]` buffers, plus
+primitive scalar `VALUE` arguments (`byte`, `short`, `char`, `int`, `long`, `float`, `double`, `boolean`, and registered
+scalar aliases). For buffers it resolves `cuMemAlloc_v2`, `cuMemcpyHtoD_v2`, and `cuMemFree_v2`, uploads host values,
+packs vector arrays using the declared vector storage width, packs struct arrays with the same primitive/vector/nested
+struct field layout as the OpenCL ABI slice, builds the host-side kernel parameter table with
+device-pointer and scalar-value slots, records readback-required counts for `READ_WRITE` outputs plus scalar-slot
+receipts, and frees device allocations/native argument slots when the prepared
+argument frame closes. Primitive array `LOCAL` arguments are mapped to CUDA dynamic shared memory and contribute
+`runtime.cuda.argumentFrame.localSharedMemory.*` layout receipts. One `LOCAL` is omitted from the kernel parameter table.
+When multiple `LOCAL` parameters exist, the CUDA lowerer emits hidden unsigned byte-offset parameters after visible
+non-`LOCAL` parameters, and the driver binder appends matching offset slots after normal device-pointer/scalar slots.
+Launch receives the total layout size as `sharedMemoryBytes`. Add `.withCudaDriverKernelLauncher()` to enter the
+built-in Driver API launcher after native argument binding. It resolves `cuLaunchKernel`, requires a real
+`CudaDriverLoadedModule`, a prepared argument frame, and an explicit `GpuExecutionConfig`, then derives CUDA grid/block
+dimensions from the portable global/local work shape and submits the kernel parameter table. A successful launcher emits
+`runtime.cuda.kernelLaunch.*`, including shared-memory byte-size fields, plus portable `runtime.backend.invoke.*`
+launch-shape fields. Add
+`.withCudaDriverReadback()` to enter the built-in Driver API readback bridge. It resolves `cuMemcpyDtoH_v2`, copies
+`READ_WRITE` primitive/vector/struct array device allocations back into the original Java arrays, marks allocation readback receipts, and
+updates `runtime.cuda.readback.*` plus portable `runtime.backend.invoke.readback.*` counts. Built-in production CUDA
+driver execution remains unavailable until this path is hardware-validated and broader image/sampler plus struct-by-value/local
+shapes are supported.
 CUDA inventory exposes driver, memory, CUDA runtime version, and compute capability through the same artifact/lifecycle
 field vocabulary; tooling can read selected-device fields such as `runtime.device.cuda.runtimeVersion` and
 `runtime.device.cuda.computeCapability` or per-device fields such as `deviceDiscovery.device.0.cuda.computeCapability`.
@@ -427,7 +476,8 @@ The failure block keeps `runtime.failure.type` and `runtime.failure.message` for
 `runtime.failure.catchable`, `runtime.failure.cause.*`, and `runtime.failure.context.*` facts for structured runtime
 exceptions.
 Backend adapter artifact fields also include portable `runtime.backend.adapter.*` and `runtime.backend.lowerer.*` keys,
-so OpenCL, CUDA inventory-only, and planned adapters can be rendered by the same diagnostics tooling.
+so OpenCL, the CUDA source-preview/skeleton adapter, and planned adapters can be rendered by the same diagnostics
+tooling.
 Production candidate gates and manual promotion manifest artifacts mirror their evidence under
 `runtime.production.candidateGate.*` and `runtime.production.manifest.*`; the manifest, activation-gate, and validation
 report readers consume those portable keys first and keep the older unprefixed / `binding.*` / `authorization.*` keys as

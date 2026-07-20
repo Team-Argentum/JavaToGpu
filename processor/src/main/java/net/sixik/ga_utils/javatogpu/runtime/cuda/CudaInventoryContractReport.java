@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Hardware-free CUDA inventory contract snapshot.
+ * Hardware-free CUDA inventory and execution-skeleton contract snapshot.
  */
 public record CudaInventoryContractReport(
         GpuRuntimeBackendProvider provider,
@@ -95,11 +95,11 @@ public record CudaInventoryContractReport(
         if (support.productionExecution()) {
             blockers.add("cuda-provider-production-enabled-before-execution-slice");
         }
-        if (support.executionPipelineAvailable()) {
-            blockers.add("cuda-provider-execution-pipeline-enabled-before-execution-slice");
+        if (!support.executionPipelineAvailable()) {
+            blockers.add("cuda-provider-execution-skeleton-missing");
         }
-        if (provider.executionPipelineFactory().isPresent()) {
-            blockers.add("cuda-provider-execution-factory-present-before-execution-slice");
+        if (provider.executionPipelineFactory().isEmpty()) {
+            blockers.add("cuda-provider-execution-skeleton-factory-missing");
         }
         if (!support.declaresModuleFormat(GpuBackendModuleFormat.CUDA_C)) {
             blockers.add("cuda-provider-module-format-missing:cuda-c");

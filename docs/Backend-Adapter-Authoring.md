@@ -183,6 +183,11 @@ Backend adapters should emit portable fields first:
 
 Backend-specific aliases can exist for compatibility, but new tools should be able to read the portable `runtime.*` vocabulary without knowing whether the backend is OpenCL, CUDA, Vulkan, or Metal.
 
+The shared `GpuBackendExecutionPipeline` stays quiet by default. If a caller supplies a `GpuRuntimeLifecycleEventBus`,
+the runner emits compile, module-load/prepare, and invocation lifecycle events around the same typed stage receipts that
+`execute(...)` / `executeSafely(...)` return. CUDA uses this path for its non-production bridge receipts, so journal
+consumers can observe `BACKEND_COMPILATION_*`, `MODULE_LOAD_*`, and `INVOCATION_*` without direct listener registration.
+
 Use ServiceLoader services for observability:
 
 - `GpuRuntimeLifecycleService` for lifecycle events and journals.
@@ -234,11 +239,61 @@ Check the built-in CUDA inventory contract without running `nvidia-smi` or openi
 .\gradlew.bat :processor:validateCudaInventoryContract --console=plain
 ```
 
-The expected inventory-only state is `status=ready`, `catalogProductionAdapter=false`,
-`executionPipelineAvailable=false`, `moduleFormats=cuda-c,ptx`, and
-`lowererSelectedSource=cuda-irgpu-source-unavailable` for the inventory-only sample that has no `IrGpu` payload.
-CUDA can now lower simple loaded `IrGpu` entry/helper bodies into preview `cuda-c` source, but structs/constants and
-compile/prepare/invoke stay disabled until the CUDA execution vertical slice starts.
+The expected CUDA provider state is `status=ready`, `catalogProductionAdapter=false`,
+`executionPipelineAvailable=true`, `executionPipelineFactoryPresent=true`, `moduleFormats=cuda-c,ptx`, and
+`lowererSelectedSource=cuda-irgpu-source-unavailable` for the sample that has no `IrGpu` payload. CUDA can now lower
+simple loaded `IrGpu` entry/helper bodies into preview `cuda-c` source and publish a non-production shared pipeline
+skeleton. The compile stage can produce a typed CUDA compile-preview artifact, and the opt-in driver bridge path now has
+first slices for PTX module loading, driver-version/PTX metadata receipts, PTX ISA-vs-driver preflight, PTX
+target-vs-device preflight, primitive/vector/struct array plus scalar argument binding, `cuLaunchKernel` submission, and
+primitive/vector/struct array readback.
+Production execution still stays fail-closed until the CUDA execution vertical slice is hardware-validated.
+
+The optional native compiler bridge is deliberately opt-in. Use `GpuRuntimeCompileOptions.cudaNvcc(...)` or set
+`cuda.compilerBridge=nvcc` in CUDA backend properties to let the compile stage invoke `nvcc --ptx` and return a typed
+PTX artifact. This does not make CUDA production-ready: native module loading, argument binding, launch, and readback
+remain separately opt-in, limited, and hardware-validation gated.
+
+The module/function loading boundary is also opt-in. Add `.withCudaDriverModuleLoader()` or set
+`cuda.moduleLoader=driver` to enter the built-in CUDA Driver API module loader. This built-in bridge checks whether the
+driver library can be loaded, resolves required module-loader symbols, calls `cuInit`, reads `cuDriverGetVersion`, parses
+PTX `.version` / `.target`, rejects `cuda-driver-ptx-version-unsupported:*` when a known PTX ISA version needs a newer
+CUDA driver API, rejects `cuda-ptx-target-too-new:*` when the selected CUDA device is older than the PTX target, loads
+compatible PTX with `cuModuleLoadDataEx`, resolves the entry function with `cuModuleGetFunction`, and owns cleanup through
+`CudaDriverLoadedModule.close()` / `cuModuleUnload`. Typical blockers are `cuda-driver-library-unavailable`,
+`cuda-driver-symbol-missing:*`, `cuda-driver-cuDriverGetVersion-failed:*`,
+`cuda-driver-ptx-version-unsupported:*`, `cuda-ptx-target-too-new:*`, `cuda-driver-cuModuleLoadDataEx-failed:*`, or
+`cuda-driver-cuModuleGetFunction-failed:*`. Successful receipts expose `runtime.cuda.loadedModule.driver.version.*`,
+`runtime.cuda.ptxCompatibility.*`, `runtime.cuda.ptxDriverCompatibility.*`, and
+`runtime.cuda.ptxDeviceCompatibility.*`. Invoke remains fail-closed unless argument binding, launcher, and execution
+config are explicitly requested.
+
+The argument-binding boundary is separately opt-in. Add `.withCudaDriverArgumentBinder()` or set
+`cuda.argumentBinder=driver` to enter the built-in driver argument-binding preflight after module loading. It requires a
+real driver module/function handle, prepares an empty `CudaKernelArgumentFrame` for zero-argument kernels, receives
+shallow-copied Java invocation values through `CudaExecutionPlan`, and returns explicit unsupported blockers for missing
+payloads, argument-count mismatch, unsupported buffer shapes, unsupported scalar types/mismatches, or missing `LOCAL`
+payloads. The current native slice supports non-empty primitive, GPU vector array, and `@GPUStruct[]` `READ_ONLY` / `READ_WRITE`
+arguments by allocating CUDA device memory and supports primitive scalar `VALUE` arguments by storing native-order host
+scalar slots in the kernel parameter table. It uploads host buffer values, packs vector arrays using declared storage
+width, packs struct arrays with the same primitive/vector/nested-struct field layout as the OpenCL ABI slice, prepares a host-side kernel parameter table, maps primitive array `LOCAL` arguments to one dynamic shared-memory
+layout, and frees allocations/native argument slots with the argument frame. One `LOCAL` stays outside the parameter
+table; multiple `LOCAL` slices add hidden unsigned byte-offset slots after visible non-`LOCAL` parameters. A successful preflight updates `runtime.backend.prepare.binding.*`,
+`runtime.cuda.argumentBinding.*`, `runtime.cuda.argumentFrame.*`, and `runtime.cuda.executionPlan.*`.
+
+The kernel-launch boundary is also separately opt-in. Add `.withCudaDriverKernelLauncher()` or set
+`cuda.kernelLauncher=driver` to use the built-in Driver API launcher. It resolves `cuLaunchKernel`, requires a real
+`CudaDriverLoadedModule`, a successful native argument binding result, a prepared argument frame, and an explicit
+`GpuExecutionConfig`, then computes CUDA grid/block dimensions from the portable global/local work shape and forwards any
+prepared dynamic shared-memory byte size to `cuLaunchKernel`. A successful launcher updates `runtime.cuda.kernelLaunch.*`
+and `runtime.backend.invoke.*`; host output copying remains a separate
+readback stage.
+
+The readback boundary is the final staged CUDA execution SPI in this alpha path. Add `.withCudaDriverReadback()` or set
+`cuda.readback=driver` to use the built-in Driver API readback bridge after launch. It resolves `cuMemcpyDtoH_v2`, copies
+`READ_WRITE` primitive/vector/struct array allocations back into the original Java arrays, marks allocation readback receipts, and updates
+`runtime.cuda.readback.*` plus `runtime.backend.invoke.readback.*`. It still stays opt-in and does not turn the built-in
+CUDA backend into a production driver backend by itself.
 
 Before enabling CUDA kernel execution, run the metadata-only CUDA green-light gate:
 
@@ -246,10 +301,10 @@ Before enabling CUDA kernel execution, run the metadata-only CUDA green-light ga
 .\gradlew.bat :processor:validateCudaExecutionReadiness --console=plain
 ```
 
-The expected pre-vertical-slice state is `status=ready`, `cudaPipelineAvailable=false`,
-`cudaPipelineFactoryPresent=false`, and an unsupported receipt of `compile:UNSUPPORTED, prepare:SKIPPED,
-invoke:SKIPPED`. When the CUDA vertical slice starts, this gate should be deliberately updated alongside the new
-execution tests rather than accidentally bypassed.
+The expected pre-native-execution state is `status=ready`, `cudaPipelineAvailable=true`,
+`cudaPipelineFactoryPresent=true`, `productionExecution=false`, and an unsupported receipt of
+`compile:SUCCEEDED, prepare:UNSUPPORTED, invoke:SKIPPED`. When the real CUDA native bridge starts, this gate should be
+deliberately updated alongside the new execution tests rather than accidentally bypassed.
 
 The report also emits a machine-readable checklist. In the current pre-CUDA-execution state every item should be
 `ready`, including:
@@ -258,14 +313,14 @@ The report also emits a machine-readable checklist. In the current pre-CUDA-exec
 - `opencl-shared-runner-visible`
 - `cuda-provider-present`
 - `cuda-provider-identity-stable`
-- `cuda-execution-disabled-before-vertical-slice`
-- `cuda-unavailable-stages-structured`
+- `cuda-vertical-slice-skeleton-present`
+- `cuda-native-bridge-fail-closed`
 - `cuda-module-formats-declared`
 - `cuda-capability-vocabulary-declared`
 - `cuda-unsupported-receipt-structured`
 
-When CUDA execution work begins, update this checklist and its tests in the same change that adds the first native CUDA
-vertical-slice test. Do not simply remove the disabled-execution checks.
+When CUDA native execution work begins, update this checklist and its tests in the same change that adds the first
+native CUDA vertical-slice test. Do not simply remove the fail-closed native-bridge checks.
 
 Use the dedicated harnesses before native execution:
 

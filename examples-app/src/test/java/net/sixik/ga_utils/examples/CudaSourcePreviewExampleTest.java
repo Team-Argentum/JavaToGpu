@@ -18,6 +18,17 @@ class CudaSourcePreviewExampleTest {
         assertTrue(output.contains("- selectedSource=irgpu-cuda-source"), output);
         assertTrue(output.contains("- moduleFormat=cuda-c"), output);
         assertTrue(output.contains("- execution=disabled"), output);
+        assertTrue(output.contains("- nativeCompilerBridge.example=GpuRuntimeCompileOptions.cudaNvcc(...)"), output);
+        assertTrue(output.contains("- nativeCompilerBridge.mode=nvcc"), output);
+        assertTrue(output.contains("- nativeCompilerBridge.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("- nativeModuleLoader.mode=driver"), output);
+        assertTrue(output.contains("- nativeModuleLoader.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("- nativeArgumentBinder.mode=driver"), output);
+        assertTrue(output.contains("- nativeArgumentBinder.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("- nativeKernelLauncher.mode=driver"), output);
+        assertTrue(output.contains("- nativeKernelLauncher.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("- nativeReadback.mode=driver"), output);
+        assertTrue(output.contains("- nativeReadback.execution=not-run-by-this-example"), output);
         assertTrue(output.contains("--- cuda-c preview ---"), output);
         assertTrue(output.contains("__device__ float jtg_fn_square_float(float value);"), output);
         assertTrue(output.contains("extern \"C\" __global__ void jtg_kernel(const float* input, float* output)"), output);
@@ -43,5 +54,23 @@ class CudaSourcePreviewExampleTest {
         assertTrue(output.contains("dumpArtifact.optimizedCudaPreview=true"), output);
         assertTrue(output.contains("dumpPreview.execution=disabled"), output);
         assertTrue(output.contains("dumpPreview.selectedBackendStillOpenCl=true"), output);
+    }
+
+    @Test
+    void rendersNativeCompilerBridgeOptionsWithoutRunningNvcc() {
+        String output = CudaSourcePreviewExample.renderNativeCompilerBridgeOptions();
+
+        assertTrue(output.contains("nativeCompilerBridge.example=GpuRuntimeCompileOptions.cudaNvcc(...)"), output);
+        assertTrue(output.contains("nativeCompilerBridge.mode=nvcc"), output);
+        assertTrue(output.contains("nativeCompilerBridge.nvccPath=nvcc"), output);
+        assertTrue(output.contains("nativeCompilerBridge.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("nativeModuleLoader.mode=driver"), output);
+        assertTrue(output.contains("nativeModuleLoader.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("nativeArgumentBinder.mode=driver"), output);
+        assertTrue(output.contains("nativeArgumentBinder.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("nativeKernelLauncher.mode=driver"), output);
+        assertTrue(output.contains("nativeKernelLauncher.execution=not-run-by-this-example"), output);
+        assertTrue(output.contains("nativeReadback.mode=driver"), output);
+        assertTrue(output.contains("nativeReadback.execution=not-run-by-this-example"), output);
     }
 }

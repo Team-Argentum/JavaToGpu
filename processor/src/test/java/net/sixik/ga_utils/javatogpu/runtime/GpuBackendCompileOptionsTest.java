@@ -76,4 +76,43 @@ class GpuBackendCompileOptionsTest {
                 GpuBackendCompileOptions.RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY
         ));
     }
+
+    @Test
+    void cudaArgumentBinderIsOptInAndCanUseDriverMode() {
+        GpuBackendCompileOptions options = GpuBackendCompileOptions.cuda(List.of(), Map.of());
+
+        assertEquals(GpuBackendCompileOptions.CUDA_ARGUMENT_BINDER_DISABLED, options.cudaArgumentBinderMode());
+        assertFalse(options.requestsCudaNativeArgumentBinder());
+
+        GpuBackendCompileOptions driverOptions = options.withCudaDriverArgumentBinder();
+
+        assertEquals(GpuBackendCompileOptions.CUDA_ARGUMENT_BINDER_DRIVER, driverOptions.cudaArgumentBinderMode());
+        assertTrue(driverOptions.requestsCudaNativeArgumentBinder());
+    }
+
+    @Test
+    void cudaKernelLauncherIsOptInAndCanUseDriverMode() {
+        GpuBackendCompileOptions options = GpuBackendCompileOptions.cuda(List.of(), Map.of());
+
+        assertEquals(GpuBackendCompileOptions.CUDA_KERNEL_LAUNCHER_DISABLED, options.cudaKernelLauncherMode());
+        assertFalse(options.requestsCudaNativeKernelLauncher());
+
+        GpuBackendCompileOptions driverOptions = options.withCudaDriverKernelLauncher();
+
+        assertEquals(GpuBackendCompileOptions.CUDA_KERNEL_LAUNCHER_DRIVER, driverOptions.cudaKernelLauncherMode());
+        assertTrue(driverOptions.requestsCudaNativeKernelLauncher());
+    }
+
+    @Test
+    void cudaReadbackIsOptInAndCanUseDriverMode() {
+        GpuBackendCompileOptions options = GpuBackendCompileOptions.cuda(List.of(), Map.of());
+
+        assertEquals(GpuBackendCompileOptions.CUDA_READBACK_DISABLED, options.cudaReadbackMode());
+        assertFalse(options.requestsCudaNativeReadback());
+
+        GpuBackendCompileOptions driverOptions = options.withCudaDriverReadback();
+
+        assertEquals(GpuBackendCompileOptions.CUDA_READBACK_DRIVER, driverOptions.cudaReadbackMode());
+        assertTrue(driverOptions.requestsCudaNativeReadback());
+    }
 }

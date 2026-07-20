@@ -40,6 +40,23 @@ public record GpuBackendCompileOptions(
     public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_RANKING_CACHED = "cached";
     public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY = "runtime.methodTestProbeEvidenceCachePath";
     public static final String RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY = "runtime.methodTestProbeEvidenceMaxAgeMillis";
+    public static final String CUDA_COMPILER_BRIDGE_PROPERTY = "cuda.compilerBridge";
+    public static final String CUDA_COMPILER_BRIDGE_PREVIEW = "preview";
+    public static final String CUDA_COMPILER_BRIDGE_NVCC = "nvcc";
+    public static final String CUDA_NVCC_PATH_PROPERTY = "cuda.nvcc.path";
+    public static final String CUDA_COMPILER_TIMEOUT_MILLIS_PROPERTY = "cuda.compilerTimeoutMillis";
+    public static final String CUDA_MODULE_LOADER_PROPERTY = "cuda.moduleLoader";
+    public static final String CUDA_MODULE_LOADER_DISABLED = "disabled";
+    public static final String CUDA_MODULE_LOADER_DRIVER = "driver";
+    public static final String CUDA_ARGUMENT_BINDER_PROPERTY = "cuda.argumentBinder";
+    public static final String CUDA_ARGUMENT_BINDER_DISABLED = "disabled";
+    public static final String CUDA_ARGUMENT_BINDER_DRIVER = "driver";
+    public static final String CUDA_KERNEL_LAUNCHER_PROPERTY = "cuda.kernelLauncher";
+    public static final String CUDA_KERNEL_LAUNCHER_DISABLED = "disabled";
+    public static final String CUDA_KERNEL_LAUNCHER_DRIVER = "driver";
+    public static final String CUDA_READBACK_PROPERTY = "cuda.readback";
+    public static final String CUDA_READBACK_DISABLED = "disabled";
+    public static final String CUDA_READBACK_DRIVER = "driver";
 
     public GpuBackendCompileOptions {
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
@@ -80,6 +97,15 @@ public record GpuBackendCompileOptions(
 
     public static GpuBackendCompileOptions cuda(List<String> nvrtcOptions, Map<String, String> properties) {
         return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, nvrtcOptions, properties);
+    }
+
+    public static GpuBackendCompileOptions cudaNvcc(List<String> nvccOptions, String nvccPath) {
+        LinkedHashMap<String, String> properties = new LinkedHashMap<>();
+        properties.put(CUDA_COMPILER_BRIDGE_PROPERTY, CUDA_COMPILER_BRIDGE_NVCC);
+        if (nvccPath != null && !nvccPath.isBlank()) {
+            properties.put(CUDA_NVCC_PATH_PROPERTY, nvccPath.trim());
+        }
+        return cuda(nvccOptions, properties);
     }
 
     public static GpuBackendCompileOptions vulkan(List<String> spirvOptions, Map<String, String> properties) {
@@ -240,6 +266,184 @@ public record GpuBackendCompileOptions(
         } catch (NumberFormatException exception) {
             return Optional.empty();
         }
+    }
+
+    public String cudaCompilerBridgeMode() {
+        if (backendTarget != GpuBackendTarget.CUDA) {
+            return CUDA_COMPILER_BRIDGE_PREVIEW;
+        }
+        String value = properties.get(CUDA_COMPILER_BRIDGE_PROPERTY);
+        return value == null || value.isBlank() ? CUDA_COMPILER_BRIDGE_PREVIEW : value.trim();
+    }
+
+    public boolean requestsCudaNativeCompilerBridge() {
+        return backendTarget == GpuBackendTarget.CUDA
+                && !CUDA_COMPILER_BRIDGE_PREVIEW.equals(cudaCompilerBridgeMode());
+    }
+
+    public String cudaModuleLoaderMode() {
+        if (backendTarget != GpuBackendTarget.CUDA) {
+            return CUDA_MODULE_LOADER_DISABLED;
+        }
+        String value = properties.get(CUDA_MODULE_LOADER_PROPERTY);
+        return value == null || value.isBlank() ? CUDA_MODULE_LOADER_DISABLED : value.trim();
+    }
+
+    public boolean requestsCudaNativeModuleLoader() {
+        return backendTarget == GpuBackendTarget.CUDA
+                && !CUDA_MODULE_LOADER_DISABLED.equals(cudaModuleLoaderMode());
+    }
+
+    public String cudaArgumentBinderMode() {
+        if (backendTarget != GpuBackendTarget.CUDA) {
+            return CUDA_ARGUMENT_BINDER_DISABLED;
+        }
+        String value = properties.get(CUDA_ARGUMENT_BINDER_PROPERTY);
+        return value == null || value.isBlank() ? CUDA_ARGUMENT_BINDER_DISABLED : value.trim();
+    }
+
+    public boolean requestsCudaNativeArgumentBinder() {
+        return backendTarget == GpuBackendTarget.CUDA
+                && !CUDA_ARGUMENT_BINDER_DISABLED.equals(cudaArgumentBinderMode());
+    }
+
+    public String cudaKernelLauncherMode() {
+        if (backendTarget != GpuBackendTarget.CUDA) {
+            return CUDA_KERNEL_LAUNCHER_DISABLED;
+        }
+        String value = properties.get(CUDA_KERNEL_LAUNCHER_PROPERTY);
+        return value == null || value.isBlank() ? CUDA_KERNEL_LAUNCHER_DISABLED : value.trim();
+    }
+
+    public boolean requestsCudaNativeKernelLauncher() {
+        return backendTarget == GpuBackendTarget.CUDA
+                && !CUDA_KERNEL_LAUNCHER_DISABLED.equals(cudaKernelLauncherMode());
+    }
+
+    public String cudaReadbackMode() {
+        if (backendTarget != GpuBackendTarget.CUDA) {
+            return CUDA_READBACK_DISABLED;
+        }
+        String value = properties.get(CUDA_READBACK_PROPERTY);
+        return value == null || value.isBlank() ? CUDA_READBACK_DISABLED : value.trim();
+    }
+
+    public boolean requestsCudaNativeReadback() {
+        return backendTarget == GpuBackendTarget.CUDA
+                && !CUDA_READBACK_DISABLED.equals(cudaReadbackMode());
+    }
+
+    public Optional<String> cudaNvccPath() {
+        String value = properties.get(CUDA_NVCC_PATH_PROPERTY);
+        if (value == null || value.isBlank()) {
+            value = System.getProperty("javatogpu.cuda.nvcc.path");
+        }
+        if (value == null || value.isBlank()) {
+            value = System.getenv("JAVATOGPU_CUDA_NVCC_PATH");
+        }
+        return value == null || value.isBlank() ? Optional.empty() : Optional.of(value.trim());
+    }
+
+    public Duration cudaCompilerTimeout() {
+        String value = properties.get(CUDA_COMPILER_TIMEOUT_MILLIS_PROPERTY);
+        if (value == null || value.isBlank()) {
+            value = System.getProperty("javatogpu.cuda.compiler.timeoutMillis");
+        }
+        if (value == null || value.isBlank()) {
+            return Duration.ofSeconds(30);
+        }
+        try {
+            long millis = Long.parseLong(value.trim());
+            return millis <= 0L ? Duration.ofSeconds(30) : Duration.ofMillis(millis);
+        } catch (NumberFormatException exception) {
+            return Duration.ofSeconds(30);
+        }
+    }
+
+    public GpuBackendCompileOptions withCudaCompilePreview() {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.remove(CUDA_COMPILER_BRIDGE_PROPERTY);
+        updated.remove(CUDA_NVCC_PATH_PROPERTY);
+        return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withCudaNvccCompilerBridge(String nvccPath) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(CUDA_COMPILER_BRIDGE_PROPERTY, CUDA_COMPILER_BRIDGE_NVCC);
+        if (nvccPath == null || nvccPath.isBlank()) {
+            updated.remove(CUDA_NVCC_PATH_PROPERTY);
+        } else {
+            updated.put(CUDA_NVCC_PATH_PROPERTY, nvccPath.trim());
+        }
+        return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withCudaNativeModuleLoader(String loaderMode) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        String normalized = loaderMode == null || loaderMode.isBlank()
+                ? CUDA_MODULE_LOADER_DRIVER
+                : loaderMode.trim();
+        if (CUDA_MODULE_LOADER_DISABLED.equals(normalized)) {
+            updated.remove(CUDA_MODULE_LOADER_PROPERTY);
+        } else {
+            updated.put(CUDA_MODULE_LOADER_PROPERTY, normalized);
+        }
+        return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withCudaDriverModuleLoader() {
+        return withCudaNativeModuleLoader(CUDA_MODULE_LOADER_DRIVER);
+    }
+
+    public GpuBackendCompileOptions withCudaNativeArgumentBinder(String binderMode) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        String normalized = binderMode == null || binderMode.isBlank()
+                ? CUDA_ARGUMENT_BINDER_DRIVER
+                : binderMode.trim();
+        if (CUDA_ARGUMENT_BINDER_DISABLED.equals(normalized)) {
+            updated.remove(CUDA_ARGUMENT_BINDER_PROPERTY);
+        } else {
+            updated.put(CUDA_ARGUMENT_BINDER_PROPERTY, normalized);
+        }
+        return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withCudaDriverArgumentBinder() {
+        return withCudaNativeArgumentBinder(CUDA_ARGUMENT_BINDER_DRIVER);
+    }
+
+    public GpuBackendCompileOptions withCudaNativeKernelLauncher(String launcherMode) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        String normalized = launcherMode == null || launcherMode.isBlank()
+                ? CUDA_KERNEL_LAUNCHER_DRIVER
+                : launcherMode.trim();
+        if (CUDA_KERNEL_LAUNCHER_DISABLED.equals(normalized)) {
+            updated.remove(CUDA_KERNEL_LAUNCHER_PROPERTY);
+        } else {
+            updated.put(CUDA_KERNEL_LAUNCHER_PROPERTY, normalized);
+        }
+        return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withCudaDriverKernelLauncher() {
+        return withCudaNativeKernelLauncher(CUDA_KERNEL_LAUNCHER_DRIVER);
+    }
+
+    public GpuBackendCompileOptions withCudaNativeReadback(String readbackMode) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        String normalized = readbackMode == null || readbackMode.isBlank()
+                ? CUDA_READBACK_DRIVER
+                : readbackMode.trim();
+        if (CUDA_READBACK_DISABLED.equals(normalized)) {
+            updated.remove(CUDA_READBACK_PROPERTY);
+        } else {
+            updated.put(CUDA_READBACK_PROPERTY, normalized);
+        }
+        return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withCudaDriverReadback() {
+        return withCudaNativeReadback(CUDA_READBACK_DRIVER);
     }
 
     public GpuBackendCompileOptions withProductionPromotionDecision(GpuProductionPromotionDecision decision) {

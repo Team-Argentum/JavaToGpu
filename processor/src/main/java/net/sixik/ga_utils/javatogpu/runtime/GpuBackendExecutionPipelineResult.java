@@ -18,7 +18,7 @@ public record GpuBackendExecutionPipelineResult<
         GpuBackendCompilationResult compilationResult,
         GpuBackendPreparationResult preparationResult,
         GpuBackendInvocationResult invocationResult
-) {
+) implements AutoCloseable {
 
     public GpuBackendExecutionPipelineResult {
         compilationResult = compilationResult == null
@@ -178,5 +178,31 @@ public record GpuBackendExecutionPipelineResult<
         fields.put("runtime.backend.executionPipeline.present", "true");
         fields.put("runtime.backend.executionPipeline.succeeded", Boolean.toString(succeeded()));
         return Collections.unmodifiableMap(fields);
+    }
+
+    @Override
+    public void close() {
+        RuntimeException failure = null;
+        if (preparedKernel != null) {
+            try {
+                preparedKernel.close();
+            } catch (RuntimeException exception) {
+                failure = exception;
+            }
+        }
+        if (compiledKernel != null) {
+            try {
+                compiledKernel.close();
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 }

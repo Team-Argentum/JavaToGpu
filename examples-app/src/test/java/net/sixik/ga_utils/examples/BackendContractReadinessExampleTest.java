@@ -27,11 +27,13 @@ class BackendContractReadinessExampleTest {
         assertTrue(output.contains("- catalogProductionAdapter=false"), output);
         assertTrue(output.contains("- lowererSelectedSource=cuda-irgpu-source-unavailable"), output);
         assertTrue(output.contains("CUDA execution green-light checklist:"), output);
-        assertTrue(output.contains("- cudaExecutionAvailability=execution-unavailable"), output);
-        assertTrue(output.contains("- cudaPipelineAvailable=false"), output);
-        assertTrue(output.contains("- unsupportedReceipt=compile:UNSUPPORTED,prepare:SKIPPED,invoke:SKIPPED"), output);
+        assertTrue(output.contains("- cudaExecutionAvailability=execution-pipeline-available"), output);
+        assertTrue(output.contains("- cudaPipelineAvailable=true"), output);
+        assertTrue(output.contains("- cudaPipelineFactoryPresent=true"), output);
+        assertTrue(output.contains("- unsupportedReceipt=compile:SUCCEEDED,prepare:UNSUPPORTED,invoke:SKIPPED"), output);
         assertTrue(output.contains("- checklistReady=9/9"), output);
         assertTrue(output.contains("- checklistBlocked=0"), output);
-        assertTrue(output.contains("- checklist.cuda-execution-disabled-before-vertical-slice=ready"), output);
+        assertTrue(output.contains("- checklist.cuda-vertical-slice-skeleton-present=ready"), output);
+        assertTrue(output.contains("- checklist.cuda-native-bridge-fail-closed=ready"), output);
     }
 }

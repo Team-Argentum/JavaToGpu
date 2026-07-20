@@ -151,7 +151,7 @@ class GpuBackendExecutionPipelineTest {
                         GpuBackendTarget.CUDA,
                         loweringResult,
                         List.of("cuda-execution-not-implemented"),
-                        List.of("CUDA provider is inventory-only")
+                        List.of("Native CUDA execution bridge is not implemented")
                 );
         Map<String, String> fields = result.artifactFields("pipeline");
 
@@ -296,6 +296,35 @@ class GpuBackendExecutionPipelineTest {
         );
     }
 
+    @Test
+    void executionPipelineResultClosesPreparedThenCompiledHandles() {
+        List<String> closeOrder = new ArrayList<>();
+        CloseableCompiledKernel compiledKernel = new CloseableCompiledKernel(sampleDescriptor(), closeOrder);
+        CloseablePreparedKernel preparedKernel = new CloseablePreparedKernel(compiledKernel, closeOrder);
+        GpuBackendExecutionPipelineResult<CloseableCompiledKernel, CloseablePreparedKernel> result =
+                new GpuBackendExecutionPipelineResult<>(
+                        compiledKernel,
+                        preparedKernel,
+                        GpuBackendCompilationResult.succeeded(
+                                sampleLoweringResult(sampleModuleArtifact(sampleDescriptor())),
+                                new GpuRuntimeBackendCompilationSummary(true, true, "opencl-c", false, 0, 0),
+                                compiledKernel.cacheKey(),
+                                List.of("compiled")
+                        ),
+                        GpuBackendPreparationResult.prepared(
+                                null,
+                                preparedKernel.preparedKernelKind(),
+                                preparedKernel.bindingSummary(),
+                                List.of("prepared")
+                        ),
+                        null
+                );
+
+        result.close();
+
+        assertEquals(List.of("prepared", "compiled"), closeOrder);
+    }
+
     private static GpuKernelDescriptor sampleDescriptor() {
         return new GpuKernelDescriptor(
                 "kernel",
@@ -353,6 +382,57 @@ class GpuBackendExecutionPipelineTest {
         @Override
         public String preparedKernelKind() {
             return "test-kernel";
+        }
+    }
+
+    private static final class CloseableCompiledKernel implements GpuBackendCompiledKernel {
+        private final GpuKernelDescriptor descriptor;
+        private final List<String> closeOrder;
+
+        private CloseableCompiledKernel(GpuKernelDescriptor descriptor, List<String> closeOrder) {
+            this.descriptor = descriptor;
+            this.closeOrder = closeOrder;
+        }
+
+        @Override
+        public GpuKernelDescriptor descriptor() {
+            return descriptor;
+        }
+
+        @Override
+        public String cacheKey() {
+            return "cache:closeable";
+        }
+
+        @Override
+        public GpuRuntimeCompileArtifactSnapshot artifactSnapshot() {
+            GpuRuntimeCompileRequest request = sampleCompileRequest(descriptor);
+            return GpuRuntimeCompileArtifactSnapshot.from(request, request, sampleModuleArtifact(descriptor));
+        }
+
+        @Override
+        public void close() {
+            closeOrder.add("compiled");
+        }
+    }
+
+    private record CloseablePreparedKernel(
+            GpuBackendCompiledKernel compiledKernel,
+            List<String> closeOrder
+    ) implements GpuPreparedKernel {
+        @Override
+        public GpuRuntimeInvocationBindingSummary bindingSummary() {
+            return GpuRuntimeInvocationBindingSummary.empty();
+        }
+
+        @Override
+        public GpuExecutionConfig explicitExecutionConfig() {
+            return null;
+        }
+
+        @Override
+        public void close() {
+            closeOrder.add("prepared");
         }
     }
 

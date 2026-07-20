@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CudaInventoryContractReportTest {
 
     @Test
-    void builtInCudaProviderExposesInventoryOnlyContractWithoutNativeDiscovery() {
+    void builtInCudaProviderExposesInventoryAndExecutionSkeletonContractWithoutNativeDiscovery() {
         CudaInventoryContractReport report = CudaInventoryContractReport.inspectBuiltInProvider();
         Map<String, String> fields = report.artifactFields("test.cuda.inventory");
 
@@ -34,8 +34,8 @@ class CudaInventoryContractReportTest {
         assertFalse(report.catalogEntry().productionAdapter());
         assertTrue(report.catalogEntry().executionSupport().isPresent());
         assertFalse(report.provider().executionSupport().productionExecution());
-        assertFalse(report.provider().executionSupport().executionPipelineAvailable());
-        assertTrue(report.provider().executionPipelineFactory().isEmpty());
+        assertTrue(report.provider().executionSupport().executionPipelineAvailable());
+        assertTrue(report.provider().executionPipelineFactory().isPresent());
         assertTrue(report.provider().executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C));
         assertTrue(report.provider().executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX));
         assertTrue(report.provider().executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY));
@@ -44,7 +44,7 @@ class CudaInventoryContractReportTest {
         assertEquals("cuda-source-preview-unavailable", report.lowererSourceSelectionPlan().runtimeLoadMode());
         assertTrue(report.lowererSourceSelectionPlan().blockers().contains("cuda-irgpu-artifact-missing"));
         assertEquals("ready", fields.get("runtime.cuda.inventoryContract.status"));
-        assertEquals("false", fields.get("runtime.cuda.inventoryContract.provider.executionPipeline.available"));
+        assertEquals("true", fields.get("runtime.cuda.inventoryContract.provider.executionPipeline.available"));
         assertEquals("cuda-irgpu-source-unavailable", fields.get("runtime.cuda.inventoryContract.lowerer.selectedSource"));
         assertTrue(report.toMarkdown().contains("CUDA inventory contract: ready"));
         assertTrue(CudaInventoryContractCli.render(report).contains("lowererSelectedSource=cuda-irgpu-source-unavailable"));

@@ -4,8 +4,8 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.runtime.CudaRuntimeBackendProvider;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendExecutionPipelineResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLoweringResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleFormat;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendPipelineStage;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendStageStatus;
 import net.sixik.ga_utils.javatogpu.runtime.GpuPreparedKernel;
@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Metadata-only green-light checklist before starting CUDA kernel execution work.
+ * CUDA execution vertical-slice readiness checklist.
  */
 public record CudaExecutionReadinessReport(
         OpenClBackendSpiContractReport openClSpiContract,
@@ -120,17 +120,23 @@ public record CudaExecutionReadinessReport(
         GpuRuntimeBackendExecutionAvailability availability = cudaExecutionAvailability.orElseGet(provider::executionAvailability);
         boolean providerIdentityStable = provider.backendTarget() == GpuBackendTarget.CUDA
                 && "backend-provider:cuda".equals(provider.providerId());
-        boolean executionDisabledBeforeVerticalSlice = !provider.executionSupport().productionExecution()
-                && !provider.executionSupport().executionPipelineAvailable()
-                && provider.executionPipelineFactory().isEmpty();
-        boolean structuredUnavailableStages = executionStageBlockersPresent(availability);
+        boolean verticalSliceSkeletonPresent = !provider.executionSupport().productionExecution()
+                && provider.executionSupport().executionPipelineAvailable()
+                && provider.executionPipelineFactory().isPresent();
+        boolean nativeBridgeFailClosed = cudaUnsupportedReceipt.compilationResult().stageResult().status()
+                == GpuBackendStageStatus.SUCCEEDED
+                && cudaUnsupportedReceipt.compiledKernel() instanceof CudaCompiledKernel cudaCompiledKernel
+                && !cudaCompiledKernel.nativeHandleAvailable()
+                && cudaUnsupportedReceipt.preparationResult().stageResult().status() == GpuBackendStageStatus.UNSUPPORTED
+                && cudaUnsupportedReceipt.preparationResult().stageResult().blockers()
+                .contains("cuda-native-argument-binding-missing");
         boolean moduleFormatsDeclared = provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C)
                 && provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX);
         boolean capabilityVocabularyDeclared = provider.executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)
                 && provider.executionSupport().declaresCapability(GpuRuntimeCapability.GLOBAL_MEMORY);
         boolean unsupportedReceiptStructured = cudaUnsupportedReceipt.compilationResult().stageResult().status()
-                == GpuBackendStageStatus.UNSUPPORTED
-                && cudaUnsupportedReceipt.preparationResult().stageResult().status() == GpuBackendStageStatus.SKIPPED
+                == GpuBackendStageStatus.SUCCEEDED
+                && cudaUnsupportedReceipt.preparationResult().stageResult().status() == GpuBackendStageStatus.UNSUPPORTED
                 && cudaUnsupportedReceipt.invocationResult().stageResult().status() == GpuBackendStageStatus.SKIPPED;
 
         items.add(new ChecklistItem(
@@ -139,16 +145,18 @@ public record CudaExecutionReadinessReport(
                 "target=" + provider.backendTarget() + ", provider=" + provider.providerId()
         ));
         items.add(new ChecklistItem(
-                "cuda-execution-disabled-before-vertical-slice",
-                executionDisabledBeforeVerticalSlice,
+                "cuda-vertical-slice-skeleton-present",
+                verticalSliceSkeletonPresent,
                 "productionExecution=" + provider.executionSupport().productionExecution()
                         + ", pipelineAvailable=" + provider.executionSupport().executionPipelineAvailable()
                         + ", factoryPresent=" + provider.executionPipelineFactory().isPresent()
         ));
         items.add(new ChecklistItem(
-                "cuda-unavailable-stages-structured",
-                structuredUnavailableStages,
-                "availability=" + availability.status() + ", blockers=" + String.join(",", availability.blockers())
+                "cuda-native-bridge-fail-closed",
+                nativeBridgeFailClosed,
+                "compile=" + cudaUnsupportedReceipt.compilationResult().stageResult().status()
+                        + ", prepare=" + cudaUnsupportedReceipt.preparationResult().stageResult().status()
+                        + ", prepareBlockers=" + String.join(",", cudaUnsupportedReceipt.preparationResult().stageResult().blockers())
         ));
         items.add(new ChecklistItem(
                 "cuda-module-formats-declared",
@@ -212,20 +220,15 @@ public record CudaExecutionReadinessReport(
         if (provider.executionSupport().productionExecution()) {
             blockers.add("cuda-production-execution-enabled-before-green-light");
         }
-        if (provider.executionSupport().executionPipelineAvailable()) {
-            blockers.add("cuda-execution-stages-enabled-before-vertical-slice");
+        if (!provider.executionSupport().executionPipelineAvailable()) {
+            blockers.add("cuda-execution-skeleton-stages-missing");
         }
-        if (provider.executionPipelineFactory().isPresent()) {
-            blockers.add("cuda-execution-pipeline-factory-present-before-vertical-slice");
+        if (provider.executionPipelineFactory().isEmpty()) {
+            blockers.add("cuda-execution-skeleton-factory-missing");
         }
-        for (GpuBackendPipelineStage stage : List.of(
-                GpuBackendPipelineStage.COMPILE,
-                GpuBackendPipelineStage.PREPARE,
-                GpuBackendPipelineStage.INVOKE
-        )) {
-            if (!availability.blockers().contains("backend-execution-stage-missing:" + stage.key())) {
-                blockers.add("cuda-execution-blocker-missing:" + stage.key());
-            }
+        if (availability.sharedPipelineRunnerAvailable() && availability.blockers().stream()
+                .anyMatch(blocker -> blocker.startsWith("backend-execution-stage-missing:"))) {
+            blockers.add("cuda-execution-availability-has-stale-stage-blocker");
         }
         if (!provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C)) {
             blockers.add("cuda-module-format-missing:cuda-c");
@@ -239,11 +242,23 @@ public record CudaExecutionReadinessReport(
         if (!provider.executionSupport().declaresCapability(GpuRuntimeCapability.GLOBAL_MEMORY)) {
             blockers.add("cuda-capability-missing:global-memory");
         }
-        if (cudaUnsupportedReceipt.compilationResult().stageResult().status() != GpuBackendStageStatus.UNSUPPORTED) {
-            blockers.add("cuda-unsupported-receipt-compile-not-unsupported");
+        if (cudaUnsupportedReceipt.compilationResult().stageResult().status() != GpuBackendStageStatus.SUCCEEDED) {
+            blockers.add("cuda-compile-preview-not-succeeded");
         }
-        if (cudaUnsupportedReceipt.preparationResult().stageResult().status() != GpuBackendStageStatus.SKIPPED) {
-            blockers.add("cuda-unsupported-receipt-prepare-not-skipped");
+        if (!cudaUnsupportedReceipt.compilationResult().compiled()) {
+            blockers.add("cuda-compile-preview-artifact-missing");
+        }
+        if (!(cudaUnsupportedReceipt.compiledKernel() instanceof CudaCompiledKernel cudaCompiledKernel)) {
+            blockers.add("cuda-compiled-kernel-type-missing");
+        } else if (cudaCompiledKernel.nativeHandleAvailable()) {
+            blockers.add("cuda-native-handle-enabled-before-prepare-bridge");
+        }
+        if (cudaUnsupportedReceipt.preparationResult().stageResult().status() != GpuBackendStageStatus.UNSUPPORTED) {
+            blockers.add("cuda-unsupported-receipt-prepare-not-unsupported");
+        }
+        if (!cudaUnsupportedReceipt.preparationResult().stageResult().blockers()
+                .contains("cuda-native-argument-binding-missing")) {
+            blockers.add("cuda-native-argument-binding-blocker-missing");
         }
         if (cudaUnsupportedReceipt.invocationResult().stageResult().status() != GpuBackendStageStatus.SKIPPED) {
             blockers.add("cuda-unsupported-receipt-invoke-not-skipped");
@@ -371,29 +386,20 @@ public record CudaExecutionReadinessReport(
         return builder.toString();
     }
 
-    private static boolean executionStageBlockersPresent(GpuRuntimeBackendExecutionAvailability availability) {
-        for (GpuBackendPipelineStage stage : List.of(
-                GpuBackendPipelineStage.COMPILE,
-                GpuBackendPipelineStage.PREPARE,
-                GpuBackendPipelineStage.INVOKE
-        )) {
-            if (!availability.blockers().contains("backend-execution-stage-missing:" + stage.key())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     private static GpuBackendLoweringResult cudaLoweringPreviewResult() {
-        return GpuBackendLoweringResult.unsupported(
-                GpuBackendTarget.CUDA,
+        GpuBackendModuleArtifact module = GpuBackendModuleArtifact.cudaSource(
+                "extern \"C\" __global__ void cudaExecutionReadinessKernel(const float* input, float* output) { }",
+                "inline://cuda/execution-readiness.cu",
+                "cuda-execution-readiness-preview"
+        );
+        return GpuBackendLoweringResult.succeeded(
+                module,
                 GpuBackendSourceSelectionPlan.descriptorSource(
                         GpuBackendTarget.CUDA,
                         GpuBackendModuleFormat.CUDA_C.key(),
-                        "CUDA execution readiness check does not lower or compile kernels"
+                        "CUDA execution readiness check uses an in-memory cuda-c preview module"
                 ),
-                List.of("cuda-execution-not-enabled"),
-                List.of("metadata-only CUDA green-light checklist")
+                List.of("metadata-only CUDA green-light checklist with compile-preview module")
         );
     }
 }

@@ -175,10 +175,20 @@ final class CudaIrTextBodyEmitter {
         if (declaredType != null && GpuTypeSupport.isSupportedArrayType(declaredType)) {
             return (constant ? "const " : "") + emitType(GpuTypeSupport.componentType(declaredType)) + "*";
         }
+        if (declaredType != null && isSupportedVectorArrayType(declaredType)) {
+            return (constant ? "const " : "") + emitType(GpuTypeSupport.componentType(declaredType)) + "*";
+        }
+        if (declaredType != null && declaredType.endsWith("[]")) {
+            return (constant ? "const " : "") + emitType(GpuTypeSupport.componentType(declaredType)) + "*";
+        }
         if (GpuTypeSupport.isSupportedPointerType(declaredType)) {
             return (constant ? "const " : "") + emitType(GpuTypeSupport.pointerValueType(declaredType)) + "*";
         }
         return emitType(declaredType);
+    }
+
+    private static boolean isSupportedVectorArrayType(String javaType) {
+        return javaType.endsWith("[]") && GpuTypeSupport.isSupportedVectorType(GpuTypeSupport.componentType(javaType));
     }
 
     private static String emitLocalVariableType(String javaType) {

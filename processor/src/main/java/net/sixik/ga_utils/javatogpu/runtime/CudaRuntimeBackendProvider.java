@@ -1,11 +1,17 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaBackendExecutionPipelineFactory;
+import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaExecutionPlan;
+import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaGpuRuntimeBackend;
 
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
- * Built-in CUDA backend provider for discovery-only alpha support.
+ * Built-in CUDA backend provider for source preview and fail-closed execution bring-up.
  */
 public final class CudaRuntimeBackendProvider implements GpuRuntimeBackendProvider {
 
@@ -36,9 +42,18 @@ public final class CudaRuntimeBackendProvider implements GpuRuntimeBackendProvid
 
     @Override
     public GpuRuntimeBackendExecutionSupport executionSupport() {
-        return GpuRuntimeBackendExecutionSupport.discoveryOnly(
+        return new GpuRuntimeBackendExecutionSupport(
                 backendTarget(),
                 providerId(),
+                false,
+                EnumSet.of(
+                        GpuBackendPipelineStage.DISCOVER,
+                        GpuBackendPipelineStage.SELECT,
+                        GpuBackendPipelineStage.LOWER,
+                        GpuBackendPipelineStage.COMPILE,
+                        GpuBackendPipelineStage.PREPARE,
+                        GpuBackendPipelineStage.INVOKE
+                ),
                 Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
                 Set.of(
                         GpuRuntimeCapability.DEVICE_CLASS,
@@ -47,7 +62,44 @@ public final class CudaRuntimeBackendProvider implements GpuRuntimeBackendProvid
                         GpuRuntimeCapability.COMPUTE_CAPABILITY,
                         GpuRuntimeCapability.GLOBAL_MEMORY
                 ),
-                "CUDA is inventory-only in this alpha; execution pipeline is intentionally not enabled yet"
+                "CUDA exposes a non-production compile/prepare/invoke skeleton with staged native bridges; production execution remains fail-closed until hardware validation"
+        );
+    }
+
+    @Override
+    public Optional<GpuBackendExecutionPipelineFactory<?, ?, ?>> executionPipelineFactory() {
+        return Optional.of(new CudaBackendExecutionPipelineFactory());
+    }
+
+    @Override
+    public GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> unsupportedExecutionResult(
+            GpuBackendLoweringResult loweringResult
+    ) {
+        CudaBackendExecutionPipelineFactory factory = new CudaBackendExecutionPipelineFactory();
+        GpuBackendExecutionPipeline<GpuBackendCompiledKernel, GpuPreparedKernel, CudaExecutionPlan> pipeline =
+                factory.createPipeline(new CudaGpuRuntimeBackend());
+        GpuBackendLoweringResult lowering = loweringResult == null
+                ? GpuBackendLoweringResult.unsupported(
+                        GpuBackendTarget.CUDA,
+                        GpuBackendSourceSelectionPlan.descriptorSource(
+                                GpuBackendTarget.CUDA,
+                                GpuBackendModuleFormat.CUDA_C.key(),
+                                "CUDA unsupported receipt was requested without a lowered module"
+                        ),
+                        List.of("cuda-lowering-result-missing"),
+                        List.of("CUDA execution skeleton did not receive a lowering result")
+                )
+                : loweringResult;
+        return pipeline.executeSafely(
+                new GpuRuntimeCompileRequest(
+                        new GpuKernelDescriptor("cudaUnsupportedReceipt", "inline://cuda/unsupported.cu", "", List.of()),
+                        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                        GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA")
+                ),
+                lowering,
+                lowering.moduleArtifact(),
+                CudaExecutionPlan.empty(),
+                null
         );
     }
 }

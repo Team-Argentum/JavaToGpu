@@ -42,7 +42,7 @@ class BackendSelectionExampleTest {
         assertTrue(diagnostic.contains("score: preference=1000000"));
         assertTrue(diagnostic.contains("rejected=true"));
         assertTrue(diagnostic.contains("moduleFormats: cuda-c,ptx"));
-        assertTrue(diagnostic.contains("executionPipeline: available=false"));
+        assertTrue(diagnostic.contains("executionPipeline: available=true"));
     }
 
     @Test
@@ -55,7 +55,7 @@ class BackendSelectionExampleTest {
         assertTrue(availability.contains("OPENCL: status=execution-pipeline-available"));
         assertTrue(availability.contains("sharedRunner=true"));
         assertTrue(availability.contains("moduleFormats: opencl-c"));
-        assertTrue(availability.contains("CUDA: status=execution-unavailable"));
+        assertTrue(availability.contains("CUDA: status=execution-pipeline-available"));
         assertTrue(availability.contains("moduleFormats: cuda-c,ptx"));
         assertTrue(availability.contains("VULKAN: status=execution-unavailable"));
         assertTrue(availability.contains("METAL: status=execution-unavailable"));

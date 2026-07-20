@@ -114,7 +114,7 @@ public final class CudaRuntimeDeviceDiscovery {
             if ("unknown".equals(cudaVersion)) {
                 diagnostics.add("nvidia-smi did not report a CUDA runtime version");
             }
-            diagnostics.add("CUDA discovery is inventory-only; CUDA runtime execution backend is not implemented yet");
+            diagnostics.add("CUDA discovery is inventory-only; native CUDA compilation and kernel launch are not implemented yet");
             GpuRuntimeDeviceSelection selection = resolvedRegistry.select(
                     GpuRuntimeDevicePolicyContext.forBackendDiscovery(resolvedOptions, profiles)
             ).withAdditionalDiagnostics(diagnostics);

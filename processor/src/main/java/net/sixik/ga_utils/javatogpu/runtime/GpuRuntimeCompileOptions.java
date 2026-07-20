@@ -310,6 +310,88 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    public GpuRuntimeCompileOptions withCudaCompilePreview() {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.CUDA,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withCudaCompilePreview(),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withCudaNvccCompilerBridge(String nvccPath) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.CUDA,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withCudaNvccCompilerBridge(nvccPath),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withCudaNativeModuleLoader(String loaderMode) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.CUDA,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withCudaNativeModuleLoader(loaderMode),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withCudaDriverModuleLoader() {
+        return withCudaNativeModuleLoader(GpuBackendCompileOptions.CUDA_MODULE_LOADER_DRIVER);
+    }
+
+    public GpuRuntimeCompileOptions withCudaNativeArgumentBinder(String binderMode) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.CUDA,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withCudaNativeArgumentBinder(binderMode),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withCudaDriverArgumentBinder() {
+        return withCudaNativeArgumentBinder(GpuBackendCompileOptions.CUDA_ARGUMENT_BINDER_DRIVER);
+    }
+
+    public GpuRuntimeCompileOptions withCudaNativeKernelLauncher(String launcherMode) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.CUDA,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withCudaNativeKernelLauncher(launcherMode),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withCudaDriverKernelLauncher() {
+        return withCudaNativeKernelLauncher(GpuBackendCompileOptions.CUDA_KERNEL_LAUNCHER_DRIVER);
+    }
+
+    public GpuRuntimeCompileOptions withCudaNativeReadback(String readbackMode) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.CUDA,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withCudaNativeReadback(readbackMode),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
+    public GpuRuntimeCompileOptions withCudaDriverReadback() {
+        return withCudaNativeReadback(GpuBackendCompileOptions.CUDA_READBACK_DRIVER);
+    }
+
     public GpuRuntimeCompileOptions withPersistentMethodTestProbeEvidenceRanking(Path cacheDirectory) {
         return withPersistentMethodTestProbeEvidenceRanking(cacheDirectory, null);
     }
@@ -345,6 +427,14 @@ public record GpuRuntimeCompileOptions(
             String optimizationProfile
     ) {
         return backendSpecific(GpuBackendCompileOptions.cuda(nvrtcOptions, properties), optimizationProfile);
+    }
+
+    public static GpuRuntimeCompileOptions cudaNvcc(
+            List<String> nvccOptions,
+            String nvccPath,
+            String optimizationProfile
+    ) {
+        return backendSpecific(GpuBackendCompileOptions.cudaNvcc(nvccOptions, nvccPath), optimizationProfile);
     }
 
     public static GpuRuntimeCompileOptions vulkan(

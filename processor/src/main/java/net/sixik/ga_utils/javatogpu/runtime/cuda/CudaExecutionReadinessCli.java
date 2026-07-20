@@ -1,7 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 /**
- * Prints the metadata-only CUDA execution green-light checklist.
+ * Prints the CUDA execution vertical-slice readiness checklist.
  */
 public final class CudaExecutionReadinessCli {
     private CudaExecutionReadinessCli() {
@@ -62,7 +62,7 @@ public final class CudaExecutionReadinessCli {
                     .append(System.lineSeparator());
         }
         builder.append("- firstBlocker=").append(report.firstBlocker()).append(System.lineSeparator());
-        builder.append("- rule=metadata-only; CUDA inventory is allowed, CUDA kernel execution must remain disabled until the vertical slice starts")
+        builder.append("- rule=CUDA default no-bridge receipt stays fail-closed; real driver stages remain explicit opt-ins")
                 .append(System.lineSeparator());
         return builder.toString();
     }

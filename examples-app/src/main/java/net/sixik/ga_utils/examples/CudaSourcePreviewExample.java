@@ -60,6 +60,7 @@ public final class CudaSourcePreviewExample {
         builder.append("- moduleFormat=").append(result.moduleArtifact().moduleFormat().key()).append(System.lineSeparator());
         builder.append("- helperFunctions=1").append(System.lineSeparator());
         builder.append("- execution=disabled").append(System.lineSeparator());
+        builder.append(renderNativeCompilerBridgeOptions());
         if (!result.stageResult().blockers().isEmpty()) {
             builder.append("- blockers=").append(String.join(",", result.stageResult().blockers())).append(System.lineSeparator());
         }
@@ -67,6 +68,49 @@ public final class CudaSourcePreviewExample {
         builder.append(result.moduleArtifact().source());
         builder.append(System.lineSeparator()).append("--- runtime dump preview ---").append(System.lineSeparator());
         builder.append(renderRuntimeDumpPreview());
+        return builder.toString();
+    }
+
+    static String renderNativeCompilerBridgeOptions() {
+        GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions.cudaNvcc(
+                List.of("--gpu-architecture=compute_86"),
+                "nvcc",
+                "off"
+        ).withCudaDriverModuleLoader()
+                .withCudaDriverArgumentBinder()
+                .withCudaDriverKernelLauncher()
+                .withCudaDriverReadback();
+        StringBuilder builder = new StringBuilder();
+        builder.append("- nativeCompilerBridge.example=GpuRuntimeCompileOptions.cudaNvcc(...)")
+                .append(System.lineSeparator());
+        builder.append("- nativeCompilerBridge.mode=")
+                .append(options.backendOptions().cudaCompilerBridgeMode())
+                .append(System.lineSeparator());
+        builder.append("- nativeCompilerBridge.nvccPath=")
+                .append(options.backendOptions().cudaNvccPath().orElse("nvcc"))
+                .append(System.lineSeparator());
+        builder.append("- nativeCompilerBridge.execution=not-run-by-this-example")
+                .append(System.lineSeparator());
+        builder.append("- nativeModuleLoader.mode=")
+                .append(options.backendOptions().cudaModuleLoaderMode())
+                .append(System.lineSeparator());
+        builder.append("- nativeModuleLoader.execution=not-run-by-this-example")
+                .append(System.lineSeparator());
+        builder.append("- nativeArgumentBinder.mode=")
+                .append(options.backendOptions().cudaArgumentBinderMode())
+                .append(System.lineSeparator());
+        builder.append("- nativeArgumentBinder.execution=not-run-by-this-example")
+                .append(System.lineSeparator());
+        builder.append("- nativeKernelLauncher.mode=")
+                .append(options.backendOptions().cudaKernelLauncherMode())
+                .append(System.lineSeparator());
+        builder.append("- nativeKernelLauncher.execution=not-run-by-this-example")
+                .append(System.lineSeparator());
+        builder.append("- nativeReadback.mode=")
+                .append(options.backendOptions().cudaReadbackMode())
+                .append(System.lineSeparator());
+        builder.append("- nativeReadback.execution=not-run-by-this-example")
+                .append(System.lineSeparator());
         return builder.toString();
     }
 

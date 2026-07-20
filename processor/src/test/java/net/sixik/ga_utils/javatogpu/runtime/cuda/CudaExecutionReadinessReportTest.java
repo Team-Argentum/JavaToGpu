@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CudaExecutionReadinessReportTest {
 
     @Test
-    void builtInsAreReadyForCudaVerticalSlicePlanningButDoNotEnableCudaExecution() {
+    void builtInsExposeCudaExecutionSkeletonButDoNotEnableProductionCudaExecution() {
         CudaExecutionReadinessReport report = CudaExecutionReadinessReport.inspectBuiltIns();
         Map<String, String> fields = report.artifactFields("test.cuda.readiness");
 
@@ -37,27 +37,36 @@ class CudaExecutionReadinessReportTest {
         assertEquals("ready", report.openClSpiContract().status());
         assertEquals("backend-provider:cuda", report.cudaProvider().orElseThrow().providerId());
         assertFalse(report.cudaProvider().orElseThrow().executionSupport().productionExecution());
-        assertFalse(report.cudaProvider().orElseThrow().executionSupport().executionPipelineAvailable());
-        assertTrue(report.cudaProvider().orElseThrow().executionPipelineFactory().isEmpty());
+        assertTrue(report.cudaProvider().orElseThrow().executionSupport().executionPipelineAvailable());
+        assertTrue(report.cudaProvider().orElseThrow().executionPipelineFactory().isPresent());
         assertTrue(report.cudaProvider().orElseThrow().executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C));
         assertTrue(report.cudaProvider().orElseThrow().executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX));
         assertTrue(report.cudaProvider().orElseThrow().executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY));
-        assertEquals("execution-unavailable", report.cudaExecutionAvailability().orElseThrow().status());
-        assertTrue(report.cudaExecutionAvailability().orElseThrow().blockers().contains("backend-execution-stage-missing:compile"));
-        assertEquals("UNSUPPORTED", report.cudaUnsupportedReceipt().compilationResult().stageResult().status().name());
-        assertEquals("SKIPPED", report.cudaUnsupportedReceipt().preparationResult().stageResult().status().name());
+        assertEquals("execution-pipeline-available", report.cudaExecutionAvailability().orElseThrow().status());
+        assertTrue(report.cudaExecutionAvailability().orElseThrow().blockers().isEmpty());
+        assertEquals("SUCCEEDED", report.cudaUnsupportedReceipt().compilationResult().stageResult().status().name());
+        assertTrue(report.cudaUnsupportedReceipt().compilationResult().compiled());
+        assertTrue(report.cudaUnsupportedReceipt().compiledKernel() instanceof CudaCompiledKernel);
+        assertFalse(((CudaCompiledKernel) report.cudaUnsupportedReceipt().compiledKernel()).nativeHandleAvailable());
+        assertEquals("UNSUPPORTED", report.cudaUnsupportedReceipt().preparationResult().stageResult().status().name());
+        assertTrue(report.cudaUnsupportedReceipt().preparationResult().stageResult().blockers()
+                .contains("cuda-native-argument-binding-missing"));
         assertEquals("SKIPPED", report.cudaUnsupportedReceipt().invocationResult().stageResult().status().name());
         assertEquals("ready", fields.get("runtime.cuda.executionReadiness.status"));
         assertEquals("9", fields.get("runtime.cuda.executionReadiness.checklist.item.count"));
         assertEquals("9", fields.get("runtime.cuda.executionReadiness.checklist.ready.count"));
         assertEquals("0", fields.get("runtime.cuda.executionReadiness.checklist.blocked.count"));
         assertEquals("none", fields.get("runtime.cuda.executionReadiness.checklist.firstBlocked"));
-        assertEquals("false", fields.get("runtime.cuda.executionReadiness.cuda.executionPipeline.available"));
-        assertEquals("false", fields.get("runtime.cuda.executionReadiness.cuda.executionPipeline.factory.present"));
-        assertEquals("UNSUPPORTED", fields.get("runtime.cuda.executionReadiness.cuda.unsupportedReceipt.compile.status"));
+        assertEquals("true", fields.get("runtime.cuda.executionReadiness.cuda.executionPipeline.available"));
+        assertEquals("true", fields.get("runtime.cuda.executionReadiness.cuda.executionPipeline.factory.present"));
+        assertEquals("SUCCEEDED", fields.get("runtime.cuda.executionReadiness.cuda.unsupportedReceipt.compile.status"));
         assertTrue(report.toMarkdown().contains("CUDA execution green-light checklist: ready"));
-        assertTrue(report.toMarkdown().contains("cuda-execution-disabled-before-vertical-slice: ready"));
-        assertTrue(CudaExecutionReadinessCli.render(report).contains("cudaPipelineAvailable=false"));
+        assertTrue(report.toMarkdown().contains("cuda-vertical-slice-skeleton-present: ready"));
+        assertTrue(report.toMarkdown().contains("cuda-native-bridge-fail-closed: ready"));
+        assertTrue(CudaExecutionReadinessCli.render(report).contains("cudaPipelineAvailable=true"));
+        assertTrue(CudaExecutionReadinessCli.render(report).contains(
+                "unsupportedReceipt=compile:SUCCEEDED,prepare:UNSUPPORTED,invoke:SKIPPED"
+        ));
         assertTrue(CudaExecutionReadinessCli.render(report).contains("checklistReady=9/9"));
         assertTrue(CudaExecutionReadinessCli.render(report).contains(
                 "checklist.cuda-unsupported-receipt-structured=ready"
@@ -65,7 +74,7 @@ class CudaExecutionReadinessReportTest {
     }
 
     @Test
-    void blocksIfCudaProviderStartsDeclaringExecutionBeforeTheVerticalSliceGateChanges() {
+    void blocksIfCudaProviderDeclaresProductionExecutionBeforeNativeBridgeExists() {
         GpuRuntimeBackendProvider prematureCudaProvider = new GpuRuntimeBackendProvider() {
             @Override
             public GpuBackendTarget backendTarget() {
@@ -117,9 +126,11 @@ class CudaExecutionReadinessReportTest {
 
         assertEquals("blocked", report.status());
         assertTrue(report.checklistBlockedCount() > 0);
-        assertEquals("cuda-execution-disabled-before-vertical-slice", report.firstBlockedChecklistItem());
+        assertEquals("cuda-vertical-slice-skeleton-present", report.firstBlockedChecklistItem());
         assertTrue(report.blockers().contains("cuda-production-execution-enabled-before-green-light"));
-        assertTrue(report.blockers().contains("cuda-execution-stages-enabled-before-vertical-slice"));
-        assertTrue(report.blockers().contains("cuda-execution-blocker-missing:compile"));
+        assertTrue(report.blockers().contains("cuda-execution-skeleton-factory-missing"));
+        assertTrue(report.blockers().contains("cuda-compile-preview-artifact-missing"));
+        assertTrue(report.blockers().contains("cuda-compiled-kernel-type-missing"));
+        assertTrue(report.blockers().contains("cuda-native-argument-binding-blocker-missing"));
     }
 }

@@ -1852,7 +1852,7 @@ class GpuRuntimeTest {
         assertTrue(result.failureSummary().contains("Runtime backend adapter is not implemented for CUDA"));
         assertTrue(result.explanation().toMarkdown().contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
         assertTrue(result.explanation().toMarkdown().contains("moduleFormats: cuda-c,ptx"));
-        assertTrue(result.explanation().toMarkdown().contains("executionPipeline: available=false"));
+        assertTrue(result.explanation().toMarkdown().contains("executionPipeline: available=true"));
     }
 
     @Test
@@ -1870,16 +1870,16 @@ class GpuRuntimeTest {
         assertTrue(providerCatalog.forTarget(GpuBackendTarget.OPENCL).orElseThrow().executionAvailability()
                 .sharedPipelineRunnerAvailable());
         assertEquals(cudaProvider, providerCatalog.forProviderId("backend-provider:cuda").orElseThrow());
-        assertEquals(1, providerCatalog.sharedPipelineRunnerAvailableCount());
-        assertEquals(3, providerCatalog.executionUnavailableCount());
+        assertEquals(2, providerCatalog.sharedPipelineRunnerAvailableCount());
+        assertEquals(2, providerCatalog.executionUnavailableCount());
         assertTrue(providerCatalog.anySharedPipelineRunnerAvailable());
         assertTrue(providerCatalog.toMarkdown().contains("OPENCL: status=execution-pipeline-available"));
-        assertTrue(providerCatalog.toMarkdown().contains("CUDA: status=execution-unavailable"));
+        assertTrue(providerCatalog.toMarkdown().contains("CUDA: status=execution-pipeline-available"));
         Map<String, String> providerCatalogFields = providerCatalog.artifactFields("providerCatalog");
         assertEquals("true", providerCatalogFields.get("runtime.backend.providerCatalog.present"));
         assertEquals("4", providerCatalogFields.get("providerCatalog.provider.count"));
-        assertEquals("1", providerCatalogFields.get("providerCatalog.sharedRunner.available.count"));
-        assertEquals("3", providerCatalogFields.get("providerCatalog.executionUnavailable.count"));
+        assertEquals("2", providerCatalogFields.get("providerCatalog.sharedRunner.available.count"));
+        assertEquals("2", providerCatalogFields.get("providerCatalog.executionUnavailable.count"));
         assertEquals("backend-provider:opencl", providerCatalogFields.get("providerCatalog.provider.0.providerId"));
         assertEquals(
                 "execution-pipeline-available",
@@ -1898,16 +1898,16 @@ class GpuRuntimeTest {
         assertEquals("execution-pipeline-available", openClProvider.executionAvailability().status());
         assertTrue(openClProvider.executionAvailability().sharedPipelineRunnerAvailable());
         assertFalse(cudaProvider.executionSupport().productionExecution());
-        assertFalse(cudaProvider.executionSupport().executionPipelineAvailable());
+        assertTrue(cudaProvider.executionSupport().executionPipelineAvailable());
         assertEquals("cuda-c,ptx", cudaProvider.executionSupport().moduleFormatKeys());
         assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C));
         assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX));
         assertTrue(cudaProvider.executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY));
         assertTrue(cudaProvider.executionSupport().declaresCapability(GpuRuntimeCapability.GLOBAL_MEMORY));
-        assertTrue(cudaProvider.executionPipelineFactory().isEmpty());
-        assertEquals("execution-unavailable", cudaProvider.executionAvailability().status());
-        assertTrue(cudaProvider.executionAvailability().blockers().contains("backend-execution-stage-missing:compile"));
-        assertTrue(cudaProvider.executionAvailability().toMarkdown().contains("CUDA execution unavailable"));
+        assertTrue(cudaProvider.executionPipelineFactory().isPresent());
+        assertEquals("execution-pipeline-available", cudaProvider.executionAvailability().status());
+        assertTrue(cudaProvider.executionAvailability().blockers().isEmpty());
+        assertTrue(cudaProvider.executionAvailability().toMarkdown().contains("CUDA execution is available through provider"));
         Map<String, String> openClProviderFields = openClProvider.artifactFields("provider");
         assertEquals("true", openClProviderFields.get("runtime.backend.provider.present"));
         assertEquals("backend-provider:opencl", openClProviderFields.get("provider.providerId"));
@@ -1921,11 +1921,16 @@ class GpuRuntimeTest {
         );
         assertEquals("compile", openClProviderFields.get("provider.executionSupport.supportedStages").split(",")[3]);
         Map<String, String> cudaProviderFields = cudaProvider.artifactFields("provider");
-        assertEquals("execution-unavailable", cudaProviderFields.get("runtime.backend.executionAvailability.status"));
-        assertEquals("false", cudaProviderFields.get("runtime.backend.executionAvailability.sharedRunner.available"));
-        assertEquals("3", cudaProviderFields.get("runtime.backend.executionAvailability.blocker.count"));
+        assertEquals("execution-pipeline-available", cudaProviderFields.get("runtime.backend.executionAvailability.status"));
+        assertEquals("true", cudaProviderFields.get("runtime.backend.executionAvailability.sharedRunner.available"));
+        assertEquals("0", cudaProviderFields.get("runtime.backend.executionAvailability.blocker.count"));
         assertEquals("cuda-c,ptx", cudaProviderFields.get("runtime.backend.executionSupport.moduleFormats"));
         assertTrue(cudaProviderFields.get("runtime.backend.executionSupport.capabilities").contains("compute-capability"));
+        GpuBackendExecutionPipelineFactory<?, ?, ?> cudaPipelineFactory = cudaProvider
+                .executionPipelineFactory()
+                .orElseThrow();
+        assertEquals("backend-execution-pipeline:cuda-preview", cudaPipelineFactory.factoryId());
+        assertFalse(cudaProvider.executionSupport().productionExecution());
         GpuBackendExecutionPipelineFactory<?, ?, ?> openClPipelineFactory = openClProvider
                 .executionPipelineFactory()
                 .orElseThrow();
@@ -1974,7 +1979,7 @@ class GpuRuntimeTest {
                         GpuBackendTarget.CUDA,
                         "source",
                         "cuda-c",
-                        "",
+                        "extern \"C\" __global__ void kernel(const float* input, float* output) { }",
                         "javatogpu/sample/Demo/kernel.cu",
                         "cuda:source:cuda-c:v1",
                         "test-cuda-lowerer"
@@ -1990,12 +1995,12 @@ class GpuRuntimeTest {
                 cudaProvider.unsupportedExecutionResult(cudaLoweringResult);
 
         assertTrue(!unsupportedExecution.succeeded());
-        assertEquals(GpuBackendStageStatus.UNSUPPORTED, unsupportedExecution.compilationResult().stageResult().status());
-        assertEquals(GpuBackendStageStatus.SKIPPED, unsupportedExecution.preparationResult().stageResult().status());
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, unsupportedExecution.compilationResult().stageResult().status());
+        assertEquals(GpuBackendStageStatus.UNSUPPORTED, unsupportedExecution.preparationResult().stageResult().status());
         assertEquals(GpuBackendStageStatus.SKIPPED, unsupportedExecution.invocationResult().stageResult().status());
         assertEquals(
-                "backend-execution-stage-missing:compile",
-                unsupportedExecution.compilationResult().stageResult().blockers().get(0)
+                "cuda-native-argument-binding-missing",
+                unsupportedExecution.preparationResult().stageResult().blockers().get(0)
         );
     }
 

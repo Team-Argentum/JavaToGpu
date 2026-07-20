@@ -7,7 +7,7 @@ import java.util.Map;
 /**
  * Backend-neutral handle for a compiled kernel after arguments/resources are prepared for invocation.
  */
-public interface GpuPreparedKernel {
+public interface GpuPreparedKernel extends AutoCloseable {
 
     GpuBackendCompiledKernel compiledKernel();
 
@@ -43,5 +43,9 @@ public interface GpuPreparedKernel {
             fields.put("runtime.backend.target", compiledKernel().backendTarget().name());
         }
         return Collections.unmodifiableMap(fields);
+    }
+
+    @Override
+    default void close() {
     }
 }

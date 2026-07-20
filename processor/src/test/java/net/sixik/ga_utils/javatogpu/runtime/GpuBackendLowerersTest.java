@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.Float2;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
@@ -12,6 +13,8 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructFieldMetadata;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuStructMetadata;
 import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityChecker;
@@ -516,6 +519,216 @@ class GpuBackendLowerersTest {
         assertTrue(moduleArtifact.source().contains("const float* input, float scale, float* output"));
         assertTrue(moduleArtifact.source().contains("blockIdx.x * blockDim.x + threadIdx.x"));
         assertTrue(moduleArtifact.source().contains("output[id] = input[id] + scale;"));
+    }
+
+    @Test
+    void cudaLowererMapsSingleLocalParameterToDynamicSharedMemoryDeclaration() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_local_entry",
+                "inline://tests/cuda-local-preview.cu",
+                "__kernel void gpu_local_entry(__global const float* input, __local float* scratch, __global float* output) { }",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scratch", "float[]", GpuKernelParameterAccess.LOCAL),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "localKernel",
+                        "gpu_local_entry",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "localKernel",
+                                "gpu_local_entry",
+                                "body\n  set scratch[0] = input[0]\n  set output[0] = scratch[0]\n",
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "float[]", "GLOBAL", true, List.of("const")),
+                        new IrGpuEntryParameter("scratch", "float[]", "LOCAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())
+                ),
+                List.of(IrGpuBackendOutput.openClSource("inline://tests/cuda-local-preview.cl")),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA).lower(compileRequest);
+
+        assertTrue(moduleArtifact.source().contains("extern \"C\" __global__ void gpu_local_entry(const float* input, float* output)"));
+        assertTrue(moduleArtifact.source().contains("extern __shared__ float scratch[];"));
+        assertTrue(!moduleArtifact.source().contains("float* scratch"));
+        assertTrue(moduleArtifact.source().contains("scratch[0] = input[0];"));
+    }
+
+    @Test
+    void cudaLowererMapsMultipleLocalParametersToSharedMemorySlices() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_multi_local_entry",
+                "inline://tests/cuda-multi-local-preview.cu",
+                "__kernel void gpu_multi_local_entry(__local float* scratchA, __local int* scratchB) { }",
+                List.of(
+                        new GpuKernelParameterDescriptor("scratchA", "float[]", GpuKernelParameterAccess.LOCAL),
+                        new GpuKernelParameterDescriptor("scratchB", "int[]", GpuKernelParameterAccess.LOCAL)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "multiLocalKernel",
+                        "gpu_multi_local_entry",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "multiLocalKernel",
+                                "gpu_multi_local_entry",
+                                "body\n  set scratchA[0] = 1.0\n  set scratchB[0] = 2\n",
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("scratchA", "float[]", "LOCAL", false, List.of()),
+                        new IrGpuEntryParameter("scratchB", "int[]", "LOCAL", false, List.of())
+                ),
+                List.of(IrGpuBackendOutput.openClSource("inline://tests/cuda-multi-local-preview.cl")),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA).lower(compileRequest);
+
+        assertTrue(moduleArtifact.source().contains("extern \"C\" __global__ void gpu_multi_local_entry(unsigned int __jtg_local_scratchA_byte_offset, unsigned int __jtg_local_scratchB_byte_offset)"));
+        assertTrue(moduleArtifact.source().contains("extern __shared__ __align__(8) unsigned char __jtg_cuda_dynamic_shared[];"));
+        assertTrue(moduleArtifact.source().contains("float* scratchA = (float*)(__jtg_cuda_dynamic_shared + __jtg_local_scratchA_byte_offset);"));
+        assertTrue(moduleArtifact.source().contains("int* scratchB = (int*)(__jtg_cuda_dynamic_shared + __jtg_local_scratchB_byte_offset);"));
+        assertTrue(!moduleArtifact.source().contains("float* scratchA,"));
+        assertTrue(moduleArtifact.source().contains("scratchA[0] = 1.0;"));
+        assertTrue(moduleArtifact.source().contains("scratchB[0] = 2;"));
+    }
+
+    @Test
+    void cudaLowererMapsVectorArrayParametersToCudaVectorPointers() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_vector_array_entry",
+                "inline://tests/cuda-vector-array-preview.cu",
+                "__kernel void gpu_vector_array_entry(__global const float2* input, __global float2* output) { }",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", Float2.class.getName() + "[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", Float2.class.getName() + "[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "vectorArrayKernel",
+                        "gpu_vector_array_entry",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "vectorArrayKernel",
+                                "gpu_vector_array_entry",
+                                "body\n  set output[0] = input[0]\n",
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", Float2.class.getName() + "[]", "GLOBAL", true, List.of("const")),
+                        new IrGpuEntryParameter("output", Float2.class.getName() + "[]", "GLOBAL", false, List.of())
+                ),
+                List.of(IrGpuBackendOutput.openClSource("inline://tests/cuda-vector-array-preview.cl")),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA).lower(compileRequest);
+
+        assertTrue(moduleArtifact.source().contains("extern \"C\" __global__ void gpu_vector_array_entry(const float2* input, float2* output)"));
+        assertTrue(moduleArtifact.source().contains("output[0] = input[0];"));
+    }
+
+    @Test
+    void cudaLowererEmitsStructTypedefAndStructArrayPointers() {
+        String structType = "net.example.CudaParticle";
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "gpu_struct_array_entry",
+                "inline://tests/cuda-struct-array-preview.cu",
+                "__kernel void gpu_struct_array_entry(__global const CudaParticle* input, __global CudaParticle* output) { }",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", structType + "[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", structType + "[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "structArrayKernel",
+                        "gpu_struct_array_entry",
+                        List.of(),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "structArrayKernel",
+                                "gpu_struct_array_entry",
+                                "body\n  set output[0] = input[0]\n",
+                                List.of()
+                        ))
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", structType + "[]", "GLOBAL", true, List.of("const")),
+                        new IrGpuEntryParameter("output", structType + "[]", "GLOBAL", false, List.of())
+                ),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(new IrGpuStructMetadata(
+                        structType,
+                        "CudaParticle",
+                        List.of(
+                                new IrGpuStructFieldMetadata("weight", "float", List.of()),
+                                new IrGpuStructFieldMetadata("normal", Float2.class.getName(), List.of())
+                        ),
+                        List.of()
+                )),
+                List.of(),
+                List.of(),
+                List.of(IrGpuBackendOutput.openClSource("inline://tests/cuda-struct-array-preview.cl")),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendModuleArtifact moduleArtifact = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA).lower(compileRequest);
+
+        assertTrue(moduleArtifact.source().contains("typedef struct{\n    float weight;\n    float2 normal;\n} CudaParticle;"));
+        assertTrue(moduleArtifact.source().contains("extern \"C\" __global__ void gpu_struct_array_entry(const CudaParticle* input, CudaParticle* output)"));
+        assertTrue(moduleArtifact.source().contains("output[0] = input[0];"));
     }
 
     @Test
