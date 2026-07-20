@@ -187,7 +187,17 @@ Preview the provider-authoring path for a future backend without touching native
 This shows the intended progression for a third-party backend provider: discovery-only, lowering-only, then production
 pipeline with a shared compile/prepare/invoke runner and structured unsupported receipts for incomplete stages. External
 providers use the same ServiceLoader-backed registry path as built-in providers and can be inspected without opening
-native runtime sessions.
+native runtime sessions. The authoring flow is documented in [Backend Adapter Authoring](docs/Backend-Adapter-Authoring.md).
+
+Print a compact backend contract readiness dashboard without touching native APIs:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendContractReadinessExample --console=plain
+```
+
+This combines the OpenCL SPI contract, CUDA inventory contract, and CUDA execution-readiness gate in one output. It is
+the quickest way to confirm that OpenCL is still the production reference while CUDA remains inventory-only before the
+CUDA vertical slice.
 
 Preview read-only backend hooks loaded through ServiceLoader without opening native APIs:
 
@@ -195,14 +205,116 @@ Preview read-only backend hooks loaded through ServiceLoader without opening nat
 .\gradlew.bat :examples-app:runBackendHookServiceLoaderExample --console=plain
 ```
 
+Preview fail-closed backend hook authorization without enabling mutating hooks:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendHookAuthorizationPreviewExample --console=plain
+```
+
+Run the same authorization check as a small classpath validator for CI:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendHookAuthorizationValidatorExample --console=plain
+```
+
+Check IR validation providers against synthetic IR methods without running annotation processing or GPU code:
+
+```powershell
+.\gradlew.bat :examples-app:runIrValidationProviderHarnessExample --console=plain
+```
+
+Check lifecycle/log ServiceLoader extensions without opening a native runtime:
+
+```powershell
+.\gradlew.bat :examples-app:runRuntimeObservabilityServiceHarnessExample --console=plain
+```
+
+Check device-selection policies against synthetic CPU/iGPU/dGPU candidates without opening a native runtime:
+
+```powershell
+.\gradlew.bat :examples-app:runDevicePolicyHarnessExample --console=plain
+```
+
+Check compiler-feedback parsers against synthetic compiler logs without opening a backend compiler:
+
+```powershell
+.\gradlew.bat :examples-app:runCompilerFeedbackHarnessExample --console=plain
+```
+
+Run every hardware-free extension harness example in one pass:
+
+```powershell
+.\gradlew.bat :examples-app:runExtensionHarnessExamples --console=plain
+```
+
+Run the full metadata-only backend adapter contract gate without opening native GPU state:
+
+```powershell
+.\gradlew.bat :processor:validateBackendAdapterContracts --console=plain
+```
+
+This runs the OpenCL SPI contract, backend source/lowering contract, CUDA inventory contract, and CUDA
+execution-readiness gate together.
+
+Check only that the built-in OpenCL provider still exposes the expected backend SPI/provider contract without opening OpenCL:
+
+```powershell
+.\gradlew.bat :processor:validateOpenClBackendSpiContract --console=plain
+```
+
+Check that every built-in backend reports source selection and lowering through the same portable contract:
+
+```powershell
+.\gradlew.bat :processor:validateBackendSourceLoweringContract --console=plain
+```
+
+OpenCL should lower to `opencl-c`; CUDA should expose the hardware-free preview `IrGpu -> cuda-c` path; Vulkan and
+Metal should stay structured `UNSUPPORTED` until their real lowerers exist. The output uses
+`runtime.backend.sourceSelection.*` and `runtime.backend.lowering.*` fields so future CUDA/PTX/SPIR-V work does not
+invent a second source-selection vocabulary.
+
+Preview the current CUDA source lowering without opening CUDA, NVRTC, `nvcc`, or `nvidia-smi`:
+
+```powershell
+.\gradlew.bat :examples-app:runCudaSourcePreviewExample --console=plain
+```
+
+The example builds a tiny in-memory `IrGpu` artifact with one helper function and prints the generated `cuda-c` source.
+
+Check the metadata-only CUDA inventory/provider contract:
+
+```powershell
+.\gradlew.bat :processor:validateCudaInventoryContract --console=plain
+```
+
+This verifies that CUDA is registered through the shared provider-backed adapter path, exposes `cuda-c` / `ptx`
+metadata, keeps the catalog entry non-production, and reports the inventory-only lowerer sample as unavailable when no
+`IrGpu` payload is present. This is separate from the preview source-lowering path above.
+
+Check the metadata-only CUDA execution green-light gate before starting CUDA kernel execution work:
+
+```powershell
+.\gradlew.bat :processor:validateCudaExecutionReadiness --console=plain
+```
+
+This verifies that OpenCL remains the production SPI reference, CUDA is visible as an inventory/provider candidate with
+`cuda-c` / `ptx` metadata, and CUDA compile/prepare/invoke still returns structured unsupported/skipped receipts until
+the real CUDA vertical slice is deliberately enabled. The output also includes machine-readable `checklist.*` lines,
+including `cuda-execution-disabled-before-vertical-slice` and `cuda-unsupported-receipt-structured`, so CI can detect
+whether CUDA execution was enabled accidentally instead of as part of the planned vertical slice.
+
 This shows example `GpuBackendDiscoveryContributor`, `GpuBackendLoweringHook`, `GpuBackendCompilationHook`,
 `GpuBackendInvocationHook`, and `GpuBackendArtifactHook` implementations registered under `META-INF/services`. The hooks
 observe discovery/lowering/compile/invoke/artifact receipts, contribute namespaced metadata, and keep production results
 unchanged. Extension modules can test the same behavior directly with `GpuBackendHookTestHarness`, which builds synthetic
 receipts without requiring OpenCL/CUDA hardware and reports hook contract diagnostics such as authorization-required
-non-read-only hooks. `GpuBackendHookRegistry.authorizationReport(...)` gives the same fail-closed authorization view for
-a backend target and stage: read-only hooks are executable today, stronger hooks can be preview-authorized for review,
-but remain `AUTHORIZED_BUT_EXECUTION_DISABLED` until a separate production-affecting runner exists.
+non-read-only hooks. Harness reports now include stage-by-stage authorization fields for discovery, lowering,
+compilation, invocation, and artifact hooks, including first-blocker summaries for CI output. `GpuBackendHookRegistry.authorizationCatalog(...)`
+gives the same fail-closed authorization view across the standard backend hook stages, while `authorizationReport(...)`
+targets one stage. `GpuBackendHookAuthorizationValidator.validateReadOnlyClasspath(...)` wraps that catalog into a
+pass/fail result with a recommended process exit code, so extension modules can reject unexpected production-affecting
+hooks before native runtime startup. Read-only hooks are executable today; stronger hooks can be preview-authorized for
+review, but remain `AUTHORIZED_BUT_EXECUTION_DISABLED` until a separate production-affecting runner exists.
 
 Backend authors should use the shared `GpuBackendModuleFormat` and `GpuRuntimeCapability` vocabulary for module formats
 and device facts, and declare that vocabulary through `GpuRuntimeBackendExecutionSupport`. This keeps OpenCL-C, CUDA-C,
@@ -237,6 +349,9 @@ score weight for old-but-still-valid entries before they expire into misses. Run
 participated in device ranking.
 This runtime path is explicitly `GpuRuntimeMethodTestProbeMode.CACHE_ONLY`: it reads warmed evidence only and never runs
 method-test GPU probes during device selection.
+Custom `GpuRuntimeDevicePolicy` services can be smoke-tested with `runDevicePolicyHarnessExample`, which feeds synthetic
+OpenCL CPU/iGPU/dGPU candidates through the same core policy registry and prints the selected device, policy count,
+execution count, and first blocker without touching OpenCL/CUDA.
 Backend selection can consume the same warmed cache through the opt-in backend score bridge:
 `GpuRuntimeBackendPolicy.builder().rankCandidatesByScore().scoreCandidatesForCompileRequest(request)` plus
 `.scoreCandidatesWithCachedMethodTestProbeEvidence()`. This fills the backend `policyAdjustment` score bucket from
@@ -246,6 +361,9 @@ Precomputed compiler feedback can participate in the same score bucket with
 `.scoreCandidatesWithCompilerFeedback(report)`. This is advisory resource evidence only: it reads an already-created
 feedback report, never compiles candidates during selection, and remains lower priority than method-test correctness
 evidence.
+Custom `GpuBackendCompilerFeedbackProvider` services can be smoke-tested with `runCompilerFeedbackHarnessExample`, which
+feeds synthetic compiler logs through the same registry and prints the selected parser, parsed register/local-memory/
+occupancy metrics, and provider execution count without invoking a backend compiler.
 Workload intent can participate through `.scoreCandidatesWithWorkloadHints(hints)`. This is also advisory: it lets the
 selector explain preferences such as `PTX` output, high arithmetic intensity, large work-groups, or required portable
 capabilities without turning those preferences into hard rejection gates.
@@ -313,6 +431,9 @@ shows the common `OpenClImageWorkflow.rgbaIntToFloat2D(...)` host helper, then p
 `optimized.backend.opencl-c`, selected `backend.opencl-c`, and `runtime-ir-optimizer-evidence.properties`.
 Use `"-Pjavatogpu.runtimeLog=system-out"` or provide a `GpuRuntimeLogService` through ServiceLoader to route lifecycle
 logs into System.out, Log4J, SLF4J, or another application logging backend without manual listener registration.
+The examples app also registers `ExampleRuntimeLogTraceService`, which stays quiet unless
+`javatogpu.examples.runtimeLogTraceFile` is set, and can be checked together with lifecycle services through
+`runRuntimeObservabilityServiceHarnessExample`.
 
 ## Project Layout
 

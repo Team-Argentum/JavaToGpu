@@ -1,7 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +60,8 @@ public final class GpuBackendHookTestHarness {
         GpuBackendInvocationResult invocationResult = syntheticInvocationResult(preparationResult);
 
         Map<String, String> registryFields = registry.artifactFields("runtime.backend.hookRegistry");
+        Map<String, String> authorizationFields = registry.authorizationCatalog(target)
+                .artifactFields("runtime.backend.hookAuthorization");
         Map<String, String> discoveryFields = registry.observeDiscovery(
                 target,
                 compileOptions,
@@ -95,6 +96,7 @@ public final class GpuBackendHookTestHarness {
                 target,
                 registry.size(),
                 registryFields,
+                authorizationFields,
                 discoveryFields,
                 loweringFields,
                 compilationFields,

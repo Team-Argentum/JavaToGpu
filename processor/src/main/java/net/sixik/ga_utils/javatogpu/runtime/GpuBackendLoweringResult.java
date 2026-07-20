@@ -72,6 +72,7 @@ public record GpuBackendLoweringResult(
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.lowering" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         fields.putAll(stageResult.artifactFields(normalizedPrefix + ".stage"));
+        fields.putAll(sourceSelectionPlan.artifactFields(normalizedPrefix + ".sourceSelection"));
         fields.put(normalizedPrefix + ".lowered", Boolean.toString(lowered()));
         fields.put(normalizedPrefix + ".selectedSource", sourceSelectionPlan.selectedSource());
         fields.put(normalizedPrefix + ".payloadFormat", sourceSelectionPlan.payloadFormat());

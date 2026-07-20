@@ -116,6 +116,16 @@ class GpuBackendHookTestHarnessTest {
                 .get("runtime.backend.hookRegistry.contract.warning.count"));
         assertEquals("authorization-required", report.registryFields()
                 .get("runtime.backend.hookRegistry.contract.hook.3.status"));
+        assertEquals("read-only-ready", report.authorizationFields()
+                .get("runtime.backend.hookAuthorization.discovery.status"));
+        assertEquals("1", report.authorizationFields()
+                .get("runtime.backend.hookAuthorization.discovery.currentRegistryExecutable.count"));
+        assertEquals("blocked", report.authorizationFields()
+                .get("runtime.backend.hookAuthorization.invocation.status"));
+        assertEquals("1", report.authorizationFields()
+                .get("runtime.backend.hookAuthorization.invocation.blocked.count"));
+        assertEquals("test.harness.production-invocation:PERMISSION_EXCEEDS_POLICY", report.authorizationFields()
+                .get("runtime.backend.hookAuthorization.invocation.firstBlocker"));
         assertEquals(1, discoveryCalls.get());
         assertEquals(1, loweringCalls.get());
         assertEquals(1, compilationCalls.get());
@@ -141,8 +151,12 @@ class GpuBackendHookTestHarnessTest {
                 "test.artifact.status"
         ));
         assertTrue(report.toMarkdown().contains("Backend hook harness: OPENCL"));
+        assertTrue(report.toMarkdown().contains("Invocation authorization: status=blocked"));
+        assertTrue(report.toMarkdown().contains("firstBlocker=test.harness.production-invocation:PERMISSION_EXCEEDS_POLICY"));
         assertTrue(report.toMarkdown().contains("Compilation: hooks=1, applied=0, skipped=0, failed=1"));
         assertEquals("true", report.artifactFields("harness").get("harness.present"));
+        assertTrue(Integer.parseInt(report.artifactFields("harness")
+                .get("harness.authorization.field.count")) > 0);
     }
 
     @Test

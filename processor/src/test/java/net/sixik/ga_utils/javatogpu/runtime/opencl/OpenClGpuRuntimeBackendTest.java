@@ -97,6 +97,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -790,12 +791,25 @@ class OpenClGpuRuntimeBackendTest {
                 GpuExecutionConfig.oneDimensional(4L)
         );
         OpenClCompiledKernel compiledViaAdapter = pipelineResult.compiledKernel();
+        Map<String, String> pipelineFields = pipelineResult.artifactFields("pipeline");
 
         assertEquals(GpuBackendTarget.OPENCL, compiler.backendTarget());
         assertEquals(GpuBackendTarget.OPENCL, backendPreparer.backendTarget());
         assertEquals(GpuBackendTarget.OPENCL, invoker.backendTarget());
         assertTrue(pipelineResult.succeeded());
-        assertEquals("true", pipelineResult.artifactFields("pipeline").get("runtime.backend.executionPipeline.succeeded"));
+        assertEquals("true", pipelineFields.get("runtime.backend.executionPipeline.succeeded"));
+        assertEquals("true", pipelineFields.get("runtime.backend.compilation.present"));
+        assertEquals("SUCCEEDED", pipelineFields.get("runtime.backend.compilation.status"));
+        assertEquals("true", pipelineFields.get("runtime.backend.compilation.compiled"));
+        assertEquals("compile", pipelineFields.get("runtime.backend.compilation.stage.key"));
+        assertEquals("true", pipelineFields.get("runtime.backend.prepare.present"));
+        assertEquals("SUCCEEDED", pipelineFields.get("runtime.backend.prepare.status"));
+        assertEquals("true", pipelineFields.get("runtime.backend.prepare.prepared"));
+        assertEquals("true", pipelineFields.get("runtime.backend.invoke.present"));
+        assertEquals("SUCCEEDED", pipelineFields.get("runtime.backend.invoke.status"));
+        assertEquals("true", pipelineFields.get("runtime.backend.invoke.invoked"));
+        assertEquals("true", pipelineFields.get("runtime.backend.compiledKernel.present"));
+        assertEquals("true", pipelineFields.get("runtime.backend.preparedKernel.present"));
         assertEquals(1, compileCalls.get());
         assertEquals(1, invokeCalls.get());
         assertEquals("compiled:adapter-spi", compiledViaAdapter.cacheKey());
@@ -1279,6 +1293,8 @@ class OpenClGpuRuntimeBackendTest {
             }
         };
         GpuKernelDescriptor descriptor = intOutputDescriptor();
+        AtomicBoolean compileCalledFromSharedPipeline = new AtomicBoolean();
+        AtomicBoolean invokeCalledFromSharedPipeline = new AtomicBoolean();
         OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend(
                 OpenClGpuRuntimeBackend.CacheMode.INSTANCE,
                 GpuRuntimeLifecycleEventBus.of(List.of(listener))
@@ -1302,11 +1318,13 @@ class OpenClGpuRuntimeBackendTest {
                     GpuRuntimeCompileRequest compileRequest,
                     GpuBackendModuleArtifact moduleArtifact
             ) {
+                compileCalledFromSharedPipeline.set(calledFromBackendExecutionPipeline());
                 return new OpenClCompiledKernel(compileRequest.descriptor(), "compiled:lifecycle");
             }
 
             @Override
             protected void executeKernel(OpenClPreparedExecution execution) {
+                invokeCalledFromSharedPipeline.set(calledFromBackendExecutionPipeline());
                 // no-op: this test covers lifecycle dispatch, not native OpenCL execution.
             }
         };
@@ -1445,6 +1463,8 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals("INSTANCE", events.get(27).fields().get("runtime.backend.cache.mode"));
         assertEquals("1", events.get(27).fields().get("runtime.backend.invocation.count"));
         assertEquals("1", events.get(27).fields().get("runtime.backend.compile.count"));
+        assertTrue(compileCalledFromSharedPipeline.get());
+        assertTrue(invokeCalledFromSharedPipeline.get());
     }
 
     @Test

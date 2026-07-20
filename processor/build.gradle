@@ -631,6 +631,47 @@ tasks.register('openClValidationReport', JavaExec) {
     systemProperty 'javatogpu.opencl.validationHistoryBaselineFile', openClValidationHistoryBaselineFile.absolutePath
 }
 
+tasks.register('validateOpenClBackendSpiContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates the metadata-only OpenCL backend SPI provider/factory contract without opening OpenCL.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendSpiContractCli'
+}
+
+tasks.register('validateCudaExecutionReadiness', JavaExec) {
+    group = 'verification'
+    description = 'Validates the metadata-only CUDA execution green-light checklist without enabling CUDA kernel execution.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaExecutionReadinessCli'
+}
+
+tasks.register('validateCudaInventoryContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates the hardware-free CUDA inventory provider/adapter/lowerer contract without native discovery.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaInventoryContractCli'
+}
+
+tasks.register('validateBackendSourceLoweringContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates the metadata-only backend source-selection/lowering contract across built-in backend targets.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceLoweringContractCli'
+}
+
+tasks.register('validateBackendAdapterContracts') {
+    group = 'verification'
+    description = 'Runs all metadata-only backend adapter contract gates without opening native GPU runtime state.'
+    dependsOn 'validateOpenClBackendSpiContract'
+    dependsOn 'validateBackendSourceLoweringContract'
+    dependsOn 'validateCudaInventoryContract'
+    dependsOn 'validateCudaExecutionReadiness'
+}
+
 tasks.register('validateOpenClKernelLaunchAdvisoryDrift', JavaExec) {
     group = 'verification'
     description = 'Fails OpenCL CI when the kernel launch-advisory drift artifact reports a regression.'
@@ -985,6 +1026,7 @@ tasks.named('openClValidationReport') {
 tasks.register('openClVendorValidation') {
     group = 'verification'
     description = 'Runs the full OpenCL cross-device validation bucket set and writes a validation report artifact.'
+    dependsOn 'validateBackendAdapterContracts'
     dependsOn 'compileOnlyTest'
     dependsOn 'runtimeOpenClTest'
     dependsOn 'imageOpenClTest'

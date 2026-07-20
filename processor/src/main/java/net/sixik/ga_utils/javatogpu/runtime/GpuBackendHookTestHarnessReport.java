@@ -13,6 +13,7 @@ public record GpuBackendHookTestHarnessReport(
         GpuBackendTarget backendTarget,
         int loadedHookCount,
         Map<String, String> registryFields,
+        Map<String, String> authorizationFields,
         Map<String, String> discoveryFields,
         Map<String, String> loweringFields,
         Map<String, String> compilationFields,
@@ -24,6 +25,7 @@ public record GpuBackendHookTestHarnessReport(
         backendTarget = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
         loadedHookCount = Math.max(0, loadedHookCount);
         registryFields = immutableCopy(registryFields);
+        authorizationFields = immutableCopy(authorizationFields);
         discoveryFields = immutableCopy(discoveryFields);
         loweringFields = immutableCopy(loweringFields);
         compilationFields = immutableCopy(compilationFields);
@@ -38,6 +40,7 @@ public record GpuBackendHookTestHarnessReport(
         fields.put(normalizedPrefix + ".backendTarget", backendTarget.name());
         fields.put(normalizedPrefix + ".loadedHook.count", Integer.toString(loadedHookCount));
         appendIndexedFields(fields, normalizedPrefix + ".registry", registryFields);
+        appendIndexedFields(fields, normalizedPrefix + ".authorization", authorizationFields);
         appendIndexedFields(fields, normalizedPrefix + ".discovery", discoveryFields);
         appendIndexedFields(fields, normalizedPrefix + ".lowering", loweringFields);
         appendIndexedFields(fields, normalizedPrefix + ".compilation", compilationFields);
@@ -50,6 +53,11 @@ public record GpuBackendHookTestHarnessReport(
         StringBuilder builder = new StringBuilder();
         builder.append("Backend hook harness: ").append(backendTarget).append(System.lineSeparator());
         builder.append("- Loaded hooks: ").append(loadedHookCount).append(System.lineSeparator());
+        appendAuthorizationSummary(builder, "Discovery authorization", authorizationFields, "runtime.backend.hookAuthorization.discovery");
+        appendAuthorizationSummary(builder, "Lowering authorization", authorizationFields, "runtime.backend.hookAuthorization.lowering");
+        appendAuthorizationSummary(builder, "Compilation authorization", authorizationFields, "runtime.backend.hookAuthorization.compilation");
+        appendAuthorizationSummary(builder, "Invocation authorization", authorizationFields, "runtime.backend.hookAuthorization.invocation");
+        appendAuthorizationSummary(builder, "Artifact authorization", authorizationFields, "runtime.backend.hookAuthorization.artifact");
         appendStageSummary(builder, "Discovery", discoveryFields, "runtime.backend.hookExecution.discovery");
         appendStageSummary(builder, "Lowering", loweringFields, "runtime.backend.hookExecution.lowering");
         appendStageSummary(builder, "Compilation", compilationFields, "runtime.backend.hookExecution.compilation");
@@ -76,6 +84,25 @@ public record GpuBackendHookTestHarnessReport(
                 .append(fields.getOrDefault(prefix + ".failed.count", "0"))
                 .append(", mutationIgnored=")
                 .append(fields.getOrDefault(prefix + ".mutationIgnored.count", "0"))
+                .append(System.lineSeparator());
+    }
+
+    private static void appendAuthorizationSummary(
+            StringBuilder builder,
+            String label,
+            Map<String, String> fields,
+            String prefix
+    ) {
+        builder.append("- ")
+                .append(label)
+                .append(": status=")
+                .append(fields.getOrDefault(prefix + ".status", "unknown"))
+                .append(", executable=")
+                .append(fields.getOrDefault(prefix + ".currentRegistryExecutable.count", "0"))
+                .append(", blocked=")
+                .append(fields.getOrDefault(prefix + ".blocked.count", "0"))
+                .append(", firstBlocker=")
+                .append(fields.getOrDefault(prefix + ".firstBlocker", "none"))
                 .append(System.lineSeparator());
     }
 

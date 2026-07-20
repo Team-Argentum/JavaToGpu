@@ -1,9 +1,6 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHook;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookAuthorizationReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookTestHarness;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookTestHarnessReport;
 
@@ -24,10 +21,6 @@ public final class BackendHookServiceLoaderExample {
     static String renderServiceLoaderHookPreview() {
         GpuBackendHookTestHarness harness = GpuBackendHookTestHarness.loadWithServiceLoader();
         GpuBackendHookTestHarnessReport report = harness.runSyntheticOpenCl();
-        GpuBackendHookAuthorizationReport authorizationReport = harness.registry().authorizationReport(
-                GpuBackendTarget.OPENCL,
-                GpuExtensionPhase.BACKEND_INVOCATION
-        );
 
         StringBuilder builder = new StringBuilder();
         builder.append("Backend hook ServiceLoader example:").append(System.lineSeparator());
@@ -63,10 +56,12 @@ public final class BackendHookServiceLoaderExample {
                 ))
                 .append(System.lineSeparator());
         builder.append("- authorizationStatus=")
-                .append(authorizationReport.status())
+                .append(report.authorizationFields()
+                        .get("runtime.backend.hookAuthorization.invocation.status"))
                 .append(System.lineSeparator());
         builder.append("- authorizationExecutableHooks=")
-                .append(authorizationReport.currentRegistryExecutableCount())
+                .append(report.authorizationFields()
+                        .get("runtime.backend.hookAuthorization.invocation.currentRegistryExecutable.count"))
                 .append(System.lineSeparator());
         builder.append("- rule=read-only hooks observe receipts; returned replacements are ignored by the registry")
                 .append(System.lineSeparator());

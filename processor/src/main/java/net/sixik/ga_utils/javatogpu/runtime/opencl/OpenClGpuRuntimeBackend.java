@@ -24,7 +24,7 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilationResult;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendExecutionPipeline;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendExecutionPipelineResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerers;
@@ -684,7 +684,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
         );
     }
 
-    private void executeProductionPipeline(
+    private GpuBackendExecutionPipelineResult<OpenClCompiledKernel, OpenClPreparedExecution> executeProductionPipeline(
             GpuRuntimeCompileRequest compileRequest,
             GpuBackendModuleArtifact moduleArtifact,
             GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
@@ -693,15 +693,13 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
             GpuExecutionConfig executionConfig,
             GpuRuntimeDiagnosticContext diagnosticContext
     ) {
-        GpuBackendExecutionPipeline<OpenClCompiledKernel, OpenClPreparedExecution, OpenClExecutionPlan> pipeline =
-                new GpuBackendExecutionPipeline<>(
-                        productionCachedCompiler(compileCacheKey, artifactSnapshot, diagnosticContext),
-                        kernelPreparer(),
-                        productionCheckedInvoker(diagnosticContext)
-                );
-        pipeline.execute(
+        OpenClProductionExecutionPipeline pipeline = new OpenClProductionExecutionPipeline(
+                productionCachedCompiler(compileCacheKey, artifactSnapshot, diagnosticContext),
+                kernelPreparer(),
+                productionCheckedInvoker(diagnosticContext)
+        );
+        return pipeline.execute(
                 compileRequest,
-                productionLoweringResult(moduleArtifact),
                 moduleArtifact,
                 plan,
                 executionConfig
@@ -791,19 +789,6 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                 preparedKernel.scalarBindings(),
                 preparedKernel.argumentBindings(),
                 executionConfig
-        );
-    }
-
-    private static GpuBackendLoweringResult productionLoweringResult(GpuBackendModuleArtifact moduleArtifact) {
-        GpuBackendModuleArtifact module = moduleArtifact == null ? GpuBackendModuleArtifact.unknown() : moduleArtifact;
-        return GpuBackendLoweringResult.succeeded(
-                module,
-                GpuBackendSourceSelectionPlan.descriptorSource(
-                        module.backendTarget(),
-                        module.format(),
-                        "OpenCL production pipeline received a preselected backend module artifact"
-                ),
-                List.of("OpenCL production execution pipeline is using the selected backend module artifact")
         );
     }
 

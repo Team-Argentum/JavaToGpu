@@ -136,6 +136,14 @@ jobs:
           where git
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Get-CimInstance Win32_VideoController | Select-Object Name, AdapterCompatibility, DriverVersion | Format-Table -AutoSize } catch { Write-Warning ('Unable to query Win32_VideoController: ' + $_.Exception.Message) }"
 
+      - name: Backend adapter contract smoke
+        shell: cmd
+        run: .\gradlew.bat :processor:validateBackendAdapterContracts --console=plain --no-daemon
+
+      - name: Hardware-free extension SPI smoke
+        shell: cmd
+        run: .\gradlew.bat :examples-app:runExtensionHarnessExamples --console=plain --no-daemon
+
       - name: Prepare kernel launch-advisory negative fixture
         if: env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true'
         id: launch_advisory_negative_fixture_prepare

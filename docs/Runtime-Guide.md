@@ -475,6 +475,35 @@ Register that class in `META-INF/services/net.sixik.ga_utils.javatogpu.runtime.G
 log services by extension order/id/version and isolates failures, so a broken logging sink cannot control runtime
 selection, compilation, or invocation.
 
+To smoke-test lifecycle and logging services without opening OpenCL/CUDA, use the observability harness:
+
+```powershell
+.\gradlew.bat :examples-app:runRuntimeObservabilityServiceHarnessExample --console=plain
+```
+
+Library tests can call `GpuRuntimeObservabilityServiceHarness.loadFromServiceLoader().runSyntheticOpenCl()` directly.
+The harness publishes one synthetic lifecycle event and one synthetic log record, then reports service counts, success
+flags, artifact fields, and Markdown.
+
+Device-selection policies have a matching hardware-free harness:
+
+```powershell
+.\gradlew.bat :examples-app:runDevicePolicyHarnessExample --console=plain
+```
+
+It runs the built-in plus ServiceLoader `GpuRuntimeDevicePolicy` registry against synthetic OpenCL CPU/iGPU/dGPU
+candidates and prints the selected device, policy execution count, first blocker, and artifact-friendly status.
+
+IR validation providers can be checked the same way, without javac annotation processing or GPU execution:
+
+```powershell
+.\gradlew.bat :examples-app:runIrValidationProviderHarnessExample --console=plain
+```
+
+Library tests can call `GpuIrValidationProviderHarness.loadFromServiceLoader().runSynthetic()` directly. The harness
+runs synthetic helper/kernel IR methods through `GpuIrValidationRunner` and reports validation entries, diagnostics,
+extension metadata, first blocker, and Markdown/artifact fields.
+
 To let device selection consume already-recorded probe evidence, opt in through compile options:
 
 ```java
@@ -540,6 +569,34 @@ selection. The score bridge applies only to a matching backend target, rewards a
 metrics such as low register pressure, zero spills, zero stack frame, and known occupancy, and applies bounded penalties
 for high register pressure, spills, stack frame bytes, or heavy local-memory use. Treat this as placement evidence, not a
 correctness gate; `@GPUTest` probe evidence has much stronger score weight.
+
+Compiler-feedback providers can be checked without a backend compiler:
+
+```powershell
+.\gradlew.bat :examples-app:runCompilerFeedbackHarnessExample --console=plain
+```
+
+Library tests can call `GpuBackendCompilerFeedbackHarness.loadWithBuiltIns().runSyntheticOpenCl()` directly. The harness
+feeds synthetic compiler logs through the same provider registry and reports the selected provider, parsed metrics,
+execution outcomes, artifact fields, and Markdown.
+
+To run all hardware-free extension smoke examples together:
+
+```powershell
+.\gradlew.bat :examples-app:runExtensionHarnessExamples --console=plain
+```
+
+Use this aggregate task before native OpenCL/CUDA checks when you only need to verify ServiceLoader registration,
+extension ordering, fail-soft isolation, and basic report rendering.
+
+To check the built-in OpenCL provider/factory SPI contract without opening an OpenCL platform or context:
+
+```powershell
+.\gradlew.bat :processor:validateOpenClBackendSpiContract --console=plain
+```
+
+This verifies the metadata contract for provider id/version, production execution support, compile/prepare/invoke stage
+coverage, `opencl-c` module format, shared pipeline factory, and stable artifact aliases.
 
 When the application knows the shape of the workload before real backend execution exists, pass workload hints:
 

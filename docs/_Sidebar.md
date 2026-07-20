@@ -13,6 +13,7 @@
 - [OpenCL Data Model](OpenCL-Data-Model.md)
 - [IR Validation](IR-Validation.md)
 - [IR Optimizer](IR-Optimizer.md)
+- [Backend Adapter Authoring](Backend-Adapter-Authoring.md)
 - [Validation and Operations](Validation-and-Operations.md)
 - [ASM Contract](ASM-Contract.md)
 - [OpenCL Runner Contract](OpenCL-Runner-Contract.md)

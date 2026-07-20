@@ -13,15 +13,32 @@ JavaToGpu has one public Java GPU dialect: the `net.sixik.ga_utils.javatogpu.api
 | Print runtime lifecycle logs locally | Built-in `GpuRuntimeLogService` console sink | `-Djavatogpu.runtime.log=system-out` |
 | Route logs to Log4J, SLF4J, or another logger | `GpuRuntimeLogService` | Implement a ServiceLoader service |
 | Observe compile/runtime stages | `GpuRuntimeLifecycleService` | Implement a read-only lifecycle service |
+| Check lifecycle/log services without a GPU | `GpuRuntimeObservabilityServiceHarness` | Run a synthetic ServiceLoader check |
 | Add a company IR validator | `GpuIrValidationProvider` | Emit read-only validation reports |
+| Check IR validators without javac/GPU | `GpuIrValidationProviderHarness` | Run synthetic IR methods |
 | Add an optimizer pass | `GpuRuntimeIrOptimizationPass` or `GpuRuntimeIrPeepholeRule` | Produce optimizer evidence first |
 | Parse backend compiler resource logs | `GpuBackendCompilerFeedbackProvider` | Keep parsed metrics advisory |
+| Check compiler-feedback parsers without a compiler | `GpuBackendCompilerFeedbackHarness` | Run synthetic compiler logs |
 | Add or preview a backend family | `GpuRuntimeBackendProvider` | Start discovery-only, then add execution stages |
+| Check built-in backend contracts | `validateBackendAdapterContracts` | Run all metadata-only backend adapter gates |
+| Check built-in OpenCL backend SPI | `validateOpenClBackendSpiContract` | Verify provider/factory metadata without OpenCL |
+| Check CUDA inventory contract | `validateCudaInventoryContract` | Verify CUDA provider/adapter metadata without `nvidia-smi` |
+| Check pre-CUDA execution gate | `validateCudaExecutionReadiness` | Verify CUDA is inventory-only until the vertical slice |
 | Add backend-stage facts or hooks | `GpuBackendHook` family | Keep defaults read-only and fail-soft |
 | Influence backend/device selection | `GpuRuntimeDevicePolicy` | Add evidence or hard rejections |
+| Check device policy behavior without a GPU | `GpuRuntimeDevicePolicyHarness` | Run synthetic CPU/iGPU/dGPU candidates |
+| Smoke-test all hardware-free SPI examples | `runExtensionHarnessExamples` | Run one Gradle task before native runtime tests |
 | Add device-specific method variants | `@GPUFallbackVariant` | Keep the Java launch ABI identical |
 
 For normal application code, you usually only need annotations, runtime options, and optional logging. Most SPI hooks are for libraries, tooling, CI, or backend integrations.
+
+To run the full hardware-free SPI smoke suite from the examples app:
+
+```powershell
+.\gradlew.bat :examples-app:runExtensionHarnessExamples --console=plain
+```
+
+That task runs the backend hook, authorization, IR-validation, lifecycle/log, device-policy, and compiler-feedback harness examples. It is intended as a fast classpath/API check before running real OpenCL/CUDA validation.
 
 ## Pick The Right Hook
 
@@ -121,6 +138,19 @@ META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLogService
 ```
 
 The core runtime emits immutable `GpuRuntimeLogRecord` values and does not depend on Log4J, SLF4J, java.util.logging, or any concrete logging framework.
+
+Before wiring logging into a real kernel run, check that ServiceLoader can discover and call the service:
+
+```java
+GpuRuntimeObservabilityServiceHarnessReport report = GpuRuntimeObservabilityServiceHarness
+        .loadFromServiceLoader()
+        .runSyntheticOpenCl();
+
+System.out.println(report.toMarkdown());
+```
+
+The examples app includes a no-op-unless-configured `ExampleRuntimeLogTraceService`. Set
+`-Djavatogpu.examples.runtimeLogTraceFile=...` if you want that example service to write human-readable log lines.
 
 ## Runtime Lifecycle
 
@@ -237,12 +267,25 @@ META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleServic
 
 Lifecycle services are observers. They should not mutate runtime state, depend on execution order for correctness, or throw exceptions as control flow. The event bus isolates listener failures so diagnostics do not break ordinary runtime execution.
 
+To check lifecycle and logging services together without opening OpenCL/CUDA, run the observability harness:
+
+```powershell
+.\gradlew.bat :examples-app:runRuntimeObservabilityServiceHarnessExample --console=plain
+```
+
+The harness publishes one synthetic lifecycle event and one synthetic log record, then reports listener/service counts,
+success flags, artifact fields, and Markdown. Use it in extension-module tests when you need to verify ServiceLoader
+registration, ordering, and failure isolation before touching a native runtime.
+
 ## Backend Provider SPI
 
 Use `GpuRuntimeBackendProvider` when a module wants to register a backend family such as CUDA, Vulkan/SPIR-V, Metal, or
 a company-specific runtime adapter. A provider is intentionally lightweight: it reports a stable provider id/version,
 backend target, deterministic order, and creates a `GpuRuntimeBackendAdapter` without opening native sessions during
 catalog inspection.
+
+If you are building a real backend module, start with the shorter [Backend Adapter Authoring](Backend-Adapter-Authoring.md)
+guide, then return here for exact SPI type details.
 
 Register it with ServiceLoader:
 
@@ -609,22 +652,38 @@ phase or omit the expected capability. Catalog artifacts also include `runtime.b
 Those fields show which hooks are read-only and which hooks are loaded but require future production authorization before
 they can execute.
 
-For authorization diagnostics, use `authorizationReport(...)`. This is a preview/report API, not a mutating execution
-switch: the current runner still executes only read-only hooks.
+For authorization diagnostics, use `authorizationCatalog(...)` when you want the standard discovery/lowering/
+compilation/invocation/artifact view, or `authorizationReport(...)` for one stage. These are preview/report APIs, not
+mutating execution switches: the current runner still executes only read-only hooks.
 
 ```java
 GpuBackendHookRegistry registry = GpuBackendHookRegistry.loadWithServiceLoader();
-GpuBackendHookAuthorizationReport report = registry.authorizationReport(
-        GpuBackendTarget.OPENCL,
-        GpuExtensionPhase.BACKEND_INVOCATION
-);
+GpuBackendHookAuthorizationCatalog catalog = registry.authorizationCatalog(GpuBackendTarget.OPENCL);
 
-System.out.println(report.toMarkdown());
+System.out.println(catalog.toMarkdown());
 ```
 
 `GpuBackendHookAuthorizationPolicy.previewExplicitAuthorization(...)` can model a future policy decision for tests and
 review tools. Even when a stronger hook id is explicitly authorized by that policy, the report marks it as
-`AUTHORIZED_BUT_EXECUTION_DISABLED` until a separate production-affecting runner exists.
+`AUTHORIZED_BUT_EXECUTION_DISABLED` until a separate production-affecting runner exists. Reports also expose
+`firstBlocker()` and `*.firstBlocker*` artifact fields so CI and examples can show the first actionable authorization
+problem without parsing every decision.
+
+For a CI-style pass/fail gate, use `GpuBackendHookAuthorizationValidator`. It is still hardware-free: it only inspects
+the loaded hook contracts and does not open OpenCL, CUDA, or any native runtime.
+
+```java
+GpuBackendHookAuthorizationValidationResult result =
+        GpuBackendHookAuthorizationValidator.validateReadOnlyClasspath(GpuBackendTarget.OPENCL);
+
+System.out.println(result.toMarkdown());
+System.exit(result.recommendedExitCode());
+```
+
+The default validator expects the classpath to be runtime-ready for the current registry, which means no blocked hooks
+and no future-authorized-but-disabled hooks. If a tool wants to review an explicit preview policy without failing on
+`AUTHORIZED_BUT_EXECUTION_DISABLED`, call `GpuBackendHookAuthorizationValidator.validate(..., true)` and keep the result
+clearly labeled as preview-only.
 
 Current wiring is intentionally narrow:
 
@@ -667,6 +726,18 @@ The examples app includes runnable ServiceLoader hook implementations under `net
 .\gradlew.bat :examples-app:runBackendHookServiceLoaderExample --console=plain
 ```
 
+It also includes a hardware-free authorization preview for the blocked/default and preview-authorized cases:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendHookAuthorizationPreviewExample --console=plain
+```
+
+And a small CI-style validator over the ServiceLoader classpath:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendHookAuthorizationValidatorExample --console=plain
+```
+
 That example uses discovery/lowering/compilation/invocation hooks as read-only observers and an artifact hook as a
 metadata contributor. It is intentionally hardware-free and uses `GpuBackendHookTestHarness` to generate synthetic
 OpenCL discovery/lowering/compile/invoke/artifact receipts, so extension authors can verify registration and receipt
@@ -683,9 +754,10 @@ System.out.println(report.toMarkdown());
 ```
 
 The harness also exposes `runSynthetic(GpuBackendTarget)` and static synthetic receipt factories for discovery,
-lowering, compilation, preparation, and invocation. This lets a hook module test target filters, fail-soft behavior,
-`mutation-ignored` reporting, contribution fields, contract diagnostics, and ServiceLoader registration without requiring
-OpenCL hardware.
+lowering, compilation, preparation, and invocation. Its report includes execution fields plus stage-by-stage
+`runtime.backend.hookAuthorization.discovery/lowering/compilation/invocation/artifact.*` fields. This lets a hook module
+test target filters, fail-soft behavior, `mutation-ignored` reporting, contribution fields, contract diagnostics,
+authorization gates, first-blocker summaries, and ServiceLoader registration without requiring OpenCL hardware.
 
 Catalog inspection:
 
@@ -836,6 +908,24 @@ Device policies do not directly pick the final device. They return a `GpuRuntime
 
 This lets future CUDA, Vulkan, Metal, or multi-GPU backends plug into the same policy model without changing user-facing annotations.
 
+For extension tests, use `GpuRuntimeDevicePolicyHarness` instead of opening a real OpenCL/CUDA session:
+
+```java
+GpuRuntimeDevicePolicyHarnessReport report = GpuRuntimeDevicePolicyHarness
+        .loadWithBuiltIns()
+        .runSyntheticOpenCl();
+
+System.out.println(report.toMarkdown());
+```
+
+The harness feeds synthetic CPU/iGPU/dGPU candidates through the same registry, returns the normal
+`GpuRuntimeDeviceSelection`, and exposes compact artifact fields. The examples app registers a small read-only policy
+and includes a runnable check:
+
+```powershell
+.\gradlew.bat :examples-app:runDevicePolicyHarnessExample --console=plain
+```
+
 ## Method Fallback Variants
 
 Use `@GPUFallbackVariant` when one logical operation has multiple implementations for different hardware classes.
@@ -907,6 +997,27 @@ Register providers in:
 META-INF/services/net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider
 ```
 
+For provider tests, use `GpuIrValidationProviderHarness` instead of running javac annotation processing or opening a GPU:
+
+```java
+GpuIrValidationProviderHarnessReport report = GpuIrValidationProviderHarness
+        .loadFromServiceLoader()
+        .runSynthetic();
+
+if (!report.allProvidersCompleted()) {
+    throw new IllegalStateException(report.firstBlocker());
+}
+```
+
+From the examples app:
+
+```powershell
+.\gradlew.bat :examples-app:runIrValidationProviderHarnessExample --console=plain
+```
+
+The harness runs synthetic helper/kernel IR methods through the same `GpuIrValidationRunner`, captures validation entries,
+diagnostics, extension metadata, and failure isolation, and does not mutate IR.
+
 Use `GpuBackendCompilerFeedbackProvider` to parse backend compiler diagnostics such as registers, spills, stack frame bytes, local memory, or occupancy.
 
 Register providers in:
@@ -916,6 +1027,25 @@ META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbac
 ```
 
 Compiler feedback is advisory. It can explain performance, resource drift, and CI regressions, but it cannot satisfy optimizer proof or production-promotion requirements by itself. Distinct register files must remain separate; for example, an AMD parser must not merge SGPR and VGPR counts into a fake total.
+
+For provider tests, use `GpuBackendCompilerFeedbackHarness` instead of invoking a real compiler:
+
+```java
+GpuBackendCompilerFeedbackHarnessReport report = GpuBackendCompilerFeedbackHarness
+        .loadWithBuiltIns()
+        .runSyntheticOpenCl();
+
+System.out.println(report.toMarkdown());
+```
+
+The examples app registers a small synthetic parser and includes a runnable check:
+
+```powershell
+.\gradlew.bat :examples-app:runCompilerFeedbackHarnessExample --console=plain
+```
+
+The harness runs the same registry, validates provider ordering and failure isolation, and returns the normal
+`GpuBackendCompilerFeedbackReport` plus compact artifact fields.
 
 ## Runtime Artifacts
 

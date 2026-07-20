@@ -598,13 +598,20 @@ class GpuBackendHookContractTest {
         assertEquals("blocked", report.status());
         assertEquals(1, report.currentRegistryExecutableCount());
         assertEquals(1, report.blockedCount());
+        assertEquals(1, report.blockedDecisions().size());
         assertEquals(0, report.authorizationRequiredCount());
+        assertEquals("test.hook.production-invocation:PERMISSION_EXCEEDS_POLICY", report.firstBlocker());
+        assertTrue(report.firstBlockedDecision().isPresent());
         assertEquals(GpuBackendHookAuthorizationStatus.READ_ONLY_AUTHORIZED, readOnlyDecision.status());
         assertTrue(readOnlyDecision.currentRegistryExecutable());
         assertEquals(GpuBackendHookAuthorizationStatus.PERMISSION_EXCEEDS_POLICY, productionDecision.status());
         assertFalse(productionDecision.currentRegistryExecutable());
         assertEquals("blocked", report.artifactFields("auth").get("auth.status"));
         assertEquals("1", report.artifactFields("auth").get("auth.blocked.count"));
+        assertEquals("test.hook.production-invocation:PERMISSION_EXCEEDS_POLICY",
+                report.artifactFields("auth").get("auth.firstBlocker"));
+        assertEquals("hook declares PRODUCTION_AFFECTING but policy maximum is READ_ONLY",
+                report.artifactFields("auth").get("auth.firstBlocker.diagnostic"));
     }
 
     @Test
@@ -631,6 +638,7 @@ class GpuBackendHookContractTest {
 
         assertEquals("future-authorized-execution-disabled", report.status());
         assertEquals(0, report.blockedCount());
+        assertEquals("none", report.firstBlocker());
         assertEquals(1, report.futureAuthorizedButDisabledCount());
         assertEquals(GpuBackendHookAuthorizationStatus.AUTHORIZED_BUT_EXECUTION_DISABLED, decision.status());
         assertTrue(decision.policyAuthorized());
@@ -661,6 +669,144 @@ class GpuBackendHookContractTest {
                 decisionById(openClLoweringReport, "test.hook.cuda-lowering").status());
         assertEquals(GpuBackendHookAuthorizationStatus.PHASE_FILTERED,
                 decisionById(cudaCompilationReport, "test.hook.cuda-lowering").status());
+    }
+
+    @Test
+    void hookAuthorizationCatalogAggregatesStandardStageReports() {
+        GpuBackendDiscoveryContributor discoveryHook = new GpuBackendDiscoveryContributor() {
+            @Override
+            public String extensionId() {
+                return "test.hook.discovery";
+            }
+        };
+        GpuBackendInvocationHook productionHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.hook.production-invocation";
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return GpuExtensionPermission.PRODUCTION_AFFECTING;
+            }
+        };
+
+        GpuBackendHookAuthorizationCatalog catalog = GpuBackendHookRegistry.of(List.of(discoveryHook, productionHook))
+                .authorizationCatalog(GpuBackendTarget.OPENCL);
+        Map<String, String> fields = catalog.artifactFields("authCatalog");
+
+        assertEquals("blocked", catalog.status());
+        assertEquals(5, catalog.reports().size());
+        assertEquals(10, catalog.decisionCount());
+        assertEquals(1, catalog.currentRegistryExecutableCount());
+        assertEquals(1, catalog.blockedCount());
+        assertEquals("invocation:test.hook.production-invocation:PERMISSION_EXCEEDS_POLICY", catalog.firstBlocker());
+        assertTrue(catalog.reportForPhase(GpuExtensionPhase.BACKEND_INVOCATION).isPresent());
+        assertEquals("blocked", fields.get("authCatalog.status"));
+        assertEquals("5", fields.get("authCatalog.stage.count"));
+        assertEquals("read-only-ready", fields.get("authCatalog.discovery.status"));
+        assertEquals("blocked", fields.get("authCatalog.invocation.status"));
+        assertEquals("invocation:test.hook.production-invocation:PERMISSION_EXCEEDS_POLICY",
+                fields.get("authCatalog.firstBlocker"));
+        assertTrue(catalog.toMarkdown().contains("Backend hook authorization catalog: blocked"));
+        assertTrue(catalog.toMarkdown().contains("invocation: status=blocked"));
+    }
+
+    @Test
+    void backendHookAuthorizationValidatorPassesReadOnlyClasspath() {
+        GpuBackendDiscoveryContributor discoveryHook = new GpuBackendDiscoveryContributor() {
+            @Override
+            public String extensionId() {
+                return "test.validator.discovery";
+            }
+        };
+        GpuBackendInvocationHook invocationHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.validator.invocation";
+            }
+        };
+
+        GpuBackendHookAuthorizationValidationResult result = GpuBackendHookAuthorizationValidator
+                .validateReadOnlyClasspath(
+                        GpuBackendHookRegistry.of(List.of(discoveryHook, invocationHook)),
+                        GpuBackendTarget.OPENCL
+                );
+
+        assertTrue(result.passed());
+        assertEquals("passed", result.status());
+        assertEquals(0, result.recommendedExitCode());
+        assertEquals("read-only-ready", result.catalog().status());
+        assertEquals("true", result.artifactFields("validator").get("validator.passed"));
+        assertTrue(result.toMarkdown().contains("Backend hook authorization validation: passed"));
+    }
+
+    @Test
+    void backendHookAuthorizationValidatorFailsNonReadOnlyClasspath() {
+        GpuBackendInvocationHook productionHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.validator.production-invocation";
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return GpuExtensionPermission.PRODUCTION_AFFECTING;
+            }
+        };
+
+        GpuBackendHookAuthorizationValidationResult result = GpuBackendHookAuthorizationValidator
+                .validateReadOnlyClasspath(
+                        GpuBackendHookRegistry.of(List.of(productionHook)),
+                        GpuBackendTarget.OPENCL
+                );
+
+        assertFalse(result.passed());
+        assertEquals("blocked", result.status());
+        assertEquals(1, result.recommendedExitCode());
+        assertTrue(result.diagnostic().contains("test.validator.production-invocation"));
+        assertEquals("false", result.artifactFields("validator").get("validator.passed"));
+        assertThrows(IllegalStateException.class, result::throwIfFailed);
+    }
+
+    @Test
+    void backendHookAuthorizationValidatorKeepsPreviewAuthorizationSeparateFromRuntimeReadiness() {
+        GpuBackendInvocationHook productionHook = new GpuBackendInvocationHook() {
+            @Override
+            public String extensionId() {
+                return "test.validator.preview-production";
+            }
+
+            @Override
+            public GpuExtensionPermission extensionPermission() {
+                return GpuExtensionPermission.PRODUCTION_AFFECTING;
+            }
+        };
+        GpuBackendHookAuthorizationPolicy policy = GpuBackendHookAuthorizationPolicy.previewExplicitAuthorization(
+                GpuExtensionPermission.PRODUCTION_AFFECTING,
+                List.of("test.validator.preview-production")
+        );
+
+        GpuBackendHookAuthorizationValidationResult runtimeReady = GpuBackendHookAuthorizationValidator.validate(
+                GpuBackendHookRegistry.of(List.of(productionHook)),
+                GpuBackendTarget.OPENCL,
+                policy,
+                false
+        );
+        GpuBackendHookAuthorizationValidationResult previewOnly = GpuBackendHookAuthorizationValidator.validate(
+                GpuBackendHookRegistry.of(List.of(productionHook)),
+                GpuBackendTarget.OPENCL,
+                policy,
+                true
+        );
+
+        assertFalse(runtimeReady.passed());
+        assertEquals("future-authorized-execution-disabled", runtimeReady.status());
+        assertTrue(runtimeReady.diagnostic().contains("not executable by the current runner"));
+        assertTrue(previewOnly.passed());
+        assertEquals("passed", previewOnly.status());
+        assertEquals(1, previewOnly.catalog().futureAuthorizedButDisabledCount());
+        assertTrue(previewOnly.diagnostic().contains("still disabled by the current runner"));
     }
 
     @Test

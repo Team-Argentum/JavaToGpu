@@ -12,6 +12,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
+import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityChecker;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuParityResult;
@@ -136,7 +137,7 @@ class GpuBackendLowerersTest {
         assertEquals("lower-unsupported", stageFields.get("runtime.status"));
         assertEquals("UNSUPPORTED", loweringFields.get("runtime.backend.lowering.status"));
         assertEquals("false", loweringFields.get("runtime.backend.lowering.lowered"));
-        assertEquals("cuda-lowerer-unavailable", loweringFields.get("runtime.backend.lowering.selectedSource"));
+        assertEquals("cuda-irgpu-source-unavailable", loweringFields.get("runtime.backend.lowering.selectedSource"));
         assertEquals("CUDA", loweringFields.get("runtime.backend.target"));
     }
 
@@ -482,6 +483,255 @@ class GpuBackendLowerersTest {
     }
 
     @Test
+    void cudaLowererProducesPreviewCudaSourceFromPackagedIrGpuArtifact() {
+        GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
+        IrGpuArtifact artifact = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendLowerer lowerer = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA);
+        GpuBackendSourceSelectionPlan sourceSelectionPlan = lowerer.sourceSelectionPlan(compileRequest);
+        GpuBackendLoweringResult result = lowerer.lowerWithStageResult(compileRequest);
+        GpuBackendModuleArtifact moduleArtifact = result.moduleArtifact();
+
+        assertEquals(GpuBackendTarget.CUDA, lowerer.backendTarget());
+        assertEquals(CudaBackendLowerer.VERSION, lowerer.lowererVersion());
+        assertTrue(sourceSelectionPlan.irGpuSourceSelected());
+        assertEquals("irgpu-cuda-source", sourceSelectionPlan.selectedSource());
+        assertEquals("ir-text-v1", sourceSelectionPlan.payloadFormat());
+        assertEquals("cuda-c-source-preview", sourceSelectionPlan.runtimeLoadMode());
+        assertTrue(sourceSelectionPlan.blockers().isEmpty());
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, result.stageResult().status());
+        assertTrue(result.lowered());
+        assertEquals(GpuBackendTarget.CUDA, moduleArtifact.backendTarget());
+        assertEquals("cuda-c", moduleArtifact.moduleFormat().key());
+        assertEquals(descriptor.kernelResource() + "#irgpu-cuda-preview", moduleArtifact.resource());
+        assertEquals("derived-cuda-source", moduleArtifact.sourceOrigin());
+        assertTrue(moduleArtifact.source().contains("extern \"C\" __global__ void gpu_irgpu_entry("));
+        assertTrue(moduleArtifact.source().contains("const float* input, float scale, float* output"));
+        assertTrue(moduleArtifact.source().contains("blockIdx.x * blockDim.x + threadIdx.x"));
+        assertTrue(moduleArtifact.source().contains("output[id] = input[id] + scale;"));
+    }
+
+    @Test
+    void cudaLowererReportsMissingIrGpuArtifactWithoutExecution() {
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                sampleDescriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA")
+        );
+
+        GpuBackendLowerer lowerer = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA);
+        GpuBackendSourceSelectionPlan sourceSelectionPlan = lowerer.sourceSelectionPlan(compileRequest);
+        GpuBackendLoweringResult result = lowerer.lowerWithStageResult(compileRequest);
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> lowerer.lower(compileRequest));
+
+        assertEquals(GpuBackendTarget.CUDA, lowerer.backendTarget());
+        assertEquals(CudaBackendLowerer.VERSION, lowerer.lowererVersion());
+        assertTrue(!sourceSelectionPlan.irGpuSourceSelected());
+        assertEquals("cuda-irgpu-source-unavailable", sourceSelectionPlan.selectedSource());
+        assertEquals("irgpu-missing", sourceSelectionPlan.payloadFormat());
+        assertEquals("cuda-source-preview-unavailable", sourceSelectionPlan.runtimeLoadMode());
+        assertTrue(sourceSelectionPlan.blockers().contains("cuda-irgpu-artifact-missing"));
+        assertEquals(GpuBackendStageStatus.UNSUPPORTED, result.stageResult().status());
+        assertTrue(!result.lowered());
+        assertTrue(exception.getMessage().contains("cuda-irgpu-artifact-missing"));
+    }
+
+    @Test
+    void cudaLowererAssemblesFlatHelperSourceWhenHelperMetadataExists() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "jtg_kernel",
+                "inline://cuda/helper-kernel.cu",
+                "",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(new IrGpuModuleMethod(
+                                "square",
+                                "jtg_fn_square_float",
+                                "float",
+                                List.of(new IrGpuEntryParameter("value", "float", "PRIVATE", false, List.of()))
+                        )),
+                        List.of(),
+                        List.of(
+                                IrGpuMethodBody.entry(
+                                        "kernel",
+                                        "jtg_kernel",
+                                        "body\n  set output[0] = helper(jtg_fn_square_float args=[input[0]])\n  return\n",
+                                        List.of("jtg_fn_square_float")
+                                ),
+                                IrGpuMethodBody.helper(
+                                        "square",
+                                        "jtg_fn_square_float",
+                                        "body\n  return (value * value)\n",
+                                        List.of()
+                                )
+                        )
+                ),
+                List.of(
+                        new IrGpuEntryParameter("input", "float[]", "GLOBAL", false, List.of()),
+                        new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())
+                ),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(IrGpuBackendOutput.openClSource("inline://cuda/helper-kernel.cl")),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendLoweringResult result = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA)
+                .lowerWithStageResult(compileRequest);
+        String source = result.moduleArtifact().source();
+
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, result.stageResult().status());
+        assertTrue(result.lowered());
+        assertTrue(source.contains("__device__ float jtg_fn_square_float(float value);"));
+        assertTrue(source.contains("__device__ float jtg_fn_square_float(float value) {"));
+        assertTrue(source.contains("return (value * value);"));
+        assertTrue(source.contains("extern \"C\" __global__ void jtg_kernel(float* input, float* output)"));
+        assertTrue(source.contains("output[0] = jtg_fn_square_float(input[0]);"));
+        assertTrue(result.stageResult().diagnostics().contains("CUDA source assembler emitted 1 helper function(s)"));
+    }
+
+    @Test
+    void cudaLowererMatchesHelperByFallbackNameWhenEmittedNameIsBlank() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "jtg_kernel",
+                "inline://cuda/fallback-helper-name.cu",
+                "",
+                List.of(new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(new IrGpuModuleMethod(
+                                "square",
+                                "",
+                                "float",
+                                List.of(new IrGpuEntryParameter("value", "float", "PRIVATE", false, List.of()))
+                        )),
+                        List.of(),
+                        List.of(
+                                IrGpuMethodBody.entry(
+                                        "kernel",
+                                        "jtg_kernel",
+                                        "body\n  set output[0] = helper(square args=[2.0F])\n  return\n",
+                                        List.of("square")
+                                ),
+                                IrGpuMethodBody.helper(
+                                        "square",
+                                        "",
+                                        "body\n  return (value * value)\n",
+                                        List.of()
+                                )
+                        )
+                ),
+                List.of(new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(IrGpuBackendOutput.openClSource("inline://cuda/fallback-helper-name.cl")),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendLoweringResult result = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA)
+                .lowerWithStageResult(compileRequest);
+        String source = result.moduleArtifact().source();
+
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, result.stageResult().status());
+        assertTrue(result.lowered());
+        assertTrue(source.contains("__device__ float square(float value);"));
+        assertTrue(source.contains("__device__ float square(float value) {"));
+        assertTrue(source.contains("output[0] = square(2.0F);"));
+    }
+
+    @Test
+    void cudaLowererReportsMissingHelperBodyAsStructuredUnsupported() {
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "jtg_kernel",
+                "inline://cuda/missing-helper-body.cu",
+                "",
+                List.of(new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE))
+        );
+        IrGpuArtifact artifact = new IrGpuArtifact(
+                IrGpuArtifactHeader.javaSourceV1(),
+                new IrGpuModule(
+                        "kernel",
+                        "jtg_kernel",
+                        List.of(new IrGpuModuleMethod(
+                                "square",
+                                "jtg_fn_square_float",
+                                "float",
+                                List.of(new IrGpuEntryParameter("value", "float", "PRIVATE", false, List.of()))
+                        )),
+                        List.of(),
+                        List.of(IrGpuMethodBody.entry(
+                                "kernel",
+                                "jtg_kernel",
+                                "body\n  set output[0] = helper(jtg_fn_square_float args=[2.0F])\n  return\n",
+                                List.of("jtg_fn_square_float")
+                        ))
+                ),
+                List.of(new IrGpuEntryParameter("output", "float[]", "GLOBAL", false, List.of())),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata.defaultOneDimensional(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuValidationMetadata.frontendSubset(),
+                net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata.none(),
+                IrGpuRegenerationMetadata.backendNeutralReady(),
+                List.of(IrGpuBackendOutput.openClSource("inline://cuda/missing-helper-body.cl")),
+                "opencl",
+                "off"
+        );
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.CUDA),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"),
+                Optional.of(artifact)
+        );
+
+        GpuBackendLoweringResult result = GpuBackendLowerers.forTarget(GpuBackendTarget.CUDA)
+                .lowerWithStageResult(compileRequest);
+
+        assertEquals(GpuBackendStageStatus.UNSUPPORTED, result.stageResult().status());
+        assertTrue(!result.lowered());
+        assertTrue(result.stageResult().blockers().contains("cuda-entry-helper-dependency-body-missing:jtg_fn_square_float"));
+        assertTrue(result.stageResult().blockers().contains("cuda-helper-jtg_fn_square_float-body-missing"));
+        assertTrue(result.stageResult().diagnostics().contains(
+                "CUDA IrGpu source reconstruction is limited to simple entry/helper kernels for this slice"
+        ));
+    }
+
+    @Test
     void openClLowererUsesReconstructedPrivateArraySourceWhenExplicitlyRequestedAndParityMatched() {
         GpuKernelDescriptor descriptor = privateArrayRoundTripDescriptor();
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
@@ -794,7 +1044,6 @@ class GpuBackendLowerersTest {
                 GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA")
         );
 
-        assertUnsupported(GpuBackendTarget.CUDA, compileRequest);
         assertUnsupported(GpuBackendTarget.VULKAN, compileRequest);
         assertUnsupported(GpuBackendTarget.METAL, compileRequest);
     }

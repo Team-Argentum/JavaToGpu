@@ -1,0 +1,307 @@
+# Backend Adapter Authoring
+
+This guide is for library authors who want to add or preview a backend family such as CUDA, Vulkan/SPIR-V, Metal, or a company-specific runtime.
+
+Start small. A backend provider should first be inspectable without opening native drivers, then discover devices, then lower source, and only then expose a production execution pipeline.
+
+## Quick Path
+
+| Stage | What you expose | What must be true |
+| --- | --- | --- |
+| Discovery-only | `GpuRuntimeBackendProvider` + adapter metadata | Catalogs can list the backend without native sessions. |
+| Inventory | Device discovery | Fail-soft diagnostics explain missing drivers/devices. |
+| Lowering-only | `GpuBackendLowerer` + module formats | Source/artifact metadata is visible, but execution remains unavailable. |
+| Production pipeline | Compiler, preparer, invoker, pipeline factory | Compile/prepare/invoke receipts use the shared backend SPI. |
+| Production validation | Lifecycle, artifacts, failures, tests | The backend behaves like OpenCL from the user's point of view. |
+
+Do not jump straight to native execution. Most integration bugs are easier to catch while the backend is still discovery-only or lowering-only.
+
+## Minimal Provider
+
+Register a provider through ServiceLoader:
+
+```text
+src/main/resources/META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProvider
+```
+
+The file contains your implementation class:
+
+```text
+com.example.gpu.ExampleCudaBackendProvider
+```
+
+A discovery-only provider should be lightweight:
+
+```java
+package com.example.gpu;
+
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendAdapter;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendExecutionSupport;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProvider;
+
+public final class ExampleCudaBackendProvider implements GpuRuntimeBackendProvider {
+    @Override
+    public GpuBackendTarget backendTarget() {
+        return GpuBackendTarget.CUDA;
+    }
+
+    @Override
+    public String providerId() {
+        return "example.cuda";
+    }
+
+    @Override
+    public String providerVersion() {
+        return "1";
+    }
+
+    @Override
+    public int providerOrder() {
+        return 1_000;
+    }
+
+    @Override
+    public GpuRuntimeBackendAdapter createAdapter() {
+        return new ExampleCudaBackendAdapter();
+    }
+
+    @Override
+    public GpuRuntimeBackendExecutionSupport executionSupport() {
+        return GpuRuntimeBackendExecutionSupport.discoveryOnly(
+                backendTarget(),
+                providerId(),
+                "CUDA discovery is available, but kernel execution is not wired yet"
+        );
+    }
+}
+```
+
+Rules:
+
+- Keep `providerId()` stable and unique. Duplicate ids fail during provider loading.
+- Do not create CUDA/OpenCL/Vulkan sessions in `createAdapter()` or metadata methods.
+- Be honest in `executionSupport()`. If compile/prepare/invoke is not ready, report discovery-only or lowering-only.
+- Put backend-specific facts under backend-specific fields, but keep common facts in portable `runtime.*` fields.
+
+## Inspect It
+
+Use the provider catalog to see what applications will see:
+
+```java
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProviderCatalog;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProviders;
+
+String markdown = GpuRuntimeBackendProviderCatalog
+        .of(GpuRuntimeBackendProviders.loadWithServiceLoader())
+        .toMarkdown();
+
+System.out.println(markdown);
+```
+
+The catalog validates ordering, duplicate ids, execution readiness, provider fields, and Markdown output without opening a native runtime.
+
+For the built-in OpenCL provider contract, run:
+
+```powershell
+.\gradlew.bat :processor:validateOpenClBackendSpiContract --console=plain
+```
+
+That task is metadata-only. It must not open an OpenCL platform, context, program, or kernel.
+
+For the current built-in backend contract bundle, run:
+
+```powershell
+.\gradlew.bat :processor:validateBackendAdapterContracts --console=plain
+```
+
+This runs the OpenCL SPI contract, backend source/lowering contract, CUDA inventory contract, and CUDA
+execution-readiness gate together.
+
+Check only the shared source/lowering contract:
+
+```powershell
+.\gradlew.bat :processor:validateBackendSourceLoweringContract --console=plain
+```
+
+The expected state is OpenCL lowering successfully to `opencl-c`, while CUDA/Vulkan/Metal return structured
+`UNSUPPORTED` lower-stage receipts with explicit `*-lowerer-not-implemented` blockers. This keeps future CUDA/PTX/SPIR-V
+work on the same `GpuBackendSourceSelectionPlan`, `GpuBackendLoweringResult`, and `GpuBackendModuleArtifact` path.
+
+## Add Lowering
+
+When the backend can emit source or binary artifacts, add a `GpuBackendLowerer` and declare formats such as `cuda-c`, `ptx`, `spir-v`, or `opencl-c` through `GpuRuntimeBackendExecutionSupport`.
+
+Use `GpuBackendModuleArtifact` instead of raw strings so source selection, artifact dumps, policy requirements, and diagnostics can reason about the output:
+
+```java
+GpuBackendModuleArtifact artifact = GpuBackendModuleArtifact.cudaSource(
+        generatedCudaSource,
+        "generated/MyKernel.cu",
+        "example-cuda-lowerer:1"
+);
+```
+
+At this stage execution can still be unavailable. Incomplete backends should return structured unsupported receipts instead of ad-hoc exceptions:
+
+```java
+provider.unsupportedExecutionResult(loweringResult);
+```
+
+That creates a `UNSUPPORTED / SKIPPED / SKIPPED` compile/prepare/invoke result that tools can display consistently.
+
+## Add Execution
+
+Production execution uses the shared compile -> prepare -> invoke runner:
+
+- `GpuBackendCompiledKernel` is the backend-neutral compiled handle.
+- `GpuPreparedKernel` is the backend-neutral prepared invocation handle.
+- `GpuBackendKernelCompiler` compiles or loads the module artifact.
+- `GpuBackendKernelPreparer` binds resources and produces a prepared handle.
+- `GpuBackendKernelInvoker` launches the prepared handle and performs readback accounting.
+- `GpuBackendExecutionPipelineFactory` creates the runner for a concrete backend instance.
+
+Important rule: the factory must bind to the backend instance's real compiler/preparer/invoker. Do not create a second native session, cache, buffer registry, or hook path inside the factory. OpenCL's factory is the reference pattern: it creates the shared runner from the backend-owned components, so provider-created pipelines preserve the same behavior as production runtime calls.
+
+For diagnostic tools, `GpuBackendExecutionPipeline.executeSafely(...)` converts stage exceptions into typed `FAILED` receipts and marks later stages as `SKIPPED`. Use strict `execute(...)` for production paths that should throw normally.
+
+## Lifecycle And Artifacts
+
+Backend adapters should emit portable fields first:
+
+- `runtime.backend.target`
+- `runtime.module.format`
+- `runtime.backend.compilation.*`
+- `runtime.backend.prepare.*`
+- `runtime.backend.invoke.*`
+- `runtime.compilation.*`
+- `runtime.invocation.binding.*`
+- `runtime.failure.*`
+
+Backend-specific aliases can exist for compatibility, but new tools should be able to read the portable `runtime.*` vocabulary without knowing whether the backend is OpenCL, CUDA, Vulkan, or Metal.
+
+Use ServiceLoader services for observability:
+
+- `GpuRuntimeLifecycleService` for lifecycle events and journals.
+- `GpuRuntimeLogService` for framework-neutral logging.
+- `GpuBackendCompilerFeedbackProvider` for compiler/resource diagnostics.
+- `GpuRuntimeDevicePolicy` for device ranking or rejection.
+- `GpuBackendHook` family for read-only backend-stage enrichment.
+
+## Hardware-Free Checks
+
+Run the provider authoring example:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendProviderAuthoringExample --console=plain
+```
+
+It prints the intended progression:
+
+1. Discovery-only provider.
+2. Lowering-only provider.
+3. Production pipeline provider.
+
+Print the combined backend contract readiness dashboard:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendContractReadinessExample --console=plain
+```
+
+This combines OpenCL SPI readiness, CUDA inventory readiness, and CUDA execution readiness in one hardware-free output.
+
+Preview the current CUDA source lowering without opening CUDA, NVRTC, `nvcc`, or `nvidia-smi`:
+
+```powershell
+.\gradlew.bat :examples-app:runCudaSourcePreviewExample --console=plain
+```
+
+The example builds a tiny in-memory `IrGpu` artifact with one helper function and prints the generated preview
+`cuda-c` source.
+
+Run all hardware-free extension examples:
+
+```powershell
+.\gradlew.bat :examples-app:runExtensionHarnessExamples --console=plain
+```
+
+Check the built-in CUDA inventory contract without running `nvidia-smi` or opening native state:
+
+```powershell
+.\gradlew.bat :processor:validateCudaInventoryContract --console=plain
+```
+
+The expected inventory-only state is `status=ready`, `catalogProductionAdapter=false`,
+`executionPipelineAvailable=false`, `moduleFormats=cuda-c,ptx`, and
+`lowererSelectedSource=cuda-irgpu-source-unavailable` for the inventory-only sample that has no `IrGpu` payload.
+CUDA can now lower simple loaded `IrGpu` entry/helper bodies into preview `cuda-c` source, but structs/constants and
+compile/prepare/invoke stay disabled until the CUDA execution vertical slice starts.
+
+Before enabling CUDA kernel execution, run the metadata-only CUDA green-light gate:
+
+```powershell
+.\gradlew.bat :processor:validateCudaExecutionReadiness --console=plain
+```
+
+The expected pre-vertical-slice state is `status=ready`, `cudaPipelineAvailable=false`,
+`cudaPipelineFactoryPresent=false`, and an unsupported receipt of `compile:UNSUPPORTED, prepare:SKIPPED,
+invoke:SKIPPED`. When the CUDA vertical slice starts, this gate should be deliberately updated alongside the new
+execution tests rather than accidentally bypassed.
+
+The report also emits a machine-readable checklist. In the current pre-CUDA-execution state every item should be
+`ready`, including:
+
+- `opencl-spi-contract-ready`
+- `opencl-shared-runner-visible`
+- `cuda-provider-present`
+- `cuda-provider-identity-stable`
+- `cuda-execution-disabled-before-vertical-slice`
+- `cuda-unavailable-stages-structured`
+- `cuda-module-formats-declared`
+- `cuda-capability-vocabulary-declared`
+- `cuda-unsupported-receipt-structured`
+
+When CUDA execution work begins, update this checklist and its tests in the same change that adds the first native CUDA
+vertical-slice test. Do not simply remove the disabled-execution checks.
+
+Use the dedicated harnesses before native execution:
+
+| Need | Harness |
+| --- | --- |
+| Backend hooks | `GpuBackendHookTestHarness` |
+| Hook authorization | `GpuBackendHookAuthorizationValidator` |
+| Lifecycle/log services | `GpuRuntimeObservabilityServiceHarness` |
+| Device policies | `GpuRuntimeDevicePolicyHarness` |
+| Compiler feedback parsers | `GpuBackendCompilerFeedbackHarness` |
+| IR validation providers | `GpuIrValidationProviderHarness` |
+
+## Release Checklist
+
+Before a backend can be treated as production-ready, it should satisfy these checks:
+
+- Provider metadata is stable, unique, and visible in `GpuRuntimeBackendProviderCatalog`.
+- Discovery fails softly when native drivers are missing.
+- Module formats and capability vocabulary are declared honestly.
+- Lowering returns `GpuBackendModuleArtifact` values, not untyped strings.
+- Unsupported execution returns structured receipts until execution exists.
+- CUDA execution readiness is explicit through `validateCudaExecutionReadiness` before CUDA kernels are enabled.
+- The pipeline factory uses backend-owned compiler/preparer/invoker state.
+- Compile, prepare, invoke, readback, and close stages emit portable receipts.
+- Lifecycle and artifact fields use portable `runtime.*` names first.
+- Hardware-free examples pass before native validation.
+- Native validation has real-device evidence for the target vendor/device class.
+
+## What Not To Do
+
+- Do not fork the OpenCL backend to create CUDA. Implement the shared provider/adapter contracts instead.
+- Do not hide unavailable execution behind generic `RuntimeException` failures. Use unsupported/skipped receipts.
+- Do not run native discovery during provider catalog inspection.
+- Do not let selection policies depend on raw vendor strings when a portable capability exists.
+- Do not enable mutating hooks or optimizer-selected IR just because a backend exists. Those gates are separate.
+
+## Related Pages
+
+- [Public API And Extension Contract](Public-API-And-Extension-Contract.md)
+- [Runtime Guide](Runtime-Guide.md)
+- [Validation and Operations](Validation-and-Operations.md)
+- [IR Optimizer](IR-Optimizer.md)

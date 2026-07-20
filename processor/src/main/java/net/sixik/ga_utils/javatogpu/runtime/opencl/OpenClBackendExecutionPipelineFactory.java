@@ -39,7 +39,7 @@ public final class OpenClBackendExecutionPipelineFactory implements GpuBackendEx
     ) {
         requireSupportedBackend(backend);
         OpenClGpuRuntimeBackend openClBackend = (OpenClGpuRuntimeBackend) backend;
-        return new GpuBackendExecutionPipeline<>(
+        return OpenClProductionExecutionPipeline.createSharedPipeline(
                 openClBackend.kernelCompiler(),
                 openClBackend.kernelPreparer(),
                 openClBackend.kernelInvoker()

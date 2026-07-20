@@ -208,6 +208,31 @@ public final class GpuBackendHookRegistry {
         return new GpuBackendHookAuthorizationReport(target, requestedPhase, authorizationPolicy, decisions);
     }
 
+    public GpuBackendHookAuthorizationCatalog authorizationCatalog(GpuBackendTarget backendTarget) {
+        return authorizationCatalog(backendTarget, GpuBackendHookAuthorizationPolicy.readOnlyOnly());
+    }
+
+    public GpuBackendHookAuthorizationCatalog authorizationCatalog(
+            GpuBackendTarget backendTarget,
+            GpuBackendHookAuthorizationPolicy policy
+    ) {
+        GpuBackendTarget target = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
+        GpuBackendHookAuthorizationPolicy authorizationPolicy = policy == null
+                ? GpuBackendHookAuthorizationPolicy.readOnlyOnly()
+                : policy;
+        return new GpuBackendHookAuthorizationCatalog(
+                target,
+                authorizationPolicy,
+                List.of(
+                        authorizationReport(target, GpuExtensionPhase.BACKEND_DISCOVERY, authorizationPolicy),
+                        authorizationReport(target, GpuExtensionPhase.BACKEND_LOWERING, authorizationPolicy),
+                        authorizationReport(target, GpuExtensionPhase.BACKEND_COMPILATION, authorizationPolicy),
+                        authorizationReport(target, GpuExtensionPhase.BACKEND_INVOCATION, authorizationPolicy),
+                        authorizationReport(target, GpuExtensionPhase.ARTIFACT_EMISSION, authorizationPolicy)
+                )
+        );
+    }
+
     public Map<String, String> observeDiscovery(
             GpuRuntimeCompileOptions compileOptions,
             GpuRuntimeDeviceDiscoveryResult discoveryResult,

@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Report-only authorization view for backend hook execution.
@@ -35,6 +36,22 @@ public record GpuBackendHookAuthorizationReport(
         return decisions.stream()
                 .filter(GpuBackendHookAuthorizationDecision::blocked)
                 .count();
+    }
+
+    public List<GpuBackendHookAuthorizationDecision> blockedDecisions() {
+        return decisions.stream()
+                .filter(GpuBackendHookAuthorizationDecision::blocked)
+                .toList();
+    }
+
+    public Optional<GpuBackendHookAuthorizationDecision> firstBlockedDecision() {
+        return blockedDecisions().stream().findFirst();
+    }
+
+    public String firstBlocker() {
+        return firstBlockedDecision()
+                .map(decision -> decision.hookId() + ":" + decision.status())
+                .orElse("none");
     }
 
     public long futureAuthorizedButDisabledCount() {
@@ -83,9 +100,16 @@ public record GpuBackendHookAuthorizationReport(
         fields.put(normalizedPrefix + ".currentRegistryExecutable.count",
                 Long.toString(currentRegistryExecutableCount()));
         fields.put(normalizedPrefix + ".blocked.count", Long.toString(blockedCount()));
+        fields.put(normalizedPrefix + ".firstBlocker", firstBlocker());
         fields.put(normalizedPrefix + ".authorizationRequired.count", Long.toString(authorizationRequiredCount()));
         fields.put(normalizedPrefix + ".futureAuthorizedButDisabled.count",
                 Long.toString(futureAuthorizedButDisabledCount()));
+        firstBlockedDecision().ifPresent(decision -> {
+            fields.put(normalizedPrefix + ".firstBlocker.id", decision.hookId());
+            fields.put(normalizedPrefix + ".firstBlocker.status", decision.status().name());
+            fields.put(normalizedPrefix + ".firstBlocker.permission", decision.permission().name());
+            fields.put(normalizedPrefix + ".firstBlocker.diagnostic", decision.diagnostic());
+        });
         for (int index = 0; index < decisions.size(); index++) {
             fields.putAll(decisions.get(index).artifactFields(normalizedPrefix + ".decision." + index));
         }
@@ -96,6 +120,7 @@ public record GpuBackendHookAuthorizationReport(
         fields.put("runtime.backend.hookAuthorization.currentRegistryExecutable.count",
                 Long.toString(currentRegistryExecutableCount()));
         fields.put("runtime.backend.hookAuthorization.blocked.count", Long.toString(blockedCount()));
+        fields.put("runtime.backend.hookAuthorization.firstBlocker", firstBlocker());
         fields.put("runtime.backend.hookAuthorization.futureAuthorizedButDisabled.count",
                 Long.toString(futureAuthorizedButDisabledCount()));
         return Collections.unmodifiableMap(fields);
@@ -107,6 +132,9 @@ public record GpuBackendHookAuthorizationReport(
         builder.append("Backend: ").append(backendTarget).append('\n');
         builder.append("Phase: ").append(phase).append('\n');
         builder.append("Policy: ").append(policy.summary()).append('\n');
+        if (blockedCount() > 0) {
+            builder.append("First blocker: ").append(firstBlocker()).append('\n');
+        }
         if (!decisions.isEmpty()) {
             builder.append('\n').append("Decisions:").append('\n');
             for (GpuBackendHookAuthorizationDecision decision : decisions) {

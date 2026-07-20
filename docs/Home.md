@@ -33,6 +33,7 @@ This documentation is written for users of the current alpha. It starts with pra
 
 - [IR Validation](IR-Validation.md) - optional strict IR checks and read-only optimizer diagnostics.
 - [IR Optimizer](IR-Optimizer.md) - optional backend-neutral optimizer layer plus separate vendor-provider SPI.
+- [Backend Adapter Authoring](Backend-Adapter-Authoring.md) - add or preview backend families through the shared provider/SPI path.
 - [Diagnostics Reference](Diagnostics-Reference.md) - diagnostic categories and how to interpret them.
 - [Validation and Operations](Validation-and-Operations.md) - local validation routines and OpenCL evidence artifacts.
 - [ASM Contract](ASM-Contract.md) - bytecode input guidance for advanced integrations.

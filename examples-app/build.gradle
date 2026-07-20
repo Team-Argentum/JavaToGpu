@@ -69,10 +69,85 @@ tasks.register('runBackendProviderAuthoringExample', JavaExec) {
     mainClass = 'net.sixik.ga_utils.examples.BackendProviderAuthoringExample'
 }
 
+tasks.register('runBackendContractReadinessExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.BackendContractReadinessExample'
+}
+
+tasks.register('runCudaSourcePreviewExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.CudaSourcePreviewExample'
+}
+
 tasks.register('runBackendHookServiceLoaderExample', JavaExec) {
     dependsOn tasks.named('classes')
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'net.sixik.ga_utils.examples.BackendHookServiceLoaderExample'
+}
+
+tasks.register('runBackendHookAuthorizationPreviewExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.BackendHookAuthorizationPreviewExample'
+}
+
+tasks.register('runBackendHookAuthorizationValidatorExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.BackendHookAuthorizationValidatorExample'
+}
+
+tasks.register('runRuntimeObservabilityServiceHarnessExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.RuntimeObservabilityServiceHarnessExample'
+}
+
+tasks.register('runDevicePolicyHarnessExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.DevicePolicyHarnessExample'
+}
+
+tasks.register('runCompilerFeedbackHarnessExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.CompilerFeedbackHarnessExample'
+}
+
+tasks.register('runIrValidationProviderHarnessExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.IrValidationProviderHarnessExample'
+}
+
+def extensionHarnessExampleTaskNames = [
+        'runBackendContractReadinessExample',
+        'runBackendHookServiceLoaderExample',
+        'runBackendHookAuthorizationPreviewExample',
+        'runBackendHookAuthorizationValidatorExample',
+        'runIrValidationProviderHarnessExample',
+        'runRuntimeObservabilityServiceHarnessExample',
+        'runDevicePolicyHarnessExample',
+        'runCompilerFeedbackHarnessExample'
+]
+
+tasks.register('runExtensionHarnessExamples') {
+    group = 'verification'
+    description = 'Runs all hardware-free extension SPI harness examples.'
+    extensionHarnessExampleTaskNames.each { taskName ->
+        dependsOn tasks.named(taskName)
+    }
+}
+
+for (int i = 1; i < extensionHarnessExampleTaskNames.size(); i++) {
+    def previousTaskName = extensionHarnessExampleTaskNames[i - 1]
+    def currentTaskName = extensionHarnessExampleTaskNames[i]
+    tasks.named(currentTaskName) {
+        mustRunAfter tasks.named(previousTaskName)
+    }
 }
 
 tasks.register('runMethodTestProbeExample', JavaExec) {
