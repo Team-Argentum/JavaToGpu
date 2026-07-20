@@ -124,9 +124,12 @@ Check only the shared source/lowering contract:
 .\gradlew.bat :processor:validateBackendSourceLoweringContract --console=plain
 ```
 
-The expected state is OpenCL lowering successfully to `opencl-c`, while CUDA/Vulkan/Metal return structured
-`UNSUPPORTED` lower-stage receipts with explicit `*-lowerer-not-implemented` blockers. This keeps future CUDA/PTX/SPIR-V
-work on the same `GpuBackendSourceSelectionPlan`, `GpuBackendLoweringResult`, and `GpuBackendModuleArtifact` path.
+The expected state is OpenCL lowering successfully to `opencl-c`. CUDA is currently a hardware-free source-preview
+lowerer: when a backend-neutral `IrGpu` artifact is present it can emit `cuda-c` for review/dump diagnostics, and when
+that artifact is missing it returns a structured `UNSUPPORTED` receipt with `cuda-irgpu-artifact-missing`. Vulkan and
+Metal still return structured `UNSUPPORTED` lower-stage receipts with explicit `*-lowerer-not-implemented` blockers. This
+keeps future CUDA/PTX/SPIR-V work on the same `GpuBackendSourceSelectionPlan`, `GpuBackendLoweringResult`, and
+`GpuBackendModuleArtifact` path without enabling CUDA execution early.
 
 ## Add Lowering
 
@@ -216,8 +219,8 @@ Preview the current CUDA source lowering without opening CUDA, NVRTC, `nvcc`, or
 .\gradlew.bat :examples-app:runCudaSourcePreviewExample --console=plain
 ```
 
-The example builds a tiny in-memory `IrGpu` artifact with one helper function and prints the generated preview
-`cuda-c` source.
+The example builds tiny in-memory `IrGpu` artifacts, prints the generated preview `cuda-c` source, and shows the runtime
+dump sidecar names for before/after CUDA preview files while keeping CUDA execution disabled.
 
 Run all hardware-free extension examples:
 

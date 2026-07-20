@@ -1458,6 +1458,66 @@ class GpuRuntimeCompileArtifactDumperTest {
     }
 
     @Test
+    void dumpWritesCudaPreviewSourceForOriginalAndOptimizedIrGpuArtifacts() {
+        IrGpuArtifact original = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        IrGpuArtifact optimized = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                descriptor.kernelSource(),
+                descriptor.kernelResource(),
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuRuntimeCompileRequest originalRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeCompileRequest optimizedRequest = originalRequest.withIrGpuArtifact(Optional.of(optimized));
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                originalRequest,
+                optimizedRequest,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(optimizedRequest, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(optimizedRequest),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimized))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.hasArtifact("cuda-source-preview.properties"));
+        String preview = dump.artifact("cuda-source-preview.properties");
+        assertTrue(preview.contains("backendTarget=CUDA"));
+        assertTrue(preview.contains("moduleFormat=cuda-c"));
+        assertTrue(preview.contains("previewOnly=true"));
+        assertTrue(preview.contains("hardwareRequired=false"));
+        assertTrue(preview.contains("runtimeExecutionEnabled=false"));
+        assertTrue(preview.contains("selectedStage=optimized"));
+        assertTrue(preview.contains("selectedPreviewArtifact=optimized.preview.backend.cuda-c"));
+        assertTrue(preview.contains("original.present=true"));
+        assertTrue(preview.contains("original.reconstructed=true"));
+        assertTrue(preview.contains("original.sourceAvailable=true"));
+        assertTrue(preview.contains("original.selectedSource=irgpu-cuda-source"));
+        assertTrue(preview.contains("original.runtimeLoadMode=cuda-c-source-preview"));
+        assertTrue(preview.contains("optimized.present=true"));
+        assertTrue(preview.contains("optimized.reconstructed=true"));
+        assertTrue(preview.contains("optimized.sourceAvailable=true"));
+        assertTrue(preview.contains("optimized.selectedSource=irgpu-cuda-source"));
+        assertTrue(preview.contains("optimized.runtimeLoadMode=cuda-c-source-preview"));
+        assertTrue(dump.hasArtifact("original.preview.backend.cuda-c"));
+        assertTrue(dump.hasArtifact("optimized.preview.backend.cuda-c"));
+        String cudaSource = dump.artifact("optimized.preview.backend.cuda-c");
+        assertTrue(cudaSource.contains("extern \"C\" __global__ void gpu_irgpu_entry"));
+        assertTrue(cudaSource.contains("blockIdx.x * blockDim.x + threadIdx.x"));
+        assertTrue(cudaSource.contains("const float* input"));
+        assertEquals(backendArtifact.source(), dump.artifact("backend.opencl-c"));
+    }
+
+    @Test
     void dumpRecordsPrivateArraySourceReconstructionAsReviewReadyWhenEvidencePasses() {
         String descriptorSource = """
                 __kernel void jtg_kernel(__global float* input, __global float* output) {

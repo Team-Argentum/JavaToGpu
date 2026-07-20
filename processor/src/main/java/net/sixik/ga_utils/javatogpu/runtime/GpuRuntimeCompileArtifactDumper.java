@@ -5,6 +5,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactSerializer
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation;
+import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaIrGpuSourceReconstructor;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuReconstructionPreview;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClIrGpuSourceReconstructor;
 
@@ -77,6 +78,7 @@ public final class GpuRuntimeCompileArtifactDumper {
                 "optimized",
                 artifact
         ));
+        artifacts.put("cuda-source-preview.properties", putCudaPreviewArtifacts(artifacts, snapshot));
         artifacts.put("backend." + snapshot.backendModuleArtifact().format(), snapshot.backendModuleArtifact().source());
         artifacts.put("compile-provenance.properties", snapshot.compileProvenance().toPropertiesText());
         snapshot.deviceSelection().ifPresent(selection -> artifacts.put(
@@ -169,6 +171,99 @@ public final class GpuRuntimeCompileArtifactDumper {
             return;
         }
         artifacts.put(stage + ".backend." + artifact.format(), artifact.source());
+    }
+
+    private static String putCudaPreviewArtifacts(
+            LinkedHashMap<String, String> artifacts,
+            GpuRuntimeCompileArtifactSnapshot snapshot
+    ) {
+        CudaPreviewStage original = reconstructCudaPreview("original", snapshot.originalIrGpuArtifact().orElse(null));
+        CudaPreviewStage optimized = reconstructCudaPreview("optimized", snapshot.optimizedIrGpuArtifact().orElse(null));
+        putCudaPreviewStageArtifact(artifacts, original);
+        putCudaPreviewStageArtifact(artifacts, optimized);
+        return formatCudaPreviewProperties(original, optimized);
+    }
+
+    private static CudaPreviewStage reconstructCudaPreview(String stage, IrGpuArtifact artifact) {
+        if (artifact == null) {
+            return new CudaPreviewStage(stage, false, null, stage + ".preview.backend.cuda-c");
+        }
+        return new CudaPreviewStage(
+                stage,
+                true,
+                CudaIrGpuSourceReconstructor.INSTANCE.reconstruct(artifact),
+                stage + ".preview.backend.cuda-c"
+        );
+    }
+
+    private static void putCudaPreviewStageArtifact(
+            LinkedHashMap<String, String> artifacts,
+            CudaPreviewStage stage
+    ) {
+        GpuBackendSourceReconstructionResult reconstruction = stage.reconstruction();
+        if (reconstruction == null || !reconstruction.sourceAvailable()) {
+            return;
+        }
+        artifacts.put(stage.artifactName(), reconstruction.source());
+    }
+
+    private static String formatCudaPreviewProperties(CudaPreviewStage original, CudaPreviewStage optimized) {
+        CudaPreviewStage selected = optimized.sourceAvailable() ? optimized : original.sourceAvailable() ? original : null;
+        StringBuilder builder = new StringBuilder();
+        builder.append("backendTarget=CUDA\n");
+        builder.append("moduleFormat=cuda-c\n");
+        builder.append("previewOnly=true\n");
+        builder.append("hardwareRequired=false\n");
+        builder.append("runtimeExecutionEnabled=false\n");
+        builder.append("selectedStage=").append(selected == null ? "none" : selected.stage()).append('\n');
+        builder.append("selectedPreviewArtifact=").append(selected == null ? "none" : selected.artifactName()).append('\n');
+        appendCudaPreviewStage(builder, original);
+        appendCudaPreviewStage(builder, optimized);
+        return builder.toString();
+    }
+
+    private static void appendCudaPreviewStage(StringBuilder builder, CudaPreviewStage stage) {
+        GpuBackendSourceReconstructionResult reconstruction = stage.reconstruction();
+        builder.append(stage.stage()).append(".present=").append(stage.present()).append('\n');
+        builder.append(stage.stage()).append(".artifact=").append(stage.artifactName()).append('\n');
+        builder.append(stage.stage()).append(".moduleFormat=cuda-c\n");
+        builder.append(stage.stage()).append(".attempted=").append(reconstruction != null && reconstruction.attempted()).append('\n');
+        builder.append(stage.stage()).append(".ready=").append(reconstruction != null && reconstruction.ready()).append('\n');
+        builder.append(stage.stage()).append(".reconstructed=").append(reconstruction != null && reconstruction.reconstructed()).append('\n');
+        builder.append(stage.stage()).append(".sourceAvailable=").append(stage.sourceAvailable()).append('\n');
+        builder.append(stage.stage()).append(".sourceLength=").append(reconstruction == null ? 0 : reconstruction.source().length()).append('\n');
+        builder.append(stage.stage()).append(".selectedSource=")
+                .append(reconstruction == null ? "none" : safePropertyValue(reconstruction.selectedSource())).append('\n');
+        builder.append(stage.stage()).append(".payloadFormat=")
+                .append(reconstruction == null ? "none" : safePropertyValue(reconstruction.payloadFormat())).append('\n');
+        builder.append(stage.stage()).append(".sourceOrigin=")
+                .append(reconstruction == null ? "none" : safePropertyValue(reconstruction.sourceOrigin())).append('\n');
+        builder.append(stage.stage()).append(".runtimeLoadMode=")
+                .append(reconstruction == null ? "none" : safePropertyValue(reconstruction.runtimeLoadMode())).append('\n');
+        List<String> blockers = reconstruction == null ? List.of() : reconstruction.blockers();
+        builder.append(stage.stage()).append(".blocker.count=").append(blockers.size()).append('\n');
+        for (int index = 0; index < blockers.size(); index++) {
+            builder.append(stage.stage()).append(".blocker.").append(index).append('=')
+                    .append(safePropertyValue(blockers.get(index))).append('\n');
+        }
+        List<String> diagnostics = reconstruction == null ? List.of() : reconstruction.diagnostics();
+        builder.append(stage.stage()).append(".diagnostic.count=").append(diagnostics.size()).append('\n');
+        for (int index = 0; index < diagnostics.size(); index++) {
+            builder.append(stage.stage()).append(".diagnostic.").append(index).append('=')
+                    .append(safePropertyValue(diagnostics.get(index))).append('\n');
+        }
+    }
+
+    private record CudaPreviewStage(
+            String stage,
+            boolean present,
+            GpuBackendSourceReconstructionResult reconstruction,
+            String artifactName
+    ) {
+
+        private boolean sourceAvailable() {
+            return reconstruction != null && reconstruction.sourceAvailable();
+        }
     }
 
     private static String formatProperties(Map<String, String> fields) {

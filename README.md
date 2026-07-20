@@ -279,7 +279,9 @@ Preview the current CUDA source lowering without opening CUDA, NVRTC, `nvcc`, or
 .\gradlew.bat :examples-app:runCudaSourcePreviewExample --console=plain
 ```
 
-The example builds a tiny in-memory `IrGpu` artifact with one helper function and prints the generated `cuda-c` source.
+The example builds tiny in-memory `IrGpu` artifacts, prints the generated `cuda-c` source, and shows the diagnostic dump
+sidecar files (`original.preview.backend.cuda-c`, `optimized.preview.backend.cuda-c`, and `cuda-source-preview.properties`)
+while keeping CUDA execution disabled.
 
 Check the metadata-only CUDA inventory/provider contract:
 
@@ -428,7 +430,9 @@ trace output, run:
 Use `-Pjavatogpu.practicalOpenClEvidenceCacheDir=...` to choose the evidence/journal directory. The walkthrough also
 shows the common `OpenClImageWorkflow.rgbaIntToFloat2D(...)` host helper, then points to
 `runOptimizationJournalExample` and the before/after files to compare: `original.backend.opencl-c`,
-`optimized.backend.opencl-c`, selected `backend.opencl-c`, and `runtime-ir-optimizer-evidence.properties`.
+`optimized.backend.opencl-c`, selected `backend.opencl-c`, optional CUDA source previews
+`original.preview.backend.cuda-c` / `optimized.preview.backend.cuda-c`, `cuda-source-preview.properties`, and
+`runtime-ir-optimizer-evidence.properties`.
 Use `"-Pjavatogpu.runtimeLog=system-out"` or provide a `GpuRuntimeLogService` through ServiceLoader to route lifecycle
 logs into System.out, Log4J, SLF4J, or another application logging backend without manual listener registration.
 The examples app also registers `ExampleRuntimeLogTraceService`, which stays quiet unless

@@ -46,6 +46,9 @@ dumped files:
 | `original.backend.opencl-c` | Backend code before optimizer review |
 | `optimized.backend.opencl-c` | Optimizer candidate, if one was produced |
 | `backend.opencl-c` | Code selected for compilation |
+| `original.preview.backend.cuda-c` | CUDA-C source preview reconstructed from original IR, if supported |
+| `optimized.preview.backend.cuda-c` | CUDA-C source preview reconstructed from optimized IR, if supported |
+| `cuda-source-preview.properties` | CUDA preview status, blockers, and selected preview stage |
 | `runtime-ir-handoff.properties` | Which runtime stage/source was selected |
 | `runtime-ir-optimizer-evidence.properties` | Optimizer pass evidence and blockers |
 
