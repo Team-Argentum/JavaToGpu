@@ -76,9 +76,12 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
             }
         } else if (!request.invocationArgumentCountMatchesDescriptor()) {
             blockers.add("cuda-driver-argument-count-mismatch");
+            List<GpuKernelParameterDescriptor> parameters = summaryParameters(request);
             return CudaArgumentBindingResult.unsupportedWithExecutionPlan(
                     request.binderMode(),
                     request.executionPlan(),
+                    CudaImageSamplerRuntimeBindingPlan.from(parameters, request.invocationArguments()),
+                    CudaImageSamplerDescriptorBuildPlan.from(parameters, request.invocationArguments()),
                     blockers,
                     List.of("CUDA driver argument binding received "
                             + request.invocationArgumentCount()
@@ -107,13 +110,17 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
     ) {
         List<GpuKernelParameterDescriptor> parameters = request.descriptor().parameterDescriptors();
         Object[] arguments = request.invocationArguments();
+        CudaImageSamplerRuntimeBindingPlan imageSamplerRuntimeBindingPlan = CudaImageSamplerRuntimeBindingPlan.from(parameters, arguments);
+        CudaImageSamplerDescriptorBuildPlan imageSamplerDescriptorBuildPlan = CudaImageSamplerDescriptorBuildPlan.from(parameters, arguments);
         ArrayList<String> blockers = validateNativeArguments(parameters, arguments);
         if (!blockers.isEmpty()) {
             return CudaArgumentBindingResult.unsupportedWithExecutionPlan(
                     request.binderMode(),
                     request.executionPlan(),
+                    imageSamplerRuntimeBindingPlan,
+                    imageSamplerDescriptorBuildPlan,
                     blockers,
-                    List.of("CUDA driver argument binding currently supports non-empty primitive/vector/struct array buffers, primitive scalar VALUE arguments, and primitive array LOCAL shared-memory bindings")
+                    unsupportedNativeArgumentDiagnostics(imageSamplerRuntimeBindingPlan)
             );
         }
         MemorySymbols symbols = requiresDeviceMemory(parameters)
@@ -180,7 +187,7 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
                     binderId(),
                     summary,
                     frame,
-                    List.of("CUDA driver native argument frame prepared for primitive/vector/struct array buffers, scalar VALUE arguments, and LOCAL shared memory"),
+                    List.of("CUDA driver native argument frame prepared for primitive/vector/struct array buffers, scalar or @GPUStruct VALUE arguments, and primitive/struct LOCAL shared memory"),
                     request.executionPlan()
             );
         } catch (DriverCallException exception) {
@@ -204,6 +211,25 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
         }
     }
 
+    private static List<GpuKernelParameterDescriptor> summaryParameters(CudaArgumentBindingRequest request) {
+        return request.descriptor() == null || request.descriptor().parameterDescriptors() == null
+                ? List.of()
+                : request.descriptor().parameterDescriptors();
+    }
+
+    private static List<String> unsupportedNativeArgumentDiagnostics(
+            CudaImageSamplerRuntimeBindingPlan imageSamplerRuntimeBindingPlan
+    ) {
+        String base = "CUDA driver argument binding currently supports non-empty primitive/vector/struct array buffers, primitive scalar or @GPUStruct VALUE arguments, and primitive/struct array LOCAL shared-memory bindings";
+        if (imageSamplerRuntimeBindingPlan == null || !imageSamplerRuntimeBindingPlan.present()) {
+            return List.of(base);
+        }
+        return List.of(
+                base,
+                "CUDA image/sampler runtime binding preflight recorded planned texture/surface/sampler slots, but active CUDA image/sampler binding remains fail-closed"
+        );
+    }
+
     private static ArrayList<String> validateNativeArguments(
             List<GpuKernelParameterDescriptor> parameters,
             Object[] arguments
@@ -213,6 +239,10 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
             GpuKernelParameterDescriptor parameter = parameters.get(index);
             if (parameter == null) {
                 blockers.add("cuda-driver-parameter-descriptor-missing:" + index);
+                continue;
+            }
+            if (GpuTypeSupport.isSupportedImageOrSamplerType(parameter.javaType())) {
+                validateImageOrSamplerArgument(parameter, index, blockers);
                 continue;
             }
             if (parameter.access() == GpuKernelParameterAccess.VALUE) {
@@ -250,6 +280,22 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
         }
         validateLocalSharedMemoryLayout(parameters, arguments, blockers);
         return blockers;
+    }
+
+    private static void validateImageOrSamplerArgument(
+            GpuKernelParameterDescriptor parameter,
+            int parameterIndex,
+            List<String> blockers
+    ) {
+        CudaImageSamplerAbi.descriptorFor(parameter.javaType())
+                .map(descriptor -> descriptor.unsupportedBlocker(parameterIndex, parameter.javaType()))
+                .ifPresentOrElse(
+                        blockers::add,
+                        () -> blockers.add("cuda-driver-image-sampler-argument-unsupported:"
+                                + parameterIndex
+                                + ":"
+                                + parameter.javaType())
+                );
     }
 
     private static boolean isSupportedBufferArrayArgumentType(String declaredType) {
@@ -384,20 +430,24 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
             List<String> blockers
     ) {
         String declaredType = GpuTypeSupport.declaredType(parameter.javaType());
-        if (!isSupportedPrimitiveArrayArgumentType(declaredType)) {
+        boolean primitiveLocal = isSupportedPrimitiveArrayArgumentType(declaredType);
+        boolean structLocal = CudaValuePacker.structArrayCompatible(declaredType, hostArray(argument));
+        if (!primitiveLocal && !structLocal) {
             blockers.add("cuda-driver-local-buffer-type-unsupported:" + parameterIndex + ":" + parameter.javaType());
             return;
         }
-        if (!primitiveArrayArgumentCompatible(declaredType, argument)) {
+        if (primitiveLocal && !primitiveArrayArgumentCompatible(declaredType, argument)) {
             blockers.add("cuda-driver-local-array-argument-type-mismatch:" + parameterIndex + ":" + declaredType);
             return;
         }
-        int elementCount = primitiveArrayLength(argument);
+        int elementCount = arrayLength(argument);
         if (elementCount == 0) {
             blockers.add("cuda-driver-local-empty-buffer-unsupported:" + parameterIndex);
             return;
         }
-        long byteSize = primitiveArrayByteSize(declaredType, elementCount);
+        long byteSize = primitiveLocal
+                ? primitiveArrayByteSize(declaredType, elementCount)
+                : arrayByteSize(declaredType, argument, elementCount);
         if (byteSize > Integer.MAX_VALUE) {
             blockers.add("cuda-driver-local-shared-memory-too-large:" + parameterIndex);
         }
@@ -462,7 +512,14 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
     ) {
         String declaredType = GpuTypeSupport.declaredType(parameter.javaType());
         if (!isSupportedScalarArgumentType(declaredType)) {
-            blockers.add("cuda-driver-scalar-type-unsupported:" + parameterIndex + ":" + parameter.javaType());
+            if (CudaValuePacker.structValueCompatible(declaredType, argument)) {
+                long byteSize = CudaValuePacker.structValueByteSize(argument);
+                if (byteSize > Integer.MAX_VALUE) {
+                    blockers.add("cuda-driver-struct-value-too-large:" + parameterIndex + ":" + parameter.javaType());
+                }
+                return;
+            }
+            blockers.add("cuda-driver-value-type-unsupported:" + parameterIndex + ":" + parameter.javaType());
             return;
         }
         if (!scalarArgumentCompatible(declaredType, argument)) {
@@ -533,6 +590,9 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
             Object argument
     ) {
         String declaredType = GpuTypeSupport.declaredType(parameter.javaType());
+        if (CudaValuePacker.structValueCompatible(declaredType, argument)) {
+            return CudaValuePacker.packStructValue(argument);
+        }
         int byteSize = GpuTypeSupport.scalarByteSize(declaredType);
         ByteBuffer slot = MemoryUtil.memAlloc(byteSize).order(ByteOrder.nativeOrder());
         writeScalarValue(slot, parameterIndex, declaredType, argument);

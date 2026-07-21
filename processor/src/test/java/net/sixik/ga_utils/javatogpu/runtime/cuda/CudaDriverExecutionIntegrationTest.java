@@ -75,7 +75,7 @@ class CudaDriverExecutionIntegrationTest {
                 new Object[]{input, 2.5f, output},
                 GpuExecutionConfig.oneDimensional(input.length, input.length)
         )) {
-            assumeOrFailSucceeded(result);
+            assumeOrFailSucceeded(result, "primitive-array-scalar");
             assertArrayEquals(new float[]{2.5f, 5.0f, 7.5f, 10.0f}, output, 0.0001f);
             assertTrue(result.invocationResult().readbackComplete());
             assertLaunchShape(result, "1x1x1", "4x1x1");
@@ -110,7 +110,7 @@ class CudaDriverExecutionIntegrationTest {
                 new Object[]{GpuMemorySlice.of(input, 1, 3), GpuMemorySlice.of(output, 1, 3)},
                 GpuExecutionConfig.oneDimensional(3L, 3L)
         )) {
-            assumeOrFailSucceeded(result);
+            assumeOrFailSucceeded(result, "primitive-array-slice");
             assertArrayEquals(new float[]{-1.0f, 11.0f, 12.0f, 13.0f, -5.0f}, output, 0.0001f);
             assertTrue(result.invocationResult().readbackComplete());
             assertLaunchShape(result, "1x1x1", "3x1x1");
@@ -156,7 +156,7 @@ class CudaDriverExecutionIntegrationTest {
                 new Object[]{input, output},
                 GpuExecutionConfig.oneDimensional(input.length, input.length)
         )) {
-            assumeOrFailSucceeded(result);
+            assumeOrFailSucceeded(result, "vector-array");
             assertEquals(2.0f, output[0].x, 0.0001f);
             assertEquals(4.0f, output[0].y, 0.0001f);
             assertEquals(4.0f, output[1].x, 0.0001f);
@@ -203,13 +203,60 @@ class CudaDriverExecutionIntegrationTest {
                 new Object[]{input, output},
                 GpuExecutionConfig.oneDimensional(input.length, input.length)
         )) {
-            assumeOrFailSucceeded(result);
+            assumeOrFailSucceeded(result, "struct-array");
             assertEquals(3.5f, output[0].weight, 0.0001f);
             assertEquals(12, output[0].count);
             assertEquals(7.5f, output[1].weight, 0.0001f);
             assertEquals(14, output[1].count);
             assertTrue(result.invocationResult().readbackComplete());
             assertLaunchShape(result, "1x1x1", "2x1x1");
+        }
+    }
+
+    @Test
+    void executesStructValueKernelThroughCudaDriverPipelineWhenAvailable() {
+        CudaSmokeEnvironment environment = assumeCudaSmokeEnvironment();
+        String kernelName = "jtg_cuda_smoke_struct_value_kernel";
+        String source = """
+                typedef struct CudaSmokeParticle {
+                    float weight;
+                    int count;
+                } CudaSmokeParticle;
+
+                extern "C" __global__ void jtg_cuda_smoke_struct_value_kernel(
+                        CudaSmokeParticle particle,
+                        float bias,
+                        float* output) {
+                    output[0] = particle.weight + (float) particle.count + bias;
+                }
+                """;
+        GpuKernelDescriptor descriptor = descriptor(
+                kernelName,
+                source,
+                List.of(
+                        new GpuKernelParameterDescriptor("particle", CudaSmokeParticle.class.getName(), GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("bias", "float", GpuKernelParameterAccess.VALUE),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        CudaSmokeParticle particle = new CudaSmokeParticle(2.5f, 4);
+        float[] output = new float[]{0.0f};
+
+        try (GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result = executeSmoke(
+                environment,
+                descriptor,
+                source,
+                new Object[]{particle, 1.25f, output},
+                GpuExecutionConfig.oneDimensional(1L, 1L)
+        )) {
+            assumeOrFailSucceeded(result, "struct-value");
+            assertArrayEquals(new float[]{7.75f}, output, 0.0001f);
+            assertTrue(result.invocationResult().readbackComplete());
+            assertLaunchShape(result, "1x1x1", "1x1x1");
+            assertEquals("2", result.artifactFields("cudaSmoke")
+                    .get("runtime.cuda.argumentFrame.scalarArgumentSlot.count"));
+            assertEquals("12", result.artifactFields("cudaSmoke")
+                    .get("runtime.cuda.argumentFrame.scalarArgumentSlot.byteSize"));
         }
     }
 
@@ -255,11 +302,66 @@ class CudaDriverExecutionIntegrationTest {
                 new Object[]{input, scratchA, scratchB, output},
                 GpuExecutionConfig.oneDimensional(input.length, input.length)
         )) {
-            assumeOrFailSucceeded(result);
+            assumeOrFailSucceeded(result, "multi-local-shared-memory");
             assertArrayEquals(new float[]{2.0f, 4.0f, 6.0f, 8.0f}, output, 0.0001f);
             assertTrue(result.invocationResult().readbackComplete());
             assertLaunchShape(result, "1x1x1", "4x1x1");
             assertEquals("true", result.artifactFields("cudaSmoke").get("runtime.cuda.kernelLaunch.sharedMemory.present"));
+        }
+    }
+
+    @Test
+    void executesStructLocalSharedMemoryKernelThroughCudaDriverPipelineWhenAvailable() {
+        CudaSmokeEnvironment environment = assumeCudaSmokeEnvironment();
+        String kernelName = "jtg_cuda_smoke_struct_local_kernel";
+        String source = """
+                typedef struct CudaSmokeParticle {
+                    float weight;
+                    int count;
+                } CudaSmokeParticle;
+
+                extern "C" __global__ void jtg_cuda_smoke_struct_local_kernel(
+                        const float* input,
+                        float* output) {
+                    extern __shared__ CudaSmokeParticle scratch[];
+                    int id = threadIdx.x;
+                    scratch[id].weight = input[id] + 1.0f;
+                    scratch[id].count = id;
+                    __syncthreads();
+                    output[id] = scratch[id].weight + (float) scratch[id].count;
+                }
+                """;
+        GpuKernelDescriptor descriptor = descriptor(
+                kernelName,
+                source,
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "float[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("scratch", CudaSmokeParticle.class.getName() + "[]", GpuKernelParameterAccess.LOCAL),
+                        new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        float[] input = new float[]{1.0f, 2.0f, 3.0f, 4.0f};
+        CudaSmokeParticle[] scratch = new CudaSmokeParticle[]{
+                new CudaSmokeParticle(),
+                new CudaSmokeParticle(),
+                new CudaSmokeParticle(),
+                new CudaSmokeParticle()
+        };
+        float[] output = new float[input.length];
+
+        try (GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result = executeSmoke(
+                environment,
+                descriptor,
+                source,
+                new Object[]{input, scratch, output},
+                GpuExecutionConfig.oneDimensional(input.length, input.length)
+        )) {
+            assumeOrFailSucceeded(result, "local-struct");
+            assertArrayEquals(new float[]{2.0f, 4.0f, 6.0f, 8.0f}, output, 0.0001f);
+            assertTrue(result.invocationResult().readbackComplete());
+            assertLaunchShape(result, "1x1x1", "4x1x1");
+            assertEquals("true", result.artifactFields("cudaSmoke").get("runtime.cuda.kernelLaunch.sharedMemory.present"));
+            assertEquals("32", result.artifactFields("cudaSmoke").get("runtime.cuda.kernelLaunch.sharedMemory.byteSize"));
         }
     }
 
@@ -355,10 +457,11 @@ class CudaDriverExecutionIntegrationTest {
     }
 
     private static void assumeOrFailSucceeded(
-            GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result
+            GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result,
+            String scenario
     ) {
         if (result.succeeded()) {
-            recordCudaSmokeEvidence(result);
+            recordCudaSmokeEvidence(result, scenario);
             return;
         }
         String message = "CUDA driver execution smoke did not complete: " + pipelineSummary(result);
@@ -369,7 +472,8 @@ class CudaDriverExecutionIntegrationTest {
     }
 
     private static void recordCudaSmokeEvidence(
-            GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result
+            GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result,
+            String scenario
     ) {
         Map<String, String> fields = result.artifactFields("cudaSmoke");
         List<String> keys = List.of(
@@ -391,6 +495,10 @@ class CudaDriverExecutionIntegrationTest {
                 "runtime.backend.invoke.readback.complete"
         );
         StringBuilder line = new StringBuilder(SMOKE_EVIDENCE_PREFIX);
+        line.append(' ')
+                .append("runtime.cuda.smoke.scenario")
+                .append('=')
+                .append(escapeEvidenceValue(scenario));
         for (String key : keys) {
             line.append(' ')
                     .append(key)

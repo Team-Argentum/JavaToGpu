@@ -49,6 +49,32 @@ final class CudaDriverLibrary {
             "cuMemcpyDtoH_v2"
     );
 
+    static final List<String> REQUIRED_IMAGE_SAMPLER_OBJECT_SYMBOLS = List.of(
+            "cuTexObjectCreate",
+            "cuTexObjectDestroy",
+            "cuSurfObjectCreate",
+            "cuSurfObjectDestroy"
+    );
+
+    static final List<String> REQUIRED_IMAGE_SAMPLER_RESOURCE_SYMBOLS = List.of(
+            "cuArray3DCreate",
+            "cuMemcpy2D_v2",
+            "cuMemcpy3D_v2",
+            "cuMipmappedArrayCreate",
+            "cuMipmappedArrayGetLevel",
+            "cuMipmappedArrayDestroy",
+            "cuMemAlloc_v2",
+            "cuMemcpyHtoD_v2",
+            "cuMemFree_v2"
+    );
+
+    static final List<String> REQUIRED_IMAGE_SAMPLER_SYMBOLS = java.util.stream.Stream.concat(
+                    REQUIRED_IMAGE_SAMPLER_OBJECT_SYMBOLS.stream(),
+                    REQUIRED_IMAGE_SAMPLER_RESOURCE_SYMBOLS.stream()
+            )
+            .distinct()
+            .toList();
+
     private CudaDriverLibrary() {
     }
 
@@ -660,6 +686,32 @@ final class CudaDriverLibrary {
         ) {
             return CUDA_ERROR_NOT_SUPPORTED;
         }
+
+        default int cuTexObjectCreate(
+                long textureObjectOutAddress,
+                long resourceDescriptorAddress,
+                long textureDescriptorAddress,
+                long resourceViewDescriptorAddress,
+                long functionAddress
+        ) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
+
+        default int cuTexObjectDestroy(long textureObjectHandle, long functionAddress) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
+
+        default int cuSurfObjectCreate(
+                long surfaceObjectOutAddress,
+                long resourceDescriptorAddress,
+                long functionAddress
+        ) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
+
+        default int cuSurfObjectDestroy(long surfaceObjectHandle, long functionAddress) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
     }
 
     private static final class JniDriverApiInvoker implements DriverApiInvoker {
@@ -776,6 +828,16 @@ final class CudaDriverLibrary {
                     extraAddress,
                     functionAddress
             );
+        }
+
+        @Override
+        public int cuTexObjectDestroy(long textureObjectHandle, long functionAddress) {
+            return JNI.invokePI(textureObjectHandle, functionAddress);
+        }
+
+        @Override
+        public int cuSurfObjectDestroy(long surfaceObjectHandle, long functionAddress) {
+            return JNI.invokePI(surfaceObjectHandle, functionAddress);
         }
     }
 

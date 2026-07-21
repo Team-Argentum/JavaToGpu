@@ -2,6 +2,9 @@ package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.Float3;
+import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.Sampler;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
@@ -14,7 +17,9 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import org.junit.jupiter.api.Test;
+import org.lwjgl.system.MemoryUtil;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -171,6 +176,37 @@ class CudaDriverArgumentBinderBridgeTest {
     }
 
     @Test
+    void driverArgumentBinderBindsStructLocalSharedMemorySlices() {
+        CudaDriverLoadedModule loadedModule = loadedModule();
+        CudaArgumentBindingRequest request = bindingRequest(
+                structLocalParameters(),
+                loadedModule,
+                new Object[]{new byte[3], new CudaParticle[]{new CudaParticle(), new CudaParticle()}}
+        );
+
+        CudaArgumentBindingResult result = new CudaDriverArgumentBinderBridge().bind(request);
+        Map<String, String> fields = result.artifactFields("test.cuda.argumentBinding");
+
+        assertTrue(result.succeeded());
+        assertTrue(result.argumentFrame() != null);
+        assertEquals(80L, result.argumentFrame().localSharedMemoryByteSize());
+        assertEquals(2, result.argumentFrame().kernelParameterSlotCount());
+        assertEquals(2, result.argumentFrame().scalarArgumentSlotCount());
+        assertEquals(0, result.argumentFrame().deviceAllocationCount());
+        assertEquals("80", fields.get("runtime.cuda.argumentFrame.localSharedMemory.byteSize"));
+        assertEquals("2", fields.get("runtime.cuda.argumentFrame.localSharedMemory.slice.count"));
+        assertEquals("0", fields.get("runtime.cuda.argumentFrame.localSharedMemory.layout.slice.0.byteOffset"));
+        assertEquals("3", fields.get("runtime.cuda.argumentFrame.localSharedMemory.layout.slice.0.byteSize"));
+        assertEquals("16", fields.get("runtime.cuda.argumentFrame.localSharedMemory.layout.slice.1.byteOffset"));
+        assertEquals("64", fields.get("runtime.cuda.argumentFrame.localSharedMemory.layout.slice.1.byteSize"));
+        assertEquals("16", fields.get("runtime.cuda.argumentFrame.localSharedMemory.layout.slice.1.alignment"));
+        assertEquals(CudaParticle.class.getName() + "[]", fields.get("runtime.cuda.argumentFrame.localSharedMemory.layout.slice.1.parameter.javaType"));
+
+        result.argumentFrame().close();
+        loadedModule.close();
+    }
+
+    @Test
     void driverArgumentBinderAllocatesMixedFloatBuffersAndScalarValues() {
         FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
         CudaDriverLoadedModule loadedModule = loadedModule(invoker);
@@ -321,6 +357,202 @@ class CudaDriverArgumentBinderBridgeTest {
 
         assertTrue(result.argumentFrame().closed());
         assertEquals(invoker.allocatedPointers, invoker.freedPointers);
+
+        loadedModule.close();
+    }
+
+    @Test
+    void cudaValuePackerPacksStructValueWithVectorFieldPadding() {
+        ByteBuffer buffer = CudaValuePacker.packStructValue(
+                new CudaParticle(1.5f, new Float3(2.0f, 3.0f, 4.0f))
+        );
+        try {
+            assertEquals(32, buffer.capacity());
+            assertEquals(1.5f, buffer.getFloat(0), 0.0001f);
+            assertEquals(2.0f, buffer.getFloat(16), 0.0001f);
+            assertEquals(3.0f, buffer.getFloat(20), 0.0001f);
+            assertEquals(4.0f, buffer.getFloat(24), 0.0001f);
+            assertEquals(0.0f, buffer.getFloat(28), 0.0001f);
+        } finally {
+            MemoryUtil.memFree(buffer);
+        }
+    }
+
+    @Test
+    void driverArgumentBinderBindsStructValueArgument() {
+        CudaDriverLoadedModule loadedModule = loadedModule();
+        CudaArgumentBindingRequest request = bindingRequest(
+                structValueParameters(),
+                loadedModule,
+                new Object[]{new CudaParticle(1.5f, new Float3(1.0f, 2.0f, 3.0f))}
+        );
+
+        CudaArgumentBindingResult result = new CudaDriverArgumentBinderBridge().bind(request);
+        Map<String, String> fields = result.artifactFields("test.cuda.argumentBinding");
+
+        assertTrue(result.succeeded());
+        assertTrue(result.argumentFrame() != null);
+        assertTrue(result.argumentFrame().nativePointerTablePresent());
+        assertFalse(result.argumentFrame().deviceMemoryPresent());
+        assertEquals(0, result.argumentFrame().deviceAllocationCount());
+        assertEquals(1, result.argumentFrame().scalarArgumentSlotCount());
+        assertEquals(32, result.argumentFrame().scalarArgumentByteSize());
+        assertEquals(1, result.argumentFrame().kernelParameterSlotCount());
+        assertEquals("1", fields.get("runtime.cuda.argumentFrame.scalarArgumentSlot.count"));
+        assertEquals("32", fields.get("runtime.cuda.argumentFrame.scalarArgumentSlot.byteSize"));
+
+        result.argumentFrame().close();
+        loadedModule.close();
+    }
+
+    @Test
+    void driverArgumentBinderRejectsNonStructValueObject() {
+        CudaDriverLoadedModule loadedModule = loadedModule();
+        CudaArgumentBindingRequest request = bindingRequest(
+                List.of(new GpuKernelParameterDescriptor("value", PlainValue.class.getName(), GpuKernelParameterAccess.VALUE)),
+                loadedModule,
+                new Object[]{new PlainValue()}
+        );
+
+        CudaArgumentBindingResult result = new CudaDriverArgumentBinderBridge().bind(request);
+
+        assertFalse(result.succeeded());
+        assertTrue(result.blockers().contains("cuda-driver-value-type-unsupported:0:" + PlainValue.class.getName()));
+        assertTrue(result.argumentFrame() == null);
+
+        loadedModule.close();
+    }
+
+    @Test
+    void driverArgumentBinderRejectsImageAndSamplerArgumentsWithExplicitBlockers() {
+        CudaDriverLoadedModule loadedModule = loadedModule();
+        CudaArgumentBindingRequest request = bindingRequest(
+                imageAndSamplerParameters(),
+                loadedModule,
+                new Object[]{
+                        Image2DReadOnly.borrowed(0xCAFE_2101L, 8, 4),
+                        Sampler.borrowed(0xCAFE_2102L),
+                        Image2DWriteOnly.borrowed(0xCAFE_2103L, 8, 4)
+                }
+        );
+
+        CudaArgumentBindingResult result = new CudaDriverArgumentBinderBridge().bind(request);
+        Map<String, String> fields = result.artifactFields("test.cuda.argumentBinding");
+
+        assertFalse(result.succeeded());
+        assertTrue(result.blockers().contains("cuda-driver-image-argument-unsupported:0:" + Image2DReadOnly.class.getName()));
+        assertTrue(result.blockers().contains("cuda-driver-sampler-argument-unsupported:1:" + Sampler.class.getName()));
+        assertTrue(result.blockers().contains("cuda-driver-image-argument-unsupported:2:" + Image2DWriteOnly.class.getName()));
+        assertFalse(result.blockers().stream().anyMatch(blocker -> blocker.startsWith("cuda-driver-value-type-unsupported")));
+        assertFalse(result.blockers().stream().anyMatch(blocker -> blocker.startsWith("cuda-driver-array-argument-type-mismatch")));
+        assertTrue(result.argumentFrame() == null);
+        assertTrue(result.imageSamplerRuntimeBindingPlan().present());
+        assertEquals("fail-closed", result.imageSamplerRuntimeBindingPlan().status());
+        assertEquals(3, result.imageSamplerRuntimeBindingPlan().entries().size());
+        assertEquals(6, result.imageSamplerRuntimeBindingPlan().plannedRuntimeKernelParameterSlotCount());
+        assertEquals(0, result.imageSamplerRuntimeBindingPlan().runtimeBindingKernelParameterSlotCount());
+        assertTrue(result.imageSamplerDescriptorBuildPlan().present());
+        assertEquals("ready", result.imageSamplerDescriptorBuildPlan().status());
+        assertEquals(3, result.imageSamplerDescriptorBuildPlan().entries().size());
+        assertEquals(2, result.imageSamplerDescriptorBuildPlan().resourceDescriptorPayloadPlannedCount());
+        assertEquals(2, result.imageSamplerDescriptorBuildPlan().textureDescriptorPayloadPlannedCount());
+        assertEquals(0, result.imageSamplerDescriptorBuildPlan().activeDescriptorPayloadCount());
+        assertEquals(0, result.imageSamplerDescriptorBuildPlan().activeNativeDescriptorCount());
+        assertTrue(result.imageSamplerDescriptorPayloadModel().present());
+        assertEquals("ready", result.imageSamplerDescriptorPayloadModel().status());
+        assertEquals(3, result.imageSamplerDescriptorPayloadModel().entries().size());
+        assertEquals(2, result.imageSamplerDescriptorPayloadModel().resourcePayloadBuiltCount());
+        assertEquals(2, result.imageSamplerDescriptorPayloadModel().texturePayloadBuiltCount());
+        assertEquals(1, result.imageSamplerDescriptorPayloadModel().samplerPayloadCount());
+        assertEquals(0, result.imageSamplerDescriptorPayloadModel().activeNativeDescriptorCount());
+        assertTrue(result.imageSamplerNativeDescriptorEncodingPlan().present());
+        assertEquals("ready", result.imageSamplerNativeDescriptorEncodingPlan().status());
+        assertEquals(3, result.imageSamplerNativeDescriptorEncodingPlan().entries().size());
+        assertEquals(4, result.imageSamplerNativeDescriptorEncodingPlan().resourceFieldWriteCount());
+        assertEquals(12, result.imageSamplerNativeDescriptorEncodingPlan().textureFieldWriteCount());
+        assertEquals(16, result.imageSamplerNativeDescriptorEncodingPlan().fieldWriteCount());
+        assertEquals(0, result.imageSamplerNativeDescriptorEncodingPlan().nativeWriteEnabledCount());
+        assertEquals(0, result.imageSamplerNativeDescriptorEncodingPlan().sdkStructByteEncodingEnabledCount());
+        assertEquals(0, result.imageSamplerNativeDescriptorEncodingPlan().activeNativeDescriptorCount());
+        assertTrue(result.imageSamplerObjectCreationRequestPlan().present());
+        assertEquals("ready", result.imageSamplerObjectCreationRequestPlan().status());
+        assertEquals(3, result.imageSamplerObjectCreationRequestPlan().entries().size());
+        assertEquals(2, result.imageSamplerObjectCreationRequestPlan().objectCreationRequestCount());
+        assertEquals(1, result.imageSamplerObjectCreationRequestPlan().textureObjectRequestCount());
+        assertEquals(1, result.imageSamplerObjectCreationRequestPlan().surfaceObjectRequestCount());
+        assertEquals(1, result.imageSamplerObjectCreationRequestPlan().foldedSamplerCount());
+        assertEquals(0, result.imageSamplerObjectCreationRequestPlan().objectCreationCallEnabledCount());
+        assertEquals(0, result.imageSamplerObjectCreationRequestPlan().activeObjectCount());
+        assertEquals("true", fields.get("runtime.cuda.argumentBinding.imageSamplerRuntimeBindingPlan.present"));
+        assertEquals("fail-closed", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.status"));
+        assertEquals("3", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.entry.count"));
+        assertEquals("2", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.entry.image.count"));
+        assertEquals("1", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.entry.sampler.count"));
+        assertEquals("3", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.argument.compatible.count"));
+        assertEquals("3", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.argument.metadata.available.count"));
+        assertEquals("6", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.sourcePreview.kernelParameterSlot.count"));
+        assertEquals("4", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.sourcePreview.metadataSlot.count"));
+        assertEquals("6", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.runtimeBinding.plannedKernelParameterSlot.count"));
+        assertEquals("4", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.runtimeBinding.plannedMetadataSlot.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.runtimeBinding.kernelParameterSlot.count"));
+        assertEquals("cuda-image-runtime-binding-disabled:0:" + Image2DReadOnly.class.getName(), fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.firstBlocker"));
+        assertEquals("8", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.entry.0.argument.metadata.width"));
+        assertEquals("4", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.entry.0.argument.metadata.height"));
+        assertEquals("true", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.entry.0.argument.handle.valid"));
+        assertEquals("false", fields.get("runtime.cuda.imageSamplerRuntimeBindingPlan.entry.0.runtimeBinding.enabled"));
+        assertEquals("true", fields.get("runtime.cuda.argumentBinding.imageSamplerDescriptorBuildPlan.present"));
+        assertEquals("ready", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.status"));
+        assertEquals("3", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.entry.count"));
+        assertEquals("2", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.resourceDescriptorPayload.planned.count"));
+        assertEquals("2", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.textureDescriptorPayload.planned.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.activeDescriptorPayload.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.activeNativeDescriptor.count"));
+        assertEquals("false", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.nativeDescriptorAllocation.enabled"));
+        assertEquals("8", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.entry.0.argument.metadata.width"));
+        assertEquals("4", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.entry.0.argument.metadata.height"));
+        assertEquals("true", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.entry.0.argument.handle.valid"));
+        assertEquals("planned", fields.get("runtime.cuda.imageSamplerDescriptorBuildPlan.entry.0.descriptorPayload.status"));
+        assertEquals("true", fields.get("runtime.cuda.argumentBinding.imageSamplerDescriptorPayloadModel.present"));
+        assertEquals("ready", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.status"));
+        assertEquals("3", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.entry.count"));
+        assertEquals("2", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.resourcePayload.built.count"));
+        assertEquals("2", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.texturePayload.built.count"));
+        assertEquals("1", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.samplerPayload.built.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.activeNativeDescriptor.count"));
+        assertEquals("false", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.nativeDescriptorAllocation.enabled"));
+        assertEquals("false", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.objectCreation.enabled"));
+        assertEquals("false", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.runtimeBinding.enabled"));
+        assertEquals("CUDA_RESOURCE_DESC", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.entry.0.resourcePayload.struct"));
+        assertEquals("CUDA_TEXTURE_DESC", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.entry.0.texturePayload.struct"));
+        assertEquals("folded-sampler-parameter-default", fields.get("runtime.cuda.imageSamplerDescriptorPayloadModel.entry.1.texturePayload.samplerState.source"));
+        assertEquals("true", fields.get("runtime.cuda.argumentBinding.imageSamplerNativeDescriptorEncodingPlan.present"));
+        assertEquals("ready", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.status"));
+        assertEquals("3", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.entry.count"));
+        assertEquals("4", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.resourceFieldWrite.count"));
+        assertEquals("12", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.textureFieldWrite.count"));
+        assertEquals("16", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.fieldWrite.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.nativeWrite.enabled.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.sdkStructByteEncoding.enabled.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.activeNativeDescriptor.count"));
+        assertEquals("res.array.hArray", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.entry.0.resourceFieldWrite.1.fieldPath"));
+        assertEquals("addressMode[0]", fields.get("runtime.cuda.imageSamplerNativeDescriptorEncodingPlan.entry.0.textureFieldWrite.0.fieldPath"));
+        assertEquals("true", fields.get("runtime.cuda.argumentBinding.imageSamplerObjectCreationRequestPlan.present"));
+        assertEquals("ready", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.status"));
+        assertEquals("3", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.entry.count"));
+        assertEquals("2", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.request.count"));
+        assertEquals("1", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.textureObjectRequest.count"));
+        assertEquals("1", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.surfaceObjectRequest.count"));
+        assertEquals("1", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.foldedSampler.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.objectCreationCall.enabled.count"));
+        assertEquals("0", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.activeObject.count"));
+        assertEquals("false", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.objectCreationCall.enabled"));
+        assertEquals("false", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.runtimeBinding.enabled"));
+        assertEquals("texture", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.entry.0.object.kind"));
+        assertEquals("CUtexObject", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.entry.0.parameter.carrier"));
+        assertEquals("cuTexObjectCreate", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.entry.0.createFunction.symbol"));
+        assertEquals("surface", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.entry.2.object.kind"));
+        assertEquals("CUsurfObject", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.entry.2.parameter.carrier"));
+        assertEquals("cuSurfObjectCreate", fields.get("runtime.cuda.imageSamplerObjectCreationRequestPlan.entry.2.createFunction.symbol"));
 
         loadedModule.close();
     }
@@ -540,10 +772,31 @@ class CudaDriverArgumentBinderBridgeTest {
         );
     }
 
+    private static List<GpuKernelParameterDescriptor> structValueParameters() {
+        return List.of(
+                new GpuKernelParameterDescriptor("particle", CudaParticle.class.getName(), GpuKernelParameterAccess.VALUE)
+        );
+    }
+
+    private static List<GpuKernelParameterDescriptor> imageAndSamplerParameters() {
+        return List.of(
+                new GpuKernelParameterDescriptor("inputImage", Image2DReadOnly.class.getName(), GpuKernelParameterAccess.READ_ONLY),
+                new GpuKernelParameterDescriptor("sampler", Sampler.class.getName(), GpuKernelParameterAccess.VALUE),
+                new GpuKernelParameterDescriptor("outputImage", Image2DWriteOnly.class.getName(), GpuKernelParameterAccess.READ_WRITE)
+        );
+    }
+
     private static List<GpuKernelParameterDescriptor> multipleLocalParameters() {
         return List.of(
                 new GpuKernelParameterDescriptor("scratchA", "byte[]", GpuKernelParameterAccess.LOCAL),
                 new GpuKernelParameterDescriptor("scratchB", "double[]", GpuKernelParameterAccess.LOCAL)
+        );
+    }
+
+    private static List<GpuKernelParameterDescriptor> structLocalParameters() {
+        return List.of(
+                new GpuKernelParameterDescriptor("scratchA", "byte[]", GpuKernelParameterAccess.LOCAL),
+                new GpuKernelParameterDescriptor("scratchB", CudaParticle.class.getName() + "[]", GpuKernelParameterAccess.LOCAL)
         );
     }
 
@@ -624,6 +877,10 @@ class CudaDriverArgumentBinderBridgeTest {
             this.weight = weight;
             this.normal = normal;
         }
+    }
+
+    private static final class PlainValue {
+        int value = 1;
     }
 
     private static final class FakeDriverApiInvoker implements CudaDriverLibrary.DriverApiInvoker {

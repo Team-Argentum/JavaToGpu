@@ -83,6 +83,7 @@ def cudaSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-
 def cudaPtxSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-cuda-ptx-smoke-summary.properties').get().asFile
 def cudaCubinSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-cuda-cubin-smoke-summary.properties').get().asFile
 def cudaFatbinSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-cuda-fatbin-smoke-summary.properties').get().asFile
+def cudaProductionReadinessFile = layout.buildDirectory.file('reports/cuda/production-readiness.properties').get().asFile
 def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
 def openClValidationHistoryMarkdownFile = layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile
 def openClValidationHistoryCacheDirectory = layout.buildDirectory.dir('opencl-validation-history-cache').get().asFile
@@ -818,12 +819,111 @@ tasks.register('validateCudaExecutionReadiness', JavaExec) {
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaExecutionReadinessCli'
 }
 
+tasks.register('validateCudaLaunchContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA Driver API launch-shape guardrails without opening native CUDA state.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaLaunchContractCli'
+}
+
+tasks.register('validateCudaImageSamplerContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler arguments are recognized and fail-closed until a CUDA ABI exists.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerContractCli'
+}
+
+tasks.register('validateCudaImageSamplerAbiPlan', JavaExec) {
+    group = 'verification'
+    description = 'Validates the hardware-free CUDA image/sampler ABI plan while runtime binding remains fail-closed.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerAbiPlanCli'
+}
+
+tasks.register('validateCudaImageSamplerObjectCreationContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA texture/surface object-creation symbols without creating CUDA objects.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerObjectCreationContractCli'
+}
+
+tasks.register('validateCudaImageSamplerDescriptorContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler resource and texture descriptor plans without native descriptor allocation.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerDescriptorContractCli'
+}
+
+tasks.register('validateCudaImageSamplerNativeDescriptorLayout', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler native descriptor layout preview without native descriptor allocation.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeDescriptorLayoutCli'
+}
+
+tasks.register('validateCudaImageSamplerDescriptorBuildPlan', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler descriptor build planning without native descriptor allocation.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerDescriptorBuildPlanCli'
+}
+
+tasks.register('validateCudaImageSamplerDescriptorPayloadModel', JavaExec) {
+    group = 'verification'
+    description = 'Validates Java-only CUDA image/sampler descriptor payload modeling without native descriptor allocation.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerDescriptorPayloadModelCli'
+}
+
+tasks.register('validateCudaImageSamplerNativeDescriptorEncodingPlan', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler native descriptor field encoding plans without writing native memory.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeDescriptorEncodingPlanCli'
+}
+
+tasks.register('validateCudaImageSamplerObjectCreationRequestPlan', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler texture/surface object-creation request plans without creating objects.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerObjectCreationRequestPlanCli'
+}
+
 tasks.register('validateCudaInventoryContract', JavaExec) {
     group = 'verification'
     description = 'Validates the hardware-free CUDA inventory provider/adapter/lowerer contract without native discovery.'
     dependsOn 'classes'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaInventoryContractCli'
+}
+
+tasks.register('validateCudaProductionReadiness', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA staged binary execution evidence and writes a fail-closed production-readiness artifact.'
+    dependsOn 'classes'
+    dependsOn 'integrationCudaPtxSmokeTestSummaryGate'
+    dependsOn 'integrationCudaCubinSmokeTestSummaryGate'
+    dependsOn 'integrationCudaFatbinSmokeTestSummaryGate'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaProductionReadinessCli'
+    systemProperty 'javatogpu.cuda.productionReadinessFile', cudaProductionReadinessFile.absolutePath
+    systemProperty 'javatogpu.cuda.ptxSmokeSummaryFile', cudaPtxSmokeSummaryFile.absolutePath
+    systemProperty 'javatogpu.cuda.cubinSmokeSummaryFile', cudaCubinSmokeSummaryFile.absolutePath
+    systemProperty 'javatogpu.cuda.fatbinSmokeSummaryFile', cudaFatbinSmokeSummaryFile.absolutePath
+    inputs.file(cudaPtxSmokeSummaryFile)
+    inputs.file(cudaCubinSmokeSummaryFile)
+    inputs.file(cudaFatbinSmokeSummaryFile)
+    outputs.file(cudaProductionReadinessFile)
 }
 
 tasks.register('validateBackendSourceLoweringContract', JavaExec) {
@@ -841,6 +941,16 @@ tasks.register('validateBackendAdapterContracts') {
     dependsOn 'validateBackendSourceLoweringContract'
     dependsOn 'validateCudaInventoryContract'
     dependsOn 'validateCudaExecutionReadiness'
+    dependsOn 'validateCudaLaunchContract'
+    dependsOn 'validateCudaImageSamplerContract'
+    dependsOn 'validateCudaImageSamplerAbiPlan'
+    dependsOn 'validateCudaImageSamplerObjectCreationContract'
+    dependsOn 'validateCudaImageSamplerDescriptorContract'
+    dependsOn 'validateCudaImageSamplerNativeDescriptorLayout'
+    dependsOn 'validateCudaImageSamplerDescriptorBuildPlan'
+    dependsOn 'validateCudaImageSamplerDescriptorPayloadModel'
+    dependsOn 'validateCudaImageSamplerNativeDescriptorEncodingPlan'
+    dependsOn 'validateCudaImageSamplerObjectCreationRequestPlan'
 }
 
 tasks.register('validateOpenClKernelLaunchAdvisoryDrift', JavaExec) {
@@ -1459,6 +1569,8 @@ private static void writeCudaSmokeEvidenceSummary(
         int executedCount
 ) {
     LinkedHashMap<String, Integer> formatCounts = new LinkedHashMap<>()
+    LinkedHashMap<String, Integer> scenarioCounts = new LinkedHashMap<>()
+    LinkedHashMap<String, Integer> scenarioRealDriverCounts = new LinkedHashMap<>()
     int realDriverCount = 0
     int moduleHandleCount = 0
     int functionHandleCount = 0
@@ -1473,6 +1585,8 @@ private static void writeCudaSmokeEvidenceSummary(
     for (Map<String, String> row : evidenceRows) {
         String format = sanitizeCudaSmokeEvidencePropertySegment(row.get('runtime.cuda.loadedModule.module.format'))
         formatCounts.put(format, formatCounts.getOrDefault(format, 0) + 1)
+        String scenario = sanitizeCudaSmokeEvidencePropertySegment(row.get('runtime.cuda.smoke.scenario'))
+        scenarioCounts.put(scenario, scenarioCounts.getOrDefault(scenario, 0) + 1)
         payloadByteSizeMax = Math.max(
                 payloadByteSizeMax,
                 parseCudaSmokeInt(row.get('runtime.cuda.loadedModule.module.payload.byteSize'))
@@ -1495,8 +1609,10 @@ private static void writeCudaSmokeEvidenceSummary(
         if (firstBlockShape == 'unknown') {
             firstBlockShape = cudaSmokeEvidenceKnown(row.get('runtime.cuda.kernelLaunch.launchShape.blockShape'))
         }
-        if (moduleHandlePresent && functionHandlePresent && contextHandlePresent && launchSubmitted && readbackComplete) {
+        boolean realDriverEvidence = moduleHandlePresent && functionHandlePresent && contextHandlePresent && launchSubmitted && readbackComplete
+        if (realDriverEvidence) {
             realDriverCount++
+            scenarioRealDriverCounts.put(scenario, scenarioRealDriverCounts.getOrDefault(scenario, 0) + 1)
         }
     }
 
@@ -1517,6 +1633,13 @@ private static void writeCudaSmokeEvidenceSummary(
     )
     formatCounts.each { String format, Integer count ->
         summary.setProperty('evidence.module.format.' + format + '.count', Integer.toString(count))
+    }
+    scenarioCounts.each { String scenario, Integer count ->
+        summary.setProperty('evidence.scenario.' + scenario + '.count', Integer.toString(count))
+        summary.setProperty(
+                'evidence.scenario.' + scenario + '.realDriver.count',
+                Integer.toString(scenarioRealDriverCounts.getOrDefault(scenario, 0))
+        )
     }
 }
 

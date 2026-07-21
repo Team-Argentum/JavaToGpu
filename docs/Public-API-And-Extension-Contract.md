@@ -24,6 +24,16 @@ JavaToGpu has one public Java GPU dialect: the `net.sixik.ga_utils.javatogpu.api
 | Check built-in OpenCL backend SPI | `validateOpenClBackendSpiContract` | Verify provider/factory metadata without OpenCL |
 | Check CUDA inventory contract | `validateCudaInventoryContract` | Verify CUDA provider/adapter metadata without `nvidia-smi` |
 | Check CUDA execution gate | `validateCudaExecutionReadiness` | Verify CUDA skeleton exists and native execution still fails closed |
+| Check CUDA launch contract | `validateCudaLaunchContract` | Verify launch-shape guardrails without opening CUDA |
+| Check CUDA image/sampler contract | `validateCudaImageSamplerContract` | Verify image/sampler parameters fail closed and expose planned runtime slot preflight |
+| Check CUDA image/sampler ABI plan | `validateCudaImageSamplerAbiPlan` | Verify the planned texture/surface/sampler mapping without enabling runtime binding |
+| Check CUDA image/sampler object boundary | `validateCudaImageSamplerObjectCreationContract` | Verify planned texture/surface symbols without creating CUDA objects |
+| Check CUDA image/sampler descriptor boundary | `validateCudaImageSamplerDescriptorContract` | Verify planned resource/texture descriptors without native descriptor allocation |
+| Check CUDA image/sampler native layout | `validateCudaImageSamplerNativeDescriptorLayout` | Verify planned native descriptor layout fields without native memory allocation |
+| Check CUDA image/sampler descriptor build plan | `validateCudaImageSamplerDescriptorBuildPlan` | Verify Java wrapper handle/metadata preflight without native descriptor payloads |
+| Check CUDA image/sampler payload model | `validateCudaImageSamplerDescriptorPayloadModel` | Verify Java-only descriptor payload objects without native descriptor allocation |
+| Check CUDA image/sampler encoding plan | `validateCudaImageSamplerNativeDescriptorEncodingPlan` | Verify planned native descriptor field writes without writing native memory |
+| Check CUDA image/sampler object request plan | `validateCudaImageSamplerObjectCreationRequestPlan` | Verify planned texture/surface object requests without calling Driver API object creation |
 | Add backend-stage facts or hooks | `GpuBackendHook` family | Keep defaults read-only and fail-soft |
 | Influence backend/device selection | `GpuRuntimeDevicePolicy` | Add evidence or hard rejections |
 | Check device policy behavior without a GPU | `GpuRuntimeDevicePolicyHarness` | Run synthetic CPU/iGPU/dGPU candidates |
@@ -538,19 +548,19 @@ If a backend has a compile -> prepare -> invoke slice, expose it with `execution
 this through an `OpenClBackendExecutionPipelineFactory`. CUDA publishes a non-production skeleton factory so diagnostics,
 artifact receipts, and CI can exercise the shared path. Its compile stage can produce a typed CUDA compile-preview
 artifact today. The built-in `cuda.moduleLoader=driver` bridge can load the CUDA Driver API and create/unload PTX
-module/function handles, record driver-version/PTX metadata receipts, reject known PTX ISA versions that need a newer
+module/function handles from PTX/CUBIN/FATBIN payloads, record driver-version/PTX metadata receipts, reject known PTX ISA versions that need a newer
 CUDA driver API, and reject PTX targets that are newer than the selected CUDA device compute capability before native
 module load. The built-in `cuda.argumentBinder=driver` bridge can
 preflight those handles, prepare an empty argument frame for zero-argument kernels, bind non-empty primitive array buffer
 shapes, GPU vector array buffer shapes, and `@GPUStruct[]` buffer shapes through CUDA device memory allocation plus host-to-device upload, bind
-primitive scalar `VALUE` slots, and map primitive array `LOCAL` arguments to CUDA dynamic shared memory. Unsupported
-buffer shapes, unsupported local types, image/sampler payloads, struct-by-value/local payloads, and broader readback remain separate fail-closed stages.
+primitive scalar and `@GPUStruct` `VALUE` slots, and map primitive or `@GPUStruct[]` array `LOCAL` arguments to CUDA dynamic shared memory. Unsupported
+buffer shapes, unsupported local types, image/sampler payloads, and broader readback remain separate fail-closed stages.
 
 CUDA native compiler bridges implement `CudaNativeCompilerBridge` and are loaded through ServiceLoader plus built-ins.
 The built-in `nvcc` process bridge is opt-in via `GpuRuntimeCompileOptions.cudaNvcc(...)` or
-`cuda.compilerBridge=nvcc`; it emits PTX only and does not load a CUDA module or launch kernels.
+`cuda.compilerBridge=nvcc`; it can emit PTX, CUBIN, or FATBIN and does not load a CUDA module or launch kernels.
 CUDA module/function loaders implement `CudaModuleLoaderBridge` and are also ServiceLoader-backed. They are requested
-separately with `.withCudaDriverModuleLoader()` or `cuda.moduleLoader=driver`, so PTX emission, module loading, argument
+separately with `.withCudaDriverModuleLoader()` or `cuda.moduleLoader=driver`, so module emission, module loading, argument
 binding, and kernel launch remain independently testable stages. The built-in `driver` bridge currently stops after
 CUDA Driver API library/symbol probing only when the driver is unavailable or required symbols are missing; otherwise it
 calls `cuInit`, reads `cuDriverGetVersion`, parses PTX `.version` / `.target`, performs PTX ISA-vs-driver and
@@ -568,13 +578,15 @@ kernels and for non-empty primitive/vector/struct array `READ_ONLY` / `READ_WRIT
 shallow-copied Java invocation values through `CudaExecutionPlan`, reports `cuda-driver-argument-values-missing` when no
 payload exists, and reports `cuda-driver-argument-count-mismatch` when descriptor and payload disagree. For supported
 buffers, the built-in binder resolves `cuMemAlloc_v2`, `cuMemcpyHtoD_v2`, and `cuMemFree_v2`, packs vector arrays using
-declared storage width, packs struct arrays using the same primitive/vector/nested-struct field layout as the OpenCL ABI slice, records `CudaDriverDeviceAllocation` receipts, builds the host-side kernel parameter table, and frees device memory when the
-argument frame closes. Primitive scalar `VALUE` arguments are stored as native-order host slots. One primitive array
+declared storage width, packs struct arrays and `@GPUStruct` `VALUE` arguments using the same primitive/vector/nested-struct field layout as the OpenCL ABI slice, records `CudaDriverDeviceAllocation` receipts, builds the host-side kernel parameter table, and frees device memory when the
+argument frame closes. Primitive scalar `VALUE` arguments are stored as native-order host slots too. One primitive or `@GPUStruct[]` array
 `LOCAL` argument is recorded as dynamic shared-memory bytes and intentionally omitted from the kernel parameter table.
 Multiple `LOCAL` arguments share one dynamic allocation; the CUDA lowerer emits hidden unsigned byte-offset parameters
 after visible non-`LOCAL` parameters, and the driver binder appends matching offset slots after normal device-pointer and
 scalar slots. Empty buffers,
-unsupported scalar/buffer types, image/sampler payloads, struct-by-value/local payloads, and unsupported readback shapes remain fail-closed. A successful binder reports portable binding counts through
+unsupported scalar/buffer types, image/sampler payloads, non-`@GPUStruct` object `VALUE` payloads, unsupported local shapes, and unsupported readback shapes remain fail-closed. Rejected image/sampler payloads also carry
+`runtime.cuda.imageSamplerRuntimeBindingPlan.*` fields that record planned texture/surface/sampler slots, argument
+metadata, and active runtime slot count `0`. A successful binder reports portable binding counts through
 `GpuRuntimeInvocationBindingSummary` plus CUDA-specific `runtime.cuda.argumentBinding.*`,
 `runtime.cuda.argumentFrame.*`, and `runtime.cuda.executionPlan.*` fields, but it still does not imply production CUDA
 execution support.
@@ -585,6 +597,52 @@ frame, and an explicit `GpuExecutionConfig`, then submits the Driver API launch 
 from the portable global/local work shape plus any prepared dynamic shared-memory byte size. A successful launcher reports `runtime.cuda.kernelLaunch.*` and portable
 `runtime.backend.invoke.*` fields. Keep readback separate: launch success means the bridge submitted work, not that
 host-visible output copying has completed.
+Use `validateCudaLaunchContract` to check this boundary without CUDA hardware. The synthetic contract accepts valid 1D/3D
+launch shapes and dynamic shared memory, and expects stable fail-closed blockers for auto-local, non-divisible shapes,
+oversized blocks, and shared-memory limit violations.
+Use `validateCudaImageSamplerContract` to check the current image/sampler boundary. It proves Java image/sampler wrapper
+parameters are recognized by CUDA binder preflight but return stable unsupported receipts until a CUDA texture/surface/sampler
+ABI is implemented. Those unsupported receipts now also carry `runtime.cuda.imageSamplerRuntimeBindingPlan.*` fields with
+planned texture/surface/sampler slots, argument metadata, and active runtime slots set to `0`.
+Use `validateCudaImageSamplerAbiPlan` when changing the planned CUDA mapping. It keeps the future texture/surface/sampler
+ABI explicit as metadata (`CUtexObject`, `CUsurfObject`, and folded sampler descriptor state) while production binding stays
+disabled. The same gate also reports source-preview kernel/metadata slot counts, planned runtime slot counts, and keeps
+`runtimeBindingEnabled=0` / `runtimeBindingKernelParameterSlots=0` visible for CI drift checks.
+Use `validateCudaImageSamplerObjectCreationContract` when touching the future Driver API object boundary. It resolves the
+planned texture/surface object symbols and supporting array/copy symbols through synthetic module handles, but must keep
+`objectCreationEnabled=false`, `objectOwnershipBoundary=prepared`, and `activeObjectCount=0`. Missing
+`cuTexObjectCreate` or `cuSurfObjectCreate` is reported as a stable
+`cuda-image-sampler-object-creation-symbol-missing:*` blocker instead of silently enabling runtime binding. The owner
+close path exists for future handles, but normal runtime binding still creates no CUDA image/sampler objects.
+Use `validateCudaImageSamplerDescriptorContract` when touching planned `CUDA_RESOURCE_DESC` / `CUDA_TEXTURE_DESC` work.
+It fixes the metadata vocabulary for resource descriptors, texture descriptors, sampler defaults, and native-layout
+pending state while keeping `descriptorBuildEnabled=false`, `nativeDescriptorAllocationEnabled=false`, and
+`activeDescriptorCount=0`. This prevents descriptor planning changes from silently becoming runtime image support.
+Use `validateCudaImageSamplerNativeDescriptorLayout` when touching the future native descriptor builder boundary. It
+pins the preview-only logical layout (`resourceLayouts=16`, `resourceLayoutFields=35`, `textureLayouts=9`,
+`textureLayoutFields=54`) while keeping `nativeLayoutBuildEnabled=false`, `nativeDescriptorAllocationEnabled=false`, and
+`activeNativeDescriptorCount=0`; it must not allocate CUDA descriptor memory or create texture/surface objects.
+Use `validateCudaImageSamplerDescriptorBuildPlan` when touching invocation-time descriptor preflight. It proves valid
+2D image/sampler wrapper payloads are recognized, missing handles/closed samplers/incomplete metadata are rejected with
+stable blockers, and descriptor payload/native descriptor counts stay at `0` until the native builder is implemented.
+Use `validateCudaImageSamplerDescriptorPayloadModel` when touching the Java-only payload shape above that preflight. It
+builds logical resource/texture descriptor payload objects for ready plans, records 16 built-in resource payloads, 9
+texture payloads, and 1 folded sampler payload, and keeps native allocation, object creation, and runtime binding
+disabled. This is the last safe Java-side layer before a real native descriptor encoder exists.
+Use `validateCudaImageSamplerNativeDescriptorEncodingPlan` when touching native descriptor field encoding. It records
+logical field-write intent for ready payloads (`resType`, resource-handle fields, texture address modes, filter mode,
+flags, and read mode), pins 35 resource field writes and 54 texture field writes, and keeps native writes, SDK struct
+byte encoding, native allocation, object creation, and runtime binding disabled.
+Use `validateCudaImageSamplerObjectCreationRequestPlan` when touching the layer that will eventually call texture/surface
+object creation. It records only planned requests (`objectRequests=16`, `textureObjectRequests=8`,
+`surfaceObjectRequests=8`, `foldedSamplers=1`) and must keep object creation calls disabled, active objects at `0`, and
+blocked descriptor plans at zero requests. Normal runtime binding still must not call `cuTexObjectCreate` or
+`cuSurfObjectCreate`.
+CUDA source lowering for image/sampler methods remains a separate stage. The supported preview slice now covers 2D
+texture reads and 2D surface writes (`Image2DReadOnly` -> `cudaTextureObject_t`, `Image2DWriteOnly` ->
+`cudaSurfaceObject_t`, `read_imagef/i/ui` -> `tex2D<T>`, `write_imagef/i/ui` -> `surf2Dwrite(...)`, folded `Sampler`,
+and explicit width/height metadata parameters). Non-2D image shapes, unsupported metadata, and runtime binding still fail
+closed until their CUDA ABI evidence exists.
 CUDA readback bridges implement `CudaKernelReadbackBridge` and are requested separately with `.withCudaDriverReadback()`
 or `cuda.readback=driver`. The built-in driver readback bridge resolves `cuMemcpyDtoH_v2`, copies supported
 `READ_WRITE` primitive/vector/struct array allocations back into the original Java arrays, records allocation-level readback status, reports

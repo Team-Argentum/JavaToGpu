@@ -74,14 +74,18 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
         if (!artifact.constants().isEmpty() || !artifact.constantData().isEmpty()) {
             blockers.add("cuda-constant-metadata-lowering-not-supported");
         }
-        entryBody.ifPresent(body -> validateEntryDependencies(artifact, body, blockers));
+        entryBody.ifPresent(body -> {
+            validateEntryDependencies(artifact, body, blockers);
+            validateImageSamplerIntrinsicCoverage(body.body(), blockers);
+        });
         Map<String, String> helperBodies = emitHelperBodies(artifact, blockers, diagnostics);
         for (IrGpuEntryParameter parameter : artifact.entryParameters()) {
             if (!supportedParameter(parameter, artifact.structMetadata())) {
                 blockers.add("cuda-parameter-type-not-supported:" + parameter.name() + ':' + parameter.javaType());
             }
+            validateEntryImageSamplerSourceLowering(parameter, blockers);
         }
-        validateEntryLocalParameters(artifact.entryParameters(), blockers);
+        validateEntryLocalParameters(artifact.entryParameters(), artifact.structMetadata(), blockers);
         if (!blockers.isEmpty()) {
             diagnostics.add("CUDA IrGpu source reconstruction is limited to simple entry/helper kernels for this slice");
             return blocked(blockers, diagnostics);
@@ -182,7 +186,102 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
                 blockers.add("cuda-helper-" + sanitize(emittedName)
                         + "-parameter-type-not-supported:" + parameter.name() + ':' + parameter.javaType());
             }
+            validateHelperImageSamplerSourceLowering(parameter, blockers);
         }
+    }
+
+    private static void validateEntryImageSamplerSourceLowering(IrGpuEntryParameter parameter, List<String> blockers) {
+        Optional<CudaImageSamplerAbi.Descriptor> descriptor = parameter == null
+                ? Optional.empty()
+                : CudaImageSamplerAbi.descriptorFor(parameter.javaType());
+        if (descriptor.isEmpty()) {
+            return;
+        }
+        CudaImageSamplerAbi.Descriptor imageSampler = descriptor.orElseThrow();
+        if (((imageSampler.readTextureObject() || imageSampler.writeSurfaceObject()) && imageSampler.cudaArray2D())
+                || imageSampler.textureDescriptorState()) {
+            return;
+        }
+        blockers.add("cuda-image-sampler-source-lowering-pending:" + parameter.name() + ':' + parameter.javaType());
+    }
+
+    private static void validateHelperImageSamplerSourceLowering(IrGpuEntryParameter parameter, List<String> blockers) {
+        if (parameter == null || CudaImageSamplerAbi.descriptorFor(parameter.javaType()).isEmpty()) {
+            return;
+        }
+        blockers.add("cuda-image-sampler-helper-source-lowering-pending:" + parameter.name() + ':' + parameter.javaType());
+    }
+
+    private static void validateImageSamplerIntrinsicCoverage(String body, List<String> blockers) {
+        String source = body == null ? "" : body;
+        for (String intrinsic : imageWriteIntrinsics(source)) {
+            if (!"write_imagef".equals(intrinsic) && !"write_imagei".equals(intrinsic) && !"write_imageui".equals(intrinsic)) {
+                blockers.add("cuda-image-write-source-lowering-pending:" + intrinsic);
+            }
+        }
+        for (String intrinsic : imageMetadataIntrinsics(source)) {
+            if (!"get_image_width".equals(intrinsic) && !"get_image_height".equals(intrinsic)) {
+                blockers.add("cuda-image-metadata-source-lowering-pending:" + intrinsic);
+            }
+        }
+    }
+
+    private static List<String> imageMetadataIntrinsics(String body) {
+        ArrayList<String> names = new ArrayList<>();
+        String source = body == null ? "" : body;
+        int index = 0;
+        while (index >= 0 && index < source.length()) {
+            int start = source.indexOf("intrinsic(get_image_", index);
+            if (start < 0) {
+                break;
+            }
+            int nameStart = start + "intrinsic(".length();
+            int nameEnd = nameStart;
+            while (nameEnd < source.length()) {
+                char ch = source.charAt(nameEnd);
+                if (!Character.isLetterOrDigit(ch) && ch != '_') {
+                    break;
+                }
+                nameEnd++;
+            }
+            String name = source.substring(nameStart, nameEnd);
+            if (!names.contains(name)) {
+                names.add(name);
+            }
+            index = nameEnd;
+        }
+        return names;
+    }
+
+    private static List<String> imageWriteIntrinsics(String body) {
+        return imageIntrinsicNames(body, "intrinsic(write_image");
+    }
+
+    private static List<String> imageIntrinsicNames(String body, String prefix) {
+        ArrayList<String> names = new ArrayList<>();
+        String source = body == null ? "" : body;
+        int index = 0;
+        while (index >= 0 && index < source.length()) {
+            int start = source.indexOf(prefix, index);
+            if (start < 0) {
+                break;
+            }
+            int nameStart = start + "intrinsic(".length();
+            int nameEnd = nameStart;
+            while (nameEnd < source.length()) {
+                char ch = source.charAt(nameEnd);
+                if (!Character.isLetterOrDigit(ch) && ch != '_') {
+                    break;
+                }
+                nameEnd++;
+            }
+            String name = source.substring(nameStart, nameEnd);
+            if (!names.contains(name)) {
+                names.add(name);
+            }
+            index = nameEnd;
+        }
+        return names;
     }
 
     private static void validateHelperDependencies(
@@ -227,6 +326,7 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
         return GpuTypeSupport.isSupportedArrayType(type)
                 || isSupportedVectorArrayType(type)
                 || isSupportedStructArrayType(type, structMetadata)
+                || isSupportedStructValueType(type, structMetadata)
                 || GpuTypeSupport.isSupportedKernelParameterType(type)
                 || GpuTypeSupport.isSupportedVectorType(type)
                 || GpuTypeSupport.isSupportedPointerType(type);
@@ -255,6 +355,21 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
         return false;
     }
 
+    private static boolean isSupportedStructValueType(String javaType, List<IrGpuStructMetadata> structMetadata) {
+        String declaredType = GpuTypeSupport.declaredType(javaType);
+        if (declaredType == null || declaredType.endsWith("[]")) {
+            return false;
+        }
+        for (IrGpuStructMetadata struct : structMetadata) {
+            if (declaredType.equals(struct.ownerQualifiedName())
+                    || declaredType.equals(struct.ownerSimpleName())
+                    || declaredType.equals(GpuTypeSupport.simpleTypeName(struct.ownerSimpleName()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static String assembleKernel(
             IrGpuArtifact artifact,
             IrGpuMethodBody entryBody,
@@ -264,6 +379,9 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
             List<String> diagnostics
     ) {
         StringBuilder builder = new StringBuilder();
+        if (hasImageSamplerParameters(artifact.entryParameters())) {
+            builder.append("#include <cuda_runtime.h>\n\n");
+        }
         for (IrGpuStructMetadata struct : artifact.structMetadata()) {
             builder.append(emitStruct(struct));
         }
@@ -395,7 +513,17 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
             boolean constant = parameter.constant()
                     || "CONSTANT".equals(parameter.addressSpace())
                     || parameter.openClQualifiers().contains("const");
+            Optional<CudaImageSamplerAbi.Descriptor> imageSampler = CudaImageSamplerAbi.descriptorFor(parameter.javaType());
+            if (imageSampler.isPresent() && imageSampler.orElseThrow().textureDescriptorState()) {
+                continue;
+            }
             emitted.add(CudaIrTextBodyEmitter.emitParameterType(parameter.javaType(), constant) + ' ' + parameter.name());
+            if (imageSampler.isPresent()
+                    && (imageSampler.orElseThrow().readTextureObject() || imageSampler.orElseThrow().writeSurfaceObject())
+                    && imageSampler.orElseThrow().cudaArray2D()) {
+                emitted.add("int " + CudaIrTextBodyEmitter.imageMetadataParameter(parameter.name(), "width"));
+                emitted.add("int " + CudaIrTextBodyEmitter.imageMetadataParameter(parameter.name(), "height"));
+            }
         }
         if (CudaLocalSharedMemoryLayout.hiddenOffsetsRequired(localParameters.size())) {
             for (IrGpuEntryParameter parameter : localParameters) {
@@ -405,7 +533,20 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
         return String.join(", ", emitted);
     }
 
-    private static void validateEntryLocalParameters(List<IrGpuEntryParameter> parameters, List<String> blockers) {
+    private static boolean hasImageSamplerParameters(List<IrGpuEntryParameter> parameters) {
+        for (IrGpuEntryParameter parameter : parameters == null ? List.<IrGpuEntryParameter>of() : parameters) {
+            if (parameter != null && CudaImageSamplerAbi.descriptorFor(parameter.javaType()).isPresent()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void validateEntryLocalParameters(
+            List<IrGpuEntryParameter> parameters,
+            List<IrGpuStructMetadata> structMetadata,
+            List<String> blockers
+    ) {
         int localCount = 0;
         for (IrGpuEntryParameter parameter : parameters) {
             if (!"LOCAL".equals(parameter.addressSpace())) {
@@ -418,7 +559,8 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
                 continue;
             }
             String componentType = GpuTypeSupport.componentType(type);
-            if (!isSupportedLocalSharedMemoryComponent(componentType)) {
+            if (!isSupportedLocalSharedMemoryComponent(componentType)
+                    && !isSupportedStructArrayType(type, structMetadata)) {
                 blockers.add("cuda-local-shared-memory-type-not-supported:" + parameter.name() + ':' + parameter.javaType());
             }
         }
@@ -452,7 +594,7 @@ public final class CudaIrGpuSourceReconstructor implements GpuBackendSourceRecon
                     .append("[];\n");
             return builder.toString();
         }
-        builder.append("    extern __shared__ __align__(8) unsigned char __jtg_cuda_dynamic_shared[];\n");
+        builder.append("    extern __shared__ __align__(16) unsigned char __jtg_cuda_dynamic_shared[];\n");
         for (IrGpuEntryParameter parameter : localParameters) {
             String componentType = GpuTypeSupport.componentType(GpuTypeSupport.declaredType(parameter.javaType()));
             String cudaType = CudaIrTextBodyEmitter.emitType(componentType);

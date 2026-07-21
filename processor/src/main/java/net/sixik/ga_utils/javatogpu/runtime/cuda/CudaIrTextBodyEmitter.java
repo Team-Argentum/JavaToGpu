@@ -172,6 +172,16 @@ final class CudaIrTextBodyEmitter {
 
     static String emitParameterType(String javaType, boolean constant) {
         String declaredType = GpuTypeSupport.declaredType(javaType);
+        java.util.Optional<CudaImageSamplerAbi.Descriptor> imageSampler = CudaImageSamplerAbi.descriptorFor(declaredType);
+        if (imageSampler.isPresent()) {
+            CudaImageSamplerAbi.Descriptor descriptor = imageSampler.orElseThrow();
+            if (descriptor.readTextureObject()) {
+                return "cudaTextureObject_t";
+            }
+            if (descriptor.writeSurfaceObject()) {
+                return "cudaSurfaceObject_t";
+            }
+        }
         if (declaredType != null && GpuTypeSupport.isSupportedArrayType(declaredType)) {
             return (constant ? "const " : "") + emitType(GpuTypeSupport.componentType(declaredType)) + "*";
         }
@@ -388,6 +398,18 @@ final class CudaIrTextBodyEmitter {
         for (String arg : args) {
             emittedArgs.add(emitExpression(arg.trim()));
         }
+        if (isReadImageIntrinsic(name)) {
+            return emitTextureRead(name, emittedArgs);
+        }
+        if (isWriteImageIntrinsic(name)) {
+            return emitSurfaceWrite(name, emittedArgs);
+        }
+        if ("get_image_width".equals(name) && emittedArgs.size() == 1) {
+            return imageMetadataParameter(emittedArgs.get(0), "width");
+        }
+        if ("get_image_height".equals(name) && emittedArgs.size() == 1) {
+            return imageMetadataParameter(emittedArgs.get(0), "height");
+        }
         if (template.isBlank()) {
             return name + "(" + String.join(", ", emittedArgs) + ")";
         }
@@ -400,6 +422,85 @@ final class CudaIrTextBodyEmitter {
             emitted = emitted.replace("{" + index + "}", emittedArgs.get(index));
         }
         return emitted;
+    }
+
+    private static boolean isReadImageIntrinsic(String name) {
+        return "read_imagef".equals(name) || "read_imagei".equals(name) || "read_imageui".equals(name);
+    }
+
+    private static boolean isWriteImageIntrinsic(String name) {
+        return "write_imagef".equals(name) || "write_imagei".equals(name) || "write_imageui".equals(name);
+    }
+
+    private static String emitTextureRead(String name, List<String> emittedArgs) {
+        if (emittedArgs.size() != 2 && emittedArgs.size() != 3) {
+            return name + "(" + String.join(", ", emittedArgs) + ")";
+        }
+        String image = emittedArgs.get(0);
+        String coordinates = emittedArgs.get(emittedArgs.size() - 1);
+        return "tex2D<" + cudaTextureReadType(name) + ">(" + image
+                + ", (float)(" + coordinateComponent(coordinates, "x") + ")"
+                + ", (float)(" + coordinateComponent(coordinates, "y") + "))";
+    }
+
+    private static String cudaTextureReadType(String name) {
+        return switch (name) {
+            case "read_imagef" -> "float4";
+            case "read_imageui" -> "uint4";
+            default -> "int4";
+        };
+    }
+
+    private static String emitSurfaceWrite(String name, List<String> emittedArgs) {
+        if (emittedArgs.size() != 3) {
+            return name + "(" + String.join(", ", emittedArgs) + ")";
+        }
+        String surface = emittedArgs.get(0);
+        String coordinates = emittedArgs.get(1);
+        String value = emittedArgs.get(2);
+        String valueType = cudaSurfaceWriteType(name);
+        return "surf2Dwrite(" + value
+                + ", " + surface
+                + ", (int)((" + coordinateComponent(coordinates, "x") + ") * sizeof(" + valueType + "))"
+                + ", " + coordinateComponent(coordinates, "y") + ")";
+    }
+
+    private static String cudaSurfaceWriteType(String name) {
+        return switch (name) {
+            case "write_imagef" -> "float4";
+            case "write_imageui" -> "uint4";
+            default -> "int4";
+        };
+    }
+
+    private static String coordinateComponent(String coordinates, String component) {
+        String value = coordinates == null || coordinates.isBlank() ? "0" : coordinates.trim();
+        return "(" + value + ")." + component;
+    }
+
+    static String imageMetadataParameter(String imageParameterName, String metadataName) {
+        String image = sanitizeIdentifier(imageParameterName);
+        String metadata = sanitizeIdentifier(metadataName);
+        return "__jtg_cuda_image_" + image + '_' + metadata;
+    }
+
+    private static String sanitizeIdentifier(String value) {
+        String raw = value == null ? "unknown" : value.trim();
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < raw.length(); index++) {
+            char ch = raw.charAt(index);
+            if (Character.isLetterOrDigit(ch) || ch == '_') {
+                builder.append(ch);
+            }
+        }
+        String sanitized = builder.toString();
+        if (sanitized.isBlank()) {
+            return "unknown";
+        }
+        if (Character.isDigit(sanitized.charAt(0))) {
+            return '_' + sanitized;
+        }
+        return sanitized;
     }
 
     private static String cudaGlobalId(String dimension) {

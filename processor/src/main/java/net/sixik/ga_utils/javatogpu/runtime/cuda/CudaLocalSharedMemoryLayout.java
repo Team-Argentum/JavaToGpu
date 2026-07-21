@@ -43,11 +43,22 @@ final class CudaLocalSharedMemoryLayout {
             if (parameter == null || parameter.access() != GpuKernelParameterAccess.LOCAL) {
                 continue;
             }
+            Object argument = arguments[index];
             String declaredType = GpuTypeSupport.declaredType(parameter.javaType());
             String componentType = GpuTypeSupport.componentType(declaredType);
-            int elementCount = primitiveArrayLength(arguments[index]);
-            long componentByteSize = GpuTypeSupport.scalarByteSize(componentType);
-            locals.add(new LocalParameter(index, parameter.name(), parameter.javaType(), componentType, elementCount, componentByteSize));
+            Object hostArray = hostArray(argument);
+            int elementCount = localArrayLength(argument);
+            long componentByteSize = localComponentByteSize(declaredType, hostArray, componentType);
+            long componentAlignment = localComponentAlignment(declaredType, hostArray, componentType);
+            locals.add(new LocalParameter(
+                    index,
+                    parameter.name(),
+                    parameter.javaType(),
+                    componentType,
+                    elementCount,
+                    componentByteSize,
+                    componentAlignment
+            ));
         }
         if (locals.isEmpty()) {
             return empty();
@@ -56,7 +67,7 @@ final class CudaLocalSharedMemoryLayout {
         ArrayList<Slice> slices = new ArrayList<>();
         long offset = 0L;
         for (LocalParameter local : locals) {
-            long alignment = Math.max(1L, local.componentByteSize());
+            long alignment = Math.max(1L, local.componentAlignment());
             long alignedOffset = alignTo(offset, alignment);
             long byteSize = local.componentByteSize() * local.elementCount();
             slices.add(new Slice(
@@ -136,9 +147,12 @@ final class CudaLocalSharedMemoryLayout {
         return remainder == 0L ? value : value + alignment - remainder;
     }
 
-    private static int primitiveArrayLength(Object argument) {
+    private static int localArrayLength(Object argument) {
         if (argument instanceof GpuMemorySlice<?> slice) {
             return slice.length();
+        }
+        if (CudaValuePacker.isStructArrayInstance(argument)) {
+            return CudaValuePacker.structArrayLength(argument);
         }
         if (argument instanceof byte[] values) {
             return values.length;
@@ -164,6 +178,24 @@ final class CudaLocalSharedMemoryLayout {
         return 0;
     }
 
+    private static Object hostArray(Object argument) {
+        return argument instanceof GpuMemorySlice<?> slice ? slice.array() : argument;
+    }
+
+    private static long localComponentByteSize(String declaredType, Object hostArray, String componentType) {
+        if (CudaValuePacker.structArrayCompatible(declaredType, hostArray)) {
+            return CudaValuePacker.structArrayElementByteSize(hostArray);
+        }
+        return GpuTypeSupport.scalarByteSize(componentType);
+    }
+
+    private static long localComponentAlignment(String declaredType, Object hostArray, String componentType) {
+        if (CudaValuePacker.structArrayCompatible(declaredType, hostArray)) {
+            return CudaValuePacker.structArrayElementAlignment(hostArray);
+        }
+        return GpuTypeSupport.scalarByteSize(componentType);
+    }
+
     private static String cIdentifier(String value) {
         if (value == null || value.isBlank()) {
             return "arg";
@@ -185,7 +217,8 @@ final class CudaLocalSharedMemoryLayout {
             String javaType,
             String componentType,
             int elementCount,
-            long componentByteSize
+            long componentByteSize,
+            long componentAlignment
     ) {
     }
 

@@ -20,6 +20,7 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
     private final boolean nativePointerTablePresent;
     private final boolean deviceMemoryPresent;
     private final List<CudaDriverDeviceAllocation> deviceAllocations;
+    private final List<CudaDriverImageSamplerObject> imageSamplerObjects;
     private final PointerBuffer kernelParameterTable;
     private final List<PointerBuffer> kernelArgumentSlots;
     private final List<ByteBuffer> scalarArgumentSlots;
@@ -33,6 +34,7 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
             boolean nativePointerTablePresent,
             boolean deviceMemoryPresent,
             List<CudaDriverDeviceAllocation> deviceAllocations,
+            List<CudaDriverImageSamplerObject> imageSamplerObjects,
             PointerBuffer kernelParameterTable,
             List<PointerBuffer> kernelArgumentSlots,
             List<ByteBuffer> scalarArgumentSlots,
@@ -46,6 +48,7 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
                 ? GpuRuntimeInvocationBindingSummary.empty()
                 : bindingSummary;
         this.deviceAllocations = deviceAllocations == null ? List.of() : List.copyOf(deviceAllocations);
+        this.imageSamplerObjects = imageSamplerObjects == null ? List.of() : List.copyOf(imageSamplerObjects);
         this.kernelParameterTable = kernelParameterTable;
         this.kernelArgumentSlots = kernelArgumentSlots == null ? List.of() : List.copyOf(kernelArgumentSlots);
         this.scalarArgumentSlots = scalarArgumentSlots == null ? List.of() : List.copyOf(scalarArgumentSlots);
@@ -65,6 +68,7 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
                 GpuRuntimeInvocationBindingSummary.empty(),
                 false,
                 false,
+                List.of(),
                 List.of(),
                 null,
                 List.of(),
@@ -87,6 +91,7 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
                 kernelParameterTable != null,
                 deviceAllocations != null && !deviceAllocations.isEmpty(),
                 deviceAllocations,
+                List.of(),
                 kernelParameterTable,
                 kernelArgumentSlots,
                 List.of(),
@@ -152,6 +157,33 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
                 kernelParameterTable != null,
                 deviceAllocations != null && !deviceAllocations.isEmpty(),
                 deviceAllocations,
+                List.of(),
+                kernelParameterTable,
+                kernelArgumentSlots,
+                scalarArgumentSlots,
+                localSharedMemoryByteSize,
+                localSharedMemoryLayout
+        );
+    }
+
+    static CudaKernelArgumentFrame nativeBindings(
+            String binderId,
+            GpuRuntimeInvocationBindingSummary bindingSummary,
+            List<CudaDriverDeviceAllocation> deviceAllocations,
+            PointerBuffer kernelParameterTable,
+            List<PointerBuffer> kernelArgumentSlots,
+            List<ByteBuffer> scalarArgumentSlots,
+            long localSharedMemoryByteSize,
+            CudaLocalSharedMemoryLayout localSharedMemoryLayout,
+            List<CudaDriverImageSamplerObject> imageSamplerObjects
+    ) {
+        return new CudaKernelArgumentFrame(
+                binderId,
+                bindingSummary,
+                kernelParameterTable != null,
+                deviceAllocations != null && !deviceAllocations.isEmpty(),
+                deviceAllocations,
+                imageSamplerObjects,
                 kernelParameterTable,
                 kernelArgumentSlots,
                 scalarArgumentSlots,
@@ -180,6 +212,10 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
         return deviceAllocations;
     }
 
+    List<CudaDriverImageSamplerObject> imageSamplerObjects() {
+        return imageSamplerObjects;
+    }
+
     public long kernelParameterTableAddress() {
         return kernelParameterTable == null ? 0L : MemoryUtil.memAddress(kernelParameterTable);
     }
@@ -190,6 +226,10 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
 
     public int deviceAllocationCount() {
         return deviceAllocations.size();
+    }
+
+    public int imageSamplerObjectCount() {
+        return imageSamplerObjects.size();
     }
 
     public int scalarArgumentSlotCount() {
@@ -244,6 +284,7 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
         fields.put(prefix + ".nativePointerTable.present", Boolean.toString(nativePointerTablePresent));
         fields.put(prefix + ".deviceMemory.present", Boolean.toString(deviceMemoryPresent));
         fields.put(prefix + ".deviceAllocation.count", Integer.toString(deviceAllocations.size()));
+        fields.put(prefix + ".imageSamplerObject.count", Integer.toString(imageSamplerObjects.size()));
         fields.put(prefix + ".scalarArgumentSlot.count", Integer.toString(scalarArgumentSlotCount()));
         fields.put(prefix + ".scalarArgumentSlot.byteSize", Integer.toString(scalarArgumentByteSize()));
         fields.put(prefix + ".localSharedMemory.present", Boolean.toString(localSharedMemoryByteSize > 0L));
@@ -259,6 +300,9 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
         fields.put(prefix + ".binding.local.count", Integer.toString(bindingSummary.localBindingCount()));
         fields.put(prefix + ".binding.scalar.count", Integer.toString(bindingSummary.scalarBindingCount()));
         fields.put(prefix + ".closed", Boolean.toString(closed));
+        for (int index = 0; index < imageSamplerObjects.size(); index++) {
+            fields.putAll(imageSamplerObjects.get(index).artifactFields(prefix + ".imageSamplerObject." + index));
+        }
         for (int index = 0; index < deviceAllocations.size(); index++) {
             fields.putAll(deviceAllocations.get(index).artifactFields(prefix + ".deviceAllocation." + index));
         }
@@ -270,6 +314,17 @@ public final class CudaKernelArgumentFrame implements AutoCloseable {
             return;
         }
         RuntimeException failure = null;
+        for (CudaDriverImageSamplerObject imageSamplerObject : imageSamplerObjects) {
+            try {
+                imageSamplerObject.close();
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
         for (CudaDriverDeviceAllocation allocation : deviceAllocations) {
             try {
                 allocation.close();

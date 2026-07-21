@@ -290,6 +290,52 @@ driver launch requires explicit local sizing, rejects non-divisible global/local
 limits, and records actual `runtime.cuda.kernelLaunch.launchShape.*` fields. A successful launcher updates
 `runtime.cuda.kernelLaunch.*` and `runtime.backend.invoke.*`; host output copying remains a separate
 readback stage.
+Use `:processor:validateCudaLaunchContract` as the hardware-free guard for this boundary. It validates accepted 1D/3D
+launch shapes, dynamic shared memory, and stable fail-closed blockers for auto-local, non-divisible global/local shapes,
+block-size limit violations, and shared-memory limit violations without opening CUDA.
+Use `:processor:validateCudaImageSamplerContract` for the image/sampler boundary. Today that contract must stay
+fail-closed: image and sampler wrapper parameters are recognized by the staged CUDA binder and return stable
+`cuda-driver-image-argument-unsupported:*` / `cuda-driver-sampler-argument-unsupported:*` blockers until a CUDA
+texture/surface/sampler ABI exists. The same contract exposes a runtime binding preflight plan in binding artifacts and
+CLI output, including planned texture/surface/sampler slot counts and active runtime slot count `0`.
+Use `:processor:validateCudaImageSamplerAbiPlan` for the metadata-only ABI matrix. It documents the intended CUDA
+carriers (`CUtexObject`, `CUsurfObject`, and `CUDA_TEXTURE_DESC` state), the current source-preview coverage, and the
+planned runtime kernel/metadata slot shape, while keeping the `runtimeBindingEnabled=0` /
+`runtimeBindingKernelParameterSlots=0` guardrail without enabling production image/sampler binding.
+Use `:processor:validateCudaImageSamplerObjectCreationContract` for the next boundary below the ABI matrix. It resolves
+the planned texture/surface object and array/copy Driver API symbols through synthetic module handles, reports 17 planned
+entries and 13 resolved symbols, and must keep `objectCreationEnabled=false`, `objectOwnershipBoundary=prepared`, plus
+`activeObjectCount=0`. Backend authors should not treat this as CUDA image runtime support; it is only the contract that
+protects the future `cuTexObjectCreate` / `cuSurfObjectCreate` implementation point and the owner close path for future
+texture/surface handles.
+Use `:processor:validateCudaImageSamplerDescriptorContract` before changing native descriptor layout or sampler mapping.
+It reports 16 planned resource descriptors, 9 texture descriptors, default nearest/clamp-to-edge texture state until
+sampler metadata exists, `nativeLayoutPending=17`, and keeps descriptor build/allocation disabled. Backend authors should
+wire real `CUDA_RESOURCE_DESC` / `CUDA_TEXTURE_DESC` memory only after this metadata contract is updated with deliberate
+tests.
+Use `:processor:validateCudaImageSamplerNativeDescriptorLayout` before introducing actual native descriptor builders. It
+pins the preview field shape (`resourceLayouts=16`, `resourceLayoutFields=35`, `textureLayouts=9`,
+`textureLayoutFields=54`) while keeping native layout build, native allocation, object creation, and runtime binding
+disabled.
+Use `:processor:validateCudaImageSamplerDescriptorBuildPlan` before wiring invocation-time descriptor payload builders.
+It validates Java wrapper handle/metadata preflight, keeps descriptor payload/native descriptor counts at zero, and pins
+stable blockers for missing handles, closed samplers, and incomplete 2D metadata.
+Use `:processor:validateCudaImageSamplerDescriptorPayloadModel` before wiring native descriptor encoders. It builds only
+logical Java payload objects for future `CUDA_RESOURCE_DESC` / `CUDA_TEXTURE_DESC` memory, pins 16 resource payloads,
+9 texture payloads, and 1 folded sampler payload across built-ins, and keeps native allocation, object creation, and
+runtime binding disabled.
+Use `:processor:validateCudaImageSamplerNativeDescriptorEncodingPlan` before implementing native descriptor memory
+writes. It pins the field-write shape above the Java payload model (`resourceFieldWrites=35`, `textureFieldWrites=54`,
+`fieldWrites=89`) while keeping native writes, SDK struct byte encoding, object creation, and runtime binding disabled.
+Use `:processor:validateCudaImageSamplerObjectCreationRequestPlan` before wiring texture/surface object creation. It
+pins request intent above descriptor encoding (`objectRequests=16`, `textureObjectRequests=8`,
+`surfaceObjectRequests=8`, `foldedSamplers=1`) while keeping `objectCreationCallEnabledCount=0`, `activeObjects=0`,
+and blocked descriptor plans at zero requests. Do not call `cuTexObjectCreate` / `cuSurfObjectCreate` from this layer.
+CUDA source reconstruction has a 2D texture/surface preview: `Image2DReadOnly` parameters become
+`cudaTextureObject_t`, `Image2DWriteOnly` parameters become `cudaSurfaceObject_t`, `read_imagef/i/ui` becomes
+`tex2D<T>`, `write_imagef/i/ui` becomes `surf2Dwrite(...)`, folded `Sampler` parameters disappear from the kernel
+signature, and width/height metadata become explicit integer parameters. Non-2D image shapes, unsupported metadata, and
+runtime binding still fail closed until their CUDA ABI and binding path are implemented.
 
 The readback boundary is the final staged CUDA execution SPI in this alpha path. Add `.withCudaDriverReadback()` or set
 `cuda.readback=driver` to use the built-in Driver API readback bridge after launch. It resolves `cuMemcpyDtoH_v2`, copies
@@ -312,7 +358,7 @@ Use the opt-in real-driver smoke gate when you want to validate that staged CUDA
 
 The gate runs direct `GpuBackendExecutionPipeline.executeSafely(...)` coverage with `nvcc`, PTX/CUBIN/FATBIN module loading, driver
 argument binding, `cuLaunchKernel`, and `cuMemcpyDtoH_v2` readback. It covers primitive buffers/scalars, `Float2[]`,
-simple `@GPUStruct[]`, `GpuMemorySlice` primitive subranges, multi-`LOCAL` shared-memory offsets, and launch-shape
+simple `@GPUStruct[]`, scalar `@GPUStruct` `VALUE`, `GpuMemorySlice` primitive subranges, multi-`LOCAL` shared-memory offsets, local `@GPUStruct[]` shared memory, and launch-shape
 artifact fields. By default it skips cleanly when CUDA is not installed;
 set `JTG_CUDA_SMOKE_REQUIRED=true` for a dedicated CUDA CI lane that must fail on an incomplete staged run.
 The default companion summary artifact is `processor/build/reports/cuda/integration-cuda-smoke-summary.properties`; the
@@ -323,6 +369,10 @@ test has rich real-driver evidence for module/context handles, launch submission
 It also records `nvcc.outputFormat`; `ptx`, `cubin`, and `fatbin` are accepted staged CUDA module formats. CUBIN/FATBIN
 payloads are carried as binary artifacts into `cuModuleLoadDataEx`, while production CUDA support still requires promotion
 policy and broader coverage before promotion.
+After those summaries are available, `:processor:validateCudaProductionReadiness` writes
+`processor/build/reports/cuda/production-readiness.properties` and validates the staged-to-production boundary. The current
+healthy CUDA state is `review-ready`: binary staged execution is proven, `productionExecution.enabled=false`, and remaining
+work is explicit instead of silently enabling runtime auto-selection.
 Treat `cuda-driver-ptx-version-unsupported:*` as an environment/toolchain blocker, not as proof that argument binding or
 launch/readback failed. CUDA Toolkit 13.3, for example, emits PTX 9.3, which a driver exposing CUDA Driver API 13.2 cannot
 load. For real execution evidence, use a matching/newer driver, an older compatible `nvcc` selected through
@@ -377,6 +427,9 @@ Before a backend can be treated as production-ready, it should satisfy these che
 - Lowering returns `GpuBackendModuleArtifact` values, not untyped strings.
 - Unsupported execution returns structured receipts until execution exists.
 - CUDA execution readiness is explicit through `validateCudaExecutionReadiness` before CUDA kernels are enabled.
+- CUDA launch-shape guardrails are explicit through `validateCudaLaunchContract` before promotion.
+- CUDA image/sampler arguments are explicit through `validateCudaImageSamplerContract`, and the future texture/surface
+  ABI matrix is pinned through `validateCudaImageSamplerAbiPlan` before runtime binding work starts.
 - The pipeline factory uses backend-owned compiler/preparer/invoker state.
 - Compile, prepare, invoke, readback, and close stages emit portable receipts.
 - Lifecycle and artifact fields use portable `runtime.*` names first.

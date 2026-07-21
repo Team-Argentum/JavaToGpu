@@ -17,6 +17,11 @@ public record CudaArgumentBindingResult(
         GpuRuntimeInvocationBindingSummary bindingSummary,
         CudaExecutionPlan executionPlan,
         CudaKernelArgumentFrame argumentFrame,
+        CudaImageSamplerRuntimeBindingPlan imageSamplerRuntimeBindingPlan,
+        CudaImageSamplerDescriptorBuildPlan imageSamplerDescriptorBuildPlan,
+        CudaImageSamplerDescriptorPayloadModel imageSamplerDescriptorPayloadModel,
+        CudaImageSamplerNativeDescriptorEncodingPlan imageSamplerNativeDescriptorEncodingPlan,
+        CudaImageSamplerObjectCreationRequestPlan imageSamplerObjectCreationRequestPlan,
         List<String> blockers,
         List<String> diagnostics
 ) {
@@ -25,6 +30,21 @@ public record CudaArgumentBindingResult(
         binderId = binderId == null || binderId.isBlank() ? "cuda-argument-binder:unknown" : binderId.trim();
         status = status == null || status.isBlank() ? "unknown" : status.trim();
         bindingSummary = bindingSummary == null ? GpuRuntimeInvocationBindingSummary.empty() : bindingSummary;
+        imageSamplerRuntimeBindingPlan = imageSamplerRuntimeBindingPlan == null
+                ? CudaImageSamplerRuntimeBindingPlan.empty()
+                : imageSamplerRuntimeBindingPlan;
+        imageSamplerDescriptorBuildPlan = imageSamplerDescriptorBuildPlan == null
+                ? CudaImageSamplerDescriptorBuildPlan.empty()
+                : imageSamplerDescriptorBuildPlan;
+        imageSamplerDescriptorPayloadModel = imageSamplerDescriptorPayloadModel == null
+                ? CudaImageSamplerDescriptorPayloadModel.from(imageSamplerDescriptorBuildPlan)
+                : imageSamplerDescriptorPayloadModel;
+        imageSamplerNativeDescriptorEncodingPlan = imageSamplerNativeDescriptorEncodingPlan == null
+                ? CudaImageSamplerNativeDescriptorEncodingPlan.from(imageSamplerDescriptorPayloadModel)
+                : imageSamplerNativeDescriptorEncodingPlan;
+        imageSamplerObjectCreationRequestPlan = imageSamplerObjectCreationRequestPlan == null
+                ? CudaImageSamplerObjectCreationRequestPlan.from(imageSamplerNativeDescriptorEncodingPlan)
+                : imageSamplerObjectCreationRequestPlan;
         blockers = blockers == null ? List.of() : List.copyOf(blockers);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
     }
@@ -34,6 +54,11 @@ public record CudaArgumentBindingResult(
                 binderId(binderMode),
                 "disabled",
                 GpuRuntimeInvocationBindingSummary.empty(),
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 List.of("cuda-native-argument-binder-disabled"),
@@ -52,6 +77,11 @@ public record CudaArgumentBindingResult(
                 GpuRuntimeInvocationBindingSummary.empty(),
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 blockers,
                 diagnostics
         );
@@ -63,11 +93,44 @@ public record CudaArgumentBindingResult(
             List<String> blockers,
             List<String> diagnostics
     ) {
+        return unsupportedWithExecutionPlan(binderMode, executionPlan, null, blockers, diagnostics);
+    }
+
+    public static CudaArgumentBindingResult unsupportedWithExecutionPlan(
+            String binderMode,
+            CudaExecutionPlan executionPlan,
+            CudaImageSamplerRuntimeBindingPlan imageSamplerRuntimeBindingPlan,
+            List<String> blockers,
+            List<String> diagnostics
+    ) {
+        return unsupportedWithExecutionPlan(
+                binderMode,
+                executionPlan,
+                imageSamplerRuntimeBindingPlan,
+                null,
+                blockers,
+                diagnostics
+        );
+    }
+
+    public static CudaArgumentBindingResult unsupportedWithExecutionPlan(
+            String binderMode,
+            CudaExecutionPlan executionPlan,
+            CudaImageSamplerRuntimeBindingPlan imageSamplerRuntimeBindingPlan,
+            CudaImageSamplerDescriptorBuildPlan imageSamplerDescriptorBuildPlan,
+            List<String> blockers,
+            List<String> diagnostics
+    ) {
         return new CudaArgumentBindingResult(
                 binderId(binderMode),
                 "unsupported",
                 GpuRuntimeInvocationBindingSummary.empty(),
                 executionPlan,
+                null,
+                imageSamplerRuntimeBindingPlan,
+                imageSamplerDescriptorBuildPlan,
+                null,
+                null,
                 null,
                 blockers,
                 diagnostics
@@ -83,6 +146,11 @@ public record CudaArgumentBindingResult(
                 binderId,
                 "failed",
                 GpuRuntimeInvocationBindingSummary.empty(),
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 blockers,
@@ -101,6 +169,11 @@ public record CudaArgumentBindingResult(
                 "failed",
                 GpuRuntimeInvocationBindingSummary.empty(),
                 executionPlan,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 blockers,
                 diagnostics
@@ -137,6 +210,11 @@ public record CudaArgumentBindingResult(
                 bindingSummary,
                 executionPlan,
                 argumentFrame,
+                null,
+                null,
+                null,
+                null,
+                null,
                 List.of(),
                 diagnostics
         );
@@ -170,6 +248,26 @@ public record CudaArgumentBindingResult(
         fields.put(prefix + ".executionPlan.present", Boolean.toString(executionPlan != null));
         if (executionPlan != null) {
             fields.putAll(executionPlan.artifactFields(prefix + ".executionPlan"));
+        }
+        fields.put(prefix + ".imageSamplerRuntimeBindingPlan.present", Boolean.toString(imageSamplerRuntimeBindingPlan.present()));
+        if (imageSamplerRuntimeBindingPlan.present()) {
+            fields.putAll(imageSamplerRuntimeBindingPlan.artifactFields(prefix + ".imageSamplerRuntimeBindingPlan"));
+        }
+        fields.put(prefix + ".imageSamplerDescriptorBuildPlan.present", Boolean.toString(imageSamplerDescriptorBuildPlan.present()));
+        if (imageSamplerDescriptorBuildPlan.present()) {
+            fields.putAll(imageSamplerDescriptorBuildPlan.artifactFields(prefix + ".imageSamplerDescriptorBuildPlan"));
+        }
+        fields.put(prefix + ".imageSamplerDescriptorPayloadModel.present", Boolean.toString(imageSamplerDescriptorPayloadModel.present()));
+        if (imageSamplerDescriptorPayloadModel.present()) {
+            fields.putAll(imageSamplerDescriptorPayloadModel.artifactFields(prefix + ".imageSamplerDescriptorPayloadModel"));
+        }
+        fields.put(prefix + ".imageSamplerNativeDescriptorEncodingPlan.present", Boolean.toString(imageSamplerNativeDescriptorEncodingPlan.present()));
+        if (imageSamplerNativeDescriptorEncodingPlan.present()) {
+            fields.putAll(imageSamplerNativeDescriptorEncodingPlan.artifactFields(prefix + ".imageSamplerNativeDescriptorEncodingPlan"));
+        }
+        fields.put(prefix + ".imageSamplerObjectCreationRequestPlan.present", Boolean.toString(imageSamplerObjectCreationRequestPlan.present()));
+        if (imageSamplerObjectCreationRequestPlan.present()) {
+            fields.putAll(imageSamplerObjectCreationRequestPlan.artifactFields(prefix + ".imageSamplerObjectCreationRequestPlan"));
         }
         fields.put(prefix + ".argumentFrame.present", Boolean.toString(argumentFrame != null));
         if (argumentFrame != null) {

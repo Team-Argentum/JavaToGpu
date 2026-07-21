@@ -39,6 +39,44 @@ final class CudaValuePacker {
                 && GpuAnnotationSupport.hasAnnotation(type.getComponentType(), GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES);
     }
 
+    static boolean isStructValueInstance(Object value) {
+        if (value == null) {
+            return false;
+        }
+        Class<?> type = value.getClass();
+        return !type.isArray()
+                && GpuAnnotationSupport.hasAnnotation(type, GpuAnnotationSupport.GPU_STRUCT_ANNOTATION_TYPES);
+    }
+
+    static boolean structValueCompatible(String declaredType, Object value) {
+        if (!isStructValueInstance(value) || declaredType == null || declaredType.endsWith("[]")) {
+            return false;
+        }
+        Class<?> actualType = value.getClass();
+        return declaredType.equals(actualType.getName())
+                || declaredType.equals(actualType.getSimpleName());
+    }
+
+    static long structValueByteSize(Object value) {
+        if (!isStructValueInstance(value)) {
+            return 0L;
+        }
+        return resolveStructLayout(value.getClass()).size();
+    }
+
+    static ByteBuffer packStructValue(Object value) {
+        if (!isStructValueInstance(value)) {
+            String typeName = value == null ? "null" : value.getClass().getName();
+            throw new IllegalArgumentException("Unsupported CUDA struct VALUE type: " + typeName);
+        }
+        StructLayout layout = resolveStructLayout(value.getClass());
+        ByteBuffer buffer = MemoryUtil.memCalloc(layout.size()).order(ByteOrder.nativeOrder());
+        layout.write(value, buffer, 0);
+        buffer.limit(buffer.capacity());
+        buffer.position(0);
+        return buffer;
+    }
+
     static boolean structArrayCompatible(String declaredArrayType, Object value) {
         if (!isStructArrayInstance(value) || declaredArrayType == null || !declaredArrayType.endsWith("[]")) {
             return false;
@@ -66,6 +104,20 @@ final class CudaValuePacker {
         }
         StructLayout layout = resolveStructLayout(value.getClass().getComponentType());
         return (long) layout.size() * Math.max(0, elementCount);
+    }
+
+    static int structArrayElementByteSize(Object value) {
+        if (!isStructArrayInstance(value)) {
+            return 0;
+        }
+        return resolveStructLayout(value.getClass().getComponentType()).size();
+    }
+
+    static int structArrayElementAlignment(Object value) {
+        if (!isStructArrayInstance(value)) {
+            return 0;
+        }
+        return resolveStructLayout(value.getClass().getComponentType()).alignment();
     }
 
     static ByteBuffer packStructArray(Object value) {

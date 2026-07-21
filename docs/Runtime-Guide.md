@@ -103,11 +103,11 @@ supports non-empty primitive array `READ_ONLY` / `READ_WRITE` buffers
 `@GPUStruct[]` buffers, plus
 primitive scalar `VALUE` arguments (`byte`, `short`, `char`, `int`, `long`, `float`, `double`, `boolean`, and registered
 scalar aliases). For buffers it resolves `cuMemAlloc_v2`, `cuMemcpyHtoD_v2`, and `cuMemFree_v2`, uploads host values,
-packs vector arrays using the declared vector storage width, packs struct arrays with the same primitive/vector/nested
-struct field layout as the OpenCL ABI slice, builds the host-side kernel parameter table with
-device-pointer and scalar-value slots, records readback-required counts for `READ_WRITE` outputs plus scalar-slot
+packs vector arrays using the declared vector storage width, packs struct arrays and `@GPUStruct` `VALUE` arguments with
+the same primitive/vector/nested struct field layout as the OpenCL ABI slice, builds the host-side kernel parameter table with
+device-pointer and value slots, records readback-required counts for `READ_WRITE` outputs plus scalar-slot
 receipts, and frees device allocations/native argument slots when the prepared
-argument frame closes. Primitive array `LOCAL` arguments are mapped to CUDA dynamic shared memory and contribute
+argument frame closes. Primitive array and local `@GPUStruct[]` `LOCAL` arguments are mapped to CUDA dynamic shared memory and contribute
 `runtime.cuda.argumentFrame.localSharedMemory.*` layout receipts. One `LOCAL` is omitted from the kernel parameter table.
 When multiple `LOCAL` parameters exist, the CUDA lowerer emits hidden unsigned byte-offset parameters after visible
 non-`LOCAL` parameters, and the driver binder appends matching offset slots after normal device-pointer/scalar slots.
@@ -122,8 +122,8 @@ unsupported blocker instead of an exception. A successful launcher emits `runtim
 `.withCudaDriverReadback()` to enter the built-in Driver API readback bridge. It resolves `cuMemcpyDtoH_v2`, copies
 `READ_WRITE` primitive/vector/struct array device allocations back into the original Java arrays, marks allocation readback receipts, and
 updates `runtime.cuda.readback.*` plus portable `runtime.backend.invoke.readback.*` counts. Built-in production CUDA
-driver execution remains unavailable until this path is hardware-validated and broader image/sampler plus struct-by-value/local
-shapes are supported.
+driver execution remains unavailable until broader image/sampler coverage, cross-device validation,
+and explicit production activation policy are in place.
 The staged CUDA binder/readback path accepts full Java arrays or explicit `GpuMemorySlice.of(array, offset, length)`
 views for contiguous primitive, vector, and `@GPUStruct[]` buffers. Slice uploads allocate/copy only the selected element
 range, and readback writes results back into the same host offset while preserving surrounding array elements.
@@ -141,10 +141,16 @@ Use explicit per-format lanes when validating the PTX-vs-binary module paths ind
 .\gradlew.bat :processor:integrationCudaFatbinSmokeTest --console=plain
 ```
 
+The binary smoke summaries include scenario-level evidence counters. For example,
+`evidence.scenario.struct-value.realDriver.count=1` and `evidence.scenario.local-struct.realDriver.count=1` prove that
+the staged CUDA Driver API path actually launched and read back kernels that use an `@GPUStruct` `VALUE` parameter and
+local `@GPUStruct[]` shared memory, rather than relying only on generic lane success.
+
 That task discovers a CUDA device through `nvidia-smi`, compiles inline CUDA-C with `nvcc`, loads PTX/CUBIN/FATBIN through the CUDA
 Driver API, binds arguments, launches kernels, and reads back outputs. The current smoke coverage includes primitive
 buffers plus scalar `VALUE`, `GpuMemorySlice` primitive subranges, `Float2[]` buffers, simple `@GPUStruct[]` buffers,
-multi-`LOCAL` dynamic shared-memory offsets, and launch-shape artifact checks. It skips when CUDA tooling/driver state is unavailable unless `JTG_CUDA_SMOKE_REQUIRED=true` is set. Use
+scalar `@GPUStruct` `VALUE` parameters, multi-`LOCAL` dynamic shared-memory offsets, local `@GPUStruct[]` shared memory,
+and launch-shape artifact checks. It skips when CUDA tooling/driver state is unavailable unless `JTG_CUDA_SMOKE_REQUIRED=true` is set. Use
 `JTG_CUDA_SMOKE_ARCH=compute_86`, `JTG_CUDA_NVCC=C:\path\to\nvcc.exe`, or `JTG_CUDA_NVCC_OUTPUT_FORMAT=ptx|cubin|fatbin`
 to pin the compiler target, compiler path, or requested nvcc output family.
 The default task writes and validates `processor/build/reports/cuda/integration-cuda-smoke-summary.properties` after every
@@ -165,6 +171,144 @@ staged binary module path.
 `cuModuleLoadDataEx` and skips PTX ISA compatibility preflight for those formats. The binary lanes are the preferred way
 to validate execution when PTX ISA is newer than the installed driver API; production CUDA execution still requires
 promotion policy and broader coverage before it can be treated as supported.
+
+Once the per-format summaries exist, run the production-readiness boundary gate:
+
+```powershell
+.\gradlew.bat :processor:validateCudaProductionReadiness --console=plain
+```
+
+The task writes `processor/build/reports/cuda/production-readiness.properties`. `review-ready` means the staged CUBIN/FATBIN
+execution evidence is complete while production CUDA remains disabled by policy; `production-ready` is reserved for a future
+activation path, and `blocked` means smoke evidence or metadata contracts regressed.
+
+When changing CUDA launch sizing or dynamic shared-memory logic, run the hardware-free launch contract gate:
+
+```powershell
+.\gradlew.bat :processor:validateCudaLaunchContract --console=plain
+```
+
+This gate uses synthetic Driver API handles, not a real CUDA driver. It proves that valid 1D/3D launch shapes and dynamic
+shared memory are accepted while auto-local, non-divisible global/local shapes, oversized blocks, and shared-memory limit
+violations stay fail-closed with stable `cuda-driver-launch-*` blockers.
+
+CUDA image/sampler arguments have a separate fail-closed contract:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerContract --console=plain
+```
+
+That gate recognizes the existing Java image and sampler wrapper types but expects unsupported CUDA binder receipts with
+stable `cuda-driver-image-argument-unsupported:*` / `cuda-driver-sampler-argument-unsupported:*` blockers. This is not
+production image/sampler support; it is the guardrail that prevents accidental struct/scalar binding while the CUDA
+texture/surface/sampler ABI is still pending. The same gate records a hardware-free runtime binding preflight plan:
+current synthetic cases report `runtimeBindingPlanEntries=6`, `runtimeBindingPlanPlannedSlots=12`, and
+`runtimeBindingPlanActiveSlots=0`, proving planned texture/surface/sampler slots are visible while actual runtime binding
+remains disabled.
+
+The planned CUDA image/sampler ABI can be checked separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerAbiPlan --console=plain
+```
+
+This gate is also hardware-free. It fixes the future mapping for Java image wrappers to `CUtexObject` / `CUsurfObject`
+carriers and `Sampler` state to `CUDA_TEXTURE_DESC`, reports current source-preview coverage (`sourcePreviewEnabled=2`,
+`sourcePreviewFolded=1`, `sourcePreviewPending=14`, `sourcePreviewKernelParameterSlots=6`,
+`sourcePreviewMetadataSlots=4`), records the planned runtime slot shape (`plannedRuntimeKernelParameterSlots=44`,
+`plannedRuntimeMetadataSlots=28`), and keeps active runtime binding at `runtimeBindingEnabled=0` /
+`runtimeBindingKernelParameterSlots=0` until the real implementation and real-device evidence exist.
+
+The Driver API object-creation boundary has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerObjectCreationContract --console=plain
+```
+
+This resolves the planned texture/surface object symbols through synthetic Driver API handles and must report
+`objectCreationEnabled=false`, `objectOwnershipBoundary=prepared`, `activeObjectCount=0`, `requiredDriverSymbols=13`,
+`resolvedDriverSymbols=13`, and `missingDriverSymbols=0`. The ownership path is ready to close future texture/surface
+handles, but this gate is still symbol/preflight only; runtime binding does not call `cuTexObjectCreate`,
+`cuSurfObjectCreate`, or their destroy functions during normal execution.
+
+The CUDA descriptor boundary is checked separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerDescriptorContract --console=plain
+```
+
+This gate fixes the planned resource/texture descriptor vocabulary without allocating native descriptor structs. It must
+report `resourceDescriptors=16`, `textureDescriptors=9`, `descriptorBuildEnabled=false`,
+`nativeDescriptorAllocationEnabled=false`, `activeDescriptorCount=0`, and `nativeLayoutPending=17`. The sampler state is
+currently a planned default (`nearest-clamp-to-edge` with unnormalized coordinates) until Java-side sampler metadata is
+available for CUDA.
+
+The planned native descriptor layout has a separate preview-only check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorLayout --console=plain
+```
+
+This gate records the logical `CUDA_RESOURCE_DESC` / `CUDA_TEXTURE_DESC` field shape before native memory work exists. It
+must report `resourceLayouts=16`, `resourceLayoutFields=35`, `textureLayouts=9`, `textureLayoutFields=54`,
+`nativeLayoutBuildEnabled=false`, `nativeDescriptorAllocationEnabled=false`, and `activeNativeDescriptorCount=0`. It does
+not allocate descriptor memory, encode CUDA SDK struct bytes, call texture/surface object creation, or enable runtime
+image/sampler binding.
+
+Java-side descriptor build planning has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerDescriptorBuildPlan --console=plain
+```
+
+This gate validates the invocation wrapper data that a future descriptor builder will need. It must report
+`caseReady=7/7`, `planReady=4`, `planBlocked=3`, `entries=9`, `resourceDescriptorPayloads=6`,
+`textureDescriptorPayloads=7`, `activeDescriptorPayloads=0`, and `activeNativeDescriptors=0`. The intentionally blocked
+cases pin stable diagnostics for missing image handles, closed samplers, and missing 2D height metadata.
+
+The Java-only descriptor payload model has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerDescriptorPayloadModel --console=plain
+```
+
+This gate turns ready descriptor build plans into logical Java payload objects for future `CUDA_RESOURCE_DESC` /
+`CUDA_TEXTURE_DESC` encoders. It must report `caseReady=3/3`, `modelReady=1`, `modelBlocked=2`, `entries=19`,
+`resourcePayloads=16`, `texturePayloads=9`, `samplerPayloads=1`, and `activeNativeDescriptors=0`. Blocked preflight
+cases stay blocked with stable missing-handle/closed-sampler diagnostics. Native allocation, native struct encoding,
+texture/surface object creation, and runtime image/sampler binding remain disabled.
+
+The planned native descriptor field encoding shape has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorEncodingPlan --console=plain
+```
+
+This gate records field-write intent only. It maps ready Java payloads to logical `CUDA_RESOURCE_DESC` /
+`CUDA_TEXTURE_DESC` field paths such as `resType`, `res.array.hArray`, `res.linear.devPtr`, `addressMode[0]`,
+`filterMode`, `flags`, and `readMode`. It must report `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `entries=19`,
+`resourceFieldWrites=35`, `textureFieldWrites=54`, `fieldWrites=89`, `nativeWriteEnabledCount=0`,
+`sdkStructByteEncodingEnabledCount=0`, and `activeNativeDescriptors=0`. It still writes no native memory and does not
+encode CUDA SDK struct bytes.
+
+The planned texture/surface object request shape has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerObjectCreationRequestPlan --console=plain
+```
+
+This gate records request intent above descriptor encoding only. It must report `caseReady=3/3`, `planReady=1`,
+`planBlocked=2`, `entries=19`, `objectRequests=16`, `textureObjectRequests=8`, `surfaceObjectRequests=8`,
+`foldedSamplers=1`, `objectCreationCallEnabledCount=0`, and `activeObjects=0`. Blocked descriptor plans keep stable
+blockers and produce zero object requests. Runtime image/sampler binding still does not call `cuTexObjectCreate` or
+`cuSurfObjectCreate`.
+
+CUDA source preview now has a 2D texture/surface slice: `Image2DReadOnly` lowers to `cudaTextureObject_t`,
+`Image2DWriteOnly` lowers to `cudaSurfaceObject_t`, `read_imagef/i/ui` lowers to `tex2D<T>`, `write_imagef/i/ui`
+lowers to `surf2Dwrite(...)`, `Sampler` is folded out of the kernel signature as planned descriptor state, and
+`get_image_width/height` lower to explicit metadata parameters. Non-2D image shapes and unsupported image metadata still
+fail closed with structured blockers such as `cuda-image-sampler-source-lowering-pending:*`,
+`cuda-image-write-source-lowering-pending:*`, or `cuda-image-metadata-source-lowering-pending:*`.
 CUDA inventory exposes driver, memory, CUDA runtime version, and compute capability through the same artifact/lifecycle
 field vocabulary; tooling can read selected-device fields such as `runtime.device.cuda.runtimeVersion` and
 `runtime.device.cuda.computeCapability` or per-device fields such as `deviceDiscovery.device.0.cuda.computeCapability`.
