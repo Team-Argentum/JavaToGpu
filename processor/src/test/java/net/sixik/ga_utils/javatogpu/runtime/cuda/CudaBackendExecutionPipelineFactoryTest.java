@@ -18,6 +18,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuPreparedKernel;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEvent;
@@ -102,6 +103,54 @@ class CudaBackendExecutionPipelineFactoryTest {
         assertEquals(GpuBackendStageStatus.UNSUPPORTED, result.preparationResult().stageResult().status());
         assertTrue(result.preparationResult().stageResult().blockers()
                 .contains("cuda-native-argument-binding-missing"));
+    }
+
+    @Test
+    void binaryCudaModuleFormatsCanReachModuleLoaderWhenPayloadPresent() {
+        GpuBackendExecutionPipeline<GpuBackendCompiledKernel, GpuPreparedKernel, CudaExecutionPlan> pipeline =
+                new GpuBackendExecutionPipeline<>(
+                        new CudaKernelCompiler(CudaNativeCompilerBridgeRegistry.of(List.of(new TestCubinBridge()))),
+                        new CudaKernelPreparer(CudaModuleLoaderBridgeRegistry.of(List.of(new TestModuleLoader()))),
+                        new CudaKernelInvoker()
+                );
+        GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result = pipeline.executeSafely(
+                nativeCompileAndLoadRequest("test-cubin"),
+                loweringResult(),
+                loweringResult().moduleArtifact(),
+                CudaExecutionPlan.empty(),
+                null
+        );
+        Map<String, String> fields = result.artifactFields("cuda.pipeline");
+
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, result.compilationResult().stageResult().status());
+        assertTrue(result.compiledKernel() instanceof CudaCompiledKernel);
+        CudaCompiledKernel compiledKernel = (CudaCompiledKernel) result.compiledKernel();
+        assertEquals(GpuBackendModuleFormat.CUBIN, compiledKernel.moduleArtifact().moduleFormat());
+        assertEquals("cubin", fields.get("runtime.backend.compiledKernel.module.format.canonical"));
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, result.preparationResult().stageResult().status());
+        assertEquals("succeeded", fields.get("runtime.cuda.moduleLoad.status"));
+    }
+
+    @Test
+    void binaryCudaModuleFormatsFailClosedWhenPayloadIsMissing() {
+        GpuBackendExecutionPipeline<GpuBackendCompiledKernel, GpuPreparedKernel, CudaExecutionPlan> pipeline =
+                new GpuBackendExecutionPipeline<>(
+                        new CudaKernelCompiler(CudaNativeCompilerBridgeRegistry.of(List.of(new TestCubinMetadataOnlyBridge()))),
+                        new CudaKernelPreparer(CudaModuleLoaderBridgeRegistry.of(List.of(new TestModuleLoader()))),
+                        new CudaKernelInvoker()
+                );
+        GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> result = pipeline.executeSafely(
+                nativeCompileAndLoadRequest("test-cubin-metadata-only"),
+                loweringResult(),
+                loweringResult().moduleArtifact(),
+                CudaExecutionPlan.empty(),
+                null
+        );
+
+        assertEquals(GpuBackendStageStatus.SUCCEEDED, result.compilationResult().stageResult().status());
+        assertEquals(GpuBackendStageStatus.UNSUPPORTED, result.preparationResult().stageResult().status());
+        assertTrue(result.preparationResult().stageResult().blockers()
+                .contains("cuda-module-loader-binary-payload-missing:cubin"));
     }
 
     @Test
@@ -326,6 +375,10 @@ class CudaBackendExecutionPipelineFactoryTest {
     }
 
     private static GpuRuntimeCompileRequest nativeCompileAndLoadRequest() {
+        return nativeCompileAndLoadRequest("test-ptx");
+    }
+
+    private static GpuRuntimeCompileRequest nativeCompileAndLoadRequest(String compilerBridge) {
         return new GpuRuntimeCompileRequest(
                 new GpuKernelDescriptor(
                         "jtg_cuda_preview_kernel",
@@ -337,7 +390,7 @@ class CudaBackendExecutionPipelineFactoryTest {
                         List.of("--gpu-architecture=compute_86"),
                         Map.of(
                                 GpuBackendCompileOptions.CUDA_COMPILER_BRIDGE_PROPERTY,
-                                "test-ptx",
+                                compilerBridge,
                                 GpuBackendCompileOptions.CUDA_MODULE_LOADER_PROPERTY,
                                 "test-module"
                         ),
@@ -488,6 +541,73 @@ class CudaBackendExecutionPipelineFactoryTest {
         }
     }
 
+    private static final class TestCubinBridge implements CudaNativeCompilerBridge {
+        @Override
+        public String bridgeId() {
+            return "cuda-native-compiler:test-cubin";
+        }
+
+        @Override
+        public int bridgeOrder() {
+            return 1;
+        }
+
+        @Override
+        public boolean supports(CudaNativeCompilationRequest request) {
+            return "test-cubin".equals(request.bridgeMode());
+        }
+
+        @Override
+        public CudaNativeCompilationResult compile(CudaNativeCompilationRequest request) {
+            return CudaNativeCompilationResult.succeeded(
+                    bridgeId(),
+                    GpuBackendModuleArtifact.cubin(
+                            "inline://tests/cuda-preview.cubin",
+                            bridgeId(),
+                            true
+                    ),
+                    List.of(new GpuRuntimeBinaryArtifact(
+                            "cuda-preview.cubin",
+                            "application/x-cuda-cubin",
+                            new byte[]{1, 2, 3, 4}
+                    )),
+                    "ptxas info : synthetic CUBIN bridge",
+                    List.of("synthetic CUBIN bridge emitted CUBIN metadata")
+            );
+        }
+    }
+
+    private static final class TestCubinMetadataOnlyBridge implements CudaNativeCompilerBridge {
+        @Override
+        public String bridgeId() {
+            return "cuda-native-compiler:test-cubin-metadata-only";
+        }
+
+        @Override
+        public int bridgeOrder() {
+            return 1;
+        }
+
+        @Override
+        public boolean supports(CudaNativeCompilationRequest request) {
+            return "test-cubin-metadata-only".equals(request.bridgeMode());
+        }
+
+        @Override
+        public CudaNativeCompilationResult compile(CudaNativeCompilationRequest request) {
+            return CudaNativeCompilationResult.succeeded(
+                    bridgeId(),
+                    GpuBackendModuleArtifact.cubin(
+                            "inline://tests/cuda-preview.cubin",
+                            bridgeId(),
+                            true
+                    ),
+                    "ptxas info : synthetic CUBIN bridge",
+                    List.of("synthetic CUBIN bridge emitted CUBIN metadata without payload")
+            );
+        }
+    }
+
     private static final class TestModuleLoader implements CudaModuleLoaderBridge {
         @Override
         public String loaderId() {
@@ -506,6 +626,9 @@ class CudaBackendExecutionPipelineFactoryTest {
 
         @Override
         public CudaModuleLoadResult load(CudaModuleLoadRequest request) {
+            if (request.moduleArtifact().moduleFormat() == GpuBackendModuleFormat.CUBIN) {
+                assertTrue(request.moduleBinaryArtifact().isPresent());
+            }
             return CudaModuleLoadResult.succeeded(
                     loaderId(),
                     "test-module-handle",

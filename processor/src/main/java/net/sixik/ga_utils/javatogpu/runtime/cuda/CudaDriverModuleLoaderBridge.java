@@ -25,6 +25,6 @@ final class CudaDriverModuleLoaderBridge implements CudaModuleLoaderBridge {
 
     @Override
     public CudaModuleLoadResult load(CudaModuleLoadRequest request) {
-        return CudaDriverLibrary.loadModuleFromPtx(request, loaderId());
+        return CudaDriverLibrary.loadModule(request, loaderId());
     }
 }

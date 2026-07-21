@@ -63,6 +63,30 @@ class CudaDriverReadbackBridgeTest {
     }
 
     @Test
+    void driverReadbackCopiesReadWriteFloatSliceBackToHost() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        invoker.nextReadbackValues = new float[]{3.0f, 5.0f};
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
+        float[] output = new float[]{100.0f, 0.0f, 0.0f, 400.0f};
+        CudaKernelArgumentFrame frame = argumentFrame(invoker, output, "float[]", Float.BYTES, 1, 2);
+        CudaKernelReadbackRequest request = readbackRequest(loadedModule, frame);
+
+        CudaKernelReadbackResult result = new CudaDriverReadbackBridge().readBack(request);
+        Map<String, String> fields = frame.artifactFields("test.cuda.argumentFrame");
+
+        assertTrue(result.succeeded());
+        assertTrue(result.complete());
+        assertArrayEquals(new float[]{100.0f, 3.0f, 5.0f, 400.0f}, output);
+        assertEquals(List.of(0xD00D_0000L + ":8"), invoker.deviceToHostCopies);
+        assertEquals("true", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.hostSlice.enabled"));
+        assertEquals("1", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.hostElement.offset"));
+        assertEquals("3", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.hostElement.endExclusive"));
+
+        frame.close();
+        loadedModule.close();
+    }
+
+    @Test
     void driverReadbackCopiesReadWriteIntArrayBackToHost() {
         FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
         invoker.nextReadbackValues = new int[]{7, 11, 13};
@@ -239,14 +263,26 @@ class CudaDriverReadbackBridgeTest {
             String javaType,
             int elementByteSize
     ) {
+        return argumentFrame(invoker, output, javaType, elementByteSize, 0, arrayLength(output));
+    }
+
+    private static CudaKernelArgumentFrame argumentFrame(
+            FakeDriverApiInvoker invoker,
+            Object output,
+            String javaType,
+            int elementByteSize,
+            int hostElementOffset,
+            int elementCount
+    ) {
         CudaDriverDeviceAllocation allocation = new CudaDriverDeviceAllocation(
                 0,
                 "output",
                 javaType,
                 GpuKernelParameterAccess.READ_WRITE,
                 output,
-                arrayLength(output),
-                (long) arrayLength(output) * elementByteSize,
+                hostElementOffset,
+                elementCount,
+                (long) elementCount * elementByteSize,
                 0xD00D_0000L,
                 true,
                 0x2003L,

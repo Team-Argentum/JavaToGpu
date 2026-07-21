@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -15,6 +16,7 @@ public record CudaNativeCompilationResult(
         String bridgeId,
         String status,
         Optional<GpuBackendModuleArtifact> moduleArtifact,
+        List<GpuRuntimeBinaryArtifact> binaryArtifacts,
         String compileLog,
         List<String> blockers,
         List<String> diagnostics
@@ -24,6 +26,7 @@ public record CudaNativeCompilationResult(
         bridgeId = bridgeId == null || bridgeId.isBlank() ? "cuda-native-compiler:unknown" : bridgeId.trim();
         status = status == null || status.isBlank() ? "unknown" : status.trim();
         moduleArtifact = moduleArtifact == null ? Optional.empty() : moduleArtifact;
+        binaryArtifacts = binaryArtifacts == null ? List.of() : List.copyOf(binaryArtifacts);
         compileLog = compileLog == null ? "" : compileLog;
         blockers = blockers == null ? List.of() : List.copyOf(blockers);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
@@ -34,6 +37,7 @@ public record CudaNativeCompilationResult(
                 bridgeId(bridgeMode),
                 "disabled",
                 Optional.empty(),
+                List.of(),
                 "",
                 List.of("cuda-native-compiler-bridge-disabled"),
                 List.of("CUDA native compiler bridge was not requested")
@@ -49,6 +53,7 @@ public record CudaNativeCompilationResult(
                 bridgeId(bridgeMode),
                 "unsupported",
                 Optional.empty(),
+                List.of(),
                 "",
                 blockers,
                 diagnostics
@@ -65,6 +70,7 @@ public record CudaNativeCompilationResult(
                 bridgeId,
                 "failed",
                 Optional.empty(),
+                List.of(),
                 compileLog,
                 blockers,
                 diagnostics
@@ -77,10 +83,21 @@ public record CudaNativeCompilationResult(
             String compileLog,
             List<String> diagnostics
     ) {
+        return succeeded(bridgeId, moduleArtifact, List.of(), compileLog, diagnostics);
+    }
+
+    public static CudaNativeCompilationResult succeeded(
+            String bridgeId,
+            GpuBackendModuleArtifact moduleArtifact,
+            List<GpuRuntimeBinaryArtifact> binaryArtifacts,
+            String compileLog,
+            List<String> diagnostics
+    ) {
         return new CudaNativeCompilationResult(
                 bridgeId,
                 "succeeded",
                 Optional.ofNullable(moduleArtifact),
+                binaryArtifacts,
                 compileLog,
                 List.of(),
                 diagnostics
@@ -101,6 +118,13 @@ public record CudaNativeCompilationResult(
         fields.put(normalizedPrefix + ".status", status);
         fields.put(normalizedPrefix + ".succeeded", Boolean.toString(succeeded()));
         fields.put(normalizedPrefix + ".module.present", Boolean.toString(moduleArtifact.isPresent()));
+        fields.put(normalizedPrefix + ".binaryArtifact.count", Integer.toString(binaryArtifacts.size()));
+        for (int index = 0; index < binaryArtifacts.size(); index++) {
+            GpuRuntimeBinaryArtifact artifact = binaryArtifacts.get(index);
+            fields.put(normalizedPrefix + ".binaryArtifact." + index + ".name", artifact.name());
+            fields.put(normalizedPrefix + ".binaryArtifact." + index + ".mediaType", artifact.mediaType());
+            fields.put(normalizedPrefix + ".binaryArtifact." + index + ".byteSize", Integer.toString(artifact.size()));
+        }
         moduleArtifact.ifPresent(module -> {
             fields.put(normalizedPrefix + ".module.format", module.format());
             fields.put(normalizedPrefix + ".module.resource", module.resource());
@@ -114,6 +138,7 @@ public record CudaNativeCompilationResult(
         fields.put("runtime.cuda.nativeCompilation.bridge.id", bridgeId);
         fields.put("runtime.cuda.nativeCompilation.status", status);
         fields.put("runtime.cuda.nativeCompilation.succeeded", Boolean.toString(succeeded()));
+        fields.put("runtime.cuda.nativeCompilation.binaryArtifact.count", Integer.toString(binaryArtifacts.size()));
         return Collections.unmodifiableMap(fields);
     }
 

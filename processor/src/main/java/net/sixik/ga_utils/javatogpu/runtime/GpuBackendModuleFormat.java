@@ -13,6 +13,8 @@ public enum GpuBackendModuleFormat {
     OPENCL_C("opencl-c", true, false, Set.of(GpuBackendTarget.OPENCL)),
     CUDA_C("cuda-c", true, false, Set.of(GpuBackendTarget.CUDA)),
     PTX("ptx", true, true, Set.of(GpuBackendTarget.CUDA)),
+    CUBIN("cubin", false, true, Set.of(GpuBackendTarget.CUDA)),
+    FATBIN("fatbin", false, true, Set.of(GpuBackendTarget.CUDA)),
     SPIR_V("spir-v", false, true, Set.of(GpuBackendTarget.VULKAN, GpuBackendTarget.OPENCL)),
     METAL_SHADING_LANGUAGE("metal-shading-language", true, false, Set.of(GpuBackendTarget.METAL)),
     NATIVE_BINARY("native-binary", false, true, Set.of());
@@ -78,6 +80,12 @@ public enum GpuBackendModuleFormat {
         }
         if ("cuda".equals(normalized) || "cudac".equals(normalized) || "cuda-c-source".equals(normalized)) {
             return CUDA_C.key;
+        }
+        if ("cuda-cubin".equals(normalized) || "nvidia-cubin".equals(normalized)) {
+            return CUBIN.key;
+        }
+        if ("cuda-fatbin".equals(normalized) || "nvidia-fatbin".equals(normalized)) {
+            return FATBIN.key;
         }
         if ("metal".equals(normalized) || "metal-shading-language-source".equals(normalized)) {
             return METAL_SHADING_LANGUAGE.key;

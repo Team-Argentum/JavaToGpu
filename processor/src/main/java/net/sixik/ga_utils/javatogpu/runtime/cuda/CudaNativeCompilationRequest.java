@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleFormat;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 
 import java.time.Duration;
@@ -51,6 +52,18 @@ public record CudaNativeCompilationRequest(
 
     public Optional<String> nvccPath() {
         return backendOptions.cudaNvccPath();
+    }
+
+    public String nvccOutputFormat() {
+        return backendOptions.cudaNvccOutputFormat();
+    }
+
+    public GpuBackendModuleFormat nvccOutputModuleFormat() {
+        return backendOptions.cudaNvccOutputModuleFormat();
+    }
+
+    public Optional<String> nvccOutputFormatBlocker() {
+        return backendOptions.cudaNvccOutputFormatBlocker();
     }
 
     public Duration timeout() {

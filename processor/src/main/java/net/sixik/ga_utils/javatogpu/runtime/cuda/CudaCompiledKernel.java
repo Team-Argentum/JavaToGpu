@@ -108,13 +108,15 @@ public final class CudaCompiledKernel implements GpuBackendCompiledKernel {
                 + ":"
                 + compileRequest.descriptor().kernelName()
                 + ":"
-                + sha256(compiledModule.source());
+                + modulePayloadIdentity(compiledModule);
         GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot
                 .from(compileRequest, compileRequest, compiledModule)
+                .withBinaryArtifacts(nativeCompilationResult.binaryArtifacts())
                 .withCompileLog(nativeCompilationResult.compileLog())
                 .withRuntimeValidationEvidence(List.of(
                         "cuda.nativeCompilation.bridge=" + nativeCompilationResult.bridgeId(),
                         "cuda.nativeCompilation.status=" + nativeCompilationResult.status(),
+                        "cuda.nativeCompilation.binaryArtifact.count=" + nativeCompilationResult.binaryArtifacts().size(),
                         "cuda.nativeHandle.available=false"
                 ));
         return new CudaCompiledKernel(
@@ -196,6 +198,20 @@ public final class CudaCompiledKernel implements GpuBackendCompiledKernel {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 digest is not available", exception);
         }
+    }
+
+    private static String modulePayloadIdentity(GpuBackendModuleArtifact moduleArtifact) {
+        GpuBackendModuleArtifact module = moduleArtifact == null ? GpuBackendModuleArtifact.unknown() : moduleArtifact;
+        if (module.sourceAvailable()) {
+            return sha256(module.source());
+        }
+        return sha256(module.format()
+                + "|"
+                + module.resource()
+                + "|"
+                + module.artifactVersion()
+                + "|"
+                + module.binaryAvailable());
     }
 
     private static String normalize(String value, String fallback) {

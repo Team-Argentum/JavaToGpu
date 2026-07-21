@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,13 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
 
     @Override
     public CudaKernelLaunchResult launch(CudaKernelLaunchRequest request) {
+        if (request == null) {
+            return CudaKernelLaunchResult.unsupported(
+                    GpuBackendCompileOptions.CUDA_KERNEL_LAUNCHER_DRIVER,
+                    List.of("cuda-driver-launch-request-missing"),
+                    List.of("CUDA driver kernel launch requires a launch request")
+            );
+        }
         CudaDriverLoadedModule loadedModule = request.preparedKernel().moduleLoadResult().loadedModule();
         if (loadedModule == null || loadedModule.moduleHandle() == 0L) {
             return CudaKernelLaunchResult.unsupported(
@@ -74,10 +82,13 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
             );
         }
 
-        LaunchShape launchShape;
+        DriverLaunchShape launchShape;
+        int sharedMemoryByteSize;
         try {
-            launchShape = LaunchShape.from(request.executionConfig());
-        } catch (UnsupportedLaunchShapeException exception) {
+            GpuRuntimeDeviceProfile deviceProfile = request.preparedKernel().compiledKernel().deviceProfile();
+            launchShape = DriverLaunchShape.from(request.executionConfig(), deviceProfile);
+            sharedMemoryByteSize = checkedSharedMemoryByteSize(request, deviceProfile);
+        } catch (UnsupportedLaunchContractException exception) {
             return CudaKernelLaunchResult.unsupported(
                     request.launcherMode(),
                     List.of(exception.blocker()),
@@ -93,7 +104,7 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
                 launchShape.blockDimX(),
                 launchShape.blockDimY(),
                 launchShape.blockDimZ(),
-                request.sharedMemoryByteSize(),
+                sharedMemoryByteSize,
                 0L,
                 kernelParameterTableAddress,
                 0L,
@@ -109,13 +120,14 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
         return CudaKernelLaunchResult.succeeded(
                 launcherId(),
                 request.executionConfig(),
-                request.sharedMemoryByteSize(),
+                sharedMemoryByteSize,
                 request.readbackRequiredCount(),
                 0,
                 List.of("CUDA driver kernel launch submitted with "
                         + launchShape.summary()
                         + ", sharedMemoryBytes="
-                        + request.sharedMemoryByteSize())
+                        + sharedMemoryByteSize),
+                launchShape.toResultLaunchShape()
         );
     }
 
@@ -151,7 +163,7 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
         }
     }
 
-    private record LaunchShape(
+    private record DriverLaunchShape(
             int gridDimX,
             int gridDimY,
             int gridDimZ,
@@ -159,14 +171,48 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
             int blockDimY,
             int blockDimZ
     ) {
-        private static LaunchShape from(GpuExecutionConfig config) {
-            long blockX = config.localX() > 0L ? config.localX() : 1L;
-            long blockY = config.dimensions() >= 2 && config.localY() > 0L ? config.localY() : 1L;
-            long blockZ = config.dimensions() == 3 && config.localZ() > 0L ? config.localZ() : 1L;
-            long gridX = ceilDiv(config.globalX(), blockX);
-            long gridY = config.dimensions() >= 2 ? ceilDiv(config.globalY(), blockY) : 1L;
-            long gridZ = config.dimensions() == 3 ? ceilDiv(config.globalZ(), blockZ) : 1L;
-            return new LaunchShape(
+        private static DriverLaunchShape from(GpuExecutionConfig config, GpuRuntimeDeviceProfile deviceProfile) {
+            if (config == null) {
+                throw new UnsupportedLaunchContractException(
+                        "cuda-driver-launch-config-missing",
+                        "CUDA driver kernel launch requires an explicit execution config"
+                );
+            }
+            if (!config.hasExplicitLocalSize()) {
+                throw new UnsupportedLaunchContractException(
+                        "cuda-driver-launch-local-size-required",
+                        "CUDA driver kernel launch requires an explicit local work-group size"
+                );
+            }
+            long blockX = config.localX();
+            long blockY = config.dimensions() >= 2 ? config.localY() : 1L;
+            long blockZ = config.dimensions() == 3 ? config.localZ() : 1L;
+            ensureDivisible("x", config.globalX(), blockX);
+            if (config.dimensions() >= 2) {
+                ensureDivisible("y", config.globalY(), blockY);
+            }
+            if (config.dimensions() == 3) {
+                ensureDivisible("z", config.globalZ(), blockZ);
+            }
+            long blockItemCount = checkedProduct("blockItemCount", blockX, blockY, blockZ);
+            if (blockItemCount > Integer.MAX_VALUE) {
+                throw new UnsupportedLaunchContractException(
+                        "cuda-driver-launch-block-item-count-too-large",
+                        "CUDA launch block item count exceeds the supported Java int range: " + blockItemCount
+                );
+            }
+            long maxWorkGroupSize = deviceProfile == null ? -1L : deviceProfile.maxWorkGroupSize();
+            if (maxWorkGroupSize > 0L && blockItemCount > maxWorkGroupSize) {
+                throw new UnsupportedLaunchContractException(
+                        "cuda-driver-launch-block-item-count-exceeds-device",
+                        "CUDA launch block item count " + blockItemCount
+                                + " exceeds device max work-group size " + maxWorkGroupSize
+                );
+            }
+            long gridX = config.globalX() / blockX;
+            long gridY = config.dimensions() >= 2 ? config.globalY() / blockY : 1L;
+            long gridZ = config.dimensions() == 3 ? config.globalZ() / blockZ : 1L;
+            return new DriverLaunchShape(
                     checkedUnsignedInt("gridDimX", gridX),
                     checkedUnsignedInt("gridDimY", gridY),
                     checkedUnsignedInt("gridDimZ", gridZ),
@@ -180,15 +226,71 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
             return "grid=" + gridDimX + "x" + gridDimY + "x" + gridDimZ
                     + ", block=" + blockDimX + "x" + blockDimY + "x" + blockDimZ;
         }
+
+        private CudaKernelLaunchResult.LaunchShape toResultLaunchShape() {
+            return new CudaKernelLaunchResult.LaunchShape(
+                    gridDimX,
+                    gridDimY,
+                    gridDimZ,
+                    blockDimX,
+                    blockDimY,
+                    blockDimZ
+            );
+        }
     }
 
-    private static long ceilDiv(long value, long divisor) {
-        return ((value - 1L) / divisor) + 1L;
+    private static int checkedSharedMemoryByteSize(
+            CudaKernelLaunchRequest request,
+            GpuRuntimeDeviceProfile deviceProfile
+    ) {
+        int byteSize;
+        try {
+            byteSize = request.sharedMemoryByteSize();
+        } catch (IllegalStateException exception) {
+            throw new UnsupportedLaunchContractException(
+                    "cuda-driver-launch-shared-memory-too-large",
+                    exception.getMessage()
+            );
+        }
+        long localMemoryBytes = deviceProfile == null ? -1L : deviceProfile.localMemoryBytes();
+        if (localMemoryBytes > 0L && byteSize > localMemoryBytes) {
+            throw new UnsupportedLaunchContractException(
+                    "cuda-driver-launch-shared-memory-exceeds-device-local-memory",
+                    "CUDA launch shared-memory byte size " + byteSize
+                            + " exceeds device local memory " + localMemoryBytes
+            );
+        }
+        return byteSize;
+    }
+
+    private static void ensureDivisible(String axis, long global, long local) {
+        if (global % local != 0L) {
+            throw new UnsupportedLaunchContractException(
+                    "cuda-driver-launch-global-local-mismatch:" + axis,
+                    "CUDA launch global " + axis + " dimension " + global
+                            + " must be divisible by local " + axis + " dimension " + local
+            );
+        }
+    }
+
+    private static long checkedProduct(String dimensionName, long x, long y, long z) {
+        long xy = checkedMultiply(dimensionName, x, y);
+        return checkedMultiply(dimensionName, xy, z);
+    }
+
+    private static long checkedMultiply(String dimensionName, long left, long right) {
+        if (left > Long.MAX_VALUE / right) {
+            throw new UnsupportedLaunchContractException(
+                    "cuda-driver-launch-dimension-too-large:" + dimensionName,
+                    "CUDA launch dimension " + dimensionName + " exceeds the supported Java long range"
+            );
+        }
+        return left * right;
     }
 
     private static int checkedUnsignedInt(String dimensionName, long value) {
         if (value <= 0L || value > Integer.MAX_VALUE) {
-            throw new UnsupportedLaunchShapeException(
+            throw new UnsupportedLaunchContractException(
                     "cuda-driver-launch-dimension-too-large:" + dimensionName,
                     "CUDA launch dimension " + dimensionName + " is outside the supported Java int range: " + value
             );
@@ -196,10 +298,10 @@ final class CudaDriverKernelLauncherBridge implements CudaKernelLauncherBridge {
         return (int) value;
     }
 
-    private static final class UnsupportedLaunchShapeException extends RuntimeException {
+    private static final class UnsupportedLaunchContractException extends RuntimeException {
         private final String blocker;
 
-        private UnsupportedLaunchShapeException(String blocker, String message) {
+        private UnsupportedLaunchContractException(String blocker, String message) {
             super(message);
             this.blocker = blocker;
         }

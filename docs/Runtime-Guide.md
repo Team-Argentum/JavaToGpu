@@ -78,13 +78,13 @@ CUDA-specific `runtime.cuda.*` receipts for native bridge stages.
 Vulkan/SPIR-V and Metal remain planned
 placeholders with clear diagnostics instead of being silently hidden.
 When CUDA options use `GpuRuntimeCompileOptions.cudaNvcc(...)`, the optional built-in process bridge may invoke
-`nvcc --ptx` to materialize a PTX artifact. That still remains a compile-only step; CUDA module loading, argument
+`nvcc --ptx`, `nvcc --cubin`, or `nvcc --fatbin` to materialize a CUDA module artifact. That still remains a compile-only step; CUDA module loading, argument
 binding, launch, and readback are separate stages. Add `.withCudaDriverModuleLoader()` to opt into the built-in
 CUDA Driver API module loader. Today that bridge can load the driver library, resolve required module-loader symbols,
 call `cuInit`, read `cuDriverGetVersion`, parse PTX `.version` / `.target` metadata, reject known PTX ISA versions that
 need a newer CUDA driver API, reject a PTX target that is newer than the selected CUDA device compute capability, load
-compatible PTX with `cuModuleLoadDataEx`, resolve the entry function with `cuModuleGetFunction`, and unload the module
-through `CudaDriverLoadedModule.close()`. Missing driver/symbol/PTX/function/version/target cases return structured
+compatible PTX or binary CUBIN/FATBIN payloads with `cuModuleLoadDataEx`, resolve the entry function with `cuModuleGetFunction`, and unload the module
+through `CudaDriverLoadedModule.close()`. PTX compatibility preflight runs only for PTX; CUBIN/FATBIN payloads skip it because they are already backend-native binaries. Missing driver/symbol/PTX/function/version/target cases return structured
 blockers such as `cuda-driver-library-unavailable`, `cuda-driver-symbol-missing:*`,
 `cuda-driver-cuDriverGetVersion-failed:*`, `cuda-driver-ptx-version-unsupported:*`, `cuda-ptx-target-too-new:*`,
 `cuda-driver-cuModuleLoadDataEx-failed:*`, or `cuda-driver-cuModuleGetFunction-failed:*`. Successful module-load receipts
@@ -114,14 +114,57 @@ non-`LOCAL` parameters, and the driver binder appends matching offset slots afte
 Launch receives the total layout size as `sharedMemoryBytes`. Add `.withCudaDriverKernelLauncher()` to enter the
 built-in Driver API launcher after native argument binding. It resolves `cuLaunchKernel`, requires a real
 `CudaDriverLoadedModule`, a prepared argument frame, and an explicit `GpuExecutionConfig`, then derives CUDA grid/block
-dimensions from the portable global/local work shape and submits the kernel parameter table. A successful launcher emits
-`runtime.cuda.kernelLaunch.*`, including shared-memory byte-size fields, plus portable `runtime.backend.invoke.*`
-launch-shape fields. Add
+dimensions from the portable global/local work shape and submits the kernel parameter table. The driver launcher is
+fail-closed for launch shape: local size must be explicit, each global dimension must be divisible by the matching local
+dimension, block item count must fit the Driver API/device limit, and oversized dynamic shared memory is reported as an
+unsupported blocker instead of an exception. A successful launcher emits `runtime.cuda.kernelLaunch.*`, including
+`launchShape.*` and shared-memory byte-size fields, plus portable `runtime.backend.invoke.*` launch-shape fields. Add
 `.withCudaDriverReadback()` to enter the built-in Driver API readback bridge. It resolves `cuMemcpyDtoH_v2`, copies
 `READ_WRITE` primitive/vector/struct array device allocations back into the original Java arrays, marks allocation readback receipts, and
 updates `runtime.cuda.readback.*` plus portable `runtime.backend.invoke.readback.*` counts. Built-in production CUDA
 driver execution remains unavailable until this path is hardware-validated and broader image/sampler plus struct-by-value/local
 shapes are supported.
+The staged CUDA binder/readback path accepts full Java arrays or explicit `GpuMemorySlice.of(array, offset, length)`
+views for contiguous primitive, vector, and `@GPUStruct[]` buffers. Slice uploads allocate/copy only the selected element
+range, and readback writes results back into the same host offset while preserving surrounding array elements.
+For explicit hardware validation of this non-production staged path, run:
+
+```powershell
+.\gradlew.bat :processor:integrationCudaSmokeTest --console=plain
+```
+
+Use explicit per-format lanes when validating the PTX-vs-binary module paths independently:
+
+```powershell
+.\gradlew.bat :processor:integrationCudaPtxSmokeTest --console=plain
+.\gradlew.bat :processor:integrationCudaCubinSmokeTest --console=plain
+.\gradlew.bat :processor:integrationCudaFatbinSmokeTest --console=plain
+```
+
+That task discovers a CUDA device through `nvidia-smi`, compiles inline CUDA-C with `nvcc`, loads PTX/CUBIN/FATBIN through the CUDA
+Driver API, binds arguments, launches kernels, and reads back outputs. The current smoke coverage includes primitive
+buffers plus scalar `VALUE`, `GpuMemorySlice` primitive subranges, `Float2[]` buffers, simple `@GPUStruct[]` buffers,
+multi-`LOCAL` dynamic shared-memory offsets, and launch-shape artifact checks. It skips when CUDA tooling/driver state is unavailable unless `JTG_CUDA_SMOKE_REQUIRED=true` is set. Use
+`JTG_CUDA_SMOKE_ARCH=compute_86`, `JTG_CUDA_NVCC=C:\path\to\nvcc.exe`, or `JTG_CUDA_NVCC_OUTPUT_FORMAT=ptx|cubin|fatbin`
+to pin the compiler target, compiler path, or requested nvcc output family.
+The default task writes and validates `processor/build/reports/cuda/integration-cuda-smoke-summary.properties` after every
+run, including `status`, test counts, `executed`, `realDriverExecutionEvidence`, `realDriverExecutionEvidence.rich`,
+`evidence.*` counters, `nvcc.outputFormat`, and structured blockers such as `cuda-nvcc-host-compiler-missing:cl.exe`.
+The per-format lanes write sibling summary files named `integration-cuda-ptx-smoke-summary.properties`,
+`integration-cuda-cubin-smoke-summary.properties`, and `integration-cuda-fatbin-smoke-summary.properties`. A passed smoke
+summary must include rich real-driver evidence for every executed test; otherwise the summary gate fails the build.
+On Windows, make sure the Visual C++ host compiler (`cl.exe`) is on `PATH` before expecting `nvcc` to emit PTX; missing
+`cl.exe` is reported as `cuda-nvcc-host-compiler-missing:cl.exe` and skipped by default. Run the task from a Visual
+Studio Developer Command Prompt or configure a CUDA-supported MSVC toolchain.
+If `nvcc` emits a PTX ISA newer than the installed CUDA driver can load, the same smoke also skips by default with a
+structured blocker such as `cuda-driver-ptx-version-unsupported:ptx-9.3:driver-13.2:requires-13.3`. This can happen even
+when the selected `compute_XX` target is old because PTX ISA version follows the CUDA toolkit frontend. Use a matching
+driver/toolkit pair, set `JTG_CUDA_NVCC` to an older compatible toolkit, or request `cubin`/`fatbin` output for the
+staged binary module path.
+`cubin` and `fatbin` are recognized canonical module formats. The staged CUDA loader passes their binary payloads into
+`cuModuleLoadDataEx` and skips PTX ISA compatibility preflight for those formats. The binary lanes are the preferred way
+to validate execution when PTX ISA is newer than the installed driver API; production CUDA execution still requires
+promotion policy and broader coverage before it can be treated as supported.
 CUDA inventory exposes driver, memory, CUDA runtime version, and compute capability through the same artifact/lifecycle
 field vocabulary; tooling can read selected-device fields such as `runtime.device.cuda.runtimeVersion` and
 `runtime.device.cuda.computeCapability` or per-device fields such as `deviceDiscovery.device.0.cuda.computeCapability`.

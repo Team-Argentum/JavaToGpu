@@ -56,6 +56,39 @@ class CudaDriverKernelLauncherBridgeTest {
         assertEquals("succeeded", fields.get("runtime.cuda.kernelLaunch.status"));
         assertEquals("true", fields.get("runtime.cuda.kernelLaunch.submitted"));
         assertEquals("1", fields.get("runtime.cuda.kernelLaunch.readback.required.count"));
+        assertEquals("true", fields.get("runtime.cuda.kernelLaunch.launchShape.present"));
+        assertEquals("4x1x1", fields.get("runtime.cuda.kernelLaunch.launchShape.gridShape"));
+        assertEquals("16x1x1", fields.get("runtime.cuda.kernelLaunch.launchShape.blockShape"));
+        assertEquals("4", fields.get("runtime.cuda.kernelLaunch.launchShape.gridDim.x"));
+        assertEquals("16", fields.get("runtime.cuda.kernelLaunch.launchShape.blockDim.x"));
+
+        frame.close();
+        loadedModule.close();
+    }
+
+    @Test
+    void driverKernelLauncherSubmitsTwoDimensionalLaunchShape() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
+        CudaKernelArgumentFrame frame = argumentFrame(invoker);
+        CudaKernelLaunchRequest request = launchRequest(
+                loadedModule,
+                frame,
+                GpuExecutionConfig.twoDimensional(128L, 32L, 16L, 8L)
+        );
+
+        CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
+        Map<String, String> fields = result.artifactFields("test.cuda.kernelLaunch");
+
+        assertTrue(result.succeeded());
+        assertEquals(8, invoker.gridDimX);
+        assertEquals(4, invoker.gridDimY);
+        assertEquals(1, invoker.gridDimZ);
+        assertEquals(16, invoker.blockDimX);
+        assertEquals(8, invoker.blockDimY);
+        assertEquals(1, invoker.blockDimZ);
+        assertEquals("8x4x1", fields.get("runtime.cuda.kernelLaunch.launchShape.gridShape"));
+        assertEquals("16x8x1", fields.get("runtime.cuda.kernelLaunch.launchShape.blockShape"));
 
         frame.close();
         loadedModule.close();
@@ -87,7 +120,7 @@ class CudaDriverKernelLauncherBridgeTest {
     void driverKernelLauncherReportsMissingLaunchSymbol() {
         CudaDriverLoadedModule loadedModule = loadedModule(new FakeDriverApiInvoker(), new FakeHandle(false));
         CudaKernelArgumentFrame frame = argumentFrame(new FakeDriverApiInvoker());
-        CudaKernelLaunchRequest request = launchRequest(loadedModule, frame, GpuExecutionConfig.oneDimensional(8L));
+        CudaKernelLaunchRequest request = launchRequest(loadedModule, frame, GpuExecutionConfig.oneDimensional(8L, 1L));
 
         CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
 
@@ -106,13 +139,117 @@ class CudaDriverKernelLauncherBridgeTest {
         invoker.launchStatus = 719;
         CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
         CudaKernelArgumentFrame frame = argumentFrame(invoker);
-        CudaKernelLaunchRequest request = launchRequest(loadedModule, frame, GpuExecutionConfig.oneDimensional(8L));
+        CudaKernelLaunchRequest request = launchRequest(loadedModule, frame, GpuExecutionConfig.oneDimensional(8L, 1L));
 
         CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
 
         assertFalse(result.succeeded());
         assertEquals("failed", result.status());
         assertTrue(result.blockers().contains("cuda-driver-cuLaunchKernel-failed:719"));
+
+        frame.close();
+        loadedModule.close();
+    }
+
+    @Test
+    void driverKernelLauncherRejectsAutoLocalSize() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
+        CudaKernelArgumentFrame frame = argumentFrame(invoker);
+        CudaKernelLaunchRequest request = launchRequest(
+                loadedModule,
+                frame,
+                GpuExecutionConfig.twoDimensional(8L, 8L)
+        );
+
+        CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
+
+        assertFalse(result.succeeded());
+        assertEquals("unsupported", result.status());
+        assertTrue(result.blockers().contains("cuda-driver-launch-local-size-required"));
+        assertEquals(0, invoker.gridDimX);
+
+        frame.close();
+        loadedModule.close();
+    }
+
+    @Test
+    void driverKernelLauncherRejectsNonDivisibleGlobalAndLocalShape() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
+        CudaKernelArgumentFrame frame = argumentFrame(invoker);
+        CudaKernelLaunchRequest request = launchRequest(loadedModule, frame, GpuExecutionConfig.oneDimensional(10L, 4L));
+
+        CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
+
+        assertFalse(result.succeeded());
+        assertEquals("unsupported", result.status());
+        assertTrue(result.blockers().contains("cuda-driver-launch-global-local-mismatch:x"));
+        assertEquals(0, invoker.gridDimX);
+
+        frame.close();
+        loadedModule.close();
+    }
+
+    @Test
+    void driverKernelLauncherReportsOversizedSharedMemoryAsUnsupported() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
+        CudaKernelArgumentFrame frame = oversizedLocalSharedMemoryFrame();
+        CudaKernelLaunchRequest request = launchRequest(loadedModule, frame, GpuExecutionConfig.oneDimensional(32L, 8L));
+
+        CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
+
+        assertFalse(result.succeeded());
+        assertEquals("unsupported", result.status());
+        assertTrue(result.blockers().contains("cuda-driver-launch-shared-memory-too-large"));
+        assertEquals(0, invoker.gridDimX);
+
+        frame.close();
+        loadedModule.close();
+    }
+
+    @Test
+    void driverKernelLauncherRejectsBlockItemCountAboveDeviceLimit() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
+        CudaKernelArgumentFrame frame = argumentFrame(invoker);
+        CudaKernelLaunchRequest request = launchRequest(
+                loadedModule,
+                frame,
+                GpuExecutionConfig.oneDimensional(64L, 32L),
+                compiledKernel(cudaDeviceProfile(1_024L, 16L))
+        );
+
+        CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
+
+        assertFalse(result.succeeded());
+        assertEquals("unsupported", result.status());
+        assertTrue(result.blockers().contains("cuda-driver-launch-block-item-count-exceeds-device"));
+        assertEquals(0, invoker.gridDimX);
+
+        frame.close();
+        loadedModule.close();
+    }
+
+    @Test
+    void driverKernelLauncherRejectsSharedMemoryAboveDeviceLocalMemory() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker, new FakeHandle(true));
+        CudaKernelArgumentFrame frame = localSharedMemoryOnlyFrame();
+        CudaKernelLaunchRequest request = launchRequest(
+                loadedModule,
+                frame,
+                GpuExecutionConfig.oneDimensional(32L, 8L),
+                compiledKernel(cudaDeviceProfile(16L, 1_024L))
+        );
+
+        CudaKernelLaunchResult result = new CudaDriverKernelLauncherBridge().launch(request);
+
+        assertFalse(result.succeeded());
+        assertEquals("unsupported", result.status());
+        assertTrue(result.blockers().contains("cuda-driver-launch-shared-memory-exceeds-device-local-memory"));
+        assertEquals(0, invoker.gridDimX);
 
         frame.close();
         loadedModule.close();
@@ -137,7 +274,15 @@ class CudaDriverKernelLauncherBridgeTest {
             CudaKernelArgumentFrame frame,
             GpuExecutionConfig executionConfig
     ) {
-        CudaCompiledKernel compiledKernel = compiledKernel();
+        return launchRequest(loadedModule, frame, executionConfig, compiledKernel());
+    }
+
+    private static CudaKernelLaunchRequest launchRequest(
+            CudaDriverLoadedModule loadedModule,
+            CudaKernelArgumentFrame frame,
+            GpuExecutionConfig executionConfig,
+            CudaCompiledKernel compiledKernel
+    ) {
         CudaModuleLoadResult moduleLoadResult = CudaModuleLoadResult.succeeded(
                 "cuda-module-loader:driver",
                 loadedModule,
@@ -197,7 +342,23 @@ class CudaDriverKernelLauncherBridgeTest {
         );
     }
 
+    private static CudaKernelArgumentFrame oversizedLocalSharedMemoryFrame() {
+        return CudaKernelArgumentFrame.nativeBindings(
+                "cuda-argument-binder:driver",
+                new GpuRuntimeInvocationBindingSummary(0, 1, 0, 1),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                (long) Integer.MAX_VALUE + 1L
+        );
+    }
+
     private static CudaCompiledKernel compiledKernel() {
+        return compiledKernel(GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA"));
+    }
+
+    private static CudaCompiledKernel compiledKernel(GpuRuntimeDeviceProfile deviceProfile) {
         GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
                 descriptor(),
                 GpuRuntimeCompileOptions.cuda(
@@ -212,7 +373,7 @@ class CudaDriverKernelLauncherBridgeTest {
                         ),
                         "off"
                 ),
-                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.CUDA, "CUDA")
+                deviceProfile
         );
         GpuBackendModuleArtifact ptx = GpuBackendModuleArtifact.ptx(
                 ".version 8.0\n.target sm_86\n.address_size 64\n",
@@ -228,6 +389,24 @@ class CudaDriverKernelLauncherBridgeTest {
                         "ptxas info : synthetic PTX bridge",
                         List.of("synthetic PTX bridge emitted PTX")
                 )
+        );
+    }
+
+    private static GpuRuntimeDeviceProfile cudaDeviceProfile(long localMemoryBytes, long maxWorkGroupSize) {
+        return new GpuRuntimeDeviceProfile(
+                GpuBackendTarget.CUDA,
+                "CUDA",
+                "test CUDA device",
+                "NVIDIA",
+                "test-driver",
+                "CUDA 12.0",
+                16L,
+                localMemoryBytes,
+                maxWorkGroupSize,
+                1L,
+                false,
+                false,
+                false
         );
     }
 

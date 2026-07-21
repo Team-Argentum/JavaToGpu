@@ -240,18 +240,18 @@ Check the built-in CUDA inventory contract without running `nvidia-smi` or openi
 ```
 
 The expected CUDA provider state is `status=ready`, `catalogProductionAdapter=false`,
-`executionPipelineAvailable=true`, `executionPipelineFactoryPresent=true`, `moduleFormats=cuda-c,ptx`, and
+`executionPipelineAvailable=true`, `executionPipelineFactoryPresent=true`, `moduleFormats=cubin,cuda-c,fatbin,ptx`, and
 `lowererSelectedSource=cuda-irgpu-source-unavailable` for the sample that has no `IrGpu` payload. CUDA can now lower
 simple loaded `IrGpu` entry/helper bodies into preview `cuda-c` source and publish a non-production shared pipeline
 skeleton. The compile stage can produce a typed CUDA compile-preview artifact, and the opt-in driver bridge path now has
-first slices for PTX module loading, driver-version/PTX metadata receipts, PTX ISA-vs-driver preflight, PTX
+first slices for PTX/CUBIN/FATBIN module loading, driver-version/PTX metadata receipts, PTX ISA-vs-driver preflight, PTX
 target-vs-device preflight, primitive/vector/struct array plus scalar argument binding, `cuLaunchKernel` submission, and
 primitive/vector/struct array readback.
 Production execution still stays fail-closed until the CUDA execution vertical slice is hardware-validated.
 
 The optional native compiler bridge is deliberately opt-in. Use `GpuRuntimeCompileOptions.cudaNvcc(...)` or set
-`cuda.compilerBridge=nvcc` in CUDA backend properties to let the compile stage invoke `nvcc --ptx` and return a typed
-PTX artifact. This does not make CUDA production-ready: native module loading, argument binding, launch, and readback
+`cuda.compilerBridge=nvcc` in CUDA backend properties to let the compile stage invoke `nvcc --ptx`, `--cubin`, or `--fatbin` and return a typed
+CUDA module artifact. This does not make CUDA production-ready: native module loading, argument binding, launch, and readback
 remain separately opt-in, limited, and hardware-validation gated.
 
 The module/function loading boundary is also opt-in. Add `.withCudaDriverModuleLoader()` or set
@@ -259,8 +259,8 @@ The module/function loading boundary is also opt-in. Add `.withCudaDriverModuleL
 driver library can be loaded, resolves required module-loader symbols, calls `cuInit`, reads `cuDriverGetVersion`, parses
 PTX `.version` / `.target`, rejects `cuda-driver-ptx-version-unsupported:*` when a known PTX ISA version needs a newer
 CUDA driver API, rejects `cuda-ptx-target-too-new:*` when the selected CUDA device is older than the PTX target, loads
-compatible PTX with `cuModuleLoadDataEx`, resolves the entry function with `cuModuleGetFunction`, and owns cleanup through
-`CudaDriverLoadedModule.close()` / `cuModuleUnload`. Typical blockers are `cuda-driver-library-unavailable`,
+compatible PTX or binary CUBIN/FATBIN payloads with `cuModuleLoadDataEx`, resolves the entry function with `cuModuleGetFunction`, and owns cleanup through
+`CudaDriverLoadedModule.close()` / `cuModuleUnload`. PTX compatibility preflight applies only to PTX; CUBIN/FATBIN payloads skip it as backend-native binaries. Typical blockers are `cuda-driver-library-unavailable`,
 `cuda-driver-symbol-missing:*`, `cuda-driver-cuDriverGetVersion-failed:*`,
 `cuda-driver-ptx-version-unsupported:*`, `cuda-ptx-target-too-new:*`, `cuda-driver-cuModuleLoadDataEx-failed:*`, or
 `cuda-driver-cuModuleGetFunction-failed:*`. Successful receipts expose `runtime.cuda.loadedModule.driver.version.*`,
@@ -285,8 +285,10 @@ The kernel-launch boundary is also separately opt-in. Add `.withCudaDriverKernel
 `cuda.kernelLauncher=driver` to use the built-in Driver API launcher. It resolves `cuLaunchKernel`, requires a real
 `CudaDriverLoadedModule`, a successful native argument binding result, a prepared argument frame, and an explicit
 `GpuExecutionConfig`, then computes CUDA grid/block dimensions from the portable global/local work shape and forwards any
-prepared dynamic shared-memory byte size to `cuLaunchKernel`. A successful launcher updates `runtime.cuda.kernelLaunch.*`
-and `runtime.backend.invoke.*`; host output copying remains a separate
+prepared dynamic shared-memory byte size to `cuLaunchKernel`. Backend authors should keep this boundary fail-closed:
+driver launch requires explicit local sizing, rejects non-divisible global/local shapes, validates block/shared-memory
+limits, and records actual `runtime.cuda.kernelLaunch.launchShape.*` fields. A successful launcher updates
+`runtime.cuda.kernelLaunch.*` and `runtime.backend.invoke.*`; host output copying remains a separate
 readback stage.
 
 The readback boundary is the final staged CUDA execution SPI in this alpha path. Add `.withCudaDriverReadback()` or set
@@ -294,6 +296,38 @@ The readback boundary is the final staged CUDA execution SPI in this alpha path.
 `READ_WRITE` primitive/vector/struct array allocations back into the original Java arrays, marks allocation readback receipts, and updates
 `runtime.cuda.readback.*` plus `runtime.backend.invoke.readback.*`. It still stays opt-in and does not turn the built-in
 CUDA backend into a production driver backend by itself.
+The same staged CUDA binder/readback path supports `GpuMemorySlice.of(array, offset, length)` for contiguous primitive,
+vector, and `@GPUStruct[]` subranges. Backend authors should treat slice handling as an explicit memory-view contract:
+upload/readback must use the selected host range and artifact fields should expose offset/end-exclusive evidence rather
+than silently treating the backing array as a full buffer.
+
+Use the opt-in real-driver smoke gate when you want to validate that staged CUDA execution actually works on a machine:
+
+```powershell
+.\gradlew.bat :processor:integrationCudaSmokeTest --console=plain
+.\gradlew.bat :processor:integrationCudaPtxSmokeTest --console=plain
+.\gradlew.bat :processor:integrationCudaCubinSmokeTest --console=plain
+.\gradlew.bat :processor:integrationCudaFatbinSmokeTest --console=plain
+```
+
+The gate runs direct `GpuBackendExecutionPipeline.executeSafely(...)` coverage with `nvcc`, PTX/CUBIN/FATBIN module loading, driver
+argument binding, `cuLaunchKernel`, and `cuMemcpyDtoH_v2` readback. It covers primitive buffers/scalars, `Float2[]`,
+simple `@GPUStruct[]`, `GpuMemorySlice` primitive subranges, multi-`LOCAL` shared-memory offsets, and launch-shape
+artifact fields. By default it skips cleanly when CUDA is not installed;
+set `JTG_CUDA_SMOKE_REQUIRED=true` for a dedicated CUDA CI lane that must fail on an incomplete staged run.
+The default companion summary artifact is `processor/build/reports/cuda/integration-cuda-smoke-summary.properties`; the
+explicit PTX/CUBIN/FATBIN lanes write sibling `integration-cuda-*-smoke-summary.properties` files. Adapter CI can key off
+`status`, `realDriverExecutionEvidence`, `realDriverExecutionEvidence.rich`, `evidence.*`, `nvcc.outputFormat`, and
+`firstBlocker` without scraping Gradle console output. The summary gate rejects a `passed` smoke run unless every executed
+test has rich real-driver evidence for module/context handles, launch submission, and readback.
+It also records `nvcc.outputFormat`; `ptx`, `cubin`, and `fatbin` are accepted staged CUDA module formats. CUBIN/FATBIN
+payloads are carried as binary artifacts into `cuModuleLoadDataEx`, while production CUDA support still requires promotion
+policy and broader coverage before promotion.
+Treat `cuda-driver-ptx-version-unsupported:*` as an environment/toolchain blocker, not as proof that argument binding or
+launch/readback failed. CUDA Toolkit 13.3, for example, emits PTX 9.3, which a driver exposing CUDA Driver API 13.2 cannot
+load. For real execution evidence, use a matching/newer driver, an older compatible `nvcc` selected through
+`JTG_CUDA_NVCC`, or a staged CUBIN/fatbin smoke lane. On Windows, `cuda-nvcc-host-compiler-missing:cl.exe` means the
+CUDA frontend was found but the Visual C++ host compiler is not visible to `nvcc`.
 
 Before enabling CUDA kernel execution, run the metadata-only CUDA green-light gate:
 

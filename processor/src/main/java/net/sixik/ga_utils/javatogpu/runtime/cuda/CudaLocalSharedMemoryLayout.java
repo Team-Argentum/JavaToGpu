@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuMemorySlice;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 
 import java.util.ArrayList;
@@ -136,6 +137,9 @@ final class CudaLocalSharedMemoryLayout {
     }
 
     private static int primitiveArrayLength(Object argument) {
+        if (argument instanceof GpuMemorySlice<?> slice) {
+            return slice.length();
+        }
         if (argument instanceof byte[] values) {
             return values.length;
         }

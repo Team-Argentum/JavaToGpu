@@ -57,11 +57,22 @@ final class CudaKernelPreparer implements GpuBackendKernelPreparer<
         if (!request.moduleLoaderRequested()) {
             return null;
         }
-        if (request.moduleArtifact().moduleFormat() != GpuBackendModuleFormat.PTX) {
+        GpuBackendModuleFormat moduleFormat = request.moduleArtifact().moduleFormat();
+        if (moduleFormat == GpuBackendModuleFormat.CUBIN
+                || moduleFormat == GpuBackendModuleFormat.FATBIN) {
+            if (request.moduleBinaryArtifact().isEmpty()) {
+                lastModuleLoadResult = CudaModuleLoadResult.unsupported(
+                        request.loaderMode(),
+                        List.of("cuda-module-loader-binary-payload-missing:" + moduleFormat.key()),
+                        List.of("CUDA Driver module loading requires a binary payload for " + moduleFormat.key())
+                );
+                return null;
+            }
+        } else if (moduleFormat == GpuBackendModuleFormat.NATIVE_BINARY) {
             lastModuleLoadResult = CudaModuleLoadResult.unsupported(
                     request.loaderMode(),
-                    List.of("cuda-module-loader-ptx-missing"),
-                    List.of("CUDA module loading currently requires a PTX artifact")
+                    List.of("cuda-module-loader-binary-format-unsupported:" + moduleFormat.key()),
+                    List.of("CUDA Driver module loading needs a concrete CUDA binary format such as cubin or fatbin")
             );
             return null;
         }

@@ -9,6 +9,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuMemorySlice;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -376,6 +378,36 @@ class CudaDriverArgumentBinderBridgeTest {
     }
 
     @Test
+    void driverArgumentBinderAllocatesPrimitiveArraySlices() {
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        CudaDriverLoadedModule loadedModule = loadedModule(invoker);
+        float[] input = new float[]{10.0f, 20.0f, 30.0f, 40.0f};
+        float[] output = new float[]{-1.0f, -1.0f, -1.0f, -1.0f};
+        CudaArgumentBindingRequest request = bindingRequest(
+                bufferOnlyParameters(),
+                loadedModule,
+                new Object[]{GpuMemorySlice.of(input, 1, 2), GpuMemorySlice.of(output, 1, 2)}
+        );
+
+        CudaArgumentBindingResult result = new CudaDriverArgumentBinderBridge().bind(request);
+        Map<String, String> fields = result.artifactFields("test.cuda.argumentBinding");
+
+        assertTrue(result.succeeded());
+        assertTrue(result.argumentFrame() != null);
+        assertEquals(2, result.argumentFrame().deviceAllocationCount());
+        assertEquals(List.of(8L, 8L), invoker.memAllocByteCounts);
+        assertArrayEquals(new float[]{20.0f, 30.0f}, invoker.hostToDeviceFloatCopies.get(0), 0.0001f);
+        assertEquals("true", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.hostSlice.enabled"));
+        assertEquals("1", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.hostElement.offset"));
+        assertEquals("3", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.hostElement.endExclusive"));
+        assertEquals("2", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.element.count"));
+        assertEquals("8", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.byteSize"));
+
+        result.argumentFrame().close();
+        loadedModule.close();
+    }
+
+    @Test
     void driverArgumentBinderReportsMissingMemorySymbols() {
         CudaDriverLoadedModule loadedModule = loadedModule(new FakeDriverApiInvoker(), new FakeHandle(false));
         CudaArgumentBindingRequest request = bindingRequest(
@@ -599,6 +631,7 @@ class CudaDriverArgumentBinderBridgeTest {
         private final List<Long> memAllocByteCounts = new ArrayList<>();
         private final List<Long> allocatedPointers = new ArrayList<>();
         private final List<String> hostToDeviceCopies = new ArrayList<>();
+        private final List<float[]> hostToDeviceFloatCopies = new ArrayList<>();
         private final List<Long> freedPointers = new ArrayList<>();
         private long nextDevicePointer = 0xD00D_0000L;
 
@@ -648,6 +681,14 @@ class CudaDriverArgumentBinderBridgeTest {
         @Override
         public int cuMemcpyHtoD(long devicePointer, long hostPointerAddress, long byteCount, long functionAddress) {
             hostToDeviceCopies.add(devicePointer + ":" + byteCount);
+            if (byteCount % Float.BYTES == 0L) {
+                float[] values = new float[Math.toIntExact(byteCount / Float.BYTES)];
+                org.lwjgl.system.MemoryUtil.memByteBuffer(hostPointerAddress, Math.toIntExact(byteCount))
+                        .order(java.nio.ByteOrder.nativeOrder())
+                        .asFloatBuffer()
+                        .get(values);
+                hostToDeviceFloatCopies.add(values);
+            }
             return 0;
         }
 

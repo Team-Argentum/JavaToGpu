@@ -107,6 +107,12 @@ public record CudaInventoryContractReport(
         if (!support.declaresModuleFormat(GpuBackendModuleFormat.PTX)) {
             blockers.add("cuda-provider-module-format-missing:ptx");
         }
+        if (!support.declaresModuleFormat(GpuBackendModuleFormat.CUBIN)) {
+            blockers.add("cuda-provider-module-format-missing:cubin");
+        }
+        if (!support.declaresModuleFormat(GpuBackendModuleFormat.FATBIN)) {
+            blockers.add("cuda-provider-module-format-missing:fatbin");
+        }
         if (!support.declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)) {
             blockers.add("cuda-provider-capability-missing:compute-capability");
         }

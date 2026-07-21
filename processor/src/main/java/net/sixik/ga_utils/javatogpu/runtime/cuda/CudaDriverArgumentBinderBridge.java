@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.runtime.cuda;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuMemorySlice;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInvocationBindingSummary;
 import net.sixik.ga_utils.javatogpu.types.GpuTypeSupport;
 import org.lwjgl.PointerBuffer;
@@ -288,14 +289,15 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
     }
 
     private static boolean primitiveArrayArgumentCompatible(String declaredType, Object argument) {
+        Object array = hostArray(argument);
         return switch (declaredType) {
-            case "byte[]" -> argument instanceof byte[];
-            case "short[]" -> argument instanceof short[];
-            case "char[]" -> argument instanceof char[];
-            case "int[]" -> argument instanceof int[];
-            case "long[]" -> argument instanceof long[];
-            case "float[]" -> argument instanceof float[];
-            case "double[]" -> argument instanceof double[];
+            case "byte[]" -> array instanceof byte[];
+            case "short[]" -> array instanceof short[];
+            case "char[]" -> array instanceof char[];
+            case "int[]" -> array instanceof int[];
+            case "long[]" -> array instanceof long[];
+            case "float[]" -> array instanceof float[];
+            case "double[]" -> array instanceof double[];
             default -> false;
         };
     }
@@ -304,11 +306,15 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
         if (isSupportedPrimitiveArrayArgumentType(declaredType)) {
             return primitiveArrayArgumentCompatible(declaredType, argument);
         }
-        return CudaValuePacker.vectorArrayCompatible(declaredType, argument)
-                || CudaValuePacker.structArrayCompatible(declaredType, argument);
+        Object array = hostArray(argument);
+        return CudaValuePacker.vectorArrayCompatible(declaredType, array)
+                || CudaValuePacker.structArrayCompatible(declaredType, array);
     }
 
     private static int arrayLength(Object argument) {
+        if (argument instanceof GpuMemorySlice<?> slice) {
+            return slice.length();
+        }
         if (CudaValuePacker.isStructArrayInstance(argument)) {
             return CudaValuePacker.structArrayLength(argument);
         }
@@ -319,35 +325,48 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
     }
 
     private static long arrayByteSize(String declaredType, Object argument, int elementCount) {
-        if (CudaValuePacker.vectorArrayCompatible(declaredType, argument)) {
+        Object array = hostArray(argument);
+        if (CudaValuePacker.vectorArrayCompatible(declaredType, array)) {
             return CudaValuePacker.vectorArrayByteSize(declaredType, elementCount);
         }
-        if (CudaValuePacker.structArrayCompatible(declaredType, argument)) {
-            return CudaValuePacker.structArrayByteSize(argument);
+        if (CudaValuePacker.structArrayCompatible(declaredType, array)) {
+            return CudaValuePacker.structArrayByteSize(array, elementCount);
         }
         return primitiveArrayByteSize(declaredType, elementCount);
     }
 
+    private static Object hostArray(Object argument) {
+        return argument instanceof GpuMemorySlice<?> slice ? slice.array() : argument;
+    }
+
+    private static int hostElementOffset(Object argument) {
+        return argument instanceof GpuMemorySlice<?> slice ? slice.offset() : 0;
+    }
+
     private static int primitiveArrayLength(Object argument) {
-        if (argument instanceof byte[] values) {
+        if (argument instanceof GpuMemorySlice<?> slice) {
+            return slice.length();
+        }
+        Object array = hostArray(argument);
+        if (array instanceof byte[] values) {
             return values.length;
         }
-        if (argument instanceof short[] values) {
+        if (array instanceof short[] values) {
             return values.length;
         }
-        if (argument instanceof char[] values) {
+        if (array instanceof char[] values) {
             return values.length;
         }
-        if (argument instanceof int[] values) {
+        if (array instanceof int[] values) {
             return values.length;
         }
-        if (argument instanceof long[] values) {
+        if (array instanceof long[] values) {
             return values.length;
         }
-        if (argument instanceof float[] values) {
+        if (array instanceof float[] values) {
             return values.length;
         }
-        if (argument instanceof double[] values) {
+        if (array instanceof double[] values) {
             return values.length;
         }
         return 0;
@@ -593,6 +612,7 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
             }
             devicePointer = devicePointerOut.get(0);
         }
+        int hostElementOffset = hostElementOffset(values);
         ByteBuffer hostBuffer = allocateHostUploadBuffer(declaredType, values, (int) byteSize);
         try {
             int copyStatus = invoker.cuMemcpyHtoD(
@@ -618,7 +638,8 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
                     parameter.name(),
                     parameter.javaType(),
                     parameter.access(),
-                    values,
+                    hostArray(values),
+                    hostElementOffset,
                     elementCount,
                     byteSize,
                     devicePointer,
@@ -632,26 +653,35 @@ final class CudaDriverArgumentBinderBridge implements CudaArgumentBinderBridge {
     }
 
     private static ByteBuffer allocateHostUploadBuffer(String declaredType, Object values, int byteSize) {
-        if (CudaValuePacker.vectorArrayCompatible(declaredType, values)) {
-            return CudaValuePacker.packVectorArray(declaredType, values);
+        Object array = hostArray(values);
+        int offset = hostElementOffset(values);
+        int elementCount = arrayLength(values);
+        if (CudaValuePacker.vectorArrayCompatible(declaredType, array)) {
+            return CudaValuePacker.packVectorArray(declaredType, array, offset, elementCount);
         }
-        if (CudaValuePacker.structArrayCompatible(declaredType, values)) {
-            return CudaValuePacker.packStructArray(values);
+        if (CudaValuePacker.structArrayCompatible(declaredType, array)) {
+            return CudaValuePacker.packStructArray(array, offset, elementCount);
         }
         ByteBuffer hostBuffer = MemoryUtil.memAlloc(byteSize).order(ByteOrder.nativeOrder());
-        writePrimitiveArrayToBuffer(hostBuffer, declaredType, values);
+        writePrimitiveArrayToBuffer(hostBuffer, declaredType, array, offset, elementCount);
         return hostBuffer;
     }
 
-    private static void writePrimitiveArrayToBuffer(ByteBuffer buffer, String declaredType, Object values) {
+    private static void writePrimitiveArrayToBuffer(
+            ByteBuffer buffer,
+            String declaredType,
+            Object values,
+            int offset,
+            int elementCount
+    ) {
         switch (declaredType) {
-            case "byte[]" -> buffer.put((byte[]) values);
-            case "short[]" -> buffer.asShortBuffer().put((short[]) values);
-            case "char[]" -> buffer.asCharBuffer().put((char[]) values);
-            case "int[]" -> buffer.asIntBuffer().put((int[]) values);
-            case "long[]" -> buffer.asLongBuffer().put((long[]) values);
-            case "float[]" -> buffer.asFloatBuffer().put((float[]) values);
-            case "double[]" -> buffer.asDoubleBuffer().put((double[]) values);
+            case "byte[]" -> buffer.put((byte[]) values, offset, elementCount);
+            case "short[]" -> buffer.asShortBuffer().put((short[]) values, offset, elementCount);
+            case "char[]" -> buffer.asCharBuffer().put((char[]) values, offset, elementCount);
+            case "int[]" -> buffer.asIntBuffer().put((int[]) values, offset, elementCount);
+            case "long[]" -> buffer.asLongBuffer().put((long[]) values, offset, elementCount);
+            case "float[]" -> buffer.asFloatBuffer().put((float[]) values, offset, elementCount);
+            case "double[]" -> buffer.asDoubleBuffer().put((double[]) values, offset, elementCount);
             default -> throw new DriverCallException(
                     "cuda-driver-buffer-type-unsupported:" + declaredType,
                     "CUDA driver primitive array binding does not support parameter type " + declaredType

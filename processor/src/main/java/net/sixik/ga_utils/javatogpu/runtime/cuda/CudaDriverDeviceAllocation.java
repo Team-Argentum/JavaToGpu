@@ -16,6 +16,7 @@ public final class CudaDriverDeviceAllocation implements AutoCloseable {
     private final String javaType;
     private final GpuKernelParameterAccess access;
     private final Object hostArray;
+    private final int hostElementOffset;
     private final int elementCount;
     private final long byteSize;
     private final long devicePointer;
@@ -40,6 +41,36 @@ public final class CudaDriverDeviceAllocation implements AutoCloseable {
             long memFreeAddress,
             CudaDriverLibrary.DriverApiInvoker invoker
     ) {
+        this(
+                parameterIndex,
+                parameterName,
+                javaType,
+                access,
+                hostArray,
+                0,
+                elementCount,
+                byteSize,
+                devicePointer,
+                hostUploadCompleted,
+                memFreeAddress,
+                invoker
+        );
+    }
+
+    CudaDriverDeviceAllocation(
+            int parameterIndex,
+            String parameterName,
+            String javaType,
+            GpuKernelParameterAccess access,
+            Object hostArray,
+            int hostElementOffset,
+            int elementCount,
+            long byteSize,
+            long devicePointer,
+            boolean hostUploadCompleted,
+            long memFreeAddress,
+            CudaDriverLibrary.DriverApiInvoker invoker
+    ) {
         this.parameterIndex = Math.max(0, parameterIndex);
         this.parameterName = parameterName == null || parameterName.isBlank()
                 ? "arg" + this.parameterIndex
@@ -47,6 +78,7 @@ public final class CudaDriverDeviceAllocation implements AutoCloseable {
         this.javaType = javaType == null || javaType.isBlank() ? "unknown" : javaType.trim();
         this.access = access == null ? GpuKernelParameterAccess.READ_WRITE : access;
         this.hostArray = hostArray;
+        this.hostElementOffset = Math.max(0, hostElementOffset);
         this.elementCount = Math.max(0, elementCount);
         this.byteSize = Math.max(0L, byteSize);
         this.devicePointer = devicePointer;
@@ -73,6 +105,24 @@ public final class CudaDriverDeviceAllocation implements AutoCloseable {
 
     public Object hostArray() {
         return hostArray;
+    }
+
+    public int hostElementOffset() {
+        return hostElementOffset;
+    }
+
+    public int hostElementEndExclusive() {
+        return hostElementOffset + elementCount;
+    }
+
+    public int hostArrayLength() {
+        return hostArray != null && hostArray.getClass().isArray()
+                ? java.lang.reflect.Array.getLength(hostArray)
+                : elementCount;
+    }
+
+    public boolean hostSliceEnabled() {
+        return hostElementOffset != 0 || elementCount != hostArrayLength();
     }
 
     public int elementCount() {
@@ -132,6 +182,10 @@ public final class CudaDriverDeviceAllocation implements AutoCloseable {
         fields.put(prefix + ".parameter.name", parameterName);
         fields.put(prefix + ".parameter.javaType", javaType);
         fields.put(prefix + ".parameter.access", access.name());
+        fields.put(prefix + ".hostSlice.enabled", Boolean.toString(hostSliceEnabled()));
+        fields.put(prefix + ".hostElement.backingLength", Integer.toString(hostArrayLength()));
+        fields.put(prefix + ".hostElement.offset", Integer.toString(hostElementOffset));
+        fields.put(prefix + ".hostElement.endExclusive", Integer.toString(hostElementEndExclusive()));
         fields.put(prefix + ".element.count", Integer.toString(elementCount));
         fields.put(prefix + ".byteSize", Long.toString(byteSize));
         fields.put(prefix + ".devicePointer.present", Boolean.toString(devicePointer != 0L));

@@ -131,7 +131,9 @@ public record CudaExecutionReadinessReport(
                 && cudaUnsupportedReceipt.preparationResult().stageResult().blockers()
                 .contains("cuda-native-argument-binding-missing");
         boolean moduleFormatsDeclared = provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C)
-                && provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX);
+                && provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX)
+                && provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUBIN)
+                && provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.FATBIN);
         boolean capabilityVocabularyDeclared = provider.executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)
                 && provider.executionSupport().declaresCapability(GpuRuntimeCapability.GLOBAL_MEMORY);
         boolean unsupportedReceiptStructured = cudaUnsupportedReceipt.compilationResult().stageResult().status()
@@ -235,6 +237,12 @@ public record CudaExecutionReadinessReport(
         }
         if (!provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX)) {
             blockers.add("cuda-module-format-missing:ptx");
+        }
+        if (!provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUBIN)) {
+            blockers.add("cuda-module-format-missing:cubin");
+        }
+        if (!provider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.FATBIN)) {
+            blockers.add("cuda-module-format-missing:fatbin");
         }
         if (!provider.executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)) {
             blockers.add("cuda-capability-missing:compute-capability");

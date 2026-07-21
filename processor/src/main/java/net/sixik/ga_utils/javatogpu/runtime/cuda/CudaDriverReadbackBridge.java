@@ -157,31 +157,42 @@ final class CudaDriverReadbackBridge implements CudaKernelReadbackBridge {
             Object values
     ) {
         if (CudaValuePacker.isVectorArrayInstance(values)) {
-            CudaValuePacker.unpackVectorArray(hostBuffer, allocation.javaType(), values);
+            CudaValuePacker.unpackVectorArray(
+                    hostBuffer,
+                    allocation.javaType(),
+                    values,
+                    allocation.hostElementOffset(),
+                    allocation.elementCount()
+            );
             return;
         }
         if (CudaValuePacker.isStructArrayInstance(values)) {
-            CudaValuePacker.unpackStructArray(hostBuffer, values);
+            CudaValuePacker.unpackStructArray(
+                    hostBuffer,
+                    values,
+                    allocation.hostElementOffset(),
+                    allocation.elementCount()
+            );
             return;
         }
-        readPrimitiveArrayFromBuffer(hostBuffer, values, allocation.elementCount());
+        readPrimitiveArrayFromBuffer(hostBuffer, values, allocation.hostElementOffset(), allocation.elementCount());
     }
 
-    private static void readPrimitiveArrayFromBuffer(ByteBuffer hostBuffer, Object values, int elementCount) {
+    private static void readPrimitiveArrayFromBuffer(ByteBuffer hostBuffer, Object values, int offset, int elementCount) {
         if (values instanceof byte[] array) {
-            hostBuffer.get(array, 0, elementCount);
+            hostBuffer.get(array, offset, elementCount);
         } else if (values instanceof short[] array) {
-            hostBuffer.asShortBuffer().get(array, 0, elementCount);
+            hostBuffer.asShortBuffer().get(array, offset, elementCount);
         } else if (values instanceof char[] array) {
-            hostBuffer.asCharBuffer().get(array, 0, elementCount);
+            hostBuffer.asCharBuffer().get(array, offset, elementCount);
         } else if (values instanceof int[] array) {
-            hostBuffer.asIntBuffer().get(array, 0, elementCount);
+            hostBuffer.asIntBuffer().get(array, offset, elementCount);
         } else if (values instanceof long[] array) {
-            hostBuffer.asLongBuffer().get(array, 0, elementCount);
+            hostBuffer.asLongBuffer().get(array, offset, elementCount);
         } else if (values instanceof float[] array) {
-            hostBuffer.asFloatBuffer().get(array, 0, elementCount);
+            hostBuffer.asFloatBuffer().get(array, offset, elementCount);
         } else if (values instanceof double[] array) {
-            hostBuffer.asDoubleBuffer().get(array, 0, elementCount);
+            hostBuffer.asDoubleBuffer().get(array, offset, elementCount);
         }
     }
 

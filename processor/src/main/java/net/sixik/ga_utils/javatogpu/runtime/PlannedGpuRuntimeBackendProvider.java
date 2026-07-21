@@ -57,7 +57,12 @@ public final class PlannedGpuRuntimeBackendProvider implements GpuRuntimeBackend
         return switch (backendTarget) {
             case VULKAN -> Set.of(GpuBackendModuleFormat.SPIR_V);
             case METAL -> Set.of(GpuBackendModuleFormat.METAL_SHADING_LANGUAGE);
-            case CUDA -> Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX);
+            case CUDA -> Set.of(
+                    GpuBackendModuleFormat.CUDA_C,
+                    GpuBackendModuleFormat.PTX,
+                    GpuBackendModuleFormat.CUBIN,
+                    GpuBackendModuleFormat.FATBIN
+            );
             case OPENCL -> Set.of(GpuBackendModuleFormat.OPENCL_C);
             default -> Set.of();
         };

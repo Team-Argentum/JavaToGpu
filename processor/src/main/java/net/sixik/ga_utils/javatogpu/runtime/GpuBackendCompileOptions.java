@@ -44,6 +44,10 @@ public record GpuBackendCompileOptions(
     public static final String CUDA_COMPILER_BRIDGE_PREVIEW = "preview";
     public static final String CUDA_COMPILER_BRIDGE_NVCC = "nvcc";
     public static final String CUDA_NVCC_PATH_PROPERTY = "cuda.nvcc.path";
+    public static final String CUDA_NVCC_OUTPUT_FORMAT_PROPERTY = "cuda.nvcc.outputFormat";
+    public static final String CUDA_NVCC_OUTPUT_FORMAT_PTX = "ptx";
+    public static final String CUDA_NVCC_OUTPUT_FORMAT_CUBIN = "cubin";
+    public static final String CUDA_NVCC_OUTPUT_FORMAT_FATBIN = "fatbin";
     public static final String CUDA_COMPILER_TIMEOUT_MILLIS_PROPERTY = "cuda.compilerTimeoutMillis";
     public static final String CUDA_MODULE_LOADER_PROPERTY = "cuda.moduleLoader";
     public static final String CUDA_MODULE_LOADER_DISABLED = "disabled";
@@ -100,10 +104,22 @@ public record GpuBackendCompileOptions(
     }
 
     public static GpuBackendCompileOptions cudaNvcc(List<String> nvccOptions, String nvccPath) {
+        return cudaNvcc(nvccOptions, nvccPath, CUDA_NVCC_OUTPUT_FORMAT_PTX);
+    }
+
+    public static GpuBackendCompileOptions cudaNvcc(
+            List<String> nvccOptions,
+            String nvccPath,
+            String outputFormat
+    ) {
         LinkedHashMap<String, String> properties = new LinkedHashMap<>();
         properties.put(CUDA_COMPILER_BRIDGE_PROPERTY, CUDA_COMPILER_BRIDGE_NVCC);
         if (nvccPath != null && !nvccPath.isBlank()) {
             properties.put(CUDA_NVCC_PATH_PROPERTY, nvccPath.trim());
+        }
+        String normalizedOutputFormat = normalizeCudaNvccOutputFormat(outputFormat);
+        if (!CUDA_NVCC_OUTPUT_FORMAT_PTX.equals(normalizedOutputFormat)) {
+            properties.put(CUDA_NVCC_OUTPUT_FORMAT_PROPERTY, normalizedOutputFormat);
         }
         return cuda(nvccOptions, properties);
     }
@@ -344,6 +360,31 @@ public record GpuBackendCompileOptions(
         return value == null || value.isBlank() ? Optional.empty() : Optional.of(value.trim());
     }
 
+    public String cudaNvccOutputFormat() {
+        String value = properties.get(CUDA_NVCC_OUTPUT_FORMAT_PROPERTY);
+        if (value == null || value.isBlank()) {
+            value = System.getProperty("javatogpu.cuda.nvcc.outputFormat");
+        }
+        if (value == null || value.isBlank()) {
+            value = System.getenv("JTG_CUDA_NVCC_OUTPUT_FORMAT");
+        }
+        return normalizeCudaNvccOutputFormat(value);
+    }
+
+    public GpuBackendModuleFormat cudaNvccOutputModuleFormat() {
+        return GpuBackendModuleFormat.fromKey(cudaNvccOutputFormat());
+    }
+
+    public Optional<String> cudaNvccOutputFormatBlocker() {
+        String outputFormat = cudaNvccOutputFormat();
+        if (CUDA_NVCC_OUTPUT_FORMAT_PTX.equals(outputFormat)
+                || CUDA_NVCC_OUTPUT_FORMAT_CUBIN.equals(outputFormat)
+                || CUDA_NVCC_OUTPUT_FORMAT_FATBIN.equals(outputFormat)) {
+            return Optional.empty();
+        }
+        return Optional.of("cuda-nvcc-output-format-unsupported:" + outputFormat);
+    }
+
     public Duration cudaCompilerTimeout() {
         String value = properties.get(CUDA_COMPILER_TIMEOUT_MILLIS_PROPERTY);
         if (value == null || value.isBlank()) {
@@ -364,6 +405,7 @@ public record GpuBackendCompileOptions(
         Map<String, String> updated = new LinkedHashMap<>(properties);
         updated.remove(CUDA_COMPILER_BRIDGE_PROPERTY);
         updated.remove(CUDA_NVCC_PATH_PROPERTY);
+        updated.remove(CUDA_NVCC_OUTPUT_FORMAT_PROPERTY);
         return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
     }
 
@@ -374,6 +416,18 @@ public record GpuBackendCompileOptions(
             updated.remove(CUDA_NVCC_PATH_PROPERTY);
         } else {
             updated.put(CUDA_NVCC_PATH_PROPERTY, nvccPath.trim());
+        }
+        return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
+    }
+
+    public GpuBackendCompileOptions withCudaNvccOutputFormat(String outputFormat) {
+        Map<String, String> updated = new LinkedHashMap<>(properties);
+        updated.put(CUDA_COMPILER_BRIDGE_PROPERTY, CUDA_COMPILER_BRIDGE_NVCC);
+        String normalizedOutputFormat = normalizeCudaNvccOutputFormat(outputFormat);
+        if (CUDA_NVCC_OUTPUT_FORMAT_PTX.equals(normalizedOutputFormat)) {
+            updated.remove(CUDA_NVCC_OUTPUT_FORMAT_PROPERTY);
+        } else {
+            updated.put(CUDA_NVCC_OUTPUT_FORMAT_PROPERTY, normalizedOutputFormat);
         }
         return new GpuBackendCompileOptions(GpuBackendTarget.CUDA, flags, updated);
     }
@@ -537,6 +591,13 @@ public record GpuBackendCompileOptions(
         updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_CACHE_PATH_PROPERTY);
         updated.remove(RUNTIME_METHOD_TEST_PROBE_EVIDENCE_MAX_AGE_MILLIS_PROPERTY);
         return new GpuBackendCompileOptions(backendTarget, flags, updated);
+    }
+
+    private static String normalizeCudaNvccOutputFormat(String value) {
+        String normalized = GpuBackendModuleFormat.normalizeKey(value);
+        return GpuBackendModuleFormat.UNKNOWN.key().equals(normalized)
+                ? CUDA_NVCC_OUTPUT_FORMAT_PTX
+                : normalized;
     }
 
     public Map<String, String> stableProperties() {

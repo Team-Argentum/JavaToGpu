@@ -1845,13 +1845,13 @@ class GpuRuntimeTest {
         assertEquals(1, result.candidateDecisions().size());
         assertEquals(GpuBackendTarget.CUDA, result.candidateDecisions().get(0).backendTarget());
         assertTrue(result.candidateDecisions().get(0).metadata().executionSupportPresent());
-        assertEquals("cuda-c,ptx", result.candidateDecisions().get(0).metadata().moduleFormatKeys());
+        assertEquals("cubin,cuda-c,fatbin,ptx", result.candidateDecisions().get(0).metadata().moduleFormatKeys());
         assertTrue(result.candidateDecisions().get(0).artifactFields("candidate")
                 .get("candidate.executionSupport.capabilities")
                 .contains("compute-capability"));
         assertTrue(result.failureSummary().contains("Runtime backend adapter is not implemented for CUDA"));
         assertTrue(result.explanation().toMarkdown().contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
-        assertTrue(result.explanation().toMarkdown().contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(result.explanation().toMarkdown().contains("moduleFormats: cubin,cuda-c,fatbin,ptx"));
         assertTrue(result.explanation().toMarkdown().contains("executionPipeline: available=true"));
     }
 
@@ -1899,9 +1899,11 @@ class GpuRuntimeTest {
         assertTrue(openClProvider.executionAvailability().sharedPipelineRunnerAvailable());
         assertFalse(cudaProvider.executionSupport().productionExecution());
         assertTrue(cudaProvider.executionSupport().executionPipelineAvailable());
-        assertEquals("cuda-c,ptx", cudaProvider.executionSupport().moduleFormatKeys());
+        assertEquals("cubin,cuda-c,fatbin,ptx", cudaProvider.executionSupport().moduleFormatKeys());
         assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUDA_C));
         assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.PTX));
+        assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.CUBIN));
+        assertTrue(cudaProvider.executionSupport().declaresModuleFormat(GpuBackendModuleFormat.FATBIN));
         assertTrue(cudaProvider.executionSupport().declaresCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY));
         assertTrue(cudaProvider.executionSupport().declaresCapability(GpuRuntimeCapability.GLOBAL_MEMORY));
         assertTrue(cudaProvider.executionPipelineFactory().isPresent());
@@ -1924,7 +1926,7 @@ class GpuRuntimeTest {
         assertEquals("execution-pipeline-available", cudaProviderFields.get("runtime.backend.executionAvailability.status"));
         assertEquals("true", cudaProviderFields.get("runtime.backend.executionAvailability.sharedRunner.available"));
         assertEquals("0", cudaProviderFields.get("runtime.backend.executionAvailability.blocker.count"));
-        assertEquals("cuda-c,ptx", cudaProviderFields.get("runtime.backend.executionSupport.moduleFormats"));
+        assertEquals("cubin,cuda-c,fatbin,ptx", cudaProviderFields.get("runtime.backend.executionSupport.moduleFormats"));
         assertTrue(cudaProviderFields.get("runtime.backend.executionSupport.capabilities").contains("compute-capability"));
         GpuBackendExecutionPipelineFactory<?, ?, ?> cudaPipelineFactory = cudaProvider
                 .executionPipelineFactory()
@@ -1960,7 +1962,7 @@ class GpuRuntimeTest {
         assertEquals(GpuBackendTarget.CUDA, entries.get(1).backendTarget());
         assertTrue(entries.get(0).executionSupport().orElseThrow().executionPipelineAvailable());
         assertEquals("opencl-c", entries.get(0).executionSupport().orElseThrow().moduleFormatKeys());
-        assertEquals("cuda-c,ptx", entries.get(1).executionSupport().orElseThrow().moduleFormatKeys());
+        assertEquals("cubin,cuda-c,fatbin,ptx", entries.get(1).executionSupport().orElseThrow().moduleFormatKeys());
         assertEquals(GpuBackendTarget.CUDA, discoveryCatalog.forBackend(GpuBackendTarget.CUDA).orElseThrow().backendTarget());
         assertEquals("CUDA", discoveryCatalog.forBackend(GpuBackendTarget.CUDA).orElseThrow().backendName());
         assertEquals("CUDA", fields.get("adapter.backendTarget"));
@@ -2031,6 +2033,16 @@ class GpuRuntimeTest {
                 "",
                 "binary-load"
         );
+        GpuBackendModuleArtifact cubin = GpuBackendModuleArtifact.cubin(
+                "generated/kernel.cubin",
+                "test-cuda-cubin-lowerer",
+                true
+        );
+        GpuBackendModuleArtifact fatbin = GpuBackendModuleArtifact.fatbin(
+                "generated/kernel.fatbin",
+                "test-cuda-fatbin-lowerer",
+                true
+        );
 
         assertEquals("opencl-c", openCl.format());
         assertEquals(GpuBackendModuleFormat.OPENCL_C, openCl.moduleFormat());
@@ -2046,6 +2058,15 @@ class GpuRuntimeTest {
         assertFalse(spirV.sourceLikeFormat());
         assertTrue(spirV.binaryLikeFormat());
         assertTrue(spirV.formatMatchesBackendTarget());
+        assertEquals("cubin", cubin.format());
+        assertEquals(GpuBackendModuleFormat.CUBIN, cubin.moduleFormat());
+        assertFalse(cubin.sourceLikeFormat());
+        assertTrue(cubin.binaryLikeFormat());
+        assertTrue(cubin.formatMatchesBackendTarget());
+        assertEquals("fatbin", fatbin.format());
+        assertEquals(GpuBackendModuleFormat.FATBIN, fatbin.moduleFormat());
+        assertTrue(fatbin.binaryLikeFormat());
+        assertEquals(GpuBackendModuleFormat.FATBIN, GpuBackendModuleFormat.fromKey("nvidia-fatbin"));
     }
 
     @Test

@@ -79,6 +79,10 @@ def openClPromotionGitSha = providers.gradleProperty('openClPromotionGitSha')
 def openClKernelLaunchAdvisoryDriftFile = layout.buildDirectory.file('reports/opencl/runtime-launch-advisory-drift.properties').get().asFile
 def openClCompilerResourceDriftFile = layout.buildDirectory.file('reports/opencl/runtime-compiler-resource-drift.properties').get().asFile
 def openClRuntimeIrOptimizerEvidenceDirectory = layout.buildDirectory.dir('reports/opencl/runtime-compile-artifacts').get().asFile
+def cudaSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-cuda-smoke-summary.properties').get().asFile
+def cudaPtxSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-cuda-ptx-smoke-summary.properties').get().asFile
+def cudaCubinSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-cuda-cubin-smoke-summary.properties').get().asFile
+def cudaFatbinSmokeSummaryFile = layout.buildDirectory.file('reports/cuda/integration-cuda-fatbin-smoke-summary.properties').get().asFile
 def openClValidationHistoryFile = layout.buildDirectory.file('reports/opencl/validation-history.properties').get().asFile
 def openClValidationHistoryMarkdownFile = layout.buildDirectory.file('reports/opencl/validation-history.md').get().asFile
 def openClValidationHistoryCacheDirectory = layout.buildDirectory.dir('opencl-validation-history-cache').get().asFile
@@ -112,7 +116,7 @@ def attachBucketStatusRecording = { Test task ->
     task.afterSuite { descriptor, result ->
         if (descriptor.parent == null) {
             String status = switch (result.resultType.toString()) {
-                case 'SUCCESS' -> 'passed'
+                case 'SUCCESS' -> result.testCount > 0 && result.skippedTestCount == result.testCount ? 'skipped' : 'passed'
                 case 'FAILURE' -> 'failed'
                 case 'SKIPPED' -> 'skipped'
                 default -> result.resultType.toString().toLowerCase(java.util.Locale.ROOT)
@@ -407,6 +411,173 @@ tasks.register('integrationOpenClSmokeTest', Test) {
         includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackendIntegrationTest'
     }
     attachBucketStatusRecording(it)
+}
+
+tasks.register('integrationCudaSmokeTest', Test) {
+    group = 'verification'
+    description = 'Runs the opt-in real-driver CUDA staged execution smoke suite.'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'javatogpu.cuda.smoke.enabled', 'true'
+    String nvccPath = System.getenv('JTG_CUDA_NVCC') ?: ''
+    if (!nvccPath.isBlank()) {
+        systemProperty 'javatogpu.cuda.nvcc.path', nvccPath
+    }
+    String smokeArch = System.getenv('JTG_CUDA_SMOKE_ARCH') ?: ''
+    if (!smokeArch.isBlank()) {
+        systemProperty 'javatogpu.cuda.smoke.arch', smokeArch
+    }
+    String smokeRequired = System.getenv('JTG_CUDA_SMOKE_REQUIRED') ?: ''
+    if (!smokeRequired.isBlank()) {
+        systemProperty 'javatogpu.cuda.smoke.required', smokeRequired
+    }
+    String nvccOutputFormat = System.getenv('JTG_CUDA_NVCC_OUTPUT_FORMAT') ?: ''
+    if (!nvccOutputFormat.isBlank()) {
+        systemProperty 'javatogpu.cuda.nvcc.outputFormat', nvccOutputFormat
+    }
+    filter {
+        includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaDriverExecutionIntegrationTest'
+    }
+    attachBucketStatusRecording(it)
+}
+
+def registerCudaSmokeLane = { String taskName, String outputFormat, File summaryFile ->
+    tasks.register(taskName, Test) {
+        group = 'verification'
+        description = "Runs the opt-in real-driver CUDA staged execution smoke suite with nvcc ${outputFormat} output."
+        useJUnitPlatform()
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        systemProperty 'javatogpu.cuda.smoke.enabled', 'true'
+        systemProperty 'javatogpu.cuda.nvcc.outputFormat', outputFormat
+        String nvccPath = System.getenv('JTG_CUDA_NVCC') ?: ''
+        if (!nvccPath.isBlank()) {
+            systemProperty 'javatogpu.cuda.nvcc.path', nvccPath
+        }
+        String smokeArch = System.getenv('JTG_CUDA_SMOKE_ARCH') ?: ''
+        if (!smokeArch.isBlank()) {
+            systemProperty 'javatogpu.cuda.smoke.arch', smokeArch
+        }
+        String smokeRequired = System.getenv('JTG_CUDA_SMOKE_REQUIRED') ?: ''
+        if (!smokeRequired.isBlank()) {
+            systemProperty 'javatogpu.cuda.smoke.required', smokeRequired
+        }
+        filter {
+            includeTestsMatching 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaDriverExecutionIntegrationTest'
+        }
+        attachBucketStatusRecording(it)
+    }
+    String summaryTaskName = taskName + 'SummaryReport'
+    tasks.register(summaryTaskName) {
+        group = 'verification'
+        description = "Writes a machine-readable summary for ${taskName}."
+        inputs.dir(layout.buildDirectory.dir("test-results/${taskName}"))
+        outputs.file(summaryFile)
+        mustRunAfter taskName
+
+        doLast {
+            File resultsDirectory = layout.buildDirectory.dir("test-results/${taskName}").get().asFile
+            Properties summary = cudaSmokeSummary(
+                    resultsDirectory,
+                    Boolean.toString(Boolean.parseBoolean(System.getenv('JTG_CUDA_SMOKE_REQUIRED') ?: 'false')),
+                    System.getenv('JTG_CUDA_NVCC') ?: 'nvcc',
+                    System.getenv('JTG_CUDA_SMOKE_ARCH') ?: 'auto',
+                    outputFormat,
+                    taskName
+            )
+            summaryFile.parentFile.mkdirs()
+            summaryFile.withOutputStream { stream ->
+                summary.store(stream, "JavaToGpu staged CUDA ${outputFormat} smoke summary")
+            }
+            logger.lifecycle('CUDA {} smoke summary written: status={}, executed={}, firstBlocker={} -> {}',
+                    outputFormat,
+                    summary.getProperty('status'),
+                    summary.getProperty('test.executed.count'),
+                    summary.getProperty('firstBlocker'),
+                    summaryFile)
+        }
+    }
+    String summaryGateTaskName = taskName + 'SummaryGate'
+    tasks.register(summaryGateTaskName) {
+        group = 'verification'
+        description = "Validates real-driver evidence in the ${taskName} summary."
+        inputs.file(summaryFile)
+        dependsOn summaryTaskName
+
+        doLast {
+            validateCudaSmokeSummaryGate(summaryFile, taskName, outputFormat)
+            logger.lifecycle('CUDA {} smoke summary gate passed: richEvidence={} -> {}',
+                    outputFormat,
+                    loadPropertiesFile(summaryFile).getProperty('realDriverExecutionEvidence.rich', 'false'),
+                    summaryFile)
+        }
+    }
+    tasks.named(taskName) {
+        finalizedBy summaryTaskName
+    }
+    tasks.named(summaryTaskName) {
+        finalizedBy summaryGateTaskName
+    }
+}
+
+registerCudaSmokeLane('integrationCudaPtxSmokeTest', 'ptx', cudaPtxSmokeSummaryFile)
+registerCudaSmokeLane('integrationCudaCubinSmokeTest', 'cubin', cudaCubinSmokeSummaryFile)
+registerCudaSmokeLane('integrationCudaFatbinSmokeTest', 'fatbin', cudaFatbinSmokeSummaryFile)
+
+tasks.register('cudaSmokeSummaryReport') {
+    group = 'verification'
+    description = 'Writes a machine-readable summary for the staged CUDA real-driver smoke gate.'
+    inputs.dir(layout.buildDirectory.dir('test-results/integrationCudaSmokeTest'))
+    outputs.file(cudaSmokeSummaryFile)
+    mustRunAfter 'integrationCudaSmokeTest'
+
+    doLast {
+        File resultsDirectory = layout.buildDirectory.dir('test-results/integrationCudaSmokeTest').get().asFile
+        Properties summary = cudaSmokeSummary(
+                resultsDirectory,
+                Boolean.toString(Boolean.parseBoolean(System.getenv('JTG_CUDA_SMOKE_REQUIRED') ?: 'false')),
+                System.getenv('JTG_CUDA_NVCC') ?: 'nvcc',
+                System.getenv('JTG_CUDA_SMOKE_ARCH') ?: 'auto',
+                System.getenv('JTG_CUDA_NVCC_OUTPUT_FORMAT') ?: 'ptx',
+                'integrationCudaSmokeTest'
+        )
+        cudaSmokeSummaryFile.parentFile.mkdirs()
+        cudaSmokeSummaryFile.withOutputStream { stream ->
+            summary.store(stream, 'JavaToGpu staged CUDA smoke summary')
+        }
+        logger.lifecycle('CUDA smoke summary written: status={}, executed={}, firstBlocker={} -> {}',
+                summary.getProperty('status'),
+                summary.getProperty('test.executed.count'),
+                summary.getProperty('firstBlocker'),
+                cudaSmokeSummaryFile)
+    }
+}
+
+tasks.named('integrationCudaSmokeTest') {
+    finalizedBy 'cudaSmokeSummaryReport'
+}
+
+tasks.register('cudaSmokeSummaryGate') {
+    group = 'verification'
+    description = 'Validates real-driver evidence in the staged CUDA smoke summary.'
+    inputs.file(cudaSmokeSummaryFile)
+    dependsOn 'cudaSmokeSummaryReport'
+
+    doLast {
+        validateCudaSmokeSummaryGate(
+                cudaSmokeSummaryFile,
+                'integrationCudaSmokeTest',
+                System.getenv('JTG_CUDA_NVCC_OUTPUT_FORMAT') ?: 'ptx'
+        )
+        logger.lifecycle('CUDA smoke summary gate passed: richEvidence={} -> {}',
+                loadPropertiesFile(cudaSmokeSummaryFile).getProperty('realDriverExecutionEvidence.rich', 'false'),
+                cudaSmokeSummaryFile)
+    }
+}
+
+tasks.named('cudaSmokeSummaryReport') {
+    finalizedBy 'cudaSmokeSummaryGate'
 }
 
 tasks.register('openClWorkloadValidationTest', Test) {
@@ -1080,6 +1251,312 @@ private static Properties loadPropertiesFile(File file) {
     Properties properties = new Properties()
     file.withInputStream { stream -> properties.load(stream) }
     return properties
+}
+
+private static void validateCudaSmokeSummaryGate(File summaryFile, String expectedTaskName, String expectedOutputFormat) {
+    if (summaryFile == null || !summaryFile.isFile()) {
+        throw new GradleException('Missing CUDA smoke summary: ' + summaryFile)
+    }
+    Properties summary = loadPropertiesFile(summaryFile)
+    if (summary.getProperty('format') != 'javatogpu.cuda-smoke-summary.v1') {
+        throw new GradleException('CUDA smoke summary has an unsupported format in ' + summaryFile)
+    }
+    String taskName = summary.getProperty('taskName', 'unknown')
+    if (expectedTaskName != null && !expectedTaskName.isBlank() && taskName != expectedTaskName) {
+        throw new GradleException('CUDA smoke summary task drifted from ' + expectedTaskName + ' to ' + taskName)
+    }
+    String outputFormat = summary.getProperty('nvcc.outputFormat', 'ptx')
+    String expectedFormat = expectedOutputFormat == null || expectedOutputFormat.isBlank() ? 'ptx' : expectedOutputFormat
+    if (outputFormat != expectedFormat) {
+        throw new GradleException('CUDA smoke summary output format drifted from ' + expectedFormat + ' to ' + outputFormat)
+    }
+
+    String status = summary.getProperty('status', 'unknown')
+    boolean required = Boolean.parseBoolean(summary.getProperty('required', 'false'))
+    boolean richEvidence = Boolean.parseBoolean(summary.getProperty('realDriverExecutionEvidence.rich', 'false'))
+    int executedCount = parseCudaSmokeInt(summary.getProperty('test.executed.count'))
+    int realDriverCount = parseCudaSmokeInt(summary.getProperty('evidence.realDriver.count'))
+    int evidenceCount = parseCudaSmokeInt(summary.getProperty('evidence.count'))
+    String firstBlocker = summary.getProperty('firstBlocker', 'none')
+
+    if (status == 'failed') {
+        throw new GradleException('CUDA smoke summary reports failed status for ' + taskName + ': ' + firstBlocker)
+    }
+    if (required && status != 'passed') {
+        throw new GradleException('Required CUDA smoke did not pass for ' + taskName + ': status=' + status
+                + ', firstBlocker=' + firstBlocker)
+    }
+    if (status == 'passed' && executedCount <= 0) {
+        throw new GradleException('CUDA smoke summary passed without executed tests for ' + taskName)
+    }
+    if (status == 'passed' && !richEvidence) {
+        throw new GradleException('CUDA smoke summary passed without rich real-driver evidence for ' + taskName
+                + ': evidence.realDriver.count=' + realDriverCount
+                + ', evidence.count=' + evidenceCount
+                + ', executed=' + executedCount)
+    }
+    if (status == 'passed' && realDriverCount < executedCount) {
+        throw new GradleException('CUDA smoke summary has incomplete real-driver evidence for ' + taskName
+                + ': evidence.realDriver.count=' + realDriverCount
+                + ', executed=' + executedCount)
+    }
+    if (required && !richEvidence) {
+        throw new GradleException('Required CUDA smoke lacks rich real-driver evidence for ' + taskName
+                + ': status=' + status
+                + ', firstBlocker=' + firstBlocker)
+    }
+}
+
+private static Properties cudaSmokeSummary(
+        File resultsDirectory,
+        String required,
+        String nvccPath,
+        String smokeArch,
+        String nvccOutputFormat,
+        String taskName
+) {
+    Properties summary = new Properties()
+    summary.setProperty('format', 'javatogpu.cuda-smoke-summary.v1')
+    summary.setProperty('taskName', taskName == null || taskName.isBlank() ? 'integrationCudaSmokeTest' : taskName)
+    summary.setProperty('generatedAtUtc', Instant.now().toString())
+    summary.setProperty('required', required)
+    summary.setProperty('nvcc.path', nvccPath == null || nvccPath.isBlank() ? 'nvcc' : nvccPath)
+    summary.setProperty('smoke.arch', smokeArch == null || smokeArch.isBlank() ? 'auto' : smokeArch)
+    summary.setProperty('nvcc.outputFormat', nvccOutputFormat == null || nvccOutputFormat.isBlank() ? 'ptx' : nvccOutputFormat)
+    summary.setProperty('junit.results.directory', resultsDirectory.absolutePath)
+
+    File[] reportFiles = resultsDirectory.isDirectory()
+            ? resultsDirectory.listFiles({ File ignored, String name -> name.endsWith('.xml') } as FilenameFilter)
+            : null
+    List<File> reports = reportFiles == null ? List.of() : reportFiles.toList().sort { it.name }
+    summary.setProperty('junit.results.present', Boolean.toString(!reports.isEmpty()))
+
+    int testCount = 0
+    int skippedCount = 0
+    int failureCount = 0
+    int errorCount = 0
+    LinkedHashSet<String> blockers = new LinkedHashSet<>()
+    List<Map<String, String>> evidenceRows = new ArrayList<>()
+    for (File report : reports) {
+        def suite = new XmlSlurper(false, false).parse(report)
+        testCount += parseCudaSmokeInt(suite.@tests.text())
+        skippedCount += parseCudaSmokeInt(suite.@skipped.text())
+        failureCount += parseCudaSmokeInt(suite.@failures.text())
+        errorCount += parseCudaSmokeInt(suite.@errors.text())
+        collectCudaSmokeEvidence(suite.'system-out'.text(), evidenceRows)
+        collectCudaSmokeEvidence(suite.'system-err'.text(), evidenceRows)
+        suite.testcase.each { testcase ->
+            collectCudaSmokeBlockers(testcase.skipped.@message.text(), blockers)
+            collectCudaSmokeBlockers(testcase.skipped.text(), blockers)
+            collectCudaSmokeBlockers(testcase.failure.@message.text(), blockers)
+            collectCudaSmokeBlockers(testcase.failure.text(), blockers)
+            collectCudaSmokeBlockers(testcase.error.@message.text(), blockers)
+            collectCudaSmokeBlockers(testcase.error.text(), blockers)
+            collectCudaSmokeEvidence(testcase.'system-out'.text(), evidenceRows)
+            collectCudaSmokeEvidence(testcase.'system-err'.text(), evidenceRows)
+        }
+    }
+    if (reports.isEmpty()) {
+        blockers.add('junit-results-missing')
+    }
+
+    int failedCount = failureCount + errorCount
+    int executedCount = Math.max(0, testCount - skippedCount)
+    String status = failedCount > 0
+            ? 'failed'
+            : (testCount == 0 || skippedCount == testCount ? 'skipped' : 'passed')
+
+    summary.setProperty('status', status)
+    summary.setProperty('test.count', Integer.toString(testCount))
+    summary.setProperty('test.executed.count', Integer.toString(executedCount))
+    summary.setProperty('test.skipped.count', Integer.toString(skippedCount))
+    summary.setProperty('test.failed.count', Integer.toString(failedCount))
+    summary.setProperty('test.failure.count', Integer.toString(failureCount))
+    summary.setProperty('test.error.count', Integer.toString(errorCount))
+    summary.setProperty('executed', Boolean.toString(executedCount > 0))
+    summary.setProperty('realDriverExecutionEvidence', Boolean.toString(status == 'passed' && executedCount > 0))
+    writeCudaSmokeEvidenceSummary(summary, evidenceRows, status, executedCount)
+    summary.setProperty('firstBlocker', blockers.isEmpty() ? 'none' : blockers.first())
+    summary.setProperty('blocker.count', Integer.toString(blockers.size()))
+    int blockerIndex = 0
+    for (String blocker : blockers) {
+        summary.setProperty('blocker.' + blockerIndex, blocker)
+        blockerIndex++
+    }
+    return summary
+}
+
+private static void collectCudaSmokeBlockers(String text, LinkedHashSet<String> blockers) {
+    if (text == null || text.isBlank()) {
+        return
+    }
+    def matcher = text =~ /blockers=([^\s<]+)/
+    while (matcher.find()) {
+        matcher.group(1).split(',').each { String blocker ->
+            String normalized = blocker.trim()
+            if (!normalized.isBlank()) {
+                blockers.add(normalized)
+            }
+        }
+    }
+}
+
+private static void collectCudaSmokeEvidence(String text, List<Map<String, String>> evidenceRows) {
+    if (text == null || text.isBlank()) {
+        return
+    }
+    text.eachLine { String line ->
+        String trimmed = line == null ? '' : line.trim()
+        if (trimmed.startsWith('JTG_CUDA_SMOKE_EVIDENCE')) {
+            Map<String, String> row = parseCudaSmokeEvidenceLine(trimmed)
+            if (!row.isEmpty()) {
+                evidenceRows.add(row)
+            }
+        }
+    }
+}
+
+private static Map<String, String> parseCudaSmokeEvidenceLine(String line) {
+    LinkedHashMap<String, String> row = new LinkedHashMap<>()
+    String prefix = 'JTG_CUDA_SMOKE_EVIDENCE'
+    if (line == null || !line.startsWith(prefix)) {
+        return row
+    }
+    String payload = line.substring(prefix.length()).trim()
+    if (payload.isBlank()) {
+        return row
+    }
+    payload.split(/\s+/).each { String token ->
+        int separator = token.indexOf('=')
+        if (separator <= 0) {
+            return
+        }
+        String key = token.substring(0, separator).trim()
+        String value = token.substring(separator + 1).trim()
+        if (!key.isBlank()) {
+            row.put(key, decodeCudaSmokeEvidenceValue(value))
+        }
+    }
+    return row
+}
+
+private static String decodeCudaSmokeEvidenceValue(String value) {
+    if (value == null || value.isBlank()) {
+        return 'unknown'
+    }
+    return value
+            .replace('%20', ' ')
+            .replace('%09', '\t')
+            .replace('%0A', '\n')
+            .replace('%0D', '\r')
+            .replace('%25', '%')
+}
+
+private static void writeCudaSmokeEvidenceSummary(
+        Properties summary,
+        List<Map<String, String>> evidenceRows,
+        String status,
+        int executedCount
+) {
+    LinkedHashMap<String, Integer> formatCounts = new LinkedHashMap<>()
+    int realDriverCount = 0
+    int moduleHandleCount = 0
+    int functionHandleCount = 0
+    int contextHandleCount = 0
+    int launchSubmittedCount = 0
+    int readbackCompleteCount = 0
+    int sharedMemoryPresentCount = 0
+    int payloadByteSizeMax = 0
+    String firstGridShape = 'unknown'
+    String firstBlockShape = 'unknown'
+
+    for (Map<String, String> row : evidenceRows) {
+        String format = sanitizeCudaSmokeEvidencePropertySegment(row.get('runtime.cuda.loadedModule.module.format'))
+        formatCounts.put(format, formatCounts.getOrDefault(format, 0) + 1)
+        payloadByteSizeMax = Math.max(
+                payloadByteSizeMax,
+                parseCudaSmokeInt(row.get('runtime.cuda.loadedModule.module.payload.byteSize'))
+        )
+        boolean moduleHandlePresent = cudaSmokeEvidenceTrue(row, 'runtime.cuda.loadedModule.moduleHandle.present')
+        boolean functionHandlePresent = cudaSmokeEvidenceTrue(row, 'runtime.cuda.loadedModule.functionHandle.present')
+        boolean contextHandlePresent = cudaSmokeEvidenceTrue(row, 'runtime.cuda.loadedModule.contextHandle.present')
+        boolean launchSubmitted = cudaSmokeEvidenceTrue(row, 'runtime.cuda.kernelLaunch.submitted')
+        boolean readbackComplete = cudaSmokeReadbackComplete(row)
+
+        moduleHandleCount += moduleHandlePresent ? 1 : 0
+        functionHandleCount += functionHandlePresent ? 1 : 0
+        contextHandleCount += contextHandlePresent ? 1 : 0
+        launchSubmittedCount += launchSubmitted ? 1 : 0
+        readbackCompleteCount += readbackComplete ? 1 : 0
+        sharedMemoryPresentCount += cudaSmokeEvidenceTrue(row, 'runtime.cuda.kernelLaunch.sharedMemory.present') ? 1 : 0
+        if (firstGridShape == 'unknown') {
+            firstGridShape = cudaSmokeEvidenceKnown(row.get('runtime.cuda.kernelLaunch.launchShape.gridShape'))
+        }
+        if (firstBlockShape == 'unknown') {
+            firstBlockShape = cudaSmokeEvidenceKnown(row.get('runtime.cuda.kernelLaunch.launchShape.blockShape'))
+        }
+        if (moduleHandlePresent && functionHandlePresent && contextHandlePresent && launchSubmitted && readbackComplete) {
+            realDriverCount++
+        }
+    }
+
+    summary.setProperty('evidence.count', Integer.toString(evidenceRows.size()))
+    summary.setProperty('evidence.realDriver.count', Integer.toString(realDriverCount))
+    summary.setProperty('evidence.module.payload.byteSize.max', Integer.toString(payloadByteSizeMax))
+    summary.setProperty('evidence.moduleHandle.present.count', Integer.toString(moduleHandleCount))
+    summary.setProperty('evidence.functionHandle.present.count', Integer.toString(functionHandleCount))
+    summary.setProperty('evidence.contextHandle.present.count', Integer.toString(contextHandleCount))
+    summary.setProperty('evidence.launch.submitted.count', Integer.toString(launchSubmittedCount))
+    summary.setProperty('evidence.readback.complete.count', Integer.toString(readbackCompleteCount))
+    summary.setProperty('evidence.sharedMemory.present.count', Integer.toString(sharedMemoryPresentCount))
+    summary.setProperty('evidence.firstLaunch.gridShape', firstGridShape)
+    summary.setProperty('evidence.firstLaunch.blockShape', firstBlockShape)
+    summary.setProperty(
+            'realDriverExecutionEvidence.rich',
+            Boolean.toString(status == 'passed' && executedCount > 0 && realDriverCount >= executedCount)
+    )
+    formatCounts.each { String format, Integer count ->
+        summary.setProperty('evidence.module.format.' + format + '.count', Integer.toString(count))
+    }
+}
+
+private static boolean cudaSmokeEvidenceTrue(Map<String, String> row, String key) {
+    return 'true'.equalsIgnoreCase(row.getOrDefault(key, 'false'))
+}
+
+private static boolean cudaSmokeReadbackComplete(Map<String, String> row) {
+    if (cudaSmokeEvidenceTrue(row, 'runtime.cuda.readback.complete')) {
+        return true
+    }
+    if (cudaSmokeEvidenceTrue(row, 'runtime.backend.invoke.readback.complete')) {
+        return true
+    }
+    int required = parseCudaSmokeInt(row.get('runtime.cuda.kernelLaunch.readback.required.count'))
+    int completed = parseCudaSmokeInt(row.get('runtime.cuda.kernelLaunch.readback.completed.count'))
+    return completed >= required
+}
+
+private static String cudaSmokeEvidenceKnown(String value) {
+    if (value == null || value.isBlank() || value == 'unknown') {
+        return 'unknown'
+    }
+    return value.trim()
+}
+
+private static String sanitizeCudaSmokeEvidencePropertySegment(String value) {
+    if (value == null || value.isBlank()) {
+        return 'unknown'
+    }
+    String normalized = value.trim().toLowerCase(java.util.Locale.ROOT).replaceAll(/[^a-z0-9_.-]/, '_')
+    return normalized.isBlank() ? 'unknown' : normalized
+}
+
+private static int parseCudaSmokeInt(String value) {
+    try {
+        return Integer.parseInt(value == null || value.isBlank() ? '0' : value.trim())
+    } catch (NumberFormatException ignored) {
+        return 0
+    }
 }
 
 private static Properties openClI3ReadinessBaseline(Properties current) {

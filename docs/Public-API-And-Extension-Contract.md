@@ -392,7 +392,7 @@ formats and capability facts this backend family knows how to expose through the
 
 When a policy is built from `GpuRuntimeBackendCatalog` entries, this provider metadata is attached to every backend
 candidate as `GpuRuntimeBackendCandidateMetadata`. The selection explanation keeps the old compact candidate summary,
-then adds readable lines such as `moduleFormats: cuda-c,ptx`, `capabilityVocabulary: compute-capability,...`, and
+then adds readable lines such as `moduleFormats: cubin,cuda-c,fatbin,ptx`, `capabilityVocabulary: compute-capability,...`, and
 `executionPipeline: available=true/false`. Built-in CUDA reports `available=true` for its non-production skeleton;
 custom discovery-only providers should report `available=false`. Artifact maps expose the same facts under candidate-local
 `*.executionSupport.*` fields, so CLIs, CI reports, and future backend scoring can reason about backend readiness
@@ -848,6 +848,8 @@ The current canonical module-format keys are:
 | `opencl-c` | OpenCL C source. |
 | `cuda-c` | CUDA C source. |
 | `ptx` | NVIDIA PTX text/intermediate module. |
+| `cubin` | NVIDIA CUDA device binary module. |
+| `fatbin` | NVIDIA CUDA fat binary bundle. |
 | `spir-v` | SPIR-V binary/intermediate module. |
 | `metal-shading-language` | Metal shader source. |
 | `native-binary` | Backend-owned binary format. |

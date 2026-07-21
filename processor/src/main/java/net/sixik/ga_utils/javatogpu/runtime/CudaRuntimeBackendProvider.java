@@ -54,7 +54,12 @@ public final class CudaRuntimeBackendProvider implements GpuRuntimeBackendProvid
                         GpuBackendPipelineStage.PREPARE,
                         GpuBackendPipelineStage.INVOKE
                 ),
-                Set.of(GpuBackendModuleFormat.CUDA_C, GpuBackendModuleFormat.PTX),
+                Set.of(
+                        GpuBackendModuleFormat.CUDA_C,
+                        GpuBackendModuleFormat.PTX,
+                        GpuBackendModuleFormat.CUBIN,
+                        GpuBackendModuleFormat.FATBIN
+                ),
                 Set.of(
                         GpuRuntimeCapability.DEVICE_CLASS,
                         GpuRuntimeCapability.DRIVER_VERSION,

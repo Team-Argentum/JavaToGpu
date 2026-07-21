@@ -57,23 +57,33 @@ final class CudaValuePacker {
         if (!isStructArrayInstance(value)) {
             return 0L;
         }
+        return structArrayByteSize(value, structArrayLength(value));
+    }
+
+    static long structArrayByteSize(Object value, int elementCount) {
+        if (!isStructArrayInstance(value)) {
+            return 0L;
+        }
         StructLayout layout = resolveStructLayout(value.getClass().getComponentType());
-        return (long) layout.size() * structArrayLength(value);
+        return (long) layout.size() * Math.max(0, elementCount);
     }
 
     static ByteBuffer packStructArray(Object value) {
+        return packStructArray(value, 0, structArrayLength(value));
+    }
+
+    static ByteBuffer packStructArray(Object value, int offset, int elementCount) {
         if (!isStructArrayInstance(value)) {
             throw new IllegalArgumentException("Unsupported CUDA struct array type: " + value.getClass().getName());
         }
         StructLayout layout = resolveStructLayout(value.getClass().getComponentType());
-        int elementCount = structArrayLength(value);
         long byteSize = (long) layout.size() * elementCount;
         if (byteSize > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("CUDA struct array is too large to pack on host: " + byteSize);
         }
         ByteBuffer buffer = MemoryUtil.memCalloc((int) byteSize).order(ByteOrder.nativeOrder());
         for (int index = 0; index < elementCount; index++) {
-            Object element = Array.get(value, index);
+            Object element = Array.get(value, offset + index);
             if (element != null) {
                 layout.write(element, buffer, index * layout.size());
             }
@@ -84,14 +94,17 @@ final class CudaValuePacker {
     }
 
     static void unpackStructArray(ByteBuffer buffer, Object targetArray) {
+        unpackStructArray(buffer, targetArray, 0, structArrayLength(targetArray));
+    }
+
+    static void unpackStructArray(ByteBuffer buffer, Object targetArray, int offset, int elementCount) {
         if (!isStructArrayInstance(targetArray)) {
             throw new IllegalArgumentException("Unsupported CUDA struct array readback type: " + targetArray.getClass().getName());
         }
         Class<?> targetType = targetArray.getClass().getComponentType();
         StructLayout layout = resolveStructLayout(targetType);
-        int length = structArrayLength(targetArray);
-        for (int index = 0; index < length; index++) {
-            Array.set(targetArray, index, layout.read(buffer, index * layout.size(), targetType));
+        for (int index = 0; index < elementCount; index++) {
+            Array.set(targetArray, offset + index, layout.read(buffer, index * layout.size(), targetType));
         }
     }
 
@@ -129,7 +142,10 @@ final class CudaValuePacker {
     }
 
     static ByteBuffer packVectorArray(String declaredArrayType, Object value) {
-        int elementCount = vectorArrayLength(value);
+        return packVectorArray(declaredArrayType, value, 0, vectorArrayLength(value));
+    }
+
+    static ByteBuffer packVectorArray(String declaredArrayType, Object value, int offset, int elementCount) {
         long byteSize = vectorArrayByteSize(declaredArrayType, elementCount);
         if (byteSize > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("CUDA vector array is too large to pack on host: " + byteSize);
@@ -138,7 +154,7 @@ final class CudaValuePacker {
         String componentType = GpuTypeSupport.componentType(declaredArrayType);
         int stride = GpuTypeSupport.vectorByteSize(componentType);
         for (int index = 0; index < elementCount; index++) {
-            Object element = Array.get(value, index);
+            Object element = Array.get(value, offset + index);
             if (element != null) {
                 writeVector(componentType, element, buffer, index * stride);
             }
@@ -149,14 +165,23 @@ final class CudaValuePacker {
     }
 
     static void unpackVectorArray(ByteBuffer buffer, String declaredArrayType, Object targetArray) {
+        unpackVectorArray(buffer, declaredArrayType, targetArray, 0, vectorArrayLength(targetArray));
+    }
+
+    static void unpackVectorArray(
+            ByteBuffer buffer,
+            String declaredArrayType,
+            Object targetArray,
+            int offset,
+            int elementCount
+    ) {
         String componentType = GpuTypeSupport.componentType(declaredArrayType);
         int stride = GpuTypeSupport.vectorByteSize(componentType);
-        int length = vectorArrayLength(targetArray);
         Class<?> targetType = targetArray.getClass().getComponentType();
-        for (int index = 0; index < length; index++) {
+        for (int index = 0; index < elementCount; index++) {
             Object element = instantiate(targetType);
             readVector(componentType, buffer, index * stride, element);
-            Array.set(targetArray, index, element);
+            Array.set(targetArray, offset + index, element);
         }
     }
 

@@ -4,17 +4,20 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.system.MemoryUtil;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -137,6 +140,51 @@ class CudaDriverLibraryTest {
         assertTrue(handle.closed);
         assertEquals(List.of(0xCAFE_0001L), invoker.unloadedModules);
         assertTrue(result.loadedModule().closed());
+    }
+
+    @Test
+    void moduleLoadPassesCubinBinaryPayloadToDriverApi() {
+        FakeHandle handle = new FakeHandle("nvcuda", "C:/Windows/System32/nvcuda.dll", requiredSymbols());
+        FakeResolver resolver = new FakeResolver(Map.of("nvcuda", handle));
+        FakeDriverApiInvoker invoker = new FakeDriverApiInvoker();
+        byte[] payload = new byte[]{0x7F, 'E', 'L', 'F', 1, 2, 3, 4};
+        invoker.expectedModuleImageBytes = payload.length;
+
+        CudaModuleLoadResult result = CudaDriverLibrary.loadModule(
+                moduleLoadRequestWithBinary(
+                        GpuBackendModuleArtifact.cubin(
+                                "inline://tests/cuda-preview.cubin",
+                                "test-cuda-cubin",
+                                true
+                        ),
+                        new GpuRuntimeBinaryArtifact(
+                                "cuda-preview.cubin",
+                                "application/x-cuda-cubin",
+                                payload
+                        ),
+                        cudaDevice("8.6")
+                ),
+                "cuda-module-loader:driver",
+                resolver,
+                invoker,
+                List.of("nvcuda")
+        );
+
+        assertTrue(result.succeeded());
+        assertEquals(1, invoker.moduleLoadCalls);
+        assertArrayEquals(payload, invoker.loadedModuleImage);
+        assertEquals("cubin", result.loadedModule().moduleFormat());
+        assertEquals(payload.length, result.loadedModule().modulePayloadByteSize());
+        assertTrue(result.loadedModule().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.contains("PTX compatibility preflight skipped")));
+        Map<String, String> fields = result.artifactFields("test.cuda.moduleLoad");
+        assertEquals("cubin", fields.get("runtime.cuda.loadedModule.module.format"));
+        assertEquals(Integer.toString(payload.length), fields.get("runtime.cuda.loadedModule.module.payload.byteSize"));
+
+        result.loadedModule().close();
+
+        assertTrue(handle.closed);
+        assertEquals(List.of(0xCAFE_0001L), invoker.unloadedModules);
     }
 
     @Test
@@ -301,6 +349,39 @@ class CudaDriverLibraryTest {
         return CudaModuleLoadRequest.from(compiledKernel, CudaExecutionPlan.empty());
     }
 
+    private static CudaModuleLoadRequest moduleLoadRequestWithBinary(
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeBinaryArtifact binaryArtifact,
+            GpuRuntimeDeviceProfile deviceProfile
+    ) {
+        GpuRuntimeCompileRequest compileRequest = new GpuRuntimeCompileRequest(
+                new GpuKernelDescriptor(
+                        "jtg_cuda_preview_kernel",
+                        "inline://tests/cuda-preview.cu",
+                        "extern \"C\" __global__ void jtg_cuda_preview_kernel(const float* input, float* output) { }",
+                        List.of()
+                ),
+                GpuRuntimeCompileOptions.cuda(
+                        List.of("--gpu-architecture=compute_86"),
+                        Map.of(GpuBackendCompileOptions.CUDA_MODULE_LOADER_PROPERTY, "driver"),
+                        "off"
+                ),
+                deviceProfile
+        );
+        CudaCompiledKernel compiledKernel = CudaCompiledKernel.nativeCompiled(
+                compileRequest,
+                GpuBackendModuleArtifact.cudaSource("", "inline://tests/cuda-preview.cu", "test"),
+                CudaNativeCompilationResult.succeeded(
+                        "cuda-native-compiler:test",
+                        moduleArtifact,
+                        List.of(binaryArtifact),
+                        "nvcc synthetic binary output",
+                        List.of("synthetic CUDA binary bridge emitted payload")
+                )
+        );
+        return CudaModuleLoadRequest.from(compiledKernel, CudaExecutionPlan.empty());
+    }
+
     private static GpuRuntimeDeviceProfile cudaDevice(String computeCapability) {
         return GpuRuntimeDeviceProfile.cuda(
                 "cuda-0",
@@ -369,7 +450,12 @@ class CudaDriverLibraryTest {
 
     private static final class FakeDriverApiInvoker implements CudaDriverLibrary.DriverApiInvoker {
         private final List<Long> unloadedModules = new ArrayList<>();
+        private final List<Integer> releasedPrimaryContexts = new ArrayList<>();
         private int initStatus;
+        private int deviceGetStatus;
+        private int devicePrimaryCtxRetainStatus;
+        private int ctxSetCurrentStatus;
+        private int devicePrimaryCtxReleaseStatus;
         private int driverVersionStatus;
         private int driverVersionRaw = 12040;
         private int moduleLoadCalls;
@@ -377,10 +463,39 @@ class CudaDriverLibraryTest {
         private int moduleGetFunctionStatus;
         private int moduleUnloadStatus;
         private String kernelName;
+        private int expectedModuleImageBytes;
+        private byte[] loadedModuleImage = new byte[0];
 
         @Override
         public int cuInit(int flags, long functionAddress) {
             return initStatus;
+        }
+
+        @Override
+        public int cuDeviceGet(long deviceOutAddress, int ordinal, long functionAddress) {
+            if (deviceGetStatus == 0) {
+                MemoryUtil.memPutInt(deviceOutAddress, ordinal);
+            }
+            return deviceGetStatus;
+        }
+
+        @Override
+        public int cuDevicePrimaryCtxRetain(long contextOutAddress, int device, long functionAddress) {
+            if (devicePrimaryCtxRetainStatus == 0) {
+                MemoryUtil.memPutAddress(contextOutAddress, 0xCAFE_00C7L + device);
+            }
+            return devicePrimaryCtxRetainStatus;
+        }
+
+        @Override
+        public int cuCtxSetCurrent(long contextHandle, long functionAddress) {
+            return ctxSetCurrentStatus;
+        }
+
+        @Override
+        public int cuDevicePrimaryCtxRelease(int device, long functionAddress) {
+            releasedPrimaryContexts.add(device);
+            return devicePrimaryCtxReleaseStatus;
         }
 
         @Override
@@ -401,6 +516,11 @@ class CudaDriverLibraryTest {
                 long functionAddress
         ) {
             moduleLoadCalls++;
+            if (expectedModuleImageBytes > 0) {
+                ByteBuffer image = MemoryUtil.memByteBuffer(imageAddress, expectedModuleImageBytes);
+                loadedModuleImage = new byte[expectedModuleImageBytes];
+                image.get(loadedModuleImage);
+            }
             if (moduleLoadStatus == 0) {
                 MemoryUtil.memPutAddress(moduleOutAddress, 0xCAFE_0001L);
             }

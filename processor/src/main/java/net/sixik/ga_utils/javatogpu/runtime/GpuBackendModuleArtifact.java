@@ -168,6 +168,46 @@ public record GpuBackendModuleArtifact(
         );
     }
 
+    public static GpuBackendModuleArtifact cubin(
+            String resource,
+            String lowererVersion,
+            boolean binaryAvailable
+    ) {
+        return cudaBinary(GpuBackendModuleFormat.CUBIN.key(), resource, lowererVersion, binaryAvailable);
+    }
+
+    public static GpuBackendModuleArtifact fatbin(
+            String resource,
+            String lowererVersion,
+            boolean binaryAvailable
+    ) {
+        return cudaBinary(GpuBackendModuleFormat.FATBIN.key(), resource, lowererVersion, binaryAvailable);
+    }
+
+    public static GpuBackendModuleArtifact cudaBinary(
+            String format,
+            String resource,
+            String lowererVersion,
+            boolean binaryAvailable
+    ) {
+        String normalizedFormat = GpuBackendModuleFormat.normalizeKey(format);
+        return new GpuBackendModuleArtifact(
+                GpuBackendTarget.CUDA,
+                "binary",
+                normalizedFormat,
+                "",
+                resource,
+                "cuda:binary:" + normalizedFormat + ":v1",
+                lowererVersion,
+                "derived-cuda-binary",
+                false,
+                binaryAvailable,
+                "",
+                "",
+                "binary-load"
+        );
+    }
+
     public static GpuBackendModuleArtifact spirV(
             String resource,
             String lowererVersion,

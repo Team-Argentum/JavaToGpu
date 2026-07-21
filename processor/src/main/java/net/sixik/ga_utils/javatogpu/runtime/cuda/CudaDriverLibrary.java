@@ -6,12 +6,15 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.SharedLibrary;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleFormat;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBinaryArtifact;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Small CUDA Driver API shared-library probe used before real native handle ownership exists.
@@ -22,6 +25,10 @@ final class CudaDriverLibrary {
 
     static final List<String> REQUIRED_MODULE_LOADER_SYMBOLS = List.of(
             "cuInit",
+            "cuDeviceGet",
+            "cuDevicePrimaryCtxRetain",
+            "cuCtxSetCurrent",
+            "cuDevicePrimaryCtxRelease_v2",
             "cuDriverGetVersion",
             "cuModuleLoadDataEx",
             "cuModuleGetFunction",
@@ -50,7 +57,17 @@ final class CudaDriverLibrary {
     }
 
     static CudaModuleLoadResult loadModuleFromPtx(CudaModuleLoadRequest request, String loaderId) {
-        return loadModuleFromPtx(
+        return loadModule(
+                request,
+                loaderId,
+                new LwjglSharedLibraryResolver(),
+                new JniDriverApiInvoker(),
+                defaultLibraryCandidates()
+        );
+    }
+
+    static CudaModuleLoadResult loadModule(CudaModuleLoadRequest request, String loaderId) {
+        return loadModule(
                 request,
                 loaderId,
                 new LwjglSharedLibraryResolver(),
@@ -60,6 +77,16 @@ final class CudaDriverLibrary {
     }
 
     static CudaModuleLoadResult loadModuleFromPtx(
+            CudaModuleLoadRequest request,
+            String loaderId,
+            SharedLibraryResolver resolver,
+            DriverApiInvoker invoker,
+            List<String> libraryCandidates
+    ) {
+        return loadModule(request, loaderId, resolver, invoker, libraryCandidates);
+    }
+
+    static CudaModuleLoadResult loadModule(
             CudaModuleLoadRequest request,
             String loaderId,
             SharedLibraryResolver resolver,
@@ -100,8 +127,11 @@ final class CudaDriverLibrary {
             );
         }
 
-        ByteBuffer ptxBuffer = null;
+        ByteBuffer moduleBuffer = null;
         long moduleHandle = 0L;
+        long contextHandle = 0L;
+        int contextDevice = -1;
+        boolean primaryContextRetained = false;
         boolean transferOwnership = false;
         try {
             int initStatus = invoker.cuInit(0, symbols.cuInit());
@@ -112,10 +142,36 @@ final class CudaDriverLibrary {
                         append(diagnostics, "CUDA cuInit failed with code " + initStatus)
                 );
             }
-            String ptxSource = request.moduleArtifact().requireSource();
-            CudaPtxCompatibilityMetadata ptxMetadata = CudaPtxCompatibilityMetadata.fromSource(ptxSource);
-            diagnostics.add(ptxMetadata.diagnosticLine());
-            ptxBuffer = MemoryUtil.memUTF8(ptxSource, true);
+            GpuBackendModuleFormat moduleFormat = request.moduleArtifact().moduleFormat();
+            CudaPtxCompatibilityMetadata ptxMetadata = CudaPtxCompatibilityMetadata.fromSource("");
+            if (moduleFormat == GpuBackendModuleFormat.PTX) {
+                String ptxSource = request.moduleArtifact().requireSource();
+                ptxMetadata = CudaPtxCompatibilityMetadata.fromSource(ptxSource);
+                diagnostics.add(ptxMetadata.diagnosticLine());
+                moduleBuffer = MemoryUtil.memUTF8(ptxSource, true);
+            } else if (moduleFormat == GpuBackendModuleFormat.CUBIN || moduleFormat == GpuBackendModuleFormat.FATBIN) {
+                Optional<GpuRuntimeBinaryArtifact> binaryArtifact = request.moduleBinaryArtifact();
+                if (binaryArtifact.isEmpty() || binaryArtifact.orElseThrow().size() == 0) {
+                    return CudaModuleLoadResult.unsupported(
+                            request.loaderMode(),
+                            List.of("cuda-driver-module-binary-payload-missing:" + moduleFormat.key()),
+                            append(diagnostics, "CUDA Driver module loader did not receive a binary payload for " + moduleFormat.key())
+                    );
+                }
+                byte[] payload = binaryArtifact.orElseThrow().content();
+                moduleBuffer = MemoryUtil.memAlloc(payload.length);
+                moduleBuffer.put(payload).flip();
+                diagnostics.add("CUDA Driver module binary payload prepared: format="
+                        + moduleFormat.key()
+                        + ", bytes="
+                        + payload.length);
+            } else {
+                return CudaModuleLoadResult.unsupported(
+                        request.loaderMode(),
+                        List.of("cuda-driver-module-format-unsupported:" + moduleFormat.key()),
+                        append(diagnostics, "CUDA Driver module loader supports ptx, cubin, and fatbin modules")
+                );
+            }
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 java.nio.IntBuffer driverVersionOut = stack.mallocInt(1);
                 int driverVersionStatus = invoker.cuDriverGetVersion(
@@ -132,34 +188,89 @@ final class CudaDriverLibrary {
                 int driverVersionRaw = driverVersionOut.get(0);
                 String driverVersion = formatDriverVersion(driverVersionRaw);
                 diagnostics.add("CUDA Driver API version reported " + driverVersion + " (" + driverVersionRaw + ")");
-                CudaPtxDriverCompatibility ptxDriverCompatibility = CudaPtxDriverCompatibility.evaluate(
-                        ptxMetadata,
-                        driverVersionRaw
+                int deviceOrdinal = cudaDeviceOrdinal(request);
+                java.nio.IntBuffer deviceOut = stack.mallocInt(1);
+                int deviceGetStatus = invoker.cuDeviceGet(
+                        MemoryUtil.memAddress(deviceOut),
+                        deviceOrdinal,
+                        symbols.cuDeviceGet()
                 );
-                diagnostics.addAll(ptxDriverCompatibility.diagnostics());
-                if (!ptxDriverCompatibility.passedOrSkipped()) {
-                    return CudaModuleLoadResult.unsupported(
-                            request.loaderMode(),
-                            ptxDriverCompatibility.blockers(),
-                            diagnostics
+                if (deviceGetStatus != CUDA_SUCCESS) {
+                    return failedAfterClosing(
+                            loaderId,
+                            List.of("cuda-driver-cuDeviceGet-failed:" + deviceGetStatus),
+                            append(diagnostics, "CUDA cuDeviceGet failed for ordinal " + deviceOrdinal + " with code " + deviceGetStatus)
                     );
                 }
+                contextDevice = deviceOut.get(0);
+                PointerBuffer contextOut = stack.mallocPointer(1);
+                int contextRetainStatus = invoker.cuDevicePrimaryCtxRetain(
+                        MemoryUtil.memAddress(contextOut),
+                        contextDevice,
+                        symbols.cuDevicePrimaryCtxRetain()
+                );
+                if (contextRetainStatus != CUDA_SUCCESS) {
+                    return failedAfterClosing(
+                            loaderId,
+                            List.of("cuda-driver-cuDevicePrimaryCtxRetain-failed:" + contextRetainStatus),
+                            append(diagnostics, "CUDA cuDevicePrimaryCtxRetain failed for device " + contextDevice + " with code " + contextRetainStatus)
+                    );
+                }
+                primaryContextRetained = true;
+                contextHandle = contextOut.get(0);
+                int setCurrentStatus = invoker.cuCtxSetCurrent(contextHandle, symbols.cuCtxSetCurrent());
+                if (setCurrentStatus != CUDA_SUCCESS) {
+                    int releaseStatus = invoker.cuDevicePrimaryCtxRelease(
+                            contextDevice,
+                            symbols.cuDevicePrimaryCtxRelease()
+                    );
+                    primaryContextRetained = false;
+                    return failedAfterClosing(
+                            loaderId,
+                            List.of("cuda-driver-cuCtxSetCurrent-failed:" + setCurrentStatus),
+                            append(
+                                    diagnostics,
+                                    "CUDA cuCtxSetCurrent failed with code "
+                                            + setCurrentStatus
+                                            + "; cuDevicePrimaryCtxRelease after failure returned "
+                                            + releaseStatus
+                            )
+                    );
+                }
+                diagnostics.add("CUDA Driver primary context retained and set current for device ordinal "
+                        + deviceOrdinal
+                        + " (device="
+                        + contextDevice
+                        + ")");
+                CudaPtxDriverCompatibility ptxDriverCompatibility = CudaPtxDriverCompatibility.evaluate(ptxMetadata, driverVersionRaw);
                 CudaPtxDeviceCompatibility ptxDeviceCompatibility = CudaPtxDeviceCompatibility.evaluate(
                         ptxMetadata,
                         request.compiledKernel().deviceProfile()
                 );
-                diagnostics.addAll(ptxDeviceCompatibility.diagnostics());
-                if (!ptxDeviceCompatibility.passedOrSkipped()) {
-                    return CudaModuleLoadResult.unsupported(
-                            request.loaderMode(),
-                            ptxDeviceCompatibility.blockers(),
-                            diagnostics
-                    );
+                if (moduleFormat == GpuBackendModuleFormat.PTX) {
+                    diagnostics.addAll(ptxDriverCompatibility.diagnostics());
+                    if (!ptxDriverCompatibility.passedOrSkipped()) {
+                        return CudaModuleLoadResult.unsupported(
+                                request.loaderMode(),
+                                ptxDriverCompatibility.blockers(),
+                                diagnostics
+                        );
+                    }
+                    diagnostics.addAll(ptxDeviceCompatibility.diagnostics());
+                    if (!ptxDeviceCompatibility.passedOrSkipped()) {
+                        return CudaModuleLoadResult.unsupported(
+                                request.loaderMode(),
+                                ptxDeviceCompatibility.blockers(),
+                                diagnostics
+                        );
+                    }
+                } else {
+                    diagnostics.add("CUDA PTX compatibility preflight skipped for binary module format " + moduleFormat.key());
                 }
                 PointerBuffer moduleOut = stack.mallocPointer(1);
                 int moduleLoadStatus = invoker.cuModuleLoadDataEx(
                         MemoryUtil.memAddress(moduleOut),
-                        MemoryUtil.memAddress(ptxBuffer),
+                        MemoryUtil.memAddress(moduleBuffer),
                         0,
                         0L,
                         0L,
@@ -208,6 +319,12 @@ final class CudaDriverLibrary {
                         ptxMetadata,
                         ptxDeviceCompatibility,
                         ptxDriverCompatibility,
+                        moduleFormat.key(),
+                        moduleBuffer.remaining(),
+                        contextHandle,
+                        contextDevice,
+                        symbols.cuCtxSetCurrent(),
+                        symbols.cuDevicePrimaryCtxRelease(),
                         library,
                         invoker,
                         append(diagnostics, "CUDA module/function handles loaded through Driver API")
@@ -228,19 +345,45 @@ final class CudaDriverLibrary {
                     diagnostics.add("CUDA cuModuleUnload after exception failed: " + exceptionMessage(unloadException));
                 }
             }
+            if (primaryContextRetained && symbols != null) {
+                try {
+                    int releaseStatus = invoker.cuDevicePrimaryCtxRelease(contextDevice, symbols.cuDevicePrimaryCtxRelease());
+                    diagnostics.add("CUDA cuDevicePrimaryCtxRelease after exception returned " + releaseStatus);
+                } catch (RuntimeException releaseException) {
+                    diagnostics.add("CUDA cuDevicePrimaryCtxRelease after exception failed: " + exceptionMessage(releaseException));
+                }
+            }
             return failedAfterClosing(
                     loaderId,
                     List.of("cuda-driver-module-load-exception:" + exception.getClass().getSimpleName()),
                     append(diagnostics, exceptionMessage(exception))
             );
         } finally {
-            if (ptxBuffer != null) {
-                MemoryUtil.memFree(ptxBuffer);
+            if (moduleBuffer != null) {
+                MemoryUtil.memFree(moduleBuffer);
             }
             if (!transferOwnership) {
                 closeQuietly(library, diagnostics);
             }
         }
+    }
+
+    private static int cudaDeviceOrdinal(CudaModuleLoadRequest request) {
+        if (request == null || request.compiledKernel() == null || request.compiledKernel().deviceProfile() == null) {
+            return 0;
+        }
+        String deviceId = request.compiledKernel().deviceProfile().deviceId();
+        if (deviceId == null || deviceId.isBlank()) {
+            return 0;
+        }
+        String trimmed = deviceId.trim().toLowerCase(Locale.ROOT);
+        if (trimmed.matches("[0-9]+")) {
+            return Integer.parseInt(trimmed);
+        }
+        if (trimmed.matches("cuda-[0-9]+")) {
+            return Integer.parseInt(trimmed.substring("cuda-".length()));
+        }
+        return 0;
     }
 
     static CudaDriverApiProbeResult probe(
@@ -335,6 +478,10 @@ final class CudaDriverLibrary {
     private static SymbolAddresses resolveRequiredSymbols(SharedLibraryHandle library, List<String> diagnostics) {
         ArrayList<String> missing = new ArrayList<>();
         long cuInit = requiredSymbol(library, "cuInit", missing);
+        long cuDeviceGet = requiredSymbol(library, "cuDeviceGet", missing);
+        long cuDevicePrimaryCtxRetain = requiredSymbol(library, "cuDevicePrimaryCtxRetain", missing);
+        long cuCtxSetCurrent = requiredSymbol(library, "cuCtxSetCurrent", missing);
+        long cuDevicePrimaryCtxRelease = requiredSymbol(library, "cuDevicePrimaryCtxRelease_v2", missing);
         long cuDriverGetVersion = requiredSymbol(library, "cuDriverGetVersion", missing);
         long cuModuleLoadDataEx = requiredSymbol(library, "cuModuleLoadDataEx", missing);
         long cuModuleGetFunction = requiredSymbol(library, "cuModuleGetFunction", missing);
@@ -345,7 +492,17 @@ final class CudaDriverLibrary {
             throw new MissingSymbolsException(missing);
         }
         diagnostics.add("CUDA Driver API library loaded and required symbols resolved");
-        return new SymbolAddresses(cuInit, cuDriverGetVersion, cuModuleLoadDataEx, cuModuleGetFunction, cuModuleUnload);
+        return new SymbolAddresses(
+                cuInit,
+                cuDeviceGet,
+                cuDevicePrimaryCtxRetain,
+                cuCtxSetCurrent,
+                cuDevicePrimaryCtxRelease,
+                cuDriverGetVersion,
+                cuModuleLoadDataEx,
+                cuModuleGetFunction,
+                cuModuleUnload
+        );
     }
 
     private static long requiredSymbol(SharedLibraryHandle library, String name, List<String> missing) {
@@ -385,6 +542,10 @@ final class CudaDriverLibrary {
 
     private record SymbolAddresses(
             long cuInit,
+            long cuDeviceGet,
+            long cuDevicePrimaryCtxRetain,
+            long cuCtxSetCurrent,
+            long cuDevicePrimaryCtxRelease,
             long cuDriverGetVersion,
             long cuModuleLoadDataEx,
             long cuModuleGetFunction,
@@ -428,6 +589,22 @@ final class CudaDriverLibrary {
         int CUDA_ERROR_NOT_SUPPORTED = 801;
 
         int cuInit(int flags, long functionAddress);
+
+        default int cuDeviceGet(long deviceOutAddress, int ordinal, long functionAddress) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
+
+        default int cuDevicePrimaryCtxRetain(long contextOutAddress, int device, long functionAddress) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
+
+        default int cuCtxSetCurrent(long contextHandle, long functionAddress) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
+
+        default int cuDevicePrimaryCtxRelease(int device, long functionAddress) {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
 
         default int cuDriverGetVersion(long versionOutAddress, long functionAddress) {
             return CUDA_ERROR_NOT_SUPPORTED;
@@ -489,6 +666,26 @@ final class CudaDriverLibrary {
         @Override
         public int cuInit(int flags, long functionAddress) {
             return JNI.invokeI(flags, functionAddress);
+        }
+
+        @Override
+        public int cuDeviceGet(long deviceOutAddress, int ordinal, long functionAddress) {
+            return JNI.invokePI(deviceOutAddress, ordinal, functionAddress);
+        }
+
+        @Override
+        public int cuDevicePrimaryCtxRetain(long contextOutAddress, int device, long functionAddress) {
+            return JNI.invokePI(contextOutAddress, device, functionAddress);
+        }
+
+        @Override
+        public int cuCtxSetCurrent(long contextHandle, long functionAddress) {
+            return JNI.invokePI(contextHandle, functionAddress);
+        }
+
+        @Override
+        public int cuDevicePrimaryCtxRelease(int device, long functionAddress) {
+            return JNI.invokeI(device, functionAddress);
         }
 
         @Override
@@ -565,7 +762,7 @@ final class CudaDriverLibrary {
                 long extraAddress,
                 long functionAddress
         ) {
-            return JNI.callPPPPI(
+            return JNI.callPPPPPPPPPPI(
                     functionHandle,
                     gridDimX,
                     gridDimY,

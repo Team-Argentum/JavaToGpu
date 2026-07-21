@@ -437,6 +437,29 @@ public record GpuRuntimeCompileOptions(
         return backendSpecific(GpuBackendCompileOptions.cudaNvcc(nvccOptions, nvccPath), optimizationProfile);
     }
 
+    public static GpuRuntimeCompileOptions cudaNvcc(
+            List<String> nvccOptions,
+            String nvccPath,
+            String outputFormat,
+            String optimizationProfile
+    ) {
+        return backendSpecific(
+                GpuBackendCompileOptions.cudaNvcc(nvccOptions, nvccPath, outputFormat),
+                optimizationProfile
+        );
+    }
+
+    public GpuRuntimeCompileOptions withCudaNvccOutputFormat(String outputFormat) {
+        return new GpuRuntimeCompileOptions(
+                GpuBackendTarget.CUDA,
+                compileArgs,
+                optimizationProfile,
+                backendOptions.withCudaNvccOutputFormat(outputFormat),
+                deviceOverride,
+                devicePreference
+        );
+    }
+
     public static GpuRuntimeCompileOptions vulkan(
             List<String> spirvOptions,
             Map<String, String> properties,

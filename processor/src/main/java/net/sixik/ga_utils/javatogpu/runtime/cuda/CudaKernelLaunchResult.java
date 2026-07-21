@@ -19,8 +19,32 @@ public record CudaKernelLaunchResult(
         int readbackRequiredCount,
         int readbackCompletedCount,
         List<String> blockers,
-        List<String> diagnostics
+        List<String> diagnostics,
+        LaunchShape launchShape
 ) {
+
+    public CudaKernelLaunchResult(
+            String launcherId,
+            String status,
+            GpuExecutionConfig executionConfig,
+            int sharedMemoryByteSize,
+            int readbackRequiredCount,
+            int readbackCompletedCount,
+            List<String> blockers,
+            List<String> diagnostics
+    ) {
+        this(
+                launcherId,
+                status,
+                executionConfig,
+                sharedMemoryByteSize,
+                readbackRequiredCount,
+                readbackCompletedCount,
+                blockers,
+                diagnostics,
+                null
+        );
+    }
 
     public CudaKernelLaunchResult {
         launcherId = launcherId == null || launcherId.isBlank() ? "cuda-kernel-launcher:unknown" : launcherId.trim();
@@ -30,6 +54,7 @@ public record CudaKernelLaunchResult(
         readbackCompletedCount = Math.max(0, readbackCompletedCount);
         blockers = blockers == null ? List.of() : List.copyOf(blockers);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        launchShape = launchShape == null || !launchShape.present() ? null : launchShape;
     }
 
     public static CudaKernelLaunchResult disabled(String launcherMode) {
@@ -79,6 +104,26 @@ public record CudaKernelLaunchResult(
             int readbackCompletedCount,
             List<String> diagnostics
     ) {
+        return succeeded(
+                launcherId,
+                executionConfig,
+                sharedMemoryByteSize,
+                readbackRequiredCount,
+                readbackCompletedCount,
+                diagnostics,
+                null
+        );
+    }
+
+    public static CudaKernelLaunchResult succeeded(
+            String launcherId,
+            GpuExecutionConfig executionConfig,
+            int sharedMemoryByteSize,
+            int readbackRequiredCount,
+            int readbackCompletedCount,
+            List<String> diagnostics,
+            LaunchShape launchShape
+    ) {
         return new CudaKernelLaunchResult(
                 launcherId,
                 "succeeded",
@@ -87,7 +132,8 @@ public record CudaKernelLaunchResult(
                 readbackRequiredCount,
                 readbackCompletedCount,
                 List.of(),
-                diagnostics
+                diagnostics,
+                launchShape
         );
     }
 
@@ -121,6 +167,17 @@ public record CudaKernelLaunchResult(
         for (int index = 0; index < blockers.size(); index++) {
             fields.put(prefix + ".blocker." + index, blockers.get(index));
         }
+        fields.put(prefix + ".launchShape.present", Boolean.toString(launchShape != null));
+        if (launchShape != null) {
+            fields.put(prefix + ".launchShape.gridShape", launchShape.gridShape());
+            fields.put(prefix + ".launchShape.blockShape", launchShape.blockShape());
+            fields.put(prefix + ".launchShape.gridDim.x", Integer.toString(launchShape.gridDimX()));
+            fields.put(prefix + ".launchShape.gridDim.y", Integer.toString(launchShape.gridDimY()));
+            fields.put(prefix + ".launchShape.gridDim.z", Integer.toString(launchShape.gridDimZ()));
+            fields.put(prefix + ".launchShape.blockDim.x", Integer.toString(launchShape.blockDimX()));
+            fields.put(prefix + ".launchShape.blockDim.y", Integer.toString(launchShape.blockDimY()));
+            fields.put(prefix + ".launchShape.blockDim.z", Integer.toString(launchShape.blockDimZ()));
+        }
         if (executionConfig != null) {
             fields.put(prefix + ".work.dimensions", Integer.toString(executionConfig.dimensions()));
             fields.put(prefix + ".work.globalShape", executionConfig.globalShape());
@@ -134,5 +191,44 @@ public record CudaKernelLaunchResult(
         return launcherMode == null || launcherMode.isBlank()
                 ? "cuda-kernel-launcher:unknown"
                 : "cuda-kernel-launcher:" + launcherMode.trim();
+    }
+
+    public record LaunchShape(
+            int gridDimX,
+            int gridDimY,
+            int gridDimZ,
+            int blockDimX,
+            int blockDimY,
+            int blockDimZ
+    ) {
+        public LaunchShape {
+            gridDimX = Math.max(0, gridDimX);
+            gridDimY = Math.max(0, gridDimY);
+            gridDimZ = Math.max(0, gridDimZ);
+            blockDimX = Math.max(0, blockDimX);
+            blockDimY = Math.max(0, blockDimY);
+            blockDimZ = Math.max(0, blockDimZ);
+        }
+
+        public boolean present() {
+            return gridDimX > 0
+                    && gridDimY > 0
+                    && gridDimZ > 0
+                    && blockDimX > 0
+                    && blockDimY > 0
+                    && blockDimZ > 0;
+        }
+
+        public String gridShape() {
+            return gridDimX + "x" + gridDimY + "x" + gridDimZ;
+        }
+
+        public String blockShape() {
+            return blockDimX + "x" + blockDimY + "x" + blockDimZ;
+        }
+
+        public String summary() {
+            return "grid=" + gridShape() + ", block=" + blockShape();
+        }
     }
 }
