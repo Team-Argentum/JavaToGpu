@@ -513,6 +513,63 @@ This gate records the exact logical fields a future native encoder would write, 
 `fieldWrites=89`, and keeps `nativeWriteEnabledCount=0`, `sdkStructByteEncodingEnabledCount=0`, and
 `activeNativeDescriptors=0`.
 
+Check native descriptor allocation/ownership preflight separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorAllocationPreflight --console=plain
+```
+
+This gate records future native allocation and lifecycle intent after descriptor field encoding but before object
+creation. It currently reports `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`,
+`preflightBlocked=3`, `entries=19`, `resourceDescriptorAllocations=16`, `textureDescriptorAllocations=9`,
+`plannedNativeDescriptors=25`, `allocatedNativeDescriptors=0`, `nativeDescriptorOwnershipPlanned=25`,
+`cleanupPlanned=25`, `rollbackPlanned=25`, `allocationEnabledCount=0`, and `activeNativeDescriptors=0`. It does not
+allocate native descriptor memory, encode CUDA SDK struct bytes, create texture/surface objects, or enable runtime
+binding.
+
+Check native descriptor allocation transaction planning separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan --console=plain
+```
+
+This gate materializes Java-side owner skeletons and deterministic cleanup/rollback order for future descriptor
+allocation. It currently reports `caseReady=3/3`, `preflightReady=0`, `preflightBlocked=3`, `transactionReady=0`,
+`transactionBlocked=3`, `entries=19`, `descriptorOwners=25`, `resourceDescriptorOwners=16`,
+`textureDescriptorOwners=9`, `activeDescriptorOwners=0`, `nativeAddressesPresent=0`, `allocationEnabledCount=0`,
+`cleanupPlanned=25`, `rollbackPlanned=25`, and `activeNativeDescriptors=0`. It still does not apply native allocation,
+cleanup, rollback, SDK struct byte encoding, object creation, or runtime binding.
+
+There is also an internal explicit opt-in allocation result for this plan. It can allocate zeroed native host memory for
+future `CUDA_RESOURCE_DESC` / `CUDA_TEXTURE_DESC` owners and must be closed by the caller, but it is not used by the
+default argument binder or fail-closed gates. It does not encode SDK struct bytes, call `cuTexObjectCreate` /
+`cuSurfObjectCreate`, or pass image/sampler object handles into kernels.
+
+Check that opt-in allocation result separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorAllocationResult --console=plain
+```
+
+This diagnostic is intentionally not part of `validateBackendAdapterContracts`. It allocates and releases host native
+memory for a 2D image/sampler sample, then verifies native addresses are cleared after `close()` while SDK byte encoding,
+object creation, and runtime binding remain disabled.
+
+Check native descriptor field-write transaction planning separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan --console=plain
+```
+
+This gate maps the planned descriptor field writes onto the Java-side owner slots from the allocation transaction plan.
+It currently reports `caseReady=3/3`, `encodingPlanReady=1`, `encodingPlanBlocked=2`,
+`allocationTransactionReady=0`, `allocationTransactionBlocked=3`, `transactionReady=0`, `transactionBlocked=3`,
+`entries=19`, `descriptorWrites=25`, `resourceDescriptorWrites=16`, `textureDescriptorWrites=9`,
+`resourceFieldWrites=35`, `textureFieldWrites=54`, `fieldWrites=89`, `ownersPresent=25`, `ownersActive=0`,
+`nativeAddressesPresent=0`, `nativeWriteEnabledCount=0`, `sdkStructByteEncodingEnabledCount=0`, and
+`activeNativeDescriptors=0`. It still writes no native memory, encodes no SDK struct bytes, creates no objects, and
+binds no runtime image/sampler handles.
+
 Check planned texture/surface object creation requests separately:
 
 ```powershell
@@ -524,6 +581,64 @@ reports `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `entries=19`, `objectRe
 `textureObjectRequests=8`, `surfaceObjectRequests=8`, `foldedSamplers=1`, `objectCreationCallEnabledCount=0`, and
 `activeObjects=0`. Blocked descriptor plans deliberately produce zero object requests, and the runtime still does not
 call `cuTexObjectCreate` or `cuSurfObjectCreate`.
+
+Check native object-preparation preflight separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeObjectPreparationPreflight --console=plain
+```
+
+This gate records the native prerequisites required before those planned requests can become real Driver API object
+creation calls. It currently reports `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`,
+`preflightBlocked=3`, `entries=19`, `objectPreparations=16`, `textureObjectPreparations=8`,
+`surfaceObjectPreparations=8`, `foldedSamplers=1`, `resourceDescriptorsRequired=16`, `resourceDescriptorsAvailable=0`,
+`resourceDescriptorOwnersPresent=16`, `resourceDescriptorWritesPlanned=16`, `textureDescriptorsRequired=8`,
+`textureDescriptorsAvailable=0`, `textureDescriptorOwnersPresent=8`, `textureDescriptorWritesPlanned=8`,
+`resourceDescriptorNativeAddressesPresent=0`, `textureDescriptorNativeAddressesPresent=0`, `createFunctionsAvailable=16`,
+`destroyFunctionsAvailable=16`, `objectHandlesAvailable=0`, and `activeObjects=0`.
+
+Check planned runtime object kernel-argument binding separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerRuntimeObjectBindingPlan --console=plain
+```
+
+This gate connects planned `CUtexObject` / `CUsurfObject` requests to future kernel parameter slots without binding any
+handles. It currently reports `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `entries=19`, `objectBindings=16`,
+`textureObjectBindings=8`, `surfaceObjectBindings=8`, `foldedSamplers=1`, `plannedObjectKernelParameterSlots=16`,
+`plannedMetadataKernelParameterSlots=28`, `plannedKernelParameterSlots=44`, `runtimeBindingKernelParameterSlots=0`,
+`objectCreationCallEnabledCount=0`, and `activeObjects=0`.
+
+Check the runtime object-binding transaction preflight separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight --console=plain
+```
+
+This gate records the prerequisites needed before those planned object slots can become real kernel-argument writes. It
+currently reports `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`, `preflightBlocked=3`,
+`entries=19`, `objectBindingTransactions=16`, `textureObjectTransactions=8`, `surfaceObjectTransactions=8`,
+`foldedSamplers=1`, `objectHandlesRequired=16`, `objectHandlesAvailable=0`, `nativeDescriptorsAvailable=0`,
+`resourceDescriptorsRequired=16`, `resourceDescriptorOwnersPresent=16`, `resourceDescriptorNativeAddressesPresent=0`,
+`resourceDescriptorWritesPlanned=16`, `resourceDescriptorNativeWritesEnabled=0`, `textureDescriptorsRequired=8`,
+`textureDescriptorOwnersPresent=8`, `textureDescriptorNativeAddressesPresent=0`, `textureDescriptorWritesPlanned=8`,
+`textureDescriptorNativeWritesEnabled=0`, `transactionApplyEnabledCount=0`, and `kernelParameterWriteEnabledCount=0`.
+It is expected to block first on missing native descriptor addresses, then object handles, ownership, and kernel
+parameter writes as those layers become real.
+
+Check the top-level image/sampler fail-closed contract separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerFailClosedContract --console=plain
+```
+
+This gate aggregates the image/sampler staged reports into one user-facing guardrail. It currently reports
+`componentReady=15/15`, `plannedNativeDescriptors=25`, `plannedObjectRequests=16`,
+`plannedRuntimeKernelParameterSlots=44`, `nativeMutationCount=0`, `runtimeBindingKernelParameterSlots=0`,
+`objectCreationCallEnabledCount=0`, `nativeDescriptorsAvailable=0`, `nativeDescriptorAddressesPresent=0`,
+`nativeDescriptorWritesEnabled=0`, `objectHandlesAvailable=0`, `activeNativeDescriptors=0`, and `activeObjects=0`.
+Use this before touching real CUDA image/sampler native work; it must stay green until native descriptor allocation,
+descriptor writes, object creation, runtime binding, and kernel parameter writes are introduced deliberately.
 
 This shows example `GpuBackendDiscoveryContributor`, `GpuBackendLoweringHook`, `GpuBackendCompilationHook`,
 `GpuBackendInvocationHook`, and `GpuBackendArtifactHook` implementations registered under `META-INF/services`. The hooks
@@ -658,6 +773,11 @@ logs into System.out, Log4J, SLF4J, or another application logging backend witho
 The examples app also registers `ExampleRuntimeLogTraceService`, which stays quiet unless
 `javatogpu.examples.runtimeLogTraceFile` is set, and can be checked together with lifecycle services through
 `runRuntimeObservabilityServiceHarnessExample`.
+
+Native host-memory allocation is now separated behind `GpuRuntimeNativeMemoryService`. The built-in service is
+LWJGL-backed, and future Java Panama support can plug in through ServiceLoader by returning the same closeable native
+address + `ByteBuffer` view contract. The CUDA image/sampler descriptor allocation diagnostic uses this path, but SDK
+struct byte encoding, texture/surface object creation, and runtime binding still stay disabled by default.
 
 ## Project Layout
 

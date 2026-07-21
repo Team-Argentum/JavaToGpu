@@ -891,12 +891,76 @@ tasks.register('validateCudaImageSamplerNativeDescriptorEncodingPlan', JavaExec)
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeDescriptorEncodingPlanCli'
 }
 
+tasks.register('validateCudaImageSamplerNativeDescriptorAllocationPreflight', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler native descriptor allocation/ownership preflight without allocating native memory.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeDescriptorAllocationPreflightCli'
+}
+
+tasks.register('validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler native descriptor allocation transaction planning without applying native allocation.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeDescriptorAllocationTransactionPlanCli'
+}
+
+tasks.register('validateCudaImageSamplerNativeDescriptorAllocationResult', JavaExec) {
+    group = 'verification'
+    description = 'Validates explicit opt-in CUDA image/sampler native descriptor host-memory allocation and cleanup without CUDA object creation.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeDescriptorAllocationResultCli'
+}
+
+tasks.register('validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler native descriptor field-write transaction planning without writing native memory.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeDescriptorEncodingTransactionPlanCli'
+}
+
 tasks.register('validateCudaImageSamplerObjectCreationRequestPlan', JavaExec) {
     group = 'verification'
     description = 'Validates CUDA image/sampler texture/surface object-creation request plans without creating objects.'
     dependsOn 'classes'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerObjectCreationRequestPlanCli'
+}
+
+tasks.register('validateCudaImageSamplerNativeObjectPreparationPreflight', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler native object-preparation preflight without native descriptor allocation or object creation.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerNativeObjectPreparationPreflightCli'
+}
+
+tasks.register('validateCudaImageSamplerRuntimeObjectBindingPlan', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler runtime object-binding plans without binding texture/surface objects.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerRuntimeObjectBindingPlanCli'
+}
+
+tasks.register('validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight', JavaExec) {
+    group = 'verification'
+    description = 'Validates CUDA image/sampler runtime object-binding transaction preflight without writing kernel arguments.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerRuntimeObjectBindingTransactionPreflightCli'
+}
+
+tasks.register('validateCudaImageSamplerFailClosedContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates the top-level CUDA image/sampler fail-closed contract across all staged metadata gates.'
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.cuda.CudaImageSamplerFailClosedContractCli'
 }
 
 tasks.register('validateCudaInventoryContract', JavaExec) {
@@ -950,7 +1014,14 @@ tasks.register('validateBackendAdapterContracts') {
     dependsOn 'validateCudaImageSamplerDescriptorBuildPlan'
     dependsOn 'validateCudaImageSamplerDescriptorPayloadModel'
     dependsOn 'validateCudaImageSamplerNativeDescriptorEncodingPlan'
+    dependsOn 'validateCudaImageSamplerNativeDescriptorAllocationPreflight'
+    dependsOn 'validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan'
+    dependsOn 'validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan'
     dependsOn 'validateCudaImageSamplerObjectCreationRequestPlan'
+    dependsOn 'validateCudaImageSamplerNativeObjectPreparationPreflight'
+    dependsOn 'validateCudaImageSamplerRuntimeObjectBindingPlan'
+    dependsOn 'validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight'
+    dependsOn 'validateCudaImageSamplerFailClosedContract'
 }
 
 tasks.register('validateOpenClKernelLaunchAdvisoryDrift', JavaExec) {

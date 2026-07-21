@@ -21,7 +21,13 @@ public record CudaArgumentBindingResult(
         CudaImageSamplerDescriptorBuildPlan imageSamplerDescriptorBuildPlan,
         CudaImageSamplerDescriptorPayloadModel imageSamplerDescriptorPayloadModel,
         CudaImageSamplerNativeDescriptorEncodingPlan imageSamplerNativeDescriptorEncodingPlan,
+        CudaImageSamplerNativeDescriptorAllocationPreflight imageSamplerNativeDescriptorAllocationPreflight,
+        CudaImageSamplerNativeDescriptorAllocationTransactionPlan imageSamplerNativeDescriptorAllocationTransactionPlan,
+        CudaImageSamplerNativeDescriptorEncodingTransactionPlan imageSamplerNativeDescriptorEncodingTransactionPlan,
         CudaImageSamplerObjectCreationRequestPlan imageSamplerObjectCreationRequestPlan,
+        CudaImageSamplerNativeObjectPreparationPreflight imageSamplerNativeObjectPreparationPreflight,
+        CudaImageSamplerRuntimeObjectBindingPlan imageSamplerRuntimeObjectBindingPlan,
+        CudaImageSamplerRuntimeObjectBindingTransactionPreflight imageSamplerRuntimeObjectBindingTransactionPreflight,
         List<String> blockers,
         List<String> diagnostics
 ) {
@@ -42,9 +48,36 @@ public record CudaArgumentBindingResult(
         imageSamplerNativeDescriptorEncodingPlan = imageSamplerNativeDescriptorEncodingPlan == null
                 ? CudaImageSamplerNativeDescriptorEncodingPlan.from(imageSamplerDescriptorPayloadModel)
                 : imageSamplerNativeDescriptorEncodingPlan;
+        imageSamplerNativeDescriptorAllocationPreflight = imageSamplerNativeDescriptorAllocationPreflight == null
+                ? CudaImageSamplerNativeDescriptorAllocationPreflight.from(imageSamplerNativeDescriptorEncodingPlan)
+                : imageSamplerNativeDescriptorAllocationPreflight;
+        imageSamplerNativeDescriptorAllocationTransactionPlan = imageSamplerNativeDescriptorAllocationTransactionPlan == null
+                ? CudaImageSamplerNativeDescriptorAllocationTransactionPlan.from(imageSamplerNativeDescriptorAllocationPreflight)
+                : imageSamplerNativeDescriptorAllocationTransactionPlan;
+        imageSamplerNativeDescriptorEncodingTransactionPlan = imageSamplerNativeDescriptorEncodingTransactionPlan == null
+                ? CudaImageSamplerNativeDescriptorEncodingTransactionPlan.from(
+                imageSamplerNativeDescriptorEncodingPlan,
+                imageSamplerNativeDescriptorAllocationTransactionPlan
+        )
+                : imageSamplerNativeDescriptorEncodingTransactionPlan;
         imageSamplerObjectCreationRequestPlan = imageSamplerObjectCreationRequestPlan == null
                 ? CudaImageSamplerObjectCreationRequestPlan.from(imageSamplerNativeDescriptorEncodingPlan)
                 : imageSamplerObjectCreationRequestPlan;
+        imageSamplerNativeObjectPreparationPreflight = imageSamplerNativeObjectPreparationPreflight == null
+                ? CudaImageSamplerNativeObjectPreparationPreflight.from(
+                imageSamplerObjectCreationRequestPlan,
+                imageSamplerNativeDescriptorEncodingTransactionPlan
+        )
+                : imageSamplerNativeObjectPreparationPreflight;
+        imageSamplerRuntimeObjectBindingPlan = imageSamplerRuntimeObjectBindingPlan == null
+                ? CudaImageSamplerRuntimeObjectBindingPlan.from(imageSamplerObjectCreationRequestPlan)
+                : imageSamplerRuntimeObjectBindingPlan;
+        imageSamplerRuntimeObjectBindingTransactionPreflight = imageSamplerRuntimeObjectBindingTransactionPreflight == null
+                ? CudaImageSamplerRuntimeObjectBindingTransactionPreflight.from(
+                imageSamplerRuntimeObjectBindingPlan,
+                imageSamplerNativeObjectPreparationPreflight
+        )
+                : imageSamplerRuntimeObjectBindingTransactionPreflight;
         blockers = blockers == null ? List.of() : List.copyOf(blockers);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
     }
@@ -54,6 +87,12 @@ public record CudaArgumentBindingResult(
                 binderId(binderMode),
                 "disabled",
                 GpuRuntimeInvocationBindingSummary.empty(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -75,6 +114,12 @@ public record CudaArgumentBindingResult(
                 binderId(binderMode),
                 "unsupported",
                 GpuRuntimeInvocationBindingSummary.empty(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -132,6 +177,12 @@ public record CudaArgumentBindingResult(
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 blockers,
                 diagnostics
         );
@@ -146,6 +197,12 @@ public record CudaArgumentBindingResult(
                 binderId,
                 "failed",
                 GpuRuntimeInvocationBindingSummary.empty(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -169,6 +226,12 @@ public record CudaArgumentBindingResult(
                 "failed",
                 GpuRuntimeInvocationBindingSummary.empty(),
                 executionPlan,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -210,6 +273,12 @@ public record CudaArgumentBindingResult(
                 bindingSummary,
                 executionPlan,
                 argumentFrame,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -265,9 +334,33 @@ public record CudaArgumentBindingResult(
         if (imageSamplerNativeDescriptorEncodingPlan.present()) {
             fields.putAll(imageSamplerNativeDescriptorEncodingPlan.artifactFields(prefix + ".imageSamplerNativeDescriptorEncodingPlan"));
         }
+        fields.put(prefix + ".imageSamplerNativeDescriptorAllocationPreflight.present", Boolean.toString(imageSamplerNativeDescriptorAllocationPreflight.present()));
+        if (imageSamplerNativeDescriptorAllocationPreflight.present()) {
+            fields.putAll(imageSamplerNativeDescriptorAllocationPreflight.artifactFields(prefix + ".imageSamplerNativeDescriptorAllocationPreflight"));
+        }
+        fields.put(prefix + ".imageSamplerNativeDescriptorAllocationTransactionPlan.present", Boolean.toString(imageSamplerNativeDescriptorAllocationTransactionPlan.present()));
+        if (imageSamplerNativeDescriptorAllocationTransactionPlan.present()) {
+            fields.putAll(imageSamplerNativeDescriptorAllocationTransactionPlan.artifactFields(prefix + ".imageSamplerNativeDescriptorAllocationTransactionPlan"));
+        }
+        fields.put(prefix + ".imageSamplerNativeDescriptorEncodingTransactionPlan.present", Boolean.toString(imageSamplerNativeDescriptorEncodingTransactionPlan.present()));
+        if (imageSamplerNativeDescriptorEncodingTransactionPlan.present()) {
+            fields.putAll(imageSamplerNativeDescriptorEncodingTransactionPlan.artifactFields(prefix + ".imageSamplerNativeDescriptorEncodingTransactionPlan"));
+        }
         fields.put(prefix + ".imageSamplerObjectCreationRequestPlan.present", Boolean.toString(imageSamplerObjectCreationRequestPlan.present()));
         if (imageSamplerObjectCreationRequestPlan.present()) {
             fields.putAll(imageSamplerObjectCreationRequestPlan.artifactFields(prefix + ".imageSamplerObjectCreationRequestPlan"));
+        }
+        fields.put(prefix + ".imageSamplerNativeObjectPreparationPreflight.present", Boolean.toString(imageSamplerNativeObjectPreparationPreflight.present()));
+        if (imageSamplerNativeObjectPreparationPreflight.present()) {
+            fields.putAll(imageSamplerNativeObjectPreparationPreflight.artifactFields(prefix + ".imageSamplerNativeObjectPreparationPreflight"));
+        }
+        fields.put(prefix + ".imageSamplerRuntimeObjectBindingPlan.present", Boolean.toString(imageSamplerRuntimeObjectBindingPlan.present()));
+        if (imageSamplerRuntimeObjectBindingPlan.present()) {
+            fields.putAll(imageSamplerRuntimeObjectBindingPlan.artifactFields(prefix + ".imageSamplerRuntimeObjectBindingPlan"));
+        }
+        fields.put(prefix + ".imageSamplerRuntimeObjectBindingTransactionPreflight.present", Boolean.toString(imageSamplerRuntimeObjectBindingTransactionPreflight.present()));
+        if (imageSamplerRuntimeObjectBindingTransactionPreflight.present()) {
+            fields.putAll(imageSamplerRuntimeObjectBindingTransactionPreflight.artifactFields(prefix + ".imageSamplerRuntimeObjectBindingTransactionPreflight"));
         }
         fields.put(prefix + ".argumentFrame.present", Boolean.toString(argumentFrame != null));
         if (argumentFrame != null) {

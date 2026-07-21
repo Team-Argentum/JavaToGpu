@@ -291,6 +291,47 @@ This gate records field-write intent only. It maps ready Java payloads to logica
 `sdkStructByteEncodingEnabledCount=0`, and `activeNativeDescriptors=0`. It still writes no native memory and does not
 encode CUDA SDK struct bytes.
 
+The native descriptor allocation/ownership preflight has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorAllocationPreflight --console=plain
+```
+
+This gate records allocation, ownership, cleanup, and rollback intent below descriptor field encoding. It must report
+`caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`, `preflightBlocked=3`, `entries=19`,
+`resourceDescriptorAllocations=16`, `textureDescriptorAllocations=9`, `plannedNativeDescriptors=25`,
+`allocatedNativeDescriptors=0`, `nativeDescriptorOwnershipPlanned=25`, `cleanupPlanned=25`, `rollbackPlanned=25`,
+`allocationEnabledCount=0`, and `activeNativeDescriptors=0`. It still allocates no native descriptor memory, encodes no
+CUDA SDK struct bytes, creates no texture/surface objects, and binds no runtime image/sampler handles.
+
+The native descriptor allocation transaction plan has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan --console=plain
+```
+
+This gate turns allocation intent into Java-side owner skeletons and deterministic cleanup/rollback order only. It must
+report `caseReady=3/3`, `preflightReady=0`, `preflightBlocked=3`, `transactionReady=0`, `transactionBlocked=3`,
+`entries=19`, `descriptorOwners=25`, `resourceDescriptorOwners=16`, `textureDescriptorOwners=9`,
+`activeDescriptorOwners=0`, `nativeAddressesPresent=0`, `allocationEnabledCount=0`, `cleanupPlanned=25`,
+`rollbackPlanned=25`, and `activeNativeDescriptors=0`. It still applies no native allocation, cleanup, rollback, SDK
+struct byte encoding, object creation, or runtime binding.
+
+The native descriptor field-write transaction plan has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan --console=plain
+```
+
+This gate maps logical field writes to planned descriptor owner slots only. It must report `caseReady=3/3`,
+`encodingPlanReady=1`, `encodingPlanBlocked=2`, `allocationTransactionReady=0`, `allocationTransactionBlocked=3`,
+`transactionReady=0`, `transactionBlocked=3`, `entries=19`, `descriptorWrites=25`,
+`resourceDescriptorWrites=16`, `textureDescriptorWrites=9`, `resourceFieldWrites=35`, `textureFieldWrites=54`,
+`fieldWrites=89`, `ownersPresent=25`, `ownersActive=0`, `nativeAddressesPresent=0`,
+`nativeWriteEnabledCount=0`, `sdkStructByteEncodingEnabledCount=0`, and `activeNativeDescriptors=0`. It still writes
+no native memory, encodes no SDK struct bytes, creates no texture/surface objects, and binds no runtime image/sampler
+handles.
+
 The planned texture/surface object request shape has its own hardware-free check:
 
 ```powershell
@@ -302,6 +343,65 @@ This gate records request intent above descriptor encoding only. It must report 
 `foldedSamplers=1`, `objectCreationCallEnabledCount=0`, and `activeObjects=0`. Blocked descriptor plans keep stable
 blockers and produce zero object requests. Runtime image/sampler binding still does not call `cuTexObjectCreate` or
 `cuSurfObjectCreate`.
+
+The native object-preparation preflight has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeObjectPreparationPreflight --console=plain
+```
+
+This gate records the native prerequisites below request planning and above real Driver API object creation. It must
+report `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`, `preflightBlocked=3`, `entries=19`,
+`objectPreparations=16`, `textureObjectPreparations=8`, `surfaceObjectPreparations=8`, `foldedSamplers=1`,
+`resourceDescriptorsRequired=16`, `resourceDescriptorsAvailable=0`, `resourceDescriptorOwnersPresent=16`,
+`resourceDescriptorWritesPlanned=16`, `textureDescriptorsRequired=8`, `textureDescriptorsAvailable=0`,
+`textureDescriptorOwnersPresent=8`, `textureDescriptorWritesPlanned=8`, `resourceDescriptorNativeAddressesPresent=0`,
+`textureDescriptorNativeAddressesPresent=0`, `createFunctionsAvailable=16`, `destroyFunctionsAvailable=16`,
+`objectHandlesAvailable=0`, and `activeObjects=0`. It still allocates no native descriptor memory and calls no object
+creation functions.
+
+The planned runtime object binding shape has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerRuntimeObjectBindingPlan --console=plain
+```
+
+This gate connects planned future `CUtexObject` / `CUsurfObject` handles to kernel parameter slots only. It must report
+`caseReady=3/3`, `planReady=1`, `planBlocked=2`, `entries=19`, `objectBindings=16`, `textureObjectBindings=8`,
+`surfaceObjectBindings=8`, `foldedSamplers=1`, `plannedObjectKernelParameterSlots=16`,
+`plannedMetadataKernelParameterSlots=28`, `plannedKernelParameterSlots=44`, `runtimeBindingKernelParameterSlots=0`,
+`objectCreationCallEnabledCount=0`, and `activeObjects=0`. Runtime binding still passes no texture/surface object
+handles to CUDA kernels.
+
+The runtime object-binding transaction preflight has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight --console=plain
+```
+
+This gate verifies the final prerequisites before any planned `CUtexObject` / `CUsurfObject` slot can become a real
+kernel-argument write. It must report `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`,
+`preflightBlocked=3`, `entries=19`, `objectBindingTransactions=16`, `textureObjectTransactions=8`,
+`surfaceObjectTransactions=8`, `objectHandlesRequired=16`, `objectHandlesAvailable=0`, `nativeDescriptorsAvailable=0`,
+`resourceDescriptorsRequired=16`, `resourceDescriptorOwnersPresent=16`, `resourceDescriptorNativeAddressesPresent=0`,
+`resourceDescriptorWritesPlanned=16`, `resourceDescriptorNativeWritesEnabled=0`, `textureDescriptorsRequired=8`,
+`textureDescriptorOwnersPresent=8`, `textureDescriptorNativeAddressesPresent=0`, `textureDescriptorWritesPlanned=8`,
+`textureDescriptorNativeWritesEnabled=0`, `transactionApplyEnabledCount=0`, and `kernelParameterWriteEnabledCount=0`.
+The expected state is blocked until native descriptor addresses/writes, object handles, ownership, and kernel parameter
+writes exist.
+
+The top-level image/sampler fail-closed contract has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerFailClosedContract --console=plain
+```
+
+This gate aggregates the staged image/sampler reports and proves the whole boundary is still closed. It must report
+`componentReady=15/15`, `plannedNativeDescriptors=25`, `plannedObjectRequests=16`,
+`plannedRuntimeKernelParameterSlots=44`, `nativeMutationCount=0`, `runtimeBindingKernelParameterSlots=0`,
+`objectCreationCallEnabledCount=0`, `nativeDescriptorsAvailable=0`, `nativeDescriptorAddressesPresent=0`,
+`nativeDescriptorWritesEnabled=0`, `objectHandlesAvailable=0`, `activeNativeDescriptors=0`, and `activeObjects=0`.
+If this gate fails, do not treat CUDA image/sampler support as production-safe.
 
 CUDA source preview now has a 2D texture/surface slice: `Image2DReadOnly` lowers to `cudaTextureObject_t`,
 `Image2DWriteOnly` lowers to `cudaSurfaceObject_t`, `read_imagef/i/ui` lowers to `tex2D<T>`, `write_imagef/i/ui`
@@ -678,6 +778,13 @@ follow `runtime.cache.key`, `runtime.module.*`, `runtime.work.*`, `runtime.backe
 execution adapters later.
 Lifecycle event reports keep the indexed `field.N.key/value` representation, but also copy any `runtime.*` event field
 to a direct `runtimeLifecycle.event.runtime.*` property so journals can be queried without unpacking the indexed list.
+
+Native host memory is also behind a small service boundary. `GpuRuntimeNativeMemoryService` allocates closeable native
+memory and returns both the native address and a `ByteBuffer` view. The built-in service uses LWJGL today; future Java
+Panama modules can provide the same ServiceLoader contract without forcing CUDA descriptor encoders or argument packers
+to depend directly on one allocation API. The current CUDA image/sampler descriptor allocation diagnostic exercises this
+boundary through `validateCudaImageSamplerNativeDescriptorAllocationResult`, while SDK struct byte encoding and object
+creation remain disabled.
 
 Lifecycle events can also be routed into a pluggable logging backend through `GpuRuntimeLogService`. The built-in
 `GpuRuntimeLifecycleLoggingService` bridges lifecycle events into the runtime logging bus, but it stays silent until a

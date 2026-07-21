@@ -327,10 +327,61 @@ runtime binding disabled.
 Use `:processor:validateCudaImageSamplerNativeDescriptorEncodingPlan` before implementing native descriptor memory
 writes. It pins the field-write shape above the Java payload model (`resourceFieldWrites=35`, `textureFieldWrites=54`,
 `fieldWrites=89`) while keeping native writes, SDK struct byte encoding, object creation, and runtime binding disabled.
+Use `:processor:validateCudaImageSamplerNativeDescriptorAllocationPreflight` before allocating native descriptor memory
+or introducing descriptor ownership. It pins allocation/lifecycle intent below field encoding (`resourceDescriptorAllocations=16`,
+`textureDescriptorAllocations=9`, `plannedNativeDescriptors=25`, `nativeDescriptorOwnershipPlanned=25`,
+`cleanupPlanned=25`, `rollbackPlanned=25`) while keeping allocation enabled counts, SDK byte encoding, object creation,
+runtime binding, and active native descriptor counts at zero.
+Use `:processor:validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan` before implementing a real allocation
+transaction. It pins Java-side descriptor owner skeletons and deterministic cleanup/rollback order (`descriptorOwners=25`,
+`resourceDescriptorOwners=16`, `textureDescriptorOwners=9`, `cleanupPlanned=25`, `rollbackPlanned=25`) while keeping
+native addresses, allocation apply, cleanup apply, rollback apply, SDK byte encoding, object creation, and runtime
+binding disabled.
+The internal opt-in allocation result can allocate zeroed native host memory for those owner skeletons and releases it
+through `AutoCloseable`, but it is deliberately outside the default binder and aggregate fail-closed gates. Backend
+authors should still treat SDK struct byte encoding, texture/surface object creation, and runtime kernel binding as
+separate disabled stages.
+Use `:processor:validateCudaImageSamplerNativeDescriptorAllocationResult` only when you explicitly want to exercise
+that host-memory ownership path. It allocates and closes native descriptor memory for a synthetic 2D image/sampler sample
+without adding any CUDA object handles or kernel parameters.
+That allocation path goes through `GpuRuntimeNativeMemoryService`: the built-in provider uses LWJGL, while future Panama
+or backend-specific providers can be loaded through ServiceLoader as long as they return a closeable native address plus
+a `ByteBuffer` view.
+Use `:processor:validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan` before implementing real descriptor
+field writes. It pins the mapping from logical field-write intent to planned descriptor owner slots (`descriptorWrites=25`,
+`resourceFieldWrites=35`, `textureFieldWrites=54`, `fieldWrites=89`, `ownersPresent=25`) while keeping native writes,
+SDK byte encoding, object creation, runtime binding, and active native descriptor counts at zero.
 Use `:processor:validateCudaImageSamplerObjectCreationRequestPlan` before wiring texture/surface object creation. It
 pins request intent above descriptor encoding (`objectRequests=16`, `textureObjectRequests=8`,
 `surfaceObjectRequests=8`, `foldedSamplers=1`) while keeping `objectCreationCallEnabledCount=0`, `activeObjects=0`,
 and blocked descriptor plans at zero requests. Do not call `cuTexObjectCreate` / `cuSurfObjectCreate` from this layer.
+Use `:processor:validateCudaImageSamplerNativeObjectPreparationPreflight` before allocating native descriptors or
+preparing object handles. It pins the native prerequisites below request planning (`objectPreparations=16`,
+`resourceDescriptorsRequired=16`, `resourceDescriptorOwnersPresent=16`, `resourceDescriptorWritesPlanned=16`,
+`resourceDescriptorsAvailable=0`, `textureDescriptorsRequired=8`, `textureDescriptorOwnersPresent=8`,
+`textureDescriptorWritesPlanned=8`, `textureDescriptorsAvailable=0`, `resourceDescriptorNativeAddressesPresent=0`,
+`textureDescriptorNativeAddressesPresent=0`, `createFunctionsAvailable=16`, `destroyFunctionsAvailable=16`, and
+`objectHandlesAvailable=0`) while still creating no CUDA objects.
+Use `:processor:validateCudaImageSamplerRuntimeObjectBindingPlan` before wiring texture/surface object kernel arguments.
+It pins the future kernel slot shape (`objectBindings=16`, `plannedObjectKernelParameterSlots=16`,
+`plannedMetadataKernelParameterSlots=28`, `plannedKernelParameterSlots=44`) while keeping
+`runtimeBindingKernelParameterSlots=0`, `objectCreationCallEnabledCount=0`, and `activeObjects=0`. Do not bind
+`CUtexObject` / `CUsurfObject` handles from this layer.
+Use `:processor:validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight` before implementing the actual binding
+transaction. It pins the last fail-closed prerequisites (`objectBindingTransactions=16`, `objectHandlesRequired=16`,
+`objectHandlesAvailable=0`, `nativeDescriptorsAvailable=0`, `resourceDescriptorsRequired=16`,
+`resourceDescriptorOwnersPresent=16`, `resourceDescriptorNativeAddressesPresent=0`,
+`resourceDescriptorWritesPlanned=16`, `resourceDescriptorNativeWritesEnabled=0`, `textureDescriptorsRequired=8`,
+`textureDescriptorOwnersPresent=8`, `textureDescriptorNativeAddressesPresent=0`, `textureDescriptorWritesPlanned=8`,
+`textureDescriptorNativeWritesEnabled=0`, `transactionApplyEnabledCount=0`, and `kernelParameterWriteEnabledCount=0`)
+so object handles cannot be written into CUDA kernel arguments until native descriptor allocation, descriptor writes,
+object creation, ownership, and parameter writes all exist together.
+Use `:processor:validateCudaImageSamplerFailClosedContract` as the top-level guardrail before touching real CUDA
+image/sampler native work. It aggregates the staged gates and must keep `componentReady=15/15`,
+`nativeMutationCount=0`, `runtimeBindingKernelParameterSlots=0`, `objectCreationCallEnabledCount=0`,
+`nativeDescriptorsAvailable=0`, `nativeDescriptorAddressesPresent=0`, `nativeDescriptorWritesEnabled=0`,
+`objectHandlesAvailable=0`, `activeNativeDescriptors=0`, and `activeObjects=0`. If this fails, the image/sampler
+boundary is not fail-closed enough to start native allocation or Driver API object creation safely.
 CUDA source reconstruction has a 2D texture/surface preview: `Image2DReadOnly` parameters become
 `cudaTextureObject_t`, `Image2DWriteOnly` parameters become `cudaSurfaceObject_t`, `read_imagef/i/ui` becomes
 `tex2D<T>`, `write_imagef/i/ui` becomes `surf2Dwrite(...)`, folded `Sampler` parameters disappear from the kernel

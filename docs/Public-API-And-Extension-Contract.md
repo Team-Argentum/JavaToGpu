@@ -33,7 +33,15 @@ JavaToGpu has one public Java GPU dialect: the `net.sixik.ga_utils.javatogpu.api
 | Check CUDA image/sampler descriptor build plan | `validateCudaImageSamplerDescriptorBuildPlan` | Verify Java wrapper handle/metadata preflight without native descriptor payloads |
 | Check CUDA image/sampler payload model | `validateCudaImageSamplerDescriptorPayloadModel` | Verify Java-only descriptor payload objects without native descriptor allocation |
 | Check CUDA image/sampler encoding plan | `validateCudaImageSamplerNativeDescriptorEncodingPlan` | Verify planned native descriptor field writes without writing native memory |
+| Check CUDA image/sampler descriptor allocation preflight | `validateCudaImageSamplerNativeDescriptorAllocationPreflight` | Verify planned native descriptor allocation/ownership without allocating native memory |
+| Check CUDA image/sampler descriptor allocation transaction plan | `validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan` | Verify planned descriptor owners and cleanup/rollback order without applying native allocation |
+| Check opt-in CUDA native descriptor allocation | `validateCudaImageSamplerNativeDescriptorAllocationResult` | Verify ServiceLoader-friendly native host memory allocation and cleanup without object creation |
+| Check CUDA image/sampler descriptor encoding transaction plan | `validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan` | Verify planned descriptor field writes are mapped to owner slots without writing native memory |
 | Check CUDA image/sampler object request plan | `validateCudaImageSamplerObjectCreationRequestPlan` | Verify planned texture/surface object requests without calling Driver API object creation |
+| Check CUDA image/sampler native object preparation | `validateCudaImageSamplerNativeObjectPreparationPreflight` | Verify native descriptor/object-handle prerequisites stay blocked before Driver API object creation |
+| Check CUDA image/sampler runtime object binding plan | `validateCudaImageSamplerRuntimeObjectBindingPlan` | Verify planned texture/surface object kernel slots without binding object handles |
+| Check CUDA image/sampler runtime object binding preflight | `validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight` | Verify native/object/kernel-write prerequisites stay blocked before real object binding |
+| Check CUDA image/sampler fail-closed contract | `validateCudaImageSamplerFailClosedContract` | Verify every staged image/sampler gate is ready while native mutation remains zero |
 | Add backend-stage facts or hooks | `GpuBackendHook` family | Keep defaults read-only and fail-soft |
 | Influence backend/device selection | `GpuRuntimeDevicePolicy` | Add evidence or hard rejections |
 | Check device policy behavior without a GPU | `GpuRuntimeDevicePolicyHarness` | Run synthetic CPU/iGPU/dGPU candidates |
@@ -61,6 +69,7 @@ That task runs the backend hook, authorization, IR-validation, lifecycle/log, de
 | One peephole pattern | `GpuRuntimeIrPeepholeRule` | Mutation proposal | Runs inside the built-in peephole host. |
 | Compiler log parser | `GpuBackendCompilerFeedbackProvider` | Read-only | Resource metrics are advisory. |
 | Backend family registration | `GpuRuntimeBackendProvider` | Stage-specific | Discovery can be read-only; compile/invoke becomes production-affecting. |
+| Native host-memory allocation | `GpuRuntimeNativeMemoryService` | Production-affecting | Default is LWJGL; future Panama providers can return the same address + `ByteBuffer` view contract. |
 | Backend policy/discovery/stage hooks | `GpuBackendPolicyContributor`, `GpuRuntimeBackendScoreContributor`, `GpuBackendDiscoveryContributor`, `GpuBackendLoweringHook`, `GpuBackendCompilationHook`, `GpuBackendInvocationHook`, `GpuBackendArtifactHook` | Read-only by default | Observer/enricher contracts for backend receipts; production-affecting hooks must opt into stronger permission explicitly. |
 | Device ranking facts | `GpuRuntimeDevicePolicy` | Read-only | Rejections are hard; score changes are evidence. |
 | Backend source generation | `GpuBackendLowerer` | Production-affecting | Must stay auditable and fail closed. |
@@ -89,6 +98,11 @@ com.example.gpu.Log4jGpuRuntimeLogService
 ```
 
 Every public extension also exposes common metadata through `GpuExtension`: `extensionId()`, `extensionVersion()`, `extensionCapabilities()`, `extensionPhase()`, `extensionPermission()`, and `extensionOrder()`. Use stable ids and versions because artifacts and diagnostics record them.
+
+Native-memory providers use the same ServiceLoader deployment style, but through `GpuRuntimeNativeMemoryService`. The
+runtime chooses providers deterministically by `serviceOrder()`, `serviceId()`, and `serviceVersion()`. A provider must
+return a closeable `GpuRuntimeNativeMemoryAllocation` with a native address and a `ByteBuffer` view; this keeps current
+LWJGL code working while leaving room for a future Panama implementation that exposes a `MemorySegment` as a buffer view.
 
 ## Runtime Logging
 
@@ -633,11 +647,51 @@ Use `validateCudaImageSamplerNativeDescriptorEncodingPlan` when touching native 
 logical field-write intent for ready payloads (`resType`, resource-handle fields, texture address modes, filter mode,
 flags, and read mode), pins 35 resource field writes and 54 texture field writes, and keeps native writes, SDK struct
 byte encoding, native allocation, object creation, and runtime binding disabled.
+Use `validateCudaImageSamplerNativeDescriptorAllocationPreflight` when touching native descriptor allocation or lifecycle
+ownership. It records only allocation, ownership, cleanup, and rollback intent (`resourceDescriptorAllocations=16`,
+`textureDescriptorAllocations=9`, `plannedNativeDescriptors=25`) and must keep allocated descriptors, SDK struct byte
+encoding, object creation, runtime binding, and active native descriptors at `0`.
+Use `validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan` when touching the future allocation transaction
+shape. It records Java-side descriptor owner skeletons and deterministic cleanup/rollback order (`descriptorOwners=25`)
+while keeping native addresses, allocation apply, cleanup apply, rollback apply, SDK struct byte encoding, object
+creation, runtime binding, and active native descriptors at `0`.
+Use `validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan` when touching the future native descriptor write
+transaction. It connects logical field-write intent to planned owner slots (`descriptorWrites=25`,
+`resourceFieldWrites=35`, `textureFieldWrites=54`, `fieldWrites=89`, `ownersPresent=25`) while keeping native writes,
+SDK struct byte encoding, object creation, runtime binding, and active native descriptors at `0`.
 Use `validateCudaImageSamplerObjectCreationRequestPlan` when touching the layer that will eventually call texture/surface
 object creation. It records only planned requests (`objectRequests=16`, `textureObjectRequests=8`,
 `surfaceObjectRequests=8`, `foldedSamplers=1`) and must keep object creation calls disabled, active objects at `0`, and
 blocked descriptor plans at zero requests. Normal runtime binding still must not call `cuTexObjectCreate` or
 `cuSurfObjectCreate`.
+Use `validateCudaImageSamplerNativeObjectPreparationPreflight` when touching native descriptor/object handle preparation
+below request planning. It proves create/destroy symbols are known for planned requests while native descriptor handles,
+object handles, ownership, and object creation remain unavailable (`resourceDescriptorsAvailable=0`,
+`textureDescriptorsAvailable=0`, `objectHandlesAvailable=0`, `objectCreationCallEnabledCount=0`). It also proves the
+owner/write intent is already visible (`resourceDescriptorOwnersPresent=16`, `resourceDescriptorWritesPlanned=16`,
+`textureDescriptorOwnersPresent=8`, `textureDescriptorWritesPlanned=8`) while native descriptor addresses and native
+writes remain at `0`. This gate should stay blocked until native descriptor allocation and Driver API object creation are
+introduced deliberately.
+Use `validateCudaImageSamplerRuntimeObjectBindingPlan` when touching the future kernel-argument binding layer for
+texture/surface objects. It connects planned object requests to planned kernel slots (`objectBindings=16`,
+`plannedObjectKernelParameterSlots=16`, `plannedMetadataKernelParameterSlots=28`, `plannedKernelParameterSlots=44`) and
+must keep `runtimeBindingKernelParameterSlots=0`, object creation calls disabled, active objects at `0`, and blocked
+descriptor plans at zero slots. Normal runtime binding still must not pass `CUtexObject` / `CUsurfObject` handles to
+CUDA kernels.
+Use `validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight` when touching the final boundary before real
+texture/surface object kernel-argument writes. It proves the runtime sees planned transactions but still lacks the native
+prerequisites (`objectHandlesAvailable=0`, `nativeDescriptorsAvailable=0`, `resourceDescriptorNativeAddressesPresent=0`,
+`resourceDescriptorNativeWritesEnabled=0`, `textureDescriptorNativeAddressesPresent=0`,
+`textureDescriptorNativeWritesEnabled=0`, `transactionApplyEnabledCount=0`, and `kernelParameterWriteEnabledCount=0`).
+It also proves owner/write intent is already visible (`resourceDescriptorOwnersPresent=16`,
+`resourceDescriptorWritesPlanned=16`, `textureDescriptorOwnersPresent=8`, `textureDescriptorWritesPlanned=8`). This
+gate should stay blocked until native descriptor allocation, native descriptor writes, Driver API object creation,
+object ownership, and kernel parameter writes are implemented as one auditable transaction.
+Use `validateCudaImageSamplerFailClosedContract` as the final hardware-free guardrail before native image/sampler work.
+It aggregates the staged reports and must keep all components ready (`componentReady=15/15`) while native mutation stays
+at `0`: no runtime binding slots, object creation calls, native descriptor availability/addresses/writes, object
+handles, active native descriptors, or active objects. Treat this as the quick public API smoke for the whole CUDA
+image/sampler fail-closed boundary.
 CUDA source lowering for image/sampler methods remains a separate stage. The supported preview slice now covers 2D
 texture reads and 2D surface writes (`Image2DReadOnly` -> `cudaTextureObject_t`, `Image2DWriteOnly` ->
 `cudaSurfaceObject_t`, `read_imagef/i/ui` -> `tex2D<T>`, `write_imagef/i/ui` -> `surf2Dwrite(...)`, folded `Sampler`,
