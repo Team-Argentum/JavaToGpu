@@ -333,7 +333,9 @@ public final class GpuRuntimeBackendPolicy {
          */
         public Builder scoreCandidatesWithCompilerFeedback(GpuBackendCompilerFeedbackReport report) {
             scoreCandidatesForCompilerFeedback(report);
-            return scoreCandidatesWith(GpuBackendCompilerFeedbackScoreContributor.fromContext());
+            return scoreCandidatesWith(
+                    net.sixik.ga_utils.javatogpu.runtime.selection.GpuBackendCompilerFeedbackScoreContributor.fromContext()
+            );
         }
 
         /**
@@ -349,14 +351,18 @@ public final class GpuRuntimeBackendPolicy {
          */
         public Builder scoreCandidatesWithWorkloadHints(GpuRuntimeWorkloadHints hints) {
             scoreCandidatesForWorkloadHints(hints);
-            return scoreCandidatesWith(GpuRuntimeWorkloadHintBackendScoreContributor.fromContext());
+            return scoreCandidatesWith(
+                    net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeWorkloadHintBackendScoreContributor.fromContext()
+            );
         }
 
         /**
          * Adds the standard inferred workload-hints score bridge for already-attached descriptor/IrGpu context.
          */
         public Builder scoreCandidatesWithInferredWorkloadHints() {
-            return scoreCandidatesWith(GpuRuntimeInferredWorkloadHintBackendScoreContributor.fromContext());
+            return scoreCandidatesWith(
+                    net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeInferredWorkloadHintBackendScoreContributor.fromContext()
+            );
         }
 
         /**

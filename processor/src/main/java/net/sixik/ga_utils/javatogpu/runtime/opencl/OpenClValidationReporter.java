@@ -2,9 +2,9 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionCandidateGate;
 import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionWorkloadSummary;
-import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuPromotionArtifactRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilityValidation;
-import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityFormatter;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuProductionPromotionExplainabilityFormatter;
 import net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilitySummary;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeArtifactProperties;
 

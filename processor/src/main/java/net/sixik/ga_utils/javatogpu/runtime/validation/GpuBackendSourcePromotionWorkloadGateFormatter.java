@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime.validation;
 
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionBlockerClassifier;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuBackendSourcePromotionBlockerClassifier;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeArtifactProperties;
 

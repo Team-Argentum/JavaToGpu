@@ -111,6 +111,12 @@ public final class GpuRuntimePackageTaxonomy {
         if (isBackendHook(simpleName)) {
             return Optional.of(Domain.BACKEND_HOOKS);
         }
+        if (isBackendSourcePromotionDiagnostic(simpleName)) {
+            return Optional.of(Domain.ARTIFACTS_AND_DIAGNOSTICS);
+        }
+        if (isBackendCompilerFeedbackDiagnostic(simpleName)) {
+            return Optional.of(Domain.ARTIFACTS_AND_DIAGNOSTICS);
+        }
         if (isBackendSpi(simpleName)) {
             return Optional.of(Domain.BACKEND_SPI);
         }
@@ -171,13 +177,22 @@ public final class GpuRuntimePackageTaxonomy {
                 "GpuRuntimeInferredWorkload",
                 "GpuRuntimeExplicitDeviceOverride",
                 "GpuRuntimeMethodDeviceConstraint")
-                || "GpuRuntimeSelectionResult".equals(simpleName);
+                || "GpuRuntimeSelectionResult".equals(simpleName)
+                || "GpuBackendCompilerFeedbackScoreContributor".equals(simpleName);
     }
 
     private static boolean isBackendHook(String simpleName) {
         return startsWith(simpleName, "GpuBackendHook")
                 || endsWithAny(simpleName, "Hook")
                 || containsAny(simpleName, "HookAuthorization");
+    }
+
+    private static boolean isBackendCompilerFeedbackDiagnostic(String simpleName) {
+        return "GpuBackendCompilerFeedbackRegistry".equals(simpleName);
+    }
+
+    private static boolean isBackendSourcePromotionDiagnostic(String simpleName) {
+        return "GpuBackendSourcePromotionBlockerClassifier".equals(simpleName);
     }
 
     private static boolean isBackendSpi(String simpleName) {
@@ -223,6 +238,7 @@ public final class GpuRuntimePackageTaxonomy {
                 "GpuRuntimeFallback",
                 "GpuRuntimeFailure",
                 "GpuRuntimeProductionProfiles",
+                "GpuPromotionArtifactRegistry",
                 "GpuProduction",
                 "GpuPromotion")
                 || endsWithAny(simpleName, "Exception", "Report", "Summary")

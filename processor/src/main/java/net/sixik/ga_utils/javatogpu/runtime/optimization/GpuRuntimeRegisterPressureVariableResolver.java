@@ -1,4 +1,4 @@
-package net.sixik.ga_utils.javatogpu.runtime;
+package net.sixik.ga_utils.javatogpu.runtime.optimization;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;

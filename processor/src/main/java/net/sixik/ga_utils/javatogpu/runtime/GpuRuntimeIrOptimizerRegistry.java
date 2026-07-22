@@ -69,9 +69,9 @@ public final class GpuRuntimeIrOptimizerRegistry {
 
     public static GpuRuntimeIrOptimizerRegistry loadFromServiceLoader() {
         java.util.ArrayList<GpuRuntimeIrOptimizationPass> loadedPasses = new java.util.ArrayList<>();
-        loadedPasses.add(new GpuRuntimeRegisterPressureAnalysisPass());
-        if (GpuRuntimeCommonSubexpressionReviewPass.optInEnabled()) {
-            loadedPasses.add(new GpuRuntimeCommonSubexpressionReviewPass());
+        loadedPasses.add(new net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeRegisterPressureAnalysisPass());
+        if (net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeCommonSubexpressionReviewPass.optInEnabled()) {
+            loadedPasses.add(new net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeCommonSubexpressionReviewPass());
         }
         ServiceLoader.load(GpuRuntimeIrOptimizationPass.class, GpuRuntimeIrOptimizationPass.class.getClassLoader())
                 .forEach(loadedPasses::add);

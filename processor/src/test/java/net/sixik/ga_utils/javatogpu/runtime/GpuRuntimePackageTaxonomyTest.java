@@ -35,6 +35,22 @@ final class GpuRuntimePackageTaxonomyTest {
                 GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeDeviceSelection").orElseThrow()
         );
         assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.SELECTION_AND_DEVICE_POLICY,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeWorkloadHintInference").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.SELECTION_AND_DEVICE_POLICY,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuBackendCompilerFeedbackScoreContributor").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.SELECTION_AND_DEVICE_POLICY,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeWorkloadHintBackendScoreContributor").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.SELECTION_AND_DEVICE_POLICY,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeInferredWorkloadHintBackendScoreContributor").orElseThrow()
+        );
+        assertEquals(
                 GpuRuntimePackageTaxonomy.Domain.METHOD_TESTS,
                 GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeMethodTestProbes").orElseThrow()
         );
@@ -43,12 +59,40 @@ final class GpuRuntimePackageTaxonomyTest {
                 GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeIrOptimizer").orElseThrow()
         );
         assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.IR_OPTIMIZATION,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeRegisterPressureAnalyzer").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.IR_OPTIMIZATION,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeCommonSubexpressionReviewPass").orElseThrow()
+        );
+        assertEquals(
                 GpuRuntimePackageTaxonomy.Domain.OBSERVABILITY,
                 GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeLifecycleEventBus").orElseThrow()
         );
         assertEquals(
                 GpuRuntimePackageTaxonomy.Domain.NATIVE_MEMORY,
                 GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeNativeMemoryService").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.ARTIFACTS_AND_DIAGNOSTICS,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuRuntimeCompileArtifactDumper").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.ARTIFACTS_AND_DIAGNOSTICS,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuProductionPromotionExplainabilityFormatter").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.ARTIFACTS_AND_DIAGNOSTICS,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuBackendCompilerFeedbackRegistry").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.ARTIFACTS_AND_DIAGNOSTICS,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuPromotionArtifactRegistry").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.ARTIFACTS_AND_DIAGNOSTICS,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuBackendSourcePromotionBlockerClassifier").orElseThrow()
         );
     }
 
