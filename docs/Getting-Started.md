@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide gets you from an ordinary Java method to a GPU-backed OpenCL call.
+This guide gets you from an ordinary Java method to a GPU-backed OpenCL call. If you want the shortest possible path first, start with [User Quickstart](User-Quickstart.md).
 
 ## 1. Add JavaToGpu
 
@@ -57,10 +57,10 @@ Keep first kernels simple:
 For a one-off call, install the OpenCL runtime scope around the generated launcher call:
 
 ```java
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope;
+import net.sixik.ga_utils.javatogpu.api.GpuScope;
+import net.sixik.ga_utils.javatogpu.api.JavaToGpu;
 
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
+try (GpuScope ignored = JavaToGpu.useOpenCl()) {
     DemoKernel.transform(input, output);
 }
 ```
@@ -68,11 +68,11 @@ try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
 For repeated calls, use the shared cache so the OpenCL session and compiled kernels stay warm:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
     DemoKernel.transform(input, output);
 } finally {
-    GpuRuntime.shutdownOpenClSharedCache();
+    JavaToGpu.shutdownOpenClSharedCache();
 }
 ```
 
@@ -118,6 +118,7 @@ Start with `diagnostic` mode. Move to strict modes only when you want builds to 
 
 - [Cookbook](Cookbook.md) for copyable patterns.
 - [Method Tests](Method-Tests.md) for fixture-based `@GPUTest` checks, including `@GPUStruct[]` examples.
+- [Performance Basics](Performance-Basics.md) for cold compile, warm cache, launch overhead, and practical sizing.
 - [Runtime Guide](Runtime-Guide.md) for launch sizes, fallback policies, compile options, and review-lane options.
 - [OpenCL Data Model](OpenCL-Data-Model.md) for structs, vectors, pointers, images, and packed data.
 - [Known Limitations](Known-Limitations.md) before relying on JavaToGpu in larger projects.

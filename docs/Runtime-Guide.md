@@ -1,6 +1,6 @@
 # Runtime Guide
 
-JavaToGpu runtime execution is controlled through `GpuRuntime`.
+For ordinary application code, start with the public `JavaToGpu` facade. The lower-level `GpuRuntime` API remains available for custom backend policies, descriptor-based invocation, generated launcher internals, and extension modules.
 
 ## Runtime Scopes
 
@@ -9,7 +9,7 @@ JavaToGpu runtime execution is controlled through `GpuRuntime`.
 Use this for simple applications, tests, and one-off calls:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
+try (GpuScope ignored = JavaToGpu.useOpenCl()) {
     DemoKernel.transform(input, output);
 }
 ```
@@ -19,11 +19,11 @@ try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
 Use this for hot paths and repeated calls:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
     DemoKernel.transform(input, output);
 } finally {
-    GpuRuntime.shutdownOpenClSharedCache();
+    JavaToGpu.shutdownOpenClSharedCache();
 }
 ```
 
@@ -34,7 +34,7 @@ The shared cache keeps the OpenCL session and compiled kernels warm across calls
 ### Strict OpenCL
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
 }
 ```
@@ -66,6 +66,16 @@ GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
 GpuRuntimeSelectionResult result = GpuRuntime.trySelect(policy);
 System.out.println(result.explanationSummary());
 ```
+
+Advanced code that only needs selection/discovery can use the domain entry point instead of importing more root-runtime helpers:
+
+```java
+GpuRuntimeSelectionResult result = GpuRuntimeSelection.trySelect(policy);
+GpuRuntimeBackendDeviceSelection preflight = GpuRuntimeSelection.trySelectStandardBackendAndDevice();
+System.out.println(preflight.toMarkdown());
+```
+
+`net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeSelection` is a compatibility-safe facade over the current runtime selection APIs. It is the preferred package for new selection-focused tools while `GpuRuntime` remains the lower-level runtime compatibility entry point.
 
 `GpuRuntimeBackendCatalog.standard()` is lazy and inspectable: listing entries does not initialize OpenCL or any native
 driver. Today the production catalog contains the OpenCL shared-cache adapter. `standardWithPlannedBackends()` also

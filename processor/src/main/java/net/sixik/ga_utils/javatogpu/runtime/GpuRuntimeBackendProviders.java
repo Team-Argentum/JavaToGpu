@@ -1,6 +1,9 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaRuntimeBackendProvider;
+import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClRuntimeBackendProvider;
+import net.sixik.ga_utils.javatogpu.runtime.spi.PlannedGpuRuntimeBackendProvider;
 
 import java.util.ArrayList;
 import java.util.Comparator;

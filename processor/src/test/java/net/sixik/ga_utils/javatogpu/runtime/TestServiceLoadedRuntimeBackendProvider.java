@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.spi.PlannedGpuRuntimeBackendAdapter;
 
 /**
  * Test-only external backend provider used to verify ServiceLoader registration without touching production built-ins.

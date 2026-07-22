@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendLowerer;
+import net.sixik.ga_utils.javatogpu.runtime.spi.UnsupportedGpuBackendLowerer;
 
 public final class GpuBackendLowerers {
 

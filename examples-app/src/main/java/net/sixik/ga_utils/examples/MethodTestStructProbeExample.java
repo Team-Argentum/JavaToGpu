@@ -5,12 +5,12 @@ import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUTest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherInvoker;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestFixtureReadiness;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestFixtureValueBindingPlan;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestInvocationMaterializationPlan;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbePlan;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbes;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestReferenceComparisonPlan;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestFixtureReadiness;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestFixtureValueBindingPlan;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestInvocationMaterializationPlan;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbePlan;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbes;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestReferenceComparisonPlan;
 
 /**
  * Shows how to test a {@link GPUGlobal} {@code @GPUStruct[]} method with {@link GPUTest} fixtures.

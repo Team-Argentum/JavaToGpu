@@ -4,9 +4,20 @@ This page gives a practical map of the JavaToGpu API for normal application code
 
 ## Packages You Will Use
 
-- `net.sixik.ga_utils.javatogpu.api` - kernel-facing helpers such as `GPU`, vectors, pointer views, image wrappers, samplers, and unsigned aliases.
+- `net.sixik.ga_utils.javatogpu.api` - user-facing runtime facade `JavaToGpu`, scope wrapper `GpuScope`, kernel-facing `GPU`, vectors, pointer views, image wrappers, samplers, and unsigned aliases.
 - `net.sixik.ga_utils.javatogpu.api.annotations` - annotations for marking kernels, parameters, structs, helpers, intrinsics, attributes, and qualifiers.
-- `net.sixik.ga_utils.javatogpu.runtime` - runtime scopes, backend selection, launch configs, descriptors, compile options, and invocation helpers.
+- `net.sixik.ga_utils.javatogpu.runtime` - lower-level runtime scopes, backend selection, launch configs, descriptors, compile options, and invocation helpers for advanced users and extensions.
+- `net.sixik.ga_utils.javatogpu.runtime.selection` - domain entry points for advanced backend/device discovery, policy selection, and preflight diagnostics.
+
+Current alpha note: `JavaToGpu` is the preferred user-facing runtime facade for common application flows. `net.sixik.ga_utils.javatogpu.runtime.GpuRuntime` remains supported as the lower-level compatibility entry point for current users, generated launchers, advanced configuration, and extension modules.
+
+For advanced backend/device diagnostics, prefer `runtime.selection.GpuRuntimeSelection` over adding new code directly to the root `runtime` package. It delegates to the compatibility runtime APIs today and gives selection-focused code a stable package home while the large root runtime package is split gradually.
+
+Run the facade example without launching a kernel:
+
+```powershell
+.\gradlew.bat :examples-app:runRuntimeFacadeExample --console=plain
+```
 
 ## Kernel Annotations
 
@@ -204,18 +215,25 @@ Use image APIs when you need OpenCL image memory, filtering, channel metadata, o
 
 ## Runtime API
 
-The usual runtime entry point is `GpuRuntime`.
+The usual runtime entry point for application code is `JavaToGpu`.
 
 Common calls:
 
-- `GpuRuntime.useOpenCl()` for a simple scoped OpenCL runtime.
-- `GpuRuntime.useOpenClSharedCache()` for repeated calls with a warm session and compile cache.
-- `GpuRuntime.use(policy)` for custom fallback policies.
-- `GpuRuntime.trySelect(policy)` for prechecking whether a GPU path is available.
-- `GpuRuntime.invoke(...)` for descriptor-based direct invocation.
-- `GpuExecutionConfig.oneDimensional(...)`, `twoDimensional(...)`, and `threeDimensional(...)` for explicit launch sizes.
+- `JavaToGpu.useOpenCl()` for a simple scoped OpenCL runtime.
+- `JavaToGpu.useOpenClSharedCache()` for repeated calls with a warm session and compile cache.
+- `JavaToGpu.shutdownOpenClSharedCache()` to release the process-wide shared OpenCL cache.
+- `JavaToGpu.useStandardBackendAndDevice()` for the default backend/device selection path.
+- `JavaToGpu.explainStandardBackendAndDevice()` for setup diagnostics without installing a runtime backend.
+- `JavaToGpu.launch1D(...)`, `launch2D(...)`, and `launch3D(...)` for explicit launch sizes.
 - Generated launcher methods for normal `@GPU` calls.
 - Automatic method-variant selection for generated launchers that declare `@GPUFallbackVariant`.
+
+Lower-level runtime calls remain available under `net.sixik.ga_utils.javatogpu.runtime` for advanced configuration, custom policies, direct descriptor invocation, generated launcher internals, and extension modules:
+
+- `GpuRuntime.use(policy)` for custom fallback policies.
+- `GpuRuntime.trySelect(policy)` for prechecking whether a custom GPU path is available.
+- `GpuRuntime.invoke(...)` for descriptor-based direct invocation.
+- `GpuExecutionConfig.oneDimensional(...)`, `twoDimensional(...)`, and `threeDimensional(...)` when code already works directly with runtime types.
 - `GpuRuntimeCompileOptions.withDeviceSelfTestMode(...)` for `AUTO`, `DISABLED`, or strict `REQUIRED` startup correctness evidence.
 - `GpuRuntimeCompileOptions.openClIrGpuSourceReview(...)` for opt-in reconstructed-`IrGpu` source smoke/review runs without changing the production default source path.
 - `GpuProductionPromotionOperatorAcceptance` for identity-bound operator approval of a reviewed production source-switching context. The binding includes backend, device vendor/label, driver, optimization profile, kernel resource, and production decision mode.
@@ -227,7 +245,7 @@ Common calls:
 Runtime failures share the public `GpuRuntimeException` base type. Catch a specific subtype when recovery depends on the phase, or catch the base type for a general CPU/backend fallback:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
 } catch (GpuRuntimeDeviceSelectionException exception) {
     CpuFallback.transform(input, output);

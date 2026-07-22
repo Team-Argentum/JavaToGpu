@@ -655,7 +655,7 @@ tasks.register('openClBackendSourcePromotionCandidateGate', JavaExec) {
     dependsOn 'openClProductionSourceSwitchingValidationTest'
     dependsOn 'openClProductionMutationValidationTest'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionCandidateGateCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionCandidateGateCli'
     args openClBackendSourcePromotionWorkloadGateFile.absolutePath,
             openClProductionSourceSwitchingValidationFile.absolutePath,
             openClBackendSourcePromotionCandidateGateFile.absolutePath
@@ -667,7 +667,7 @@ tasks.register('writeOpenClBackendSourcePromotionManifestTemplate', JavaExec) {
     description = 'Writes a pending manual approval manifest bound to the current OpenCL production candidate.'
     dependsOn 'openClBackendSourcePromotionCandidateGate'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionManifestTemplateCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionManifestTemplateCli'
     args openClBackendSourcePromotionCandidateGateFile.absolutePath,
             openClBackendSourcePromotionManifestTemplateFile.absolutePath,
             openClPromotionGitSha.get()
@@ -680,7 +680,7 @@ tasks.register('validateOpenClBackendSourcePromotionManifest', JavaExec) {
     description = 'Validates a manual approval manifest against the exact candidate artifact, Git SHA, and device identity.'
     dependsOn 'openClBackendSourcePromotionCandidateGate'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionManifestValidatorCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionManifestValidatorCli'
     args openClBackendSourcePromotionCandidateGateFile.absolutePath,
             openClBackendSourcePromotionManifestFile.get().absolutePath,
             openClBackendSourcePromotionManifestValidationFile.absolutePath,
@@ -695,7 +695,7 @@ tasks.register('validateOpenClBackendSourcePromotionActivationGate', JavaExec) {
     description = 'Validates controlled opt-in activation readiness without enabling the default runtime path.'
     dependsOn 'validateOpenClBackendSourcePromotionManifest'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionActivationGateCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionActivationGateCli'
     args openClBackendSourcePromotionCandidateGateFile.absolutePath,
             openClBackendSourcePromotionManifestValidationFile.absolutePath,
             openClProductionSourceSwitchingValidationFile.absolutePath,
@@ -995,7 +995,7 @@ tasks.register('validateBackendSourceLoweringContract', JavaExec) {
     description = 'Validates the metadata-only backend source-selection/lowering contract across built-in backend targets.'
     dependsOn 'classes'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceLoweringContractCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourceLoweringContractCli'
 }
 
 tasks.register('validateBackendAdapterContracts') {
@@ -1327,7 +1327,7 @@ tasks.register('validateOpenClProductionPromotionExplainability', JavaExec) {
     description = 'Validates the OpenCL production-promotion explainability artifact remains fail-closed until explicit production gates are accepted.'
     dependsOn 'openClValidationReport'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidatorCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilityValidatorCli'
     args openClProductionPromotionExplainabilityFile.absolutePath
     inputs.file(openClProductionPromotionExplainabilityFile)
 }
@@ -1346,7 +1346,7 @@ tasks.register('summarizeOpenClProductionPromotionExplainability', JavaExec) {
     description = 'Writes a compact CI summary for the OpenCL production-promotion explainability artifact.'
     dependsOn 'openClValidationReport'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilitySummaryCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilitySummaryCli'
     args openClProductionPromotionExplainabilityFile.absolutePath, openClProductionPromotionExplainabilitySummaryFile.absolutePath
     inputs.file(openClProductionPromotionExplainabilityFile)
     outputs.file(openClProductionPromotionExplainabilitySummaryFile)
@@ -1357,7 +1357,7 @@ tasks.register('summarizeOpenClBackendSourcePromotionWorkload', JavaExec) {
     description = 'Writes a compact CI summary for the OpenCL backend source-promotion workload gate.'
     dependsOn 'openClValidationReport'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadSummaryCli'
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionWorkloadSummaryCli'
     args openClBackendSourcePromotionWorkloadGateFile.absolutePath, openClBackendSourcePromotionWorkloadSummaryFile.absolutePath
     inputs.file(openClBackendSourcePromotionWorkloadGateFile)
     outputs.file(openClBackendSourcePromotionWorkloadSummaryFile)

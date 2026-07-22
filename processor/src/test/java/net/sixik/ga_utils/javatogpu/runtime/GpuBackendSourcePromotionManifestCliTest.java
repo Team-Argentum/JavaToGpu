@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionManifestTemplateCli;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionManifestValidatorCli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

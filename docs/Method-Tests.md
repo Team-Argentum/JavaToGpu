@@ -265,7 +265,7 @@ GpuRuntimeMethodTestGpuProbePlan gpuProbe = GpuRuntimeMethodTestProbes.executeGp
 Only use this after installing a backend, for example through an OpenCL runtime scope. Keep probe fixtures small because the GPU probe is intended for smoke validation and placement evidence, not full benchmarking.
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     GpuRuntimeMethodTestGpuProbePlan gpuProbe = GpuRuntimeMethodTestProbes.executeGpuProbe(
             descriptor,
             materialization,

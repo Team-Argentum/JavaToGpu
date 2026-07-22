@@ -8,11 +8,11 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestMode;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventBus;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestGpuProbeOptions;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceSelection;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceSelectionPlan;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidates;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupPlan;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestGpuProbeOptions;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbeEvidenceSelection;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbeEvidenceSelectionPlan;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbeEvidenceWarmupCandidates;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbeEvidenceWarmupPlan;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

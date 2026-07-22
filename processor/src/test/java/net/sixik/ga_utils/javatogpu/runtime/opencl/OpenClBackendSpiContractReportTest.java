@@ -3,7 +3,6 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendAdapter;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProvider;
-import net.sixik.ga_utils.javatogpu.runtime.OpenClRuntimeBackendProvider;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;

@@ -2,7 +2,6 @@ package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendCatalogEntry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendPolicy;
@@ -11,12 +10,12 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProvider;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProviders;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendDeviceSelectionExplanation;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscovery;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryCatalog;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelfTestMode;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeSelectionResult;
+import net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeSelection;
 
 import java.util.List;
 
@@ -85,7 +84,10 @@ public final class BackendSelectionExample {
 
     static String renderStandardSelectionAttempt() {
         try {
-            GpuRuntimeSelectionResult result = GpuRuntime.trySelectStandardBackends();
+            GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+                    .preferStandardBackends()
+                    .build();
+            GpuRuntimeSelectionResult result = GpuRuntimeSelection.trySelect(policy);
             return "Standard backend selection:" + System.lineSeparator()
                     + result.explanation().toMarkdown();
         } catch (RuntimeException exception) {
@@ -98,8 +100,11 @@ public final class BackendSelectionExample {
 
     static String renderStandardBackendDeviceSelectionAttempt() {
         try {
-            GpuRuntimeSelectionResult backendSelection = GpuRuntime.trySelectStandardBackends();
-            GpuRuntimeDeviceDiscoveryCatalog deviceDiscoveryCatalog = GpuRuntimeDeviceDiscovery.discoverStandardBackends(
+            GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+                    .preferStandardBackends()
+                    .build();
+            GpuRuntimeSelectionResult backendSelection = GpuRuntimeSelection.trySelect(policy);
+            GpuRuntimeDeviceDiscoveryCatalog deviceDiscoveryCatalog = GpuRuntimeSelection.discoverStandardBackends(
                     openClDiscoveryOptions()
             );
             return renderBackendDeviceSelection(backendSelection, deviceDiscoveryCatalog)
@@ -116,7 +121,7 @@ public final class BackendSelectionExample {
     }
 
     static String renderOpenClDeviceDiscovery() {
-        return renderDeviceDiscovery(GpuRuntimeDeviceDiscovery.discoverOpenCl(openClDiscoveryOptions()));
+        return renderDeviceDiscovery(GpuRuntimeSelection.discoverOpenCl(openClDiscoveryOptions()));
     }
 
     static String renderAutomaticBackendDevicePreflightGuide() {

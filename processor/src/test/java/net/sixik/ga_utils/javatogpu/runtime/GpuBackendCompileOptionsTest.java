@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.*;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

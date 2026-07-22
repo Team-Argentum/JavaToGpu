@@ -1,5 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionWorkloadSummaryCli;
 import org.junit.jupiter.api.Test;
 
 import java.util.Properties;

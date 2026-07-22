@@ -1,7 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.runtime.CudaRuntimeBackendProvider;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendExecutionPipelineResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLoweringResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;

@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeArtifactPropertiesSupport;
+
 import java.util.Map;
 import java.util.Properties;
 
@@ -16,23 +18,11 @@ public final class GpuRuntimeArtifactProperties {
     }
 
     public static String first(Properties properties, String fallback, String... keys) {
-        if (properties == null || keys == null) {
-            return fallback;
-        }
-        for (String key : keys) {
-            if (key == null || key.isBlank()) {
-                continue;
-            }
-            String value = properties.getProperty(key);
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return fallback;
+        return GpuRuntimeArtifactPropertiesSupport.first(properties, fallback, keys);
     }
 
     public static String portable(Properties properties, String portablePrefix, String key, String fallback) {
-        return first(properties, fallback, portableKey(portablePrefix, key), key);
+        return GpuRuntimeArtifactPropertiesSupport.portable(properties, portablePrefix, key, fallback);
     }
 
     public static String prefixedPortable(
@@ -42,20 +32,25 @@ public final class GpuRuntimeArtifactProperties {
             String key,
             String fallback
     ) {
-        String prefix = ownerPrefix == null ? "" : ownerPrefix;
-        return first(properties, fallback, prefix + portableKey(portablePrefix, key), prefix + key);
+        return GpuRuntimeArtifactPropertiesSupport.prefixedPortable(
+                properties,
+                ownerPrefix,
+                portablePrefix,
+                key,
+                fallback
+        );
     }
 
     public static void appendPortable(StringBuilder builder, String portablePrefix, String key, Object value) {
-        builder.append(portableKey(portablePrefix, key)).append('=').append(value).append('\n');
+        GpuRuntimeArtifactPropertiesSupport.appendPortable(builder, portablePrefix, key, value);
     }
 
     public static void putPortable(Map<String, String> fields, String portablePrefix, String key, Object value) {
-        fields.put(portableKey(portablePrefix, key), String.valueOf(value));
+        GpuRuntimeArtifactPropertiesSupport.putPortable(fields, portablePrefix, key, value);
     }
 
     public static void setPortable(Properties properties, String portablePrefix, String key, Object value) {
-        properties.setProperty(portableKey(portablePrefix, key), String.valueOf(value));
+        GpuRuntimeArtifactPropertiesSupport.setPortable(properties, portablePrefix, key, value);
     }
 
     public static void putPrefixedPortable(
@@ -65,7 +60,7 @@ public final class GpuRuntimeArtifactProperties {
             String key,
             Object value
     ) {
-        fields.put((ownerPrefix == null ? "" : ownerPrefix) + portableKey(portablePrefix, key), String.valueOf(value));
+        GpuRuntimeArtifactPropertiesSupport.putPrefixedPortable(fields, ownerPrefix, portablePrefix, key, value);
     }
 
     public static void setPrefixedPortable(
@@ -75,9 +70,12 @@ public final class GpuRuntimeArtifactProperties {
             String key,
             Object value
     ) {
-        properties.setProperty(
-                (ownerPrefix == null ? "" : ownerPrefix) + portableKey(portablePrefix, key),
-                String.valueOf(value)
+        GpuRuntimeArtifactPropertiesSupport.setPrefixedPortable(
+                properties,
+                ownerPrefix,
+                portablePrefix,
+                key,
+                value
         );
     }
 
@@ -88,18 +86,12 @@ public final class GpuRuntimeArtifactProperties {
             String key,
             Object value
     ) {
-        builder.append(ownerPrefix == null ? "" : ownerPrefix)
-                .append(portableKey(portablePrefix, key))
-                .append('=')
-                .append(value)
-                .append('\n');
-    }
-
-    private static String portableKey(String portablePrefix, String key) {
-        String prefix = portablePrefix == null || portablePrefix.isBlank() ? "" : portablePrefix;
-        if (!prefix.isEmpty() && !prefix.endsWith(".")) {
-            prefix += ".";
-        }
-        return prefix + (key == null ? "" : key);
+        GpuRuntimeArtifactPropertiesSupport.appendPrefixedPortable(
+                builder,
+                ownerPrefix,
+                portablePrefix,
+                key,
+                value
+        );
     }
 }

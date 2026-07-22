@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourceLoweringContractCli;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

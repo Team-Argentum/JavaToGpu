@@ -65,7 +65,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendUnavailableException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCapabilityException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptionsException;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSiteResolver;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeCallSiteResolverSupport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDiagnosticContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeException;
@@ -74,8 +74,8 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequestFactory;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleFields;
+import net.sixik.ga_utils.javatogpu.runtime.launch.GpuRuntimeCompileRequestSupport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendDevicePreselector;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
@@ -396,7 +396,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                 primaryIrGpuArtifact,
                 requestCompileOptions
         );
-        primaryContext = primaryContext.withCallSite(GpuRuntimeCallSiteResolver.resolve(
+        primaryContext = primaryContext.withCallSite(GpuRuntimeCallSiteResolverSupport.resolve(
                 invocation.artifactClassLoader(),
                 primaryContext.sourceLocation()
         ));
@@ -481,7 +481,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                 loadedIrGpuArtifact,
                 requestCompileOptions
         );
-        GpuRuntimeDiagnosticContext selectedContext = selectedContextBase.withCallSite(GpuRuntimeCallSiteResolver.resolve(
+        GpuRuntimeDiagnosticContext selectedContext = selectedContextBase.withCallSite(GpuRuntimeCallSiteResolverSupport.resolve(
                 selectedInvocation.artifactClassLoader(),
                 selectedContextBase.sourceLocation()
         ));
@@ -4347,7 +4347,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
     }
 
     private GpuRuntimeCompileRequest buildCompileRequest(GpuKernelDescriptor descriptor) {
-        return GpuRuntimeCompileRequestFactory.fromDescriptor(
+        return GpuRuntimeCompileRequestSupport.fromDescriptor(
                 descriptor,
                 GpuRuntimeCompileOptions.defaults(backendTarget()),
                 compileDeviceProfile()
@@ -4355,7 +4355,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
     }
 
     private GpuRuntimeCompileRequest buildCompileRequest(GpuKernelInvocation invocation) {
-        return GpuRuntimeCompileRequestFactory.fromInvocation(
+        return GpuRuntimeCompileRequestSupport.fromInvocation(
                 invocation,
                 compileDeviceProfile()
         );

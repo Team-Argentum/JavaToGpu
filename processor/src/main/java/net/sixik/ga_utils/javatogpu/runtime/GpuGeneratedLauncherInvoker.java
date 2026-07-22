@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.launch.GpuLauncherNamingSupport;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -476,7 +478,7 @@ public final class GpuGeneratedLauncherInvoker {
     private static LauncherBinding launcherBinding(Class<?> ownerClass, String methodName) {
         try {
             Class<?> launcherClass = Class.forName(
-                    GpuLauncherNaming.launcherClassName(ownerClass, methodName),
+                    GpuLauncherNamingSupport.launcherClassName(ownerClass, methodName),
                     true,
                     ownerClass.getClassLoader()
             );
@@ -491,7 +493,7 @@ public final class GpuGeneratedLauncherInvoker {
                             + "#"
                             + methodName
                             + " at "
-                            + GpuLauncherNaming.launcherClassName(ownerClass, methodName),
+                            + GpuLauncherNamingSupport.launcherClassName(ownerClass, methodName),
                     exception
             );
         } catch (NoSuchFieldException | IllegalAccessException exception) {
@@ -1040,7 +1042,11 @@ public final class GpuGeneratedLauncherInvoker {
 
     private static Object invokeLauncherMethod(Class<?> ownerClass, String methodName, String launcherMethodName, Object... arguments) {
         try {
-            Class<?> launcherClass = Class.forName(GpuLauncherNaming.launcherClassName(ownerClass, methodName), true, ownerClass.getClassLoader());
+            Class<?> launcherClass = Class.forName(
+                    GpuLauncherNamingSupport.launcherClassName(ownerClass, methodName),
+                    true,
+                    ownerClass.getClassLoader()
+            );
             return invokeLauncherMethod(launcherClass, ownerClass, methodName, launcherMethodName, arguments);
         } catch (ClassNotFoundException exception) {
             throw new IllegalArgumentException(
@@ -1049,7 +1055,7 @@ public final class GpuGeneratedLauncherInvoker {
                             + "#"
                             + methodName
                             + " at "
-                            + GpuLauncherNaming.launcherClassName(ownerClass, methodName),
+                            + GpuLauncherNamingSupport.launcherClassName(ownerClass, methodName),
                     exception
             );
         }

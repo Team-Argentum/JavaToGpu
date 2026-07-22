@@ -2,6 +2,8 @@
 
 This is the single working checklist for moving JavaToGpu forward.
 
+Current vector: make the simple OpenCL user path the main product before adding more advanced optimizer/CUDA depth.
+
 It merges:
 
 - production-readiness work
@@ -9,6 +11,88 @@ It merges:
 - low-level OpenCL parity gap work
 
 Older files remain useful as detailed references, but this file is the primary execution plan.
+
+## Current Priority Model
+
+Use this priority order when choosing new work. Lower-priority tracks should not expand unless they directly unblock a higher-priority user outcome or protect an existing fail-closed contract.
+
+### P0. User-first OpenCL path
+
+Goal: a new user can install JavaToGpu, write one restricted `@GPU` kernel, run it through OpenCL, understand the result, and diagnose the first failure without learning backend SPI, optimizer evidence, activation gates, or CUDA staging.
+
+Active outcomes:
+
+- one short quickstart path from dependency setup to first output array;
+- one curated practical example that covers the common OpenCL runtime scope and shared-cache path;
+- concise error/fix guidance for unsupported Java shapes and missing OpenCL runtime state;
+- clear alpha boundaries: OpenCL is the active runtime, CUDA is staged/non-production, optimizer mutation is opt-in/fail-closed;
+- user docs separated from extension-author and maintainer/CI docs.
+
+### P1. OpenCL practical release polish
+
+Goal: make OpenCL feel reliable and boring for the common alpha workloads: arrays, scalars, vectors, structs, simple images, launch sizing, shared cache, method tests, and practical diagnostics.
+
+Active outcomes:
+
+- user-facing runtime facade in the public API namespace, so first-time users do not have to discover `processor/.../runtime` internals;
+- organized runtime package taxonomy instead of one large flat runtime package;
+- JavaDocs on public API, extension SPI, and high-friction runtime entrypoints;
+- stable runtime scope guidance and shared-cache behavior;
+- practical device/backend explanation without forcing users into raw artifacts;
+- `@GPUTest` examples that users can run manually today and later feed runtime placement;
+- simple benchmark/performance narrative for cold vs warm cache, launch overhead, marshalling, vectors, structs, images, and local memory;
+- Intel OpenCL validation remains the cross-vendor confidence gap.
+
+### P2. Guardrails with a budget
+
+Goal: keep fail-closed safety and contract testing, but avoid adding new gates unless they close a concrete user/runtime risk.
+
+Rules:
+
+- prefer one aggregate user-facing diagnostic over many new narrow reports;
+- add a new contract gate only when it prevents accidental production mutation, unsupported-as-supported behavior, or native resource leaks;
+- keep advanced evidence visible but out of the default quickstart;
+- update existing reports before creating new report families.
+
+### P3. CUDA as staged advanced preview
+
+Goal: preserve CUDA progress without turning it into the main release blocker.
+
+Rules:
+
+- CUDA remains explicit opt-in and non-production until OpenCL practical release quality is stronger;
+- small CUDA seams are allowed when they prevent future rewrites, such as native-memory provider abstraction for Panama/LWJGL;
+- no production CUDA claim until policy, auto-selection, image/sampler coverage, and cross-device validation are accepted;
+- CUDA image/sampler deep work should advance only in small fail-closed increments.
+
+### P4. Optimizer as optional research/advanced track
+
+Goal: keep optimizer evidence and review boundaries, but do not let e-graphs/equality saturation or vendor optimizers displace practical runtime work.
+
+Rules:
+
+- optimizer mutation remains disabled by default;
+- new optimizer work should improve diagnostics, dump review, or safe opt-in testing before adding deeper rewrite engines;
+- e-graph / equality saturation belongs to a future v2 core after practical runtime ergonomics are stronger.
+
+## 0. User-First Practical Release
+
+This section is the active top-level product track. It intentionally sits above the older production-core and backend tracks.
+
+### 0.1. 10-minute user path
+
+- [x] Add a concise user quickstart entrypoint.
+  `docs/User-Quickstart.md` now describes the shortest path from dependency setup to a first OpenCL-backed output array and links deeper docs only after the first successful run.
+- [x] Keep README focused on the simple path before advanced sections.
+  The README is now an entrypoint: install, first kernel, runtime scope, alpha limits, user docs, useful commands, project layout, and publishing. Deep backend SPI, CUDA staging, optimizer evidence, lifecycle gates, and CI details are linked out instead of dominating the first page.
+- [x] Split docs into user / advanced extension / maintainer lanes.
+  `docs/Home.md` and `_Sidebar.md` now group the documentation into user path, data/runtime, advanced extensions, and maintainer/operations lanes.
+- [x] Add a practical troubleshooting bridge for first-run failures.
+  `docs/Troubleshooting.md` now maps common first-run symptoms to short fixes: missing OpenCL device, missing generated launcher, launch-size mismatch, unsupported argument type, unsupported Java shape, unchanged output, and slow cold first call.
+- [x] Add a small performance narrative for users.
+  `docs/Performance-Basics.md` explains cold startup, compile cache, launch overhead, marshalling, driver variance, good GPU fits, CPU-favored cases, and practical local checks.
+- [x] Keep advanced machinery out of the first-run flow.
+  `docs/User-Quickstart.md`, README, and docs navigation now let a user run the first OpenCL kernel without learning backend provider catalogs, lifecycle journals, optimizer proof artifacts, CUDA staged gates, activation tokens, or method-test caches.
 
 ## A. Production Core
 
@@ -88,6 +172,9 @@ Goal: make the OpenCL path feel complete for most practical alpha users before t
 - [ ] Add user-facing backend selection controls.
   Expose controls for forcing a backend target, setting backend preference order, requiring backend features, selecting fallback behavior, and keeping selection deterministic. This should build on `GpuBackendTarget`, `GpuRuntimeBackendPolicy`, backend lowerers, and runtime device-selection artifacts rather than adding OpenCL-only flags.
   First control slice is in place: `GpuRuntimeBackendPolicy.Builder` can require/force or exclude a `GpuBackendTarget`, and the resulting rejection reasons flow into summaries, candidate decisions, explanation Markdown, and artifact fields.
+- [x] Add a small public runtime facade outside the deep runtime package.
+  Normal users should not need to know that `GpuRuntime` lives in `net.sixik.ga_utils.javatogpu.runtime` or browse the large implementation-heavy runtime package to run a kernel. Add a stable, documented facade under the public API namespace for the common flows: OpenCL one-off scope, OpenCL shared-cache scope, safe selection/preflight, launch configuration helpers, and optional diagnostics/artifact toggles. Keep the existing `runtime.GpuRuntime` entrypoint source/binary compatible as the lower-level compatibility layer; do not break current users or generated launchers. Naming should be finalized during implementation, but the design target is a short import path that feels like normal application API rather than backend internals.
+  First facade slice is in place: `net.sixik.ga_utils.javatogpu.api.JavaToGpu` exposes `useOpenCl()`, `useOpenClSharedCache()`, shared-cache shutdown, standard backend/device explanation/install helpers, and `launch1D/2D/3D(...)`; `GpuScope` wraps the lower-level runtime scope for try-with-resources. README, quickstart, getting-started, cookbook, performance docs, API overview, and `RuntimeFacadeExample` now show this as the preferred user-facing path while `runtime.GpuRuntime` remains compatible for advanced usage.
 - [ ] Add user-facing OpenCL device selection controls as the first adapter implementation.
   Expose backend-neutral controls for forcing a device, preferring a vendor/device class, excluding CPU OpenCL or iGPU devices, and configuring startup self-tests. These controls should reuse the existing runtime device-selection/profile machinery, be recorded in compile provenance and runtime artifacts, and avoid enabling automatic Multi-GPU partitioning by default.
   First control slice is in place: `GpuRuntimeCompileOptions` can carry strict `GpuRuntimeDeviceOverride` selectors and soft `GpuRuntimeDevicePreference` ranking/exclusion controls such as preferred vendor/device label/device class and excluded CPU/iGPU devices. Compile provenance records the resolved override/preference descriptions, and the built-in device policy records preference matches, score adjustments, exclusions, and diagnostics in the existing device-selection artifact fields. The public `GpuRuntimeDeviceDiscovery.discoverOpenCl(...)` preview and `examples-app` backend-selection runner now expose the OpenCL device listing/selection decision without running a kernel, including native platform grouping and runtime self-test summary. `GpuRuntimeDeviceDiscovery.discoverStandardBackends(...)` returns a multi-backend discovery catalog with real OpenCL evidence plus explicit planned CUDA/Vulkan/Metal discovery states. `GpuRuntimeBackendDeviceSelectionExplanation` links backend-selection evidence with the discovery catalog in one user-facing answer. Remaining work is real non-OpenCL discovery adapters and deeper method/workload-specific placement evidence.
@@ -104,6 +191,25 @@ Goal: make the OpenCL path feel complete for most practical alpha users before t
 - [ ] Add an optional compile/runtime lifecycle journal end-to-end.
   Record descriptor loading, `IrGpu` loading, validation, optimizer-provider discovery, proposal execution, runtime-equivalence/review-package state, backend source selection, OpenCL build, fallback/rollback, invocation, and shutdown. The journal must stay opt-in, ServiceLoader-friendly, and safe for normal applications.
   First method-test slice is done: `@GPUTest` preflight/reference/GPU-probe/cache lookup stages publish standard lifecycle events and can be observed by ServiceLoader `GpuRuntimeLifecycleService` implementations. Runtime lifecycle events can now also flow through a framework-neutral `GpuRuntimeLogService` logging bus, with built-in opt-in `system-out` / `system-err` sinks and external Log4J/SLF4J adapters supplied through ServiceLoader. `GpuRuntimeObservabilityServiceHarness` now provides a hardware-free lifecycle/log ServiceLoader smoke so extension modules can verify listener/log-service registration, ordering, failure isolation, artifact fields, and Markdown before opening a native runtime. Automatic `withStandardBackendDevicePreflight()` launchers now publish facade-level `BACKEND_DEVICE_PREFLIGHT_STARTED` / `BACKEND_DEVICE_PREFLIGHT_COMPLETED` events and pass the same lifecycle bus into backend selection/device discovery before backend compilation. Remaining work is the wider end-to-end compile/runtime journal polish across every production path and report surface.
+- [ ] Reorganize the flat runtime package into navigable domains.
+  The current `processor/src/main/java/net/sixik/ga_utils/javatogpu/runtime` package has grown into a large mixed surface of user API, backend SPI, OpenCL implementation, CUDA staging, diagnostics, hooks, artifact readers, method-test probes, and validation helpers. Split future code into clear subpackages such as `runtime.api` or public facade namespace, `runtime.selection`, `runtime.launch`, `runtime.artifacts`, `runtime.diagnostics`, `runtime.hooks`, `runtime.methodtest`, `runtime.opencl`, `runtime.cuda`, `runtime.memory`, and `runtime.spi`. Keep compatibility shims for existing public classes, move implementation-only classes gradually, and avoid large package moves without tests because generated launchers and ServiceLoader descriptors depend on stable names.
+  First taxonomy/guard slice is in place: root `runtime` now has a compatibility `package-info`, and `GpuRuntimePackageTaxonomy` classifies every current root-runtime Java class into a planned domain with recommended future packages. The planned domain packages now exist as documented `package-info.java` markers for `runtime.launch`, `runtime.spi`, `runtime.selection`, `runtime.diagnostics`, `runtime.observability`, `runtime.methodtest`, `runtime.variants`, `runtime.optimization`, `runtime.memory`, and `runtime.validation`. `GpuRuntimePackageTaxonomyTest` fails when new root-runtime classes are added without either moving them into a domain package or explicitly classifying them, and also verifies recommended runtime domain packages exist, which prevents the package from silently becoming a larger dump while preserving source/binary compatibility for existing users and generated launchers.
+  First domain API slice is in place: `runtime.selection.GpuRuntimeSelection` is the new advanced entry point for backend/device selection, discovery, standard backend/device preflight, and planned-unavailable discovery diagnostics. It delegates to existing root-runtime compatibility APIs today, so source/binary compatibility is preserved while new selection-focused code has a real domain package to import.
+  First implementation/helper move is in place: backend/device discovery implementation now lives in `runtime.selection.GpuRuntimeDeviceDiscoverySupport`, while the old root `GpuRuntimeDeviceDiscovery` class remains as a thin compatibility facade. This moves real selection logic into a domain package without moving public result records or breaking existing callers.
+  Second implementation/helper move is in place: combined backend/device preflight orchestration and lifecycle-event publishing now live in `runtime.selection.GpuRuntimeBackendDeviceSelectionSupport`. The root `GpuRuntimeBackendSelectionOrchestrator` keeps compatibility methods for existing callers, but delegates the device-discovery/preflight glue to the selection domain; the core candidate-selection algorithm can move later as a separate compatibility-managed step.
+  Third implementation/helper move is in place: the core backend candidate-selection algorithm now lives in `runtime.selection.GpuRuntimeBackendSelectionSupport`. The old root `GpuRuntimeBackendSelectionOrchestrator` is now a compatibility facade for the same public overloads, while selection-domain APIs and backend/device preflight call the domain support directly.
+  Fourth implementation/helper move is in place: generated-launcher naming rules now live in `runtime.launch.GpuLauncherNamingSupport`. The old root `GpuLauncherNaming` remains as a compatibility facade, while runtime launch code uses the launch-domain helper directly.
+  Fifth implementation/helper move is in place: generated call-site metadata resolution now lives in `runtime.diagnostics.GpuRuntimeCallSiteResolverSupport`. The old root `GpuRuntimeCallSiteResolver` remains as a compatibility facade, while OpenCL diagnostic context enrichment uses the diagnostics-domain helper directly.
+  Sixth implementation/helper move is in place: compact runtime failure rendering now lives in `runtime.diagnostics.GpuRuntimeDiagnosticRendererSupport`. The old root `GpuRuntimeDiagnosticRenderer` remains as a compatibility facade, while `GpuRuntimeException` renders through the diagnostics-domain helper directly.
+  Seventh implementation/helper move is in place: compile-request construction now lives in `runtime.launch.GpuRuntimeCompileRequestSupport`. The old root `GpuRuntimeCompileRequestFactory` remains as a compatibility facade, while frontend result conversion and OpenCL backend compile paths use the launch-domain helper directly.
+  Eighth implementation/helper move is in place: compile-cache invalidation stamp construction now lives in `runtime.diagnostics.GpuRuntimeCompileInvalidationStampSupport`. The root `GpuRuntimeCompileInvalidationStamp` remains the public value type/facade, while compile-cache key construction uses the diagnostics-domain support directly.
+  Ninth implementation/helper move is in place: portable runtime artifact property-map helpers now live in `runtime.diagnostics.GpuRuntimeArtifactPropertiesSupport`. The old root `GpuRuntimeArtifactProperties` remains as a compatibility facade for existing report, gate, and validation callers.
+  First physical backend-package move is in place: OpenCL built-in provider/adapter now live in `runtime.opencl`, CUDA built-in provider/adapter now live in `runtime.cuda`, and planned/unsupported generic placeholders now live in `runtime.spi`. Backend-neutral registries still expose the same selection/catalog behavior, but root `runtime` no longer owns those backend implementation files.
+  Second physical package move is in place: the `@GPUTest` runtime probe/evidence/cache pipeline now lives in `runtime.methodtest`. Root runtime users no longer see the method-test implementation classes in the flat package, while compile options, policy registries, artifact dumping, and tests import the method-test domain explicitly.
+  Third physical package move is in place: maintainer-facing source-promotion / production-promotion CLI entrypoints now live in `runtime.validation`, and the Gradle `JavaExec` tasks point at those validation-domain main classes. Report/value types remain in root runtime for compatibility until a separate public migration path is worth the churn.
+- [ ] Add JavaDocs as part of API stabilization, not as an afterthought.
+  Prioritize JavaDocs for the classes users and extension authors actually touch: `GPU`, annotations, vector/image/pointer wrappers, public runtime facade, `GpuRuntime`, `GpuRuntimeScope`, `GpuRuntimeCompileOptions`, `GpuExecutionConfig`, `GpuMemorySlice`, generated-launcher invocation helpers, method-test APIs, logging/lifecycle services, backend provider SPI, hook SPI, and native-memory service SPI. JavaDocs should answer "when do I use this?", "what is safe in alpha?", "what fails closed?", and "what is the replacement path if this is lower-level/internal?" before documenting every getter mechanically.
+  First API JavaDocs slice is in place: `api.JavaToGpu`, `api.GpuScope`, the public API package, the lower-level runtime package, and `GpuRuntimeCompileOptions` now explain the preferred user path, compatibility/lower-level boundaries, alpha-safe OpenCL default, staged CUDA/Vulkan/Metal behavior, and opt-in/fail-closed optimizer/source-review profiles. Remaining work is broader JavaDocs coverage across annotations, data wrappers, generated-launcher helpers, method-test APIs, ServiceLoader hooks, backend SPI, and native-memory SPI.
 - [ ] Polish common image host-helper workflows.
   Keep the existing kernel image coverage, but improve the user-facing host API and examples for the common 2D/3D float/int/uint/RGBA8 workflows, including create/upload/readback helpers, format diagnostics, and vendor-validation coverage. Unsupported image families should remain explicitly documented rather than partially hidden behind confusing helpers.
   First QOL slice is in place: `OpenClImageWorkflow.rgbaIntToFloat2D(...)` bundles the common 2D RGBA signed-int input, RGBA float output, nearest clamp-to-edge sampler, readback helper, shape validation, image-capability check, one-work-item-per-pixel execution config, shape summaries, and try-with-resources cleanup. `OpenClPracticalReleaseExample` now uses it in the real OpenCL image smoke and prints a short helper guide. Remaining work is broader 2D/3D float/int/uint/RGBA8 helper coverage only when real examples need those paths.
@@ -765,8 +871,8 @@ Current rule: keep the existing OpenCL build-time source path working while I3 i
   Define how an external module can package custom rules, descriptors, diagnostics, backend metadata, fallback variants, and policy defaults as one auditable extension pack. The pack should declare compatible JavaToGpu versions, required capabilities, optional backends, production-affecting permissions, and rollback/fallback behavior so users can install or remove it without maintaining a fork.
 - [ ] Add developer-friendly hook/event examples and test harnesses.
   Provide small example modules that implement a read-only lifecycle listener, a custom validator, a custom device policy, a custom compiler-feedback parser, and a custom artifact emitter. Add fixture utilities so extension authors can run their hooks against synthetic descriptors/`IrGpu` artifacts without needing real OpenCL hardware for every test.
-- [ ] Add JavaDocs for the public Core/API/SPI surface.
-  Prioritize JavaDocs for annotations, `GPU` facade helpers, runtime compile options, runtime scopes/backends, structured runtime exceptions, `IrGpu` public model classes, extension registry types, validation providers, optimizer proposal providers, backend lowerers, device policies, artifact dumpers, and compiler-feedback providers. JavaDocs should explain lifecycle, thread-safety, fail-closed behavior, ownership, mutation rules, and whether an API is stable, experimental, or internal.
+- [ ] Add second-layer JavaDocs for the advanced Core/SPI surface.
+  The first JavaDocs pass belongs to P1 and should cover normal users plus common extension touchpoints. This later pass should document deeper Core/SPI surfaces such as `IrGpu` model classes, extension registry internals, validation providers, optimizer proposal providers, backend lowerers, device policies, artifact dumpers, compiler-feedback providers, and production-affecting permission boundaries. JavaDocs should explain lifecycle, thread-safety, fail-closed behavior, ownership, mutation rules, and whether an API is stable, experimental, or internal.
 - [ ] Add QOL diagnostics and discoverability improvements for extension users.
   Add concise diagnostics for duplicate extension ids, wrong phase/capability/permission, stale extension versions, missing ServiceLoader descriptors, unsupported backend hooks, denied production-affecting hooks, and policy-gated skips. Prefer actionable messages with class names, extension ids, expected registration files, and next-step hints rather than raw registry exceptions.
 
@@ -919,34 +1025,46 @@ Current rule: keep the existing alpha materializers useful and conservative. The
 
 If the goal is to move forward pragmatically from the current state, the best order is now:
 
-1. `A6 OpenCL practical 90% release track`
-   Start with a backend-neutral runtime selection orchestrator and public backend-selection controls, then implement OpenCL device controls as the first real adapter and add backend/device-selection explanation. Add method-level `@GPUTest` vectors as opt-in correctness/performance probes so selection can eventually be based on the actual kernel, not only device capability metadata. After that, add the compile/runtime lifecycle journal, friendly launch helpers, image-host helper polish, and a curated examples-app release suite. This should make the current OpenCL backend feel coherent for normal alpha users while keeping CUDA/Vulkan/Metal pluggable later.
-2. `A1/A2 NVIDIA/AMD interim operational validation`
+1. `0.1 10-minute user path` - closed baseline, keep maintained
+   The first-run path is now documented through README, `docs/User-Quickstart.md`, `docs/Troubleshooting.md`, `docs/Performance-Basics.md`, and grouped docs navigation. Keep this path short as APIs change; do not reintroduce backend catalogs, CUDA staging, optimizer evidence, activation tokens, or CI reports before the first successful kernel.
+2. `A6 OpenCL practical 90% release track`
+   Polish the practical OpenCL experience around runtime scopes, launch sizing, device/backend explanation, image helpers, method-test examples, lifecycle logging, and curated examples. New backend-neutral APIs are welcome only when they make the OpenCL user path simpler today and keep future backends from forking the runtime tomorrow.
+3. `A6 public API and runtime package QOL`
+   Add a small public runtime facade outside the deep `runtime` package, keep `runtime.GpuRuntime` compatible, split the large flat runtime package into navigable domains over time, and add JavaDocs to the classes users or extension authors actually touch. This should happen before more CUDA/optimizer depth because it defines the shape people will learn and depend on.
+4. `A1/A2 NVIDIA/AMD interim operational validation`
    Keep repeating `:processor:openClOperationalRoutine --rerun-tasks` on the available RTX 3060, RTX 5070, and RX 7800 XT stacks while A6 changes land, preserving validation history, workload summaries, long-running summaries, benchmark output, and device-specific quirks. Intel remains the remaining hardware confidence gate.
-3. `A3/A4 Diagnostics and runtime-stability fixes from real failures`
+5. `A3/A4 Diagnostics and runtime-stability fixes from real failures`
    Treat any repeated NVIDIA/AMD failure, skipped workload, resource leak, confusing device-selection result, image helper failure, launch-shape issue, or lifecycle-journal gap as the next concrete implementation target.
-4. `I3 Production IR pipeline foundation`
+6. `User-facing performance narrative` - first doc slice closed, examples can deepen later
+   `docs/Performance-Basics.md` now covers cold compile vs warm cache, launch overhead, marshalling overhead, driver variance, and when GPU execution is worth it. Future work should add small measured examples from real dogfooding rather than a large benchmarking framework first.
+7. `P2 guardrails with a budget`
+   Keep existing fail-closed gates green, but prefer updating aggregate reports and user-facing diagnostics over adding new narrow contract families. Add new gates only for concrete risks: accidental production mutation, unsupported-as-supported behavior, native resource leaks, or runtime ABI corruption.
+8. `P3 CUDA staged advanced preview`
+   Continue CUDA only in small opt-in slices that preserve future compatibility, such as native-memory provider seams or explicit fail-closed checks. Do not promote CUDA production execution until OpenCL user ergonomics, policy, auto-selection, image/sampler coverage, and cross-device validation are stronger.
+9. `I3 Production IR pipeline foundation`
    Start with the non-mutating foundation: canonical `IrGpu` artifact, dual output beside current OpenCL source, OpenCL-from-`IrGpu` parity, runtime compile request/options, backend-lowering boundary, and source/ASM frontends feeding the same IR storage path. Keep runtime optimization profile `off` by default.
-5. `I4 Optional IR optimizer module split`
+10. `I4 Optional IR optimizer module split`
    Before implementing real optimizer transforms, freeze the module boundary: validator stays read-only, backend-neutral optimizer contracts live behind optional dependencies, vendor optimizers are separate providers, and all mutation remains proposal/opt-in/fail-closed until proof and rollback are present.
-6. `I3.7 Core extension hooks, lifecycle events, JavaDocs, and QOL`
-   Before adding more optimizer complexity, harden the Core extension surface: lifecycle event bus, safe hook points, extension patch packs, example modules, JavaDocs, test harnesses, and friendlier diagnostics. This lets users observe, customize, and replace parts of the library deliberately without maintaining forks.
-7. `I4.2 IR-Optimizer v2 e-graph core`
-   After the current alpha optimizer remains useful in review/apply mode, start the v2 algebraic core on pure expression regions only: typed-IR extraction, guarded rewrite catalog, bounded equality saturation, backend-aware cost model, review evidence, and immutable proposal lowering. Keep existing peephole materializers as fallback/regression fixtures until each family migrates safely.
-8. `A1 Intel runner bring-up when hardware exists`
+11. `I3.7 Core extension hooks and advanced QOL`
+   After the public API/QOL pass, continue hardening deeper extension surfaces: lifecycle event bus, safe hook points, extension patch packs, example modules, test harnesses, and friendlier diagnostics. This lets users observe, customize, and replace parts of the library deliberately without maintaining forks.
+12. `A1 Intel runner bring-up when hardware exists`
    The remaining cross-vendor production gate stays open until an Intel OpenCL stack can run the same bucket set.
-9. `Improved ASM parser/frontend`
+13. `Improved ASM parser/frontend`
    Broader ASM ingestion should lower into `IrGpu` first, then reuse the same runtime compile request, validation, backend lowering, and future optimizer path instead of growing a separate pipeline. The first broader-ASM diagnostics layer is already in place through `asmFailure.*` metadata and public preflight APIs.
-10. `I3/I4 prototype runtime optimization`
+14. `I4.2 IR-Optimizer v2 e-graph core`
+   Treat e-graphs/equality saturation as a future v2 optimizer core after practical runtime ergonomics are stronger. Start only with pure expression regions, bounded budgets, review evidence, and immutable proposal lowering.
+15. `I3/I4 prototype runtime optimization`
    After `IrGpu` storage and OpenCL parity are stable, add opt-in prototype optimization with rollback, pre/post runtime-equivalence artifacts, and NVIDIA/AMD evidence first. Keep production mutation disabled until A1/A2 confidence and the future Intel gate are satisfied.
-11. `H Lower-priority backend/optimization work`
+16. `H Lower-priority backend/optimization work`
 
 ## Current Working Conclusion
 
 JavaToGpu is already beyond the "toy compiler" stage.
 
-The broad repetitive intrinsic-family generation detour is now closed for current priorities, so the active focus returns to production-core/runtime validation rather than expanding optional API symmetry.
+The broad repetitive intrinsic-family generation detour is now closed for current priorities, and the P0 first-run documentation baseline is in place. The active focus moves to P1 user-facing OpenCL practicality rather than expanding optional API symmetry, CUDA depth, or optimizer research.
 
-After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence now includes NVIDIA and AMD lanes; Intel remains the remaining hardware validation gap. The next release should therefore focus on A6: a backend-neutral runtime selection orchestrator, public backend/device controls, OpenCL as the first complete adapter, selection explanation, method-level `@GPUTest` probes for kernel-specific placement evidence, lifecycle/compile journaling, friendlier launch helpers, common image-host helper polish, and curated examples that prove the common OpenCL path end-to-end. After that practical OpenCL 90% track is solid, the next major architecture frontier remains the I3 Production IR pipeline plus the I4 optional optimizer split: `IrGpu` should become the stored backend-neutral artifact, OpenCL/CUDA/Vulkan/Metal should become backend lowerers selected at runtime from compile options and device profile, `ir-validation` must remain read-only, and future `ir-optimizer` / `ir-vendor-optimizer` modules should plug in as optional proposal/opt-in/fail-closed providers. Before adding another wave of optimizer logic, the Core extension surface should become a first-class product feature: lifecycle events, safe hook points, extension packs, JavaDocs, examples, and QOL diagnostics should let users observe, customize, and replace parts of the library deliberately without maintaining forks. The current rule-based IR-Optimizer alpha is a useful evidence/materialization layer, but the long-term v2 core should become an e-graph / equality-saturation optimizer for pure algebraic expression regions so broad generated-form optimization does not devolve into ordering-sensitive hand-written tree conditions. Broader ASM ingestion should feed that same `IrGpu` path instead of creating a second compiler pipeline.
+After the first serious dogfooding pass, the main repo-local language/runtime gaps for the selected workload classes are no longer the active blocker. Section C and F1 are closed for current practical workload coverage: 3D launch config, union-style packed views, root-blob ergonomics, launch-sensitive attributes, and the focused packed/root-blob dogfooding slice are all covered. Operational confidence now includes NVIDIA and AMD lanes; Intel remains the remaining hardware validation gap. The next release should therefore focus on P1 OpenCL practical polish: a small public runtime facade, clearer runtime package organization, JavaDocs for public and extension touchpoints, runtime scope/device-selection guidance, first-run diagnostics from real failures, method-test examples, lifecycle/logging only when requested, image-helper polish, and practical performance examples. Backend-neutral seams remain valuable, but only when they simplify today's OpenCL user path or prevent a concrete future rewrite.
+
+CUDA should remain a staged, opt-in, non-production preview. Small compatibility seams such as native-memory provider abstraction are acceptable because they avoid locking descriptor encoding to LWJGL before future Panama support, but deeper CUDA image/sampler work should not become the main release driver. The optimizer remains useful as an evidence/materialization layer, but e-graphs/equality saturation belong to a later v2 track after runtime ergonomics and practical OpenCL confidence are stronger. Broader ASM ingestion should feed the same `IrGpu` path instead of creating a second compiler pipeline.
 
 Latest I2/L2 reconciliation: the current CI contract layer is closed for present priorities. Direct contract coverage now pins current readiness CI summaries, optimizer-gate consistency/acceptance, optimizer CI gate-index consistency/acceptance, regression/baseline CI summaries, nested artifact-field composition, and opt-in real-example dogfooding reports for `examples-app` / `test-app`. The dogfooding contract keeps safety fail-fast while treating optimizer readiness as a read-only stability artifact: production mutation must remain disabled, rewrite applicability must stay false, known CSE policy blockers are counted, and no-candidate CSE literal-promotion / auto-vectorization blockers are accepted as the current baseline. The remaining I2 items are intentionally broader frontier work: deeper transformation-safety proofs, stronger canonicalization/common-computation detection, runtime-equivalence evidence for selected optimizer families, and eventual production rewrite promotion after A1/A2 runtime confidence is stable. These should stay open until backed by runtime evidence rather than being marked complete from read-only artifact coverage alone.

@@ -63,6 +63,12 @@ tasks.register('runBackendSelectionExample', JavaExec) {
     mainClass = 'net.sixik.ga_utils.examples.BackendSelectionExample'
 }
 
+tasks.register('runRuntimeFacadeExample', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.examples.RuntimeFacadeExample'
+}
+
 tasks.register('runBackendProviderAuthoringExample', JavaExec) {
     dependsOn tasks.named('classes')
     classpath = sourceSets.main.runtimeClasspath

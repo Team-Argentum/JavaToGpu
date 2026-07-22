@@ -7,11 +7,11 @@ Small copyable patterns for common JavaToGpu tasks.
 Use this for repeated calls:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
     DemoKernel.transform(input, output);
 } finally {
-    GpuRuntime.shutdownOpenClSharedCache();
+    JavaToGpu.shutdownOpenClSharedCache();
 }
 ```
 
@@ -21,7 +21,7 @@ Use this when buffer length is not the logical work size:
 
 ```java
 GpuRuntime.invoke(
-        GpuExecutionConfig.oneDimensional(itemCount),
+        JavaToGpu.launch1D(itemCount),
         descriptor,
         input,
         output

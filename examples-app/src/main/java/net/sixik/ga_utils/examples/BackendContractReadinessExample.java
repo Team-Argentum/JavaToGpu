@@ -4,8 +4,8 @@ import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaExecutionReadinessCli;
 import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaExecutionReadinessReport;
 import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaInventoryContractCli;
 import net.sixik.ga_utils.javatogpu.runtime.cuda.CudaInventoryContractReport;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceLoweringContractCli;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceLoweringContractReport;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourceLoweringContractCli;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendSpiContractCli;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClBackendSpiContractReport;
 

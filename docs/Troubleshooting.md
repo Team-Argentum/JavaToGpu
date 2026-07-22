@@ -10,6 +10,20 @@ Use this page when a kernel does not compile, does not launch, or behaves differ
 - Replace ordinary Java library calls inside kernels with supported `GPU.*` builtins.
 - Confirm your OpenCL driver is installed and visible on the machine running the test.
 
+## First-Run Error Map
+
+| Symptom | Likely Cause | First Fix |
+| --- | --- | --- |
+| No OpenCL device is selected | Driver/runtime is missing, not visible, or filtered by policy. | Install the vendor OpenCL runtime and run `:examples-app:runBackendSelectionExample`. |
+| Generated launcher is missing | Annotation processing did not run or generated sources are stale. | Check `annotationProcessor 'io.github.deussixik:javatogpu:...'` and rebuild cleanly. |
+| Kernel compiles but launch fails | Global/local work size does not match the data shape or device limits. | Start with global size equal to the output length and avoid custom local size until it works. |
+| Unsupported argument type | The host boundary uses a Java shape the runtime cannot marshal. | Use primitive arrays, supported vector arrays, `@GPUStruct`, or supported image wrappers. |
+| Unsupported code shape | The kernel body uses normal Java runtime features. | Remove allocation, exceptions, recursion, virtual dispatch, monitors, and unsupported library calls. |
+| Output is unchanged | The method wrote to the wrong buffer or launch size was zero/smaller than expected. | Test with 1, 2, 3, and 17 elements and compare every output with a CPU reference. |
+| First call is slow | Cold OpenCL startup and compile cost are included. | Use `JavaToGpu.useOpenClSharedCache()` and measure repeated warm calls. |
+
+If a first-run error is not obvious, keep the generated OpenCL source and start with `processor/build/reports/opencl/validation-report.md` when it exists.
+
 ## Unknown `@CCode` Helper
 
 This usually means the compiler found a helper call but could not match it to a known GPU helper.

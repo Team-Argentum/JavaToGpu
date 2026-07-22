@@ -7,7 +7,6 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuBackendPipelineStage;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendExecutionAvailability;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendExecutionSupport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProvider;
-import net.sixik.ga_utils.javatogpu.runtime.OpenClRuntimeBackendProvider;
 
 import java.util.ArrayList;
 import java.util.Collections;

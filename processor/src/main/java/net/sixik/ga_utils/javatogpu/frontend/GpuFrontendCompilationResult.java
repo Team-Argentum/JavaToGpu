@@ -7,8 +7,8 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequestFactory;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
+import net.sixik.ga_utils.javatogpu.runtime.launch.GpuRuntimeCompileRequestSupport;
 
 import java.util.List;
 import java.util.Optional;
@@ -48,7 +48,7 @@ public record GpuFrontendCompilationResult(
             GpuRuntimeCompileOptions compileOptions,
             GpuRuntimeDeviceProfile deviceProfile
     ) {
-        return GpuRuntimeCompileRequestFactory.fromDescriptor(
+        return GpuRuntimeCompileRequestSupport.fromDescriptor(
                 toKernelDescriptor(),
                 compileOptions,
                 deviceProfile,

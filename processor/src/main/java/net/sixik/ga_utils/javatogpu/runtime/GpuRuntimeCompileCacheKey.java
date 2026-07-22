@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeCompileInvalidationStampSupport;
 
 import java.util.Objects;
 
@@ -30,7 +31,7 @@ public record GpuRuntimeCompileCacheKey(
                 ? moduleArtifact.lowererVersion()
                 : backendLowererVersion;
         invalidationStamp = invalidationStamp == null
-                ? GpuRuntimeCompileInvalidationStamp.from(null, moduleArtifact, null)
+                ? GpuRuntimeCompileInvalidationStampSupport.from(null, moduleArtifact, null)
                 : invalidationStamp;
         options = options == null
                 ? GpuRuntimeCompileOptions.defaults(deviceProfile == null ? null : deviceProfile.backendTarget())
@@ -44,7 +45,7 @@ public record GpuRuntimeCompileCacheKey(
             GpuRuntimeCompileRequest request,
             GpuBackendModuleArtifact moduleArtifact
     ) {
-        return from(request, moduleArtifact, GpuRuntimeCompileInvalidationStamp.from(request, moduleArtifact, null));
+        return from(request, moduleArtifact, GpuRuntimeCompileInvalidationStampSupport.from(request, moduleArtifact, null));
     }
 
     public static GpuRuntimeCompileCacheKey from(

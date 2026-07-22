@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.launch.GpuRuntimeCompileRequestSupport;
 
 import java.util.Optional;
 
@@ -17,7 +18,7 @@ public final class GpuRuntimeCompileRequestFactory {
             GpuRuntimeCompileOptions compileOptions,
             GpuRuntimeDeviceProfile deviceProfile
     ) {
-        return fromDescriptor(descriptor, compileOptions, deviceProfile, Optional.empty());
+        return GpuRuntimeCompileRequestSupport.fromDescriptor(descriptor, compileOptions, deviceProfile);
     }
 
     public static GpuRuntimeCompileRequest fromDescriptor(
@@ -26,12 +27,9 @@ public final class GpuRuntimeCompileRequestFactory {
             GpuRuntimeDeviceProfile deviceProfile,
             Optional<IrGpuArtifact> irGpuArtifact
     ) {
-        GpuRuntimeCompileOptions resolvedOptions = compileOptions == null
-                ? GpuRuntimeCompileOptions.defaults(deviceProfile == null ? null : deviceProfile.backendTarget())
-                : compileOptions;
-        return new GpuRuntimeCompileRequest(
+        return GpuRuntimeCompileRequestSupport.fromDescriptor(
                 descriptor,
-                resolvedOptions,
+                compileOptions,
                 deviceProfile,
                 irGpuArtifact
         );
@@ -41,7 +39,7 @@ public final class GpuRuntimeCompileRequestFactory {
             GpuKernelInvocation invocation,
             GpuRuntimeDeviceProfile deviceProfile
     ) {
-        return fromInvocation(invocation, deviceProfile, Optional.empty());
+        return GpuRuntimeCompileRequestSupport.fromInvocation(invocation, deviceProfile);
     }
 
     public static GpuRuntimeCompileRequest fromInvocation(
@@ -49,17 +47,6 @@ public final class GpuRuntimeCompileRequestFactory {
             GpuRuntimeDeviceProfile deviceProfile,
             Optional<IrGpuArtifact> irGpuArtifact
     ) {
-        if (invocation == null) {
-            throw new NullPointerException("invocation");
-        }
-        GpuRuntimeCompileOptions compileOptions = invocation.compileOptions() == null
-                ? GpuRuntimeCompileOptions.defaults(deviceProfile == null ? null : deviceProfile.backendTarget())
-                : invocation.compileOptions();
-        return fromDescriptor(
-                invocation.descriptor(),
-                compileOptions,
-                deviceProfile,
-                irGpuArtifact
-        );
+        return GpuRuntimeCompileRequestSupport.fromInvocation(invocation, deviceProfile, irGpuArtifact);
     }
 }

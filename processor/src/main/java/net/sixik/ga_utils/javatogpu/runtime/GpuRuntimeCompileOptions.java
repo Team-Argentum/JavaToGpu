@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.*;
+
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 
@@ -8,6 +10,22 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Immutable runtime compile and placement options for one generated GPU kernel invocation.
+ *
+ * <p>Most applications do not need to construct this type for the first run. Start with
+ * {@link net.sixik.ga_utils.javatogpu.api.JavaToGpu#useOpenClSharedCache()} or
+ * {@link net.sixik.ga_utils.javatogpu.api.JavaToGpu#useStandardBackendAndDevice()} and add compile options only when a
+ * kernel needs explicit compiler flags, device preferences, method-test placement evidence, artifact review, or staged
+ * backend experiments.</p>
+ *
+ * <p>OpenCL is the normal alpha execution path. CUDA/Vulkan/Metal helpers in this record are planning and staged
+ * integration surfaces: they should keep unsupported execution fail-closed unless the matching backend stage is
+ * deliberately enabled and available.</p>
+ *
+ * <p>Instances are value objects. Modifier methods return a new options instance and leave the current instance
+ * unchanged.</p>
+ */
 public record GpuRuntimeCompileOptions(
         GpuBackendTarget backendTarget,
         List<String> compileArgs,
@@ -17,7 +35,19 @@ public record GpuRuntimeCompileOptions(
         GpuRuntimeDevicePreference devicePreference
 ) {
 
+    /**
+     * Review-only profile that asks OpenCL to try reconstructed IrGpu source instead of descriptor source.
+     *
+     * <p>This is for diagnostics and source-promotion work. It is not the default production OpenCL source path.</p>
+     */
     public static final String OPENCL_IRGPU_SOURCE_REVIEW_PROFILE = "source-reconstruction-review";
+
+    /**
+     * Experimental profile for applying runtime IR optimizer mutations.
+     *
+     * <p>Optimizer mutation remains opt-in and fail-closed; normal users should leave optimization off unless they are
+     * explicitly reviewing generated artifacts and equivalence evidence.</p>
+     */
     public static final String IR_OPTIMIZER_EXPERIMENTAL_APPLY_PROFILE = "ir-optimizer-experimental-apply";
 
     public GpuRuntimeCompileOptions(
@@ -86,6 +116,9 @@ public record GpuRuntimeCompileOptions(
         return new GpuRuntimeCompileOptions(backendTarget, List.of(), "off");
     }
 
+    /**
+     * Creates OpenCL compile options with raw OpenCL compiler flags and an optimization profile.
+     */
     public static GpuRuntimeCompileOptions openCl(List<String> compileArgs, String optimizationProfile) {
         return new GpuRuntimeCompileOptions(
                 GpuBackendTarget.OPENCL,
@@ -95,6 +128,11 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    /**
+     * Creates review-mode OpenCL options that request reconstructed IrGpu source selection.
+     *
+     * <p>The backend still fails closed when reconstruction or source parity evidence is missing.</p>
+     */
     public static GpuRuntimeCompileOptions openClIrGpuSource(List<String> compileArgs, String optimizationProfile) {
         return new GpuRuntimeCompileOptions(
                 GpuBackendTarget.OPENCL,
@@ -104,10 +142,19 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    /**
+     * Convenience preset for non-production OpenCL reconstructed-source review.
+     */
     public static GpuRuntimeCompileOptions openClIrGpuSourceReview(List<String> compileArgs) {
         return openClIrGpuSource(compileArgs, OPENCL_IRGPU_SOURCE_REVIEW_PROFILE);
     }
 
+    /**
+     * Creates production-gated OpenCL reconstructed-source options.
+     *
+     * <p>This still requires the separate production source-switching and promotion gates before descriptor source can
+     * be replaced in production-like profiles.</p>
+     */
     public static GpuRuntimeCompileOptions openClProductionIrGpuSource(
             List<String> compileArgs,
             String optimizationProfile
@@ -120,6 +167,12 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    /**
+     * Creates OpenCL options that request the experimental runtime IR optimizer apply path.
+     *
+     * <p>Use this only when reviewing original and optimized artifacts. The optimizer is optional and must fail closed
+     * rather than silently changing production code.</p>
+     */
     public static GpuRuntimeCompileOptions openClIrOptimizerExperimentalApply(
             List<String> compileArgs,
             String optimizationProfile
@@ -132,10 +185,16 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    /**
+     * Convenience preset for the experimental runtime IR optimizer apply path.
+     */
     public static GpuRuntimeCompileOptions openClIrOptimizerExperimentalApply(List<String> compileArgs) {
         return openClIrOptimizerExperimentalApply(compileArgs, IR_OPTIMIZER_EXPERIMENTAL_APPLY_PROFILE);
     }
 
+    /**
+     * Returns a copy with experimental runtime IR optimizer application enabled.
+     */
     public GpuRuntimeCompileOptions withRuntimeIrOptimizerExperimentalApply() {
         return new GpuRuntimeCompileOptions(
                 backendTarget,
@@ -147,6 +206,9 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    /**
+     * Returns a copy that performs standard backend/device preflight before backend compilation.
+     */
     public GpuRuntimeCompileOptions withStandardBackendDevicePreflight() {
         return new GpuRuntimeCompileOptions(
                 backendTarget,
@@ -158,6 +220,9 @@ public record GpuRuntimeCompileOptions(
         );
     }
 
+    /**
+     * Returns a copy that skips automatic backend/device preflight.
+     */
     public GpuRuntimeCompileOptions withoutBackendDevicePreflight() {
         return new GpuRuntimeCompileOptions(
                 backendTarget,

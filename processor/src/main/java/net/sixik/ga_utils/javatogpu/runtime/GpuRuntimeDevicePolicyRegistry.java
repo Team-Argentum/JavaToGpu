@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.*;
+
 import net.sixik.ga_utils.javatogpu.extension.GpuExtension;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
