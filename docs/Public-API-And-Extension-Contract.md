@@ -103,6 +103,8 @@ Native-memory providers use the same ServiceLoader deployment style, but through
 runtime chooses providers deterministically by `serviceOrder()`, `serviceId()`, and `serviceVersion()`. A provider must
 return a closeable `GpuRuntimeNativeMemoryAllocation` with a native address and a `ByteBuffer` view; this keeps current
 LWJGL code working while leaving room for a future Panama implementation that exposes a `MemorySegment` as a buffer view.
+The built-in LWJGL provider is under `runtime.memory`; extension authors should still implement the root
+`GpuRuntimeNativeMemoryService` SPI for compatibility.
 
 ## Runtime Logging
 
@@ -119,6 +121,8 @@ For application launches, the runtime property is:
 ```
 
 Use `system-err` if you want logs on stderr.
+The built-in console and lifecycle-journal implementations are now under `runtime.observability`; root classes with the
+same names are compatibility facades.
 
 For a real application logger, implement `GpuRuntimeLogService`:
 
@@ -166,6 +170,9 @@ The core runtime emits immutable `GpuRuntimeLogRecord` values and does not depen
 Before wiring logging into a real kernel run, check that ServiceLoader can discover and call the service:
 
 ```java
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeObservabilityServiceHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeObservabilityServiceHarnessReport;
+
 GpuRuntimeObservabilityServiceHarnessReport report = GpuRuntimeObservabilityServiceHarness
         .loadFromServiceLoader()
         .runSyntheticOpenCl();
@@ -841,6 +848,9 @@ For a CI-style pass/fail gate, use `GpuBackendHookAuthorizationValidator`. It is
 the loaded hook contracts and does not open OpenCL, CUDA, or any native runtime.
 
 ```java
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookAuthorizationValidationResult;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookAuthorizationValidator;
+
 GpuBackendHookAuthorizationValidationResult result =
         GpuBackendHookAuthorizationValidator.validateReadOnlyClasspath(GpuBackendTarget.OPENCL);
 
@@ -914,6 +924,9 @@ fields before touching native runtimes.
 For library tests, use the harness directly instead of shelling out to the examples app:
 
 ```java
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookTestHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookTestHarnessReport;
+
 GpuBackendHookTestHarnessReport report = GpuBackendHookTestHarness
         .of(List.of(new MyBackendArtifactHook()))
         .runSyntheticOpenCl();
@@ -1081,6 +1094,9 @@ This lets future CUDA, Vulkan, Metal, or multi-GPU backends plug into the same p
 For extension tests, use `GpuRuntimeDevicePolicyHarness` instead of opening a real OpenCL/CUDA session:
 
 ```java
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeDevicePolicyHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeDevicePolicyHarnessReport;
+
 GpuRuntimeDevicePolicyHarnessReport report = GpuRuntimeDevicePolicyHarness
         .loadWithBuiltIns()
         .runSyntheticOpenCl();
@@ -1201,6 +1217,9 @@ Compiler feedback is advisory. It can explain performance, resource drift, and C
 For provider tests, use `GpuBackendCompilerFeedbackHarness` instead of invoking a real compiler:
 
 ```java
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendCompilerFeedbackHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendCompilerFeedbackHarnessReport;
+
 GpuBackendCompilerFeedbackHarnessReport report = GpuBackendCompilerFeedbackHarness
         .loadWithBuiltIns()
         .runSyntheticOpenCl();

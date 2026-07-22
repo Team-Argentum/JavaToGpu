@@ -1,6 +1,4 @@
-package net.sixik.ga_utils.javatogpu.runtime;
-
-import net.sixik.ga_utils.javatogpu.runtime.methodtest.*;
+package net.sixik.ga_utils.javatogpu.runtime.validation;
 
 import java.util.Collections;
 import java.util.EnumMap;
@@ -29,8 +27,10 @@ public final class GpuRuntimePackageTaxonomy {
         USER_API,
         /** Kernel descriptors, invocation frames, generated-launcher helpers, and launch configuration. */
         LAUNCH_AND_DESCRIPTOR,
-        /** Backend provider, lowerer, compiler, execution-pipeline, and hook SPI contracts. */
+        /** Backend provider, lowerer, compiler, and execution-pipeline SPI contracts. */
         BACKEND_SPI,
+        /** Backend hook discovery, catalog, authorization preview, and read-only stage observation. */
+        BACKEND_HOOKS,
         /** Backend/device selection, scoring, workload hints, and device policy support. */
         SELECTION_AND_DEVICE_POLICY,
         /** Runtime artifact maps, diagnostics, production gates, promotion evidence, and failure reporting. */
@@ -59,6 +59,7 @@ public final class GpuRuntimePackageTaxonomy {
         packages.put(Domain.USER_API, "net.sixik.ga_utils.javatogpu.api and runtime compatibility shims");
         packages.put(Domain.LAUNCH_AND_DESCRIPTOR, "net.sixik.ga_utils.javatogpu.runtime.launch");
         packages.put(Domain.BACKEND_SPI, "net.sixik.ga_utils.javatogpu.runtime.spi");
+        packages.put(Domain.BACKEND_HOOKS, "net.sixik.ga_utils.javatogpu.runtime.hooks");
         packages.put(Domain.SELECTION_AND_DEVICE_POLICY, "net.sixik.ga_utils.javatogpu.runtime.selection");
         packages.put(Domain.ARTIFACTS_AND_DIAGNOSTICS, "net.sixik.ga_utils.javatogpu.runtime.diagnostics");
         packages.put(Domain.OBSERVABILITY, "net.sixik.ga_utils.javatogpu.runtime.observability");
@@ -106,6 +107,9 @@ public final class GpuRuntimePackageTaxonomy {
         }
         if (isSelectionOrDevicePolicy(simpleName)) {
             return Optional.of(Domain.SELECTION_AND_DEVICE_POLICY);
+        }
+        if (isBackendHook(simpleName)) {
+            return Optional.of(Domain.BACKEND_HOOKS);
         }
         if (isBackendSpi(simpleName)) {
             return Optional.of(Domain.BACKEND_SPI);
@@ -168,6 +172,12 @@ public final class GpuRuntimePackageTaxonomy {
                 "GpuRuntimeExplicitDeviceOverride",
                 "GpuRuntimeMethodDeviceConstraint")
                 || "GpuRuntimeSelectionResult".equals(simpleName);
+    }
+
+    private static boolean isBackendHook(String simpleName) {
+        return startsWith(simpleName, "GpuBackendHook")
+                || endsWithAny(simpleName, "Hook")
+                || containsAny(simpleName, "HookAuthorization");
     }
 
     private static boolean isBackendSpi(String simpleName) {

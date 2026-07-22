@@ -1,6 +1,7 @@
-package net.sixik.ga_utils.javatogpu.runtime;
+package net.sixik.ga_utils.javatogpu.runtime.validation;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.runtime.*;
 
 /**
  * Hardware-free validator for backend hook authorization catalogs.

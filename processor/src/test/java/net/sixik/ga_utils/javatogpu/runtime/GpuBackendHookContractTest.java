@@ -7,6 +7,8 @@ import net.sixik.ga_utils.javatogpu.extension.GpuExtensionFailurePolicy;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookAuthorizationValidationResult;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookAuthorizationValidator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

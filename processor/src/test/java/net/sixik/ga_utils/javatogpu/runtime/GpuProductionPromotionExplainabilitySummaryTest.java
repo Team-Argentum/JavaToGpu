@@ -1,5 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilitySummary;
 import net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilitySummaryCli;
 import org.junit.jupiter.api.Test;
 

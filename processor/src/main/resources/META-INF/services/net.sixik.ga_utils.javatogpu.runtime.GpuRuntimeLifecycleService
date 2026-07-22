@@ -1,2 +1,2 @@
-net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleFileJournalListener
-net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleLoggingService
+net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLifecycleFileJournalListener
+net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLifecycleLoggingService

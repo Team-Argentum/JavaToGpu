@@ -1,5 +1,8 @@
-package net.sixik.ga_utils.javatogpu.runtime;
+package net.sixik.ga_utils.javatogpu.runtime.memory;
 
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeNativeMemoryAllocation;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeNativeMemoryAllocationRequest;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeNativeMemoryService;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;

@@ -461,11 +461,11 @@ Use the dedicated harnesses before native execution:
 
 | Need | Harness |
 | --- | --- |
-| Backend hooks | `GpuBackendHookTestHarness` |
-| Hook authorization | `GpuBackendHookAuthorizationValidator` |
-| Lifecycle/log services | `GpuRuntimeObservabilityServiceHarness` |
-| Device policies | `GpuRuntimeDevicePolicyHarness` |
-| Compiler feedback parsers | `GpuBackendCompilerFeedbackHarness` |
+| Backend hooks | `runtime.validation.GpuBackendHookTestHarness` |
+| Hook authorization | `runtime.validation.GpuBackendHookAuthorizationValidator` |
+| Lifecycle/log services | `runtime.validation.GpuRuntimeObservabilityServiceHarness` |
+| Device policies | `runtime.validation.GpuRuntimeDevicePolicyHarness` |
+| Compiler feedback parsers | `runtime.validation.GpuBackendCompilerFeedbackHarness` |
 | IR validation providers | `GpuIrValidationProviderHarness` |
 
 ## Release Checklist

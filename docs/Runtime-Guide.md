@@ -795,6 +795,8 @@ Panama modules can provide the same ServiceLoader contract without forcing CUDA 
 to depend directly on one allocation API. The current CUDA image/sampler descriptor allocation diagnostic exercises this
 boundary through `validateCudaImageSamplerNativeDescriptorAllocationResult`, while SDK struct byte encoding and object
 creation remain disabled.
+The built-in LWJGL provider implementation now lives in `runtime.memory`; the root native-memory SPI names remain stable
+for ServiceLoader providers and existing user imports.
 
 Lifecycle events can also be routed into a pluggable logging backend through `GpuRuntimeLogService`. The built-in
 `GpuRuntimeLifecycleLoggingService` bridges lifecycle events into the runtime logging bus, but it stays silent until a
@@ -828,6 +830,8 @@ public final class Log4jGpuRuntimeLogService implements GpuRuntimeLogService {
 Register that class in `META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLogService`. JavaToGpu sorts
 log services by extension order/id/version and isolates failures, so a broken logging sink cannot control runtime
 selection, compilation, or invocation.
+Built-in lifecycle/log implementations live in `runtime.observability`; the older root class names are compatibility
+facades for existing code.
 
 To smoke-test lifecycle and logging services without opening OpenCL/CUDA, use the observability harness:
 
@@ -835,7 +839,7 @@ To smoke-test lifecycle and logging services without opening OpenCL/CUDA, use th
 .\gradlew.bat :examples-app:runRuntimeObservabilityServiceHarnessExample --console=plain
 ```
 
-Library tests can call `GpuRuntimeObservabilityServiceHarness.loadFromServiceLoader().runSyntheticOpenCl()` directly.
+Library tests can call `runtime.validation.GpuRuntimeObservabilityServiceHarness.loadFromServiceLoader().runSyntheticOpenCl()` directly.
 The harness publishes one synthetic lifecycle event and one synthetic log record, then reports service counts, success
 flags, artifact fields, and Markdown.
 
@@ -930,7 +934,7 @@ Compiler-feedback providers can be checked without a backend compiler:
 .\gradlew.bat :examples-app:runCompilerFeedbackHarnessExample --console=plain
 ```
 
-Library tests can call `GpuBackendCompilerFeedbackHarness.loadWithBuiltIns().runSyntheticOpenCl()` directly. The harness
+Library tests can call `runtime.validation.GpuBackendCompilerFeedbackHarness.loadWithBuiltIns().runSyntheticOpenCl()` directly. The harness
 feeds synthetic compiler logs through the same provider registry and reports the selected provider, parsed metrics,
 execution outcomes, artifact fields, and Markdown.
 

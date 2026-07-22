@@ -1,175 +1,69 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
 /**
- * Detects simple typed ternary forms that can become {@code step(edge, x)}.
+ * Compatibility facade for the built-in step peephole rule.
+ *
+ * @deprecated use {@link net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeStepPeepholeRule}.
  */
+@Deprecated
 public final class GpuRuntimeStepPeepholeRule implements GpuRuntimeIrPeepholeRule {
 
-    public static final String RULE_ID = "step";
-    public static final String VERSION = "peephole-rule:step-v1";
+    public static final String RULE_ID =
+            net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeStepPeepholeRule.RULE_ID;
+    public static final String VERSION =
+            net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeStepPeepholeRule.VERSION;
+
+    private final net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeStepPeepholeRule delegate =
+            new net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeStepPeepholeRule();
 
     @Override
     public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
-        int candidates = 0;
-        ArrayList<GpuRuntimeIrPeepholeReplacementPlan> plans = new ArrayList<>();
-        for (IrGpuTypedNode node : context.graph().nodes()) {
-            if (!context.graph().isConditional(node)) {
-                continue;
-            }
-            GpuRuntimeIrPeepholeReplacementPlan plan = replacementPlan(context, node);
-            if (plan.complete()) {
-                candidates++;
-            }
-            if (!"not-step-shape".equals(plan.firstBlocker())) {
-                plans.add(plan);
-            }
-        }
-        return GpuRuntimeIrPeepholeRuleReport.diagnosticCandidates(
-                this,
-                context.methodBody().name(),
-                candidates,
-                Map.of(
-                        "pattern", "x<edge?0:1|x>=edge?1:0",
-                        "replacementPlan.count", Integer.toString(plans.size()),
-                        "replacementPlan.complete.count", Long.toString(plans.stream().filter(GpuRuntimeIrPeepholeReplacementPlan::complete).count()),
-                        "replacementPlan.partial.count", Long.toString(plans.stream().filter(plan -> !plan.complete()).count()),
-                        "replacementPlan.firstBlocker", plans.stream()
-                                .filter(plan -> !plan.complete())
-                                .map(GpuRuntimeIrPeepholeReplacementPlan::firstBlocker)
-                                .findFirst()
-                                .orElse("none")
-                ),
-                plans
-        );
+        return delegate.analyze(context);
     }
 
     @Override
     public String ruleId() {
-        return RULE_ID;
+        return delegate.ruleId();
     }
 
     @Override
     public String ruleVersion() {
-        return VERSION;
+        return delegate.ruleVersion();
     }
 
     @Override
     public String extensionId() {
-        return "javatogpu.peephole.step";
+        return delegate.extensionId();
+    }
+
+    @Override
+    public String extensionVersion() {
+        return delegate.extensionVersion();
+    }
+
+    @Override
+    public Set<GpuExtensionCapability> extensionCapabilities() {
+        return delegate.extensionCapabilities();
+    }
+
+    @Override
+    public GpuExtensionPhase extensionPhase() {
+        return delegate.extensionPhase();
+    }
+
+    @Override
+    public GpuExtensionPermission extensionPermission() {
+        return delegate.extensionPermission();
     }
 
     @Override
     public int extensionOrder() {
-        return 100;
-    }
-
-    private GpuRuntimeIrPeepholeReplacementPlan replacementPlan(
-            GpuRuntimeIrPeepholeRuleContext context,
-            IrGpuTypedNode conditional
-    ) {
-        GpuRuntimeIrTypedNodeGraph graph = context.graph();
-        Integer conditionId = graph.singleChild(conditional, "condition", "cond");
-        Integer thenId = graph.singleChild(conditional, "then", "true", "ifTrue");
-        Integer elseId = graph.singleChild(conditional, "else", "false", "ifFalse");
-        if (conditionId == null || thenId == null || elseId == null) {
-            return GpuRuntimeIrPeepholeReplacementPlan.blocked(
-                    RULE_ID,
-                    context.methodBody().name(),
-                    conditional.id(),
-                    "step",
-                    List.of(conditional.id()),
-                    GpuRuntimeIrTypedNodeGraph.presentIds(conditionId, thenId, elseId),
-                    "ternary-operands-incomplete"
-            );
-        }
-        IrGpuTypedNode condition = graph.node(conditionId);
-        if (condition == null || !"GpuIrBinary".equals(condition.kind())) {
-            return blockedNotStep(context, conditional, conditionId, thenId, elseId);
-        }
-        Integer left = graph.singleChild(condition, "left");
-        Integer right = graph.singleChild(condition, "right");
-        if (left == null || right == null) {
-            return GpuRuntimeIrPeepholeReplacementPlan.blocked(
-                    RULE_ID,
-                    context.methodBody().name(),
-                    conditional.id(),
-                    "step",
-                    List.of(conditional.id(), condition.id()),
-                    List.of(thenId, elseId),
-                    "comparison-operands-incomplete"
-            );
-        }
-        IrGpuTypedNode thenNode = graph.node(thenId);
-        IrGpuTypedNode elseNode = graph.node(elseId);
-        String operator = graph.attribute(condition, "operator");
-        if ("<".equals(operator) && isZero(graph, thenNode) && isOne(graph, elseNode)) {
-            return complete(context, conditional, condition, right, left);
-        }
-        if (">=".equals(operator) && isOne(graph, thenNode) && isZero(graph, elseNode)) {
-            return complete(context, conditional, condition, right, left);
-        }
-        if (("<".equals(operator) || ">=".equals(operator))
-                && (isZero(graph, thenNode) || isOne(graph, thenNode)
-                || isZero(graph, elseNode) || isOne(graph, elseNode))) {
-            return GpuRuntimeIrPeepholeReplacementPlan.blocked(
-                    RULE_ID,
-                    context.methodBody().name(),
-                    conditional.id(),
-                    "step",
-                    List.of(conditional.id(), condition.id()),
-                    List.of(left, right, thenId, elseId),
-                    "step-branch-values-unsupported"
-            );
-        }
-        return blockedNotStep(context, conditional, conditionId, thenId, elseId);
-    }
-
-    private static GpuRuntimeIrPeepholeReplacementPlan complete(
-            GpuRuntimeIrPeepholeRuleContext context,
-            IrGpuTypedNode conditional,
-            IrGpuTypedNode condition,
-            int edgeId,
-            int valueId
-    ) {
-        return GpuRuntimeIrPeepholeReplacementPlan.complete(
-                RULE_ID,
-                context.methodBody().name(),
-                conditional.id(),
-                "step",
-                List.of(conditional.id(), condition.id()),
-                List.of(edgeId, valueId)
-        );
-    }
-
-    private static GpuRuntimeIrPeepholeReplacementPlan blockedNotStep(
-            GpuRuntimeIrPeepholeRuleContext context,
-            IrGpuTypedNode conditional,
-            int conditionId,
-            int thenId,
-            int elseId
-    ) {
-        return GpuRuntimeIrPeepholeReplacementPlan.blocked(
-                RULE_ID,
-                context.methodBody().name(),
-                conditional.id(),
-                "step",
-                List.of(conditional.id()),
-                List.of(conditionId, thenId, elseId),
-                "not-step-shape"
-        );
-    }
-
-    private static boolean isZero(GpuRuntimeIrTypedNodeGraph graph, IrGpuTypedNode node) {
-        return graph.literalText(node).matches("[+]?0(?:\\.0+)?[fFdD]?");
-    }
-
-    private static boolean isOne(GpuRuntimeIrTypedNodeGraph graph, IrGpuTypedNode node) {
-        return graph.literalText(node).matches("[+]?1(?:\\.0+)?[fFdD]?");
+        return delegate.extensionOrder();
     }
 }

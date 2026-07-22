@@ -1,7 +1,5 @@
 package net.sixik.ga_utils.javatogpu.runtime.validation;
 
-import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityValidation;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;

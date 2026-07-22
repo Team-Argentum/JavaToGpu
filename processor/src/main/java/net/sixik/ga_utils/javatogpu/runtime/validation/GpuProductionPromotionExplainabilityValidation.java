@@ -1,4 +1,6 @@
-package net.sixik.ga_utils.javatogpu.runtime;
+package net.sixik.ga_utils.javatogpu.runtime.validation;
+
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeArtifactProperties;
 
 import java.util.ArrayList;
 import java.util.List;

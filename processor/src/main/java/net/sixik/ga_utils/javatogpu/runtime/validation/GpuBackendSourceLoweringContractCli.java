@@ -1,7 +1,5 @@
 package net.sixik.ga_utils.javatogpu.runtime.validation;
 
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceLoweringContractReport;
-
 /**
  * Prints the metadata-only backend source/lowering selection contract.
  */

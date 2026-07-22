@@ -1,9 +1,9 @@
 package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbackHarness;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbackHarnessReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbackRequest;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendCompilerFeedbackHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendCompilerFeedbackHarnessReport;
 
 /**
  * Runnable example for hardware-free compiler feedback provider checks.

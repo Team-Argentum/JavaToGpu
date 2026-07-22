@@ -1,7 +1,7 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeObservabilityServiceHarness;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeObservabilityServiceHarnessReport;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeObservabilityServiceHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeObservabilityServiceHarnessReport;
 
 /**
  * Runnable example for lifecycle/log ServiceLoader observability checks.

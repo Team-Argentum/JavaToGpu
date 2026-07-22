@@ -1,8 +1,8 @@
 package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHook;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookTestHarness;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookTestHarnessReport;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookTestHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookTestHarnessReport;
 
 import java.util.Map;
 

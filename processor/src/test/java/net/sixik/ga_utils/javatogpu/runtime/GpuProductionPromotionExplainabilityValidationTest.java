@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilityValidation;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

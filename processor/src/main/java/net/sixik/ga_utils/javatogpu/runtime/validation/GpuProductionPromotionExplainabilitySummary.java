@@ -1,4 +1,7 @@
-package net.sixik.ga_utils.javatogpu.runtime;
+package net.sixik.ga_utils.javatogpu.runtime.validation;
+
+import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeArtifactProperties;
 
 import java.util.Properties;
 

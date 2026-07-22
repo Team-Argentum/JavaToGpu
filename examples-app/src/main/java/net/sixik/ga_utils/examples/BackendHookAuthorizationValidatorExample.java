@@ -1,8 +1,8 @@
 package net.sixik.ga_utils.examples;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookAuthorizationValidationResult;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookAuthorizationValidator;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookAuthorizationValidationResult;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookAuthorizationValidator;
 
 /**
  * Runnable example for a hardware-free backend hook authorization CI gate.

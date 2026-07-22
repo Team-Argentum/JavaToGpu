@@ -2,6 +2,8 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeDevicePolicyHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeDevicePolicyHarnessReport;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

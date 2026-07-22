@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
-import net.sixik.ga_utils.javatogpu.runtime.methodtest.*;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimePackageTaxonomy;
 
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +25,10 @@ final class GpuRuntimePackageTaxonomyTest {
         assertEquals(
                 GpuRuntimePackageTaxonomy.Domain.BACKEND_SPI,
                 GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuBackendExecutionPipeline").orElseThrow()
+        );
+        assertEquals(
+                GpuRuntimePackageTaxonomy.Domain.BACKEND_HOOKS,
+                GpuRuntimePackageTaxonomy.classifyRootRuntimeClass("GpuBackendHookRegistry").orElseThrow()
         );
         assertEquals(
                 GpuRuntimePackageTaxonomy.Domain.SELECTION_AND_DEVICE_POLICY,

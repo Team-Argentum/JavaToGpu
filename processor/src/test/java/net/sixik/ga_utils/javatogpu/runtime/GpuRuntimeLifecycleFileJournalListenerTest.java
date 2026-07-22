@@ -85,7 +85,10 @@ class GpuRuntimeLifecycleFileJournalListenerTest {
         try (var input = Thread.currentThread().getContextClassLoader().getResourceAsStream(servicePath)) {
             assertTrue(input != null, servicePath);
             String descriptor = new String(input.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(descriptor.contains(GpuRuntimeLifecycleFileJournalListener.class.getName()), descriptor);
+            assertTrue(descriptor.contains(
+                    net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLifecycleFileJournalListener.class
+                            .getName()
+            ), descriptor);
         }
         assertTrue(new GpuRuntimeLifecycleFileJournalListener() instanceof GpuRuntimeLifecycleService);
     }

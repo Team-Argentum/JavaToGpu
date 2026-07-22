@@ -1,7 +1,7 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyHarness;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyHarnessReport;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeDevicePolicyHarness;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeDevicePolicyHarnessReport;
 
 /**
  * Runnable example for hardware-free device policy checks.
