@@ -38,7 +38,13 @@ public final class GpuIntrinsicDatabase {
             API_PACKAGE_PREFIX + "pointers.",
             API_PACKAGE_PREFIX + "pointers.global.",
             API_PACKAGE_PREFIX + "pointers.constant.",
-            API_PACKAGE_PREFIX + "pointers.local."
+            API_PACKAGE_PREFIX + "pointers.local.",
+            API_PACKAGE_PREFIX + "types.bytes.",
+            API_PACKAGE_PREFIX + "types.shorts.",
+            API_PACKAGE_PREFIX + "types.integers.",
+            API_PACKAGE_PREFIX + "types.longs.",
+            API_PACKAGE_PREFIX + "types.floats.",
+            API_PACKAGE_PREFIX + "types.doubles."
     );
 
     private final Map<String, List<GpuIntrinsic>> intrinsics;

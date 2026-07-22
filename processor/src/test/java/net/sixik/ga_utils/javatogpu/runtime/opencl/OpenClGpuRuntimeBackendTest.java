@@ -6006,7 +6006,7 @@ class OpenClGpuRuntimeBackendTest {
                 ),
                 java.util.List.of(new net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuEntryParameter(
                         "output",
-                        "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]",
+                        "net.sixik.ga_utils.javatogpu.api.types.floats.Float2[]",
                         "GLOBAL",
                         false,
                         java.util.List.of()
@@ -6094,7 +6094,7 @@ class OpenClGpuRuntimeBackendTest {
                 "__kernel void kernel(__global float2* output) { output[0] = (float2)(1.0f, 2.0f); }",
                 java.util.List.of(new GpuKernelParameterDescriptor(
                         "output",
-                        "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]",
+                        "net.sixik.ga_utils.javatogpu.api.types.floats.Float2[]",
                         GpuKernelParameterAccess.READ_WRITE
                 ))
         );

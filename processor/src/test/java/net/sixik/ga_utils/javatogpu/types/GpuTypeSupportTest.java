@@ -257,8 +257,8 @@ class GpuTypeSupportTest {
     @Test
     void discoversAnnotatedScalarAliasTypesBySimpleAndQualifiedName() {
         assertTrue(GpuTypeSupport.isSupportedScalarAliasType("UInt"));
-        assertTrue(GpuTypeSupport.isSupportedScalarAliasType("net.sixik.ga_utils.javatogpu.api.vectors.longs.ULong"));
-        assertTrue(GpuTypeSupport.isSupportedScalarAliasClassName("net.sixik.ga_utils.javatogpu.api.vectors.shorts.UShort"));
+        assertTrue(GpuTypeSupport.isSupportedScalarAliasType("net.sixik.ga_utils.javatogpu.api.types.longs.ULong"));
+        assertTrue(GpuTypeSupport.isSupportedScalarAliasClassName("net.sixik.ga_utils.javatogpu.api.types.shorts.UShort"));
 
         assertEquals("uint", GpuTypeSupport.openClScalarAliasTypeName("UInt"));
         assertEquals("int", GpuTypeSupport.scalarAliasValueType("UInt"));
@@ -270,19 +270,19 @@ class GpuTypeSupportTest {
         GpuIntrinsicDatabase database = GpuIntrinsicDatabase.createDefault();
 
         assertTrue(database.isAllowedAllocationType("BytePtr"));
-        assertTrue(database.isAllowedAllocationType("net.sixik.ga_utils.javatogpu.api.vectors.integers.UInt"));
+        assertTrue(database.isAllowedAllocationType("net.sixik.ga_utils.javatogpu.api.types.integers.UInt"));
     }
 
     @Test
     void discoversAnnotatedUnsignedVectorTypesBySimpleAndQualifiedName() {
         assertTrue(GpuTypeSupport.isSupportedVectorType("UInt2"));
-        assertTrue(GpuTypeSupport.isSupportedVectorType("net.sixik.ga_utils.javatogpu.api.vectors.bytes.UByte16"));
-        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.vectors.longs.ULong8"));
+        assertTrue(GpuTypeSupport.isSupportedVectorType("net.sixik.ga_utils.javatogpu.api.types.bytes.UByte16"));
+        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.types.longs.ULong8"));
 
         assertEquals("uint16", GpuTypeSupport.openClVectorTypeName("UInt16"));
         assertEquals("int", GpuTypeSupport.vectorComponentType("UInt16", "sa"));
         assertEquals(List.of("s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "sa", "sb", "sc", "sd", "se", "sf"),
-                GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.vectors.integers.UInt16"));
+                GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.types.integers.UInt16"));
         assertEquals(16 * Integer.BYTES, GpuTypeSupport.vectorByteSize("UInt16"));
         assertEquals(4, GpuTypeSupport.vectorStorageWidth("UByte3"));
     }
@@ -291,11 +291,11 @@ class GpuTypeSupportTest {
     void discoversAnnotatedSignedNarrowVectorTypes() {
         assertTrue(GpuTypeSupport.isSupportedVectorType("Byte2"));
         assertTrue(GpuTypeSupport.isSupportedVectorType("Short4"));
-        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.vectors.bytes.Byte3"));
+        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.types.bytes.Byte3"));
 
         assertEquals("char2", GpuTypeSupport.openClVectorTypeName("Byte2"));
         assertEquals("short", GpuTypeSupport.vectorComponentType("Short3", "y"));
-        assertEquals(List.of("x", "y", "z"), GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.vectors.bytes.Byte3"));
+        assertEquals(List.of("x", "y", "z"), GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.types.bytes.Byte3"));
         assertEquals(4, GpuTypeSupport.vectorStorageWidth("Byte3"));
         assertEquals(4 * Short.BYTES, GpuTypeSupport.vectorByteSize("Short4"));
     }
@@ -304,7 +304,7 @@ class GpuTypeSupportTest {
     void discoversAnnotatedWideSignedIntVectorTypes() {
         assertTrue(GpuTypeSupport.isSupportedVectorType("Int8"));
         assertTrue(GpuTypeSupport.isSupportedVectorType("Int16"));
-        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.vectors.integers.Int8"));
+        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.types.integers.Int8"));
 
         assertEquals("int8", GpuTypeSupport.openClVectorTypeName("Int8"));
         assertEquals("int16", GpuTypeSupport.openClVectorTypeName("Int16"));

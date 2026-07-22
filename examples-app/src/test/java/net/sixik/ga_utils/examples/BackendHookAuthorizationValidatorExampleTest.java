@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookAuthorizationValidationResult;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendHookAuthorizationValidationResult;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;

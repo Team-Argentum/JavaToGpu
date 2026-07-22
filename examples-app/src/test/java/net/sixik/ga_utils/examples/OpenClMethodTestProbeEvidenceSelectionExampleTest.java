@@ -5,8 +5,8 @@ import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidate;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodTestProbeEvidenceWarmupCandidates;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbeEvidenceWarmupCandidate;
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.GpuRuntimeMethodTestProbeEvidenceWarmupCandidates;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;

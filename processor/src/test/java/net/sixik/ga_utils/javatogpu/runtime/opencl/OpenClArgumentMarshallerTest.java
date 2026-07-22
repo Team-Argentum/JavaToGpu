@@ -276,7 +276,7 @@ class OpenClArgumentMarshallerTest {
                 "javatogpu/sample/Demo/kernel.cl",
                 "__kernel void kernel() {}",
                 java.util.List.of(
-                        new GpuKernelParameterDescriptor("vectors", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_WRITE)
+                        new GpuKernelParameterDescriptor("vectors", "net.sixik.ga_utils.javatogpu.api.types.floats.Float2[]", GpuKernelParameterAccess.READ_WRITE)
                 )
         );
 

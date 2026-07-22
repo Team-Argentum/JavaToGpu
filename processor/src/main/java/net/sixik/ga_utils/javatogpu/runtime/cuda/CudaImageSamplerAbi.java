@@ -10,7 +10,7 @@ import java.util.Optional;
  */
 final class CudaImageSamplerAbi {
 
-    private static final String API = "net.sixik.ga_utils.javatogpu.api.";
+    private static final String IMAGE_API = "net.sixik.ga_utils.javatogpu.api.images.";
 
     private static final List<Descriptor> DESCRIPTORS = List.of(
             texture("image1d-read-only", "Image1DReadOnly", "read_only image1d_t", "cuda-array-1d"),
@@ -69,7 +69,7 @@ final class CudaImageSamplerAbi {
         }
 
         String javaQualifiedName() {
-            return API + javaSimpleName;
+            return IMAGE_API + javaSimpleName;
         }
 
         boolean sampler() {
