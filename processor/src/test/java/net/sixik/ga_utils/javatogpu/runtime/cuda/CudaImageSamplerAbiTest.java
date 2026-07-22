@@ -1,10 +1,10 @@
 package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
-import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

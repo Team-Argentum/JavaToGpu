@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompiledKernel;

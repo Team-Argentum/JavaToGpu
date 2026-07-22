@@ -1,7 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.api.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;

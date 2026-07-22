@@ -1,10 +1,10 @@
 package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
-import net.sixik.ga_utils.javatogpu.api.Float3;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
@@ -313,7 +313,7 @@ class CudaDriverArgumentBinderBridgeTest {
         assertEquals(2, result.argumentFrame().deviceAllocationCount());
         assertEquals(1, result.argumentFrame().readbackRequiredCount());
         assertEquals(List.of(32L, 32L), invoker.memAllocByteCounts);
-        assertEquals("net.sixik.ga_utils.javatogpu.api.Float3[]", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.parameter.javaType"));
+        assertEquals("net.sixik.ga_utils.javatogpu.api.vectors.floats.Float3[]", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.parameter.javaType"));
         assertEquals("32", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.byteSize"));
         assertEquals("2", fields.get("runtime.cuda.argumentFrame.deviceAllocation.0.element.count"));
 

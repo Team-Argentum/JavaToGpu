@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
@@ -181,12 +181,12 @@ class OpenClExecutionPlannerTest {
                 "javatogpu/sample/Demo/kernel.cl",
                 "__kernel void kernel() {}",
                 java.util.List.of(
-                        new GpuKernelParameterDescriptor("vectors", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_WRITE)
+                        new GpuKernelParameterDescriptor("vectors", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_WRITE)
                 )
         );
 
         OpenClExecutionPlan plan = OpenClExecutionPlanner.plan(
-                OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new net.sixik.ga_utils.javatogpu.api.Float2[]{new net.sixik.ga_utils.javatogpu.api.Float2(2.0f, 3.0f)}})
+                OpenClArgumentMarshaller.marshall(descriptor, new Object[]{new net.sixik.ga_utils.javatogpu.api.types.floats.Float2[]{new Float2(2.0f, 3.0f)}})
         );
 
         assertEquals(1, plan.bufferBindings().size());

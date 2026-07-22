@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.frontend.asm;
 
-import net.sixik.ga_utils.javatogpu.api.FloatPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
 import net.sixik.ga_utils.javatogpu.frontend.asm.AsmFrontendFailureMetadata;
 import org.junit.jupiter.api.Test;

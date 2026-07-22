@@ -2823,7 +2823,7 @@ class GpuRuntimeTest {
                         new GpuKernelParameterDescriptor("output", "float[]", GpuKernelParameterAccess.READ_WRITE),
                         new GpuKernelParameterDescriptor(
                                 "volume",
-                                "net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly",
+                                "net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly",
                                 GpuKernelParameterAccess.READ_WRITE
                         ),
                         new GpuKernelParameterDescriptor("points", "example.Point[]", GpuKernelParameterAccess.READ_ONLY),

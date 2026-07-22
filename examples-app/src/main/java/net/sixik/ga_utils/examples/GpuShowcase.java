@@ -1,33 +1,32 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
-import net.sixik.ga_utils.javatogpu.api.Float4;
-import net.sixik.ga_utils.javatogpu.api.FloatPtr;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
+import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
-import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Int2;
-import net.sixik.ga_utils.javatogpu.api.Int4;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
-import net.sixik.ga_utils.javatogpu.api.UInt;
-import net.sixik.ga_utils.javatogpu.api.UInt4;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
+import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+import net.sixik.ga_utils.javatogpu.api.types.integers.UInt4;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUWorkGroupSizeHint;
 import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLQualifiers;
-import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 
 public final class GpuShowcase {
 

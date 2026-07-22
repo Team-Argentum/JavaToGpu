@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
 import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
 import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherInvoker;
 import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherReturnValueConvenienceReport;

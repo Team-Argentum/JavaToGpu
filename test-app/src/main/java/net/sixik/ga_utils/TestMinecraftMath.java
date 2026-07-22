@@ -1,8 +1,8 @@
 package net.sixik.ga_utils;
 
-import net.sixik.ga_utils.javatogpu.api.Double3;
+import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
 import net.sixik.ga_utils.javatogpu.api.GPU;
-import net.sixik.ga_utils.javatogpu.api.Int3;
+import net.sixik.ga_utils.javatogpu.api.types.integers.Int3;
 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;

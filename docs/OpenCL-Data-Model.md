@@ -74,6 +74,8 @@ Arrays inside struct fields are not supported in the current alpha. Pass arrays 
 Pointer wrappers are useful for helper mutation patterns:
 
 ```java
+import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
+
 @CCode
 static void writeAnswer(FloatPtr value) {
     value.value = 42.0f;
@@ -81,6 +83,13 @@ static void writeAnswer(FloatPtr value) {
 ```
 
 Use them when a helper needs pointer-like behavior. For ordinary kernels, arrays are usually easier to read and maintain.
+
+Pointer wrappers are grouped by address-space:
+
+- `net.sixik.ga_utils.javatogpu.api.pointers` for private scalar-by-reference wrappers such as `FloatPtr` and `IntPtr`.
+- `net.sixik.ga_utils.javatogpu.api.pointers.global` for `__global` packed-buffer views.
+- `net.sixik.ga_utils.javatogpu.api.pointers.constant` for read-only `__constant` packed-buffer views.
+- `net.sixik.ga_utils.javatogpu.api.pointers.local` for `__local` memory views.
 
 ## Packed Blob Views
 

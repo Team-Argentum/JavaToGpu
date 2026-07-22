@@ -33,6 +33,14 @@ public final class GpuIntrinsicDatabase {
     private static final Pattern THIS_PLACEHOLDER_PATTERN = Pattern.compile("\\{this}");
     private static final String API_PACKAGE_PREFIX = "net.sixik.ga_utils.javatogpu.api.";
 
+    private static final List<String> API_INTRINSIC_OWNER_PACKAGE_PREFIXES = List.of(
+            API_PACKAGE_PREFIX,
+            API_PACKAGE_PREFIX + "pointers.",
+            API_PACKAGE_PREFIX + "pointers.global.",
+            API_PACKAGE_PREFIX + "pointers.constant.",
+            API_PACKAGE_PREFIX + "pointers.local."
+    );
+
     private final Map<String, List<GpuIntrinsic>> intrinsics;
     private final List<GpuBuiltinConstant> builtinConstants;
     private final GpuBackendTarget backendTarget;
@@ -616,7 +624,9 @@ public final class GpuIntrinsicDatabase {
         List<String> candidates = new ArrayList<>();
         candidates.add(owner);
         if (!owner.contains(".")) {
-            candidates.add(API_PACKAGE_PREFIX + owner);
+            for (String packagePrefix : API_INTRINSIC_OWNER_PACKAGE_PREFIXES) {
+                candidates.add(packagePrefix + owner);
+            }
         }
         return candidates;
     }

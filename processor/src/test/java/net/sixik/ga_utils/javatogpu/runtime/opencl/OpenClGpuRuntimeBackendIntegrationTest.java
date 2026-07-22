@@ -1,22 +1,17 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import dev.denismasterherobrine.packager.opencl.core.OpenClException;
-import net.sixik.ga_utils.javatogpu.api.Float2;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
-import net.sixik.ga_utils.javatogpu.api.UInt;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
+import net.sixik.ga_utils.javatogpu.api.images.*;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
+import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.processors.GpuCompilerProcessor;
@@ -57,7 +52,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.Random;
 import java.util.List;
 import java.util.Map;
 
@@ -247,7 +241,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 """
                         package sample;
 
-                        import net.sixik.ga_utils.javatogpu.api.Float2;
+                        import net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2;
                         import net.sixik.ga_utils.javatogpu.api.GPU;
                         import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -325,7 +319,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         package sample;
 
                         import net.sixik.ga_utils.javatogpu.api.GPU;
-                        import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                        import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
                         import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                         import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
@@ -424,7 +418,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         package sample;
 
                         import net.sixik.ga_utils.javatogpu.api.GPU;
-                        import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                        import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
                         import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
                         import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                         import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
@@ -555,8 +549,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                         package sample;
 
                         import net.sixik.ga_utils.javatogpu.api.GPU;
-                        import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
-                        import net.sixik.ga_utils.javatogpu.api.GlobalIntPtr;
+                        import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
+                        import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalIntPtr;
                         import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                         import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
                         import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
@@ -1557,8 +1551,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                             output[id].y = input[id].y + 2.0f;
                         }""",
                 java.util.List.of(
-                        new GpuKernelParameterDescriptor("input", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_ONLY),
-                        new GpuKernelParameterDescriptor("output", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_WRITE)
+                        new GpuKernelParameterDescriptor("input", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_WRITE)
                 )
         );
         assumeKernelCompiles(descriptor, "Skipping vector array integration smoke test");
@@ -1591,8 +1585,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                             output[id].y = input[id].y + 2.0f;
                         }""",
                 java.util.List.of(
-                        new GpuKernelParameterDescriptor("input", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_ONLY),
-                        new GpuKernelParameterDescriptor("output", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_WRITE)
+                        new GpuKernelParameterDescriptor("input", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_WRITE)
                 )
         );
         assumeKernelCompiles(descriptor, "Skipping repeated vector array integration stability test");
@@ -1832,8 +1826,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                             output[id].y = input[id].y + 2.0f;
                         }""",
                 java.util.List.of(
-                        new GpuKernelParameterDescriptor("input", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_ONLY),
-                        new GpuKernelParameterDescriptor("output", "net.sixik.ga_utils.javatogpu.api.Float2[]", GpuKernelParameterAccess.READ_WRITE)
+                        new GpuKernelParameterDescriptor("input", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2[]", GpuKernelParameterAccess.READ_WRITE)
                 )
         );
         GpuKernelDescriptor imageDescriptor = new GpuKernelDescriptor(
@@ -2508,7 +2502,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
         int[] output = new int[]{0, 0};
 
         try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
-             net.sixik.ga_utils.javatogpu.api.Image3DReadOnly inputImage = backend.createReadOnlyRgbaUIntImage3D(
+             Image3DReadOnly inputImage = backend.createReadOnlyRgbaUIntImage3D(
                      2,
                      1,
                      2,
@@ -2519,7 +2513,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                              13, 14, 15, 16
                      }
              );
-             net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly outputImage = backend.createWriteOnlyRgbaUIntImage3D(2, 1, 2);
+             Image3DWriteOnly outputImage = backend.createWriteOnlyRgbaUIntImage3D(2, 1, 2);
              Sampler sampler = backend.createNearestClampToEdgeSampler()) {
             backend.invoke(new GpuKernelInvocation(descriptor, new Object[]{inputImage, outputImage, sampler, output}));
             int[] written = backend.readRgbaUIntImage3D(outputImage);
@@ -3970,7 +3964,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
@@ -4042,7 +4036,7 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
@@ -4145,8 +4139,8 @@ class OpenClGpuRuntimeBackendIntegrationTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
-                import net.sixik.ga_utils.javatogpu.api.GlobalIntPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalIntPtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
                 import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;

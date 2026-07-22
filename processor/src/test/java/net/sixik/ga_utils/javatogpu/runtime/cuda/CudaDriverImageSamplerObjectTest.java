@@ -1,7 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime.cuda;
 
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInvocationBindingSummary;
 import org.junit.jupiter.api.Test;
 
