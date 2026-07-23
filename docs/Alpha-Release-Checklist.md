@@ -7,7 +7,7 @@ Use this checklist before publishing a public alpha build.
 Recommended current public alpha version:
 
 ```text
-v0.1.0-alpha.3
+v0.1.0-alpha.4
 ```
 
 Recommended positioning:
@@ -54,7 +54,7 @@ Key files:
 ## Release Notes Template
 
 ```markdown
-# JavaToGpu v0.1.0-alpha.3
+# JavaToGpu v0.1.0-alpha.4
 
 This is a public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and runtime for GPU-safe Java kernels.
 

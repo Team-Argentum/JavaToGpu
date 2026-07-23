@@ -33,8 +33,8 @@ repositories {
 }
 
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
 }
 ```
 
@@ -42,7 +42,7 @@ Optional stricter IR validation:
 
 ```groovy
 dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.3'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.4'
 }
 
 tasks.withType(JavaCompile).configureEach {
