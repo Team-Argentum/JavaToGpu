@@ -2,6 +2,19 @@
 
 For ordinary application code, start with the public `JavaToGpu` facade. The lower-level `GpuRuntime` API remains available for custom backend policies, descriptor-based invocation, generated launcher internals, and extension modules.
 
+## How To Read This Page
+
+| If you need... | Start with |
+| --- | --- |
+| One normal OpenCL scope | Runtime Scopes |
+| CPU fallback or backend/device explanation | Runtime Selection |
+| Explicit global/local sizes | Explicit Launch Sizes |
+| Dynamic generated launcher calls | Generated Launcher Helpers |
+| Compile flags or optimizer review artifacts | Runtime Compile Options |
+| Debugging failures | Runtime Failures And Fallbacks |
+
+Skip the production source-acceptance and activation-token sections unless you are maintaining optimizer/source-promotion gates. They are not required for normal application launches.
+
 ## Runtime Scopes
 
 ### Isolated OpenCL Backend

@@ -6,6 +6,60 @@ It is intentionally practical: start with the quick-start tables, copy the small
 
 JavaToGpu has one public Java GPU dialect: the `net.sixik.ga_utils.javatogpu.api.GPU` facade. It uses OpenCL-style names today because OpenCL is the first backend, but user code should stay backend-neutral. Future CUDA, Vulkan/SPIR-V, and Metal support should lower the same Java source dialect instead of introducing separate CUDA-style or Vulkan-style Java APIs.
 
+## Read This If
+
+| You are... | Use this page for | Better first page |
+| --- | --- | --- |
+| Application user | Logging, lifecycle, fallback, and generated-launcher boundaries | [Getting Started](Getting-Started.md) |
+| Extension author | ServiceLoader interfaces, permissions, and harnesses | [Cookbook](Cookbook.md) for simple usage first |
+| Backend author | Provider stages, execution receipts, hook contracts | [Backend Adapter Authoring](Backend-Adapter-Authoring.md) |
+| Maintainer | Compatibility rules and production safety vocabulary | [Validation and Operations](Validation-and-Operations.md) |
+
+If you only want to run kernels, you do not need most of this page. Use `JavaToGpu`, generated launchers, and the Cookbook first.
+
+## Runtime Package Boundaries
+
+Use the smallest layer that solves the problem:
+
+| Audience | Prefer | Avoid by default |
+| --- | --- | --- |
+| Normal application code | `api.JavaToGpu`, `api.GpuScope`, `api.GPU`, `api.annotations`, grouped `api.types` / `api.pointers` / `api.images` | Browsing root `runtime` classes first |
+| Advanced runtime configuration | `runtime.selection`, `runtime.launch`, selected root compatibility types such as `GpuRuntimeCompileOptions` | Backend implementation packages |
+| Extension authors | `runtime.spi`, `runtime.hooks`, `runtime.observability`, `runtime.optimization`, `runtime.memory` | Direct callbacks or global mutable registries |
+| Maintainers and CI | `runtime.validation` harnesses and contract validators | Application-facing docs as a test harness |
+| Backend implementors | `runtime.opencl`, `runtime.cuda`, backend provider SPI | Adding backend-specific helpers directly to root `runtime` |
+
+The root `net.sixik.ga_utils.javatogpu.runtime` package remains supported for compatibility, generated launchers, and public SPI/value contracts. New code should prefer the domain packages above unless a root compatibility facade is deliberate.
+
+## ServiceLoader Extension Points
+
+Register extensions by creating `META-INF/services/<service-type>` and putting one implementation class name per line. The source-of-truth catalog in code is `GpuRuntimeExtensionPointCatalog`; this table mirrors the public entries from that catalog.
+
+| Need | Service type | Domain | Permission model | Hardware-free check |
+| --- | --- | --- | --- | --- |
+| Runtime logs | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLogService` | `runtime.observability` | Read-only | `GpuRuntimeObservabilityServiceHarness` |
+| Lifecycle tracing | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleService` | `runtime.observability` | Read-only | `GpuRuntimeObservabilityServiceHarness` |
+| Low-level lifecycle events | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventListener` | `runtime.observability` | Read-only | `GpuRuntimeObservabilityServiceHarness` |
+| IR validation | `net.sixik.ga_utils.javatogpu.frontend.ir.validation.GpuIrValidationProvider` | `frontend.ir.validation` | Read-only | `GpuIrValidationProviderHarness` |
+| IR optimizer pass | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationPass` | `runtime.optimization` | Mutation proposal | Optimizer report/artifact gates |
+| IR peephole rule | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrPeepholeRule` | `runtime.optimization` | Mutation proposal | Peephole report/artifact gates |
+| Legacy IR optimizer | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizer` | `runtime.optimization` | Legacy mutation proposal | Optimizer report/artifact gates |
+| Compiler feedback parser | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbackProvider` | `runtime.diagnostics` | Read-only | `GpuBackendCompilerFeedbackHarness` |
+| Backend provider | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendProvider` | `runtime.spi` | Stage-specific | `GpuRuntimeBackendProviderCatalog` |
+| Native memory provider | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeNativeMemoryService` | `runtime.memory` | Production-affecting | `GpuRuntimeNativeMemoryServiceRegistry` |
+| Device policy | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicy` | `runtime.selection` | Read-only with hard rejections | `GpuRuntimeDevicePolicyHarness` |
+| Generic backend hook | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendHook` | `runtime.hooks` | Read-only by default | `GpuBackendHookTestHarness` |
+| Backend policy facts | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendPolicyContributor` | `runtime.hooks` | Read-only | `GpuBackendHookTestHarness` |
+| Backend score contribution | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendScoreContributor` | `runtime.hooks` | Read-only | `GpuBackendHookTestHarness` |
+| Discovery facts | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendDiscoveryContributor` | `runtime.hooks` | Read-only | `GpuBackendHookTestHarness` |
+| Lowering observation | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendLoweringHook` | `runtime.hooks` | Read-only observer unless authorized | `GpuBackendHookTestHarness` |
+| Compilation observation | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilationHook` | `runtime.hooks` | Read-only observer unless authorized | `GpuBackendHookTestHarness` |
+| Invocation observation | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendInvocationHook` | `runtime.hooks` | Read-only observer unless authorized | `GpuBackendHookTestHarness` |
+| Artifact fields | `net.sixik.ga_utils.javatogpu.runtime.GpuBackendArtifactHook` | `runtime.hooks` | Read-only | `GpuBackendHookTestHarness` |
+| Method fallback variants | `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantProvider` | `runtime.variants` | Generated or advanced provider | `GpuRuntimeMethodVariantRegistry` |
+
+`net.sixik.ga_utils.javatogpu.frontend.ir.passes.GpuIrPass` is also loaded through ServiceLoader by the compiler frontend, but it is treated as compiler-internal and is not a normal application extension API.
+
 ## Quick Start
 
 | I want to... | Use this | Start here |
@@ -1136,6 +1190,22 @@ Fallback methods must expose the same Java launch ABI: same parameter count, Jav
 
 OpenCL evaluates variants through the normal device policy pipeline. Hard constraints still apply: backend compatibility, explicit device override, `@GPUDeviceConstraint`, and required features. Runtime may select another implementation for the active device, but it will not silently switch an already-created runtime session to different hardware.
 
+## Generated Launcher Contract
+
+Generated launchers are the normal user-facing call site for annotated kernels, but their source is still generated code: do not edit it by hand, and expect it to be regenerated when annotation processing runs. The generated file is intentionally readable so users can inspect what the processor embedded without learning backend internals.
+
+The generated comments identify the important groups:
+
+- kernel/resource/IrGpu/source constants and the runtime descriptor used by `GpuRuntime`;
+- fallback-variant descriptors used by method-variant selection;
+- default, explicit-size, compile-options, and standard backend/device preflight overloads;
+- narrow return-first convenience helpers and `RETURN_VALUE_CONVENIENCE_*` skip metadata;
+- generated output-length validation for helper-allocated output buffers.
+
+For normal code, call the generated launcher class directly. For dynamic/framework code, use `GpuGeneratedLauncherInvoker.launcher(ownerClass, methodName)` and keep the returned `GeneratedLauncher` handle for repeated calls. It caches the generated launcher class, descriptor, and convenience metadata, but still invokes the generated overloads so fallback routing and generated validations remain active.
+
+The descriptor and fallback descriptors are stable runtime inputs for the current alpha launcher contract. The exact generated class names and overload surface remain alpha-compatible, not beta-stable; code generators, wrappers, and framework integrations should go through `GpuGeneratedLauncherInvoker` when they need a softer reflection boundary.
+
 ## Runtime Failures
 
 Public runtime failures extend `GpuRuntimeException`. Generated launchers do not catch these exceptions; they propagate to the user's call site so application code can choose an explicit fallback.
@@ -1286,8 +1356,8 @@ Registries reject blank metadata, whitespace/control characters in ids or versio
 
 ## Read Next
 
-- `docs/Runtime-Guide.md` - running kernels, runtime scopes, logging, and artifacts.
-- `docs/Method-Tests.md` - fixture-based `@GPUTest` checks.
-- `docs/IR-Validation.md` - IR validator concepts and reports.
-- `docs/IR-Optimizer.md` - optimizer profiles, journals, and dump files.
-- `docs/API-Overview.md` - public annotations and facade overview.
+- [Runtime Guide](Runtime-Guide.md) - running kernels, runtime scopes, logging, and artifacts.
+- [Method Tests](Method-Tests.md) - fixture-based `@GPUTest` checks.
+- [IR Validation](IR-Validation.md) - IR validator concepts and reports.
+- [IR Optimizer](IR-Optimizer.md) - optimizer profiles, journals, and dump files.
+- [API Overview](API-Overview.md) - public annotations and facade overview.

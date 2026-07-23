@@ -2,6 +2,10 @@
 
 This guide describes how to publish JavaToGpu Maven artifacts to Maven Central.
 
+Use this only for release work. If you are consuming JavaToGpu from another project, copy the dependency block from [Getting Started](Getting-Started.md) instead.
+
+The safe release shape is: validate, stage locally, inspect generated POM/artifacts, then publish all JavaToGpu modules with the same version.
+
 ## Artifact Coordinates
 
 All published artifacts share the same release version:

@@ -8,7 +8,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Typed result for preparing a compiled backend module for invocation.
+ * Typed receipt for preparing a compiled backend module for invocation.
+ *
+ * <p>Preparation means backend resources and argument bindings are ready enough for an invocation stage. For OpenCL this
+ * roughly maps to kernel/buffer setup; for CUDA it can include module/function handles, argument frames, dynamic shared
+ * memory layout, and readback bookkeeping.</p>
+ *
+ * @param stageResult portable prepare-stage status, blockers, diagnostics, and failure details
+ * @param compilationResult compile receipt that produced the prepared module/kernel
+ * @param preparedKernelPresent whether a closeable prepared handle exists
+ * @param preparedKernelKind short diagnostic kind for the prepared handle
+ * @param bindingSummary portable summary of prepared argument/buffer/scalar/local bindings
  */
 public record GpuBackendPreparationResult(
         GpuBackendStageResult stageResult,
@@ -34,6 +44,9 @@ public record GpuBackendPreparationResult(
                 : stageResult;
     }
 
+    /**
+     * Creates a successful preparation receipt for a returned prepared handle.
+     */
     public static GpuBackendPreparationResult prepared(
             GpuBackendCompilationResult compilationResult,
             String preparedKernelKind,
@@ -57,6 +70,9 @@ public record GpuBackendPreparationResult(
         );
     }
 
+    /**
+     * Creates a fail-closed receipt for adapters that cannot prepare this kernel yet.
+     */
     public static GpuBackendPreparationResult unsupported(
             GpuBackendTarget backendTarget,
             GpuBackendCompilationResult compilationResult,
@@ -78,6 +94,9 @@ public record GpuBackendPreparationResult(
         );
     }
 
+    /**
+     * Creates a receipt for a preparation stage intentionally skipped because an earlier stage did not succeed.
+     */
     public static GpuBackendPreparationResult skipped(
             GpuBackendTarget backendTarget,
             GpuBackendCompilationResult compilationResult,
@@ -99,6 +118,9 @@ public record GpuBackendPreparationResult(
         );
     }
 
+    /**
+     * Creates a receipt for a hard prepare/module-load-stage failure.
+     */
     public static GpuBackendPreparationResult failed(
             GpuBackendTarget backendTarget,
             GpuBackendCompilationResult compilationResult,
@@ -120,10 +142,16 @@ public record GpuBackendPreparationResult(
         );
     }
 
+    /**
+     * Returns true only when the prepare stage succeeded and a prepared handle exists.
+     */
     public boolean prepared() {
         return stageResult.succeeded() && preparedKernelPresent;
     }
 
+    /**
+     * Stable property map for artifacts, lifecycle events, and validation summaries.
+     */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.prepare" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

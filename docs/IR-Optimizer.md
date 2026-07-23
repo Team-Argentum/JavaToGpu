@@ -14,6 +14,16 @@ That makes it useful while the optimizer is still growing. You can inspect what
 it would do, compare artifacts, validate the evidence, and only opt into real
 application during local experiments.
 
+## Fast Decision Guide
+
+| Goal | Use | Expect |
+| --- | --- | --- |
+| See before/after code | Diagnostic artifact dumps | `optimized.backend.opencl-c` may exist while `backend.opencl-c` stays original |
+| Compile optimized code locally | `openClIrOptimizerExperimentalApply(...)` | Explicit experiment only, not production activation |
+| Make optimizer safer | IR validation and evidence reports | Blockers are useful; do not hide them |
+| Add a custom rule/provider | Optimizer proposal SPI | Stable ids, proof fields, rollback/equivalence evidence |
+| Build a future production optimizer | Promotion/approval gates | Separate work from normal alpha usage |
+
 ## When To Use It
 
 Use the IR Optimizer when you want to:

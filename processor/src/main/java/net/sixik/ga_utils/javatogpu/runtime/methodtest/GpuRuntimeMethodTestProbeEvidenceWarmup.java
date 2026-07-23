@@ -27,6 +27,9 @@ public final class GpuRuntimeMethodTestProbeEvidenceWarmup {
     private GpuRuntimeMethodTestProbeEvidenceWarmup() {
     }
 
+    /**
+     * Runs selection-probe vectors against caller-provided backend/device candidates and records cacheable evidence.
+     */
     public static GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmSelectionProbeEvidence(
             GpuKernelDescriptor descriptor,
             List<GpuRuntimeMethodTestProbeEvidenceWarmupCandidate> candidates,
@@ -41,6 +44,9 @@ public final class GpuRuntimeMethodTestProbeEvidenceWarmup {
         );
     }
 
+    /**
+     * Runs evidence warm-up with a preferred classloader for generated IrGpu and fixture resources.
+     */
     public static GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmSelectionProbeEvidence(
             GpuKernelDescriptor descriptor,
             ClassLoader preferredClassLoader,
@@ -56,6 +62,9 @@ public final class GpuRuntimeMethodTestProbeEvidenceWarmup {
         );
     }
 
+    /**
+     * Runs evidence warm-up and publishes method-test lifecycle events to the supplied bus.
+     */
     public static GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmSelectionProbeEvidence(
             GpuKernelDescriptor descriptor,
             ClassLoader preferredClassLoader,

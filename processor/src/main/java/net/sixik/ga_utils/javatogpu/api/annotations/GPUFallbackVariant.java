@@ -15,11 +15,23 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.CLASS)
 public @interface GPUFallbackVariant {
 
+    /**
+     * Stable logical variant group. Methods in one group represent the same operation for different devices/backends.
+     */
     String group();
 
+    /**
+     * Stable variant id inside the group. If omitted, tooling may derive an id from the method name.
+     */
     String id() default "";
 
+    /**
+     * Selection priority after hard backend/device constraints pass. Higher values are preferred.
+     */
     int priority() default 0;
 
+    /**
+     * Human-readable note explaining when this variant should be preferred.
+     */
     String compatibilityNote() default "";
 }

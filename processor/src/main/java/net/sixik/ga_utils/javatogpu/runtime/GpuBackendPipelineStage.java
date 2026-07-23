@@ -25,14 +25,23 @@ public enum GpuBackendPipelineStage {
         this.productionAffecting = productionAffecting;
     }
 
+    /**
+     * Stable lowercase key used in artifact fields and lifecycle events.
+     */
     public String key() {
         return key;
     }
 
+    /**
+     * Stable ordering value for stage timelines.
+     */
     public int order() {
         return order;
     }
 
+    /**
+     * Returns whether this stage can affect generated/native code or kernel execution behavior.
+     */
     public boolean productionAffecting() {
         return productionAffecting;
     }

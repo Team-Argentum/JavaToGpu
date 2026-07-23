@@ -12,7 +12,7 @@ Yes, as an alpha / developer preview. It is useful for experiments, early integr
 
 ## Which backend works today?
 
-OpenCL is the active backend today. CUDA, Vulkan, and Metal are future directions, not available user backends yet.
+OpenCL is the active user backend today. CUDA has staged preview pieces for backend development, but it is not a production user backend yet. Vulkan and Metal are future directions.
 
 ## Which GPUs are validated?
 
@@ -24,7 +24,9 @@ No. GPU methods must use the supported kernel subset: primitives, arrays, suppor
 
 ## Can `@GPU` methods return values?
 
-Not currently. Write results into output arrays or other supported output parameters.
+The real GPU entry ABI is still `void + output parameters`. Write results into output arrays or other supported output parameters.
+
+There is a narrow generated convenience helper for kernels with exactly one primitive read-write output array: it can allocate that output array, launch the normal kernel path, and return `output[0]`. It is convenience over the output-buffer ABI, not general Java return-value support.
 
 ## Can I use normal Java objects in kernels?
 
@@ -36,7 +38,9 @@ No. Keep arrays as kernel parameters, or use packed buffers with explicit offset
 
 ## How do I make GPU execution optional?
 
-Use `GpuRuntime.trySelect(...)` with a backend policy. If no GPU backend matches, run your CPU fallback instead of relying on exceptions for normal control flow.
+For a simple diagnostics screen, call `JavaToGpu.explainStandardBackendAndDevice()` and show the summary when no backend/device matches.
+
+For an application fallback path, use `GpuRuntime.trySelect(...)` with a backend policy. If no GPU backend matches, run your CPU fallback instead of relying on exceptions for normal control flow.
 
 ## Should I enable IR validation?
 

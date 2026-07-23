@@ -25,6 +25,17 @@ This documentation is written for users of the current alpha. It starts with pra
 8. [API Overview](API-Overview.md) - learn the public packages and the most-used types.
 9. [Known Limitations](Known-Limitations.md) - understand the alpha boundaries before using it seriously.
 
+## Choose Your Path
+
+| If you want to... | Read these first | Skip for now |
+| --- | --- | --- |
+| Run one kernel | [Quickstart](User-Quickstart.md), [Getting Started](Getting-Started.md), [Troubleshooting](Troubleshooting.md) | Backend SPI, optimizer proof, promotion gates |
+| Write real kernels | [Language Contract](Language-Contract.md), [OpenCL Data Model](OpenCL-Data-Model.md), [Cookbook](Cookbook.md) | ASM and backend adapter docs |
+| Add confidence tests | [Method Tests](Method-Tests.md), [IR Validation](IR-Validation.md) | Production promotion internals |
+| Tune runtime behavior | [Runtime Guide](Runtime-Guide.md), [Performance Basics](Performance-Basics.md), [API Overview](API-Overview.md) | CUDA staging details unless you are testing them |
+| Extend JavaToGpu | [Public API And Extension Contract](Public-API-And-Extension-Contract.md), [Backend Adapter Authoring](Backend-Adapter-Authoring.md) | User quickstart repetition |
+| Release or validate hardware | [Validation and Operations](Validation-and-Operations.md), [Device Quirks](Device-Quirks.md), [Publishing Guide](Publishing.md) | First-run tutorials |
+
 ## Data And Runtime
 
 - [Runtime Guide](Runtime-Guide.md) - runtime scopes, launch sizes, logging, artifacts, and advanced options.

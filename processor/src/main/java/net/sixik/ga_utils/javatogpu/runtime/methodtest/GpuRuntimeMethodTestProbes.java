@@ -26,17 +26,28 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Public helper for inspecting method-level {@code @GPUTest} metadata at runtime.
+ * Public helper for inspecting and executing method-level {@code @GPUTest} evidence stages.
+ *
+ * <p>The methods are ordered from cheapest to strongest evidence: metadata plan, fixture readiness, value binding,
+ * invocation materialization, CPU/reference comparison, and opt-in GPU probe execution. Planning and fixture checks do
+ * not require native GPU access. GPU probes run only when the caller explicitly invokes the probe APIs and supplies
+ * bounded {@link GpuRuntimeMethodTestGpuProbeOptions}.</p>
  */
 public final class GpuRuntimeMethodTestProbes {
 
     private GpuRuntimeMethodTestProbes() {
     }
 
+    /**
+     * Loads generated {@code @GPUTest} metadata for the descriptor using normal classloader fallback.
+     */
     public static GpuRuntimeMethodTestProbePlan plan(GpuKernelDescriptor descriptor) {
         return plan(descriptor, (ClassLoader) null, defaultLifecycleEventBus());
     }
 
+    /**
+     * Loads generated {@code @GPUTest} metadata using a preferred artifact classloader.
+     */
     public static GpuRuntimeMethodTestProbePlan plan(
             GpuKernelDescriptor descriptor,
             ClassLoader preferredClassLoader
@@ -44,6 +55,9 @@ public final class GpuRuntimeMethodTestProbes {
         return plan(descriptor, preferredClassLoader, defaultLifecycleEventBus());
     }
 
+    /**
+     * Loads generated {@code @GPUTest} metadata and publishes lifecycle events to the supplied bus.
+     */
     public static GpuRuntimeMethodTestProbePlan plan(
             GpuKernelDescriptor descriptor,
             ClassLoader preferredClassLoader,
@@ -102,6 +116,9 @@ public final class GpuRuntimeMethodTestProbes {
         return planInternal(descriptor, artifact.orElseThrow());
     }
 
+    /**
+     * Builds a metadata plan from an already-loaded IrGpu artifact.
+     */
     public static GpuRuntimeMethodTestProbePlan plan(
             GpuKernelDescriptor descriptor,
             IrGpuArtifact artifact
@@ -171,6 +188,10 @@ public final class GpuRuntimeMethodTestProbes {
         );
     }
 
+    /**
+     * Checks whether fixture resources referenced by {@code @GPUTest} metadata are present and parseable enough for
+     * later value binding.
+     */
     public static GpuRuntimeMethodTestFixtureReadiness fixtureReadiness(GpuKernelDescriptor descriptor) {
         return fixtureReadiness(descriptor, null, defaultLifecycleEventBus());
     }

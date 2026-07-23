@@ -6,7 +6,11 @@ import net.sixik.ga_utils.javatogpu.runtime.launch.GpuRuntimeCompileRequestSuppo
 import java.util.Optional;
 
 /**
- * Shared construction point for runtime compile requests produced by Java, ASM, and future frontends.
+ * Compatibility facade for runtime compile-request construction.
+ *
+ * <p>New launch/descriptor code should prefer
+ * {@link net.sixik.ga_utils.javatogpu.runtime.launch.GpuRuntimeCompileRequestSupport}. This class keeps the original
+ * root runtime API stable for Java, ASM, generated launchers, tests, and existing callers.</p>
  */
 public final class GpuRuntimeCompileRequestFactory {
 

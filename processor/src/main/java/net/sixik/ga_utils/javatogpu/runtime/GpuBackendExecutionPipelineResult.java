@@ -9,6 +9,16 @@ import java.util.Map;
 
 /**
  * Backend-neutral result of one compile -> prepare -> invoke execution pipeline run.
+ *
+ * <p>The result owns the compiled and prepared handles it contains. Close it with try-with-resources when a caller uses
+ * the shared pipeline directly. Result sub-records remain available after close for diagnostics, but native handles may
+ * no longer be usable.</p>
+ *
+ * @param compiledKernel backend-specific compiled handle, if compilation reached that stage
+ * @param preparedKernel backend-specific prepared handle, if preparation reached that stage
+ * @param compilationResult portable compile receipt
+ * @param preparationResult portable prepare/module-load receipt
+ * @param invocationResult portable invocation/readback receipt
  */
 public record GpuBackendExecutionPipelineResult<
         C extends GpuBackendCompiledKernel,
@@ -32,10 +42,16 @@ public record GpuBackendExecutionPipelineResult<
                 : invocationResult;
     }
 
+    /**
+     * Returns true only when compile, prepare, and invoke receipts all succeeded.
+     */
     public boolean succeeded() {
         return compilationResult.compiled() && preparationResult.prepared() && invocationResult.invoked();
     }
 
+    /**
+     * Creates a fail-closed result for backends that have no execution pipeline yet.
+     */
     public static GpuBackendExecutionPipelineResult<GpuBackendCompiledKernel, GpuPreparedKernel> unsupported(
             GpuBackendTarget backendTarget,
             GpuBackendLoweringResult loweringResult,
@@ -72,6 +88,9 @@ public record GpuBackendExecutionPipelineResult<
         );
     }
 
+    /**
+     * Creates a result for a compile-stage failure.
+     */
     public static <C extends GpuBackendCompiledKernel, P extends GpuPreparedKernel>
     GpuBackendExecutionPipelineResult<C, P> failedDuringCompile(
             GpuBackendTarget backendTarget,
@@ -100,6 +119,9 @@ public record GpuBackendExecutionPipelineResult<
         return new GpuBackendExecutionPipelineResult<>(null, null, compilationResult, preparationResult, invocationResult);
     }
 
+    /**
+     * Creates a result for a prepare/module-load-stage failure after compilation succeeded.
+     */
     public static <C extends GpuBackendCompiledKernel, P extends GpuPreparedKernel>
     GpuBackendExecutionPipelineResult<C, P> failedDuringPrepare(
             C compiledKernel,
@@ -129,6 +151,9 @@ public record GpuBackendExecutionPipelineResult<
         );
     }
 
+    /**
+     * Creates a result for an invocation/readback-stage failure after preparation succeeded.
+     */
     public static <C extends GpuBackendCompiledKernel, P extends GpuPreparedKernel>
     GpuBackendExecutionPipelineResult<C, P> failedDuringInvoke(
             C compiledKernel,
@@ -158,6 +183,9 @@ public record GpuBackendExecutionPipelineResult<
         );
     }
 
+    /**
+     * Stable property map for artifacts, lifecycle events, and validation summaries.
+     */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.executionPipeline" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

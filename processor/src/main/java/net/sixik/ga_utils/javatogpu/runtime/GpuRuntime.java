@@ -257,6 +257,10 @@ public final class GpuRuntime {
 
     /**
      * Attempts standard backend selection and standard backend device discovery with default OpenCL controls.
+     *
+     * <p>This is a preflight/reporting API: it does not install the selected backend. Use
+     * {@link #useStandardBackendAndDevice()} when the selected backend should be installed for a try-with-resources
+     * scope.</p>
      */
     public static GpuRuntimeBackendDeviceSelection trySelectStandardBackendAndDevice() {
         return trySelectStandardBackendAndDevice(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL));
@@ -264,6 +268,9 @@ public final class GpuRuntime {
 
     /**
      * Attempts standard backend selection and standard backend device discovery as one preflight.
+     *
+     * <p>The compile options are used for device discovery and policy evidence, especially OpenCL platform/device
+     * overrides, artifact fields, lifecycle context, and standard backend/device preflight mode.</p>
      */
     public static GpuRuntimeBackendDeviceSelection trySelectStandardBackendAndDevice(
             GpuRuntimeCompileOptions openClDiscoveryOptions
@@ -312,6 +319,10 @@ public final class GpuRuntime {
 
     /**
      * Selects and installs the standard backend+device pair using default OpenCL controls.
+     *
+     * <p>The selected backend is installed only while the returned {@link GpuRuntimeScope} is open. Closing the scope
+     * restores the previous backend, so this is safe for tests and examples that should not leave global runtime state
+     * behind.</p>
      */
     public static GpuRuntimeScope useStandardBackendAndDevice() {
         return useStandardBackendAndDevice(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL));
@@ -319,6 +330,10 @@ public final class GpuRuntime {
 
     /**
      * Selects and installs the standard backend+device pair using caller-provided device-selection controls.
+     *
+     * <p>This is the recommended lower-level runtime helper when application code does not call the generated
+     * {@code invokeWithStandardBackendAndDevice(...)} convenience methods. It performs selection immediately and fails
+     * before kernel compilation if no backend/device pair satisfies the requested policy.</p>
      */
     public static GpuRuntimeScope useStandardBackendAndDevice(GpuRuntimeCompileOptions compileOptions) {
         return standardBackendDeviceScopeFactory.apply(compileOptions);
@@ -447,6 +462,10 @@ public final class GpuRuntime {
 
     /**
      * Invokes a generated GPU kernel with explicit runtime compile options.
+     *
+     * <p>If the active backend is still the default fail-fast backend and the compile options request standard
+     * backend/device preflight, this method opens a temporary selected-backend scope before invoking the kernel. Already
+     * configured custom/OpenCL scopes are not replaced.</p>
      */
     public static void invokeWithCompileOptions(
             GpuRuntimeCompileOptions compileOptions,

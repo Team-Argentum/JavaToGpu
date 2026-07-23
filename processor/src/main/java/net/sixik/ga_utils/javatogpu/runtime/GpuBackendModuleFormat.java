@@ -36,27 +36,45 @@ public enum GpuBackendModuleFormat {
         this.defaultTargets = Set.copyOf(defaultTargets);
     }
 
+    /**
+     * Canonical lowercase format key used in generated artifacts and lifecycle fields.
+     */
     public String key() {
         return key;
     }
 
+    /**
+     * Returns whether this format normally has textual source/intermediate content.
+     */
     public boolean sourceLike() {
         return sourceLike;
     }
 
+    /**
+     * Returns whether this format normally has binary/direct-load content.
+     */
     public boolean binaryLike() {
         return binaryLike;
     }
 
+    /**
+     * Backend targets this format is normally associated with; empty means backend-neutral native binary.
+     */
     public Set<GpuBackendTarget> defaultTargets() {
         return defaultTargets;
     }
 
+    /**
+     * Returns whether this format is normally valid for the supplied backend target.
+     */
     public boolean hasDefaultTarget(GpuBackendTarget backendTarget) {
         GpuBackendTarget target = backendTarget == null ? GpuBackendTarget.UNKNOWN : backendTarget;
         return defaultTargets.isEmpty() || defaultTargets.contains(target);
     }
 
+    /**
+     * Resolves a canonical format enum from a user, artifact, or backend-provided key.
+     */
     public static GpuBackendModuleFormat fromKey(String key) {
         String normalized = normalizeKey(key);
         for (GpuBackendModuleFormat format : values()) {
@@ -67,6 +85,9 @@ public enum GpuBackendModuleFormat {
         return UNKNOWN;
     }
 
+    /**
+     * Normalizes common aliases into canonical format keys.
+     */
     public static String normalizeKey(String key) {
         if (key == null || key.isBlank()) {
             return UNKNOWN.key;

@@ -18,6 +18,12 @@ import java.util.Set;
 @FunctionalInterface
 public interface GpuRuntimeLogService extends GpuExtension {
 
+    /**
+     * Receives one immutable runtime log record.
+     *
+     * <p>Implementations should avoid throwing. The runtime dispatch layer isolates failures, but log sinks are
+     * intended to be observability helpers rather than production execution dependencies.</p>
+     */
     void log(GpuRuntimeLogRecord record);
 
     @Override

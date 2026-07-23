@@ -13,6 +13,14 @@ import java.util.Objects;
  *
  * <p>This record is intentionally backend-neutral. Backend-specific adapters may add details, but the primary stage,
  * status, blockers, diagnostics, and artifact fields stay stable across OpenCL, CUDA, and future backends.</p>
+ *
+ * @param stage backend-neutral pipeline stage
+ * @param status terminal/non-terminal stage status
+ * @param backendTarget backend family that emitted the receipt
+ * @param summary short human-readable status summary
+ * @param blockers machine-readable reasons that prevent successful execution
+ * @param diagnostics human-readable details for reports and lifecycle journals
+ * @param details additional stable key/value details such as failure type/message
  */
 public record GpuBackendStageResult(
         GpuBackendPipelineStage stage,
@@ -36,6 +44,9 @@ public record GpuBackendStageResult(
                 : Collections.unmodifiableMap(new LinkedHashMap<>(details));
     }
 
+    /**
+     * Creates a non-terminal stage receipt.
+     */
     public static GpuBackendStageResult notStarted(GpuBackendPipelineStage stage, GpuBackendTarget backendTarget) {
         return new GpuBackendStageResult(
                 stage,
@@ -48,6 +59,9 @@ public record GpuBackendStageResult(
         );
     }
 
+    /**
+     * Creates a successful terminal stage receipt.
+     */
     public static GpuBackendStageResult succeeded(
             GpuBackendPipelineStage stage,
             GpuBackendTarget backendTarget,
@@ -65,6 +79,9 @@ public record GpuBackendStageResult(
         );
     }
 
+    /**
+     * Creates a skipped terminal receipt, usually because an earlier dependency did not succeed.
+     */
     public static GpuBackendStageResult skipped(
             GpuBackendPipelineStage stage,
             GpuBackendTarget backendTarget,
@@ -83,6 +100,9 @@ public record GpuBackendStageResult(
         );
     }
 
+    /**
+     * Creates an unsupported terminal receipt for planned or unavailable backend capabilities.
+     */
     public static GpuBackendStageResult unsupported(
             GpuBackendPipelineStage stage,
             GpuBackendTarget backendTarget,
@@ -101,6 +121,9 @@ public record GpuBackendStageResult(
         );
     }
 
+    /**
+     * Creates a failed terminal receipt and captures failure type/message in details.
+     */
     public static GpuBackendStageResult failed(
             GpuBackendPipelineStage stage,
             GpuBackendTarget backendTarget,
@@ -124,14 +147,23 @@ public record GpuBackendStageResult(
         );
     }
 
+    /**
+     * Returns true when this stage reached a successful terminal status.
+     */
     public boolean succeeded() {
         return status.successful();
     }
 
+    /**
+     * Returns true when blockers are present or the terminal status prevents continuation.
+     */
     public boolean blocked() {
         return !blockers.isEmpty() || status == GpuBackendStageStatus.FAILED || status == GpuBackendStageStatus.UNSUPPORTED;
     }
 
+    /**
+     * Stable property map for artifacts, lifecycle events, and validation summaries.
+     */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.stage" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

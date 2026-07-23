@@ -2,6 +2,17 @@
 
 This page explains how to validate JavaToGpu locally, how to capture useful evidence, and what the current alpha validation status means.
 
+## Who This Is For
+
+| Reader | Start here |
+| --- | --- |
+| Normal contributor | `:processor:test` and the first part of this page |
+| GPU-machine owner | `:processor:openClOperationalRoutine` and report capture |
+| CI maintainer | bucket status, validation history, and runner contracts |
+| Release maintainer | Practical Release Checklist and Publishing Guide |
+
+For first-run application failures, use [Troubleshooting](Troubleshooting.md) before opening the full validation artifact list.
+
 ## What To Run First
 
 For normal development, run the processor tests:

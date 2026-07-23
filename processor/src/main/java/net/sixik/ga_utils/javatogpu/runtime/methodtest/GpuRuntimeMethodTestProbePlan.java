@@ -10,8 +10,17 @@ import java.util.Map;
 /**
  * Read-only runtime plan for method-level {@code @GPUTest} probes.
  *
- * <p>This is intentionally not an executor yet. It makes generated test-vector metadata visible to examples, support
- * logs, lifecycle journals, and future backend/device selection code before fixture loading and GPU execution exist.</p>
+ * <p>This is intentionally not an executor. It makes generated test-vector metadata visible to examples, support logs,
+ * lifecycle journals, fixture checks, and backend/device selection evidence without loading fixture values or running a
+ * GPU kernel.</p>
+ *
+ * @param kernelName generated kernel name, or {@code unknown} when descriptor metadata was missing
+ * @param kernelResource generated backend source resource path
+ * @param irGpuResource generated IrGpu artifact resource path
+ * @param artifactLoaded whether the IrGpu artifact was found and read successfully
+ * @param testVectors normalized method-test vectors emitted by the frontend
+ * @param blockers machine-readable reasons why the plan cannot proceed to stronger stages
+ * @param diagnostics human-readable details for examples, reports, and lifecycle journals
  */
 public record GpuRuntimeMethodTestProbePlan(
         String kernelName,
@@ -32,24 +41,39 @@ public record GpuRuntimeMethodTestProbePlan(
         diagnostics = normalizeList(diagnostics);
     }
 
+    /**
+     * Returns true when generated metadata exists and contains at least one test vector.
+     */
     public boolean metadataReady() {
         return artifactLoaded && !testVectors.isEmpty();
     }
 
+    /**
+     * Returns true when at least one vector is explicitly marked for backend/device selection evidence.
+     */
     public boolean hasSelectionProbes() {
         return !selectionProbeVectors().isEmpty();
     }
 
+    /**
+     * Returns only vectors that may be used as opt-in placement probes.
+     */
     public List<GpuRuntimeMethodTestVectorPlan> selectionProbeVectors() {
         return testVectors.stream()
                 .filter(GpuRuntimeMethodTestVectorPlan::selectionProbe)
                 .toList();
     }
 
+    /**
+     * Returns the first blocker or {@code none}, which keeps reports stable for simple status output.
+     */
     public String firstBlocker() {
         return blockers.isEmpty() ? "none" : blockers.get(0);
     }
 
+    /**
+     * Stable property map for artifacts, lifecycle events, and CI summaries.
+     */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "methodTestProbePlan" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
@@ -69,6 +93,9 @@ public record GpuRuntimeMethodTestProbePlan(
         return Collections.unmodifiableMap(fields);
     }
 
+    /**
+     * Human-readable summary for examples and diagnostics.
+     */
     public String toMarkdown() {
         StringBuilder builder = new StringBuilder();
         builder.append("Method test probe plan: ").append(metadataReady() ? "metadata-ready" : "blocked").append('\n');

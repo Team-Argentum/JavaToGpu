@@ -8,9 +8,16 @@ import java.util.Set;
 
 /**
  * Read-only hook for contributing explainable backend-selection score adjustments.
+ *
+ * <p>Use this for preference logic that should affect backend ordering without directly installing or mutating a
+ * backend. Contributors should be deterministic for the same context and should include a concise reason in returned
+ * score contributions so selection reports stay understandable.</p>
  */
 public interface GpuRuntimeBackendScoreContributor extends GpuBackendHook {
 
+    /**
+     * Returns a score adjustment for one backend candidate, or {@link GpuRuntimeBackendScoreContribution#none()}.
+     */
     default GpuRuntimeBackendScoreContribution scoreCandidate(GpuRuntimeBackendScoreContext context) {
         return GpuRuntimeBackendScoreContribution.none();
     }

@@ -69,7 +69,7 @@ This is a public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and
 ## Highlights
 
 - Java source kernels through `@GPU`
-- OpenCL runtime dispatch through `GpuRuntime`
+- OpenCL runtime dispatch through `JavaToGpu` and generated launchers
 - Practical `GPU.*` builtin surface
 - Struct, vector, pointer, image, sampler, and packed-data support
 - Operational validation report bundle
@@ -78,7 +78,7 @@ This is a public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and
 
 - Not arbitrary Java-to-GPU execution
 - No stable API guarantee before beta
-- CUDA backend not implemented
+- CUDA is staged/experimental and not a production user backend
 - Structured ASM frontend expects canonical supported bytecode
 ```
 

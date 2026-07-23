@@ -10,6 +10,7 @@
 - [Cookbook](Cookbook.md)
 - [Known Limitations](Known-Limitations.md)
 - [Troubleshooting](Troubleshooting.md)
+- [Diagnostics Reference](Diagnostics-Reference.md)
 - [Performance Basics](Performance-Basics.md)
 - [FAQ](FAQ.md)
 
@@ -32,7 +33,6 @@
 - [Validation and Operations](Validation-and-Operations.md)
 - [ASM Contract](ASM-Contract.md)
 - [OpenCL Runner Contract](OpenCL-Runner-Contract.md)
-- [Diagnostics Reference](Diagnostics-Reference.md)
 - [Device Quirks](Device-Quirks.md)
 - [Alpha Release Checklist](Alpha-Release-Checklist.md)
 - [Publishing Guide](Publishing.md)

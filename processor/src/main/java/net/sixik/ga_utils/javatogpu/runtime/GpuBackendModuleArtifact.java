@@ -4,6 +4,28 @@ import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 
 import java.util.Objects;
 
+/**
+ * Backend module selected for compilation or direct loading.
+ *
+ * <p>The artifact may contain source text, point to a generated resource, describe a binary/intermediate payload, or be
+ * {@link #unknown()} when a backend stage did not reach module selection. This record intentionally carries both
+ * backend-neutral facts and backend-specific format keys so OpenCL, CUDA, SPIR-V, and future adapters can share the same
+ * lowering/compile pipeline receipts.</p>
+ *
+ * @param backendTarget backend family this module belongs to
+ * @param kind broad module kind such as {@code source}, {@code intermediate}, {@code binary}, or {@code unknown}
+ * @param format canonical module format key, for example {@code opencl-c}, {@code cuda-c}, {@code ptx}, or {@code cubin}
+ * @param source in-memory source/intermediate text, or blank for binary/resource-only artifacts
+ * @param resource classpath or filesystem resource path for the module payload, when available
+ * @param artifactVersion stable artifact contract version emitted by the lowerer/compiler bridge
+ * @param lowererVersion version/id of the lowerer that produced this module
+ * @param sourceOrigin explanation of where the module came from, such as descriptor source or lowered source
+ * @param sourceAvailable whether source text is available for review or source compilation
+ * @param binaryAvailable whether binary/intermediate bytes are available for direct loading
+ * @param compileLogResource optional resource path for native compiler logs
+ * @param sourceMapResource optional resource path for backend source maps
+ * @param runtimeLoadMode intended runtime mode, such as source compilation or binary load
+ */
 public record GpuBackendModuleArtifact(
         GpuBackendTarget backendTarget,
         String kind,
@@ -100,6 +122,9 @@ public record GpuBackendModuleArtifact(
         return openClSource(source, resource, lowererVersion, "derived-opencl-source", "opencl-source-compile");
     }
 
+    /**
+     * Creates an OpenCL C source artifact from lowered or descriptor-provided source text.
+     */
     public static GpuBackendModuleArtifact openClSource(
             String source,
             String resource,
@@ -124,6 +149,9 @@ public record GpuBackendModuleArtifact(
         );
     }
 
+    /**
+     * Creates a CUDA C source artifact for staged CUDA compilation.
+     */
     public static GpuBackendModuleArtifact cudaSource(
             String source,
             String resource,
@@ -146,6 +174,9 @@ public record GpuBackendModuleArtifact(
         );
     }
 
+    /**
+     * Creates a PTX intermediate artifact for CUDA Driver API loading or later native assembly.
+     */
     public static GpuBackendModuleArtifact ptx(
             String source,
             String resource,
@@ -184,6 +215,9 @@ public record GpuBackendModuleArtifact(
         return cudaBinary(GpuBackendModuleFormat.FATBIN.key(), resource, lowererVersion, binaryAvailable);
     }
 
+    /**
+     * Creates a CUDA binary artifact receipt for a canonical binary format key.
+     */
     public static GpuBackendModuleArtifact cudaBinary(
             String format,
             String resource,
@@ -208,6 +242,9 @@ public record GpuBackendModuleArtifact(
         );
     }
 
+    /**
+     * Creates a SPIR-V binary artifact receipt for future Vulkan/OpenCL paths.
+     */
     public static GpuBackendModuleArtifact spirV(
             String resource,
             String lowererVersion,
@@ -230,6 +267,9 @@ public record GpuBackendModuleArtifact(
         );
     }
 
+    /**
+     * Returns an explicit placeholder for stages that did not produce a module artifact.
+     */
     public static GpuBackendModuleArtifact unknown() {
         return new GpuBackendModuleArtifact(
                 GpuBackendTarget.UNKNOWN,
@@ -248,6 +288,9 @@ public record GpuBackendModuleArtifact(
         );
     }
 
+    /**
+     * Returns source text or fails with a clear message when this artifact is not source-backed.
+     */
     public String requireSource() {
         if (source.isBlank()) {
             throw new IllegalStateException(
@@ -257,18 +300,30 @@ public record GpuBackendModuleArtifact(
         return source;
     }
 
+    /**
+     * Returns the canonical enum value for {@link #format()}.
+     */
     public GpuBackendModuleFormat moduleFormat() {
         return GpuBackendModuleFormat.fromKey(format);
     }
 
+    /**
+     * Returns whether the module format normally carries textual source/intermediate content.
+     */
     public boolean sourceLikeFormat() {
         return moduleFormat().sourceLike();
     }
 
+    /**
+     * Returns whether the module format normally carries binary or directly loadable content.
+     */
     public boolean binaryLikeFormat() {
         return moduleFormat().binaryLike();
     }
 
+    /**
+     * Returns whether the format is normally valid for this backend target.
+     */
     public boolean formatMatchesBackendTarget() {
         return moduleFormat().hasDefaultTarget(backendTarget);
     }

@@ -8,7 +8,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Typed result for the backend lowering stage.
+ * Typed receipt for the backend lowering/source-selection stage.
+ *
+ * <p>Lowering decides which backend module should be compiled or loaded next: descriptor-provided source, optimized
+ * generated source, PTX/CUBIN/FATBIN, SPIR-V, or another backend artifact. The result is read-only and is safe to expose
+ * in reports before native compilation starts.</p>
+ *
+ * @param stageResult portable lower-stage status, blockers, diagnostics, and failure details
+ * @param sourceSelectionPlan explanation of which source/artifact path was selected
+ * @param moduleArtifact selected backend module artifact
  */
 public record GpuBackendLoweringResult(
         GpuBackendStageResult stageResult,
@@ -27,6 +35,9 @@ public record GpuBackendLoweringResult(
                 : stageResult;
     }
 
+    /**
+     * Creates a successful lowering receipt for a selected backend module artifact.
+     */
     public static GpuBackendLoweringResult succeeded(
             GpuBackendModuleArtifact moduleArtifact,
             GpuBackendSourceSelectionPlan sourceSelectionPlan,
@@ -45,6 +56,9 @@ public record GpuBackendLoweringResult(
         );
     }
 
+    /**
+     * Creates a fail-closed receipt for adapters that cannot lower to the requested backend yet.
+     */
     public static GpuBackendLoweringResult unsupported(
             GpuBackendTarget backendTarget,
             GpuBackendSourceSelectionPlan sourceSelectionPlan,
@@ -64,10 +78,16 @@ public record GpuBackendLoweringResult(
         );
     }
 
+    /**
+     * Returns true when lowering succeeded and produced source-like payload text.
+     */
     public boolean lowered() {
         return stageResult.succeeded() && moduleArtifact.sourceAvailable();
     }
 
+    /**
+     * Stable property map for artifacts, lifecycle events, and validation summaries.
+     */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.lowering" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

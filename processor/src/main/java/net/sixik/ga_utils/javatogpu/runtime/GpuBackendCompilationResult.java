@@ -8,7 +8,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Typed result for the backend compilation stage.
+ * Typed receipt for the backend compilation stage.
+ *
+ * <p>This record represents "backend source/module was accepted by a native or staged compiler". A successful stage
+ * result is not enough by itself: {@link #compiled()} also requires a present module summary so planned/unsupported
+ * adapters cannot accidentally look executable in reports.</p>
+ *
+ * @param stageResult portable stage status, blockers, diagnostics, and failure details
+ * @param loweringResult lowering/source-selection receipt that fed the compiler
+ * @param compilationSummary compact module/cache/artifact summary exposed to lifecycle journals
+ * @param cacheKey backend compile cache key, or blank when no stable key exists
  */
 public record GpuBackendCompilationResult(
         GpuBackendStageResult stageResult,
@@ -33,6 +42,9 @@ public record GpuBackendCompilationResult(
                 : stageResult;
     }
 
+    /**
+     * Creates a successful compile receipt for a returned backend module/kernel handle.
+     */
     public static GpuBackendCompilationResult succeeded(
             GpuBackendLoweringResult loweringResult,
             GpuRuntimeBackendCompilationSummary compilationSummary,
@@ -55,6 +67,9 @@ public record GpuBackendCompilationResult(
         );
     }
 
+    /**
+     * Creates a fail-closed receipt for adapters that cannot compile this backend module yet.
+     */
     public static GpuBackendCompilationResult unsupported(
             GpuBackendTarget backendTarget,
             GpuBackendLoweringResult loweringResult,
@@ -75,6 +90,9 @@ public record GpuBackendCompilationResult(
         );
     }
 
+    /**
+     * Creates a receipt for a hard compile-stage failure.
+     */
     public static GpuBackendCompilationResult failed(
             GpuBackendTarget backendTarget,
             GpuBackendLoweringResult loweringResult,
@@ -95,14 +113,23 @@ public record GpuBackendCompilationResult(
         );
     }
 
+    /**
+     * Returns true only when the compile stage succeeded and a module is present in the summary.
+     */
     public boolean compiled() {
         return stageResult.succeeded() && compilationSummary.modulePresent();
     }
 
+    /**
+     * Returns the backend module artifact selected/lowered before compilation.
+     */
     public GpuBackendModuleArtifact moduleArtifact() {
         return loweringResult.moduleArtifact();
     }
 
+    /**
+     * Stable property map for artifacts, lifecycle events, and validation summaries.
+     */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.compilation" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

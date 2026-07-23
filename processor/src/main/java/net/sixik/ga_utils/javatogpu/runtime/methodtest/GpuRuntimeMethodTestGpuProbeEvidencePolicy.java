@@ -20,7 +20,9 @@ import java.util.stream.Collectors;
  *
  * <p>This policy never compiles or executes kernels. It only computes the stable evidence key that would correspond to
  * each candidate device and reads an opt-in cache. Missing evidence is neutral, passed evidence boosts ranking, and
- * failed cached evidence rejects the candidate.</p>
+ * failed cached evidence rejects the candidate. This makes production startup predictable: run
+ * {@link GpuRuntimeMethodTestProbeEvidenceWarmup} explicitly when evidence should be refreshed, then let selection read
+ * the cache later.</p>
  */
 public final class GpuRuntimeMethodTestGpuProbeEvidencePolicy implements GpuRuntimeDevicePolicy {
 

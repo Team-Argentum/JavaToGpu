@@ -18,10 +18,16 @@ public enum GpuBackendStageStatus {
         this.successful = successful;
     }
 
+    /**
+     * Returns whether the stage reached a final state.
+     */
     public boolean terminal() {
         return terminal;
     }
 
+    /**
+     * Returns whether the final state allows the pipeline to continue normally.
+     */
     public boolean successful() {
         return successful;
     }

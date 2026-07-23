@@ -15,6 +15,7 @@ import java.util.Optional;
 public final class GpuRuntimePackageTaxonomy {
 
     private static final Map<Domain, String> RECOMMENDED_PACKAGES = recommendedPackages();
+    private static final Map<Domain, Audience> RECOMMENDED_AUDIENCES = recommendedAudiences();
 
     private GpuRuntimePackageTaxonomy() {
     }
@@ -52,6 +53,22 @@ public final class GpuRuntimePackageTaxonomy {
     }
 
     /**
+     * Intended audience for a runtime domain.
+     */
+    public enum Audience {
+        /** Application code should normally use the API facade before reaching into this layer. */
+        NORMAL_USER,
+        /** Advanced application/runtime code that intentionally configures launch, selection, or diagnostics. */
+        ADVANCED_RUNTIME,
+        /** ServiceLoader providers, backend authors, policy contributors, and tooling extensions. */
+        EXTENSION_SPI,
+        /** Maintainer and CI tools rather than application code. */
+        VALIDATION_TOOLING,
+        /** Backend implementation detail; keep direct dependencies narrow and deliberate. */
+        IMPLEMENTATION_DETAIL
+    }
+
+    /**
      * Returns the recommended future package for each domain.
      */
     public static Map<Domain, String> recommendedPackages() {
@@ -73,10 +90,38 @@ public final class GpuRuntimePackageTaxonomy {
     }
 
     /**
+     * Returns the intended audience for each runtime domain.
+     */
+    public static Map<Domain, Audience> recommendedAudiences() {
+        EnumMap<Domain, Audience> audiences = new EnumMap<>(Domain.class);
+        audiences.put(Domain.USER_API, Audience.NORMAL_USER);
+        audiences.put(Domain.LAUNCH_AND_DESCRIPTOR, Audience.ADVANCED_RUNTIME);
+        audiences.put(Domain.BACKEND_SPI, Audience.EXTENSION_SPI);
+        audiences.put(Domain.BACKEND_HOOKS, Audience.EXTENSION_SPI);
+        audiences.put(Domain.SELECTION_AND_DEVICE_POLICY, Audience.ADVANCED_RUNTIME);
+        audiences.put(Domain.ARTIFACTS_AND_DIAGNOSTICS, Audience.ADVANCED_RUNTIME);
+        audiences.put(Domain.OBSERVABILITY, Audience.EXTENSION_SPI);
+        audiences.put(Domain.METHOD_TESTS, Audience.VALIDATION_TOOLING);
+        audiences.put(Domain.METHOD_VARIANTS, Audience.ADVANCED_RUNTIME);
+        audiences.put(Domain.IR_OPTIMIZATION, Audience.EXTENSION_SPI);
+        audiences.put(Domain.NATIVE_MEMORY, Audience.EXTENSION_SPI);
+        audiences.put(Domain.VALIDATION_AND_HARNESSES, Audience.VALIDATION_TOOLING);
+        audiences.put(Domain.INTERNAL_BACKEND_IMPLEMENTATION, Audience.IMPLEMENTATION_DETAIL);
+        return Collections.unmodifiableMap(audiences);
+    }
+
+    /**
      * Returns the recommended future package for the given domain.
      */
     public static String recommendedPackage(Domain domain) {
         return RECOMMENDED_PACKAGES.get(domain);
+    }
+
+    /**
+     * Returns the intended audience for the given domain.
+     */
+    public static Audience recommendedAudience(Domain domain) {
+        return RECOMMENDED_AUDIENCES.get(domain);
     }
 
     /**

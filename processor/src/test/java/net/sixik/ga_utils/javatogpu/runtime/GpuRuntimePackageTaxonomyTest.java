@@ -125,6 +125,31 @@ final class GpuRuntimePackageTaxonomyTest {
     }
 
     @Test
+    void everyDomainHasAnIntendedAudience() {
+        for (GpuRuntimePackageTaxonomy.Domain domain : GpuRuntimePackageTaxonomy.Domain.values()) {
+            GpuRuntimePackageTaxonomy.Audience audience = GpuRuntimePackageTaxonomy.recommendedAudience(domain);
+            assertFalse(audience == null, domain.name());
+        }
+    }
+
+    @Test
+    void rootRuntimePackageInfoExplainsDomainPackages() throws IOException {
+        String packageInfo = Files.readString(runtimeSourceDirectory().resolve("package-info.java"));
+        for (GpuRuntimePackageTaxonomy.Domain domain : GpuRuntimePackageTaxonomy.Domain.values()) {
+            String recommendedPackage = GpuRuntimePackageTaxonomy.recommendedPackage(domain);
+            if (!recommendedPackage.startsWith("net.sixik.ga_utils.javatogpu.runtime.")) {
+                continue;
+            }
+
+            String shortPackage = recommendedPackage.substring("net.sixik.ga_utils.javatogpu.".length());
+            assertTrue(
+                    packageInfo.contains(shortPackage),
+                    "Root runtime package-info should mention " + shortPackage + " for " + domain.name()
+            );
+        }
+    }
+
+    @Test
     void recommendedRuntimeDomainPackagesExist() {
         Path runtimeDirectory = runtimeSourceDirectory();
         for (GpuRuntimePackageTaxonomy.Domain domain : GpuRuntimePackageTaxonomy.Domain.values()) {

@@ -6,6 +6,17 @@ They are meant to answer a practical question: "Can this generated GPU method ac
 
 Method tests are not a replacement for JUnit. Think of them as portable GPU-kernel fixtures that JavaToGpu can inspect, materialize, compare against a CPU reference, and optionally run through a backend.
 
+## Fast Decision Guide
+
+| Goal | Use |
+| --- | --- |
+| Check fixture files and parameter names | Metadata, fixture readiness, and value binding |
+| Compare expected output without a GPU | Invocation materialization + CPU/reference comparison |
+| Test a real backend/device explicitly | Optional GPU probe after a runtime scope is installed |
+| Reuse probe evidence for placement experiments | Persistent probe cache and cache-only ranking |
+
+The default workflow is manual today: examples and tests call the probe APIs explicitly. Runtime auto-gating from `@GPUTest` evidence is future/opt-in work, not a hidden first-launch behavior.
+
 ## Quick Start
 
 Run the numeric example:

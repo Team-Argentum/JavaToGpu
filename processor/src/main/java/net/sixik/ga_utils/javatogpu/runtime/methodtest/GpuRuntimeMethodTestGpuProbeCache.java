@@ -22,6 +22,11 @@ import java.util.function.Supplier;
 
 /**
  * Cache for bounded {@code @GPUTest} GPU probe execution evidence.
+ *
+ * <p>The cache stores only completed probe executions keyed by a stable method/backend/device/fixture/compile identity.
+ * Failed or blocked attempts are returned to the caller but are not written as reusable placement evidence unless the
+ * execution reached the point where a stable probe result exists. Persistent entries are best-effort: corrupted,
+ * mismatched, stale, or unreadable files are treated as cache misses.</p>
  */
 public final class GpuRuntimeMethodTestGpuProbeCache {
 
@@ -43,18 +48,30 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
         this.maxEntryAge = maxEntryAge == null || maxEntryAge.isNegative() || maxEntryAge.isZero() ? null : maxEntryAge;
     }
 
+    /**
+     * Process-local shared cache for examples and short-lived tools.
+     */
     public static GpuRuntimeMethodTestGpuProbeCache shared() {
         return SHARED;
     }
 
+    /**
+     * Creates a cache that also stores entries under the supplied directory.
+     */
     public static GpuRuntimeMethodTestGpuProbeCache persistent(Path directory) {
         return persistent(directory, null);
     }
 
+    /**
+     * Creates a persistent cache with an optional maximum entry age.
+     */
     public static GpuRuntimeMethodTestGpuProbeCache persistent(Path directory, Duration maxEntryAge) {
         return new GpuRuntimeMethodTestGpuProbeCache(Objects.requireNonNull(directory, "directory"), maxEntryAge);
     }
 
+    /**
+     * Returns cached evidence or runs the supplier once and records successful reusable evidence.
+     */
     public GpuRuntimeMethodTestGpuProbeCacheEntry getOrRun(
             GpuRuntimeMethodTestGpuProbeEvidenceKey key,
             Supplier<GpuRuntimeMethodTestGpuProbeExecution> supplier
@@ -94,6 +111,9 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
                 : new GpuRuntimeMethodTestGpuProbeCacheEntry(prior.execution(), true, prior.createdEpochMillis());
     }
 
+    /**
+     * Records an already-executed probe result.
+     */
     public void record(GpuRuntimeMethodTestGpuProbeExecution execution) {
         GpuRuntimeMethodTestGpuProbeExecution value = Objects.requireNonNull(execution, "execution");
         GpuRuntimeMethodTestGpuProbeEvidenceKey key = Objects.requireNonNull(value.evidenceKey(), "execution.evidenceKey");
@@ -105,6 +125,9 @@ public final class GpuRuntimeMethodTestGpuProbeCache {
         writePersistentEntry(key, value.withCacheHit(false), createdEpochMillis);
     }
 
+    /**
+     * Returns cached evidence for the stable key, or {@code null} on miss.
+     */
     public GpuRuntimeMethodTestGpuProbeCacheEntry get(GpuRuntimeMethodTestGpuProbeEvidenceKey key) {
         Objects.requireNonNull(key, "key");
         StoredExecution execution = executions.get(key.stableHash());

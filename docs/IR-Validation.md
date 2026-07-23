@@ -4,6 +4,17 @@
 
 Most users can start without it. Add it when you want CI reports, earlier validation failures, or clearer diagnostics while preparing kernels for future optimizer work.
 
+## Fast Decision Guide
+
+| Situation | Recommended mode |
+| --- | --- |
+| Trying JavaToGpu for the first time | Leave IR validation off |
+| Developing kernels and wanting extra hints | `diagnostic` + `summary` |
+| CI should reject unsafe kernel shapes | `strictSafety` |
+| Compiler/optimizer hardening branch | `strictOptimizer` |
+
+IR validation is read-only. It does not change generated OpenCL or runtime source selection.
+
 ## When To Use It
 
 Use IR validation when you want to:

@@ -16,23 +16,41 @@ public interface GpuBackendCompiledKernel extends AutoCloseable {
 
     GpuKernelDescriptor descriptor();
 
+    /**
+     * Stable compile cache key when the backend has one, otherwise an empty or null value.
+     */
     String cacheKey();
 
+    /**
+     * Compile artifacts and module/source/binary receipts produced for this handle.
+     */
     GpuRuntimeCompileArtifactSnapshot artifactSnapshot();
 
+    /**
+     * Backend family that produced this compiled handle.
+     */
     default GpuBackendTarget backendTarget() {
         return moduleArtifact().backendTarget();
     }
 
+    /**
+     * Backend module artifact represented by this compiled handle.
+     */
     default GpuBackendModuleArtifact moduleArtifact() {
         GpuRuntimeCompileArtifactSnapshot snapshot = artifactSnapshot();
         return snapshot == null ? GpuBackendModuleArtifact.unknown() : snapshot.backendModuleArtifact();
     }
 
+    /**
+     * Short kind string used in diagnostic output.
+     */
     default String compiledKernelKind() {
         return backendTarget().name().toLowerCase(java.util.Locale.ROOT) + "-kernel";
     }
 
+    /**
+     * Stable property map for artifacts and lifecycle events.
+     */
     default Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.compiledKernel" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

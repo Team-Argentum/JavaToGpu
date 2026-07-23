@@ -8,7 +8,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Typed result for one backend kernel invocation.
+ * Typed receipt for one backend kernel invocation.
+ *
+ * <p>Invocation covers native kernel submission and the synchronous readback work promised by the prepared handle.
+ * Backends should report unsupported launch shapes as structured blockers rather than silently changing the launch or
+ * skipping readback.</p>
+ *
+ * @param stageResult portable invocation-stage status, blockers, diagnostics, and failure details
+ * @param preparationResult prepare receipt that produced the invoked handle
+ * @param executionConfig effective launch shape used by the backend, when known
+ * @param bindingSummary portable binding summary used for lifecycle fields
+ * @param readbackRequiredCount number of outputs that were expected to be copied back
+ * @param readbackCompletedCount number of outputs that were actually copied back
  */
 public record GpuBackendInvocationResult(
         GpuBackendStageResult stageResult,
@@ -34,6 +45,9 @@ public record GpuBackendInvocationResult(
                 : stageResult;
     }
 
+    /**
+     * Creates a successful invocation receipt.
+     */
     public static GpuBackendInvocationResult invoked(
             GpuBackendPreparationResult preparationResult,
             GpuExecutionConfig executionConfig,
@@ -59,6 +73,9 @@ public record GpuBackendInvocationResult(
         );
     }
 
+    /**
+     * Creates a fail-closed receipt for adapters that cannot invoke this prepared kernel yet.
+     */
     public static GpuBackendInvocationResult unsupported(
             GpuBackendTarget backendTarget,
             GpuBackendPreparationResult preparationResult,
@@ -81,6 +98,9 @@ public record GpuBackendInvocationResult(
         );
     }
 
+    /**
+     * Creates a receipt for an invocation stage intentionally skipped because preparation did not succeed.
+     */
     public static GpuBackendInvocationResult skipped(
             GpuBackendTarget backendTarget,
             GpuBackendPreparationResult preparationResult,
@@ -103,6 +123,9 @@ public record GpuBackendInvocationResult(
         );
     }
 
+    /**
+     * Creates a receipt for a hard invocation/readback-stage failure.
+     */
     public static GpuBackendInvocationResult failed(
             GpuBackendTarget backendTarget,
             GpuBackendPreparationResult preparationResult,
@@ -127,14 +150,23 @@ public record GpuBackendInvocationResult(
         );
     }
 
+    /**
+     * Returns true when the native invocation stage reached a successful terminal status.
+     */
     public boolean invoked() {
         return stageResult.succeeded();
     }
 
+    /**
+     * Returns true when every required host-visible readback completed.
+     */
     public boolean readbackComplete() {
         return readbackCompletedCount >= readbackRequiredCount;
     }
 
+    /**
+     * Stable property map for artifacts, lifecycle events, and validation summaries.
+     */
     public Map<String, String> artifactFields(String prefix) {
         String normalizedPrefix = prefix == null || prefix.isBlank() ? "runtime.backend.invoke" : prefix.trim();
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();

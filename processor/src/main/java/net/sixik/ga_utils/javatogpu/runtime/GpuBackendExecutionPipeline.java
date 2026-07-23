@@ -8,7 +8,15 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Small backend-neutral runner for the compile -> prepare -> invoke execution slice.
+ * Backend-neutral runner for one compile -> prepare -> invoke execution slice.
+ *
+ * <p>The pipeline separates backend work into three explicit stages so OpenCL, CUDA, and future adapters can share the
+ * same lifecycle events, structured receipts, and fail-closed diagnostics. Backend-specific objects stay inside the
+ * generic compiled/prepared handles while the surrounding reports use portable runtime field names.</p>
+ *
+ * @param <C> backend-specific compiled kernel/module handle
+ * @param <P> backend-specific prepared invocation handle
+ * @param <PLAN> backend-specific execution plan produced before argument binding/preparation
  */
 public final class GpuBackendExecutionPipeline<
         C extends GpuBackendCompiledKernel,
@@ -19,6 +27,9 @@ public final class GpuBackendExecutionPipeline<
     private final GpuBackendKernelPreparer<C, P, PLAN> preparer;
     private final GpuBackendKernelInvoker<P> invoker;
 
+    /**
+     * Creates a pipeline from matching backend-target stage implementations.
+     */
     public GpuBackendExecutionPipeline(
             GpuBackendKernelCompiler<C> compiler,
             GpuBackendKernelPreparer<C, P, PLAN> preparer,
@@ -30,10 +41,16 @@ public final class GpuBackendExecutionPipeline<
         validateBackendTargets(compiler.backendTarget(), preparer.backendTarget(), invoker.backendTarget());
     }
 
+    /**
+     * Backend family handled by every stage in this pipeline.
+     */
     public GpuBackendTarget backendTarget() {
         return compiler.backendTarget();
     }
 
+    /**
+     * Executes the strict pipeline and throws if any stage fails.
+     */
     public GpuBackendExecutionPipelineResult<C, P> execute(
             GpuRuntimeCompileRequest compileRequest,
             GpuBackendLoweringResult loweringResult,
@@ -51,6 +68,9 @@ public final class GpuBackendExecutionPipeline<
         );
     }
 
+    /**
+     * Executes the strict pipeline with lifecycle events and throws if any stage fails.
+     */
     public GpuBackendExecutionPipelineResult<C, P> execute(
             GpuRuntimeCompileRequest compileRequest,
             GpuBackendLoweringResult loweringResult,
@@ -123,6 +143,9 @@ public final class GpuBackendExecutionPipeline<
      * <p>The strict {@link #execute(GpuRuntimeCompileRequest, GpuBackendLoweringResult, GpuBackendModuleArtifact,
      * Object, GpuExecutionConfig)} method keeps throwing exceptions. Use this method when a caller needs a structured
      * journal/report result for backend bring-up, CI diagnostics, or discovery-only backend placeholders.</p>
+     */
+    /**
+     * Executes the pipeline with lifecycle events and converts stage failures into typed receipts.
      */
     public GpuBackendExecutionPipelineResult<C, P> executeSafely(
             GpuRuntimeCompileRequest compileRequest,

@@ -4,6 +4,18 @@ This guide is for library authors who want to add or preview a backend family su
 
 Start small. A backend provider should first be inspectable without opening native drivers, then discover devices, then lower source, and only then expose a production execution pipeline.
 
+## Read This If
+
+Use this page when you are adding or previewing a backend family. If you are only choosing between existing devices/backends, start with [Runtime Guide](Runtime-Guide.md) instead.
+
+The safe adapter path is incremental:
+
+1. Catalog metadata works without native drivers.
+2. Discovery reports devices or clear unavailable diagnostics.
+3. Lowering produces source/artifacts without pretending execution works.
+4. Compile/prepare/invoke/readback stages return shared typed receipts.
+5. Native validation proves the backend on real hardware.
+
 ## Quick Path
 
 | Stage | What you expose | What must be true |

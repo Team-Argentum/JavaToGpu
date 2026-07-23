@@ -244,6 +244,12 @@ class GpuCompilerProcessorTest {
         Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
         assertTrue(Files.exists(launcherSourcePath));
         String launcherSource = Files.readString(launcherSourcePath);
+        assertTrue(launcherSource.contains("Generated GPU launcher for the annotated method."));
+        assertTrue(launcherSource.contains("Generated backend entry-point name."));
+        assertTrue(launcherSource.contains("Runtime descriptor consumed by GpuRuntime and reflection-based launcher helpers."));
+        assertTrue(launcherSource.contains("Optional fallback variant descriptors for the same generated launch ABI."));
+        assertTrue(launcherSource.contains("Selects a standard backend/device for this call, then invokes with compile options."));
+        assertTrue(launcherSource.contains("Allocates the generated output array, invokes one work item, and returns output[0]."));
         assertTrue(launcherSource.contains("public final class Demo_kernel_GpuLauncher"));
         assertTrue(launcherSource.contains("public static final String KERNEL_NAME = \"jtg_kernel\";"));
         assertTrue(launcherSource.contains("public static final String KERNEL_RESOURCE = \"javatogpu/sample/Demo/kernel.cl\";"));
@@ -549,6 +555,7 @@ class GpuCompilerProcessorTest {
         Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
         assertTrue(Files.exists(launcherSourcePath));
         String launcherSource = Files.readString(launcherSourcePath);
+        assertTrue(launcherSource.contains("Metadata describing whether generated return-value convenience helpers are available."));
         assertTrue(launcherSource.contains("public static final boolean RETURN_VALUE_CONVENIENCE_AVAILABLE = false;"));
         assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_STATUS = \"unavailable\";"));
         assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_REASON = \"multiple-read-write-output-arrays\";"));

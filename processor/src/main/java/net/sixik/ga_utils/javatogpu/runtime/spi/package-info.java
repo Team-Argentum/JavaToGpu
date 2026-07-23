@@ -5,5 +5,9 @@
  * extensions. Backend-specific implementation details belong in backend packages such as {@code runtime.opencl} or
  * {@code runtime.cuda}. Planned/unsupported placeholder implementations also live here because they are generic SPI
  * fallbacks rather than a concrete backend implementation.</p>
+ *
+ * <p>Some compatibility SPI interfaces still live in the root {@code runtime} package to avoid breaking existing
+ * imports. Use {@link net.sixik.ga_utils.javatogpu.runtime.validation.GpuRuntimeExtensionPointCatalog} as the current
+ * ServiceLoader map before adding or documenting another extension point.</p>
  */
 package net.sixik.ga_utils.javatogpu.runtime.spi;

@@ -15,6 +15,20 @@ try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
 }
 ```
 
+## Run One Call With Backend/Device Preflight
+
+Use this when you want the generated launcher to select and install the standard backend/device scope for a single call:
+
+```java
+DemoKernel_transform_GpuLauncher.invokeWithStandardBackendAndDevice(
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+        input,
+        output
+);
+```
+
+This is scoped to that invocation. If you already installed a runtime scope, keep using the normal generated launcher overloads.
+
 ## Run With An Explicit Launch Size
 
 Use this when buffer length is not the logical work size:
@@ -27,6 +41,24 @@ GpuRuntime.invoke(
         output
 );
 ```
+
+## Launch Dynamically By Owner Method
+
+Use this in frameworks, examples, or test tools that know the owner class and method name only at runtime:
+
+```java
+GpuGeneratedLauncherInvoker.GeneratedLauncher launcher =
+        GpuGeneratedLauncherInvoker.launcher(DemoKernel.class, "transform");
+
+launcher.invokeWithGlobalWorkSizeAndStandardBackendAndDevice(
+        itemCount,
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+        input,
+        output
+);
+```
+
+Keep the `GeneratedLauncher` handle for repeated calls. It reuses launcher resolution and metadata while still routing through the generated overloads.
 
 ## Return The First Output Value
 
@@ -89,6 +121,8 @@ static float lerp(float a, float b, float t) {
 Use pointer wrappers for helper mutation patterns:
 
 ```java
+import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
+
 @CCode
 static void setValue(FloatPtr ptr) {
     ptr.value = 42.0f;
@@ -100,6 +134,9 @@ static void setValue(FloatPtr ptr) {
 Use address-space pointer views when you need packed binary layouts:
 
 ```java
+import net.sixik.ga_utils.javatogpu.api.GPU;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
+
 GlobalBytePtr root = GPU.global(blob);
 int value = root.add(view.offset + id * 4).asIntPtr().value;
 ```
@@ -136,6 +173,10 @@ if (result.matched()) {
 Create OpenCL image resources through the runtime backend and pass wrappers to the generated kernel:
 
 ```java
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
+
 try (OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend();
      Image2DReadOnly input = backend.createReadOnlyRgbaIntImage(2, 1, pixels);
      Image2DWriteOnly output = backend.createWriteOnlyRgbaFloatImage(2, 1);
