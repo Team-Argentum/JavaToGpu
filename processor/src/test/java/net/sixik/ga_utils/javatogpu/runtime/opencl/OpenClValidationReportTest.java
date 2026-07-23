@@ -1637,14 +1637,19 @@ class OpenClValidationReportTest {
             assertTrue(workflow.contains(":processor:validateOpenClBackendSourcePromotionManifest"));
             assertTrue(workflow.contains(":processor:validateOpenClBackendSourcePromotionActivationGate"));
             assertTrue(workflow.contains("JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA"));
-            assertTrue(workflow.contains("steps.production_promotion_manifest_validation.outcome != 'success'"));
-            assertTrue(workflow.contains("steps.production_promotion_activation_gate.outcome != 'success'"));
+            assertTrue(workflow.contains("JTG_OPENCL_VENDOR_MATRIX_STRICT: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}"));
+            assertTrue(workflow.contains("Evaluate OpenCL lane gates"));
+            assertTrue(workflow.contains("call :require_success \"Promotion manifest validation\" \"%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%\""));
+            assertTrue(workflow.contains("call :require_success \"Controlled activation gate\" \"%PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME%\""));
             assertTrue(workflow.contains(":processor:prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
-            assertTrue(workflow.contains("env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true'"));
+            assertTrue(workflow.contains("if /I \"%JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE%\"==\"true\""));
             assertTrue(workflow.contains("LAUNCH_ADVISORY_DRIFT_OUTCOME%\"==\"failure"));
             assertTrue(workflow.contains("VALIDATION_HISTORY_STAGE_OUTCOME%\"==\"skipped"));
             assertTrue(workflow.contains("VALIDATION_HISTORY_SAVE_OUTCOME%\"==\"skipped"));
-            assertTrue(workflow.contains("steps.launch_advisory_negative_fixture_check.outcome != 'success'"));
+            assertTrue(workflow.contains("call :require_success \"Negative fixture contract\" \"%NEGATIVE_FIXTURE_CHECK_OUTCOME%\""));
+            assertTrue(workflow.contains("call :cascade_skip \"Optimizer-family payload fixture\" \"%OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME%\" \"OpenCL validation\""));
+            assertTrue(workflow.contains("OpenCL vendor lane advisory failure"));
+            assertTrue(workflow.contains("workflow_dispatch remains strict"));
             String buildScript = java.nio.file.Files.readString(findRepositoryFile("processor/build.gradle"));
             String sourceSwitchingDependency = "dependsOn 'openClProductionSourceSwitchingValidationTest'";
             assertEquals(
