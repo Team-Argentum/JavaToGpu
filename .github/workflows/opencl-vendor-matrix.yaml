@@ -451,41 +451,71 @@ jobs:
             call :require_success "Validation report" "%VALIDATION_REPORT_OUTCOME%"
             call :require_outcome "Launch-advisory drift expected negative fixture failure" "%LAUNCH_ADVISORY_DRIFT_OUTCOME%" "failure"
             call :require_success "Compiler-resource drift" "%COMPILER_RESOURCE_DRIFT_OUTCOME%"
-            call :require_success "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%"
+            if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+              call :require_success "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%"
+            ) else (
+              call :cascade_skip "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%" "OpenCL validation"
+            )
             call :require_success "Production explainability summary" "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"
             call :require_success "Source-promotion baseline" "%SOURCE_PROMOTION_BASELINE_OUTCOME%"
             call :require_success "Source-promotion summary" "%SOURCE_PROMOTION_SUMMARY_OUTCOME%"
             call :require_outcome "Validation history stage expected skipped" "%VALIDATION_HISTORY_STAGE_OUTCOME%" "skipped"
             call :require_outcome "Validation history save expected skipped" "%VALIDATION_HISTORY_SAVE_OUTCOME%" "skipped"
-            call :require_success "Negative fixture contract" "%NEGATIVE_FIXTURE_CHECK_OUTCOME%"
+            if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+              call :require_success "Negative fixture contract" "%NEGATIVE_FIXTURE_CHECK_OUTCOME%"
+            ) else (
+              call :cascade_skip "Negative fixture contract" "%NEGATIVE_FIXTURE_CHECK_OUTCOME%" "OpenCL validation"
+            )
           ) else (
             call :require_success "OpenCL validation" "%OPENCL_VALIDATION_OUTCOME%"
-            call :require_success "Optimizer-family payload fixture" "%OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME%"
             call :require_success "Validation report" "%VALIDATION_REPORT_OUTCOME%"
             call :require_success "Launch-advisory drift" "%LAUNCH_ADVISORY_DRIFT_OUTCOME%"
             call :require_success "Compiler-resource drift" "%COMPILER_RESOURCE_DRIFT_OUTCOME%"
             call :require_not_failure "Validation history stage" "%VALIDATION_HISTORY_STAGE_OUTCOME%"
             call :require_not_failure "Validation history save" "%VALIDATION_HISTORY_SAVE_OUTCOME%"
-            call :require_success "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%"
+            if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+              call :require_success "Optimizer-family payload fixture" "%OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME%"
+              call :require_success "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%"
+            ) else (
+              call :cascade_skip "Optimizer-family payload fixture" "%OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%" "OpenCL validation"
+            )
             call :require_success "Production explainability summary" "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"
             call :require_success "Source-promotion summary" "%SOURCE_PROMOTION_SUMMARY_OUTCOME%"
             if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="strict" call :require_success "Source-promotion baseline" "%SOURCE_PROMOTION_BASELINE_OUTCOME%"
             if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="update" call :require_success "Source-promotion baseline" "%SOURCE_PROMOTION_BASELINE_OUTCOME%"
           )
 
-          if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="template" (
-            call :require_success "Promotion manifest template" "%PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME%"
-          )
-          if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="validate" (
-            call :require_success "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%"
-            call :require_success "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%"
-          )
-          if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="activate" (
-            call :require_success "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%"
-            call :require_success "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%"
-            call :require_success "Controlled activation gate" "%PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME%"
-            call :require_success "Activation-token hardware smoke" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME%"
-            call :require_success "Activation-token negative controls" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME%"
+          if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="template" (
+              call :require_success "Promotion manifest template" "%PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME%"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="validate" (
+              call :require_success "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%"
+              call :require_success "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="activate" (
+              call :require_success "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%"
+              call :require_success "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%"
+              call :require_success "Controlled activation gate" "%PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME%"
+              call :require_success "Activation-token hardware smoke" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME%"
+              call :require_success "Activation-token negative controls" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME%"
+            )
+          ) else (
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="template" (
+              call :cascade_skip "Promotion manifest template" "%PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME%" "OpenCL validation"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="validate" (
+              call :cascade_skip "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%" "OpenCL validation"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="activate" (
+              call :cascade_skip "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Controlled activation gate" "%PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Activation-token hardware smoke" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Activation-token negative controls" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME%" "OpenCL validation"
+            )
           )
 
           if "%LANE_FAILED%"=="1" (
@@ -514,5 +544,13 @@ jobs:
           if /I "%~2"=="failure" (
             echo ::error title=OpenCL required gate failed::%~1 outcome was 'failure'; expected success or skipped.
             set "LANE_FAILED=1"
+          )
+          goto :eof
+
+          :cascade_skip
+          if /I "%~2"=="skipped" (
+            echo ::notice title=OpenCL downstream gate skipped::%~1 was skipped because %~3 did not succeed.
+          ) else if /I not "%~2"=="success" (
+            echo ::notice title=OpenCL downstream gate not evaluated::%~1 outcome was '%~2' after %~3 did not succeed.
           )
           goto :eof
