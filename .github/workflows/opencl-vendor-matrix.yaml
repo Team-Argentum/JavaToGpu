@@ -413,7 +413,7 @@ jobs:
             type processor\build\reports\opencl\runtime-launch-advisory-summary.md>>"%GITHUB_STEP_SUMMARY%"
           )
 
-      - name: Evaluate OpenCL lane after artifact capture
+      - name: Evaluate OpenCL lane gates
         if: always()
         shell: cmd
         env:
@@ -519,11 +519,11 @@ jobs:
           )
 
           if "%LANE_FAILED%"=="1" (
-            echo ::error title=OpenCL lane failed::OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% failed after artifact capture. See failed gate lines above and uploaded artifacts.
+            echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed. Artifact bundle has already been uploaded; see required gate errors above.
             exit /b 1
           )
 
-          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane passed after artifact capture.
+          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane gates passed. Artifact bundle has already been uploaded.
           exit /b 0
 
           :require_success
