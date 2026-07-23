@@ -413,6 +413,67 @@ jobs:
             type processor\build\reports\opencl\runtime-launch-advisory-summary.md>>"%GITHUB_STEP_SUMMARY%"
           )
 
+      - name: Print OpenCL validation failure diagnostics
+        if: always() && steps.opencl_validation.outcome != 'success'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Host '::group::OpenCL validation failure diagnostics'
+
+          $reportFiles = @(
+            'processor/build/reports/opencl/bucket-status.properties',
+            'processor/build/reports/opencl/validation-report.md',
+            'processor/build/reports/opencl/workload-summary.properties',
+            'processor/build/reports/opencl/long-running-summary.properties',
+            'processor/build/reports/opencl/runtime-launch-advisory-drift.properties',
+            'processor/build/reports/opencl/runtime-compiler-resource-drift.properties'
+          )
+
+          foreach ($path in $reportFiles) {
+            if (Test-Path -LiteralPath $path) {
+              Write-Host "--- $path ---"
+              Get-Content -LiteralPath $path -TotalCount 220
+            } else {
+              Write-Host "--- $path missing ---"
+            }
+          }
+
+          $testResultsRoot = 'processor/build/test-results'
+          if (Test-Path -LiteralPath $testResultsRoot) {
+            Write-Host "--- failed junit test cases under $testResultsRoot ---"
+            $failedCount = 0
+            Get-ChildItem -LiteralPath $testResultsRoot -Recurse -Filter '*.xml' -ErrorAction SilentlyContinue | ForEach-Object {
+              try {
+                [xml] $document = Get-Content -LiteralPath $_.FullName
+                $cases = @($document.testsuite.testcase)
+                foreach ($case in $cases) {
+                  if ($case.failure -or $case.error) {
+                    $failedCount++
+                    Write-Host ("FAILED {0}.{1} [{2}]" -f $case.classname, $case.name, $_.FullName)
+                    $message = if ($case.failure) { $case.failure.message } else { $case.error.message }
+                    if ($message) {
+                      Write-Host ("  message: {0}" -f $message)
+                    }
+                    $body = if ($case.failure) { $case.failure.InnerText } else { $case.error.InnerText }
+                    if ($body) {
+                      ($body -split "`r?`n" | Select-Object -First 20) | ForEach-Object { Write-Host ("  {0}" -f $_) }
+                    }
+                  }
+                }
+              } catch {
+                Write-Host ("Unable to parse {0}: {1}" -f $_.FullName, $_.Exception.Message)
+              }
+            }
+            if ($failedCount -eq 0) {
+              Write-Host 'No failed junit test cases were found in XML reports.'
+            }
+          } else {
+            Write-Host "--- $testResultsRoot missing ---"
+          }
+
+          Write-Host '::endgroup::'
+
       - name: Evaluate OpenCL lane gates
         if: always()
         shell: cmd
