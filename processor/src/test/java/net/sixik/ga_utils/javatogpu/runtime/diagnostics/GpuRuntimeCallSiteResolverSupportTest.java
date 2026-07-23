@@ -50,8 +50,8 @@ final class GpuRuntimeCallSiteResolverSupportTest {
 
         assertEquals(supportCallSites, rootCallSites);
         assertEquals(1, rootCallSites.size());
-        assertEquals("sample.Owner", rootCallSites.getFirst().callerClassName());
-        assertEquals("kernel(input)", rootCallSites.getFirst().expression());
+        assertEquals("sample.Owner", rootCallSites.get(0).callerClassName());
+        assertEquals("kernel(input)", rootCallSites.get(0).expression());
     }
 
     @Test
