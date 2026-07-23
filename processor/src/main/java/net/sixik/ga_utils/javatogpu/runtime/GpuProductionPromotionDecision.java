@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuProductionPromotionExplainabilityValidation;
+
 import java.util.Objects;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -74,6 +76,7 @@ public record GpuProductionPromotionDecision(
                     && contract.sourceSwitchingEnabled()
                     && contract.allSourceSwitchingEnabled()
                     && contract.allPromotionDecisionsEnabled()
+                    && contract.allPromotionOperatorsAccepted()
                     && contract.allProductionSourceDecisions()
                     && !contract.mutationAllowed()
                     && !contract.mutationEnabled()) {

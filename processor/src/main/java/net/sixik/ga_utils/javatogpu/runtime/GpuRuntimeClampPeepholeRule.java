@@ -1,127 +1,69 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuTypedNode;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
+import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
 /**
- * Detects typed {@code min(max(x, lo), hi)} clamp candidates without rewriting them.
+ * Compatibility facade for the built-in clamp peephole rule.
+ *
+ * @deprecated use {@link net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeClampPeepholeRule}.
  */
+@Deprecated
 public final class GpuRuntimeClampPeepholeRule implements GpuRuntimeIrPeepholeRule {
 
-    public static final String RULE_ID = "clamp";
-    public static final String VERSION = "peephole-rule:clamp-v1";
+    public static final String RULE_ID =
+            net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeClampPeepholeRule.RULE_ID;
+    public static final String VERSION =
+            net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeClampPeepholeRule.VERSION;
+
+    private final net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeClampPeepholeRule delegate =
+            new net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeClampPeepholeRule();
 
     @Override
     public GpuRuntimeIrPeepholeRuleReport analyze(GpuRuntimeIrPeepholeRuleContext context) {
-        int candidates = 0;
-        ArrayList<GpuRuntimeIrPeepholeReplacementPlan> plans = new ArrayList<>();
-        for (IrGpuTypedNode node : context.graph().nodes()) {
-            if (!context.graph().isCall(node, "min")) {
-                continue;
-            }
-            GpuRuntimeIrPeepholeReplacementPlan plan = replacementPlan(context, node);
-            if (plan.complete()) {
-                candidates++;
-            }
-            if (!"not-clamp-shape".equals(plan.firstBlocker())) {
-                plans.add(plan);
-            }
-        }
-        return GpuRuntimeIrPeepholeRuleReport.diagnosticCandidates(
-                this,
-                context.methodBody().name(),
-                candidates,
-                Map.of(
-                        "pattern", "min(max(x,lo),hi)",
-                        "replacementPlan.count", Integer.toString(plans.size()),
-                        "replacementPlan.complete.count", Long.toString(plans.stream().filter(GpuRuntimeIrPeepholeReplacementPlan::complete).count()),
-                        "replacementPlan.partial.count", Long.toString(plans.stream().filter(plan -> !plan.complete()).count()),
-                        "replacementPlan.firstBlocker", plans.stream()
-                                .filter(plan -> !plan.complete())
-                                .map(GpuRuntimeIrPeepholeReplacementPlan::firstBlocker)
-                                .findFirst()
-                                .orElse("none")
-                ),
-                plans
-        );
+        return delegate.analyze(context);
     }
 
     @Override
     public String ruleId() {
-        return RULE_ID;
+        return delegate.ruleId();
     }
 
     @Override
     public String ruleVersion() {
-        return VERSION;
+        return delegate.ruleVersion();
     }
 
     @Override
     public String extensionId() {
-        return "javatogpu.peephole.clamp";
+        return delegate.extensionId();
+    }
+
+    @Override
+    public String extensionVersion() {
+        return delegate.extensionVersion();
+    }
+
+    @Override
+    public Set<GpuExtensionCapability> extensionCapabilities() {
+        return delegate.extensionCapabilities();
+    }
+
+    @Override
+    public GpuExtensionPhase extensionPhase() {
+        return delegate.extensionPhase();
+    }
+
+    @Override
+    public GpuExtensionPermission extensionPermission() {
+        return delegate.extensionPermission();
     }
 
     @Override
     public int extensionOrder() {
-        return 100;
-    }
-
-    private GpuRuntimeIrPeepholeReplacementPlan replacementPlan(
-            GpuRuntimeIrPeepholeRuleContext context,
-            IrGpuTypedNode minNode
-    ) {
-        GpuRuntimeIrTypedNodeGraph graph = context.graph();
-        List<Integer> minArgs = graph.callArguments(minNode);
-        if (minArgs.size() != 2) {
-            return GpuRuntimeIrPeepholeReplacementPlan.blocked(
-                    RULE_ID,
-                    context.methodBody().name(),
-                    minNode.id(),
-                    "clamp",
-                    List.of(minNode.id()),
-                    minArgs,
-                    "min-arguments-incomplete"
-            );
-        }
-        IrGpuTypedNode first = graph.node(minArgs.get(0));
-        IrGpuTypedNode second = graph.node(minArgs.get(1));
-        boolean firstMax = graph.isCall(first, "max");
-        boolean secondMax = graph.isCall(second, "max");
-        if (!firstMax && !secondMax) {
-            return GpuRuntimeIrPeepholeReplacementPlan.blocked(
-                    RULE_ID,
-                    context.methodBody().name(),
-                    minNode.id(),
-                    "clamp",
-                    List.of(minNode.id()),
-                    minArgs,
-                    "not-clamp-shape"
-            );
-        }
-        IrGpuTypedNode maxNode = firstMax ? first : second;
-        int hiId = firstMax ? minArgs.get(1) : minArgs.get(0);
-        List<Integer> maxArgs = graph.callArguments(maxNode);
-        if (maxArgs.size() != 2) {
-            return GpuRuntimeIrPeepholeReplacementPlan.blocked(
-                    RULE_ID,
-                    context.methodBody().name(),
-                    minNode.id(),
-                    "clamp",
-                    List.of(minNode.id(), maxNode.id()),
-                    List.of(hiId),
-                    "max-arguments-incomplete"
-            );
-        }
-        return GpuRuntimeIrPeepholeReplacementPlan.complete(
-                RULE_ID,
-                context.methodBody().name(),
-                minNode.id(),
-                "clamp",
-                List.of(minNode.id(), maxNode.id()),
-                List.of(maxArgs.get(0), maxArgs.get(1), hiId)
-        );
+        return delegate.extensionOrder();
     }
 }

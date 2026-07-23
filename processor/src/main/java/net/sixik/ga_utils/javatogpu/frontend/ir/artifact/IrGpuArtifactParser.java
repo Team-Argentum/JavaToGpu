@@ -64,8 +64,29 @@ public final class IrGpuArtifactParser {
                 properties.getProperty("runtime.optimizationProfile", "off"),
                 parseMethodDeviceConstraints(properties),
                 parseMethodFallbackVariants(properties),
-                parseExtensionParticipationMetadata(properties)
+                parseExtensionParticipationMetadata(properties),
+                parseMethodTestVectors(properties)
         );
+    }
+
+    private static List<IrGpuMethodTestVectorMetadata> parseMethodTestVectors(Properties properties) {
+        int count = parseInt(properties, "methodTestVector.count", 0);
+        ArrayList<IrGpuMethodTestVectorMetadata> testVectors = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String prefix = "methodTestVector." + index + ".";
+            testVectors.add(new IrGpuMethodTestVectorMetadata(
+                    require(properties, prefix + "methodName"),
+                    require(properties, prefix + "emittedName"),
+                    properties.getProperty(prefix + "testId", ""),
+                    parseIndexedValues(properties, prefix + "inputRef"),
+                    parseIndexedValues(properties, prefix + "expectedOutputRef"),
+                    properties.getProperty(prefix + "tolerance", ""),
+                    parseIndexedValues(properties, prefix + "tag"),
+                    Boolean.parseBoolean(properties.getProperty(prefix + "selectionProbe", "true")),
+                    properties.getProperty(prefix + "source", "GPUTest")
+            ));
+        }
+        return List.copyOf(testVectors);
     }
 
     private static List<IrGpuExtensionParticipationMetadata> parseExtensionParticipationMetadata(Properties properties) {

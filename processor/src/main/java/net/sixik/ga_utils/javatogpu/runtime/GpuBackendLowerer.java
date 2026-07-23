@@ -47,5 +47,15 @@ public interface GpuBackendLowerer extends GpuExtension {
         );
     }
 
+    default GpuBackendLoweringResult lowerWithStageResult(GpuRuntimeCompileRequest compileRequest) {
+        GpuBackendSourceSelectionPlan plan = sourceSelectionPlan(compileRequest);
+        GpuBackendModuleArtifact artifact = lower(compileRequest);
+        return GpuBackendLoweringResult.succeeded(
+                artifact,
+                plan,
+                java.util.List.of("Backend lowerer " + extensionId() + " completed the lower stage")
+        );
+    }
+
     GpuBackendModuleArtifact lower(GpuRuntimeCompileRequest compileRequest);
 }

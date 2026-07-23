@@ -1,6 +1,19 @@
 # Runtime Guide
 
-JavaToGpu runtime execution is controlled through `GpuRuntime`.
+For ordinary application code, start with the public `JavaToGpu` facade. The lower-level `GpuRuntime` API remains available for custom backend policies, descriptor-based invocation, generated launcher internals, and extension modules.
+
+## How To Read This Page
+
+| If you need... | Start with |
+| --- | --- |
+| One normal OpenCL scope | Runtime Scopes |
+| CPU fallback or backend/device explanation | Runtime Selection |
+| Explicit global/local sizes | Explicit Launch Sizes |
+| Dynamic generated launcher calls | Generated Launcher Helpers |
+| Compile flags or optimizer review artifacts | Runtime Compile Options |
+| Debugging failures | Runtime Failures And Fallbacks |
+
+Skip the production source-acceptance and activation-token sections unless you are maintaining optimizer/source-promotion gates. They are not required for normal application launches.
 
 ## Runtime Scopes
 
@@ -9,7 +22,7 @@ JavaToGpu runtime execution is controlled through `GpuRuntime`.
 Use this for simple applications, tests, and one-off calls:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
+try (GpuScope ignored = JavaToGpu.useOpenCl()) {
     DemoKernel.transform(input, output);
 }
 ```
@@ -19,11 +32,11 @@ try (GpuRuntimeScope ignored = GpuRuntime.useOpenCl()) {
 Use this for hot paths and repeated calls:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
     DemoKernel.transform(input, output);
 } finally {
-    GpuRuntime.shutdownOpenClSharedCache();
+    JavaToGpu.shutdownOpenClSharedCache();
 }
 ```
 
@@ -34,7 +47,7 @@ The shared cache keeps the OpenCL session and compiled kernels warm across calls
 ### Strict OpenCL
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
 }
 ```
@@ -54,6 +67,446 @@ try (GpuRuntimeScope ignored = GpuRuntime.use(policy)) {
 }
 ```
 
+### Standard Backend Catalog
+
+Use the standard backend catalog when you want JavaToGpu to assemble the normal production backend chain for you:
+
+```java
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .preferStandardBackends()
+        .build();
+
+GpuRuntimeSelectionResult result = GpuRuntime.trySelect(policy);
+System.out.println(result.explanationSummary());
+```
+
+Advanced code that only needs selection/discovery can use the domain entry point instead of importing more root-runtime helpers:
+
+```java
+GpuRuntimeSelectionResult result = GpuRuntimeSelection.trySelect(policy);
+GpuRuntimeBackendDeviceSelection preflight = GpuRuntimeSelection.trySelectStandardBackendAndDevice();
+System.out.println(preflight.toMarkdown());
+```
+
+`net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeSelection` is a compatibility-safe facade over the current runtime selection APIs. It is the preferred package for new selection-focused tools while `GpuRuntime` remains the lower-level runtime compatibility entry point.
+
+`GpuRuntimeBackendCatalog.standard()` is lazy and inspectable: listing entries does not initialize OpenCL or any native
+driver. Today the production catalog contains the OpenCL shared-cache adapter. `standardWithPlannedBackends()` also
+adds CUDA, Vulkan/SPIR-V, and Metal to the same adapter list for diagnostics. CUDA can already contribute device
+inventory through `nvidia-smi` when available, publish `cuda-c`/`ptx` metadata, and expose a non-production
+compile/prepare/invoke skeleton whose real driver stages stay explicit opt-ins until production CUDA is validated.
+When callers pass a `GpuRuntimeLifecycleEventBus` into the shared execution pipeline, the CUDA staged path now emits
+`BACKEND_COMPILATION_*`, `MODULE_LOAD_*`, and `INVOCATION_*` events with portable `runtime.backend.*` fields plus
+CUDA-specific `runtime.cuda.*` receipts for native bridge stages.
+Vulkan/SPIR-V and Metal remain planned
+placeholders with clear diagnostics instead of being silently hidden.
+When CUDA options use `GpuRuntimeCompileOptions.cudaNvcc(...)`, the optional built-in process bridge may invoke
+`nvcc --ptx`, `nvcc --cubin`, or `nvcc --fatbin` to materialize a CUDA module artifact. That still remains a compile-only step; CUDA module loading, argument
+binding, launch, and readback are separate stages. Add `.withCudaDriverModuleLoader()` to opt into the built-in
+CUDA Driver API module loader. Today that bridge can load the driver library, resolve required module-loader symbols,
+call `cuInit`, read `cuDriverGetVersion`, parse PTX `.version` / `.target` metadata, reject known PTX ISA versions that
+need a newer CUDA driver API, reject a PTX target that is newer than the selected CUDA device compute capability, load
+compatible PTX or binary CUBIN/FATBIN payloads with `cuModuleLoadDataEx`, resolve the entry function with `cuModuleGetFunction`, and unload the module
+through `CudaDriverLoadedModule.close()`. PTX compatibility preflight runs only for PTX; CUBIN/FATBIN payloads skip it because they are already backend-native binaries. Missing driver/symbol/PTX/function/version/target cases return structured
+blockers such as `cuda-driver-library-unavailable`, `cuda-driver-symbol-missing:*`,
+`cuda-driver-cuDriverGetVersion-failed:*`, `cuda-driver-ptx-version-unsupported:*`, `cuda-ptx-target-too-new:*`,
+`cuda-driver-cuModuleLoadDataEx-failed:*`, or `cuda-driver-cuModuleGetFunction-failed:*`. Successful module-load receipts
+include `runtime.cuda.loadedModule.driver.version.*`, `runtime.cuda.ptxCompatibility.*`,
+`runtime.cuda.ptxDriverCompatibility.*`, and `runtime.cuda.ptxDeviceCompatibility.*` fields. Add
+`.withCudaDriverArgumentBinder()` to enter the built-in driver argument-binding preflight. It requires a real driver
+module/function handle, prepares an empty `CudaKernelArgumentFrame` for zero-argument kernels, and receives shallow-copied
+Java invocation values through `CudaExecutionPlan`. Successful preflight updates the portable
+`runtime.backend.prepare.binding.*` counts plus CUDA-specific `runtime.cuda.argumentBinding.*`,
+`runtime.cuda.argumentFrame.*`, and `runtime.cuda.executionPlan.*` receipt fields. Blocked preflight reports
+`cuda-driver-argument-values-missing` when no payload exists, `cuda-driver-argument-count-mismatch` when descriptor and
+payload disagree, `cuda-driver-buffer-binding-missing` / `cuda-driver-scalar-value-binding-missing` when no invocation
+payload exists, or `cuda-driver-local-binding-missing` when a `LOCAL` payload is absent. The current native binding slice
+supports non-empty primitive array `READ_ONLY` / `READ_WRITE` buffers
+(`byte[]`, `short[]`, `char[]`, `int[]`, `long[]`, `float[]`, `double[]`), GPU vector array buffers,
+`@GPUStruct[]` buffers, plus
+primitive scalar `VALUE` arguments (`byte`, `short`, `char`, `int`, `long`, `float`, `double`, `boolean`, and registered
+scalar aliases). For buffers it resolves `cuMemAlloc_v2`, `cuMemcpyHtoD_v2`, and `cuMemFree_v2`, uploads host values,
+packs vector arrays using the declared vector storage width, packs struct arrays and `@GPUStruct` `VALUE` arguments with
+the same primitive/vector/nested struct field layout as the OpenCL ABI slice, builds the host-side kernel parameter table with
+device-pointer and value slots, records readback-required counts for `READ_WRITE` outputs plus scalar-slot
+receipts, and frees device allocations/native argument slots when the prepared
+argument frame closes. Primitive array and local `@GPUStruct[]` `LOCAL` arguments are mapped to CUDA dynamic shared memory and contribute
+`runtime.cuda.argumentFrame.localSharedMemory.*` layout receipts. One `LOCAL` is omitted from the kernel parameter table.
+When multiple `LOCAL` parameters exist, the CUDA lowerer emits hidden unsigned byte-offset parameters after visible
+non-`LOCAL` parameters, and the driver binder appends matching offset slots after normal device-pointer/scalar slots.
+Launch receives the total layout size as `sharedMemoryBytes`. Add `.withCudaDriverKernelLauncher()` to enter the
+built-in Driver API launcher after native argument binding. It resolves `cuLaunchKernel`, requires a real
+`CudaDriverLoadedModule`, a prepared argument frame, and an explicit `GpuExecutionConfig`, then derives CUDA grid/block
+dimensions from the portable global/local work shape and submits the kernel parameter table. The driver launcher is
+fail-closed for launch shape: local size must be explicit, each global dimension must be divisible by the matching local
+dimension, block item count must fit the Driver API/device limit, and oversized dynamic shared memory is reported as an
+unsupported blocker instead of an exception. A successful launcher emits `runtime.cuda.kernelLaunch.*`, including
+`launchShape.*` and shared-memory byte-size fields, plus portable `runtime.backend.invoke.*` launch-shape fields. Add
+`.withCudaDriverReadback()` to enter the built-in Driver API readback bridge. It resolves `cuMemcpyDtoH_v2`, copies
+`READ_WRITE` primitive/vector/struct array device allocations back into the original Java arrays, marks allocation readback receipts, and
+updates `runtime.cuda.readback.*` plus portable `runtime.backend.invoke.readback.*` counts. Built-in production CUDA
+driver execution remains unavailable until broader image/sampler coverage, cross-device validation,
+and explicit production activation policy are in place.
+The staged CUDA binder/readback path accepts full Java arrays or explicit `GpuMemorySlice.of(array, offset, length)`
+views for contiguous primitive, vector, and `@GPUStruct[]` buffers. Slice uploads allocate/copy only the selected element
+range, and readback writes results back into the same host offset while preserving surrounding array elements.
+For explicit hardware validation of this non-production staged path, run:
+
+```powershell
+.\gradlew.bat :processor:integrationCudaSmokeTest --console=plain
+```
+
+Use explicit per-format lanes when validating the PTX-vs-binary module paths independently:
+
+```powershell
+.\gradlew.bat :processor:integrationCudaPtxSmokeTest --console=plain
+.\gradlew.bat :processor:integrationCudaCubinSmokeTest --console=plain
+.\gradlew.bat :processor:integrationCudaFatbinSmokeTest --console=plain
+```
+
+The binary smoke summaries include scenario-level evidence counters. For example,
+`evidence.scenario.struct-value.realDriver.count=1` and `evidence.scenario.local-struct.realDriver.count=1` prove that
+the staged CUDA Driver API path actually launched and read back kernels that use an `@GPUStruct` `VALUE` parameter and
+local `@GPUStruct[]` shared memory, rather than relying only on generic lane success.
+
+That task discovers a CUDA device through `nvidia-smi`, compiles inline CUDA-C with `nvcc`, loads PTX/CUBIN/FATBIN through the CUDA
+Driver API, binds arguments, launches kernels, and reads back outputs. The current smoke coverage includes primitive
+buffers plus scalar `VALUE`, `GpuMemorySlice` primitive subranges, `Float2[]` buffers, simple `@GPUStruct[]` buffers,
+scalar `@GPUStruct` `VALUE` parameters, multi-`LOCAL` dynamic shared-memory offsets, local `@GPUStruct[]` shared memory,
+and launch-shape artifact checks. It skips when CUDA tooling/driver state is unavailable unless `JTG_CUDA_SMOKE_REQUIRED=true` is set. Use
+`JTG_CUDA_SMOKE_ARCH=compute_86`, `JTG_CUDA_NVCC=C:\path\to\nvcc.exe`, or `JTG_CUDA_NVCC_OUTPUT_FORMAT=ptx|cubin|fatbin`
+to pin the compiler target, compiler path, or requested nvcc output family.
+The default task writes and validates `processor/build/reports/cuda/integration-cuda-smoke-summary.properties` after every
+run, including `status`, test counts, `executed`, `realDriverExecutionEvidence`, `realDriverExecutionEvidence.rich`,
+`evidence.*` counters, `nvcc.outputFormat`, and structured blockers such as `cuda-nvcc-host-compiler-missing:cl.exe`.
+The per-format lanes write sibling summary files named `integration-cuda-ptx-smoke-summary.properties`,
+`integration-cuda-cubin-smoke-summary.properties`, and `integration-cuda-fatbin-smoke-summary.properties`. A passed smoke
+summary must include rich real-driver evidence for every executed test; otherwise the summary gate fails the build.
+On Windows, make sure the Visual C++ host compiler (`cl.exe`) is on `PATH` before expecting `nvcc` to emit PTX; missing
+`cl.exe` is reported as `cuda-nvcc-host-compiler-missing:cl.exe` and skipped by default. Run the task from a Visual
+Studio Developer Command Prompt or configure a CUDA-supported MSVC toolchain.
+If `nvcc` emits a PTX ISA newer than the installed CUDA driver can load, the same smoke also skips by default with a
+structured blocker such as `cuda-driver-ptx-version-unsupported:ptx-9.3:driver-13.2:requires-13.3`. This can happen even
+when the selected `compute_XX` target is old because PTX ISA version follows the CUDA toolkit frontend. Use a matching
+driver/toolkit pair, set `JTG_CUDA_NVCC` to an older compatible toolkit, or request `cubin`/`fatbin` output for the
+staged binary module path.
+`cubin` and `fatbin` are recognized canonical module formats. The staged CUDA loader passes their binary payloads into
+`cuModuleLoadDataEx` and skips PTX ISA compatibility preflight for those formats. The binary lanes are the preferred way
+to validate execution when PTX ISA is newer than the installed driver API; production CUDA execution still requires
+promotion policy and broader coverage before it can be treated as supported.
+
+Once the per-format summaries exist, run the production-readiness boundary gate:
+
+```powershell
+.\gradlew.bat :processor:validateCudaProductionReadiness --console=plain
+```
+
+The task writes `processor/build/reports/cuda/production-readiness.properties`. `review-ready` means the staged CUBIN/FATBIN
+execution evidence is complete while production CUDA remains disabled by policy; `production-ready` is reserved for a future
+activation path, and `blocked` means smoke evidence or metadata contracts regressed.
+
+When changing CUDA launch sizing or dynamic shared-memory logic, run the hardware-free launch contract gate:
+
+```powershell
+.\gradlew.bat :processor:validateCudaLaunchContract --console=plain
+```
+
+This gate uses synthetic Driver API handles, not a real CUDA driver. It proves that valid 1D/3D launch shapes and dynamic
+shared memory are accepted while auto-local, non-divisible global/local shapes, oversized blocks, and shared-memory limit
+violations stay fail-closed with stable `cuda-driver-launch-*` blockers.
+
+CUDA image/sampler arguments have a separate fail-closed contract:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerContract --console=plain
+```
+
+That gate recognizes the existing Java image and sampler wrapper types but expects unsupported CUDA binder receipts with
+stable `cuda-driver-image-argument-unsupported:*` / `cuda-driver-sampler-argument-unsupported:*` blockers. This is not
+production image/sampler support; it is the guardrail that prevents accidental struct/scalar binding while the CUDA
+texture/surface/sampler ABI is still pending. The same gate records a hardware-free runtime binding preflight plan:
+current synthetic cases report `runtimeBindingPlanEntries=6`, `runtimeBindingPlanPlannedSlots=12`, and
+`runtimeBindingPlanActiveSlots=0`, proving planned texture/surface/sampler slots are visible while actual runtime binding
+remains disabled.
+
+The planned CUDA image/sampler ABI can be checked separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerAbiPlan --console=plain
+```
+
+This gate is also hardware-free. It fixes the future mapping for Java image wrappers to `CUtexObject` / `CUsurfObject`
+carriers and `Sampler` state to `CUDA_TEXTURE_DESC`, reports current source-preview coverage (`sourcePreviewEnabled=2`,
+`sourcePreviewFolded=1`, `sourcePreviewPending=14`, `sourcePreviewKernelParameterSlots=6`,
+`sourcePreviewMetadataSlots=4`), records the planned runtime slot shape (`plannedRuntimeKernelParameterSlots=44`,
+`plannedRuntimeMetadataSlots=28`), and keeps active runtime binding at `runtimeBindingEnabled=0` /
+`runtimeBindingKernelParameterSlots=0` until the real implementation and real-device evidence exist.
+
+The Driver API object-creation boundary has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerObjectCreationContract --console=plain
+```
+
+This resolves the planned texture/surface object symbols through synthetic Driver API handles and must report
+`objectCreationEnabled=false`, `objectOwnershipBoundary=prepared`, `activeObjectCount=0`, `requiredDriverSymbols=13`,
+`resolvedDriverSymbols=13`, and `missingDriverSymbols=0`. The ownership path is ready to close future texture/surface
+handles, but this gate is still symbol/preflight only; runtime binding does not call `cuTexObjectCreate`,
+`cuSurfObjectCreate`, or their destroy functions during normal execution.
+
+The CUDA descriptor boundary is checked separately:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerDescriptorContract --console=plain
+```
+
+This gate fixes the planned resource/texture descriptor vocabulary without allocating native descriptor structs. It must
+report `resourceDescriptors=16`, `textureDescriptors=9`, `descriptorBuildEnabled=false`,
+`nativeDescriptorAllocationEnabled=false`, `activeDescriptorCount=0`, and `nativeLayoutPending=17`. The sampler state is
+currently a planned default (`nearest-clamp-to-edge` with unnormalized coordinates) until Java-side sampler metadata is
+available for CUDA.
+
+The planned native descriptor layout has a separate preview-only check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorLayout --console=plain
+```
+
+This gate records the logical `CUDA_RESOURCE_DESC` / `CUDA_TEXTURE_DESC` field shape before native memory work exists. It
+must report `resourceLayouts=16`, `resourceLayoutFields=35`, `textureLayouts=9`, `textureLayoutFields=54`,
+`nativeLayoutBuildEnabled=false`, `nativeDescriptorAllocationEnabled=false`, and `activeNativeDescriptorCount=0`. It does
+not allocate descriptor memory, encode CUDA SDK struct bytes, call texture/surface object creation, or enable runtime
+image/sampler binding.
+
+Java-side descriptor build planning has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerDescriptorBuildPlan --console=plain
+```
+
+This gate validates the invocation wrapper data that a future descriptor builder will need. It must report
+`caseReady=7/7`, `planReady=4`, `planBlocked=3`, `entries=9`, `resourceDescriptorPayloads=6`,
+`textureDescriptorPayloads=7`, `activeDescriptorPayloads=0`, and `activeNativeDescriptors=0`. The intentionally blocked
+cases pin stable diagnostics for missing image handles, closed samplers, and missing 2D height metadata.
+
+The Java-only descriptor payload model has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerDescriptorPayloadModel --console=plain
+```
+
+This gate turns ready descriptor build plans into logical Java payload objects for future `CUDA_RESOURCE_DESC` /
+`CUDA_TEXTURE_DESC` encoders. It must report `caseReady=3/3`, `modelReady=1`, `modelBlocked=2`, `entries=19`,
+`resourcePayloads=16`, `texturePayloads=9`, `samplerPayloads=1`, and `activeNativeDescriptors=0`. Blocked preflight
+cases stay blocked with stable missing-handle/closed-sampler diagnostics. Native allocation, native struct encoding,
+texture/surface object creation, and runtime image/sampler binding remain disabled.
+
+The planned native descriptor field encoding shape has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorEncodingPlan --console=plain
+```
+
+This gate records field-write intent only. It maps ready Java payloads to logical `CUDA_RESOURCE_DESC` /
+`CUDA_TEXTURE_DESC` field paths such as `resType`, `res.array.hArray`, `res.linear.devPtr`, `addressMode[0]`,
+`filterMode`, `flags`, and `readMode`. It must report `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `entries=19`,
+`resourceFieldWrites=35`, `textureFieldWrites=54`, `fieldWrites=89`, `nativeWriteEnabledCount=0`,
+`sdkStructByteEncodingEnabledCount=0`, and `activeNativeDescriptors=0`. It still writes no native memory and does not
+encode CUDA SDK struct bytes.
+
+The native descriptor allocation/ownership preflight has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorAllocationPreflight --console=plain
+```
+
+This gate records allocation, ownership, cleanup, and rollback intent below descriptor field encoding. It must report
+`caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`, `preflightBlocked=3`, `entries=19`,
+`resourceDescriptorAllocations=16`, `textureDescriptorAllocations=9`, `plannedNativeDescriptors=25`,
+`allocatedNativeDescriptors=0`, `nativeDescriptorOwnershipPlanned=25`, `cleanupPlanned=25`, `rollbackPlanned=25`,
+`allocationEnabledCount=0`, and `activeNativeDescriptors=0`. It still allocates no native descriptor memory, encodes no
+CUDA SDK struct bytes, creates no texture/surface objects, and binds no runtime image/sampler handles.
+
+The native descriptor allocation transaction plan has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorAllocationTransactionPlan --console=plain
+```
+
+This gate turns allocation intent into Java-side owner skeletons and deterministic cleanup/rollback order only. It must
+report `caseReady=3/3`, `preflightReady=0`, `preflightBlocked=3`, `transactionReady=0`, `transactionBlocked=3`,
+`entries=19`, `descriptorOwners=25`, `resourceDescriptorOwners=16`, `textureDescriptorOwners=9`,
+`activeDescriptorOwners=0`, `nativeAddressesPresent=0`, `allocationEnabledCount=0`, `cleanupPlanned=25`,
+`rollbackPlanned=25`, and `activeNativeDescriptors=0`. It still applies no native allocation, cleanup, rollback, SDK
+struct byte encoding, object creation, or runtime binding.
+
+The native descriptor field-write transaction plan has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeDescriptorEncodingTransactionPlan --console=plain
+```
+
+This gate maps logical field writes to planned descriptor owner slots only. It must report `caseReady=3/3`,
+`encodingPlanReady=1`, `encodingPlanBlocked=2`, `allocationTransactionReady=0`, `allocationTransactionBlocked=3`,
+`transactionReady=0`, `transactionBlocked=3`, `entries=19`, `descriptorWrites=25`,
+`resourceDescriptorWrites=16`, `textureDescriptorWrites=9`, `resourceFieldWrites=35`, `textureFieldWrites=54`,
+`fieldWrites=89`, `ownersPresent=25`, `ownersActive=0`, `nativeAddressesPresent=0`,
+`nativeWriteEnabledCount=0`, `sdkStructByteEncodingEnabledCount=0`, and `activeNativeDescriptors=0`. It still writes
+no native memory, encodes no SDK struct bytes, creates no texture/surface objects, and binds no runtime image/sampler
+handles.
+
+The planned texture/surface object request shape has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerObjectCreationRequestPlan --console=plain
+```
+
+This gate records request intent above descriptor encoding only. It must report `caseReady=3/3`, `planReady=1`,
+`planBlocked=2`, `entries=19`, `objectRequests=16`, `textureObjectRequests=8`, `surfaceObjectRequests=8`,
+`foldedSamplers=1`, `objectCreationCallEnabledCount=0`, and `activeObjects=0`. Blocked descriptor plans keep stable
+blockers and produce zero object requests. Runtime image/sampler binding still does not call `cuTexObjectCreate` or
+`cuSurfObjectCreate`.
+
+The native object-preparation preflight has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerNativeObjectPreparationPreflight --console=plain
+```
+
+This gate records the native prerequisites below request planning and above real Driver API object creation. It must
+report `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`, `preflightBlocked=3`, `entries=19`,
+`objectPreparations=16`, `textureObjectPreparations=8`, `surfaceObjectPreparations=8`, `foldedSamplers=1`,
+`resourceDescriptorsRequired=16`, `resourceDescriptorsAvailable=0`, `resourceDescriptorOwnersPresent=16`,
+`resourceDescriptorWritesPlanned=16`, `textureDescriptorsRequired=8`, `textureDescriptorsAvailable=0`,
+`textureDescriptorOwnersPresent=8`, `textureDescriptorWritesPlanned=8`, `resourceDescriptorNativeAddressesPresent=0`,
+`textureDescriptorNativeAddressesPresent=0`, `createFunctionsAvailable=16`, `destroyFunctionsAvailable=16`,
+`objectHandlesAvailable=0`, and `activeObjects=0`. It still allocates no native descriptor memory and calls no object
+creation functions.
+
+The planned runtime object binding shape has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerRuntimeObjectBindingPlan --console=plain
+```
+
+This gate connects planned future `CUtexObject` / `CUsurfObject` handles to kernel parameter slots only. It must report
+`caseReady=3/3`, `planReady=1`, `planBlocked=2`, `entries=19`, `objectBindings=16`, `textureObjectBindings=8`,
+`surfaceObjectBindings=8`, `foldedSamplers=1`, `plannedObjectKernelParameterSlots=16`,
+`plannedMetadataKernelParameterSlots=28`, `plannedKernelParameterSlots=44`, `runtimeBindingKernelParameterSlots=0`,
+`objectCreationCallEnabledCount=0`, and `activeObjects=0`. Runtime binding still passes no texture/surface object
+handles to CUDA kernels.
+
+The runtime object-binding transaction preflight has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerRuntimeObjectBindingTransactionPreflight --console=plain
+```
+
+This gate verifies the final prerequisites before any planned `CUtexObject` / `CUsurfObject` slot can become a real
+kernel-argument write. It must report `caseReady=3/3`, `planReady=1`, `planBlocked=2`, `preflightReady=0`,
+`preflightBlocked=3`, `entries=19`, `objectBindingTransactions=16`, `textureObjectTransactions=8`,
+`surfaceObjectTransactions=8`, `objectHandlesRequired=16`, `objectHandlesAvailable=0`, `nativeDescriptorsAvailable=0`,
+`resourceDescriptorsRequired=16`, `resourceDescriptorOwnersPresent=16`, `resourceDescriptorNativeAddressesPresent=0`,
+`resourceDescriptorWritesPlanned=16`, `resourceDescriptorNativeWritesEnabled=0`, `textureDescriptorsRequired=8`,
+`textureDescriptorOwnersPresent=8`, `textureDescriptorNativeAddressesPresent=0`, `textureDescriptorWritesPlanned=8`,
+`textureDescriptorNativeWritesEnabled=0`, `transactionApplyEnabledCount=0`, and `kernelParameterWriteEnabledCount=0`.
+The expected state is blocked until native descriptor addresses/writes, object handles, ownership, and kernel parameter
+writes exist.
+
+The top-level image/sampler fail-closed contract has its own hardware-free check:
+
+```powershell
+.\gradlew.bat :processor:validateCudaImageSamplerFailClosedContract --console=plain
+```
+
+This gate aggregates the staged image/sampler reports and proves the whole boundary is still closed. It must report
+`componentReady=15/15`, `plannedNativeDescriptors=25`, `plannedObjectRequests=16`,
+`plannedRuntimeKernelParameterSlots=44`, `nativeMutationCount=0`, `runtimeBindingKernelParameterSlots=0`,
+`objectCreationCallEnabledCount=0`, `nativeDescriptorsAvailable=0`, `nativeDescriptorAddressesPresent=0`,
+`nativeDescriptorWritesEnabled=0`, `objectHandlesAvailable=0`, `activeNativeDescriptors=0`, and `activeObjects=0`.
+If this gate fails, do not treat CUDA image/sampler support as production-safe.
+
+CUDA source preview now has a 2D texture/surface slice: `Image2DReadOnly` lowers to `cudaTextureObject_t`,
+`Image2DWriteOnly` lowers to `cudaSurfaceObject_t`, `read_imagef/i/ui` lowers to `tex2D<T>`, `write_imagef/i/ui`
+lowers to `surf2Dwrite(...)`, `Sampler` is folded out of the kernel signature as planned descriptor state, and
+`get_image_width/height` lower to explicit metadata parameters. Non-2D image shapes and unsupported image metadata still
+fail closed with structured blockers such as `cuda-image-sampler-source-lowering-pending:*`,
+`cuda-image-write-source-lowering-pending:*`, or `cuda-image-metadata-source-lowering-pending:*`.
+CUDA inventory exposes driver, memory, CUDA runtime version, and compute capability through the same artifact/lifecycle
+field vocabulary; tooling can read selected-device fields such as `runtime.device.cuda.runtimeVersion` and
+`runtime.device.cuda.computeCapability` or per-device fields such as `deviceDiscovery.device.0.cuda.computeCapability`.
+
+When you want one scope that selects both the backend and the device, use `GpuRuntime.useStandardBackendAndDevice(...)`:
+
+```java
+try (GpuRuntimeScope ignored = GpuRuntime.useStandardBackendAndDevice(
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA")
+)) {
+    DemoKernel.transform(input, output);
+}
+```
+
+Generated launchers also expose scoped helpers when you want the generated call itself to open the backend+device scope:
+
+```java
+DemoKernel_transform_GpuLauncher.invokeWithStandardBackendAndDevice(
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input,
+        output
+);
+
+DemoKernel_transform_GpuLauncher.invokeWith3DWorkSizeAndStandardBackendAndDevice(
+        width,
+        height,
+        depth,
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input,
+        output
+);
+```
+
+The reflection-style helper has the same shape when you do not want to reference the generated launcher class directly:
+
+```java
+GpuGeneratedLauncherInvoker.invokeWithStandardBackendAndDevice(
+        DemoKernel.class,
+        "transform",
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input,
+        output
+);
+```
+
+If you prefer the normal `invokeWithCompileOptions(...)` shape, opt in through the compile options instead:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .preferDeviceVendor("NVIDIA")
+        .withStandardBackendDevicePreflight();
+
+DemoKernel_transform_GpuLauncher.invokeWithCompileOptions(options, input, output);
+```
+
+This profile only opens the standard backend+device preflight when no backend is already installed. Existing
+`GpuRuntime.useOpenCl...`, custom backend scopes, and default launcher calls are not overridden, so applications avoid
+surprise startup device scans unless they explicitly request them.
+The raw property form is `runtime.backendDevicePreflight=standard`; the only valid values are `disabled` and
+`standard`, and unknown values are treated as disabled with a `runtime-backend-device-preflight-mode-invalid` blocker.
+When automatic preflight runs, ServiceLoader lifecycle services receive `BACKEND_DEVICE_PREFLIGHT_STARTED` and
+`BACKEND_DEVICE_PREFLIGHT_COMPLETED` events around the facade scope. The same lifecycle bus is passed into backend
+selection and device discovery, so a trace service can show the path from launcher call to selected backend/device
+before backend compilation starts. These facade events include portable fields such as `runtime.kernel.name`,
+`runtime.kernel.resource`, `runtime.backend.target`, `runtime.compile.optimizationProfile`,
+`runtime.backendDevicePreflight.mode`, `runtime.work.globalShape`, `runtime.status`, and, on failures,
+`runtime.failure.type` / `runtime.failure.message`.
+
+For diagnostics without installing anything, call `GpuRuntime.trySelectStandardBackendAndDevice(...)` first and print
+`selection.toMarkdown()` when `selection.matched()` is false. `GpuRuntime.use(selection)` / `installSelectedBackend()`
+passes the selected discovery result into device-aware runtime backends before installing them. OpenCL uses that
+preselected device for its first native session and compile provenance, then still performs final per-method validation
+before launching a kernel.
+
 ### Capability Precheck
 
 ```java
@@ -72,6 +525,603 @@ try (GpuRuntimeScope ignored = result.install()) {
     DemoKernel.transform(input, output);
 }
 ```
+
+### Backend Target Controls
+
+Use backend target controls when you want deterministic startup behavior instead of "try whatever works":
+
+```java
+GpuRuntimeBackendPolicy openClOnly = GpuRuntimeBackendPolicy.builder()
+        .forceBackendTarget(GpuBackendTarget.OPENCL)
+        .preferStandardBackends()
+        .build();
+
+GpuRuntimeSelectionResult result = GpuRuntime.trySelect(openClOnly);
+System.out.println(result.explanation().toMarkdown());
+```
+
+`forceBackendTarget(...)` is an alias for `requireBackendTarget(...)`. `excludeBackendTarget(...)` rejects a backend
+family while still allowing later fallback candidates. Both controls participate in `failureSummary()`,
+`explanationSummary()`, `candidateDecisions()`, and `artifactFields(...)`, so applications can explain why CUDA,
+OpenCL, Vulkan/SPIR-V, Metal, or a custom backend was selected or rejected.
+
+### Device Selection Controls
+
+Use strict device overrides when the application must run on one specific device family:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withDeviceOverride(GpuRuntimeDeviceOverride.byVendor("NVIDIA"));
+```
+
+Use device preferences when you want deterministic ranking without forcing a single device. Preferred values add score;
+excluded values reject matching candidates before OpenCL creates the runtime context:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .preferDeviceVendor("NVIDIA")
+        .preferDeviceClass(GpuDeviceClassTarget.DGPU)
+        .excludeIntegratedAndCpuDevices();
+```
+
+Available helpers include `preferDeviceId(...)`, `preferDeviceVendor(...)`, `preferDeviceLabel(...)`,
+`preferDeviceClass(...)`, `excludeDeviceId(...)`, `excludeDeviceVendor(...)`, `excludeDeviceLabel(...)`,
+`excludeDeviceClass(...)`, `excludeCpuDevices()`, `excludeIntegratedGpuDevices()`, and
+`excludeIntegratedAndCpuDevices()`. These controls feed the same device-selection artifact fields as the built-in
+OpenCL self-tests, so the selected device, rejected candidates, score adjustments, and first blocker stay auditable.
+Compile dumps also include `deviceOverride` and `devicePreference` in `compile-provenance.properties`, making the
+selection intent visible beside backend target, compile args, optimization profile, and selected device facts.
+
+Preview the OpenCL device decision without compiling or invoking a kernel:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .preferDeviceClass(GpuDeviceClassTarget.DGPU)
+        .excludeCpuDevices();
+
+GpuRuntimeDeviceDiscoveryResult discovery = GpuRuntimeDeviceDiscovery.discoverOpenCl(options);
+System.out.println(discovery.toMarkdown());
+
+GpuRuntimeDeviceDiscoveryCatalog catalog = GpuRuntimeDeviceDiscovery.discoverStandardBackends(options);
+System.out.println(catalog.toMarkdown());
+
+GpuRuntimeSelectionResult backendSelection = GpuRuntime.trySelectStandardBackends();
+System.out.println(backendSelection.explainWithDeviceDiscovery(catalog).toMarkdown());
+```
+
+`GpuRuntimeDeviceDiscoveryResult` is fail-soft: it carries `discoveryAvailable=false`, `firstBlocker`, and diagnostics
+when OpenCL cannot be queried, and otherwise includes discovered device profiles plus the same ranked device-selection
+evidence used by runtime compile artifacts. The markdown and artifact fields also summarize native platform groups and
+runtime self-test state, so local diagnostics can distinguish "which OpenCL platform?", "which device?", and "were
+self-tests disabled, missing, accepted, or failed?" without opening raw artifacts.
+`GpuRuntimeDeviceDiscoveryCatalog` wraps multiple backend discovery states. Today it contains real OpenCL discovery plus
+explicit planned/unavailable CUDA, Vulkan/SPIR-V, and Metal entries, so tools can render one inventory even before all
+backend adapters exist.
+`GpuRuntimeBackendDeviceSelectionExplanation` is the combined surface for CLIs and support logs: it links backend
+candidate decisions with the discovery catalog and reports whether the selected backend and selected device evidence
+agree.
+
+### Method Test-Vector Metadata Preview
+
+`@GPUTest` is the first authoring contract for method-specific backend/device probes. It records stable fixture
+references in the generated `IrGpu` manifest so runtime tooling can preflight fixtures, compare a CPU/reference path,
+and optionally validate the same kernel on candidate devices without users writing separate probe methods.
+
+For a beginner-friendly walkthrough with copyable numeric and `@GPUStruct[]` examples, start with
+[Method Tests](Method-Tests.md). This section focuses on the lower-level runtime API surface.
+
+```java
+@GPU
+@GPUTest(
+        id = "selection-smoke",
+        inputs = {"fixtures/selection-smoke.inputs.json"},
+        expectedOutputs = {"fixtures/selection-smoke.outputs.json"},
+        tolerance = "abs=1e-5,rel=1e-4",
+        tags = {"selection", "smoke"}
+)
+void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+    int id = GPU.get_global_id(0);
+    output[id] = input[id] * 2.0f;
+}
+```
+
+The generated `.irgpu.properties` file stores this as `methodTestVector.*` metadata with the method name, emitted name,
+case id, input refs, expected-output refs, tolerance, tags, and `selectionProbe` flag. Old manifests parse with an empty
+test-vector list, so this metadata is safe to keep even when applications skip the optional runtime probe executor.
+
+At runtime, inspect the generated metadata without executing the kernel:
+
+```java
+GpuRuntimeMethodTestProbePlan plan = GpuRuntimeMethodTestProbes.plan(MyKernel_GpuLauncher.KERNEL_DESCRIPTOR);
+GpuRuntimeMethodTestFixtureReadiness readiness = GpuRuntimeMethodTestProbes.fixtureReadiness(plan);
+GpuRuntimeMethodTestFixtureValueBindingPlan bindings = GpuRuntimeMethodTestProbes.fixtureValueBindings(
+        MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+        plan,
+        MyKernel.class.getClassLoader()
+);
+GpuRuntimeMethodTestInvocationMaterializationPlan materialization =
+        GpuRuntimeMethodTestProbes.fixtureInvocationMaterialization(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                bindings
+        );
+GpuRuntimeMethodTestReferenceComparisonPlan referenceComparison =
+        GpuRuntimeMethodTestProbes.compareWithReference(
+                materialization,
+                plan,
+                invocationArguments -> MyKernelReference.kernel(
+                        (float[]) invocationArguments[0],
+                        (float[]) invocationArguments[1]
+                )
+        );
+GpuRuntimeMethodTestGpuProbePlan gpuProbe =
+        GpuRuntimeMethodTestProbes.executeGpuProbe(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                materialization,
+                plan,
+                GpuRuntimeMethodTestGpuProbeOptions.cached()
+        );
+
+System.out.println(plan.toMarkdown());
+System.out.println(readiness.toMarkdown());
+System.out.println(bindings.toMarkdown());
+System.out.println(materialization.toMarkdown());
+System.out.println(referenceComparison.toMarkdown());
+System.out.println(gpuProbe.toMarkdown());
+System.out.println(plan.artifactFields("methodTests"));
+System.out.println(readiness.artifactFields("methodTestFixtures"));
+System.out.println(bindings.artifactFields("methodTestValueBindings"));
+System.out.println(materialization.artifactFields("methodTestInvocations"));
+System.out.println(referenceComparison.artifactFields("methodTestReferenceComparisons"));
+System.out.println(gpuProbe.artifactFields("methodTestGpuProbes"));
+```
+
+The plan reports whether the `IrGpu` artifact loaded, how many vectors were found, how many are usable as future
+selection probes, and the first blocker when metadata is unavailable. The fixture readiness report resolves declared
+input and expected-output refs as classpath resources, reads their raw bytes, records byte size plus SHA-256 as stable
+evidence/cache keys, and performs a narrow JSON-object shape preview. The preview records the root kind, top-level field
+count, primary field, primary value kind, and primary item count.
+
+`fixtureValueBindings(...)` is the first value-binding preflight. It matches JSON fields to descriptor parameter names
+for read-only, read-write, or value inputs plus read-write expected outputs. Supported fixture values include primitive
+numeric scalars and arrays such as `float`, `float[]`, `int`, and `int[]`, plus `@GPUStruct` objects and `@GPUStruct[]`
+arrays whose fields are primitive numeric values or nested `@GPUStruct` objects. Array fields inside a struct remain
+unsupported, matching the current OpenCL ABI marshalling rules. It does not allocate buffers or invoke OpenCL, so
+applications can use it as a safe preflight before enabling CPU-reference comparison or the optional GPU probe executor.
+
+Struct fixture JSON is written as ordinary objects. For a kernel parameter `Point[] points` and read-write output
+`Point[] output`, use arrays of objects with field names matching the Java struct fields:
+
+```json
+{
+  "points": [
+    { "x": 1.0, "y": 2.0 },
+    { "x": 3.0, "y": 4.0 }
+  ]
+}
+```
+
+```json
+{
+  "output": [
+    { "x": 2.0, "y": 4.0 },
+    { "x": 6.0, "y": 8.0 }
+  ]
+}
+```
+
+`fixtureInvocationMaterialization(...)` is the next read-only step. It converts ready bindings into Java invocation
+objects in descriptor-parameter order, including boxed scalar values, primitive arrays, struct objects, struct arrays,
+and zero-filled read-write output arrays sized from expected-output fixtures. Struct materialization requires an
+accessible no-arg constructor and writable fields. Expected-output values are materialized separately for a reference
+comparison step. This still does not allocate GPU buffers or invoke OpenCL.
+
+`compareWithReference(...)` runs a caller-supplied CPU/reference callback against cloned materialized arguments and
+compares read-write outputs with materialized expected outputs. Numeric arrays compare element-by-element; struct
+outputs compare deterministic flattened numeric field paths such as `[0].x` and `[0].y`. The same simple `abs=` / `rel=`
+tolerances from `@GPUTest` apply to both numeric and struct fixtures. The reference callback is explicit on purpose: generated
+examples and builds may rewrite `@GPU` method bodies to launcher calls, so runtime tooling must not assume the original
+CPU body is still available through reflection. This is a bounded local correctness check that can run before or beside
+the GPU probe executor; by itself it does not allocate GPU buffers, invoke OpenCL, persist probe-result caches, or affect
+backend ranking.
+
+`executeGpuProbe(...)` is the first bounded runtime execution step. It uses the current `GpuRuntime` backend, infers a
+1D launch size from materialized expected-output fixture length when no explicit `GpuExecutionConfig` is supplied,
+applies a default max-global-work-items cap, executes the generated descriptor with the materialized arguments, and
+compares read-write outputs against expected fixtures with the same numeric tolerance logic. This API is opt-in: install
+an OpenCL/custom backend before calling it, keep fixture sizes small, and treat the resulting `GpuRuntimeMethodTestGpuProbePlan`
+as execution evidence rather than automatic backend-ranking policy. Each execution includes a stable
+`GpuRuntimeMethodTestGpuProbeEvidenceKey` hash built from the test id, kernel source/resource, materialized fixture
+values, expected outputs, launch config, compile options, backend/device identity, and compiler identity.
+
+Use `GpuRuntimeMethodTestGpuProbeOptions.cached()` or `withCache(...)` to enable the process-local
+`GpuRuntimeMethodTestGpuProbeCache`. Use `GpuRuntimeMethodTestGpuProbeOptions.persistentCached(path)` when probe
+evidence should survive a new cache instance, or `persistentCached(path, maxEntryAge)` when old entries should expire.
+Cache entries are keyed by the evidence hash, store only executed probe evidence, reject corrupted/mismatched/expired
+properties files as cache misses, carry their creation timestamp, and mark returned executions with `cacheHit=true` when
+a backend run was skipped.
+Method-test metadata, fixture readiness, value binding, invocation materialization, reference comparison, GPU probe
+execution, and GPU probe cache lookup now publish standard `GpuRuntimeLifecycleEvent` entries. Applications can observe
+them through ServiceLoader `GpuRuntimeLifecycleService` implementations or pass an explicit `GpuRuntimeLifecycleEventBus`
+to the overloads that accept one.
+IR loading, validation, optimizer, fallback/rollback selection, lowerer/source-selection, compile, invocation, and artifact-dump events also carry
+backend-neutral `runtime.*` fields such as `runtime.kernel.name`, `runtime.backend.target`, `runtime.backend.name`,
+`runtime.device.label`, `runtime.irgpu.present`, `runtime.module.format`, `runtime.module.lowererVersion`,
+`runtime.ir.selectedStage`, `runtime.ir.fallbackDecision`, `runtime.fallback.decision`,
+`runtime.work.globalShape`, `runtime.work.localShape`, `runtime.cache.key`, and `runtime.status`. Older
+OpenCL-specific fields remain present for compatibility, but new tooling should prefer the `runtime.*` vocabulary so
+CUDA/Vulkan/Metal traces can use the same parser later.
+Compile, invocation, and shutdown events also expose portable backend runtime-state fields such as
+`runtime.backend.cache.mode`, `runtime.backend.cache.compiledKernel.count`,
+`runtime.backend.cache.compileHit.count`, `runtime.backend.compile.count`,
+`runtime.backend.invocation.count`, and `runtime.backend.buffer.native.count`. Events with typed backend-state
+payloads also include `runtime.backend.state.present=true`, which lets journal consumers distinguish explicit runtime
+state from older ad-hoc counter maps. Backend-compilation events carry a
+`runtime.compilation.*` result summary for cache-key presence, module presence/format, compile-log presence,
+binary-artifact count, and validation-evidence count. Invocation events also carry a
+backend-neutral binding summary under `runtime.invocation.binding.*`: buffer, local, scalar, and total argument binding
+counts are available as `runtime.invocation.binding.buffer.count`, `runtime.invocation.binding.local.count`,
+`runtime.invocation.binding.scalar.count`, and `runtime.invocation.binding.argument.count`. Artifact-dump events expose
+`runtime.artifactDump.*` fields so journals can tell how many output directories were planned and how many text,
+binary, and source-location artifacts were written after a successful dump.
+Runtime IR selection and production-mutation safety use portable `runtime.ir.*` fields. Prefer
+`runtime.ir.selectedStage`, `runtime.ir.fallbackDecision`, `runtime.ir.productionGate.status`,
+`runtime.ir.productionMutation.enabled`, `runtime.ir.productionMutation.productionGateStatus`, and
+`runtime.ir.productionMutation.diagnostic` over older `runtimeProductionMutationSafety.*` report fields.
+Backend source-selection events expose the same backend-neutral shape through `runtime.backend.source.*` fields.
+The most useful fields for logs are `runtime.backend.source.status`, `runtime.backend.source.decision`,
+`runtime.backend.source.selection`, `runtime.backend.source.available`,
+`runtime.backend.source.promotionFirstBlocker`, `runtime.backend.source.productionSwitchingEnabled`, and
+`runtime.backend.source.runtimeLoadMode`. They explain whether the runtime compiled descriptor source, selected
+reconstructed `IrGpu` source, or failed closed before backend compilation.
+Backend/device selection lifecycle events use the same vocabulary: `runtime.selection.status`,
+`runtime.backend.selection.matched`, `runtime.device.discovery.available`, and selected `runtime.device.*` fields show
+whether a backend and concrete device were chosen before backend compilation begins.
+Automatic backend/device preflight events use the same descriptor/options/work vocabulary and add
+`runtime.backendDevicePreflight.*` plus `runtime.failure.*` when the scoped preflight backend fails.
+The failure block keeps `runtime.failure.type` and `runtime.failure.message` for older tooling, then adds stable
+`runtime.failure.code`, `runtime.failure.phase`, `runtime.failure.category`, `runtime.failure.summary`,
+`runtime.failure.catchable`, `runtime.failure.cause.*`, and `runtime.failure.context.*` facts for structured runtime
+exceptions.
+Backend adapter artifact fields also include portable `runtime.backend.adapter.*` and `runtime.backend.lowerer.*` keys,
+so OpenCL, the CUDA source-preview/skeleton adapter, and planned adapters can be rendered by the same diagnostics
+tooling.
+Production candidate gates and manual promotion manifest artifacts mirror their evidence under
+`runtime.production.candidateGate.*` and `runtime.production.manifest.*`; the manifest, activation-gate, and validation
+report readers consume those portable keys first and keep the older unprefixed / `binding.*` / `authorization.*` keys as
+compatibility mirrors only.
+Backend selection, device discovery, and combined runtime-selection artifact maps include the same portable fields,
+while their older prefixed keys remain available for compatibility.
+Backend compile, invocation, runtime-state, and artifact-dump events use the same shared field composer, so logs can
+follow `runtime.cache.key`, `runtime.module.*`, `runtime.work.*`, `runtime.backend.cache.*`,
+`runtime.backend.compile.*`, `runtime.backend.invocation.*`, `runtime.compilation.*`,
+`runtime.invocation.binding.*`, `runtime.artifactDump.*`, and `runtime.backend.state.*` across OpenCL now and future
+execution adapters later.
+Lifecycle event reports keep the indexed `field.N.key/value` representation, but also copy any `runtime.*` event field
+to a direct `runtimeLifecycle.event.runtime.*` property so journals can be queried without unpacking the indexed list.
+
+Native host memory is also behind a small service boundary. `GpuRuntimeNativeMemoryService` allocates closeable native
+memory and returns both the native address and a `ByteBuffer` view. The built-in service uses LWJGL today; future Java
+Panama modules can provide the same ServiceLoader contract without forcing CUDA descriptor encoders or argument packers
+to depend directly on one allocation API. The current CUDA image/sampler descriptor allocation diagnostic exercises this
+boundary through `validateCudaImageSamplerNativeDescriptorAllocationResult`, while SDK struct byte encoding and object
+creation remain disabled.
+The built-in LWJGL provider implementation now lives in `runtime.memory`; the root native-memory SPI names remain stable
+for ServiceLoader providers and existing user imports.
+
+Lifecycle events can also be routed into a pluggable logging backend through `GpuRuntimeLogService`. The built-in
+`GpuRuntimeLifecycleLoggingService` bridges lifecycle events into the runtime logging bus, but it stays silent until a
+log sink is present. For local console output, enable the built-in system stream sink:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClPracticalReleaseExample --console=plain "-Pjavatogpu.runtimeLog=system-out"
+```
+
+For application logging, provide a ServiceLoader implementation instead of depending on JavaToGpu internals:
+
+```java
+public final class Log4jGpuRuntimeLogService implements GpuRuntimeLogService {
+    private static final org.apache.logging.log4j.Logger LOG =
+            org.apache.logging.log4j.LogManager.getLogger("JavaToGpu");
+
+    @Override
+    public void log(GpuRuntimeLogRecord record) {
+        String text = record.message() + " " + record.fields();
+        switch (record.level()) {
+            case TRACE -> LOG.trace(text, record.throwable());
+            case DEBUG -> LOG.debug(text, record.throwable());
+            case INFO -> LOG.info(text, record.throwable());
+            case WARN -> LOG.warn(text, record.throwable());
+            case ERROR -> LOG.error(text, record.throwable());
+        }
+    }
+}
+```
+
+Register that class in `META-INF/services/net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLogService`. JavaToGpu sorts
+log services by extension order/id/version and isolates failures, so a broken logging sink cannot control runtime
+selection, compilation, or invocation.
+Built-in lifecycle/log implementations live in `runtime.observability`; the older root class names are compatibility
+facades for existing code.
+
+To smoke-test lifecycle and logging services without opening OpenCL/CUDA, use the observability harness:
+
+```powershell
+.\gradlew.bat :examples-app:runRuntimeObservabilityServiceHarnessExample --console=plain
+```
+
+Library tests can call `runtime.validation.GpuRuntimeObservabilityServiceHarness.loadFromServiceLoader().runSyntheticOpenCl()` directly.
+The harness publishes one synthetic lifecycle event and one synthetic log record, then reports service counts, success
+flags, artifact fields, and Markdown.
+
+Device-selection policies have a matching hardware-free harness:
+
+```powershell
+.\gradlew.bat :examples-app:runDevicePolicyHarnessExample --console=plain
+```
+
+It runs the built-in plus ServiceLoader `GpuRuntimeDevicePolicy` registry against synthetic OpenCL CPU/iGPU/dGPU
+candidates and prints the selected device, policy execution count, first blocker, and artifact-friendly status.
+
+IR validation providers can be checked the same way, without javac annotation processing or GPU execution:
+
+```powershell
+.\gradlew.bat :examples-app:runIrValidationProviderHarnessExample --console=plain
+```
+
+Library tests can call `GpuIrValidationProviderHarness.loadFromServiceLoader().runSynthetic()` directly. The harness
+runs synthetic helper/kernel IR methods through `GpuIrValidationRunner` and reports validation entries, diagnostics,
+extension metadata, first blocker, and Markdown/artifact fields.
+
+To let device selection consume already-recorded probe evidence, opt in through compile options:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withPersistentMethodTestProbeEvidenceRanking(Path.of(".javatogpu/method-test-probes"));
+```
+
+This convenience method enables `GpuRuntimeMethodTestProbeMode.CACHE_ONLY` and configures the persistent evidence cache.
+You can also set the mode explicitly when the cache path is configured separately:
+
+```java
+GpuRuntimeCompileOptions options = GpuRuntimeCompileOptions
+        .defaults(GpuBackendTarget.OPENCL)
+        .withMethodTestProbeMode(GpuRuntimeMethodTestProbeMode.CACHE_ONLY);
+```
+
+The ranking policy is cache-only: it does not compile or execute probes during device selection. For each candidate it
+recomputes the stable evidence hash for selection-probe vectors, reads the configured cache, gives passed evidence a
+ranking boost, rejects failed cached evidence, and treats missing evidence as neutral. This keeps startup predictable
+while allowing applications and future tools to warm evidence ahead of backend/device selection.
+
+Backend selection can read the same warmed cache when score-based ranking is explicitly enabled:
+
+```java
+GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+        MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+        options,
+        deviceProfile,
+        Optional.of(irGpuArtifact)
+);
+
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesForCompileRequest(request)
+        .scoreCandidatesWithCachedMethodTestProbeEvidence()
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+This bridge is also cache-only. Passed cached selection-probe evidence fills the backend `policyAdjustment` score bucket,
+failed cached evidence applies a large negative adjustment, and missing evidence stays neutral. If the compile options
+were created with `withPersistentMethodTestProbeEvidenceRanking(path, maxEntryAge)`, entries older than half of
+`maxEntryAge` are gradually down-weighted before expiry; score diagnostics include `freshnessPermille`, `ageLimited`,
+`oldestAgeMillis`, and `maxAgeMillis`. Use hard `require...` helpers when a backend must be rejected rather than merely
+ranked lower.
+
+Precomputed compiler feedback can also be used as advisory backend score evidence:
+
+```java
+GpuBackendCompilerFeedbackReport compilerFeedback =
+        GpuBackendCompilerFeedbackRegistry.loadWithBuiltIns().inspect(snapshot);
+
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithCompilerFeedback(compilerFeedback)
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithCompilerFeedback(report)` reads only the supplied report. It does not compile candidates during
+selection. The score bridge applies only to a matching backend target, rewards available resource evidence and healthy
+metrics such as low register pressure, zero spills, zero stack frame, and known occupancy, and applies bounded penalties
+for high register pressure, spills, stack frame bytes, or heavy local-memory use. Treat this as placement evidence, not a
+correctness gate; `@GPUTest` probe evidence has much stronger score weight.
+
+Compiler-feedback providers can be checked without a backend compiler:
+
+```powershell
+.\gradlew.bat :examples-app:runCompilerFeedbackHarnessExample --console=plain
+```
+
+Library tests can call `runtime.validation.GpuBackendCompilerFeedbackHarness.loadWithBuiltIns().runSyntheticOpenCl()` directly. The harness
+feeds synthetic compiler logs through the same provider registry and reports the selected provider, parsed metrics,
+execution outcomes, artifact fields, and Markdown.
+
+To run all hardware-free extension smoke examples together:
+
+```powershell
+.\gradlew.bat :examples-app:runExtensionHarnessExamples --console=plain
+```
+
+Use this aggregate task before native OpenCL/CUDA checks when you only need to verify ServiceLoader registration,
+extension ordering, fail-soft isolation, and basic report rendering.
+
+To check the built-in OpenCL provider/factory SPI contract without opening an OpenCL platform or context:
+
+```powershell
+.\gradlew.bat :processor:validateOpenClBackendSpiContract --console=plain
+```
+
+This verifies the metadata contract for provider id/version, production execution support, compile/prepare/invoke stage
+coverage, `opencl-c` module format, shared pipeline factory, and stable artifact aliases.
+
+When the application knows the shape of the workload before real backend execution exists, pass workload hints:
+
+```java
+GpuRuntimeWorkloadHints hints = GpuRuntimeWorkloadHints.builder()
+        .expectedItemCount(1_000_000L)
+        .preferredWorkGroupSize(256)
+        .memoryIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+        .arithmeticIntensity(GpuRuntimeWorkloadIntensity.HIGH)
+        .requireCapability(GpuRuntimeCapability.COMPUTE_CAPABILITY)
+        .preferModuleFormat(GpuBackendModuleFormat.PTX)
+        .build();
+
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithWorkloadHints(hints)
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithWorkloadHints(hints)` is an advisory placement signal. It rewards candidates whose report, device
+profile, or provider metadata match the declared intent and penalizes obvious mismatches, but it does not reject a
+candidate by itself. Use hard `requireDeclaredCapability(...)`, `requireDeclaredModuleFormat(...)`, or
+`requireExecutionPipelineAvailable()` when the application cannot run without a capability or artifact family.
+
+When you do not want to hand-write those hints, let the runtime infer conservative hints from the generated descriptor
+and already-loaded `IrGpu` artifact:
+
+```java
+GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+        .rankCandidatesByScore()
+        .scoreCandidatesWithInferredWorkloadHints(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                irGpuArtifact
+        )
+        .preferStandardBackendsWithPlannedDiagnostics()
+        .build();
+```
+
+`scoreCandidatesWithInferredWorkloadHints(...)` looks only at metadata that is already present: parameter types/access
+(`double[]`, images, local buffers, struct arrays), global/local/constant address-space usage, required IrGpu features,
+entry constraints, launch dimensions, and visible math density in descriptor/IrGpu bodies. It never compiles, probes, or executes candidates during selection. The
+result is still advisory; fallback order remains unchanged unless `rankCandidatesByScore()` is enabled.
+
+Warm evidence explicitly before selection when you want stronger placement confidence without making the selection
+policy execute kernels:
+
+```java
+GpuRuntimeMethodTestProbeEvidenceWarmupPlan warmup =
+        GpuRuntimeMethodTestProbeEvidenceWarmup.warmSelectionProbeEvidence(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                MyKernel.class.getClassLoader(),
+                List.of(GpuRuntimeMethodTestProbeEvidenceWarmupCandidate.owned(deviceProfile, backendFactory)),
+                GpuRuntimeMethodTestGpuProbeOptions
+                        .persistentCached(Path.of(".javatogpu/method-test-probes"))
+                        .withCompileOptions(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL))
+        );
+
+System.out.println(warmup.toMarkdown());
+```
+
+The warm-up helper runs only selection-probe vectors, installs each caller-provided backend/device candidate in a scoped
+runtime backend, writes successful or failed executions through the configured cache, and emits lifecycle events for the
+warm-up boundary plus the existing metadata/fixture/materialization/GPU-probe/cache stages. Selection can then consume
+the warmed cache through `withPersistentMethodTestProbeEvidenceRanking(path)` while staying read-only.
+
+When you want OpenCL discovery, explicit warm-up, and cache-only selection as one auditable operation, use the OpenCL
+selection helper:
+
+```java
+GpuRuntimeMethodTestProbeEvidenceSelectionPlan placement =
+        GpuRuntimeMethodTestProbeEvidenceSelection.warmAndSelectOpenCl(
+                MyKernel_GpuLauncher.KERNEL_DESCRIPTOR,
+                MyKernel.class.getClassLoader(),
+                GpuRuntimeMethodTestGpuProbeOptions
+                        .persistentCached(Path.of(".javatogpu/method-test-probes"))
+                        .withCompileOptions(baseOptions),
+                baseOptions,
+                2
+        );
+
+GpuRuntimeDeviceProfile selected = placement.selectedDevice().orElseThrow();
+System.out.println(placement.toMarkdown());
+```
+
+`warmAndSelectOpenCl(...)` discovers devices, creates OpenCL warm-up candidates, normalizes missing probe cache options
+to the shared cache, carries persistent cache directories and expiry into the cache-only selection compile options, and
+keeps warm-up candidates separate from the full discovered device list. That makes partially warmed evidence visible:
+warmed devices can be `passed` or `failed`, while devices not warmed remain `missing` and neutral.
+`GpuRuntimeMethodTestProbeEvidenceWarmupCandidates.openClGpuDevices(...)` is the built-in OpenCL convenience helper for
+that candidate list: it uses policy-ranked discovery order when available, skips CPU devices, and lazily creates owned
+OpenCL backends only when the explicit warm-up phase actually runs.
+
+The helper also publishes lifecycle events around the high-level operation: selection start, OpenCL discovery start/end,
+warm-up candidate selection, and final selection completion. A `GpuRuntimeLifecycleService` can record those events for
+logs or a journal without changing the selection result. This keeps the future runtime journal path service-based: put a
+listener implementation on the classpath, and `warmAndSelectOpenCl(...)` becomes visible from discovery through
+cache-only placement.
+
+Runtime compile artifact dumps include `runtime-method-test-evidence.properties` for each compiled kernel. That artifact
+records entry-method `@GPUTest` metadata counts, selection-probe counts, and cache-only probe-evidence ranking facts
+when the ranking policy participated. `openClValidationReport` aggregates those per-kernel artifacts into a `Method Test
+Evidence` section so CI logs can distinguish kernels with no method-test metadata, kernels with metadata but no warmed
+cache evidence, and kernels where cached passed/failed/missing evidence affected ranking.
+
+The examples app includes a portable walkthrough that uses a synthetic reference backend to record one persistent probe
+entry, then demonstrates cache-only ranking without requiring OpenCL hardware:
+
+```powershell
+.\gradlew.bat :examples-app:runMethodTestProbeEvidenceRankingExample --console=plain
+```
+
+Use `-Pjavatogpu.methodTestProbeEvidenceCacheDir=...` when you want to inspect or reuse the generated cache directory.
+
+When you want to test the same flow against actual OpenCL discovery and backend execution, run:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClMethodTestProbeEvidenceSelectionExample --console=plain
+```
+
+That example calls `warmAndSelectOpenCl(...)`, which discovers OpenCL, turns discovered GPU profiles into owned
+`OpenClGpuRuntimeBackend` warm-up candidates, pins each probe run to the candidate device id, and then prints the
+markdown report. The selection phase remains `CACHE_ONLY`; only the explicit warm-up phase may execute the tiny
+method-test probe kernels. Use `-Pjavatogpu.methodTestProbeOpenClEvidenceCacheDir=...` to control the persistent cache
+directory and `-Pjavatogpu.methodTestProbeOpenClWarmupLimit=1` to cap the number of warmed devices.
+The same runnable also enables lifecycle output through services: a full `runtime-lifecycle.jsonl` journal and a compact
+`opencl-evidence-selection.trace` are written next to the evidence cache by default, and the console prints only the
+`warmAndSelectOpenCl(...)` trace lines. The compact example trace includes a `summary=` segment when backend-state,
+compilation, invocation-binding, or artifact-dump portable fields are present, so users can inspect runtime behavior
+without opening the full JSONL journal. Use `-Pjavatogpu.lifecycleJournalFile=...`,
+`-Pjavatogpu.lifecycleJournalFormat=properties`, or `-Pjavatogpu.exampleLifecycleTraceFile=...` to override the outputs.
+
+Example compact trace line:
+
+```text
+BACKEND_COMPILATION_COMPLETED | backend=OPENCL | kernel=javatogpu/demo.cl | profile=off | status=completed | summary=compilation module=opencl-c cacheKey=true log=false binaries=0 | message=OpenCL program compiled
+```
+
+When you want one user-facing walkthrough instead of separate example commands, run:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClPracticalReleaseExample --console=plain
+```
+
+It combines backend/device explanation, method-test fixture/reference preflight, real OpenCL probe warm-up,
+cache-only placement, launch-shape guidance, vector/struct/packed-root-blob/image workload smoke, image-helper guidance,
+optimizer artifact review guidance, and lifecycle trace output in one report. Use
+`-Pjavatogpu.practicalOpenClEvidenceCacheDir=...` to choose the evidence and journal directory.
+The image helper section points to `OpenClImageWorkflow.rgbaIntToFloat2D(...)`, which bundles the common 2D RGBA image
+input/output/sampler/readback path while keeping the OpenCL resources explicit. It also exposes a natural
+`images.executionConfig()` for one-work-item-per-pixel 2D kernels plus shape helpers for logs and validation.
+The optimizer review section points to `runOptimizationJournalExample`, the default journal root, the before/after
+OpenCL files (`original.backend.opencl-c` and `optimized.backend.opencl-c`), the selected compiled file
+(`backend.opencl-c`), and the handoff/evidence files that explain why the default path stays review-only.
 
 ## Explicit Launch Sizes
 
@@ -112,6 +1162,16 @@ GpuRuntime.invoke(
 
 Explicit local sizes are also supported by the matching config factory overloads. After OpenCL compiles the selected kernel, JavaToGpu validates the total explicit local work-group size against that kernel's `CL_KERNEL_WORK_GROUP_SIZE` limit. For multidimensional launches, the validated size is the product of the local dimensions. An oversized explicit group fails before enqueue with `GpuRuntimeCapabilityException`. If no local size is specified, JavaToGpu leaves work-group selection to the OpenCL driver.
 
+For logs, examples, or diagnostics, `GpuExecutionConfig` exposes readable launch-shape helpers:
+
+```java
+GpuExecutionConfig config = GpuExecutionConfig.twoDimensional(16, 8, 4, 2);
+
+System.out.println(config.summary());      // 2D global=16x8, local=4x2
+System.out.println(config.globalShape());  // 16x8
+System.out.println(config.localShape());   // 4x2, or auto when local sizing is driver-selected
+```
+
 ## Generated Launcher Helpers
 
 For packed/blob workloads where logical item count does not match raw buffer length:
@@ -128,6 +1188,53 @@ GpuGeneratedLauncherInvoker.invokeWithGlobalWorkSize(
 ```
 
 For explicit multidimensional configs, use generated launcher config entry points or `GpuGeneratedLauncherInvoker.invokeWithConfig(...)` where applicable.
+
+For a narrow scalar-style result, keep the kernel ABI as `void + output buffer`, but let the generated launcher allocate the single primitive output array for you:
+
+```java
+GpuGeneratedLauncherInvoker.GeneratedLauncher launcher =
+        GpuGeneratedLauncherInvoker.launcher(OwnerClass.class, "kernel");
+
+float first = launcher.invokeReturningFirstWithGlobalWorkSizeAs(
+        Float.class,
+        itemCount,
+        input
+);
+```
+
+The same convenience can open a standard backend+device scope for one call:
+
+```java
+float first = launcher.invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDeviceAs(
+        Float.class,
+        itemCount,
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL).preferDeviceVendor("NVIDIA"),
+        input
+);
+```
+
+Keep the `GeneratedLauncher` handle when you call the same kernel repeatedly. It resolves the generated launcher class,
+descriptor, and return-first metadata once, while still invoking the generated overloads so fallback/variant routing stays
+intact.
+
+This helper is generated only when the `@GPU` method has exactly one primitive `@GPUGlobal` read-write output array. The helper allocates that output array using the launch item count, invokes the normal generated launcher, and returns `output[0]`. The `*As(...)` reflection helpers validate the generated return type before launching, so asking for `Integer.class` from a float-return helper fails before the kernel runs. If a kernel has multiple mutable primitive output arrays, object/struct outputs, or a different result shape, use the explicit output-buffer form instead. This is not arbitrary non-`void` `@GPU` support; it is a small convenience adapter over the existing launcher ABI.
+
+To see whether the helper exists, and why it was skipped, inspect the generated launcher metadata through the reflection helper:
+
+```java
+GpuGeneratedLauncherReturnValueConvenienceReport report =
+        launcher.returnValueConvenience();
+
+System.out.println(report.summary());
+```
+
+Common skip reasons are `no-read-write-output-array`, `multiple-read-write-output-arrays`, `output-array-component-not-supported`, and `method-return-type-not-void`.
+
+During annotation processing, JavaToGpu also emits a non-failing `NOTE` for almost-matching kernels where the helper was skipped, such as kernels with multiple primitive read-write output arrays. Suppress those compile-time notes with:
+
+```groovy
+options.compilerArgs += '-Ajavatogpu.returnValueConvenienceDiagnostics=quiet'
+```
 
 ## Runtime Compile Options
 
@@ -229,7 +1336,9 @@ High and critical estimates add optimizer diagnostics with the hottest method, e
 
 Artifact dumps store the complete result in `runtime-ir-analysis.properties`. Per-method fields include total parameter/local/private-array storage, `peakLiveRegisters`, expression-temporary peak, scoped-variable count, shadowed-variable count, unresolved-reference count, budget, utilization, level, and typed-node counts. Per-call fields include resolution state, inline/recursive flags, caller-live values, argument/result pressure, callee pressure, additional frame pressure, and combined estimate.
 
-Set `-Djavatogpu.opencl.runtimeCompileArtifactDirectory=<directory>` to dump the full runtime compile artifact bundle for each OpenCL kernel invocation without enabling the operational validation report path. Each kernel gets a sanitized subdirectory under that root. When IR artifacts are available, the bundle includes `original.irgpu.properties` and `optimized.irgpu.properties` so the pre/post optimizer IR can be compared directly, plus `original.backend.opencl-c` and `optimized.backend.opencl-c` for before/after generated OpenCL backend source. `backend.opencl-c` remains the selected OpenCL source that the backend actually compiles. In the default `GpuRuntimeCompileOptions.openCl(...)` path this remains the original/pass-through source; in explicit `GpuRuntimeCompileOptions.openClIrOptimizerExperimentalApply(...)` runs it can become the optimized source if runtime-equivalence and production gates do not reject the selected optimized IR. The bundle also includes `runtime-ir-handoff.properties`, `optimizer-report.txt` when reports exist, backend source artifacts, provenance, and diagnostics. The dump itself is diagnostic-only and does not enable production mutation or source switching.
+Set `-Djavatogpu.opencl.runtimeCompileArtifactDirectory=<directory>` to dump the full runtime compile artifact bundle for each OpenCL kernel invocation without enabling the operational validation report path. Each kernel gets a sanitized subdirectory under that root. When IR artifacts are available, the bundle includes `original.irgpu.properties` and `optimized.irgpu.properties` so the pre/post optimizer IR can be compared directly, plus `original.backend.opencl-c` and `optimized.backend.opencl-c` for before/after generated OpenCL backend source. If CUDA source preview reconstruction is possible from the same `IrGpu`, the bundle also includes `original.preview.backend.cuda-c`, `optimized.preview.backend.cuda-c`, and `cuda-source-preview.properties`; these files are hardware-free preview diagnostics only and are not compiled or executed. `backend.opencl-c` remains the selected OpenCL source that the backend actually compiles. In the default `GpuRuntimeCompileOptions.openCl(...)` path this remains the original/pass-through source; in explicit `GpuRuntimeCompileOptions.openClIrOptimizerExperimentalApply(...)` runs it can become the optimized source if runtime-equivalence and production gates do not reject the selected optimized IR. The bundle also includes `runtime-ir-handoff.properties`, `optimizer-report.txt` when reports exist, backend source artifacts, provenance, and diagnostics. The dump itself is diagnostic-only and does not enable production mutation or source switching.
+
+Workload-level source-promotion gates mirror per-kernel source-selection decisions as both legacy `kernel.N.sourceSwitching.*` fields and portable `kernel.N.runtime.backend.source.*` fields. New report tooling should prefer the portable fields for status, decision, selected source, production-switching state, first blocker, and runtime load mode. Workload gates also mirror aggregate source decisions under indexed `runtime.backend.source.decision.*` fields and expose compact `runtime.backend.source.decisions`, `runtime.backend.source.promotionFirstBlockers`, and `runtime.backend.source.promotionFirstBlockerFamilies` summaries for CI, while keeping `sourceSwitching.decisions` and unprefixed blocker summaries for compatibility. Aggregate blocker evidence is mirrored under portable `runtime.backend.source.promotionFirstBlocker.*` and `runtime.backend.source.promotionFirstBlockerFamily.*` fields while retaining legacy `sourceSwitching.sourcePromotionFirstBlocker.*` keys. Workload gates and production-promotion explainability artifacts also mirror aggregate production readiness under portable `runtime.backend.source.productionSwitchingEnabled.*`, `runtime.backend.source.productionPromotionDecisionMode.productionEnabled.*`, `runtime.backend.source.productionPromotionOperatorAccepted.*`, and `runtime.backend.source.productionDecision.*` fields, while retaining older unprefixed and `sourceSwitching.productionDecision.*` compatibility keys. Controlled production validation evidence is mirrored under portable `runtime.production.sourceSwitching.controlled.*`, `runtime.production.mutation.controlled.*`, `runtime.production.activationToken.smoke.*`, and `runtime.production.activationToken.negative.*` fields while retaining legacy `controlledProductionSourceSwitching.*`, `controlledProductionMutation.*`, `controlledProductionActivationTokenSmoke.*`, and `controlledProductionActivationTokenNegative.*` keys. Candidate-gate and manual manifest artifacts now mirror their evidence under `runtime.production.candidateGate.*` and `runtime.production.manifest.*`, while keeping unprefixed, `binding.*`, and `authorization.*` compatibility keys. The compact workload and production-promotion summaries preserve those portable aggregate fields for CI. The OpenCL validation report, history, formatter, validator, summary, manifest, activation-gate, and production-decision readers already read these portable fields first, then fall back to legacy `sourceSwitching.*` / unprefixed / controlled-production / manifest-binding keys for older artifacts.
 
 OpenCL isolated runtime-equivalence checks write raw pipeline comparison cases into `runtime-equivalence.properties` when invocation arguments use supported array shapes. Each case records the comparison mode, original invocation inputs, descriptor-source reference outputs, reconstructed-source candidate outputs, exact tolerance metadata, per-output equivalence flags, and diagnostics. Primitive arrays are written as readable vectors, vector and struct arrays as deterministic packed Base64, scalar values as literals, and opaque image/sampler/runtime objects as stable type tags without process-specific handles. This evidence validates source reconstruction and remains separate from per-family optimizer proof.
 
@@ -432,7 +1541,7 @@ The next operational boundary combines the approved manifest validation, the pro
   --console=plain --no-daemon
 ```
 
-The task writes `backend-source-promotion-activation-gate.properties` and `backend-source-promotion-activation-gate.properties.sha256`. A successful result is `controlled-activation-ready` with full kernel coverage and accepted/bound operator evidence. It explicitly records `activationScope=controlled-opt-in-only`, `defaultRuntimeActivation=false`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`.
+The task writes `backend-source-promotion-activation-gate.properties` and `backend-source-promotion-activation-gate.properties.sha256`. A successful result is `controlled-activation-ready` with full kernel coverage and accepted/bound operator evidence. It explicitly records `activationScope=controlled-opt-in-only`, `defaultRuntimeActivation=false`, `defaultProductionSourceSwitching=disabled`, and `productionMutation=disabled`. New tooling should prefer the portable `runtime.production.activationGate.*` mirrors for gate status, scope, backend, default-disabled switches, approval identity, device identity, kernel coverage, operator acceptance, blockers, and diagnostics; the unprefixed fields remain compatibility keys.
 
 This gate does not modify `GpuRuntimeCompileOptions`, does not enable the default source path, and is not consumed automatically by application runtime code. A controlled caller must load the exact artifact and expected digest, then attach the resulting token alongside the identity-bound operator acceptance:
 
@@ -476,7 +1585,7 @@ Run the hardware negative controls against the same activation artifact:
 
 This task verifies that `GpuProductionActivationToken.fromArtifact(...)` rejects a mismatched SHA-256 and that a valid token rejects an unapproved kernel resource before GPU output changes. It writes `production-activation-token-negative.properties` with the rejection and safe-default states.
 
-The OpenCL validation reporter includes both activation-token artifacts in `production-promotion-explainability.properties` and its compact CI summary. Separate readiness items require full real-workload coverage and successful negative controls. Neither item sets `productionSourceSwitchingAllowed`, enables the default source path, or authorizes production mutation.
+The OpenCL validation reporter includes controlled source-switching, mutation-readiness, and activation-token artifacts in `production-promotion-explainability.properties` and its compact CI summary. New tooling should read `runtime.production.sourceSwitching.controlled.*`, `runtime.production.mutation.controlled.*`, `runtime.production.activationToken.smoke.*`, and `runtime.production.activationToken.negative.*`; older `controlledProductionSourceSwitching.*`, `controlledProductionMutation.*`, `controlledProductionActivationTokenSmoke.*`, and `controlledProductionActivationTokenNegative.*` keys remain compatibility mirrors. Separate readiness items require full real-workload coverage and successful negative controls. Neither item sets `productionSourceSwitchingAllowed`, enables the default source path, or authorizes production mutation.
 
 ## ABI Debug
 

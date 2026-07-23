@@ -4,6 +4,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactParser;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherInvoker;
+import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherReturnValueConvenienceReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
@@ -39,6 +40,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuCompilerProcessorTest {
@@ -241,10 +244,22 @@ class GpuCompilerProcessorTest {
         Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
         assertTrue(Files.exists(launcherSourcePath));
         String launcherSource = Files.readString(launcherSourcePath);
+        assertTrue(launcherSource.contains("Generated GPU launcher for the annotated method."));
+        assertTrue(launcherSource.contains("Generated backend entry-point name."));
+        assertTrue(launcherSource.contains("Runtime descriptor consumed by GpuRuntime and reflection-based launcher helpers."));
+        assertTrue(launcherSource.contains("Optional fallback variant descriptors for the same generated launch ABI."));
+        assertTrue(launcherSource.contains("Selects a standard backend/device for this call, then invokes with compile options."));
+        assertTrue(launcherSource.contains("Allocates the generated output array, invokes one work item, and returns output[0]."));
         assertTrue(launcherSource.contains("public final class Demo_kernel_GpuLauncher"));
         assertTrue(launcherSource.contains("public static final String KERNEL_NAME = \"jtg_kernel\";"));
         assertTrue(launcherSource.contains("public static final String KERNEL_RESOURCE = \"javatogpu/sample/Demo/kernel.cl\";"));
         assertTrue(launcherSource.contains("public static final String IRGPU_RESOURCE = \"javatogpu/sample/Demo/kernel.irgpu.properties\";"));
+        assertTrue(launcherSource.contains("public static final boolean RETURN_VALUE_CONVENIENCE_AVAILABLE = true;"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_STATUS = \"available\";"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_REASON = \"single-primitive-output-array\";"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_OUTPUT_PARAMETER = \"output\";"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_OUTPUT_TYPE = \"float[]\";"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_RETURN_TYPE = \"float\";"));
         assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"input\", \"float[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_ONLY)"));
         assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"output\", \"float[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
         assertTrue(launcherSource.contains("public static void invoke(float[] input, float[] output)"));
@@ -253,18 +268,60 @@ class GpuCompilerProcessorTest {
         assertTrue(launcherSource.contains("public static void invokeWithCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWithGlobalWorkSizeAndCompileOptions(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
         assertTrue(launcherSource.contains("public static void invokeWithConfigAndCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithGlobalWorkSizeAndStandardBackendAndDevice(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWith3DWorkSizeAndStandardBackendAndDevice(long globalX, long globalY, long globalZ, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static void invokeWithConfigAndStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("GpuRuntime.useStandardBackendAndDevice(compileOptions)"));
         assertTrue(launcherSource.contains("public static void invokeWith3DWorkSize(long globalX, long globalY, long globalZ, float[] input, float[] output)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirst(float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirst(long globalWorkSize, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithConfig(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithGlobalWorkSizeAndCompileOptions(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithConfigAndCompileOptions(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithGlobalWorkSizeAndStandardBackendAndDevice(long globalWorkSize, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
+        assertTrue(launcherSource.contains("public static float invokeReturningFirstWithConfigAndStandardBackendAndDevice(net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, float[] input)"));
 
         Path launcherClassPath = classOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.class");
         assertTrue(Files.exists(launcherClassPath));
 
         AtomicReference<GpuKernelInvocation> capturedInvocation = new AtomicReference<>();
         GpuRuntimeBackend previousBackend = GpuRuntime.backend();
-        GpuRuntime.setBackend(capturedInvocation::set);
+        GpuRuntime.setBackend(invocation -> {
+            capturedInvocation.set(invocation);
+            if (invocation.arguments().length > 1 && invocation.arguments()[1] instanceof float[] outputArgument
+                    && outputArgument.length > 0) {
+                long itemCount = invocation.executionConfig() == null ? 0L : invocation.executionConfig().globalItemCount();
+                outputArgument[0] = itemCount == 0L ? -1.0f : (float) itemCount;
+            }
+        });
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classOutputDir.toUri().toURL()}, getClass().getClassLoader())) {
             Class<?> launcherClass = Class.forName("sample.generated.Demo_kernel_GpuLauncher", true, classLoader);
             Class<?> ownerClass = Class.forName("sample.Demo", true, classLoader);
+            GpuKernelDescriptor reflectedDescriptor = GpuGeneratedLauncherInvoker.descriptor(ownerClass, "kernel");
+            assertEquals("jtg_kernel", reflectedDescriptor.kernelName());
+            assertEquals("javatogpu/sample/Demo/kernel.irgpu.properties", reflectedDescriptor.irGpuResource());
+            GpuGeneratedLauncherReturnValueConvenienceReport returnValueReport =
+                    GpuGeneratedLauncherInvoker.returnValueConvenience(ownerClass, "kernel");
+            assertTrue(returnValueReport.available());
+            assertEquals("available", returnValueReport.status());
+            assertEquals("single-primitive-output-array", returnValueReport.reason());
+            assertEquals("output", returnValueReport.outputParameter());
+            assertEquals("float[]", returnValueReport.outputType());
+            assertEquals("float", returnValueReport.returnType());
+            assertTrue(returnValueReport.summary().contains("available: returns float from output"));
+            GpuGeneratedLauncherInvoker.GeneratedLauncher launcherHandle =
+                    GpuGeneratedLauncherInvoker.launcher(ownerClass, "kernel");
+            assertSame(ownerClass, launcherHandle.ownerClass());
+            assertEquals("kernel", launcherHandle.methodName());
+            assertSame(launcherClass, launcherHandle.launcherClass());
+            assertSame(launcherHandle.descriptor(), launcherHandle.descriptor());
+            assertSame(launcherHandle.returnValueConvenience(), launcherHandle.returnValueConvenience());
+            assertEquals("jtg_kernel", launcherHandle.descriptor().kernelName());
+            assertTrue(launcherHandle.returnValueConvenience().available());
             float[] input = new float[]{1.0f, 2.0f};
             float[] output = new float[]{0.0f, 0.0f};
             launcherClass.getMethod("invoke", float[].class, float[].class).invoke(null, input, output);
@@ -324,6 +381,18 @@ class GpuCompilerProcessorTest {
             assertTrue(Arrays.equals(new Object[]{input, output}, compileOptionsInvocation.arguments()));
 
             capturedInvocation.set(null);
+            launcherHandle.invokeWithConfigAndCompileOptions(
+                    net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(14L),
+                    compileOptions,
+                    input,
+                    output
+            );
+            GpuKernelInvocation handleCompileOptionsInvocation = capturedInvocation.get();
+            assertEquals(14L, handleCompileOptionsInvocation.globalWorkSize());
+            assertEquals("fast", handleCompileOptionsInvocation.compileOptions().optimizationProfile());
+            assertTrue(Arrays.equals(new Object[]{input, output}, handleCompileOptionsInvocation.arguments()));
+
+            capturedInvocation.set(null);
             launcherClass.getMethod("invokeWith3DWorkSize", long.class, long.class, long.class, float[].class, float[].class)
                     .invoke(null, 5L, 4L, 3L, input, output);
             GpuKernelInvocation explicit3DInvocation = capturedInvocation.get();
@@ -332,6 +401,15 @@ class GpuCompilerProcessorTest {
             assertEquals(4L, explicit3DInvocation.executionConfig().globalY());
             assertEquals(3L, explicit3DInvocation.executionConfig().globalZ());
             assertTrue(Arrays.equals(new Object[]{input, output}, explicit3DInvocation.arguments()));
+
+            capturedInvocation.set(null);
+            launcherHandle.invokeWith3DWorkSize(6L, 5L, 4L, input, output);
+            GpuKernelInvocation handle3DInvocation = capturedInvocation.get();
+            assertEquals(3, handle3DInvocation.executionConfig().dimensions());
+            assertEquals(6L, handle3DInvocation.executionConfig().globalX());
+            assertEquals(5L, handle3DInvocation.executionConfig().globalY());
+            assertEquals(4L, handle3DInvocation.executionConfig().globalZ());
+            assertTrue(Arrays.equals(new Object[]{input, output}, handle3DInvocation.arguments()));
 
             capturedInvocation.set(null);
             GpuGeneratedLauncherInvoker.invoke(ownerClass, "kernel", input, output);
@@ -356,11 +434,345 @@ class GpuCompilerProcessorTest {
             GpuKernelInvocation reflectedConfigInvocation = capturedInvocation.get();
             assertEquals(10L, reflectedConfigInvocation.globalWorkSize());
             assertTrue(Arrays.equals(new Object[]{input, output}, reflectedConfigInvocation.arguments()));
+
+            capturedInvocation.set(null);
+            launcherHandle.invokeWithGlobalWorkSize(11L, input, output);
+            GpuKernelInvocation handleInvocation = capturedInvocation.get();
+            assertEquals(11L, handleInvocation.globalWorkSize());
+            assertTrue(Arrays.equals(new Object[]{input, output}, handleInvocation.arguments()));
+
+            capturedInvocation.set(null);
+            Object defaultReturnValue = GpuGeneratedLauncherInvoker.invokeReturningFirst(ownerClass, "kernel", input);
+            GpuKernelInvocation defaultReturnInvocation = capturedInvocation.get();
+            assertEquals(1.0f, ((Float) defaultReturnValue).floatValue());
+            assertEquals(1L, defaultReturnInvocation.globalWorkSize());
+            assertTrue(defaultReturnInvocation.arguments()[0] == input);
+            assertEquals(1, ((float[]) defaultReturnInvocation.arguments()[1]).length);
+
+            capturedInvocation.set(null);
+            Float typedDefaultReturnValue = GpuGeneratedLauncherInvoker.invokeReturningFirstAs(
+                    Float.class,
+                    ownerClass,
+                    "kernel",
+                    input
+            );
+            GpuKernelInvocation typedDefaultReturnInvocation = capturedInvocation.get();
+            assertEquals(1.0f, typedDefaultReturnValue.floatValue());
+            assertEquals(1L, typedDefaultReturnInvocation.globalWorkSize());
+
+            capturedInvocation.set(null);
+            IllegalArgumentException typeMismatch = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> GpuGeneratedLauncherInvoker.invokeReturningFirstAs(Integer.class, ownerClass, "kernel", input)
+            );
+            assertTrue(typeMismatch.getMessage().contains("returns float, not java.lang.Integer"));
+            assertEquals(null, capturedInvocation.get());
+
+            capturedInvocation.set(null);
+            Object explicitReturnValue = GpuGeneratedLauncherInvoker.invokeReturningFirstWithGlobalWorkSize(ownerClass, "kernel", 12L, input);
+            GpuKernelInvocation explicitReturnInvocation = capturedInvocation.get();
+            assertEquals(12.0f, ((Float) explicitReturnValue).floatValue());
+            assertEquals(12L, explicitReturnInvocation.globalWorkSize());
+            assertTrue(explicitReturnInvocation.arguments()[0] == input);
+            assertEquals(12, ((float[]) explicitReturnInvocation.arguments()[1]).length);
+
+            capturedInvocation.set(null);
+            Float typedExplicitReturnValue = GpuGeneratedLauncherInvoker.invokeReturningFirstWithGlobalWorkSizeAs(
+                    Float.class,
+                    ownerClass,
+                    "kernel",
+                    8L,
+                    input
+            );
+            GpuKernelInvocation typedExplicitReturnInvocation = capturedInvocation.get();
+            assertEquals(8.0f, typedExplicitReturnValue.floatValue());
+            assertEquals(8L, typedExplicitReturnInvocation.globalWorkSize());
+
+            capturedInvocation.set(null);
+            Float handleReturnValue = launcherHandle.invokeReturningFirstWithGlobalWorkSizeAs(Float.class, 13L, input);
+            GpuKernelInvocation handleReturnInvocation = capturedInvocation.get();
+            assertEquals(13.0f, handleReturnValue.floatValue());
+            assertEquals(13L, handleReturnInvocation.globalWorkSize());
+
+            capturedInvocation.set(null);
+            IllegalArgumentException handleTypeMismatch = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> launcherHandle.invokeReturningFirstWithGlobalWorkSizeAs(Integer.class, 13L, input)
+            );
+            assertTrue(handleTypeMismatch.getMessage().contains("returns float, not java.lang.Integer"));
+            assertEquals(null, capturedInvocation.get());
+
+            capturedInvocation.set(null);
+            Object configReturnValue = launcherClass.getMethod(
+                            "invokeReturningFirstWithConfig",
+                            net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.class,
+                            float[].class
+                    )
+                    .invoke(null, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig.oneDimensional(5L), input);
+            GpuKernelInvocation configReturnInvocation = capturedInvocation.get();
+            assertEquals(5.0f, ((Float) configReturnValue).floatValue());
+            assertEquals(5L, configReturnInvocation.globalWorkSize());
+            assertTrue(configReturnInvocation.arguments()[0] == input);
+            assertEquals(5, ((float[]) configReturnInvocation.arguments()[1]).length);
         } catch (ReflectiveOperationException exception) {
             throw new AssertionError("Failed to invoke generated launcher reflectively", exception);
         } finally {
             GpuRuntime.setBackend(previousBackend);
         }
+    }
+
+    @Test
+    void skipsReturnValueConvenienceWhenKernelHasMultiplePrimitiveOutputs() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-return-convenience-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-return-convenience-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] leftOutput, @GPUGlobal float[] rightOutput) {
+                        int id = GPU.get_global_id(0);
+                        leftOutput[id] = id;
+                        rightOutput[id] = id + 1.0f;
+                    }
+                }
+                """;
+
+        compileWithProcessor(
+                compiler,
+                "sample.Demo",
+                source,
+                classOutputDir,
+                generatedOutputDir,
+                System.getProperty("java.class.path")
+        );
+
+        Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
+        assertTrue(Files.exists(launcherSourcePath));
+        String launcherSource = Files.readString(launcherSourcePath);
+        assertTrue(launcherSource.contains("Metadata describing whether generated return-value convenience helpers are available."));
+        assertTrue(launcherSource.contains("public static final boolean RETURN_VALUE_CONVENIENCE_AVAILABLE = false;"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_STATUS = \"unavailable\";"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_REASON = \"multiple-read-write-output-arrays\";"));
+        assertTrue(launcherSource.contains("public static final String RETURN_VALUE_CONVENIENCE_OUTPUT_PARAMETER = \"\";"));
+        assertFalse(launcherSource.contains("invokeReturningFirst"));
+
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classOutputDir.toUri().toURL()}, getClass().getClassLoader())) {
+            Class<?> ownerClass = Class.forName("sample.Demo", true, classLoader);
+            GpuGeneratedLauncherReturnValueConvenienceReport returnValueReport =
+                    GpuGeneratedLauncherInvoker.returnValueConvenience(ownerClass, "kernel");
+            assertFalse(returnValueReport.available());
+            assertEquals("unavailable", returnValueReport.status());
+            assertEquals("multiple-read-write-output-arrays", returnValueReport.reason());
+            assertEquals("", returnValueReport.outputParameter());
+            assertTrue(returnValueReport.summary().contains("multiple-read-write-output-arrays"));
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Failed to inspect generated return-value convenience metadata", exception);
+        }
+    }
+
+    @Test
+    void emitsReturnValueConvenienceNoteWhenAlmostMatchingKernelCannotGenerateHelper() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-return-note-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-return-note-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] leftOutput, @GPUGlobal float[] rightOutput) {
+                        int id = GPU.get_global_id(0);
+                        leftOutput[id] = id;
+                        rightOutput[id] = id + 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject("sample.Demo", source))
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        assertTrue(diagnostics.getDiagnostics().stream().anyMatch(diagnostic ->
+                diagnostic.getKind() == Diagnostic.Kind.NOTE
+                        && diagnostic.getMessage(null).contains("Return-first launcher helper was not generated")
+                        && diagnostic.getMessage(null).contains("multiple-read-write-output-arrays")
+                        && diagnostic.getMessage(null).contains("returnValueConvenience")));
+    }
+
+    @Test
+    void suppressesReturnValueConvenienceNoteWhenDiagnosticsAreQuiet() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-return-note-quiet-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-return-note-quiet-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] leftOutput, @GPUGlobal float[] rightOutput) {
+                        int id = GPU.get_global_id(0);
+                        leftOutput[id] = id;
+                        rightOutput[id] = id + 1.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString(),
+                    "-Ajavatogpu.returnValueConvenienceDiagnostics=quiet"
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject("sample.Demo", source))
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        assertFalse(diagnostics.getDiagnostics().stream().anyMatch(diagnostic ->
+                diagnostic.getMessage(null).contains("Return-first launcher helper was not generated")));
+    }
+
+    @Test
+    void keepsReturnValueConvenienceNoteQuietForOrdinaryInputOutputKernel() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-return-note-input-output-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-return-note-input-output-generated");
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+
+                public class Demo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = input[id] * 2.0f;
+                    }
+                }
+                """;
+
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-d", classOutputDir.toString(),
+                    "-s", generatedOutputDir.toString()
+            );
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostics,
+                    options,
+                    null,
+                    List.of(new StringJavaFileObject("sample.Demo", source))
+            );
+            task.setProcessors(List.of(new GpuCompilerProcessor()));
+
+            assertTrue(task.call());
+        }
+
+        assertFalse(diagnostics.getDiagnostics().stream().anyMatch(diagnostic ->
+                diagnostic.getMessage(null).contains("Return-first launcher helper was not generated")));
+    }
+
+    @Test
+    void writesGpuTestVectorsToGeneratedIrGpuManifest() throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path classOutputDir = Files.createTempDirectory("javatogpu-gputest-classes");
+        Path generatedOutputDir = Files.createTempDirectory("javatogpu-gputest-generated");
+
+        String source = """
+                package sample;
+
+                import net.sixik.ga_utils.javatogpu.api.GPU;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
+                import net.sixik.ga_utils.javatogpu.api.annotations.GPUTest;
+
+                public class TestVectorDemo {
+                    @net.sixik.ga_utils.javatogpu.api.annotations.GPU
+                    @GPUTest(
+                        id = "selection-smoke",
+                        inputs = {"fixtures/selection-smoke.inputs.json"},
+                        expectedOutputs = {"fixtures/selection-smoke.outputs.json"},
+                        tolerance = "abs=1e-5",
+                        tags = {"selection", "smoke"}
+                    )
+                    void kernel(@GPUGlobal float[] input, @GPUGlobal float[] output) {
+                        int id = GPU.get_global_id(0);
+                        output[id] = input[id] * 2.0f;
+                    }
+                }
+                """;
+
+        compileWithProcessor(
+                compiler,
+                "sample.TestVectorDemo",
+                source,
+                classOutputDir,
+                generatedOutputDir,
+                System.getProperty("java.class.path")
+        );
+
+        Path irGpuPath = generatedOutputDir.resolve("javatogpu/sample/TestVectorDemo/kernel.irgpu.properties");
+        assertTrue(Files.exists(irGpuPath));
+        String irGpuManifest = Files.readString(irGpuPath);
+        assertTrue(irGpuManifest.contains("methodTestVector.count=1"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.testId=selection-smoke"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.inputRef.0=fixtures/selection-smoke.inputs.json"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.expectedOutputRef.0=fixtures/selection-smoke.outputs.json"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.tolerance=abs=1e-5"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.tag.0=selection"));
+        assertTrue(irGpuManifest.contains("methodTestVector.0.tag.1=smoke"));
+
+        var testVectors = IrGpuArtifactParser.parse(irGpuManifest).entryTestVectors();
+        assertEquals(1, testVectors.size());
+        assertEquals("selection-smoke", testVectors.get(0).testId());
+        assertEquals(List.of("fixtures/selection-smoke.inputs.json"), testVectors.get(0).inputRefs());
+        assertEquals(List.of("fixtures/selection-smoke.outputs.json"), testVectors.get(0).expectedOutputRefs());
+        assertEquals("abs=1e-5", testVectors.get(0).tolerance());
+        assertTrue(testVectors.get(0).selectionProbe());
     }
 
     @Test
@@ -1605,7 +2017,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.FloatPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
@@ -1672,7 +2084,7 @@ class GpuCompilerProcessorTest {
 
         String source = "package sample;\n"
                 + "\n"
-                + "import net.sixik.ga_utils.javatogpu.api.FloatPtr;\n"
+                + "import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;\n"
                 + "import net.sixik.ga_utils.javatogpu.api.GPU;\n"
                 + "import net.sixik.ga_utils.javatogpu.api.annotations.CCode;\n"
                 + "import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;\n"
@@ -1871,7 +2283,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.FloatPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -3216,13 +3628,13 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Byte3;
-                import net.sixik.ga_utils.javatogpu.api.Double3;
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.Byte3;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.ULong3;
-                import net.sixik.ga_utils.javatogpu.api.UShort2;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong3;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort2;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3341,8 +3753,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3405,7 +3817,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3460,8 +3872,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3520,8 +3932,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3580,10 +3992,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3646,10 +4058,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3716,10 +4128,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3786,10 +4198,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3851,8 +4263,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -3917,8 +4329,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4049,13 +4461,13 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double3;
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Long3;
-                import net.sixik.ga_utils.javatogpu.api.UInt2;
-                import net.sixik.ga_utils.javatogpu.api.ULong3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.Long3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt2;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4117,13 +4529,13 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double3;
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Long3;
-                import net.sixik.ga_utils.javatogpu.api.UInt2;
-                import net.sixik.ga_utils.javatogpu.api.ULong3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.Long3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt2;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4185,13 +4597,13 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double3;
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte2;
-                import net.sixik.ga_utils.javatogpu.api.UByte3;
-                import net.sixik.ga_utils.javatogpu.api.UShort2;
-                import net.sixik.ga_utils.javatogpu.api.UShort3;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte2;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte3;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort2;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4253,13 +4665,13 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Byte2;
-                import net.sixik.ga_utils.javatogpu.api.Byte3;
-                import net.sixik.ga_utils.javatogpu.api.Double3;
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.Byte2;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.Byte3;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Short2;
-                import net.sixik.ga_utils.javatogpu.api.Short3;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.Short2;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.Short3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4436,10 +4848,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4506,7 +4918,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4561,10 +4973,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte;
-                import net.sixik.ga_utils.javatogpu.api.UShort;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
-                import net.sixik.ga_utils.javatogpu.api.ULong;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4622,7 +5034,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -4681,7 +5093,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double2;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -4797,7 +5209,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4858,8 +5270,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Long2;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.Long2;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4922,8 +5334,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Long2;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.Long2;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -4986,8 +5398,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int3;
-                import net.sixik.ga_utils.javatogpu.api.UInt8;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt8;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -5049,7 +5461,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5112,7 +5524,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5175,7 +5587,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5236,7 +5648,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5293,7 +5705,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5352,7 +5764,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5467,7 +5879,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5527,7 +5939,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -5588,7 +6000,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -5649,8 +6061,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UByte3;
-                import net.sixik.ga_utils.javatogpu.api.UShort4;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.UByte3;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -5714,9 +6126,9 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Byte3;
+                import net.sixik.ga_utils.javatogpu.api.types.bytes.Byte3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Short4;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.Short4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -5781,8 +6193,8 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt8;
-                import net.sixik.ga_utils.javatogpu.api.UShort16;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt8;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort16;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -5846,7 +6258,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5915,7 +6327,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -5974,7 +6386,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6033,7 +6445,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6092,7 +6504,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6149,7 +6561,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6206,7 +6618,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6261,7 +6673,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6318,7 +6730,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double2;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6377,9 +6789,9 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -6439,9 +6851,9 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -6497,9 +6909,9 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float3;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -6555,7 +6967,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6612,7 +7024,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -6805,13 +7217,13 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
-                import net.sixik.ga_utils.javatogpu.api.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
+                import net.sixik.ga_utils.javatogpu.api.images.Sampler;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -6868,11 +7280,11 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Sampler;
-                import net.sixik.ga_utils.javatogpu.api.UInt4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.images.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -6928,12 +7340,12 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
-                import net.sixik.ga_utils.javatogpu.api.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
+                import net.sixik.ga_utils.javatogpu.api.images.Sampler;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -6990,11 +7402,11 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
-                import net.sixik.ga_utils.javatogpu.api.Sampler;
-                import net.sixik.ga_utils.javatogpu.api.UInt4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
+                import net.sixik.ga_utils.javatogpu.api.images.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7051,9 +7463,9 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.UInt4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7107,10 +7519,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7165,7 +7577,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7220,7 +7632,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7275,7 +7687,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7330,7 +7742,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedReadOnly;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7384,12 +7796,12 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.images.Sampler;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7445,11 +7857,11 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DMsaaReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DMsaaWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7510,11 +7922,11 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.Sampler;
-                import net.sixik.ga_utils.javatogpu.api.UInt4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.images.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7571,7 +7983,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7626,10 +8038,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Sampler;
-                import net.sixik.ga_utils.javatogpu.api.UInt4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image1DReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image1DWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Sampler;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7684,10 +8096,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int2;
-                import net.sixik.ga_utils.javatogpu.api.UInt4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int2;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7744,9 +8156,9 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -7800,11 +8212,11 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float4;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
-                import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayReadOnly;
+                import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayWriteOnly;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -8385,7 +8797,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.FloatPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
@@ -8589,7 +9001,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalFloatPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalFloatPtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -8853,7 +9265,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.ConstantBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
@@ -8908,7 +9320,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -8960,7 +9372,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.ConstantBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
@@ -9015,7 +9427,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.LocalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
 
@@ -9069,7 +9481,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.LocalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
 
@@ -9123,7 +9535,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -9184,9 +9596,9 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
-                import net.sixik.ga_utils.javatogpu.api.GlobalDoublePtr;
-                import net.sixik.ga_utils.javatogpu.api.GlobalIntPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalDoublePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalIntPtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 
@@ -9258,10 +9670,10 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.ConstantShortPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantShortPtr;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalIntPtr;
-                import net.sixik.ga_utils.javatogpu.api.LocalLongPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalIntPtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalLongPtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstant;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPULocal;
@@ -9451,7 +9863,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
@@ -9541,7 +9953,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -9585,8 +9997,8 @@ class GpuCompilerProcessorTest {
         Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
         assertTrue(Files.exists(launcherSourcePath));
         String launcherSource = Files.readString(launcherSourcePath);
-        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"bias\", \"net.sixik.ga_utils.javatogpu.api.Float2\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.VALUE)"));
-        assertTrue(launcherSource.contains("public static void invoke(net.sixik.ga_utils.javatogpu.api.Float2 bias, float[] output)"));
+        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"bias\", \"net.sixik.ga_utils.javatogpu.api.types.floats.Float2\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.VALUE)"));
+        assertTrue(launcherSource.contains("public static void invoke(net.sixik.ga_utils.javatogpu.api.types.floats.Float2 bias, float[] output)"));
 
         AtomicReference<GpuKernelInvocation> capturedInvocation = new AtomicReference<>();
         GpuRuntimeBackend previousBackend = GpuRuntime.backend();
@@ -9595,7 +10007,7 @@ class GpuCompilerProcessorTest {
         try (URLClassLoader classLoader = new URLClassLoader(new URL[]{classOutputDir.toUri().toURL()}, getClass().getClassLoader())) {
             Class<?> launcherClass = Class.forName("sample.generated.Demo_kernel_GpuLauncher", true, classLoader);
             Class<?> ownerClass = Class.forName("sample.Demo", true, classLoader);
-            Object bias = Class.forName("net.sixik.ga_utils.javatogpu.api.Float2", true, classLoader)
+            Object bias = Class.forName("net.sixik.ga_utils.javatogpu.api.types.floats.Float2", true, classLoader)
                     .getConstructor(float.class, float.class)
                     .newInstance(1.0f, 2.0f);
             float[] output = new float[]{0.0f, 0.0f};
@@ -9630,7 +10042,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -9683,7 +10095,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.UInt16;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt16;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -9738,10 +10150,10 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int8;
-                import net.sixik.ga_utils.javatogpu.api.UInt16;
-                import net.sixik.ga_utils.javatogpu.api.ULong8;
-                import net.sixik.ga_utils.javatogpu.api.UShort16;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int8;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.UInt16;
+                import net.sixik.ga_utils.javatogpu.api.types.longs.ULong8;
+                import net.sixik.ga_utils.javatogpu.api.types.shorts.UShort16;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -9795,7 +10207,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int4;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int4;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
                 public class Demo {
@@ -10206,7 +10618,7 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -10252,9 +10664,9 @@ class GpuCompilerProcessorTest {
         Path launcherSourcePath = generatedOutputDir.resolve("sample/generated/Demo_kernel_GpuLauncher.java");
         assertTrue(Files.exists(launcherSourcePath));
         String launcherSource = Files.readString(launcherSourcePath);
-        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"input\", \"net.sixik.ga_utils.javatogpu.api.Float2[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
-        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"output\", \"net.sixik.ga_utils.javatogpu.api.Float2[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
-        assertTrue(launcherSource.contains("public static void invoke(net.sixik.ga_utils.javatogpu.api.Float2[] input, net.sixik.ga_utils.javatogpu.api.Float2[] output)"));
+        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"input\", \"net.sixik.ga_utils.javatogpu.api.types.floats.Float2[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
+        assertTrue(launcherSource.contains("new net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor(\"output\", \"net.sixik.ga_utils.javatogpu.api.types.floats.Float2[]\", net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess.READ_WRITE)"));
+        assertTrue(launcherSource.contains("public static void invoke(net.sixik.ga_utils.javatogpu.api.types.floats.Float2[] input, net.sixik.ga_utils.javatogpu.api.types.floats.Float2[] output)"));
     }
 
     @Test
@@ -10669,7 +11081,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Float2;
+                import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUConstantData;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
 
@@ -11247,9 +11659,9 @@ class GpuCompilerProcessorTest {
         String source = """
                 package sample;
 
-                import net.sixik.ga_utils.javatogpu.api.Double3;
+                import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.Int3;
+                import net.sixik.ga_utils.javatogpu.api.types.integers.Int3;
                 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
@@ -11555,7 +11967,7 @@ class GpuCompilerProcessorTest {
                 package sample;
 
                 import net.sixik.ga_utils.javatogpu.api.GPU;
-                import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
+                import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUGlobal;
                 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 

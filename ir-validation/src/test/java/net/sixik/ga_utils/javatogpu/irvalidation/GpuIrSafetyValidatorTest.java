@@ -817,7 +817,7 @@ class GpuIrSafetyValidatorTest {
                 ))))),
                 "jtg_vector_helper",
                 List.of(),
-                "net.sixik.ga_utils.javatogpu.api.Float2",
+                "net.sixik.ga_utils.javatogpu.api.vectors.floats.Float2",
                 List.of()
         );
         GpuIrCompiledMethod method = method(new GpuIrMethod("kernel", List.of(

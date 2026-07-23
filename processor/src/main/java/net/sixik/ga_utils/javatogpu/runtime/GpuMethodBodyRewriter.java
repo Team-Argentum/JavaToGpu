@@ -1,5 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.launch.GpuLauncherNamingSupport;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -97,7 +98,10 @@ public final class GpuMethodBodyRewriter {
         @Override
         public void visitEnd() {
             for (MethodRewritePlan plan : rewritePlans) {
-                String launcherInternalName = GpuLauncherNaming.launcherInternalName(ownerInternalName, plan.methodName());
+                String launcherInternalName = GpuLauncherNamingSupport.launcherInternalName(
+                        ownerInternalName,
+                        plan.methodName()
+                );
                 MethodVisitor delegate = cv.visitMethod(plan.access(), plan.methodName(), plan.methodDescriptor(), plan.signature(), plan.exceptions());
                 GeneratorAdapter generator = new GeneratorAdapter(delegate, plan.access(), plan.methodName(), plan.methodDescriptor());
                 generator.visitCode();

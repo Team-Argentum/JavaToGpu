@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GpuBackendSourcePromotionManifestTest {
 
-    private static final String GIT_SHA = "1ec61b94d629c8f4f5346ed321bc63fd2d50442c";
+    static final String GIT_SHA = "1ec61b94d629c8f4f5346ed321bc63fd2d50442c";
 
     @Test
     void templateBindsCandidateArtifactAndRemainsPending() throws Exception {
@@ -33,6 +33,25 @@ class GpuBackendSourcePromotionManifestTest {
         assertTrue(template.contains("binding.kernel.1.resource=kernel-b.cl"));
         assertTrue(template.contains("authorization.defaultProductionSourceSwitching=disabled"));
         assertTrue(template.contains("authorization.productionMutation=disabled"));
+        assertTrue(template.contains("runtime.production.manifest.status=pending"));
+        assertTrue(template.contains("runtime.production.manifest.binding.gitSha=" + GIT_SHA));
+        assertTrue(template.contains("runtime.production.manifest.authorization.productionMutation=disabled"));
+    }
+
+    @Test
+    void templateAcceptsPortableOnlyCandidateArtifact() throws Exception {
+        String candidate = portableOnlyCandidateText();
+        byte[] candidateBytes = candidate.getBytes(StandardCharsets.UTF_8);
+
+        String template = GpuBackendSourcePromotionManifest.template(
+                properties(candidate),
+                candidateBytes,
+                GIT_SHA
+        );
+
+        assertTrue(template.contains("binding.deviceVendor=NVIDIA Corporation"));
+        assertTrue(template.contains("binding.kernel.0.resource=kernel-a.cl"));
+        assertTrue(template.contains("runtime.production.manifest.binding.kernel.1.resource=kernel-b.cl"));
     }
 
     @Test
@@ -56,6 +75,33 @@ class GpuBackendSourcePromotionManifestTest {
         assertTrue(validation.toPropertiesText().contains("binding.gitShaMatched=true"));
         assertTrue(validation.toPropertiesText().contains("binding.candidateArtifactSha256Matched=true"));
         assertTrue(validation.toPropertiesText().contains("authorization.productionMutation=disabled"));
+        assertTrue(validation.toPropertiesText().contains("runtime.production.manifest.status=approved"));
+        assertTrue(validation.toPropertiesText().contains("runtime.production.manifest.valid=true"));
+        assertTrue(validation.toPropertiesText().contains("runtime.production.manifest.binding.gitShaMatched=true"));
+    }
+
+    @Test
+    void validatesPortableOnlyManifestAgainstPortableOnlyCandidate() throws Exception {
+        String candidate = portableOnlyCandidateText();
+        byte[] candidateBytes = candidate.getBytes(StandardCharsets.UTF_8);
+        String pending = GpuBackendSourcePromotionManifest.template(
+                properties(candidate),
+                candidateBytes,
+                GIT_SHA
+        );
+        String manifest = portableOnly(approve(pending), GpuBackendSourcePromotionManifest.PORTABLE_PREFIX);
+
+        GpuBackendSourcePromotionManifest.Validation validation =
+                GpuBackendSourcePromotionManifest.validate(
+                        properties(candidate),
+                        candidateBytes,
+                        properties(manifest),
+                        GIT_SHA
+                );
+
+        assertTrue(validation.valid());
+        assertEquals("approved", validation.status());
+        assertTrue(validation.blockers().isEmpty());
     }
 
     @Test
@@ -105,15 +151,59 @@ class GpuBackendSourcePromotionManifestTest {
         );
     }
 
+    static String portableOnlyCandidateText() {
+        return String.join("\n",
+                "runtime.production.candidateGate.formatVersion=1",
+                "runtime.production.candidateGate.status=review-ready",
+                "runtime.production.candidateGate.reviewReady=true",
+                "runtime.production.candidateGate.scope=real-workload-production-candidate",
+                "runtime.production.candidateGate.defaultProductionSourceSwitching=disabled",
+                "runtime.production.candidateGate.candidateProductionSourceSwitching=review-ready",
+                "runtime.production.candidateGate.productionMutation=disabled",
+                "runtime.production.candidateGate.kernel.count=2",
+                "runtime.production.candidateGate.candidateReady.count=2",
+                "runtime.production.candidateGate.candidateReady.all=true",
+                "runtime.production.candidateGate.sourceParityMatched=true",
+                "runtime.production.candidateGate.runtimeEquivalencePassed=true",
+                "runtime.production.candidateGate.controlledSourceSwitching.status=passed",
+                "runtime.production.candidateGate.operatorAcceptance.mode=identity-bound",
+                "runtime.production.candidateGate.operatorAcceptance.accepted.count=2",
+                "runtime.production.candidateGate.operatorAcceptance.accepted.all=true",
+                "runtime.production.candidateGate.operatorAcceptance.bound.count=2",
+                "runtime.production.candidateGate.operatorAcceptance.bound.all=true",
+                "runtime.production.candidateGate.operatorAcceptance.deviceVendor=NVIDIA Corporation",
+                "runtime.production.candidateGate.operatorAcceptance.deviceLabel=NVIDIA CUDA / NVIDIA GeForce RTX 5070",
+                "runtime.production.candidateGate.operatorAcceptance.driverVersion=595.97",
+                "kernel.0.runtime.production.candidateGate.resource=kernel-a.cl",
+                "kernel.1.runtime.production.candidateGate.resource=kernel-b.cl",
+                "runtime.production.candidateGate.blocker.count=0",
+                ""
+        );
+    }
+
     static String approvedManifest(byte[] candidateBytes) throws Exception {
-        return GpuBackendSourcePromotionManifest.template(
+        return approve(GpuBackendSourcePromotionManifest.template(
                 properties(candidateText()),
                 candidateBytes,
                 GIT_SHA
-        ).replace("status=pending", "status=approved")
+        ));
+    }
+
+    static String approve(String pending) {
+        return pending.replace("status=pending", "status=approved")
                 .replace("approval.id=REQUIRED", "approval.id=approval:release-2026-07-10")
                 .replace("approval.approvedBy=REQUIRED", "approval.approvedBy=release-operator")
                 .replace("approval.approvedAtUtc=REQUIRED", "approval.approvedAtUtc=2026-07-10T20:00:00Z");
+    }
+
+    static String portableOnly(String text, String portablePrefix) {
+        StringBuilder builder = new StringBuilder();
+        for (String line : text.split("\\R")) {
+            if (line.startsWith(portablePrefix)) {
+                builder.append(line).append('\n');
+            }
+        }
+        return builder.toString();
     }
 
     static Properties properties(String text) throws Exception {

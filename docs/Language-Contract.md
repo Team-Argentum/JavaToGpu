@@ -77,6 +77,8 @@ Common supported type families include:
 - Address-space views such as `GlobalBytePtr` for packed-buffer access.
 - `@GPUStruct` values for small ABI-safe records.
 
+Use the grouped API packages for imports: `api.types.*` for scalar aliases/vectors, `api.pointers.*` for pointer wrappers, and `api.images` for image/sampler wrappers. The root `api` package is reserved for the main facade classes such as `GPU`, `JavaToGpu`, and `GpuScope`.
+
 See [OpenCL Data Model](OpenCL-Data-Model.md) for examples of structs, vectors, pointers, packed blobs, and images.
 
 ## Helpers

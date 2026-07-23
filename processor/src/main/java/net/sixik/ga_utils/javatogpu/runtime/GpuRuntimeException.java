@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeDiagnosticRendererSupport;
+
 import java.util.List;
 
 /**
@@ -42,7 +44,7 @@ public class GpuRuntimeException extends RuntimeException {
             Throwable cause,
             boolean ignored
     ) {
-        super(GpuRuntimeDiagnosticRenderer.render(code, phase, summary, context, helpMessages), cause);
+        super(GpuRuntimeDiagnosticRendererSupport.render(code, phase, summary, context, helpMessages), cause);
         this.code = code;
         this.phase = phase;
         this.summary = summary;

@@ -1,15 +1,15 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMsaaReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMsaaWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMsaaReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMsaaWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;

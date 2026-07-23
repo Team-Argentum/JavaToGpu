@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.integers.UInt;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
@@ -55,7 +56,7 @@ class ExamplesAppSmokeTest {
             GpuShowcase.attributeExample(floatInput, attributeOutput);
             GpuShowcase.structExample(new SampleData(0.75, 3), doubleInput, structOutput);
             GpuShowcase.structBufferExample(structBufferInput, structBufferOutput);
-            GpuShowcase.unsignedScalarExample(new net.sixik.ga_utils.javatogpu.api.UInt(41), unsignedScalarOutput);
+            GpuShowcase.unsignedScalarExample(new UInt(41), unsignedScalarOutput);
         }
 
         assertArrayEquals(new float[]{0.96036774f, 1.7273244f, 2.2852800f, 2.8107994f}, basicOutput, 1.0e-5f);

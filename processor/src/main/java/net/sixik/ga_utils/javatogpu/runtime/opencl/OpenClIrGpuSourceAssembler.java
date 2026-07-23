@@ -148,7 +148,9 @@ public final class OpenClIrGpuSourceAssembler {
             return;
         }
         if (structPrefix) {
-            builder.append(attributes.stream().collect(Collectors.joining(" "))).append(' ');
+            builder.append("__attribute__((")
+                    .append(String.join(", ", attributes))
+                    .append(")) ");
             return;
         }
         builder.append("__attribute__((")

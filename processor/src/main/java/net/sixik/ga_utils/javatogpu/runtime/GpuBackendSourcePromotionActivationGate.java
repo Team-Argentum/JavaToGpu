@@ -53,23 +53,23 @@ public record GpuBackendSourcePromotionActivationGate(
         Properties manifest = manifestValidation == null ? new Properties() : manifestValidation;
         Properties controlled = controlledSourceSwitching == null ? new Properties() : controlledSourceSwitching;
         LinkedHashSet<String> blockers = new LinkedHashSet<>();
-        int kernelCount = parseInt(candidate.getProperty("kernel.count"), 0);
+        int kernelCount = parseInt(candidateProperty(candidate, "kernel.count", "0"), 0);
 
-        requireEquals(blockers, candidate, "status", "review-ready", "candidate-status-not-review-ready");
-        requireTrue(blockers, candidate, "reviewReady", "candidate-review-ready-false");
-        requireTrue(blockers, candidate, "candidateReady.all", "candidate-kernels-not-all-ready");
-        requireTrue(blockers, candidate, "sourceParityMatched", "candidate-source-parity-not-matched");
-        requireTrue(blockers, candidate, "runtimeEquivalencePassed", "candidate-runtime-equivalence-not-passed");
-        requireTrue(blockers, candidate, "operatorAcceptance.accepted.all", "candidate-operator-acceptance-not-all-accepted");
-        requireTrue(blockers, candidate, "operatorAcceptance.bound.all", "candidate-operator-acceptance-not-all-bound");
-        requireEquals(
+        requireCandidateEquals(blockers, candidate, "status", "review-ready", "candidate-status-not-review-ready");
+        requireCandidateTrue(blockers, candidate, "reviewReady", "candidate-review-ready-false");
+        requireCandidateTrue(blockers, candidate, "candidateReady.all", "candidate-kernels-not-all-ready");
+        requireCandidateTrue(blockers, candidate, "sourceParityMatched", "candidate-source-parity-not-matched");
+        requireCandidateTrue(blockers, candidate, "runtimeEquivalencePassed", "candidate-runtime-equivalence-not-passed");
+        requireCandidateTrue(blockers, candidate, "operatorAcceptance.accepted.all", "candidate-operator-acceptance-not-all-accepted");
+        requireCandidateTrue(blockers, candidate, "operatorAcceptance.bound.all", "candidate-operator-acceptance-not-all-bound");
+        requireCandidateEquals(
                 blockers,
                 candidate,
                 "defaultProductionSourceSwitching",
                 "disabled",
                 "candidate-default-production-source-switching-not-disabled"
         );
-        requireEquals(
+        requireCandidateEquals(
                 blockers,
                 candidate,
                 "productionMutation",
@@ -80,62 +80,62 @@ public record GpuBackendSourcePromotionActivationGate(
             blockers.add("candidate-kernels-missing");
         }
 
-        requireEquals(blockers, manifest, "status", "approved", "manifest-validation-not-approved");
-        requireTrue(blockers, manifest, "valid", "manifest-validation-invalid");
-        requireEquals(
+        requireManifestEquals(blockers, manifest, "status", "approved", "manifest-validation-not-approved");
+        requireManifestTrue(blockers, manifest, "valid", "manifest-validation-invalid");
+        requireManifestEquals(
                 blockers,
                 manifest,
                 "scope",
                 GpuBackendSourcePromotionManifest.SCOPE + "-validation",
                 "manifest-validation-scope-mismatch"
         );
-        requireTrue(blockers, manifest, "binding.gitShaMatched", "manifest-git-sha-not-matched");
-        requireTrue(
+        requireManifestTrue(blockers, manifest, "binding.gitShaMatched", "manifest-git-sha-not-matched");
+        requireManifestTrue(
                 blockers,
                 manifest,
                 "binding.candidateArtifactSha256Matched",
                 "manifest-candidate-artifact-sha256-not-matched"
         );
-        requireNonBlankEqual(
+        requireManifestNonBlankEqual(
                 blockers,
                 manifest,
                 "binding.expectedGitSha",
                 "binding.manifestGitSha",
                 "manifest-git-sha-values-mismatch"
         );
-        requireNonBlankEqual(
+        requireManifestNonBlankEqual(
                 blockers,
                 manifest,
                 "binding.actualCandidateArtifact.sha256",
                 "binding.manifestCandidateArtifact.sha256",
                 "manifest-candidate-artifact-sha256-values-mismatch"
         );
-        requireEquals(blockers, manifest, "binding.backendTarget", "OPENCL", "manifest-backend-target-mismatch");
-        requireEquals(
+        requireManifestEquals(blockers, manifest, "binding.backendTarget", "OPENCL", "manifest-backend-target-mismatch");
+        requireManifestEquals(
                 blockers,
                 manifest,
                 "authorization.defaultProductionSourceSwitching",
                 "disabled",
                 "manifest-default-production-source-switching-not-disabled"
         );
-        requireEquals(
+        requireManifestEquals(
                 blockers,
                 manifest,
                 "authorization.productionMutation",
                 "disabled",
                 "manifest-production-mutation-not-disabled"
         );
-        requireEquals(
+        requireManifestEquals(
                 blockers,
                 manifest,
                 "authorization.scope",
                 "manual-review-only",
                 "manifest-authorization-scope-mismatch"
         );
-        if (parseInt(manifest.getProperty("binding.kernel.count"), -1) != kernelCount) {
+        if (parseInt(manifestProperty(manifest, "binding.kernel.count", "-1"), -1) != kernelCount) {
             blockers.add("manifest-kernel-count-mismatch");
         }
-        if (parseInt(manifest.getProperty("blocker.count"), -1) != 0) {
+        if (parseInt(manifestProperty(manifest, "blocker.count", "-1"), -1) != 0) {
             blockers.add("manifest-validation-has-blockers");
         }
 
@@ -150,12 +150,12 @@ public record GpuBackendSourcePromotionActivationGate(
         );
         requireTrue(blockers, controlled, "operatorAcceptance.bound", "controlled-operator-acceptance-not-bound");
 
-        String candidateVendor = candidate.getProperty("operatorAcceptance.deviceVendor", "unknown");
-        String candidateLabel = candidate.getProperty("operatorAcceptance.deviceLabel", "unknown");
-        String candidateDriver = candidate.getProperty("operatorAcceptance.driverVersion", "unknown");
-        requireIdentityMatch(blockers, manifest, "binding.deviceVendor", candidateVendor, "manifest-device-vendor-mismatch");
-        requireIdentityMatch(blockers, manifest, "binding.deviceLabel", candidateLabel, "manifest-device-label-mismatch");
-        requireIdentityMatch(blockers, manifest, "binding.driverVersion", candidateDriver, "manifest-driver-version-mismatch");
+        String candidateVendor = candidateProperty(candidate, "operatorAcceptance.deviceVendor", "unknown");
+        String candidateLabel = candidateProperty(candidate, "operatorAcceptance.deviceLabel", "unknown");
+        String candidateDriver = candidateProperty(candidate, "operatorAcceptance.driverVersion", "unknown");
+        requireManifestIdentityMatch(blockers, manifest, "binding.deviceVendor", candidateVendor, "manifest-device-vendor-mismatch");
+        requireManifestIdentityMatch(blockers, manifest, "binding.deviceLabel", candidateLabel, "manifest-device-label-mismatch");
+        requireManifestIdentityMatch(blockers, manifest, "binding.driverVersion", candidateDriver, "manifest-driver-version-mismatch");
         requireIdentityMatch(blockers, controlled, "operatorAcceptance.deviceVendor", candidateVendor, "controlled-device-vendor-mismatch");
         requireIdentityMatch(blockers, controlled, "operatorAcceptance.deviceLabel", candidateLabel, "controlled-device-label-mismatch");
         requireIdentityMatch(blockers, controlled, "operatorAcceptance.driverVersion", candidateDriver, "controlled-driver-version-mismatch");
@@ -166,7 +166,7 @@ public record GpuBackendSourcePromotionActivationGate(
         int acceptedCount = 0;
         int boundCount = 0;
         for (int index = 0; index < kernelCount; index++) {
-            String resource = normalize(candidate.getProperty("kernel." + index + ".resource"), "unknown");
+            String resource = normalize(candidateKernelProperty(candidate, index, "resource", null), "unknown");
             ControlledKernel controlledKernel = controlledByResource.get(resource);
             ArrayList<String> kernelBlockers = new ArrayList<>();
             if ("unknown".equals(resource)) {
@@ -210,8 +210,8 @@ public record GpuBackendSourcePromotionActivationGate(
                 activationReady ? "controlled-activation-ready" : "blocked",
                 activationReady,
                 ACTIVATION_SCOPE,
-                manifest.getProperty("approval.id", "approval:missing"),
-                manifest.getProperty("binding.expectedGitSha", "unknown"),
+                manifestProperty(manifest, "approval.id", "approval:missing"),
+                manifestProperty(manifest, "binding.expectedGitSha", "unknown"),
                 candidateVendor,
                 candidateLabel,
                 candidateDriver,
@@ -232,53 +232,112 @@ public record GpuBackendSourcePromotionActivationGate(
         StringBuilder builder = new StringBuilder();
         builder.append("formatVersion=1\n");
         builder.append("status=").append(status).append('\n');
+        builder.append("runtime.production.activationGate.status=").append(status).append('\n');
         builder.append("activationReady=").append(activationReady).append('\n');
+        builder.append("runtime.production.activationGate.ready=").append(activationReady).append('\n');
         builder.append("activationScope=").append(activationScope).append('\n');
+        builder.append("runtime.production.activationGate.scope=").append(activationScope).append('\n');
         builder.append("backendTarget=OPENCL\n");
+        builder.append("runtime.production.activationGate.backendTarget=OPENCL\n");
         builder.append("defaultRuntimeActivation=false\n");
+        builder.append("runtime.production.activationGate.defaultRuntimeActivation=false\n");
         builder.append("defaultProductionSourceSwitching=disabled\n");
+        builder.append("runtime.production.activationGate.defaultProductionSourceSwitching=disabled\n");
         builder.append("productionMutation=disabled\n");
+        builder.append("runtime.production.activationGate.productionMutation=disabled\n");
         builder.append("manifest.approval.id=").append(propertyValue(approvalId)).append('\n');
+        builder.append("runtime.production.activationGate.approvalId=").append(propertyValue(approvalId)).append('\n');
         builder.append("manifest.candidateGitSha=").append(candidateGitSha).append('\n');
+        builder.append("runtime.production.activationGate.candidateGitSha=").append(candidateGitSha).append('\n');
         builder.append("deviceVendor=").append(propertyValue(deviceVendor)).append('\n');
+        builder.append("runtime.production.activationGate.deviceVendor=").append(propertyValue(deviceVendor)).append('\n');
         builder.append("deviceLabel=").append(propertyValue(deviceLabel)).append('\n');
+        builder.append("runtime.production.activationGate.deviceLabel=").append(propertyValue(deviceLabel)).append('\n');
         builder.append("driverVersion=").append(propertyValue(driverVersion)).append('\n');
+        builder.append("runtime.production.activationGate.driverVersion=").append(propertyValue(driverVersion)).append('\n');
         builder.append("kernel.count=").append(kernelCount).append('\n');
+        builder.append("runtime.production.activationGate.kernel.count=").append(kernelCount).append('\n');
         builder.append("controlledCoverage.count=").append(controlledCoverageCount).append('\n');
+        builder.append("runtime.production.activationGate.controlledCoverage.count=")
+                .append(controlledCoverageCount)
+                .append('\n');
         builder.append("controlledCoverage.all=")
                 .append(kernelCount > 0 && controlledCoverageCount == kernelCount)
                 .append('\n');
+        builder.append("runtime.production.activationGate.controlledCoverage.all=")
+                .append(kernelCount > 0 && controlledCoverageCount == kernelCount)
+                .append('\n');
         builder.append("operatorAcceptance.accepted.count=").append(operatorAcceptedCount).append('\n');
+        builder.append("runtime.production.activationGate.operatorAcceptance.accepted.count=")
+                .append(operatorAcceptedCount)
+                .append('\n');
         builder.append("operatorAcceptance.accepted.all=")
                 .append(kernelCount > 0 && operatorAcceptedCount == kernelCount)
                 .append('\n');
+        builder.append("runtime.production.activationGate.operatorAcceptance.accepted.all=")
+                .append(kernelCount > 0 && operatorAcceptedCount == kernelCount)
+                .append('\n');
         builder.append("operatorAcceptance.bound.count=").append(operatorBoundCount).append('\n');
+        builder.append("runtime.production.activationGate.operatorAcceptance.bound.count=")
+                .append(operatorBoundCount)
+                .append('\n');
         builder.append("operatorAcceptance.bound.all=")
+                .append(kernelCount > 0 && operatorBoundCount == kernelCount)
+                .append('\n');
+        builder.append("runtime.production.activationGate.operatorAcceptance.bound.all=")
                 .append(kernelCount > 0 && operatorBoundCount == kernelCount)
                 .append('\n');
         for (int index = 0; index < kernels.size(); index++) {
             KernelActivation kernel = kernels.get(index);
             String prefix = "kernel." + index + ".";
             builder.append(prefix).append("resource=").append(propertyValue(kernel.resource())).append('\n');
+            builder.append(prefix).append("runtime.production.activationGate.resource=")
+                    .append(propertyValue(kernel.resource()))
+                    .append('\n');
             builder.append(prefix).append("controlledStatus=").append(kernel.controlledStatus()).append('\n');
+            builder.append(prefix).append("runtime.production.activationGate.controlledStatus=")
+                    .append(kernel.controlledStatus())
+                    .append('\n');
             builder.append(prefix).append("operatorAcceptance.status=")
                     .append(kernel.operatorAcceptanceStatus()).append('\n');
+            builder.append(prefix).append("runtime.production.activationGate.operatorAcceptance.status=")
+                    .append(kernel.operatorAcceptanceStatus())
+                    .append('\n');
             builder.append(prefix).append("operatorAcceptance.bound=")
                     .append(kernel.operatorAcceptanceBound()).append('\n');
+            builder.append(prefix).append("runtime.production.activationGate.operatorAcceptance.bound=")
+                    .append(kernel.operatorAcceptanceBound())
+                    .append('\n');
             builder.append(prefix).append("activationReady=").append(kernel.activationReady()).append('\n');
+            builder.append(prefix).append("runtime.production.activationGate.ready=")
+                    .append(kernel.activationReady())
+                    .append('\n');
             builder.append(prefix).append("blocker.count=").append(kernel.blockers().size()).append('\n');
+            builder.append(prefix).append("runtime.production.activationGate.blocker.count=")
+                    .append(kernel.blockers().size())
+                    .append('\n');
             for (int blockerIndex = 0; blockerIndex < kernel.blockers().size(); blockerIndex++) {
                 builder.append(prefix).append("blocker.").append(blockerIndex).append('=')
+                        .append(kernel.blockers().get(blockerIndex)).append('\n');
+                builder.append(prefix).append("runtime.production.activationGate.blocker.").append(blockerIndex)
+                        .append('=')
                         .append(kernel.blockers().get(blockerIndex)).append('\n');
             }
         }
         builder.append("blocker.count=").append(blockers.size()).append('\n');
+        builder.append("runtime.production.activationGate.blocker.count=").append(blockers.size()).append('\n');
         for (int index = 0; index < blockers.size(); index++) {
             builder.append("blocker.").append(index).append('=').append(blockers.get(index)).append('\n');
+            builder.append("runtime.production.activationGate.blocker.").append(index)
+                    .append('=')
+                    .append(blockers.get(index))
+                    .append('\n');
         }
-        builder.append("diagnostic=").append(activationReady
+        String diagnostic = activationReady
                 ? "controlled opt-in activation is ready; default runtime activation remains disabled"
-                : "controlled opt-in activation is blocked by " + firstBlocker()).append('\n');
+                : "controlled opt-in activation is blocked by " + firstBlocker();
+        builder.append("diagnostic=").append(diagnostic).append('\n');
+        builder.append("runtime.production.activationGate.diagnostic=").append(diagnostic).append('\n');
         return builder.toString();
     }
 
@@ -311,6 +370,30 @@ public record GpuBackendSourcePromotionActivationGate(
         }
     }
 
+    private static void requireCandidateEquals(
+            LinkedHashSet<String> blockers,
+            Properties properties,
+            String key,
+            String expected,
+            String blocker
+    ) {
+        if (!expected.equals(candidateProperty(properties, key, null))) {
+            blockers.add(blocker);
+        }
+    }
+
+    private static void requireManifestEquals(
+            LinkedHashSet<String> blockers,
+            Properties properties,
+            String key,
+            String expected,
+            String blocker
+    ) {
+        if (!expected.equals(manifestProperty(properties, key, null))) {
+            blockers.add(blocker);
+        }
+    }
+
     private static void requireTrue(
             LinkedHashSet<String> blockers,
             Properties properties,
@@ -322,16 +405,50 @@ public record GpuBackendSourcePromotionActivationGate(
         }
     }
 
-    private static void requireNonBlankEqual(
+    private static void requireCandidateTrue(
+            LinkedHashSet<String> blockers,
+            Properties properties,
+            String key,
+            String blocker
+    ) {
+        if (!Boolean.parseBoolean(candidateProperty(properties, key, null))) {
+            blockers.add(blocker);
+        }
+    }
+
+    private static void requireManifestTrue(
+            LinkedHashSet<String> blockers,
+            Properties properties,
+            String key,
+            String blocker
+    ) {
+        if (!Boolean.parseBoolean(manifestProperty(properties, key, null))) {
+            blockers.add(blocker);
+        }
+    }
+
+    private static void requireManifestNonBlankEqual(
             LinkedHashSet<String> blockers,
             Properties properties,
             String firstKey,
             String secondKey,
             String blocker
     ) {
-        String first = normalize(properties.getProperty(firstKey), "missing");
-        String second = normalize(properties.getProperty(secondKey), "missing");
+        String first = normalize(manifestProperty(properties, firstKey, null), "missing");
+        String second = normalize(manifestProperty(properties, secondKey, null), "missing");
         if ("missing".equals(first) || !first.equals(second)) {
+            blockers.add(blocker);
+        }
+    }
+
+    private static void requireManifestIdentityMatch(
+            LinkedHashSet<String> blockers,
+            Properties properties,
+            String key,
+            String expected,
+            String blocker
+    ) {
+        if (!normalize(expected, "unknown").equals(normalize(manifestProperty(properties, key, null), "missing"))) {
             blockers.add(blocker);
         }
     }
@@ -358,6 +475,29 @@ public record GpuBackendSourcePromotionActivationGate(
 
     private static String propertyValue(String value) {
         return normalize(value, "unknown").replace('\\', '/').replace('\r', ' ').replace('\n', ' ');
+    }
+
+    private static String candidateProperty(Properties properties, String key, String fallback) {
+        return GpuRuntimeArtifactProperties.portable(
+                properties,
+                GpuBackendSourcePromotionCandidateGate.PORTABLE_PREFIX,
+                key,
+                fallback
+        );
+    }
+
+    private static String candidateKernelProperty(Properties properties, int index, String key, String fallback) {
+        return GpuRuntimeArtifactProperties.prefixedPortable(
+                properties,
+                "kernel." + index + ".",
+                GpuBackendSourcePromotionCandidateGate.PORTABLE_PREFIX,
+                key,
+                fallback
+        );
+    }
+
+    private static String manifestProperty(Properties properties, String key, String fallback) {
+        return GpuRuntimeArtifactProperties.portable(properties, GpuBackendSourcePromotionManifest.PORTABLE_PREFIX, key, fallback);
     }
 
     private static String normalize(String value, String fallback) {

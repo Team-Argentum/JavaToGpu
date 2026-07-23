@@ -1,9 +1,9 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.api.annotations.OpenCLAttributes;
 import net.sixik.ga_utils.javatogpu.benchmark.BenchmarkHarness;

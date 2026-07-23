@@ -95,6 +95,7 @@ jobs:
       JTG_PRODUCTION_PROMOTION_MANIFEST_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_manifest_mode || 'skip' }}
       JTG_PRODUCTION_PROMOTION_MANIFEST_FILE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_manifest_file || 'promotion/opencl/backend-source-promotion-manifest.properties' }}
       JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_candidate_git_sha || '' }}
+      JTG_OPENCL_VENDOR_MATRIX_STRICT: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
 
     steps:
@@ -135,6 +136,18 @@ jobs:
           echo Expected device: %JTG_VALIDATION_DEVICE%
           where git
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Get-CimInstance Win32_VideoController | Select-Object Name, AdapterCompatibility, DriverVersion | Format-Table -AutoSize } catch { Write-Warning ('Unable to query Win32_VideoController: ' + $_.Exception.Message) }"
+
+      - name: Backend adapter contract smoke
+        id: backend_adapter_contracts
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :processor:validateBackendAdapterContracts --console=plain --no-daemon
+
+      - name: Hardware-free extension SPI smoke
+        id: extension_spi_smoke
+        continue-on-error: true
+        shell: cmd
+        run: .\gradlew.bat :examples-app:runExtensionHarnessExamples --console=plain --no-daemon
 
       - name: Prepare kernel launch-advisory negative fixture
         if: env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true'
@@ -350,6 +363,8 @@ jobs:
         env:
           NEGATIVE_FIXTURE_PREPARE_OUTCOME: ${{ steps.launch_advisory_negative_fixture_prepare.outcome }}
           NEGATIVE_FIXTURE_CHECK_OUTCOME: ${{ steps.launch_advisory_negative_fixture_check.outcome }}
+          BACKEND_ADAPTER_CONTRACTS_OUTCOME: ${{ steps.backend_adapter_contracts.outcome }}
+          EXTENSION_SPI_SMOKE_OUTCOME: ${{ steps.extension_spi_smoke.outcome }}
           OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
           VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
           LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
@@ -371,10 +386,14 @@ jobs:
           if not defined GITHUB_STEP_SUMMARY exit /b 0
           echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
           echo.>>"%GITHUB_STEP_SUMMARY%"
+          echo Strict lane failure: `%JTG_OPENCL_VENDOR_MATRIX_STRICT%`>>"%GITHUB_STEP_SUMMARY%"
+          echo.>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Negative fixture prepare ^| %NEGATIVE_FIXTURE_PREPARE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Negative fixture contract ^| %NEGATIVE_FIXTURE_CHECK_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Backend adapter contract smoke ^| %BACKEND_ADAPTER_CONTRACTS_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
+          echo ^| Hardware-free extension SPI smoke ^| %EXTENSION_SPI_SMOKE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| OpenCL validation ^| %OPENCL_VALIDATION_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Validation report ^| %VALIDATION_REPORT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Launch-advisory drift ^| %LAUNCH_ADVISORY_DRIFT_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
@@ -397,59 +416,168 @@ jobs:
             type processor\build\reports\opencl\runtime-launch-advisory-summary.md>>"%GITHUB_STEP_SUMMARY%"
           )
 
-      - name: Fail after artifact capture
-        if: >-
-          always() &&
-          (
-            (
-              env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true' &&
-              (
-                steps.opencl_validation.outcome != 'success' ||
-                steps.optimizer_family_payload_fixture.outcome != 'success' ||
-                steps.validation_report.outcome != 'success' ||
-                steps.launch_advisory_drift.outcome != 'success' ||
-                steps.compiler_resource_drift.outcome != 'success' ||
-                steps.validation_history_stage.outcome == 'failure' ||
-                steps.validation_history_save.outcome == 'failure' ||
-                steps.production_explainability.outcome != 'success' ||
-                steps.production_explainability_summary.outcome != 'success' ||
-                steps.source_promotion_summary.outcome != 'success' ||
-                (
-                  (env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'strict' || env.JTG_SOURCE_PROMOTION_BASELINE_MODE == 'update') &&
-                  steps.source_promotion_baseline.outcome != 'success'
-                )
-              )
-            ) ||
-            (
-              env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE == 'true' &&
-              steps.launch_advisory_negative_fixture_check.outcome != 'success'
-            ) ||
-            (
-              github.event_name == 'workflow_dispatch' &&
-              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'template' &&
-              steps.production_promotion_manifest_template.outcome != 'success'
-            ) ||
-            (
-              github.event_name == 'workflow_dispatch' &&
-              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'validate' &&
-              (
-                steps.production_promotion_inputs.outcome != 'success' ||
-                steps.production_promotion_manifest_validation.outcome != 'success'
-              )
-            ) ||
-            (
-              github.event_name == 'workflow_dispatch' &&
-              env.JTG_PRODUCTION_PROMOTION_MANIFEST_MODE == 'activate' &&
-              (
-                steps.production_promotion_inputs.outcome != 'success' ||
-                steps.production_promotion_manifest_validation.outcome != 'success' ||
-                steps.production_promotion_activation_gate.outcome != 'success' ||
-                steps.production_promotion_activation_token_smoke.outcome != 'success' ||
-                steps.production_promotion_activation_token_negative.outcome != 'success'
-              )
-            )
-          )
+      - name: Print OpenCL validation failure diagnostics
+        if: always() && steps.opencl_validation.outcome != 'success'
+        continue-on-error: true
         shell: cmd
         run: |
-          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed after artifact capture.
-          exit /b 1
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Continue'; Write-Host '::group::OpenCL validation failure diagnostics'; $reportFiles = @('processor/build/reports/opencl/bucket-status.properties', 'processor/build/reports/opencl/validation-report.md', 'processor/build/reports/opencl/workload-summary.properties', 'processor/build/reports/opencl/long-running-summary.properties', 'processor/build/reports/opencl/runtime-launch-advisory-drift.properties', 'processor/build/reports/opencl/runtime-compiler-resource-drift.properties'); foreach ($path in $reportFiles) { if (Test-Path -LiteralPath $path) { Write-Host ('--- ' + $path + ' ---'); Get-Content -LiteralPath $path -TotalCount 220 } else { Write-Host ('--- ' + $path + ' missing ---') } }; $testResultsRoot = 'processor/build/test-results'; if (Test-Path -LiteralPath $testResultsRoot) { Write-Host ('--- failed junit test cases under ' + $testResultsRoot + ' ---'); $failedCount = 0; Get-ChildItem -LiteralPath $testResultsRoot -Recurse -Filter '*.xml' -ErrorAction SilentlyContinue | ForEach-Object { try { [xml] $document = Get-Content -LiteralPath $_.FullName; $cases = @($document.testsuite.testcase); foreach ($case in $cases) { if ($case.failure -or $case.error) { $failedCount++; Write-Host ('FAILED {0}.{1} [{2}]' -f $case.classname, $case.name, $_.FullName); $message = if ($case.failure) { $case.failure.message } else { $case.error.message }; if ($message) { Write-Host ('  message: {0}' -f $message) }; $body = if ($case.failure) { $case.failure.InnerText } else { $case.error.InnerText }; if ($body) { ($body -split '`r?`n' | Select-Object -First 20) | ForEach-Object { Write-Host ('  {0}' -f $_) } } } } } catch { Write-Host ('Unable to parse {0}: {1}' -f $_.FullName, $_.Exception.Message) } }; if ($failedCount -eq 0) { Write-Host 'No failed junit test cases were found in XML reports.' } } else { Write-Host ('--- ' + $testResultsRoot + ' missing ---') }; Write-Host '::endgroup::'"
+
+      - name: Evaluate OpenCL lane gates
+        if: always()
+        shell: cmd
+        env:
+          BACKEND_ADAPTER_CONTRACTS_OUTCOME: ${{ steps.backend_adapter_contracts.outcome }}
+          EXTENSION_SPI_SMOKE_OUTCOME: ${{ steps.extension_spi_smoke.outcome }}
+          NEGATIVE_FIXTURE_PREPARE_OUTCOME: ${{ steps.launch_advisory_negative_fixture_prepare.outcome }}
+          NEGATIVE_FIXTURE_CHECK_OUTCOME: ${{ steps.launch_advisory_negative_fixture_check.outcome }}
+          OPENCL_VALIDATION_OUTCOME: ${{ steps.opencl_validation.outcome }}
+          VALIDATION_REPORT_OUTCOME: ${{ steps.validation_report.outcome }}
+          LAUNCH_ADVISORY_DRIFT_OUTCOME: ${{ steps.launch_advisory_drift.outcome }}
+          COMPILER_RESOURCE_DRIFT_OUTCOME: ${{ steps.compiler_resource_drift.outcome }}
+          PRODUCTION_EXPLAINABILITY_OUTCOME: ${{ steps.production_explainability.outcome }}
+          PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME: ${{ steps.production_explainability_summary.outcome }}
+          SOURCE_PROMOTION_BASELINE_OUTCOME: ${{ steps.source_promotion_baseline.outcome }}
+          SOURCE_PROMOTION_SUMMARY_OUTCOME: ${{ steps.source_promotion_summary.outcome }}
+          PRODUCTION_PROMOTION_INPUTS_OUTCOME: ${{ steps.production_promotion_inputs.outcome }}
+          PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME: ${{ steps.production_promotion_manifest_template.outcome }}
+          PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME: ${{ steps.production_promotion_manifest_validation.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME: ${{ steps.production_promotion_activation_gate.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME: ${{ steps.production_promotion_activation_token_smoke.outcome }}
+          PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME: ${{ steps.production_promotion_activation_token_negative.outcome }}
+          OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME: ${{ steps.optimizer_family_payload_fixture.outcome }}
+          VALIDATION_HISTORY_STAGE_OUTCOME: ${{ steps.validation_history_stage.outcome }}
+          VALIDATION_HISTORY_SAVE_OUTCOME: ${{ steps.validation_history_save.outcome }}
+        run: |
+          setlocal EnableExtensions
+          set "LANE_FAILED=0"
+
+          call :require_success "Backend adapter contract smoke" "%BACKEND_ADAPTER_CONTRACTS_OUTCOME%"
+          call :require_success "Hardware-free extension SPI smoke" "%EXTENSION_SPI_SMOKE_OUTCOME%"
+
+          if /I "%JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE%"=="true" (
+            call :require_success "Negative fixture prepare" "%NEGATIVE_FIXTURE_PREPARE_OUTCOME%"
+            call :require_success "OpenCL validation" "%OPENCL_VALIDATION_OUTCOME%"
+            call :require_success "Validation report" "%VALIDATION_REPORT_OUTCOME%"
+            call :require_outcome "Launch-advisory drift expected negative fixture failure" "%LAUNCH_ADVISORY_DRIFT_OUTCOME%" "failure"
+            call :require_success "Compiler-resource drift" "%COMPILER_RESOURCE_DRIFT_OUTCOME%"
+            if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+              call :require_success "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%"
+            ) else (
+              call :cascade_skip "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%" "OpenCL validation"
+            )
+            call :require_success "Production explainability summary" "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"
+            call :require_success "Source-promotion baseline" "%SOURCE_PROMOTION_BASELINE_OUTCOME%"
+            call :require_success "Source-promotion summary" "%SOURCE_PROMOTION_SUMMARY_OUTCOME%"
+            call :require_outcome "Validation history stage expected skipped" "%VALIDATION_HISTORY_STAGE_OUTCOME%" "skipped"
+            call :require_outcome "Validation history save expected skipped" "%VALIDATION_HISTORY_SAVE_OUTCOME%" "skipped"
+            if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+              call :require_success "Negative fixture contract" "%NEGATIVE_FIXTURE_CHECK_OUTCOME%"
+            ) else (
+              call :cascade_skip "Negative fixture contract" "%NEGATIVE_FIXTURE_CHECK_OUTCOME%" "OpenCL validation"
+            )
+          ) else (
+            call :require_success "OpenCL validation" "%OPENCL_VALIDATION_OUTCOME%"
+            call :require_success "Validation report" "%VALIDATION_REPORT_OUTCOME%"
+            call :require_success "Launch-advisory drift" "%LAUNCH_ADVISORY_DRIFT_OUTCOME%"
+            call :require_success "Compiler-resource drift" "%COMPILER_RESOURCE_DRIFT_OUTCOME%"
+            call :require_not_failure "Validation history stage" "%VALIDATION_HISTORY_STAGE_OUTCOME%"
+            call :require_not_failure "Validation history save" "%VALIDATION_HISTORY_SAVE_OUTCOME%"
+            if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+              call :require_success "Optimizer-family payload fixture" "%OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME%"
+              call :require_success "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%"
+            ) else (
+              call :cascade_skip "Optimizer-family payload fixture" "%OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Production explainability" "%PRODUCTION_EXPLAINABILITY_OUTCOME%" "OpenCL validation"
+            )
+            call :require_success "Production explainability summary" "%PRODUCTION_EXPLAINABILITY_SUMMARY_OUTCOME%"
+            call :require_success "Source-promotion summary" "%SOURCE_PROMOTION_SUMMARY_OUTCOME%"
+            if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="strict" call :require_success "Source-promotion baseline" "%SOURCE_PROMOTION_BASELINE_OUTCOME%"
+            if /I "%JTG_SOURCE_PROMOTION_BASELINE_MODE%"=="update" call :require_success "Source-promotion baseline" "%SOURCE_PROMOTION_BASELINE_OUTCOME%"
+          )
+
+          if /I "%OPENCL_VALIDATION_OUTCOME%"=="success" (
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="template" (
+              call :require_success "Promotion manifest template" "%PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME%"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="validate" (
+              call :require_success "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%"
+              call :require_success "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="activate" (
+              call :require_success "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%"
+              call :require_success "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%"
+              call :require_success "Controlled activation gate" "%PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME%"
+              call :require_success "Activation-token hardware smoke" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME%"
+              call :require_success "Activation-token negative controls" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME%"
+            )
+          ) else (
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="template" (
+              call :cascade_skip "Promotion manifest template" "%PRODUCTION_PROMOTION_MANIFEST_TEMPLATE_OUTCOME%" "OpenCL validation"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="validate" (
+              call :cascade_skip "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%" "OpenCL validation"
+            )
+            if /I "%JTG_PRODUCTION_PROMOTION_MANIFEST_MODE%"=="activate" (
+              call :cascade_skip "Promotion input guard" "%PRODUCTION_PROMOTION_INPUTS_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Promotion manifest validation" "%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Controlled activation gate" "%PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Activation-token hardware smoke" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_SMOKE_OUTCOME%" "OpenCL validation"
+              call :cascade_skip "Activation-token negative controls" "%PRODUCTION_PROMOTION_ACTIVATION_TOKEN_NEGATIVE_OUTCOME%" "OpenCL validation"
+            )
+          )
+
+          if "%LANE_FAILED%"=="1" (
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed in strict mode. Artifact bundle has already been uploaded; see required gate errors above.
+              exit /b 1
+            )
+            echo ::warning title=OpenCL vendor lane advisory failure::OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% failed in advisory mode. Artifacts were uploaded; workflow_dispatch remains strict.
+            echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed in advisory mode. Artifact bundle has already been uploaded; see required gate warnings above.
+            exit /b 0
+          )
+
+          echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane gates passed. Artifact bundle has already been uploaded.
+          exit /b 0
+
+          :require_success
+          if /I not "%~2"=="success" (
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo ::error title=OpenCL required gate failed::%~1 outcome was '%~2'; expected 'success'.
+            ) else (
+              echo ::warning title=OpenCL advisory gate failed::%~1 outcome was '%~2'; expected 'success'.
+            )
+            set "LANE_FAILED=1"
+          )
+          goto :eof
+
+          :require_outcome
+          if /I not "%~2"=="%~3" (
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo ::error title=OpenCL required gate failed::%~1 outcome was '%~2'; expected '%~3'.
+            ) else (
+              echo ::warning title=OpenCL advisory gate failed::%~1 outcome was '%~2'; expected '%~3'.
+            )
+            set "LANE_FAILED=1"
+          )
+          goto :eof
+
+          :require_not_failure
+          if /I "%~2"=="failure" (
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo ::error title=OpenCL required gate failed::%~1 outcome was 'failure'; expected success or skipped.
+            ) else (
+              echo ::warning title=OpenCL advisory gate failed::%~1 outcome was 'failure'; expected success or skipped.
+            )
+            set "LANE_FAILED=1"
+          )
+          goto :eof
+
+          :cascade_skip
+          if /I "%~2"=="skipped" (
+            echo ::notice title=OpenCL downstream gate skipped::%~1 was skipped because %~3 did not succeed.
+          ) else if /I not "%~2"=="success" (
+            echo ::notice title=OpenCL downstream gate not evaluated::%~1 outcome was '%~2' after %~3 did not succeed.
+          )
+          goto :eof

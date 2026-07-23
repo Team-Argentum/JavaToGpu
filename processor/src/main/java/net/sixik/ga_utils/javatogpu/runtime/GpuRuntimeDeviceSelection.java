@@ -49,6 +49,8 @@ public record GpuRuntimeDeviceSelection(
             fields.put(normalizedPrefix + ".selected.deviceLabel", profile.deviceLabel());
             fields.put(normalizedPrefix + ".selected.vendor", profile.vendor());
             fields.put(normalizedPrefix + ".selected.deviceClass", profile.deviceClass().name().toLowerCase(java.util.Locale.ROOT));
+            fields.put(normalizedPrefix + ".selected.platformName", profile.platformName());
+            fields.put(normalizedPrefix + ".selected.platformVersion", profile.platformVersion());
             fields.put(normalizedPrefix + ".selected.driverVersion", profile.driverVersion());
             fields.put(normalizedPrefix + ".selected.apiVersionText", profile.apiVersionText());
         });
@@ -60,6 +62,8 @@ public record GpuRuntimeDeviceSelection(
             fields.put(candidatePrefix + ".vendor", ranking.profile().vendor());
             fields.put(candidatePrefix + ".deviceLabel", ranking.profile().deviceLabel());
             fields.put(candidatePrefix + ".deviceClass", ranking.profile().deviceClass().name().toLowerCase(java.util.Locale.ROOT));
+            fields.put(candidatePrefix + ".platformName", ranking.profile().platformName());
+            fields.put(candidatePrefix + ".platformVersion", ranking.profile().platformVersion());
             fields.put(candidatePrefix + ".globalMemoryBytes", Long.toString(ranking.profile().globalMemoryBytes()));
             fields.put(candidatePrefix + ".unifiedMemory", Boolean.toString(ranking.profile().unifiedMemory()));
             fields.put(candidatePrefix + ".baseScore", Integer.toString(ranking.baseScore()));

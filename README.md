@@ -1,28 +1,40 @@
 # JavaToGpu
 
-JavaToGpu lets you write a restricted Java method, mark it as a GPU kernel, and run it through an OpenCL runtime.
+JavaToGpu lets you write a restricted Java method, mark it as a GPU kernel, and run it through the OpenCL runtime.
 
 It is currently a public alpha / developer preview. Use it for experiments, examples, compiler/runtime integration, and early GPU-kernel prototyping. Do not treat the API or generated launcher shape as stable before beta.
+
+## Current Status
+
+- OpenCL is the active runtime path today.
+- NVIDIA OpenCL and AMD OpenCL are the current validated hardware baselines.
+- Intel OpenCL still needs real-hardware validation before broad cross-vendor claims.
+- CUDA is a staged, explicit opt-in preview path and is not production execution yet.
+- IR optimizer mutation is optional, fail-closed, and intended for review/testing before production use.
+
+JavaToGpu is not a "run any Java app on the GPU" system. GPU methods must stay inside the supported kernel subset.
 
 ## What You Can Do Today
 
 - Write `@GPU` Java kernels over arrays, scalars, vectors, structs, pointers, images, and samplers.
 - Use `GPU.*` builtins for OpenCL-style indexing, math, barriers, images, atomics, and low-level helpers.
-- Run kernels through `GpuRuntime.useOpenCl()` or `GpuRuntime.useOpenClSharedCache()`.
-- Pass explicit launch sizes and OpenCL compile options when needed.
-- Add optional IR validation for stricter diagnostics and CI reports.
-- Preflight intentionally generated ASM/bytecode artifacts for advanced compiler integrations.
-
-JavaToGpu is not a "run any Java app on the GPU" system. GPU methods must stay inside the supported kernel subset.
+- Run kernels through the public `JavaToGpu` runtime facade.
+- Add fixture-based `@GPUTest` metadata for manual method probes and future placement evidence.
+- Enable optional IR validation for stricter diagnostics and CI reports.
+- Inspect backend/device explanations without learning backend SPI internals.
 
 ## Install
 
 Add JavaToGpu as both a dependency and an annotation processor:
 
 ```groovy
+repositories {
+    mavenCentral()
+}
+
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
 }
 ```
 
@@ -30,7 +42,7 @@ Optional stricter IR validation:
 
 ```groovy
 dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.3'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -63,25 +75,25 @@ public final class DemoKernel {
 Run it through the OpenCL runtime:
 
 ```java
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeScope;
+import net.sixik.ga_utils.javatogpu.api.GpuScope;
+import net.sixik.ga_utils.javatogpu.api.JavaToGpu;
 
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
 } finally {
-    GpuRuntime.shutdownOpenClSharedCache();
+    JavaToGpu.shutdownOpenClSharedCache();
 }
 ```
 
-Use `GpuRuntime.useOpenCl()` for one-off calls. Use `GpuRuntime.useOpenClSharedCache()` for repeated calls so the OpenCL session and compile cache stay warm.
+Use `JavaToGpu.useOpenCl()` for one-off calls. Use `JavaToGpu.useOpenClSharedCache()` for repeated calls so the OpenCL session and compile cache stay warm. The lower-level `runtime.GpuRuntime` entrypoint remains available for advanced runtime configuration and compatibility.
 
 ## Important Alpha Limits
 
-- `@GPU` entry methods return `void`; write results to output buffers.
+- `@GPU` entry methods normally return `void`; write results to output buffers.
+- Generated launcher convenience helpers can cover narrow return-first cases, but output parameters are the stable alpha pattern.
 - General object allocation, virtual dispatch, exceptions, recursion, monitors, and heap object graphs are not supported inside kernels.
 - Arrays inside `@GPUStruct` fields are not supported in the current alpha.
 - OpenCL is the active backend today. CUDA, Vulkan, and Metal are future directions.
-- NVIDIA OpenCL and AMD OpenCL are the current validated baselines; Intel should still be validated on real hardware before broad cross-vendor claims.
 
 See [Known Limitations](docs/Known-Limitations.md) before using JavaToGpu in a larger project.
 
@@ -89,32 +101,32 @@ See [Known Limitations](docs/Known-Limitations.md) before using JavaToGpu in a l
 
 Start here:
 
-- [Docs Home](docs/Home.md)
-- [Getting Started](docs/Getting-Started.md)
-- [Cookbook](docs/Cookbook.md)
-- [Runtime Guide](docs/Runtime-Guide.md)
-- [API Overview](docs/API-Overview.md)
-- [Known Limitations](docs/Known-Limitations.md)
-- [Troubleshooting](docs/Troubleshooting.md)
-- [FAQ](docs/FAQ.md)
+- [User Quickstart](docs/User-Quickstart.md) - shortest path to one OpenCL-backed output array.
+- [Getting Started](docs/Getting-Started.md) - first kernel with more context.
+- [Cookbook](docs/Cookbook.md) - copyable user patterns.
+- [Troubleshooting](docs/Troubleshooting.md) - first-run failures and fixes.
+- [Performance Basics](docs/Performance-Basics.md) - cold compile, warm cache, launch overhead, and when GPU execution is worth it.
+- [Known Limitations](docs/Known-Limitations.md) - current alpha boundaries.
 
-Advanced topics:
+Data and runtime:
 
-- [Language Contract](docs/Language-Contract.md)
-- [OpenCL Data Model](docs/OpenCL-Data-Model.md)
-- [IR Validation](docs/IR-Validation.md)
-- [IR Optimizer](docs/IR-Optimizer.md)
-- IR Vendor Optimizer is documented in the IR Optimizer guide as a separate optional provider artifact.
-- [Validation and Operations](docs/Validation-and-Operations.md)
-- [Diagnostics Reference](docs/Diagnostics-Reference.md)
-- [ASM Contract](docs/ASM-Contract.md)
-- [Device Quirks](docs/Device-Quirks.md)
-- [OpenCL Runner Contract](docs/OpenCL-Runner-Contract.md)
-- [Publishing Guide](docs/Publishing.md)
+- [OpenCL Data Model](docs/OpenCL-Data-Model.md) - arrays, structs, vectors, pointers, packed blobs, and images.
+- [Method Tests](docs/Method-Tests.md) - fixture-based `@GPUTest` checks, including `@GPUStruct` examples.
+- [Runtime Guide](docs/Runtime-Guide.md) - runtime scopes, launch sizes, logging, artifacts, and advanced options.
+- [API Overview](docs/API-Overview.md) - public packages and most-used types.
 
-Maintainer planning notes live outside the public user manual.
+Advanced and maintainer docs:
 
-## Build And Validate
+- [Language Contract](docs/Language-Contract.md) - exact supported Java subset.
+- [IR Validation](docs/IR-Validation.md) - optional stricter compiler checks.
+- [IR Optimizer](docs/IR-Optimizer.md) - optional optimizer profiles, journals, and dumps.
+- [Backend Adapter Authoring](docs/Backend-Adapter-Authoring.md) - backend provider/SPI path.
+- [Public API And Extension Contract](docs/Public-API-And-Extension-Contract.md) - extension services and compatibility boundaries.
+- [Validation and Operations](docs/Validation-and-Operations.md) - local validation routines and OpenCL evidence artifacts.
+- [Diagnostics Reference](docs/Diagnostics-Reference.md) - detailed diagnostic vocabulary.
+- [Publishing Guide](docs/Publishing.md) - Maven Central publishing notes.
+
+## Useful Commands
 
 Run the normal processor tests:
 
@@ -128,6 +140,30 @@ Run real OpenCL validation on a GPU machine:
 .\gradlew.bat :processor:openClOperationalRoutine --rerun-tasks --console=plain
 ```
 
+Run the curated user-facing OpenCL walkthrough:
+
+```powershell
+.\gradlew.bat :examples-app:runOpenClPracticalReleaseExample --console=plain
+```
+
+Show backend/device selection explanations without running a kernel:
+
+```powershell
+.\gradlew.bat :examples-app:runBackendSelectionExample --console=plain
+```
+
+Show the public runtime facade and launch helpers without running a kernel:
+
+```powershell
+.\gradlew.bat :examples-app:runRuntimeFacadeExample --console=plain
+```
+
+Run the optional IR optimizer journal example:
+
+```powershell
+.\gradlew.bat :examples-app:runOptimizationJournalExample --console=plain
+```
+
 OpenCL reports are written under:
 
 ```text
@@ -136,20 +172,12 @@ processor/build/reports/opencl/
 
 Start with `validation-report.md` when checking a run.
 
-Run the optional IR optimizer journal example:
-
-```powershell
-.\gradlew.bat :examples-app:runOptimizationJournalExample --console=plain
-```
-
-The example is documented in [examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md](examples-app/IR_OPTIMIZER_JOURNAL_EXAMPLE.md) and shows how to opt into the optimizer module while dumping original and optimized IR artifacts plus the optional ServiceLoader-backed runtime lifecycle event journal for review. It also includes a small custom `GpuRuntimeLifecycleService` example so downstream modules can add tracing or metrics without manual callback registration.
-
 ## Project Layout
 
 - `processor` - annotation processor, compiler, OpenCL emitter, runtime, launchers, tests, and validation buckets.
 - `ir-validation` - optional stricter IR validation module.
 - `ir-optimizer` - optional backend-neutral IR optimizer skeleton and future transform module.
-- `ir-vendor-optimizer` - optional vendor-specific IR optimizer provider skeleton; it plugs into the vendor proposal SPI and is not loaded by the default runtime optimizer bridge.
+- `ir-vendor-optimizer` - optional vendor-specific IR optimizer provider skeleton.
 - `examples-app` - example kernels and usage patterns.
 - `test-app` - consumer-style sample application.
 - `docs` - public documentation.

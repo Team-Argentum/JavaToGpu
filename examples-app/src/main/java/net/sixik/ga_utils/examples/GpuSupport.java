@@ -1,7 +1,7 @@
 package net.sixik.ga_utils.examples;
 
-import net.sixik.ga_utils.javatogpu.api.Float2;
-import net.sixik.ga_utils.javatogpu.api.FloatPtr;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
+import net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr;
 import net.sixik.ga_utils.javatogpu.api.annotations.CCode;
 import net.sixik.ga_utils.javatogpu.api.annotations.CCodeLibrary;
 

@@ -29,6 +29,8 @@ public record GpuBackendSourcePromotionCandidateGate(
         List<String> blockers
 ) {
 
+    public static final String PORTABLE_PREFIX = "runtime.production.candidateGate.";
+
     public GpuBackendSourcePromotionCandidateGate {
         status = normalize(status, reviewReady ? "review-ready" : "blocked");
         controlledSourceSwitchingStatus = normalize(controlledSourceSwitchingStatus, "not-recorded");
@@ -173,65 +175,99 @@ public record GpuBackendSourcePromotionCandidateGate(
 
     public String toPropertiesText() {
         StringBuilder builder = new StringBuilder();
+        boolean allCandidateReady = candidateReadyCount == kernelCount && kernelCount > 0;
+        boolean allAccepted = operatorAcceptedCount == kernelCount && kernelCount > 0;
+        boolean allBound = operatorBoundCount == kernelCount && kernelCount > 0;
+        String candidateSwitching = reviewReady ? "review-ready" : "blocked";
         builder.append("formatVersion=1\n");
         builder.append("status=").append(status).append('\n');
         builder.append("reviewReady=").append(reviewReady).append('\n');
         builder.append("scope=real-workload-production-candidate\n");
         builder.append("defaultProductionSourceSwitching=disabled\n");
-        builder.append("candidateProductionSourceSwitching=")
-                .append(reviewReady ? "review-ready" : "blocked")
-                .append('\n');
+        builder.append("candidateProductionSourceSwitching=").append(candidateSwitching).append('\n');
         builder.append("productionMutation=disabled\n");
         builder.append("kernel.count=").append(kernelCount).append('\n');
         builder.append("candidateReady.count=").append(candidateReadyCount).append('\n');
-        builder.append("candidateReady.all=").append(candidateReadyCount == kernelCount && kernelCount > 0).append('\n');
+        builder.append("candidateReady.all=").append(allCandidateReady).append('\n');
         builder.append("sourceParityMatched=").append(sourceParityMatched).append('\n');
         builder.append("runtimeEquivalencePassed=").append(runtimeEquivalencePassed).append('\n');
         builder.append("controlledSourceSwitching.status=").append(controlledSourceSwitchingStatus).append('\n');
         builder.append("operatorAcceptance.mode=").append(operatorAcceptanceMode).append('\n');
         builder.append("operatorAcceptance.accepted.count=").append(operatorAcceptedCount).append('\n');
-        builder.append("operatorAcceptance.accepted.all=")
-                .append(operatorAcceptedCount == kernelCount && kernelCount > 0)
-                .append('\n');
+        builder.append("operatorAcceptance.accepted.all=").append(allAccepted).append('\n');
         builder.append("operatorAcceptance.bound.count=").append(operatorBoundCount).append('\n');
-        builder.append("operatorAcceptance.bound.all=")
-                .append(operatorBoundCount == kernelCount && kernelCount > 0)
-                .append('\n');
+        builder.append("operatorAcceptance.bound.all=").append(allBound).append('\n');
         builder.append("operatorAcceptance.deviceVendor=").append(propertyValue(deviceVendor)).append('\n');
         builder.append("operatorAcceptance.deviceLabel=").append(propertyValue(deviceLabel)).append('\n');
         builder.append("operatorAcceptance.driverVersion=").append(propertyValue(driverVersion)).append('\n');
+        appendPortable(builder, "formatVersion", "1");
+        appendPortable(builder, "status", status);
+        appendPortable(builder, "reviewReady", reviewReady);
+        appendPortable(builder, "scope", "real-workload-production-candidate");
+        appendPortable(builder, "defaultProductionSourceSwitching", "disabled");
+        appendPortable(builder, "candidateProductionSourceSwitching", candidateSwitching);
+        appendPortable(builder, "productionMutation", "disabled");
+        appendPortable(builder, "kernel.count", kernelCount);
+        appendPortable(builder, "candidateReady.count", candidateReadyCount);
+        appendPortable(builder, "candidateReady.all", allCandidateReady);
+        appendPortable(builder, "sourceParityMatched", sourceParityMatched);
+        appendPortable(builder, "runtimeEquivalencePassed", runtimeEquivalencePassed);
+        appendPortable(builder, "controlledSourceSwitching.status", controlledSourceSwitchingStatus);
+        appendPortable(builder, "operatorAcceptance.mode", operatorAcceptanceMode);
+        appendPortable(builder, "operatorAcceptance.accepted.count", operatorAcceptedCount);
+        appendPortable(builder, "operatorAcceptance.accepted.all", allAccepted);
+        appendPortable(builder, "operatorAcceptance.bound.count", operatorBoundCount);
+        appendPortable(builder, "operatorAcceptance.bound.all", allBound);
+        appendPortable(builder, "operatorAcceptance.deviceVendor", propertyValue(deviceVendor));
+        appendPortable(builder, "operatorAcceptance.deviceLabel", propertyValue(deviceLabel));
+        appendPortable(builder, "operatorAcceptance.driverVersion", propertyValue(driverVersion));
         for (int index = 0; index < kernels.size(); index++) {
             KernelCandidate kernel = kernels.get(index);
             String prefix = "kernel." + index + ".";
             builder.append(prefix).append("resource=").append(propertyValue(kernel.resource())).append('\n');
+            appendKernelPortable(builder, prefix, "resource", propertyValue(kernel.resource()));
             builder.append(prefix).append("workloadReviewReady=").append(kernel.workloadReviewReady()).append('\n');
+            appendKernelPortable(builder, prefix, "workloadReviewReady", kernel.workloadReviewReady());
             builder.append(prefix).append("sourceParityMatched=").append(kernel.sourceParityMatched()).append('\n');
+            appendKernelPortable(builder, prefix, "sourceParityMatched", kernel.sourceParityMatched());
             builder.append(prefix).append("runtimeEquivalencePassed=").append(kernel.runtimeEquivalencePassed()).append('\n');
+            appendKernelPortable(builder, prefix, "runtimeEquivalencePassed", kernel.runtimeEquivalencePassed());
             builder.append(prefix).append("controlledStatus=").append(kernel.controlledStatus()).append('\n');
+            appendKernelPortable(builder, prefix, "controlledStatus", kernel.controlledStatus());
             builder.append(prefix).append("operatorAcceptance.id=")
                     .append(propertyValue(kernel.operatorAcceptanceId()))
                     .append('\n');
+            appendKernelPortable(builder, prefix, "operatorAcceptance.id", propertyValue(kernel.operatorAcceptanceId()));
             builder.append(prefix).append("operatorAcceptance.status=")
                     .append(kernel.operatorAcceptanceStatus())
                     .append('\n');
+            appendKernelPortable(builder, prefix, "operatorAcceptance.status", kernel.operatorAcceptanceStatus());
             builder.append(prefix).append("operatorAcceptance.bound=")
                     .append(kernel.operatorAcceptanceBound())
                     .append('\n');
+            appendKernelPortable(builder, prefix, "operatorAcceptance.bound", kernel.operatorAcceptanceBound());
             builder.append(prefix).append("candidateReady=").append(kernel.candidateReady()).append('\n');
+            appendKernelPortable(builder, prefix, "candidateReady", kernel.candidateReady());
             builder.append(prefix).append("blocker.count=").append(kernel.blockers().size()).append('\n');
+            appendKernelPortable(builder, prefix, "blocker.count", kernel.blockers().size());
             for (int blockerIndex = 0; blockerIndex < kernel.blockers().size(); blockerIndex++) {
                 builder.append(prefix).append("blocker.").append(blockerIndex).append('=')
                         .append(kernel.blockers().get(blockerIndex))
                         .append('\n');
+                appendKernelPortable(builder, prefix, "blocker." + blockerIndex, kernel.blockers().get(blockerIndex));
             }
         }
         builder.append("blocker.count=").append(blockers.size()).append('\n');
+        appendPortable(builder, "blocker.count", blockers.size());
         for (int index = 0; index < blockers.size(); index++) {
             builder.append("blocker.").append(index).append('=').append(blockers.get(index)).append('\n');
+            appendPortable(builder, "blocker." + index, blockers.get(index));
         }
-        builder.append("diagnostic=").append(reviewReady
+        String diagnostic = reviewReady
                 ? "real workload production candidate is review-ready; default production source switching remains disabled"
-                : "real workload production candidate is blocked by " + firstBlocker()).append('\n');
+                : "real workload production candidate is blocked by " + firstBlocker();
+        builder.append("diagnostic=").append(diagnostic).append('\n');
+        appendPortable(builder, "diagnostic", diagnostic);
         return builder.toString();
     }
 
@@ -253,6 +289,14 @@ public record GpuBackendSourcePromotionCandidateGate(
 
     private static String propertyValue(String value) {
         return normalize(value, "unknown").replace('\\', '/').replace('\r', ' ').replace('\n', ' ');
+    }
+
+    private static void appendPortable(StringBuilder builder, String key, Object value) {
+        GpuRuntimeArtifactProperties.appendPortable(builder, PORTABLE_PREFIX, key, value);
+    }
+
+    private static void appendKernelPortable(StringBuilder builder, String kernelPrefix, String key, Object value) {
+        GpuRuntimeArtifactProperties.appendPrefixedPortable(builder, kernelPrefix, PORTABLE_PREFIX, key, value);
     }
 
     private static String normalize(String value, String fallback) {

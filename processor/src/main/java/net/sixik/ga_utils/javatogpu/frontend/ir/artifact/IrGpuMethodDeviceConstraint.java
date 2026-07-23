@@ -74,6 +74,8 @@ public record IrGpuMethodDeviceConstraint(
         return switch (feature) {
             case "fp64", "double", "double-precision" -> profile.supportsDoublePrecision();
             case "images", "image" -> profile.supportsImages();
+            case "image-3d-writes", "image3d-writes", "image3d-write" -> profile.supportsImage3dWrites();
+            case "atomics", "atomic", "int32-atomics", "global-int32-atomics" -> profile.supportsAtomics();
             case "subgroups", "subgroup" -> profile.supportsSubgroups();
             default -> false;
         };

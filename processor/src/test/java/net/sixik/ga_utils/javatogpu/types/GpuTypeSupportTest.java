@@ -1,27 +1,27 @@
 package net.sixik.ga_utils.javatogpu.types;
 
-import net.sixik.ga_utils.javatogpu.api.ConstantBytePtr;
-import net.sixik.ga_utils.javatogpu.api.ConstantCharPtr;
-import net.sixik.ga_utils.javatogpu.api.ConstantDoublePtr;
-import net.sixik.ga_utils.javatogpu.api.ConstantFloatPtr;
-import net.sixik.ga_utils.javatogpu.api.ConstantIntPtr;
-import net.sixik.ga_utils.javatogpu.api.ConstantLongPtr;
-import net.sixik.ga_utils.javatogpu.api.ConstantShortPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantBytePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantCharPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantDoublePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantFloatPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantIntPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantLongPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantShortPtr;
 import net.sixik.ga_utils.javatogpu.api.GPU;
-import net.sixik.ga_utils.javatogpu.api.GlobalBytePtr;
-import net.sixik.ga_utils.javatogpu.api.GlobalCharPtr;
-import net.sixik.ga_utils.javatogpu.api.GlobalDoublePtr;
-import net.sixik.ga_utils.javatogpu.api.GlobalFloatPtr;
-import net.sixik.ga_utils.javatogpu.api.GlobalIntPtr;
-import net.sixik.ga_utils.javatogpu.api.GlobalLongPtr;
-import net.sixik.ga_utils.javatogpu.api.GlobalShortPtr;
-import net.sixik.ga_utils.javatogpu.api.LocalBytePtr;
-import net.sixik.ga_utils.javatogpu.api.LocalCharPtr;
-import net.sixik.ga_utils.javatogpu.api.LocalDoublePtr;
-import net.sixik.ga_utils.javatogpu.api.LocalFloatPtr;
-import net.sixik.ga_utils.javatogpu.api.LocalIntPtr;
-import net.sixik.ga_utils.javatogpu.api.LocalLongPtr;
-import net.sixik.ga_utils.javatogpu.api.LocalShortPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalCharPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalDoublePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalFloatPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalIntPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalLongPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalShortPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalBytePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalCharPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalDoublePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalFloatPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalIntPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalLongPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalShortPtr;
 import net.sixik.ga_utils.javatogpu.frontend.intrinsics.GpuIntrinsicDatabase;
 import org.junit.jupiter.api.Test;
 
@@ -37,11 +37,11 @@ class GpuTypeSupportTest {
     @Test
     void discoversAnnotatedPointerTypesBySimpleAndQualifiedName() {
         assertTrue(GpuTypeSupport.isSupportedPointerType("IntPtr"));
-        assertTrue(GpuTypeSupport.isSupportedPointerType("net.sixik.ga_utils.javatogpu.api.FloatPtr"));
-        assertTrue(GpuTypeSupport.isSupportedPointerClassName("net.sixik.ga_utils.javatogpu.api.DoublePtr"));
+        assertTrue(GpuTypeSupport.isSupportedPointerType("net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr"));
+        assertTrue(GpuTypeSupport.isSupportedPointerClassName("net.sixik.ga_utils.javatogpu.api.pointers.DoublePtr"));
 
         assertEquals("int", GpuTypeSupport.pointerValueType("IntPtr"));
-        assertEquals("float", GpuTypeSupport.pointerValueType("net.sixik.ga_utils.javatogpu.api.FloatPtr"));
+        assertEquals("float", GpuTypeSupport.pointerValueType("net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr"));
     }
 
     @Test
@@ -98,6 +98,37 @@ class GpuTypeSupportTest {
         assertTrue(GpuTypeSupport.isArrayCompatibleWithPointerType("long[]", "LocalLongPtr"));
         assertTrue(GpuTypeSupport.isArrayCompatibleWithPointerType("float[]", "LocalFloatPtr"));
         assertTrue(GpuTypeSupport.isArrayCompatibleWithPointerType("double[]", "LocalDoublePtr"));
+    }
+
+    @Test
+    void discoversGroupedPointerPackagesByQualifiedName() {
+        String privateIntPtr = "net.sixik.ga_utils.javatogpu.api.pointers.IntPtr";
+        String globalFloatPtr = "net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalFloatPtr";
+        String constantBytePtr = "net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantBytePtr";
+        String localIntPtr = "net.sixik.ga_utils.javatogpu.api.pointers.local.LocalIntPtr";
+
+        assertTrue(GpuTypeSupport.isSupportedPointerType(privateIntPtr));
+        assertTrue(GpuTypeSupport.isSupportedPointerClassName(globalFloatPtr));
+        assertTrue(GpuTypeSupport.isSupportedPointerType(constantBytePtr));
+        assertTrue(GpuTypeSupport.isSupportedPointerType(localIntPtr));
+
+        assertEquals("int", GpuTypeSupport.pointerValueType(privateIntPtr));
+        assertEquals("float", GpuTypeSupport.pointerValueType(globalFloatPtr));
+        assertEquals("GLOBAL", GpuTypeSupport.pointerAddressSpace(globalFloatPtr));
+        assertEquals("CONSTANT", GpuTypeSupport.pointerAddressSpace(constantBytePtr));
+        assertEquals("LOCAL", GpuTypeSupport.pointerAddressSpace(localIntPtr));
+        assertTrue(GpuTypeSupport.isArrayCompatibleWithPointerType("float[]", globalFloatPtr));
+
+        GpuIntrinsicDatabase database = GpuIntrinsicDatabase.createDefault();
+        assertTrue(database.isAllowedAllocationType(privateIntPtr));
+        assertTrue(database.isAllowedAllocationType(globalFloatPtr));
+    }
+
+    @Test
+    void groupedAddressSpaceByteViewsExposeConsistentHelpers() throws ReflectiveOperationException {
+        assertGroupedByteViewHelpers("net.sixik.ga_utils.javatogpu.api.pointers.global", "Global");
+        assertGroupedByteViewHelpers("net.sixik.ga_utils.javatogpu.api.pointers.constant", "Constant");
+        assertGroupedByteViewHelpers("net.sixik.ga_utils.javatogpu.api.pointers.local", "Local");
     }
 
     @Test
@@ -226,8 +257,8 @@ class GpuTypeSupportTest {
     @Test
     void discoversAnnotatedScalarAliasTypesBySimpleAndQualifiedName() {
         assertTrue(GpuTypeSupport.isSupportedScalarAliasType("UInt"));
-        assertTrue(GpuTypeSupport.isSupportedScalarAliasType("net.sixik.ga_utils.javatogpu.api.ULong"));
-        assertTrue(GpuTypeSupport.isSupportedScalarAliasClassName("net.sixik.ga_utils.javatogpu.api.UShort"));
+        assertTrue(GpuTypeSupport.isSupportedScalarAliasType("net.sixik.ga_utils.javatogpu.api.types.longs.ULong"));
+        assertTrue(GpuTypeSupport.isSupportedScalarAliasClassName("net.sixik.ga_utils.javatogpu.api.types.shorts.UShort"));
 
         assertEquals("uint", GpuTypeSupport.openClScalarAliasTypeName("UInt"));
         assertEquals("int", GpuTypeSupport.scalarAliasValueType("UInt"));
@@ -239,19 +270,19 @@ class GpuTypeSupportTest {
         GpuIntrinsicDatabase database = GpuIntrinsicDatabase.createDefault();
 
         assertTrue(database.isAllowedAllocationType("BytePtr"));
-        assertTrue(database.isAllowedAllocationType("net.sixik.ga_utils.javatogpu.api.UInt"));
+        assertTrue(database.isAllowedAllocationType("net.sixik.ga_utils.javatogpu.api.types.integers.UInt"));
     }
 
     @Test
     void discoversAnnotatedUnsignedVectorTypesBySimpleAndQualifiedName() {
         assertTrue(GpuTypeSupport.isSupportedVectorType("UInt2"));
-        assertTrue(GpuTypeSupport.isSupportedVectorType("net.sixik.ga_utils.javatogpu.api.UByte16"));
-        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.ULong8"));
+        assertTrue(GpuTypeSupport.isSupportedVectorType("net.sixik.ga_utils.javatogpu.api.types.bytes.UByte16"));
+        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.types.longs.ULong8"));
 
         assertEquals("uint16", GpuTypeSupport.openClVectorTypeName("UInt16"));
         assertEquals("int", GpuTypeSupport.vectorComponentType("UInt16", "sa"));
         assertEquals(List.of("s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "sa", "sb", "sc", "sd", "se", "sf"),
-                GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.UInt16"));
+                GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.types.integers.UInt16"));
         assertEquals(16 * Integer.BYTES, GpuTypeSupport.vectorByteSize("UInt16"));
         assertEquals(4, GpuTypeSupport.vectorStorageWidth("UByte3"));
     }
@@ -260,11 +291,11 @@ class GpuTypeSupportTest {
     void discoversAnnotatedSignedNarrowVectorTypes() {
         assertTrue(GpuTypeSupport.isSupportedVectorType("Byte2"));
         assertTrue(GpuTypeSupport.isSupportedVectorType("Short4"));
-        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.Byte3"));
+        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.types.bytes.Byte3"));
 
         assertEquals("char2", GpuTypeSupport.openClVectorTypeName("Byte2"));
         assertEquals("short", GpuTypeSupport.vectorComponentType("Short3", "y"));
-        assertEquals(List.of("x", "y", "z"), GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.Byte3"));
+        assertEquals(List.of("x", "y", "z"), GpuTypeSupport.vectorFieldNames("net.sixik.ga_utils.javatogpu.api.types.bytes.Byte3"));
         assertEquals(4, GpuTypeSupport.vectorStorageWidth("Byte3"));
         assertEquals(4 * Short.BYTES, GpuTypeSupport.vectorByteSize("Short4"));
     }
@@ -273,13 +304,38 @@ class GpuTypeSupportTest {
     void discoversAnnotatedWideSignedIntVectorTypes() {
         assertTrue(GpuTypeSupport.isSupportedVectorType("Int8"));
         assertTrue(GpuTypeSupport.isSupportedVectorType("Int16"));
-        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.Int8"));
+        assertTrue(GpuTypeSupport.isSupportedVectorClassName("net.sixik.ga_utils.javatogpu.api.types.integers.Int8"));
 
         assertEquals("int8", GpuTypeSupport.openClVectorTypeName("Int8"));
         assertEquals("int16", GpuTypeSupport.openClVectorTypeName("Int16"));
         assertEquals("int", GpuTypeSupport.vectorComponentType("Int16", "sf"));
         assertEquals(8 * Integer.BYTES, GpuTypeSupport.vectorByteSize("Int8"));
         assertEquals(16 * Integer.BYTES, GpuTypeSupport.vectorByteSize("Int16"));
+    }
+
+    private static void assertGroupedByteViewHelpers(String packageName, String prefix) throws ReflectiveOperationException {
+        Class<?> bytePtr = Class.forName(packageName + "." + prefix + "BytePtr");
+        Map<String, Class<?>> expectations = Map.of(
+                "bytePtrAt", bytePtr,
+                "charPtrAt", Class.forName(packageName + "." + prefix + "CharPtr"),
+                "shortPtrAt", Class.forName(packageName + "." + prefix + "ShortPtr"),
+                "intPtrAt", Class.forName(packageName + "." + prefix + "IntPtr"),
+                "longPtrAt", Class.forName(packageName + "." + prefix + "LongPtr"),
+                "floatPtrAt", Class.forName(packageName + "." + prefix + "FloatPtr"),
+                "doublePtrAt", Class.forName(packageName + "." + prefix + "DoublePtr")
+        );
+
+        for (Map.Entry<String, Class<?>> methodExpectation : expectations.entrySet()) {
+            Method method = bytePtr.getMethod(methodExpectation.getKey(), int.class);
+            assertEquals(methodExpectation.getValue(), method.getReturnType());
+        }
+
+        assertEquals(expectations.get("charPtrAt"), bytePtr.getMethod("asCharPtr").getReturnType());
+        assertEquals(expectations.get("shortPtrAt"), bytePtr.getMethod("asShortPtr").getReturnType());
+        assertEquals(expectations.get("intPtrAt"), bytePtr.getMethod("asIntPtr").getReturnType());
+        assertEquals(expectations.get("longPtrAt"), bytePtr.getMethod("asLongPtr").getReturnType());
+        assertEquals(expectations.get("floatPtrAt"), bytePtr.getMethod("asFloatPtr").getReturnType());
+        assertEquals(expectations.get("doublePtrAt"), bytePtr.getMethod("asDoublePtr").getReturnType());
     }
 
 }

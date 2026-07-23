@@ -1,163 +1,50 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
-import net.sixik.ga_utils.javatogpu.extension.GpuExtension;
-import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
-import net.sixik.ga_utils.javatogpu.extension.GpuExtensionFailurePolicy;
-import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPermission;
-import net.sixik.ga_utils.javatogpu.extension.GpuExtensionPhase;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionRegistry;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.ServiceLoader;
 
 /**
- * Deterministic registry for built-in and third-party typed peephole rules.
+ * Compatibility facade for typed-IR peephole rule discovery and analysis.
  */
 public final class GpuRuntimeIrPeepholeRuleRegistry {
 
-    private final List<GpuRuntimeIrPeepholeRule> rules;
-    private final GpuExtensionRegistry extensionRegistry;
+    private final net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeRuleRegistry delegate;
 
-    private GpuRuntimeIrPeepholeRuleRegistry(List<GpuRuntimeIrPeepholeRule> rules) {
-        this.rules = List.copyOf(rules);
-        validateUniqueRuleIds(this.rules);
-        this.extensionRegistry = GpuExtensionRegistry.of(this.rules);
-        this.extensionRegistry.requirePipelineContract(
-                "runtime IR peephole rule pipeline",
-                GpuExtensionPhase.RUNTIME_IR_OPTIMIZATION,
-                GpuExtensionPermission.MUTATION_PROPOSAL,
-                GpuExtensionCapability.IR_OPTIMIZATION_PROPOSAL
-        );
+    private GpuRuntimeIrPeepholeRuleRegistry(
+            net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeRuleRegistry delegate
+    ) {
+        this.delegate = delegate;
     }
 
     public static GpuRuntimeIrPeepholeRuleRegistry of(List<GpuRuntimeIrPeepholeRule> rules) {
-        return new GpuRuntimeIrPeepholeRuleRegistry(rules == null ? List.of() : rules);
+        return new GpuRuntimeIrPeepholeRuleRegistry(
+                net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeRuleRegistry.of(rules)
+        );
     }
 
     public static GpuRuntimeIrPeepholeRuleRegistry loadWithBuiltIns() {
-        ArrayList<GpuRuntimeIrPeepholeRule> loaded = new ArrayList<>();
-        loaded.add(new GpuRuntimeMadFmaPeepholeRule());
-        loaded.add(new GpuRuntimeClampPeepholeRule());
-        loaded.add(new GpuRuntimeMixPeepholeRule());
-        loaded.add(new GpuRuntimeStepPeepholeRule());
-        loaded.add(new GpuRuntimeDotPeepholeRule());
-        ServiceLoader.load(GpuRuntimeIrPeepholeRule.class, GpuRuntimeIrPeepholeRule.class.getClassLoader())
-                .forEach(loaded::add);
-        loaded.sort(Comparator
-                .comparingInt((GpuRuntimeIrPeepholeRule rule) -> rule.extensionOrder())
-                .thenComparing(GpuRuntimeIrPeepholeRule::ruleId)
-                .thenComparing(GpuRuntimeIrPeepholeRule::ruleVersion));
-        return of(loaded);
+        return new GpuRuntimeIrPeepholeRuleRegistry(
+                net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeRuleRegistry.loadWithBuiltIns()
+        );
     }
 
     public Analysis analyze(GpuRuntimeIrOptimizationRequest request, IrGpuArtifact artifact) {
-        Objects.requireNonNull(request, "request");
-        Objects.requireNonNull(artifact, "artifact");
-        ArrayList<GpuRuntimeIrPeepholeRuleReport> reports = new ArrayList<>();
-        ArrayList<GpuExtensionExecutionReport> executions = new ArrayList<>();
-        boolean failedClosed = false;
-        for (GpuRuntimeIrPeepholeRule rule : rules) {
-            for (IrGpuMethodBody methodBody : artifact.module().methodBodies()) {
-                if (!methodBody.typedBody().available()) {
-                    continue;
-                }
-                try {
-                    GpuRuntimeIrPeepholeRuleContext context = new GpuRuntimeIrPeepholeRuleContext(
-                            request,
-                            artifact,
-                            methodBody
-                    );
-                    GpuRuntimeIrPeepholeRuleReport report = Objects.requireNonNull(
-                            rule.analyze(context),
-                            "peephole rule report"
-                    );
-                    validateRuleReport(rule, report);
-                    report = withReplacementPlanValidations(context, report);
-                    reports.add(report);
-                    executions.add(GpuExtensionExecutionReport.succeeded(
-                            rule,
-                            "peephole analysis " + methodBody.name()
-                    ));
-                } catch (RuntimeException exception) {
-                    GpuExtensionFailurePolicy failurePolicy = GpuRuntimeProductionProfiles.isProductionProfile(
-                            request.compileRequest().options().optimizationProfile()
-                    ) ? GpuExtensionFailurePolicy.STOP_PIPELINE : GpuExtensionFailurePolicy.CONTINUE;
-                    executions.add(GpuExtensionExecutionReport.failed(
-                            rule,
-                            "peephole analysis " + methodBody.name(),
-                            failurePolicy,
-                            exception
-                    ));
-                    if (failurePolicy == GpuExtensionFailurePolicy.STOP_PIPELINE) {
-                        failedClosed = true;
-                        break;
-                    }
-                }
-            }
-            if (failedClosed) {
-                break;
-            }
-        }
-        return new Analysis(reports, executions, failedClosed);
+        return Analysis.from(delegate.analyze(request, artifact));
     }
 
     public List<GpuRuntimeIrPeepholeRule> rules() {
-        return rules;
+        return delegate.rules();
     }
 
     public GpuExtensionRegistry extensionRegistry() {
-        return extensionRegistry;
+        return delegate.extensionRegistry();
     }
 
-    private static void validateUniqueRuleIds(List<GpuRuntimeIrPeepholeRule> rules) {
-        LinkedHashSet<String> ids = new LinkedHashSet<>();
-        for (GpuRuntimeIrPeepholeRule rule : rules) {
-            String ruleId = Objects.requireNonNull(rule, "rule").ruleId();
-            if (ruleId == null || ruleId.isBlank()) {
-                throw new IllegalArgumentException("Peephole rule id must not be blank");
-            }
-            if (!ids.add(ruleId)) {
-                throw new IllegalArgumentException("Duplicate peephole rule id '" + ruleId + "'");
-            }
-        }
-    }
-
-    private static void validateRuleReport(
-            GpuRuntimeIrPeepholeRule rule,
-            GpuRuntimeIrPeepholeRuleReport report
-    ) {
-        if (!rule.ruleId().equals(report.ruleId()) || !rule.ruleVersion().equals(report.ruleVersion())) {
-            throw new IllegalArgumentException(
-                    "Peephole rule report identity does not match registered rule " + rule.ruleId()
-            );
-        }
-    }
-
-    private static GpuRuntimeIrPeepholeRuleReport withReplacementPlanValidations(
-            GpuRuntimeIrPeepholeRuleContext context,
-            GpuRuntimeIrPeepholeRuleReport report
-    ) {
-        List<GpuRuntimeIrPeepholeReplacementPlanValidation> validations = report.replacementPlans().stream()
-                .map(plan -> GpuRuntimeIrPeepholeReplacementPlanValidation.validate(plan, context.graph()))
-                .toList();
-        GpuRuntimeIrPeepholeTypedRewriteVisitor visitor = GpuRuntimeIrPeepholeTypedRewriteVisitor.forGraph(
-                context.graph()
-        );
-        ArrayList<GpuRuntimeIrPeepholeRewriteVisitPreflight> visitPreflights = new ArrayList<>();
-        for (int index = 0; index < report.replacementPlans().size(); index++) {
-            GpuRuntimeIrPeepholeReplacementPlanValidation validation = index < validations.size()
-                    ? validations.get(index)
-                    : null;
-            visitPreflights.add(visitor.preflight(report.replacementPlans().get(index), validation));
-        }
-        return report.withReplacementPlanAnalysis(validations, visitPreflights);
+    net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeRuleRegistry unwrap() {
+        return delegate;
     }
 
     public record Analysis(
@@ -168,6 +55,12 @@ public final class GpuRuntimeIrPeepholeRuleRegistry {
         public Analysis {
             ruleReports = ruleReports == null ? List.of() : List.copyOf(ruleReports);
             executionReports = executionReports == null ? List.of() : List.copyOf(executionReports);
+        }
+
+        private static Analysis from(
+                net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeRuleRegistry.Analysis analysis
+        ) {
+            return new Analysis(analysis.ruleReports(), analysis.executionReports(), analysis.failedClosed());
         }
 
         public int candidateCount() {

@@ -1055,6 +1055,61 @@ class OpenClValidationReportTest {
     }
 
     @Test
+    void validationReportReadsPortableRuntimeBackendSourceFieldsWithoutLegacySourceSwitchingFields() throws Exception {
+        java.nio.file.Path workloadGateFile = java.nio.file.Files.createTempFile(
+                "javatogpu-backend-source-promotion-workload-portable-source", ".properties");
+        java.nio.file.Path reportFile = java.nio.file.Files.createTempFile(
+                "javatogpu-opencl-report-portable-source-switching", ".md");
+        java.nio.file.Files.writeString(workloadGateFile, String.join("\n",
+                "status=blocked",
+                "reviewReady=false",
+                "sourceParityMatched=false",
+                "runtimeEquivalencePassed=false",
+                "realWorkloadEvidence=runtime-snapshot",
+                "kernel.count=1",
+                "kernel.0.sourceKernelResource=inline://portable/source-kernel.cl",
+                "kernel.0.status=blocked",
+                "kernel.0.sourceParityMatched=false",
+                "kernel.0.runtimeEquivalencePassed=false",
+                "kernel.0.runtime.compile.optimizationProfile=vendor-tuned",
+                "kernel.0.runtime.backend.source.status=blocked",
+                "kernel.0.runtime.backend.source.decision=reject-production-irgpu-source",
+                "kernel.0.runtime.backend.source.promotionFirstBlocker=runtime equivalence must execute and pass before backend source promotion",
+                "kernel.0.runtime.backend.source.productionPromotionOperatorAccepted=true",
+                "kernel.0.runtime.backend.source.diagnostic=production-like profile requested IrGpu source but runtime equivalence is not accepted",
+                "kernel.0.runtimeIrHandoff.selectedStage=original",
+                "kernel.0.runtime.ir.productionMutation.enabled=false",
+                "kernel.0.runtime.ir.productionMutation.productionGateStatus=blocked",
+                "kernel.0.runtime.ir.productionMutation.productionProfileRequested=true",
+                "kernel.0.runtime.ir.productionMutation.diagnostic=production mutation remains fail-closed for portable-only test evidence",
+                "kernel.0.i3Readiness.sourceReady=false",
+                "kernel.0.i3Readiness.status=blocked",
+                ""
+        ));
+        String previousWorkloadGateFile = System.getProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile");
+        String previousReportFile = System.getProperty("javatogpu.opencl.validationReportFile");
+        try {
+            System.setProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", workloadGateFile.toString());
+            System.setProperty("javatogpu.opencl.validationReportFile", reportFile.toString());
+
+            OpenClValidationReporter.main(new String[0]);
+
+            String reportMarkdown = java.nio.file.Files.readString(reportFile);
+            assertTrue(reportMarkdown.contains("- Production promotion operator accepted: `1/1`, all=`true`"));
+            assertTrue(reportMarkdown.contains("- Source switching decisions: `reject-production-irgpu-source=1`"));
+            assertTrue(reportMarkdown.contains("- Source switching first blockers: `runtime equivalence must execute and pass before backend source promotion=1`"));
+            assertTrue(reportMarkdown.contains("- Source switching first blocker families: `runtime-equivalence=1`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0`: `inline://portable/source-kernel.cl`, status=`blocked`, parity=`false`, runtimeEquivalence=`false`, sourceSwitching=`reject-production-irgpu-source`, operatorAccepted=`true`, runtimeIr=`original`, productionMutation=`false`, sourceReady=`false`, i3=`blocked`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` source switching: status=`blocked`, profile=`vendor-tuned`, sourcePromotionFirstBlocker=`runtime equivalence must execute and pass before backend source promotion`, operatorAccepted=`true`, first=`production-like profile requested IrGpu source but runtime equivalence is not accepted`"));
+            assertTrue(reportMarkdown.contains("- Kernel `0` production mutation safety: enabled=`false`, gate=`blocked`, profileRequested=`true`, first=`production mutation remains fail-closed for portable-only test evidence`"));
+            assertFalse(reportMarkdown.contains("sourceSwitching=`not-recorded`"));
+        } finally {
+            restoreProperty("javatogpu.opencl.backendSourcePromotionWorkloadGateFile", previousWorkloadGateFile);
+            restoreProperty("javatogpu.opencl.validationReportFile", previousReportFile);
+        }
+    }
+
+    @Test
     void productionExplainabilityDerivesOptimizerFamilyBaselineFromValidationHistory() throws Exception {
         java.nio.file.Path workloadGateFile = java.nio.file.Files.createTempFile(
                 "javatogpu-optimizer-family-baseline-workload", ".properties");
@@ -1582,14 +1637,19 @@ class OpenClValidationReportTest {
             assertTrue(workflow.contains(":processor:validateOpenClBackendSourcePromotionManifest"));
             assertTrue(workflow.contains(":processor:validateOpenClBackendSourcePromotionActivationGate"));
             assertTrue(workflow.contains("JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA"));
-            assertTrue(workflow.contains("steps.production_promotion_manifest_validation.outcome != 'success'"));
-            assertTrue(workflow.contains("steps.production_promotion_activation_gate.outcome != 'success'"));
+            assertTrue(workflow.contains("JTG_OPENCL_VENDOR_MATRIX_STRICT: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}"));
+            assertTrue(workflow.contains("Evaluate OpenCL lane gates"));
+            assertTrue(workflow.contains("call :require_success \"Promotion manifest validation\" \"%PRODUCTION_PROMOTION_MANIFEST_VALIDATION_OUTCOME%\""));
+            assertTrue(workflow.contains("call :require_success \"Controlled activation gate\" \"%PRODUCTION_PROMOTION_ACTIVATION_GATE_OUTCOME%\""));
             assertTrue(workflow.contains(":processor:prepareOpenClKernelLaunchAdvisoryNegativeFixture"));
-            assertTrue(workflow.contains("env.JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE != 'true'"));
+            assertTrue(workflow.contains("if /I \"%JTG_LAUNCH_ADVISORY_NEGATIVE_FIXTURE%\"==\"true\""));
             assertTrue(workflow.contains("LAUNCH_ADVISORY_DRIFT_OUTCOME%\"==\"failure"));
             assertTrue(workflow.contains("VALIDATION_HISTORY_STAGE_OUTCOME%\"==\"skipped"));
             assertTrue(workflow.contains("VALIDATION_HISTORY_SAVE_OUTCOME%\"==\"skipped"));
-            assertTrue(workflow.contains("steps.launch_advisory_negative_fixture_check.outcome != 'success'"));
+            assertTrue(workflow.contains("call :require_success \"Negative fixture contract\" \"%NEGATIVE_FIXTURE_CHECK_OUTCOME%\""));
+            assertTrue(workflow.contains("call :cascade_skip \"Optimizer-family payload fixture\" \"%OPTIMIZER_FAMILY_PAYLOAD_FIXTURE_OUTCOME%\" \"OpenCL validation\""));
+            assertTrue(workflow.contains("OpenCL vendor lane advisory failure"));
+            assertTrue(workflow.contains("workflow_dispatch remains strict"));
             String buildScript = java.nio.file.Files.readString(findRepositoryFile("processor/build.gradle"));
             String sourceSwitchingDependency = "dependsOn 'openClProductionSourceSwitchingValidationTest'";
             assertEquals(

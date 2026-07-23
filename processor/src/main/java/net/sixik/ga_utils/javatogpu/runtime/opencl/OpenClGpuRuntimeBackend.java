@@ -1,37 +1,53 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import dev.denismasterherobrine.packager.opencl.core.OpenClBuffer;
-import dev.denismasterherobrine.packager.opencl.core.OpenClCommandQueue;
 import dev.denismasterherobrine.packager.opencl.core.OpenClEvents;
 import dev.denismasterherobrine.packager.opencl.core.OpenClException;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilationResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendExecutionPipelineResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerer;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLowerers;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendInvocationResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelCompiler;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelInvoker;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelPreparer;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendHookRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendLoweringResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendPipelineStage;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendPreparationResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceReconstructionResult;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSelectionPlan;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionGate;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourceSwitchingPolicy;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendStageResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeApiVersion;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeArtifactDumpSummary;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeArtifactProperties;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendCompilationSummary;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendReport;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendStateSummary;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEvent;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventBus;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventKind;
@@ -39,16 +55,16 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
-import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuPromotionArtifactRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactSupport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileCacheKey;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDump;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeCompileArtifactDumper;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendUnavailableException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCapabilityException;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptionsException;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCallSiteResolver;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeCallSiteResolverSupport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDiagnosticContext;
 import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeException;
@@ -57,7 +73,10 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileInvalidationStamp;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileProvenance;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequest;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequestFactory;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleFields;
+import net.sixik.ga_utils.javatogpu.runtime.launch.GpuRuntimeCompileRequestSupport;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendDevicePreselector;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscoveryResult;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceProfile;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDevicePolicyRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceSelection;
@@ -67,7 +86,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceEvidence;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceExecutor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeEquivalenceRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFallbackEvidence;
-import net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionWorkloadGateFormatter;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionWorkloadGateFormatter;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategy;
 import net.sixik.ga_utils.javatogpu.runtime.GpuOptimizationStrategyDecision;
 import net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionDecision;
@@ -79,9 +98,10 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationReport;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizationRequest;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrOptimizerRegistry;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrSelection;
+import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInvocationBindingSummary;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantSelection;
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantSelector;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackend;
+import net.sixik.ga_utils.javatogpu.runtime.variants.GpuRuntimeMethodVariantSelector;
 import java.util.Objects;
 import java.util.Map;
 import java.util.ArrayList;
@@ -120,7 +140,7 @@ import org.lwjgl.system.MemoryStack;
  * <p>Use {@link #sharedCache()} to opt into the shared mode and {@link #shutdownSharedCache()} when the application is
  * done with the global OpenCL cache.
  */
-public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable {
+public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBackendDevicePreselector, AutoCloseable {
 
     /**
      * Controls whether compiled kernels and runtime session state are local to one backend instance or reused globally.
@@ -150,10 +170,13 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     private final Map<GpuRuntimeCompileCacheKey, OpenClCompiledKernel> compiledKernels = new ConcurrentHashMap<>();
     private final OpenClDeviceBufferRegistry bufferRegistry = new OpenClDeviceBufferRegistry();
     private final OpenClExecutionPreparer executionPreparer = new OpenClExecutionPreparer(bufferRegistry);
+    private final OpenClKernelCompiler kernelCompiler = new OpenClKernelCompiler(this);
+    private final OpenClKernelInvoker kernelInvoker = new OpenClKernelInvoker(this);
     private final GpuRuntimeIrOptimizerRegistry irOptimizerRegistry;
     private final GpuOptimizationStrategy optimizationStrategy;
     private final GpuRuntimeDevicePolicyRegistry devicePolicyRegistry;
     private final GpuRuntimeLifecycleEventBus lifecycleEventBus;
+    private final GpuBackendHookRegistry backendHookRegistry;
     private final ThreadLocal<OpenClSessionSelectionRequest> sessionSelectionRequest = new ThreadLocal<>();
     private final Map<String, Object> nativeBuffers = new ConcurrentHashMap<>();
     private final AtomicLong invocationCount = new AtomicLong();
@@ -163,6 +186,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     private final AtomicLong deviceBufferCreationCount = new AtomicLong();
     private volatile OpenClRuntimeSession session;
     private volatile OpenClRuntimeCapabilities capabilities;
+    private volatile GpuRuntimeDeviceDiscoveryResult preselectedDeviceDiscovery;
 
     /**
      * Creates an OpenCL backend with instance-local cache lifetime.
@@ -185,12 +209,21 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected OpenClGpuRuntimeBackend(CacheMode cacheMode, GpuRuntimeLifecycleEventBus lifecycleEventBus) {
+        this(cacheMode, lifecycleEventBus, GpuBackendHookRegistry.loadWithServiceLoader());
+    }
+
+    protected OpenClGpuRuntimeBackend(
+            CacheMode cacheMode,
+            GpuRuntimeLifecycleEventBus lifecycleEventBus,
+            GpuBackendHookRegistry backendHookRegistry
+    ) {
         this(
                 cacheMode,
                 GpuRuntimeIrOptimizerRegistry.loadFromServiceLoader(),
                 GpuOptimizationStrategy.advisoryDefault(),
                 GpuRuntimeDevicePolicyRegistry.loadWithBuiltIns(),
-                lifecycleEventBus
+                lifecycleEventBus,
+                backendHookRegistry
         );
     }
 
@@ -233,11 +266,30 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
             GpuRuntimeLifecycleEventBus lifecycleEventBus
     ) {
+        this(
+                cacheMode,
+                irOptimizerRegistry,
+                optimizationStrategy,
+                devicePolicyRegistry,
+                lifecycleEventBus,
+                GpuBackendHookRegistry.loadWithServiceLoader()
+        );
+    }
+
+    protected OpenClGpuRuntimeBackend(
+            CacheMode cacheMode,
+            GpuRuntimeIrOptimizerRegistry irOptimizerRegistry,
+            GpuOptimizationStrategy optimizationStrategy,
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuRuntimeLifecycleEventBus lifecycleEventBus,
+            GpuBackendHookRegistry backendHookRegistry
+    ) {
         this.cacheMode = Objects.requireNonNull(cacheMode, "cacheMode");
         this.irOptimizerRegistry = Objects.requireNonNull(irOptimizerRegistry, "irOptimizerRegistry");
         this.optimizationStrategy = Objects.requireNonNull(optimizationStrategy, "optimizationStrategy");
         this.devicePolicyRegistry = Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
         this.lifecycleEventBus = lifecycleEventBus == null ? GpuRuntimeLifecycleEventBus.empty() : lifecycleEventBus;
+        this.backendHookRegistry = backendHookRegistry == null ? GpuBackendHookRegistry.empty() : backendHookRegistry;
     }
 
     /**
@@ -248,6 +300,19 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
      */
     public static OpenClGpuRuntimeBackend sharedCache() {
         return new OpenClGpuRuntimeBackend(CacheMode.SHARED);
+    }
+
+    @Override
+    public void preselectDevice(GpuRuntimeDeviceDiscoveryResult discoveryResult) {
+        GpuRuntimeDeviceDiscoveryResult discovery = Objects.requireNonNull(discoveryResult, "discoveryResult");
+        if (discovery.backendTarget() != GpuBackendTarget.OPENCL) {
+            throw new IllegalArgumentException("OpenCL backend cannot preselect device discovery for "
+                    + discovery.backendTarget());
+        }
+        discovery.selectedDevice().orElseThrow(() -> new IllegalArgumentException(
+                "OpenCL backend preselection requires a selected OpenCL device"
+        ));
+        this.preselectedDeviceDiscovery = discovery;
     }
 
     /**
@@ -330,7 +395,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 primaryIrGpuArtifact,
                 requestCompileOptions
         );
-        primaryContext = primaryContext.withCallSite(GpuRuntimeCallSiteResolver.resolve(
+        primaryContext = primaryContext.withCallSite(GpuRuntimeCallSiteResolverSupport.resolve(
                 invocation.artifactClassLoader(),
                 primaryContext.sourceLocation()
         ));
@@ -415,7 +480,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 loadedIrGpuArtifact,
                 requestCompileOptions
         );
-        GpuRuntimeDiagnosticContext selectedContext = selectedContextBase.withCallSite(GpuRuntimeCallSiteResolver.resolve(
+        GpuRuntimeDiagnosticContext selectedContext = selectedContextBase.withCallSite(GpuRuntimeCallSiteResolverSupport.resolve(
                 selectedInvocation.artifactClassLoader(),
                 selectedContextBase.sourceLocation()
         ));
@@ -552,6 +617,12 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         GpuRuntimeCompileRequest selectedCompileRequest = optimizedCompileRequest.withIrGpuArtifact(
                 runtimeIrSelection.selectedArtifact()
         );
+        publishLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.FALLBACK_OR_ROLLBACK_SELECTED,
+                selectedCompileRequest,
+                "OpenCL runtime IR fallback/rollback selection decided",
+                fallbackOrRollbackSelectionFields(runtimeIrSelection, selectionSnapshot.fallbackEvidence())
+        );
         GpuBackendModuleArtifact moduleArtifact = sameSelectedIr(optimizedCompileRequest, selectedCompileRequest)
                 ? optimizedModuleArtifact
                 : sameSelectedIr(compileRequest, selectedCompileRequest) && originalModuleArtifact != null
@@ -601,34 +672,123 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 moduleArtifact,
                 invalidationStamp
         );
+        executeProductionPipeline(
+                selectedCompileRequest,
+                moduleArtifact,
+                artifactSnapshot,
+                compileCacheKey,
+                plan,
+                selectedInvocation.executionConfig(),
+                selectedContext
+        );
+    }
+
+    private GpuBackendExecutionPipelineResult<OpenClCompiledKernel, OpenClPreparedExecution> executeProductionPipeline(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            GpuRuntimeCompileCacheKey compileCacheKey,
+            OpenClExecutionPlan plan,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
+        OpenClProductionExecutionPipeline pipeline = new OpenClProductionExecutionPipeline(
+                productionCachedCompiler(compileCacheKey, artifactSnapshot, diagnosticContext),
+                kernelPreparer(),
+                productionCheckedInvoker(diagnosticContext)
+        );
+        return pipeline.execute(
+                compileRequest,
+                moduleArtifact,
+                plan,
+                executionConfig
+        );
+    }
+
+    private GpuBackendKernelCompiler<OpenClCompiledKernel> productionCachedCompiler(
+            GpuRuntimeCompileCacheKey compileCacheKey,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
+        return new GpuBackendKernelCompiler<>() {
+            @Override
+            public GpuBackendTarget backendTarget() {
+                return GpuBackendTarget.OPENCL;
+            }
+
+            @Override
+            public OpenClCompiledKernel compile(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                OpenClCompiledKernel compiledKernel = compileKernelFromProductionCache(
+                        compileRequest,
+                        moduleArtifact,
+                        compileCacheKey,
+                        artifactSnapshot,
+                        diagnosticContext
+                );
+                dumpRuntimeCompileArtifacts(compiledKernel.artifactSnapshot());
+                return compiledKernel;
+            }
+        };
+    }
+
+    private OpenClCompiledKernel compileKernelFromProductionCache(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileCacheKey compileCacheKey,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
         Map<GpuRuntimeCompileCacheKey, OpenClCompiledKernel> kernelCache = compiledKernelCache();
         OpenClCompiledKernel compiledKernel = kernelCache.get(compileCacheKey);
         if (compiledKernel != null) {
             compileCacheHitCount.incrementAndGet();
-        } else {
-            compiledKernel = kernelCache.computeIfAbsent(
-                    compileCacheKey,
-                    ignored -> compileKernelChecked(
-                            selectedCompileRequest,
-                            moduleArtifact,
-                            artifactSnapshot,
-                            selectedContext
-                    )
-            );
+            return compiledKernel;
         }
-        dumpRuntimeCompileArtifacts(compiledKernel.artifactSnapshot());
-        OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
-        if (selectedInvocation.executionConfig() != null) {
-            execution = new OpenClPreparedExecution(
-                    execution.compiledKernel(),
-                    execution.bufferBindings(),
-                    execution.localBindings(),
-                    execution.scalarBindings(),
-                    execution.argumentBindings(),
-                    selectedInvocation.executionConfig()
-            );
+        return kernelCache.computeIfAbsent(
+                compileCacheKey,
+                ignored -> compileKernelChecked(
+                        compileRequest,
+                        moduleArtifact,
+                        artifactSnapshot,
+                        diagnosticContext
+                )
+        );
+    }
+
+    private GpuBackendKernelInvoker<OpenClPreparedExecution> productionCheckedInvoker(
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
+        return new GpuBackendKernelInvoker<>() {
+            @Override
+            public GpuBackendTarget backendTarget() {
+                return GpuBackendTarget.OPENCL;
+            }
+
+            @Override
+            public void invoke(OpenClPreparedExecution preparedKernel, GpuExecutionConfig executionConfig) {
+                executeKernelChecked(withExecutionConfig(preparedKernel, executionConfig), diagnosticContext);
+            }
+        };
+    }
+
+    private static OpenClPreparedExecution withExecutionConfig(
+            OpenClPreparedExecution preparedKernel,
+            GpuExecutionConfig executionConfig
+    ) {
+        if (executionConfig == null || preparedKernel.explicitExecutionConfig() != null) {
+            return preparedKernel;
         }
-        executeKernelChecked(execution, selectedContext);
+        return new OpenClPreparedExecution(
+                preparedKernel.compiledKernel(),
+                preparedKernel.bufferBindings(),
+                preparedKernel.localBindings(),
+                preparedKernel.scalarBindings(),
+                preparedKernel.argumentBindings(),
+                executionConfig
+        );
     }
 
     private GpuRuntimeDiagnosticContext diagnosticContext(
@@ -690,7 +850,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_STARTED,
                 compileRequest,
                 "OpenCL backend lowerer selection started",
-                backendLowererFields(purpose, null, "started", null)
+                backendLowererFields(compileRequest, purpose, null, "started", null)
         );
         try {
             GpuBackendModuleArtifact moduleArtifact = lowerBackendModule(compileRequest);
@@ -698,7 +858,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
                     compileRequest,
                     "OpenCL backend lowerer selection completed",
-                    backendLowererFields(purpose, moduleArtifact, "succeeded", null)
+                    backendLowererFields(compileRequest, purpose, moduleArtifact, "succeeded", null)
             );
             return moduleArtifact;
         } catch (RuntimeException exception) {
@@ -706,7 +866,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
                     compileRequest,
                     "OpenCL backend lowerer selection failed",
-                    backendLowererFields(purpose, null, "failed", exception)
+                    backendLowererFields(compileRequest, purpose, null, "failed", exception)
             );
             throw exception;
         }
@@ -721,7 +881,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_STARTED,
                 compileRequest,
                 "OpenCL optimized review lowerer selection started",
-                backendLowererFields(purpose, null, "started", null)
+                backendLowererFields(compileRequest, purpose, null, "started", null)
         );
         try {
             GpuBackendModuleArtifact moduleArtifact = lowerOptimizedReviewModule(compileRequest, optimizationReport);
@@ -729,7 +889,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
                     compileRequest,
                     "OpenCL optimized review lowerer selection completed",
-                    backendLowererFields(purpose, moduleArtifact, "succeeded", null)
+                    backendLowererFields(compileRequest, purpose, moduleArtifact, "succeeded", null)
             );
             return moduleArtifact;
         } catch (RuntimeException exception) {
@@ -737,7 +897,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     GpuRuntimeLifecycleEventKind.BACKEND_LOWERER_SELECTION_COMPLETED,
                     compileRequest,
                     "OpenCL optimized review lowerer selection failed",
-                    backendLowererFields(purpose, null, "failed", exception)
+                    backendLowererFields(compileRequest, purpose, null, "failed", exception)
             );
             throw exception;
         }
@@ -748,13 +908,24 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             String message,
             Map<String, String> fields
     ) {
+        LinkedHashMap<String, String> eventFields = new LinkedHashMap<>();
+        GpuRuntimeArtifactProperties.putPortable(eventFields, "runtime.backend", "target", backendTarget().name());
+        GpuRuntimeArtifactProperties.putPortable(
+                eventFields,
+                "runtime.backend",
+                "name",
+                cacheMode == CacheMode.SHARED ? "OpenCL (shared cache)" : "OpenCL"
+        );
+        if (fields != null) {
+            eventFields.putAll(fields);
+        }
         lifecycleEventBus.publish(new GpuRuntimeLifecycleEvent(
                 kind,
                 backendTarget(),
                 "runtime",
                 "off",
                 message,
-                fields
+                eventFields
         ));
     }
 
@@ -764,7 +935,18 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             String message,
             Map<String, String> fields
     ) {
-        publishLifecycleEvent(kind, compileRequest.descriptor(), compileRequest.options(), message, fields);
+        if (compileRequest == null) {
+            publishLifecycleEvent(kind, (GpuKernelDescriptor) null, (GpuRuntimeCompileOptions) null, message, fields);
+            return;
+        }
+        lifecycleEventBus.publish(new GpuRuntimeLifecycleEvent(
+                kind,
+                backendTarget(),
+                compileRequest.descriptor().kernelResource(),
+                compileRequest.options().optimizationProfile(),
+                message,
+                mergeRuntimeFields(GpuRuntimeLifecycleFields.compileRequestFields(compileRequest), fields)
+        ));
     }
 
     private void publishLifecycleEvent(
@@ -785,7 +967,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 normalizeLifecycleValue(moduleArtifact.resource(), "unknown"),
                 provenance.optimizationProfile(),
                 message,
-                fields
+                mergeRuntimeFields(GpuRuntimeLifecycleFields.artifactSnapshotFields(artifactSnapshot), fields)
         ));
     }
 
@@ -801,7 +983,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 descriptor,
                 compileOptions == null ? "off" : compileOptions.optimizationProfile(),
                 message,
-                fields
+                mergeRuntimeFields(GpuRuntimeLifecycleFields.descriptorCompileOptionsFields(descriptor, compileOptions), fields)
         );
     }
 
@@ -818,8 +1000,39 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 descriptor == null ? "unknown" : descriptor.kernelResource(),
                 optimizationProfile,
                 message,
-                fields
+                mergeRuntimeFields(
+                        GpuRuntimeLifecycleFields.descriptorFields(descriptor),
+                        fieldsWithOptimizationProfile(fields, optimizationProfile)
+                )
         ));
+    }
+
+    private static Map<String, String> mergeRuntimeFields(
+            LinkedHashMap<String, String> runtimeFields,
+            Map<String, String> fields
+    ) {
+        LinkedHashMap<String, String> merged = runtimeFields == null ? new LinkedHashMap<>() : runtimeFields;
+        if (fields != null) {
+            merged.putAll(fields);
+        }
+        return merged;
+    }
+
+    private static Map<String, String> fieldsWithOptimizationProfile(
+            Map<String, String> fields,
+            String optimizationProfile
+    ) {
+        LinkedHashMap<String, String> merged = new LinkedHashMap<>();
+        GpuRuntimeArtifactProperties.putPortable(
+                merged,
+                "runtime.compile",
+                "optimizationProfile",
+                normalizeLifecycleValue(optimizationProfile, "off")
+        );
+        if (fields != null) {
+            merged.putAll(fields);
+        }
+        return merged;
     }
 
     private static Map<String, String> irGpuLoadFields(
@@ -833,6 +1046,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         fields.put("loadRole", normalizeLifecycleValue(loadRole, "unknown"));
         fields.put("irgpu.present", Boolean.toString(artifact != null && artifact.isPresent()));
         fields.put("irgpu.identity", IrGpuArtifactIdentity.stableIdentity(artifact));
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        putRuntimeIrGpuField(fields, "present", artifact != null && artifact.isPresent());
+        putRuntimeIrGpuField(fields, "identity", IrGpuArtifactIdentity.stableIdentity(artifact));
+        GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
         putFailureFields(fields, failure);
         return fields;
     }
@@ -845,6 +1062,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         fields.put("status", normalizeLifecycleValue(status, "unknown"));
         fields.put("validation.stage", normalizeLifecycleValue(validationStage, "unknown"));
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
         putFailureFields(fields, failure);
         return fields;
     }
@@ -872,6 +1091,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             fields.put("selected.irgpuResource", selectedDescriptor.irGpuResource());
         }
         resolvedSelection.ifPresent(value -> fields.putAll(value.artifactFields("methodVariantSelection")));
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
         putFailureFields(fields, failure);
         return fields;
     }
@@ -889,6 +1110,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         fields.put("optimizer.pipelineVersion", optimizerPipelineVersion());
         fields.put("irgpu.present", Boolean.toString(compileRequest.irGpuArtifact().isPresent()));
         fields.put("irgpu.identity", IrGpuArtifactIdentity.stableIdentity(compileRequest.irGpuArtifact()));
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        putRuntimeIrGpuField(fields, "present", compileRequest.irGpuArtifact().isPresent());
+        putRuntimeIrGpuField(fields, "identity", IrGpuArtifactIdentity.stableIdentity(compileRequest.irGpuArtifact()));
+        GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
         putFailureFields(fields, failure);
         return fields;
     }
@@ -922,11 +1147,14 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             fields.put("strategy.selectedProfile", optimizationReport.strategyDecision().selectedProfile());
             fields.put("strategy.advisoryOnly", Boolean.toString(optimizationReport.strategyDecision().advisoryOnly()));
         }
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
         putFailureFields(fields, failure);
         return fields;
     }
 
-    private static Map<String, String> backendLowererFields(
+    private Map<String, String> backendLowererFields(
+            GpuRuntimeCompileRequest compileRequest,
             String purpose,
             GpuBackendModuleArtifact moduleArtifact,
             String status,
@@ -935,8 +1163,26 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         fields.put("status", normalizeLifecycleValue(status, "unknown"));
         fields.put("lowerer.purpose", normalizeLifecycleValue(purpose, "unknown"));
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        GpuRuntimeLifecycleFields.putAllMissing(fields, GpuRuntimeLifecycleFields.moduleArtifactFields(moduleArtifact));
+        GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
         putModuleArtifactFields(fields, moduleArtifact);
         putFailureFields(fields, failure);
+        if (moduleArtifact != null) {
+            GpuBackendLoweringResult loweringResult = backendLoweringResult(compileRequest, moduleArtifact);
+            GpuRuntimeLifecycleFields.putAllMissing(
+                    fields,
+                    loweringResult.artifactFields("runtime.backend.lowering")
+            );
+            GpuRuntimeLifecycleFields.putAllMissing(
+                    fields,
+                    backendHookRegistry.observeLowering(
+                            compileRequest,
+                            loweringResult,
+                            "runtime.backend.hookExecution.lowering"
+                    )
+            );
+        }
         return fields;
     }
 
@@ -946,7 +1192,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             GpuBackendSourceSwitchingDecision sourceSwitchingDecision,
             GpuRuntimeIrSelection runtimeIrSelection
     ) {
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.backendSourceSelectionFields(
+                moduleArtifact,
+                sourceSwitchingDecision
+        );
         fields.put("status", sourceSwitchingDecision.status());
         fields.put("decision", sourceSwitchingDecision.decision());
         fields.put("sourceSelection", sourceSwitchingDecision.sourceSelection());
@@ -963,30 +1212,88 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         fields.put("runtimeIr.selectedStage", runtimeIrSelection.selectedStage());
         fields.put("runtimeIr.transformed", Boolean.toString(runtimeIrSelection.transformed()));
         fields.put("runtimeIr.optimizedRejected", Boolean.toString(runtimeIrSelection.optimizedRejected()));
+        GpuRuntimeLifecycleFields.putStatus(fields, sourceSwitchingDecision.status());
+        GpuRuntimeLifecycleFields.putAllMissing(fields, GpuRuntimeLifecycleFields.runtimeIrSelectionFields(runtimeIrSelection));
         putModuleArtifactFields(fields, moduleArtifact);
         return fields;
     }
 
+    private static Map<String, String> fallbackOrRollbackSelectionFields(
+            GpuRuntimeIrSelection runtimeIrSelection,
+            GpuRuntimeFallbackEvidence fallbackEvidence
+    ) {
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.runtimeIrSelectionFields(runtimeIrSelection);
+        fields.putAll(GpuRuntimeLifecycleFields.fallbackEvidenceFields(fallbackEvidence));
+        String selectedStage = runtimeIrSelection == null ? "missing" : runtimeIrSelection.selectedStage();
+        String status = "missing".equals(selectedStage) ? "missing" : "selected-" + selectedStage;
+        fields.put("status", status);
+        fields.put("decision", runtimeIrSelection == null
+                ? GpuRuntimeCompileProvenance.NO_FALLBACK
+                : runtimeIrSelection.fallbackDecision());
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        return fields;
+    }
+
     private Map<String, String> runtimeStateFields(String status, RuntimeException failure) {
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        GpuRuntimeBackendStateSummary stateSummary = backendRuntimeStateSummary();
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.runtimeStateEventFields(
+                stateSummary,
+                status,
+                failure
+        );
         fields.put("status", normalizeLifecycleValue(status, "unknown"));
-        fields.put("cacheMode", cacheMode.name());
-        fields.put("compiledKernel.count", Integer.toString(compiledKernelCache().size()));
-        fields.put("nativeBuffer.count", Integer.toString(nativeBuffers.size()));
-        fields.put("invocation.count", Long.toString(invocationCount.get()));
-        fields.put("compile.count", Long.toString(compileCount.get()));
+        fields.put("cacheMode", stateSummary.cacheMode());
+        fields.put("compiledKernel.count", Long.toString(stateSummary.compiledKernelCount()));
+        fields.put("nativeBuffer.count", Long.toString(stateSummary.nativeBufferCount()));
+        fields.put("invocation.count", Long.toString(stateSummary.invocationCount()));
+        fields.put("compile.count", Long.toString(stateSummary.compileCount()));
         putFailureFields(fields, failure);
         return fields;
     }
 
-    private static Map<String, String> backendCompilationFields(
+    private Map<String, String> backendCompilationFields(
+            GpuRuntimeCompileRequest compileRequest,
             GpuBackendModuleArtifact moduleArtifact,
             GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
             String status,
             String cacheKey,
             RuntimeException failure
     ) {
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        GpuRuntimeBackendCompilationSummary compilationSummary = GpuRuntimeBackendCompilationSummary.from(
+                moduleArtifact,
+                artifactSnapshot,
+                cacheKey
+        );
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.backendCompilationFields(
+                compileRequest,
+                moduleArtifact,
+                artifactSnapshot,
+                backendRuntimeStateFields(),
+                compilationSummary,
+                status,
+                cacheKey,
+                failure
+        );
+        GpuBackendCompilationResult compilationResult = backendCompilationResult(
+                compileRequest,
+                moduleArtifact,
+                artifactSnapshot,
+                status,
+                cacheKey,
+                failure
+        );
+        GpuRuntimeLifecycleFields.putAllMissing(
+                fields,
+                compilationResult.artifactFields("runtime.backend.compilation")
+        );
+        GpuRuntimeLifecycleFields.putAllMissing(
+                fields,
+                backendHookRegistry.observeCompilation(
+                        compileRequest,
+                        compilationResult,
+                        "runtime.backend.hookExecution.compilation"
+                )
+        );
         fields.put("status", normalizeLifecycleValue(status, "unknown"));
         if (cacheKey != null && !cacheKey.isBlank()) {
             fields.put("cacheKey", cacheKey);
@@ -1001,22 +1308,113 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             fields.put("binaryArtifact.count", Integer.toString(artifactSnapshot.binaryArtifacts().size()));
         }
         putFailureFields(fields, failure);
+        GpuRuntimeLifecycleFields.putAllMissing(
+                fields,
+                backendHookRegistry.contributeArtifactFields(
+                        compilationResult.moduleArtifact().backendTarget(),
+                        compileRequest,
+                        fields,
+                        "runtime.backend.hookExecution.compilationArtifact"
+                )
+        );
         return fields;
     }
 
-    private static Map<String, String> invocationFields(
+    private GpuBackendCompilationResult backendCompilationResult(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            String status,
+            String cacheKey,
+            RuntimeException failure
+    ) {
+        GpuBackendModuleArtifact module = stageModuleArtifact(moduleArtifact, artifactSnapshot);
+        GpuBackendLoweringResult loweringResult = backendLoweringResult(compileRequest, module);
+        GpuRuntimeBackendCompilationSummary compilationSummary = GpuRuntimeBackendCompilationSummary.from(
+                moduleArtifact,
+                artifactSnapshot,
+                cacheKey
+        );
+        return new GpuBackendCompilationResult(
+                backendStageResult(
+                        GpuBackendPipelineStage.COMPILE,
+                        stageBackendTarget(compileRequest, module, artifactSnapshot),
+                        status,
+                        "OpenCL backend compilation",
+                        failure
+                ),
+                loweringResult,
+                compilationSummary,
+                cacheKey
+        );
+    }
+
+    private GpuBackendLoweringResult backendLoweringResult(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact
+    ) {
+        GpuBackendTarget target = stageBackendTarget(compileRequest, moduleArtifact, null);
+        GpuBackendSourceSelectionPlan sourceSelectionPlan = new GpuBackendSourceSelectionPlan(
+                target,
+                "irgpu-backend-neutral-source".equals(moduleArtifact.sourceOrigin()),
+                moduleArtifact.sourceOrigin(),
+                moduleArtifact.format(),
+                moduleArtifact.runtimeLoadMode(),
+                List.of(),
+                moduleArtifact.sourceAvailable()
+                        ? List.of("OpenCL compilation received a pre-lowered backend module artifact")
+                        : List.of("OpenCL compilation has not recorded a lowered backend module artifact")
+        );
+        if (moduleArtifact.sourceAvailable() || moduleArtifact.binaryAvailable()) {
+            return GpuBackendLoweringResult.succeeded(
+                    moduleArtifact,
+                    sourceSelectionPlan,
+                    List.of("OpenCL backend module artifact is available for compilation")
+            );
+        }
+        return new GpuBackendLoweringResult(
+                GpuBackendStageResult.notStarted(GpuBackendPipelineStage.LOWER, target),
+                sourceSelectionPlan,
+                moduleArtifact
+        );
+    }
+
+    private Map<String, String> invocationFields(
             OpenClPreparedExecution execution,
             GpuExecutionConfig executionConfig,
             String status,
             RuntimeException failure
     ) {
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        GpuRuntimeInvocationBindingSummary bindingSummary = execution.bindingSummary();
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.invocationFields(
+                execution.compiledKernel().artifactSnapshot(),
+                backendRuntimeStateFields(),
+                executionConfig,
+                bindingSummary,
+                status,
+                execution.compiledKernel().cacheKey(),
+                failure
+        );
+        GpuBackendInvocationResult invocationResult = backendInvocationResult(execution, executionConfig, status, failure);
+        GpuRuntimeLifecycleFields.putAllMissing(
+                fields,
+                invocationResult.artifactFields("runtime.backend.invoke")
+        );
+        GpuRuntimeLifecycleFields.putAllMissing(
+                fields,
+                backendHookRegistry.observeInvocation(
+                        invocationResult.preparationResult().compilationResult().moduleArtifact().backendTarget(),
+                        null,
+                        invocationResult,
+                        "runtime.backend.hookExecution.invocation"
+                )
+        );
         fields.put("status", normalizeLifecycleValue(status, "unknown"));
         fields.put("cacheKey", execution.compiledKernel().cacheKey());
-        fields.put("bufferBinding.count", Integer.toString(execution.bufferBindings().size()));
-        fields.put("localBinding.count", Integer.toString(execution.localBindings().size()));
-        fields.put("scalarBinding.count", Integer.toString(execution.scalarBindings().size()));
-        fields.put("argumentBinding.count", Integer.toString(execution.argumentBindings().size()));
+        fields.put("bufferBinding.count", Integer.toString(bindingSummary.bufferBindingCount()));
+        fields.put("localBinding.count", Integer.toString(bindingSummary.localBindingCount()));
+        fields.put("scalarBinding.count", Integer.toString(bindingSummary.scalarBindingCount()));
+        fields.put("argumentBinding.count", Integer.toString(bindingSummary.argumentBindingCount()));
         if (executionConfig != null) {
             fields.put("work.dimensions", Integer.toString(executionConfig.dimensions()));
             fields.put("work.globalX", Long.toString(executionConfig.globalX()));
@@ -1027,23 +1425,181 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             fields.put("work.localZ", Long.toString(executionConfig.localZ()));
         }
         putFailureFields(fields, failure);
+        GpuRuntimeLifecycleFields.putAllMissing(
+                fields,
+                backendHookRegistry.contributeArtifactFields(
+                        invocationResult.preparationResult().compilationResult().moduleArtifact().backendTarget(),
+                        null,
+                        fields,
+                        "runtime.backend.hookExecution.invocationArtifact"
+                )
+        );
         return fields;
     }
 
-    private static Map<String, String> artifactDumpFields(
-            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+    private GpuBackendInvocationResult backendInvocationResult(
+            OpenClPreparedExecution execution,
+            GpuExecutionConfig executionConfig,
             String status,
             RuntimeException failure
     ) {
-        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        GpuBackendPreparationResult preparationResult = backendPreparationResult(execution);
+        int readbackRequiredCount = readbackRequiredCount(execution);
+        int readbackCompletedCount = "succeeded".equals(status) ? readbackRequiredCount : 0;
+        return new GpuBackendInvocationResult(
+                backendStageResult(
+                        GpuBackendPipelineStage.INVOKE,
+                        preparationResult.compilationResult().stageResult().backendTarget(),
+                        status,
+                        "OpenCL kernel invocation",
+                        failure
+                ),
+                preparationResult,
+                executionConfig,
+                execution.bindingSummary(),
+                readbackRequiredCount,
+                readbackCompletedCount
+        );
+    }
+
+    private GpuBackendPreparationResult backendPreparationResult(OpenClPreparedExecution execution) {
+        OpenClCompiledKernel compiledKernel = execution.compiledKernel();
+        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = compiledKernel.artifactSnapshot();
+        GpuBackendCompilationResult compilationResult = backendCompilationResult(
+                null,
+                artifactSnapshot.backendModuleArtifact(),
+                artifactSnapshot,
+                "succeeded",
+                compiledKernel.cacheKey(),
+                null
+        );
+        return GpuBackendPreparationResult.prepared(
+                compilationResult,
+                "opencl-kernel",
+                execution.bindingSummary(),
+                List.of("OpenCL kernel and argument bindings are prepared")
+        );
+    }
+
+    private static int readbackRequiredCount(OpenClPreparedExecution execution) {
+        if (execution.bufferBindings() == null) {
+            return 0;
+        }
+        return (int) execution.bufferBindings().stream()
+                .filter(binding -> binding != null && binding.binding() != null && binding.binding().readbackRequired())
+                .count();
+    }
+
+    private static GpuBackendStageResult backendStageResult(
+            GpuBackendPipelineStage stage,
+            GpuBackendTarget backendTarget,
+            String status,
+            String summary,
+            RuntimeException failure
+    ) {
+        String normalizedStatus = normalizeLifecycleValue(status, "started");
+        String normalizedSummary = normalizeLifecycleValue(summary, stage.key());
+        if ("succeeded".equals(normalizedStatus)) {
+            return GpuBackendStageResult.succeeded(
+                    stage,
+                    backendTarget,
+                    normalizedSummary + " succeeded",
+                    List.of()
+            );
+        }
+        if ("failed".equals(normalizedStatus)) {
+            return GpuBackendStageResult.failed(
+                    stage,
+                    backendTarget,
+                    normalizedSummary + " failed",
+                    failure,
+                    List.of()
+            );
+        }
+        return GpuBackendStageResult.notStarted(stage, backendTarget);
+    }
+
+    private static GpuBackendModuleArtifact stageModuleArtifact(
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
+        if (moduleArtifact != null) {
+            return moduleArtifact;
+        }
+        if (artifactSnapshot != null) {
+            return artifactSnapshot.backendModuleArtifact();
+        }
+        return GpuBackendModuleArtifact.unknown();
+    }
+
+    private static GpuBackendTarget stageBackendTarget(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact,
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
+        if (moduleArtifact != null && moduleArtifact.backendTarget() != GpuBackendTarget.UNKNOWN) {
+            return moduleArtifact.backendTarget();
+        }
+        if (artifactSnapshot != null && artifactSnapshot.backendModuleArtifact().backendTarget() != GpuBackendTarget.UNKNOWN) {
+            return artifactSnapshot.backendModuleArtifact().backendTarget();
+        }
+        if (compileRequest != null && compileRequest.options() != null) {
+            return compileRequest.options().backendTarget();
+        }
+        return GpuBackendTarget.OPENCL;
+    }
+
+    private LinkedHashMap<String, String> backendRuntimeStateFields() {
+        return GpuRuntimeLifecycleFields.backendRuntimeStateFields(backendRuntimeStateSummary());
+    }
+
+    private GpuRuntimeBackendStateSummary backendRuntimeStateSummary() {
+        return new GpuRuntimeBackendStateSummary(
+                cacheMode.name(),
+                compiledKernelCache().size(),
+                nativeBuffers.size(),
+                invocationCount.get(),
+                compileCount.get(),
+                compileCacheHitCount.get(),
+                sessionCreationCount.get(),
+                deviceBufferCreationCount.get()
+        );
+    }
+
+    private Map<String, String> artifactDumpFields(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            GpuRuntimeArtifactDumpSummary dumpSummary,
+            String status,
+            RuntimeException failure
+    ) {
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.artifactDumpFields(
+                artifactSnapshot,
+                dumpSummary,
+                status,
+                failure
+        );
         fields.put("status", normalizeLifecycleValue(status, "unknown"));
+        if (dumpSummary != null) {
+            fields.put("directory.count", Integer.toString(dumpSummary.directoryCount()));
+        }
         if (artifactSnapshot != null) {
             putModuleArtifactFields(fields, artifactSnapshot.backendModuleArtifact());
-            fields.put("directory.count", Integer.toString(runtimeCompileArtifactDirectories(artifactSnapshot).size()));
             fields.put("runtimeIr.selectedStage", artifactSnapshot.runtimeIrSelection().selectedStage());
             fields.put("runtimeIr.transformed", Boolean.toString(artifactSnapshot.runtimeIrSelection().transformed()));
             fields.put("compileLog.present", Boolean.toString(!artifactSnapshot.compileLog().isBlank()));
         }
+        GpuBackendTarget backendTarget = artifactSnapshot == null
+                ? GpuBackendTarget.OPENCL
+                : artifactSnapshot.backendModuleArtifact().backendTarget();
+        GpuRuntimeLifecycleFields.putAllMissing(
+                fields,
+                backendHookRegistry.contributeArtifactFields(
+                        backendTarget,
+                        null,
+                        fields,
+                        "runtime.backend.hookExecution.artifactDump"
+                )
+        );
         putFailureFields(fields, failure);
         return fields;
     }
@@ -1072,6 +1628,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         }
         fields.put("failure.type", failure.getClass().getName());
         fields.put("failure.message", normalizeLifecycleValue(failure.getMessage(), ""));
+    }
+
+    private static void putRuntimeIrGpuField(LinkedHashMap<String, String> fields, String key, Object value) {
+        GpuRuntimeArtifactProperties.putPortable(fields, "runtime.irgpu", key, value);
     }
 
     private static String normalizeLifecycleValue(String value, String fallback) {
@@ -1685,6 +2245,31 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             return compileKernel(kernelDescriptor);
         }
         return session().compileKernel(moduleArtifact, kernelDescriptor, GpuRuntimeCompileOptions.defaults(backendTarget()));
+    }
+
+    protected GpuBackendKernelCompiler<OpenClCompiledKernel> kernelCompiler() {
+        return kernelCompiler;
+    }
+
+    protected GpuBackendKernelPreparer<OpenClCompiledKernel, OpenClPreparedExecution, OpenClExecutionPlan> kernelPreparer() {
+        return executionPreparer;
+    }
+
+    protected GpuBackendKernelInvoker<OpenClPreparedExecution> kernelInvoker() {
+        return kernelInvoker;
+    }
+
+    private OpenClCompiledKernel compileBackendKernel(
+            GpuRuntimeCompileRequest compileRequest,
+            GpuBackendModuleArtifact moduleArtifact
+    ) {
+        if (overridesCompileRequestHook()) {
+            return compileKernel(compileRequest);
+        }
+        GpuBackendModuleArtifact resolvedModuleArtifact = moduleArtifact == null
+                ? lowerBackendModule(compileRequest)
+                : moduleArtifact;
+        return kernelCompiler().compile(compileRequest, resolvedModuleArtifact);
     }
 
     protected GpuBackendModuleArtifact lowerBackendModule(GpuRuntimeCompileRequest compileRequest) {
@@ -2391,7 +2976,13 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected OpenClRuntimeSession createSession() {
-        return OpenClRuntimeSession.createDefault(devicePolicyRegistry);
+        return OpenClRuntimeSession.createDefault(
+                devicePolicyRegistry,
+                null,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                Optional.empty(),
+                preselectedDeviceSelection()
+        );
     }
 
     protected OpenClRuntimeSession createSession(
@@ -2409,12 +3000,25 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         if (overridesLegacyCreateSessionHook()) {
             return createSession();
         }
-        return OpenClRuntimeSession.createDefault(devicePolicyRegistry, descriptor, compileOptions, irGpuArtifact);
+        return OpenClRuntimeSession.createDefault(
+                devicePolicyRegistry,
+                descriptor,
+                compileOptions,
+                irGpuArtifact,
+                preselectedDeviceSelection()
+        );
     }
 
     protected Optional<GpuRuntimeDeviceSelection> runtimeDeviceSelection() {
         OpenClRuntimeSession currentSession = cacheMode == CacheMode.SHARED ? sharedSession : session;
-        return Optional.ofNullable(currentSession).map(OpenClRuntimeSession::deviceSelection);
+        return Optional.ofNullable(currentSession)
+                .map(OpenClRuntimeSession::deviceSelection)
+                .or(this::preselectedDeviceSelection);
+    }
+
+    protected Optional<GpuRuntimeDeviceSelection> preselectedDeviceSelection() {
+        return Optional.ofNullable(preselectedDeviceDiscovery)
+                .flatMap(GpuRuntimeDeviceDiscoveryResult::deviceSelection);
     }
 
     protected OpenClValidationDeviceInfo runtimeValidationDeviceInfo() {
@@ -3344,6 +3948,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         boolean usesDouble = usesDoublePrecision(descriptor);
         boolean usesImages = usesImages(descriptor);
         boolean usesImage3dWrites = usesImage3dWrites(descriptor);
+        boolean usesAtomics = usesAtomics(descriptor);
         if (usesDouble && !capabilities.supportsDoublePrecision()) {
             throw new UnsupportedOperationException(
                     "OpenCL capability precheck failed for kernel "
@@ -3372,6 +3977,16 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                             + capabilities.deviceLabel()
                             + " does not support 3D image writes required by the kernel"
                             + "; fall back to 2D/buffer workflows or select a device with 3D image write support"
+            );
+        }
+        if (usesAtomics && !capabilities.supportsAtomics()) {
+            throw new UnsupportedOperationException(
+                    "OpenCL capability precheck failed for kernel "
+                            + descriptor.kernelName()
+                            + ": device "
+                            + capabilities.deviceLabel()
+                            + " does not advertise int32 atomic support required by the kernel"
+                            + "; avoid GPU.atomic_* on this device or select a backend/device with atomics support"
             );
         }
         if (requestedLocalMemoryBytes > capabilities.localMemoryBytes()) {
@@ -3655,16 +4270,11 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_STARTED,
                 compileRequest,
                 "OpenCL backend compilation started",
-                backendCompilationFields(moduleArtifact, artifactSnapshot, "started", null, null)
+                backendCompilationFields(compileRequest, moduleArtifact, artifactSnapshot, "started", null, null)
         );
         try {
             compileCount.incrementAndGet();
-            OpenClCompiledKernel compiledKernel;
-            if (overridesCompileRequestHook()) {
-                compiledKernel = compileKernel(compileRequest);
-            } else {
-                compiledKernel = compileKernel(compileRequest, moduleArtifact);
-            }
+            OpenClCompiledKernel compiledKernel = compileBackendKernel(compileRequest, moduleArtifact);
             OpenClCompiledKernel mergedKernel = compiledKernel.withArtifactSnapshot(mergeCompilerLog(
                     artifactSnapshot,
                     compiledKernel.artifactSnapshot()
@@ -3673,7 +4283,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_COMPLETED,
                     compileRequest,
                     "OpenCL backend compilation completed",
-                    backendCompilationFields(moduleArtifact, mergedKernel.artifactSnapshot(), "succeeded", mergedKernel.cacheKey(), null)
+                    backendCompilationFields(compileRequest, moduleArtifact, mergedKernel.artifactSnapshot(), "succeeded", mergedKernel.cacheKey(), null)
             );
             return mergedKernel;
         } catch (RuntimeException exception) {
@@ -3681,7 +4291,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_COMPLETED,
                     compileRequest,
                     "OpenCL backend compilation failed",
-                    backendCompilationFields(moduleArtifact, artifactSnapshot, "failed", null, exception)
+                    backendCompilationFields(compileRequest, moduleArtifact, artifactSnapshot, "failed", null, exception)
             );
             if (exception instanceof GpuRuntimeException runtimeException) {
                 throw runtimeException;
@@ -3709,16 +4319,16 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                 GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_STARTED,
                 compileRequest,
                 "OpenCL backend compilation started",
-                backendCompilationFields(null, null, "started", null, null)
+                backendCompilationFields(compileRequest, null, null, "started", null, null)
         );
         try {
             compileCount.incrementAndGet();
-            OpenClCompiledKernel compiledKernel = compileKernel(compileRequest);
+            OpenClCompiledKernel compiledKernel = compileBackendKernel(compileRequest, null);
             publishLifecycleEvent(
                     GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_COMPLETED,
                     compileRequest,
                     "OpenCL backend compilation completed",
-                    backendCompilationFields(null, compiledKernel.artifactSnapshot(), "succeeded", compiledKernel.cacheKey(), null)
+                    backendCompilationFields(compileRequest, null, compiledKernel.artifactSnapshot(), "succeeded", compiledKernel.cacheKey(), null)
             );
             return compiledKernel;
         } catch (RuntimeException exception) {
@@ -3726,7 +4336,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
                     GpuRuntimeLifecycleEventKind.BACKEND_COMPILATION_COMPLETED,
                     compileRequest,
                     "OpenCL backend compilation failed",
-                    backendCompilationFields(null, null, "failed", null, exception)
+                    backendCompilationFields(compileRequest, null, null, "failed", null, exception)
             );
             if (exception instanceof GpuRuntimeException runtimeException) {
                 throw runtimeException;
@@ -3736,7 +4346,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     private GpuRuntimeCompileRequest buildCompileRequest(GpuKernelDescriptor descriptor) {
-        return GpuRuntimeCompileRequestFactory.fromDescriptor(
+        return GpuRuntimeCompileRequestSupport.fromDescriptor(
                 descriptor,
                 GpuRuntimeCompileOptions.defaults(backendTarget()),
                 compileDeviceProfile()
@@ -3744,7 +4354,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     private GpuRuntimeCompileRequest buildCompileRequest(GpuKernelInvocation invocation) {
-        return GpuRuntimeCompileRequestFactory.fromInvocation(
+        return GpuRuntimeCompileRequestSupport.fromInvocation(
                 invocation,
                 compileDeviceProfile()
         );
@@ -3769,24 +4379,38 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
     }
 
     protected GpuRuntimeDeviceProfile compileDeviceProfile() {
-        OpenClRuntimeCapabilities runtimeCapabilities = runtimeCapabilities();
         String backendName = cacheMode == CacheMode.SHARED ? "OpenCL (shared cache)" : "OpenCL";
         OpenClRuntimeSession currentSession = cacheMode == CacheMode.SHARED ? sharedSession : session;
         if (currentSession != null) {
             return currentSession.deviceProfile().withBackendName(backendName);
         }
+        Optional<GpuRuntimeDeviceProfile> preselectedDevice = preselectedDeviceSelection()
+                .flatMap(GpuRuntimeDeviceSelection::selectedDevice);
+        if (preselectedDevice.isPresent()) {
+            return preselectedDevice.orElseThrow().withBackendName(backendName);
+        }
+        OpenClRuntimeCapabilities runtimeCapabilities = runtimeCapabilities();
         return GpuRuntimeDeviceProfile.openCl(
                 backendName,
+                "unknown",
                 runtimeCapabilities.deviceLabel(),
                 runtimeCapabilities.vendor(),
                 runtimeCapabilities.driverVersion(),
                 runtimeCapabilities.deviceVersion(),
+                runtimeCapabilities.compilerVersion(),
+                "unknown",
+                "unknown",
+                GpuDeviceClassTarget.UNKNOWN,
                 runtimeCapabilities.computeUnits(),
+                -1L,
                 runtimeCapabilities.localMemoryBytes(),
                 runtimeCapabilities.maxWorkGroupSize(),
                 runtimeCapabilities.preferredVectorWidthFloat(),
+                false,
                 runtimeCapabilities.supportsDoublePrecision(),
                 runtimeCapabilities.supportsImages(),
+                runtimeCapabilities.supportsImage3dWrites(),
+                runtimeCapabilities.supportsAtomics(),
                 runtimeCapabilities.supportsSubgroups()
         );
     }
@@ -3851,7 +4475,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             );
             validateKernelWorkGroupSize(execution, diagnosticContext, launchAdvisory);
             dumpRuntimeLaunchAdvisory(execution.compiledKernel().artifactSnapshot(), launchAdvisory);
-            executeKernel(execution);
+            kernelInvoker().invoke(execution, executionConfig);
             publishLifecycleEvent(
                     GpuRuntimeLifecycleEventKind.INVOCATION_COMPLETED,
                     execution.compiledKernel().descriptor(),
@@ -3993,26 +4617,31 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         if (!runtimeCompileArtifactsConfigured()) {
             return;
         }
+        java.util.List<java.nio.file.Path> artifactDirectories = runtimeCompileArtifactDirectories(artifactSnapshot);
+        GpuRuntimeArtifactDumpSummary plannedSummary = GpuRuntimeArtifactDumpSummary.planned(artifactDirectories.size());
         publishLifecycleEvent(
                 GpuRuntimeLifecycleEventKind.ARTIFACT_DUMP_STARTED,
                 artifactSnapshot,
                 "OpenCL runtime artifact dump started",
-                artifactDumpFields(artifactSnapshot, "started", null)
+                artifactDumpFields(artifactSnapshot, plannedSummary, "started", null)
         );
         try {
-            writeRuntimeCompileArtifactsIfConfigured(artifactSnapshot);
+            GpuRuntimeArtifactDumpSummary dumpSummary = writeRuntimeCompileArtifactsIfConfigured(
+                    artifactSnapshot,
+                    artifactDirectories
+            );
             publishLifecycleEvent(
                     GpuRuntimeLifecycleEventKind.ARTIFACT_DUMP_COMPLETED,
                     artifactSnapshot,
                     "OpenCL runtime artifact dump completed",
-                    artifactDumpFields(artifactSnapshot, "succeeded", null)
+                    artifactDumpFields(artifactSnapshot, dumpSummary, "succeeded", null)
             );
         } catch (RuntimeException exception) {
             publishLifecycleEvent(
                     GpuRuntimeLifecycleEventKind.ARTIFACT_DUMP_COMPLETED,
                     artifactSnapshot,
                     "OpenCL runtime artifact dump failed",
-                    artifactDumpFields(artifactSnapshot, "failed", exception)
+                    artifactDumpFields(artifactSnapshot, plannedSummary, "failed", exception)
             );
             throw exception;
         }
@@ -4028,17 +4657,30 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
         return value != null && !value.isBlank();
     }
 
-    static void writeRuntimeCompileArtifactsIfConfigured(GpuRuntimeCompileArtifactSnapshot artifactSnapshot) {
+    static GpuRuntimeArtifactDumpSummary writeRuntimeCompileArtifactsIfConfigured(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot
+    ) {
         java.util.List<java.nio.file.Path> artifactDirectories = runtimeCompileArtifactDirectories(artifactSnapshot);
-        if (artifactDirectories.isEmpty()) {
-            return;
+        return writeRuntimeCompileArtifactsIfConfigured(artifactSnapshot, artifactDirectories);
+    }
+
+    private static GpuRuntimeArtifactDumpSummary writeRuntimeCompileArtifactsIfConfigured(
+            GpuRuntimeCompileArtifactSnapshot artifactSnapshot,
+            java.util.List<java.nio.file.Path> artifactDirectories
+    ) {
+        java.util.List<java.nio.file.Path> directories = artifactDirectories == null
+                ? java.util.List.of()
+                : java.util.List.copyOf(artifactDirectories);
+        if (directories.isEmpty()) {
+            return GpuRuntimeArtifactDumpSummary.planned(0);
         }
         try {
             GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(artifactSnapshot);
-            for (java.nio.file.Path artifactDirectory : artifactDirectories) {
+            for (java.nio.file.Path artifactDirectory : directories) {
                 java.nio.file.Files.createDirectories(artifactDirectory);
                 writeRuntimeCompileArtifactDump(artifactDirectory, dump);
             }
+            return GpuRuntimeArtifactDumpSummary.from(dump, directories.size());
         } catch (RuntimeException | java.io.IOException exception) {
             throw new IllegalStateException("Failed to write OpenCL runtime compile artifacts", exception);
         }
@@ -4192,6 +4834,10 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, AutoCloseable
             }
         }
         return false;
+    }
+
+    private boolean usesAtomics(GpuKernelDescriptor descriptor) {
+        return descriptor.kernelSource() != null && descriptor.kernelSource().contains("atomic_");
     }
 
     private net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig resolveExecutionConfig(OpenClPreparedExecution execution) {

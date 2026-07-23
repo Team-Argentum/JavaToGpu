@@ -44,7 +44,7 @@ If you want to experiment with bytecode input, run the ASM report APIs first and
 ## Stability Limits
 
 - Public APIs can change before beta.
-- Generated launcher names and shapes can change before beta.
+- Generated launcher names and shapes can change before beta. Dynamic/framework integrations should prefer `GpuGeneratedLauncherInvoker` over hardcoding generated class names.
 - Validation reports prove the tested commit, machine, driver, and backend, not universal GPU behavior.
 - Performance tuning is still early; prefer correctness validation before benchmarking.
 

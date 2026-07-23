@@ -1,6 +1,38 @@
 package net.sixik.ga_utils.javatogpu.api;
 
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUIntrinsic;
+import net.sixik.ga_utils.javatogpu.api.images.*;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantBytePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantCharPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantDoublePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantFloatPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantIntPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantLongPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.constant.ConstantShortPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalBytePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalCharPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalDoublePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalFloatPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalIntPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalLongPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.global.GlobalShortPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalBytePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalCharPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalDoublePtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalFloatPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalIntPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalLongPtr;
+import net.sixik.ga_utils.javatogpu.api.pointers.local.LocalShortPtr;
+import net.sixik.ga_utils.javatogpu.api.types.bytes.*;
+import net.sixik.ga_utils.javatogpu.api.types.doubles.Double2;
+import net.sixik.ga_utils.javatogpu.api.types.doubles.Double3;
+import net.sixik.ga_utils.javatogpu.api.types.doubles.Double4;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float3;
+import net.sixik.ga_utils.javatogpu.api.types.floats.Float4;
+import net.sixik.ga_utils.javatogpu.api.types.integers.*;
+import net.sixik.ga_utils.javatogpu.api.types.longs.*;
+import net.sixik.ga_utils.javatogpu.api.types.shorts.*;
 import org.lwjgl.opencl.CL10;
 
 /**

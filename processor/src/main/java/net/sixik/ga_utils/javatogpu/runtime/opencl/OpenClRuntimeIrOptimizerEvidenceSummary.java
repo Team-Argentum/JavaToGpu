@@ -1,6 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
-import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeCompileArtifactDumper;
 
 import java.io.IOException;
 import java.io.Reader;

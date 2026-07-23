@@ -22,6 +22,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodDeviceConstraint;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodFallbackVariant;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodTestVectorMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModuleMethod;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuOptimizerPolicyMetadata;
@@ -316,7 +317,69 @@ public final class GpuFrontendService {
                 "off",
                 buildMethodDeviceConstraints(compiledKernel, helperMethods),
                 buildMethodFallbackVariants(compiledKernel, helperMethods)
-        );
+        ).withMethodTestVectors(buildMethodTestVectors(compiledKernel, helperMethods));
+    }
+
+    private static List<IrGpuMethodTestVectorMetadata> buildMethodTestVectors(
+            GpuIrCompiledMethod compiledKernel,
+            List<GpuIrCompiledMethod> helperMethods
+    ) {
+        ArrayList<IrGpuMethodTestVectorMetadata> testVectors = new ArrayList<>();
+        for (GpuIrCompiledMethod helper : helperMethods) {
+            testVectors.addAll(buildMethodTestVectors(helper));
+        }
+        testVectors.addAll(buildMethodTestVectors(compiledKernel));
+        return List.copyOf(testVectors);
+    }
+
+    private static List<IrGpuMethodTestVectorMetadata> buildMethodTestVectors(GpuIrCompiledMethod compiledMethod) {
+        MethodDeclaration declaration = compiledMethod.parsedMethod().declaration();
+        if (declaration == null) {
+            return List.of();
+        }
+        List<AnnotationExpr> annotations = gpuTestAnnotations(declaration);
+        ArrayList<IrGpuMethodTestVectorMetadata> testVectors = new ArrayList<>();
+        for (int index = 0; index < annotations.size(); index++) {
+            AnnotationExpr annotation = annotations.get(index);
+            String testId = parseOptionalStringAnnotationValue(annotation, "id", "GPUTest");
+            if (testId.isBlank()) {
+                testId = compiledMethod.parsedMethod().name() + "#" + index;
+            }
+            testVectors.add(new IrGpuMethodTestVectorMetadata(
+                    compiledMethod.parsedMethod().name(),
+                    compiledMethod.emittedName(),
+                    testId,
+                    parseStringAnnotationValues(annotation, "inputs", "GPUTest"),
+                    parseStringAnnotationValues(annotation, "expectedOutputs", "GPUTest"),
+                    parseOptionalStringAnnotationValue(annotation, "tolerance", "GPUTest"),
+                    parseStringAnnotationValues(annotation, "tags", "GPUTest"),
+                    parseBooleanAnnotationValue(annotation, "selectionProbe", true, "GPUTest"),
+                    "GPUTest"
+            ));
+        }
+        return List.copyOf(testVectors);
+    }
+
+    private static List<AnnotationExpr> gpuTestAnnotations(MethodDeclaration declaration) {
+        ArrayList<AnnotationExpr> annotations = new ArrayList<>();
+        for (AnnotationExpr annotation : declaration.getAnnotations()) {
+            if (annotationNameMatches(annotation, "GPUTest")) {
+                annotations.add(annotation);
+            } else if (annotationNameMatches(annotation, "GPUTests")) {
+                annotationValue(annotation, "value").stream()
+                        .flatMap(GpuFrontendService::annotationValues)
+                        .filter(AnnotationExpr.class::isInstance)
+                        .map(AnnotationExpr.class::cast)
+                        .filter(nested -> annotationNameMatches(nested, "GPUTest"))
+                        .forEach(annotations::add);
+            }
+        }
+        return List.copyOf(annotations);
+    }
+
+    private static boolean annotationNameMatches(AnnotationExpr annotation, String simpleName) {
+        String name = annotation.getNameAsString();
+        return name.equals(simpleName) || name.endsWith("." + simpleName);
     }
 
     private static List<IrGpuMethodFallbackVariant> buildMethodFallbackVariants(
@@ -492,13 +555,16 @@ public final class GpuFrontendService {
             AnnotationExpr annotation,
             String propertyName
     ) {
-        if (!annotation.isNormalAnnotationExpr()) {
-            return java.util.Optional.empty();
+        if (annotation.isSingleMemberAnnotationExpr() && "value".equals(propertyName)) {
+            return java.util.Optional.of(annotation.asSingleMemberAnnotationExpr().getMemberValue());
         }
-        return annotation.asNormalAnnotationExpr().getPairs().stream()
+        if (annotation.isNormalAnnotationExpr()) {
+            return annotation.asNormalAnnotationExpr().getPairs().stream()
                 .filter(pair -> pair.getNameAsString().equals(propertyName))
                 .map(pair -> pair.getValue())
                 .findFirst();
+        }
+        return java.util.Optional.empty();
     }
 
     private static java.util.stream.Stream<Expression> annotationValues(Expression expression) {

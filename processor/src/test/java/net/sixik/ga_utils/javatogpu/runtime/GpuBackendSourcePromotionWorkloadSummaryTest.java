@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionWorkloadSummary;
+import net.sixik.ga_utils.javatogpu.runtime.validation.GpuBackendSourcePromotionWorkloadSummaryCli;
 import org.junit.jupiter.api.Test;
 
 import java.util.Properties;
@@ -172,6 +174,80 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
     }
 
     @Test
+    void summarizesPortableRuntimeBackendSourceFieldsWhenLegacySourceSwitchingFieldsAreMissing() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("kernel.0.runtime.backend.source.decision", "compile-irgpu-source-review");
+        properties.setProperty("kernel.0.runtime.backend.source.promotionFirstBlocker", "none");
+        properties.setProperty("kernel.0.runtime.backend.source.productionPromotionOperatorAccepted", "true");
+        properties.setProperty("kernel.1.runtime.backend.source.decision", "reject-production-irgpu-source");
+        properties.setProperty(
+                "kernel.1.runtime.backend.source.promotionFirstBlocker",
+                "runtime equivalence must execute and pass before backend source promotion"
+        );
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+
+        assertEquals("compile-irgpu-source-review=1, reject-production-irgpu-source=1", summary.sourceSwitchingDecisions());
+        assertEquals(
+                "runtime equivalence must execute and pass before backend source promotion=1",
+                summary.sourcePromotionFirstBlockers()
+        );
+        assertEquals("runtime-equivalence=1", summary.sourcePromotionFirstBlockerFamilies());
+        assertEquals(1, summary.productionPromotionOperatorAcceptedCount());
+        assertEquals("false", summary.productionPromotionOperatorAcceptedAll());
+        assertTrue(summary.historyStatus().contains("sourceSwitching=compile-irgpu-source-review=1, reject-production-irgpu-source=1"));
+        assertTrue(summary.historyStatus().contains("sourceSwitching=compile-irgpu-source-review/operatorAccepted=true/sourcePromotionFirstBlocker=none"));
+    }
+
+    @Test
+    void summarizesPortableAggregateSourcePromotionBlockersWhenLegacyAggregatesAreMissing() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("runtime.backend.source.promotionFirstBlocker.count", "1");
+        properties.setProperty(
+                "runtime.backend.source.promotionFirstBlocker.0.name",
+                "runtime equivalence must execute and pass before backend source promotion"
+        );
+        properties.setProperty("runtime.backend.source.promotionFirstBlocker.0.count", "2");
+        properties.setProperty("runtime.backend.source.promotionFirstBlockerFamily.count", "1");
+        properties.setProperty("runtime.backend.source.promotionFirstBlockerFamily.0.name", "runtime-equivalence");
+        properties.setProperty("runtime.backend.source.promotionFirstBlockerFamily.0.count", "2");
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+
+        assertEquals(
+                "runtime equivalence must execute and pass before backend source promotion=2",
+                summary.sourcePromotionFirstBlockers()
+        );
+        assertEquals("runtime-equivalence=2", summary.sourcePromotionFirstBlockerFamilies());
+    }
+
+    @Test
+    void summarizesPortableAggregateSourceDecisionsWhenPerKernelLegacyFieldsAreMissing() {
+        Properties properties = new Properties();
+        properties.setProperty("status", "blocked");
+        properties.setProperty("kernel.count", "2");
+        properties.setProperty("runtime.backend.source.decision.count", "2");
+        properties.setProperty("runtime.backend.source.decision.0.name", "compile-irgpu-source-review");
+        properties.setProperty("runtime.backend.source.decision.0.count", "1");
+        properties.setProperty("runtime.backend.source.decision.1.name", "reject-production-irgpu-source");
+        properties.setProperty("runtime.backend.source.decision.1.count", "1");
+
+        GpuBackendSourcePromotionWorkloadSummary summary =
+                GpuBackendSourcePromotionWorkloadSummary.fromProperties(properties);
+        String formatted = GpuBackendSourcePromotionWorkloadSummaryCli.format(summary);
+
+        assertEquals("compile-irgpu-source-review=1, reject-production-irgpu-source=1", summary.sourceSwitchingDecisions());
+        assertTrue(formatted.contains("runtime.backend.source.decisions=compile-irgpu-source-review=1, reject-production-irgpu-source=1\n"));
+        assertTrue(formatted.contains("sourceSwitching.decisions=compile-irgpu-source-review=1, reject-production-irgpu-source=1\n"));
+    }
+
+    @Test
     void aggregatesOptimizerFamilyReadinessAcrossMultipleKernels() {
         Properties properties = new Properties();
         properties.setProperty("status", "blocked");
@@ -311,9 +387,16 @@ class GpuBackendSourcePromotionWorkloadSummaryTest {
         assertTrue(formatted.contains("reviewReady=false\n"));
         assertTrue(formatted.contains("sourceParityMatched=true\n"));
         assertTrue(formatted.contains("runtimeEquivalencePassed=true\n"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionOperatorAccepted.count=0\n"));
+        assertTrue(formatted.contains("runtime.backend.source.productionPromotionOperatorAccepted.all=false\n"));
         assertTrue(formatted.contains("productionPromotionOperatorAccepted.count=0\n"));
         assertTrue(formatted.contains("productionPromotionOperatorAccepted.all=false\n"));
+        assertTrue(formatted.contains("runtime.backend.source.decisions=compile-descriptor-source=1\n"));
         assertTrue(formatted.contains("sourceSwitching.decisions=compile-descriptor-source=1\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockers=backend source must be reconstructed from IrGpu before promotion review=1\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockerFamilies=reconstruction=1\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockerFamily.0.name=reconstruction\n"));
+        assertTrue(formatted.contains("runtime.backend.source.promotionFirstBlockerFamily.0.count=1\n"));
         assertTrue(formatted.contains("sourcePromotionFirstBlockerFamily.0.name=reconstruction\n"));
         assertTrue(formatted.contains("sourcePromotionFirstBlockerFamily.0.count=1\n"));
         assertTrue(formatted.contains("optimizerProofArtifact.count=0\n"));

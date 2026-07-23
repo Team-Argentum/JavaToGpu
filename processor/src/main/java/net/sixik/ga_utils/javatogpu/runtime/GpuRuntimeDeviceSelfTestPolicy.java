@@ -34,7 +34,7 @@ public final class GpuRuntimeDeviceSelfTestPolicy implements GpuRuntimeDevicePol
                     policyVersion(),
                     Map.of(),
                     Set.of(),
-                    Map.of("runtime.deviceSelfTest.mode", mode.optionValue()),
+                    deviceSelfTestModeFact(mode),
                     List.of(),
                     true,
                     List.of(),
@@ -46,7 +46,7 @@ public final class GpuRuntimeDeviceSelfTestPolicy implements GpuRuntimeDevicePol
         LinkedHashSet<String> rejected = new LinkedHashSet<>();
         LinkedHashMap<String, String> facts = new LinkedHashMap<>();
         ArrayList<String> diagnostics = new ArrayList<>();
-        facts.put("runtime.deviceSelfTest.mode", mode.optionValue());
+        putRuntimeDeviceSelfTestFact(facts, "mode", mode.optionValue());
         for (GpuRuntimeDeviceProfile candidate : context.candidates()) {
             String deviceKey = GpuRuntimeDevicePolicyContext.deviceKey(candidate);
             List<GpuRuntimeDeviceSelfTestResult> results = cache.resultsFor(candidate);
@@ -203,6 +203,20 @@ public final class GpuRuntimeDeviceSelfTestPolicy implements GpuRuntimeDevicePol
     @Override
     public String policyVersion() {
         return POLICY_VERSION;
+    }
+
+    private static Map<String, String> deviceSelfTestModeFact(GpuRuntimeDeviceSelfTestMode mode) {
+        LinkedHashMap<String, String> facts = new LinkedHashMap<>();
+        putRuntimeDeviceSelfTestFact(facts, "mode", mode.optionValue());
+        return facts;
+    }
+
+    private static void putRuntimeDeviceSelfTestFact(
+            Map<String, String> facts,
+            String key,
+            Object value
+    ) {
+        GpuRuntimeArtifactProperties.putPortable(facts, "runtime.deviceSelfTest", key, value);
     }
 
     private static int saturatingAdd(int left, int right) {

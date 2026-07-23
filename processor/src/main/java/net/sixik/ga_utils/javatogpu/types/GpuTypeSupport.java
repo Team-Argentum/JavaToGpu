@@ -16,6 +16,20 @@ public final class GpuTypeSupport {
 
     private static final String API_PACKAGE_PREFIX = "net.sixik.ga_utils.javatogpu.api.";
 
+    private static final List<String> API_ANNOTATED_TYPE_PACKAGE_PREFIXES = List.of(
+            API_PACKAGE_PREFIX,
+            API_PACKAGE_PREFIX + "pointers.",
+            API_PACKAGE_PREFIX + "pointers.global.",
+            API_PACKAGE_PREFIX + "pointers.constant.",
+            API_PACKAGE_PREFIX + "pointers.local.",
+            API_PACKAGE_PREFIX + "types.bytes.",
+            API_PACKAGE_PREFIX + "types.shorts.",
+            API_PACKAGE_PREFIX + "types.integers.",
+            API_PACKAGE_PREFIX + "types.longs.",
+            API_PACKAGE_PREFIX + "types.floats.",
+            API_PACKAGE_PREFIX + "types.doubles."
+    );
+
     private static final String POINTER_REFERENCE_SUFFIX = "&";
 
     private static final Set<String> SUPPORTED_SCALAR_TYPES = Set.of(
@@ -658,7 +672,9 @@ public final class GpuTypeSupport {
         }
         candidates.add(declaredType);
         if (!declaredType.contains(".")) {
-            candidates.add(API_PACKAGE_PREFIX + declaredType);
+            for (String packagePrefix : API_ANNOTATED_TYPE_PACKAGE_PREFIXES) {
+                candidates.add(packagePrefix + declaredType);
+            }
         }
         return candidates;
     }

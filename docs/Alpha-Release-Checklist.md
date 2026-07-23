@@ -7,7 +7,7 @@ Use this checklist before publishing a public alpha build.
 Recommended current public alpha version:
 
 ```text
-v0.1.0-alpha.2
+v0.1.0-alpha.3
 ```
 
 Recommended positioning:
@@ -54,7 +54,7 @@ Key files:
 ## Release Notes Template
 
 ```markdown
-# JavaToGpu v0.1.0-alpha.2
+# JavaToGpu v0.1.0-alpha.3
 
 This is a public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and runtime for GPU-safe Java kernels.
 
@@ -69,7 +69,7 @@ This is a public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and
 ## Highlights
 
 - Java source kernels through `@GPU`
-- OpenCL runtime dispatch through `GpuRuntime`
+- OpenCL runtime dispatch through `JavaToGpu` and generated launchers
 - Practical `GPU.*` builtin surface
 - Struct, vector, pointer, image, sampler, and packed-data support
 - Operational validation report bundle
@@ -78,7 +78,7 @@ This is a public alpha of JavaToGpu, an experimental Java-to-OpenCL compiler and
 
 - Not arbitrary Java-to-GPU execution
 - No stable API guarantee before beta
-- CUDA backend not implemented
+- CUDA is staged/experimental and not a production user backend
 - Structured ASM frontend expects canonical supported bytecode
 ```
 

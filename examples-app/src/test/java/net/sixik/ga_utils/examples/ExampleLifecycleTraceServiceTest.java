@@ -47,6 +47,65 @@ class ExampleLifecycleTraceServiceTest {
     }
 
     @Test
+    void traceLineUsesSelectionStatusWhenGenericStatusIsMissing() {
+        GpuRuntimeLifecycleEvent event = new GpuRuntimeLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_COMPLETED,
+                GpuBackendTarget.OPENCL,
+                "javatogpu/sample/Kernel.cl",
+                "off",
+                "selection completed",
+                Map.of("selection.status", "selected")
+        );
+
+        String line = ExampleLifecycleTraceService.toTraceLine(event);
+
+        assertTrue(line.contains("METHOD_TEST_GPU_PROBE_EVIDENCE_SELECTION_COMPLETED"), line);
+        assertTrue(line.contains("status=selected"), line);
+    }
+
+    @Test
+    void traceLineSummarizesPortableRuntimeLifecycleFields() {
+        GpuRuntimeLifecycleEvent event = new GpuRuntimeLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.INVOCATION_COMPLETED,
+                GpuBackendTarget.OPENCL,
+                "javatogpu/sample/Kernel.cl",
+                "production",
+                "invocation completed",
+                Map.ofEntries(
+                        Map.entry("runtime.status", "succeeded"),
+                        Map.entry("runtime.backend.state.present", "true"),
+                        Map.entry("runtime.backend.cache.mode", "INSTANCE"),
+                        Map.entry("runtime.backend.cache.compiledKernel.count", "1"),
+                        Map.entry("runtime.backend.compile.count", "1"),
+                        Map.entry("runtime.backend.invocation.count", "2"),
+                        Map.entry("runtime.backend.buffer.native.count", "3"),
+                        Map.entry("runtime.compilation.present", "true"),
+                        Map.entry("runtime.compilation.module.format", "opencl-c"),
+                        Map.entry("runtime.compilation.cacheKey.present", "true"),
+                        Map.entry("runtime.compilation.compileLog.present", "false"),
+                        Map.entry("runtime.compilation.binaryArtifact.count", "0"),
+                        Map.entry("runtime.invocation.binding.present", "true"),
+                        Map.entry("runtime.invocation.binding.argument.count", "4"),
+                        Map.entry("runtime.invocation.binding.buffer.count", "2"),
+                        Map.entry("runtime.invocation.binding.local.count", "1"),
+                        Map.entry("runtime.invocation.binding.scalar.count", "1"),
+                        Map.entry("runtime.artifactDump.present", "true"),
+                        Map.entry("runtime.artifactDump.directory.count", "1"),
+                        Map.entry("runtime.artifactDump.artifact.count", "12"),
+                        Map.entry("runtime.artifactDump.binaryArtifact.count", "0")
+                )
+        );
+
+        String line = ExampleLifecycleTraceService.toTraceLine(event);
+
+        assertTrue(line.contains("status=succeeded"), line);
+        assertTrue(line.contains("summary=state cache=INSTANCE compiled=1 compile=1 invoke=2 buffers=3"), line);
+        assertTrue(line.contains("compilation module=opencl-c cacheKey=true log=false binaries=0"), line);
+        assertTrue(line.contains("bindings args=4 buffers=2 locals=1 scalars=1"), line);
+        assertTrue(line.contains("dump dirs=1 artifacts=12 binaries=0"), line);
+    }
+
+    @Test
     void serviceLoaderBusCanWriteThroughExampleLifecycleTraceService() throws Exception {
         Path traceFile = temporaryDirectory.resolve("service-loader-example-lifecycle.trace");
 

@@ -4,10 +4,17 @@ import java.lang.annotation.Annotation;
 import java.util.List;
 
 /**
- * Shared support for JavaToGpu canonical annotations.
+ * Processor-facing support for JavaToGpu canonical annotation names.
+ *
+ * <p>This class is public because the annotation processor, runtime ABI helpers, and optional extension modules need a
+ * single source of truth for canonical annotation names. Normal application code should import concrete annotations
+ * from {@code net.sixik.ga_utils.javatogpu.api.annotations} instead of depending on this support class directly.
  */
 public final class GpuAnnotationSupport {
 
+    /**
+     * Canonical package that contains JavaToGpu source annotations.
+     */
     public static final String CANONICAL_PACKAGE = "net.sixik.ga_utils.javatogpu.api.annotations.";
 
     public static final List<String> GPU_ANNOTATION_TYPES = List.of(CANONICAL_PACKAGE + "GPU");
@@ -39,6 +46,13 @@ public final class GpuAnnotationSupport {
     private GpuAnnotationSupport() {
     }
 
+    /**
+     * Returns {@code true} when {@code type} has at least one annotation whose fully qualified name is listed in
+     * {@code annotationTypeNames}.
+     *
+     * <p>Name-based matching keeps processor/runtime support resilient when optional modules are compiled against the
+     * public annotation contract but loaded through different class paths.
+     */
     public static boolean hasAnnotation(Class<?> type, List<String> annotationTypeNames) {
         for (Annotation annotation : type.getAnnotations()) {
             if (annotationTypeNames.contains(annotation.annotationType().getName())) {

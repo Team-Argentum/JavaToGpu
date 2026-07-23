@@ -2,10 +2,11 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 
 import dev.denismasterherobrine.packager.opencl.core.OpenClKernel;
 import dev.denismasterherobrine.packager.opencl.core.OpenClProgram;
+import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompiledKernel;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactSnapshot;
 
-public final class OpenClCompiledKernel implements AutoCloseable {
+public final class OpenClCompiledKernel implements GpuBackendCompiledKernel {
 
     private final GpuKernelDescriptor descriptor;
     private final String cacheKey;
@@ -54,6 +55,11 @@ public final class OpenClCompiledKernel implements AutoCloseable {
 
     public GpuRuntimeCompileArtifactSnapshot artifactSnapshot() {
         return artifactSnapshot;
+    }
+
+    @Override
+    public String compiledKernelKind() {
+        return "opencl-kernel";
     }
 
     public OpenClProgram program() {

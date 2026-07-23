@@ -9,16 +9,29 @@ import java.util.Set;
 
 /**
  * Read-only policy hook for device ranking, capability facts, quirks, and compile-option validation.
+ *
+ * <p>Implement this service when backend/device selection needs application- or vendor-specific evidence without
+ * forking the runtime. Policies are discovered through ServiceLoader and should return explainable decisions rather
+ * than throwing for ordinary rejection cases.</p>
  */
 @FunctionalInterface
 public interface GpuRuntimeDevicePolicy extends GpuExtension {
 
+    /**
+     * Evaluates one device candidate and returns ranking/rejection evidence.
+     */
     GpuRuntimeDevicePolicyDecision evaluate(GpuRuntimeDevicePolicyContext context);
 
+    /**
+     * Stable id used in diagnostics and extension catalogs.
+     */
     default String policyId() {
         return getClass().getName();
     }
 
+    /**
+     * Policy contract version emitted in diagnostics and artifact fields.
+     */
     default String policyVersion() {
         return "1";
     }

@@ -1,8 +1,6 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
-import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
-
-import java.util.Optional;
+import net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeCompileInvalidationStampSupport;
 
 /**
  * Version stamp used to invalidate compiled runtime artifacts after pipeline upgrades.
@@ -39,37 +37,7 @@ public record GpuRuntimeCompileInvalidationStamp(
             GpuBackendModuleArtifact moduleArtifact,
             String optimizerPipelineVersion
     ) {
-        Optional<IrGpuArtifact> artifact = request == null ? Optional.empty() : request.irGpuArtifact();
-        GpuBackendModuleArtifact backendArtifact = moduleArtifact == null
-                ? GpuBackendModuleArtifact.unknown()
-                : moduleArtifact;
-        return artifact
-                .map(irGpuArtifact -> from(irGpuArtifact, backendArtifact, optimizerPipelineVersion))
-                .orElseGet(() -> new GpuRuntimeCompileInvalidationStamp(
-                        NO_IR_FORMAT,
-                        0,
-                        NO_COMPILER_ARTIFACT,
-                        NO_SOURCE_FRONTEND,
-                        backendArtifact.artifactVersion(),
-                        backendArtifact.lowererVersion(),
-                        optimizerPipelineVersion
-                ));
-    }
-
-    private static GpuRuntimeCompileInvalidationStamp from(
-            IrGpuArtifact artifact,
-            GpuBackendModuleArtifact moduleArtifact,
-            String optimizerPipelineVersion
-    ) {
-        return new GpuRuntimeCompileInvalidationStamp(
-                artifact.header().format(),
-                artifact.header().schemaVersion(),
-                artifact.header().compilerArtifact(),
-                artifact.header().sourceFrontend(),
-                moduleArtifact.artifactVersion(),
-                moduleArtifact.lowererVersion(),
-                optimizerPipelineVersion
-        );
+        return GpuRuntimeCompileInvalidationStampSupport.from(request, moduleArtifact, optimizerPipelineVersion);
     }
 
     private static String normalize(String value, String fallback) {

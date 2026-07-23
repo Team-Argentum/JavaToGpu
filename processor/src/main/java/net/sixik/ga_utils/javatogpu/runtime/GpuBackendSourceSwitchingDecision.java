@@ -2,6 +2,10 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Fail-closed runtime decision for selecting descriptor source versus reconstructed IrGpu source.
  *
@@ -204,32 +208,65 @@ public record GpuBackendSourceSwitchingDecision(
 
     public String toPropertiesText() {
         StringBuilder builder = new StringBuilder();
-        builder.append("status=").append(status).append('\n');
-        builder.append("decision=").append(decision).append('\n');
-        builder.append("backendTarget=").append(backendTarget).append('\n');
-        builder.append("backendFormat=").append(backendFormat).append('\n');
-        builder.append("backendResource=").append(backendResource).append('\n');
-        builder.append("sourceOrigin=").append(sourceOrigin).append('\n');
-        builder.append("runtimeLoadMode=").append(runtimeLoadMode).append('\n');
-        builder.append("optimizationProfile=").append(optimizationProfile).append('\n');
-        builder.append("productionProfileRequested=").append(productionProfileRequested).append('\n');
-        builder.append("sourceSelection=").append(sourceSelection).append('\n');
-        builder.append("irGpuSourceRequested=").append(irGpuSourceRequested).append('\n');
-        builder.append("sourceReady=").append(sourceReady).append('\n');
-        builder.append("sourceReconstructed=").append(sourceReconstructed).append('\n');
-        builder.append("sourceAvailable=").append(sourceAvailable).append('\n');
-        builder.append("sourceParityChecked=").append(sourceParityChecked).append('\n');
-        builder.append("sourceParityMatched=").append(sourceParityMatched).append('\n');
-        builder.append("sourcePromotionStatus=").append(sourcePromotionStatus).append('\n');
-        builder.append("sourcePromotionReviewReady=").append(sourcePromotionReviewReady).append('\n');
-        builder.append("sourcePromotionFirstBlocker=").append(sourcePromotionFirstBlocker).append('\n');
-        builder.append("productionSourceSwitching=").append(productionSourceSwitching).append('\n');
-        builder.append("productionSourceSwitchingEnabled=").append(productionSourceSwitchingEnabled).append('\n');
-        builder.append("productionPromotionDecisionMode=").append(productionPromotionDecisionMode).append('\n');
-        builder.append("productionPromotionOperatorAccepted=").append(productionPromotionOperatorAccepted).append('\n');
-        builder.append("diagnostic.count=1\n");
-        builder.append("diagnostic.0=").append(diagnostic).append('\n');
+        artifactFields("").forEach((key, value) -> builder.append(key).append('=').append(value).append('\n'));
         return builder.toString();
+    }
+
+    public Map<String, String> artifactFields(String prefix) {
+        String safePrefix = prefix == null ? "" : prefix.trim();
+        String keyPrefix = safePrefix.isBlank() ? "" : safePrefix + ".";
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        fields.put(keyPrefix + "status", status);
+        fields.put(keyPrefix + "decision", decision);
+        fields.put(keyPrefix + "backendTarget", backendTarget.name());
+        fields.put(keyPrefix + "backendFormat", backendFormat);
+        fields.put(keyPrefix + "backendResource", backendResource);
+        fields.put(keyPrefix + "sourceOrigin", sourceOrigin);
+        fields.put(keyPrefix + "runtimeLoadMode", runtimeLoadMode);
+        fields.put(keyPrefix + "optimizationProfile", optimizationProfile);
+        fields.put(keyPrefix + "productionProfileRequested", Boolean.toString(productionProfileRequested));
+        fields.put(keyPrefix + "sourceSelection", sourceSelection);
+        fields.put(keyPrefix + "irGpuSourceRequested", Boolean.toString(irGpuSourceRequested));
+        fields.put(keyPrefix + "sourceReady", Boolean.toString(sourceReady));
+        fields.put(keyPrefix + "sourceReconstructed", Boolean.toString(sourceReconstructed));
+        fields.put(keyPrefix + "sourceAvailable", Boolean.toString(sourceAvailable));
+        fields.put(keyPrefix + "sourceParityChecked", Boolean.toString(sourceParityChecked));
+        fields.put(keyPrefix + "sourceParityMatched", Boolean.toString(sourceParityMatched));
+        fields.put(keyPrefix + "sourcePromotionStatus", sourcePromotionStatus);
+        fields.put(keyPrefix + "sourcePromotionReviewReady", Boolean.toString(sourcePromotionReviewReady));
+        fields.put(keyPrefix + "sourcePromotionFirstBlocker", sourcePromotionFirstBlocker);
+        fields.put(keyPrefix + "productionSourceSwitching", productionSourceSwitching);
+        fields.put(keyPrefix + "productionSourceSwitchingEnabled", Boolean.toString(productionSourceSwitchingEnabled));
+        fields.put(keyPrefix + "productionPromotionDecisionMode", productionPromotionDecisionMode);
+        fields.put(keyPrefix + "productionPromotionOperatorAccepted", Boolean.toString(productionPromotionOperatorAccepted));
+        fields.put(keyPrefix + "diagnostic.count", "1");
+        fields.put(keyPrefix + "diagnostic.0", diagnostic);
+        putPortableRuntimeFields(fields, keyPrefix);
+        return Collections.unmodifiableMap(fields);
+    }
+
+    private void putPortableRuntimeFields(Map<String, String> fields, String keyPrefix) {
+        fields.put(keyPrefix + "runtime.backend.source.selection.present", "true");
+        fields.put(keyPrefix + "runtime.backend.source.status", status);
+        fields.put(keyPrefix + "runtime.backend.source.decision", decision);
+        fields.put(keyPrefix + "runtime.backend.source.selection", sourceSelection);
+        fields.put(keyPrefix + "runtime.backend.source.irgpuRequested", Boolean.toString(irGpuSourceRequested));
+        fields.put(keyPrefix + "runtime.backend.source.ready", Boolean.toString(sourceReady));
+        fields.put(keyPrefix + "runtime.backend.source.reconstructed", Boolean.toString(sourceReconstructed));
+        fields.put(keyPrefix + "runtime.backend.source.available", Boolean.toString(sourceAvailable));
+        fields.put(keyPrefix + "runtime.backend.source.parityChecked", Boolean.toString(sourceParityChecked));
+        fields.put(keyPrefix + "runtime.backend.source.parityMatched", Boolean.toString(sourceParityMatched));
+        fields.put(keyPrefix + "runtime.backend.source.promotionStatus", sourcePromotionStatus);
+        fields.put(keyPrefix + "runtime.backend.source.promotionReviewReady", Boolean.toString(sourcePromotionReviewReady));
+        fields.put(keyPrefix + "runtime.backend.source.promotionFirstBlocker", sourcePromotionFirstBlocker);
+        fields.put(keyPrefix + "runtime.backend.source.productionProfileRequested", Boolean.toString(productionProfileRequested));
+        fields.put(keyPrefix + "runtime.backend.source.productionSwitching", productionSourceSwitching);
+        fields.put(keyPrefix + "runtime.backend.source.productionSwitchingEnabled", Boolean.toString(productionSourceSwitchingEnabled));
+        fields.put(keyPrefix + "runtime.backend.source.productionPromotionDecisionMode", productionPromotionDecisionMode);
+        fields.put(keyPrefix + "runtime.backend.source.productionPromotionOperatorAccepted", Boolean.toString(productionPromotionOperatorAccepted));
+        fields.put(keyPrefix + "runtime.backend.source.runtimeLoadMode", runtimeLoadMode);
+        fields.put(keyPrefix + "runtime.backend.source.diagnostic", diagnostic);
+        fields.put(keyPrefix + "runtime.status", status);
     }
 
     private static String normalize(String value, String fallback) {

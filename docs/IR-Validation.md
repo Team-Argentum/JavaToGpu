@@ -4,6 +4,17 @@
 
 Most users can start without it. Add it when you want CI reports, earlier validation failures, or clearer diagnostics while preparing kernels for future optimizer work.
 
+## Fast Decision Guide
+
+| Situation | Recommended mode |
+| --- | --- |
+| Trying JavaToGpu for the first time | Leave IR validation off |
+| Developing kernels and wanting extra hints | `diagnostic` + `summary` |
+| CI should reject unsafe kernel shapes | `strictSafety` |
+| Compiler/optimizer hardening branch | `strictOptimizer` |
+
+IR validation is read-only. It does not change generated OpenCL or runtime source selection.
+
 ## When To Use It
 
 Use IR validation when you want to:
@@ -21,11 +32,15 @@ For quick experiments, the main `javatogpu` artifact is enough.
 Use the same version as the main JavaToGpu artifact:
 
 ```groovy
-dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+repositories {
+    mavenCentral()
+}
 
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
+dependencies {
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
+
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.3'
 }
 ```
 
@@ -99,12 +114,16 @@ Use this flow when you are developing kernels and want actionable feedback witho
 ### 1. Add IR validation to the annotation processor path
 
 ```groovy
+repositories {
+    mavenCentral()
+}
+
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
 
     // Optional: adds read-only IR validation providers.
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.3'
 }
 ```
 

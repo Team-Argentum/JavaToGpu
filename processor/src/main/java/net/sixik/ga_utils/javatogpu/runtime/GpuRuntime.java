@@ -1,10 +1,15 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Global entry point for executing generated GPU kernels at runtime.
@@ -35,6 +40,12 @@ public final class GpuRuntime {
     };
 
     private static volatile GpuRuntimeBackend backend = DEFAULT_BACKEND;
+    private static volatile Function<GpuRuntimeCompileOptions, GpuRuntimeScope> standardBackendDeviceScopeFactory =
+            GpuRuntime::selectAndUseStandardBackendDevice;
+    private static volatile BiFunction<GpuRuntimeCompileOptions, GpuRuntimeLifecycleEventBus, GpuRuntimeScope>
+            automaticBackendDevicePreflightScopeFactory = GpuRuntime::selectAndUseStandardBackendDevice;
+    private static volatile Supplier<GpuRuntimeLifecycleEventBus> automaticBackendDevicePreflightLifecycleEventBusFactory =
+            GpuRuntimeLifecycleEventBus::loadFromServiceLoader;
 
     private GpuRuntime() {
     }
@@ -154,23 +165,7 @@ public final class GpuRuntime {
     ) {
         Objects.requireNonNull(requirements, "requirements");
         Objects.requireNonNull(candidates, "candidates");
-        if (candidates.length == 0) {
-            return new GpuRuntimeSelectionResult(null, List.of("no backend candidates were provided"));
-        }
-        List<String> failures = new ArrayList<>();
-        for (int index = 0; index < candidates.length; index++) {
-            GpuRuntimeBackend candidate = Objects.requireNonNull(candidates[index], "candidates[" + index + "]");
-            GpuRuntimeBackendReport report = describeBackend(candidate);
-            List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
-            if (reasons.isEmpty()) {
-                return new GpuRuntimeSelectionResult(
-                        new GpuRuntimeBackendSelection(candidate, report, GpuRuntimeBackendOwnership.BORROWED),
-                        failures
-                );
-            }
-            failures.add(report.backendName() + ": " + String.join("; ", reasons));
-        }
-        return new GpuRuntimeSelectionResult(null, failures);
+        return GpuRuntimeBackendSelectionOrchestrator.selectBorrowed(requirements, candidates);
     }
 
     /**
@@ -188,6 +183,40 @@ public final class GpuRuntime {
     }
 
     /**
+     * Attempts to select from the standard production-ready backend catalog.
+     */
+    public static GpuRuntimeSelectionResult trySelectStandardBackends(List<GpuRuntimeRequirement> requirements) {
+        Objects.requireNonNull(requirements, "requirements");
+        GpuRuntimeBackendPolicy.Builder builder = GpuRuntimeBackendPolicy.builder().preferStandardBackends();
+        requirements.forEach(builder::require);
+        return builder.build().trySelect();
+    }
+
+    /**
+     * Attempts to select from the standard production-ready backend catalog without additional requirements.
+     */
+    public static GpuRuntimeSelectionResult trySelectStandardBackends() {
+        return trySelectStandardBackends(List.of());
+    }
+
+    /**
+     * Installs the first matching backend from the standard production-ready backend catalog.
+     */
+    public static GpuRuntimeScope useStandardBackends(List<GpuRuntimeRequirement> requirements) {
+        Objects.requireNonNull(requirements, "requirements");
+        GpuRuntimeBackendPolicy.Builder builder = GpuRuntimeBackendPolicy.builder().preferStandardBackends();
+        requirements.forEach(builder::require);
+        return builder.build().use();
+    }
+
+    /**
+     * Installs the first available backend from the standard production-ready backend catalog.
+     */
+    public static GpuRuntimeScope useStandardBackends() {
+        return useStandardBackends(List.of());
+    }
+
+    /**
      * Selects a backend using an immutable fallback policy.
      */
     public static GpuRuntimeBackendSelection select(GpuRuntimeBackendPolicy policy) {
@@ -202,6 +231,136 @@ public final class GpuRuntime {
     }
 
     /**
+     * Attempts to select a backend and attaches native device discovery evidence to the same result object.
+     */
+    public static GpuRuntimeBackendDeviceSelection trySelectWithDeviceDiscovery(
+            GpuRuntimeBackendPolicy policy,
+            GpuRuntimeDeviceDiscoveryCatalog deviceDiscoveryCatalog
+    ) {
+        return trySelectWithDeviceDiscovery(policy, deviceDiscoveryCatalog, GpuRuntimeLifecycleEventBus.empty());
+    }
+
+    /**
+     * Attempts to select a backend, attaches native device discovery evidence, and publishes lifecycle events.
+     */
+    public static GpuRuntimeBackendDeviceSelection trySelectWithDeviceDiscovery(
+            GpuRuntimeBackendPolicy policy,
+            GpuRuntimeDeviceDiscoveryCatalog deviceDiscoveryCatalog,
+            GpuRuntimeLifecycleEventBus lifecycleEventBus
+    ) {
+        return GpuRuntimeBackendSelectionOrchestrator.selectWithDeviceDiscovery(
+                Objects.requireNonNull(policy, "policy"),
+                deviceDiscoveryCatalog,
+                lifecycleEventBus
+        );
+    }
+
+    /**
+     * Attempts standard backend selection and standard backend device discovery with default OpenCL controls.
+     *
+     * <p>This is a preflight/reporting API: it does not install the selected backend. Use
+     * {@link #useStandardBackendAndDevice()} when the selected backend should be installed for a try-with-resources
+     * scope.</p>
+     */
+    public static GpuRuntimeBackendDeviceSelection trySelectStandardBackendAndDevice() {
+        return trySelectStandardBackendAndDevice(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL));
+    }
+
+    /**
+     * Attempts standard backend selection and standard backend device discovery as one preflight.
+     *
+     * <p>The compile options are used for device discovery and policy evidence, especially OpenCL platform/device
+     * overrides, artifact fields, lifecycle context, and standard backend/device preflight mode.</p>
+     */
+    public static GpuRuntimeBackendDeviceSelection trySelectStandardBackendAndDevice(
+            GpuRuntimeCompileOptions openClDiscoveryOptions
+    ) {
+        GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+                .preferStandardBackendsWithPlannedDiagnostics()
+                .build();
+        return trySelectStandardBackendAndDevice(policy, openClDiscoveryOptions);
+    }
+
+    /**
+     * Attempts caller-supplied backend selection and standard backend device discovery as one preflight.
+     */
+    public static GpuRuntimeBackendDeviceSelection trySelectStandardBackendAndDevice(
+            GpuRuntimeBackendPolicy policy,
+            GpuRuntimeCompileOptions openClDiscoveryOptions
+    ) {
+        return trySelectStandardBackendAndDevice(
+                policy,
+                openClDiscoveryOptions,
+                GpuRuntimeLifecycleEventBus.empty()
+        );
+    }
+
+    /**
+     * Attempts caller-supplied backend selection and standard backend device discovery with lifecycle events.
+     */
+    public static GpuRuntimeBackendDeviceSelection trySelectStandardBackendAndDevice(
+            GpuRuntimeBackendPolicy policy,
+            GpuRuntimeCompileOptions openClDiscoveryOptions,
+            GpuRuntimeLifecycleEventBus lifecycleEventBus
+    ) {
+        return GpuRuntimeBackendSelectionOrchestrator.selectStandardBackendAndDevice(
+                Objects.requireNonNull(policy, "policy"),
+                openClDiscoveryOptions,
+                lifecycleEventBus
+        );
+    }
+
+    /**
+     * Installs a precomputed backend+device selection and forwards the selected device to capable backends.
+     */
+    public static GpuRuntimeScope use(GpuRuntimeBackendDeviceSelection selection) {
+        return Objects.requireNonNull(selection, "selection").installSelectedBackend();
+    }
+
+    /**
+     * Selects and installs the standard backend+device pair using default OpenCL controls.
+     *
+     * <p>The selected backend is installed only while the returned {@link GpuRuntimeScope} is open. Closing the scope
+     * restores the previous backend, so this is safe for tests and examples that should not leave global runtime state
+     * behind.</p>
+     */
+    public static GpuRuntimeScope useStandardBackendAndDevice() {
+        return useStandardBackendAndDevice(GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL));
+    }
+
+    /**
+     * Selects and installs the standard backend+device pair using caller-provided device-selection controls.
+     *
+     * <p>This is the recommended lower-level runtime helper when application code does not call the generated
+     * {@code invokeWithStandardBackendAndDevice(...)} convenience methods. It performs selection immediately and fails
+     * before kernel compilation if no backend/device pair satisfies the requested policy.</p>
+     */
+    public static GpuRuntimeScope useStandardBackendAndDevice(GpuRuntimeCompileOptions compileOptions) {
+        return standardBackendDeviceScopeFactory.apply(compileOptions);
+    }
+
+    /**
+     * Selects and installs a backend+device pair using caller-provided backend policy and device-selection controls.
+     */
+    public static GpuRuntimeScope useStandardBackendAndDevice(
+            GpuRuntimeBackendPolicy policy,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        return use(trySelectStandardBackendAndDevice(policy, compileOptions));
+    }
+
+    /**
+     * Selects and installs a backend+device pair while publishing lifecycle events for selection and discovery.
+     */
+    public static GpuRuntimeScope useStandardBackendAndDevice(
+            GpuRuntimeBackendPolicy policy,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeLifecycleEventBus lifecycleEventBus
+    ) {
+        return use(trySelectStandardBackendAndDevice(policy, compileOptions, lifecycleEventBus));
+    }
+
+    /**
      * Creates backend candidates from factories, selects the first matching backend, installs it as an owned scope,
      * and closes rejected backend instances automatically when possible.
      *
@@ -213,37 +372,13 @@ public final class GpuRuntime {
     ) {
         Objects.requireNonNull(requirements, "requirements");
         Objects.requireNonNull(candidateFactories, "candidateFactories");
-        if (candidateFactories.length == 0) {
-            throw new UnsupportedOperationException(
-                    "No GPU runtime backend satisfies the requested requirements: no backend candidates were provided"
-            );
-        }
-        List<String> failures = new ArrayList<>();
+        ArrayList<GpuRuntimeBackendFactory> factories = new ArrayList<>(candidateFactories.length);
+        ArrayList<GpuRuntimeBackendOwnership> ownerships = new ArrayList<>(candidateFactories.length);
         for (int index = 0; index < candidateFactories.length; index++) {
-            GpuRuntimeBackendFactory factory = Objects.requireNonNull(
-                    candidateFactories[index],
-                    "candidateFactories[" + index + "]"
-            );
-            GpuRuntimeBackend candidate;
-            try {
-                candidate = factory.create();
-            } catch (RuntimeException exception) {
-                failures.add("Failed to create backend candidate: " + exception.getMessage());
-                continue;
-            }
-
-            GpuRuntimeBackendReport report = describeBackend(candidate);
-            List<String> reasons = GpuRuntimeRequirements.failureReasons(report, requirements);
-            if (reasons.isEmpty()) {
-                return useOwnedBackend(candidate);
-            }
-
-            failures.add(report.backendName() + ": " + String.join("; ", reasons));
-            closeCandidateQuietly(candidate);
+            factories.add(Objects.requireNonNull(candidateFactories[index], "candidateFactories[" + index + "]"));
+            ownerships.add(GpuRuntimeBackendOwnership.OWNED);
         }
-        throw new UnsupportedOperationException(
-                "No GPU runtime backend satisfies the requested requirements: " + String.join(" | ", failures)
-        );
+        return GpuRuntimeBackendSelectionOrchestrator.select(requirements, factories, ownerships).install();
     }
 
     /**
@@ -327,13 +462,17 @@ public final class GpuRuntime {
 
     /**
      * Invokes a generated GPU kernel with explicit runtime compile options.
+     *
+     * <p>If the active backend is still the default fail-fast backend and the compile options request standard
+     * backend/device preflight, this method opens a temporary selected-backend scope before invoking the kernel. Already
+     * configured custom/OpenCL scopes are not replaced.</p>
      */
     public static void invokeWithCompileOptions(
             GpuRuntimeCompileOptions compileOptions,
             GpuKernelDescriptor descriptor,
             Object... arguments
     ) {
-        backend.invoke(new GpuKernelInvocation(descriptor, arguments, compileOptions));
+        invokeWithOptionalBackendDevicePreflight(new GpuKernelInvocation(descriptor, arguments, compileOptions));
     }
 
     /**
@@ -345,7 +484,7 @@ public final class GpuRuntime {
             GpuKernelDescriptor descriptor,
             Object... arguments
     ) {
-        backend.invoke(withLauncherClassLoader(
+        invokeWithOptionalBackendDevicePreflight(withLauncherClassLoader(
                 launcherClass,
                 new GpuKernelInvocation(descriptor, arguments, compileOptions)
         ));
@@ -360,7 +499,9 @@ public final class GpuRuntime {
             GpuKernelDescriptor descriptor,
             Object... arguments
     ) {
-        backend.invoke(new GpuKernelInvocation(descriptor, arguments, globalWorkSize, compileOptions));
+        invokeWithOptionalBackendDevicePreflight(
+                new GpuKernelInvocation(descriptor, arguments, globalWorkSize, compileOptions)
+        );
     }
 
     /**
@@ -373,7 +514,7 @@ public final class GpuRuntime {
             GpuKernelDescriptor descriptor,
             Object... arguments
     ) {
-        backend.invoke(withLauncherClassLoader(
+        invokeWithOptionalBackendDevicePreflight(withLauncherClassLoader(
                 launcherClass,
                 new GpuKernelInvocation(descriptor, arguments, globalWorkSize, compileOptions)
         ));
@@ -388,7 +529,9 @@ public final class GpuRuntime {
             GpuKernelDescriptor descriptor,
             Object... arguments
     ) {
-        backend.invoke(new GpuKernelInvocation(descriptor, arguments, executionConfig, compileOptions));
+        invokeWithOptionalBackendDevicePreflight(
+                new GpuKernelInvocation(descriptor, arguments, executionConfig, compileOptions)
+        );
     }
 
     /**
@@ -401,7 +544,7 @@ public final class GpuRuntime {
             GpuKernelDescriptor descriptor,
             Object... arguments
     ) {
-        backend.invoke(withLauncherClassLoader(
+        invokeWithOptionalBackendDevicePreflight(withLauncherClassLoader(
                 launcherClass,
                 new GpuKernelInvocation(descriptor, arguments, executionConfig, compileOptions)
         ));
@@ -423,7 +566,7 @@ public final class GpuRuntime {
             Object... arguments
     ) {
         ClassLoader classLoader = launcherClass == null ? null : launcherClass.getClassLoader();
-        backend.invoke(new GpuKernelInvocation(
+        invokeWithOptionalBackendDevicePreflight(new GpuKernelInvocation(
                 descriptor,
                 arguments,
                 executionConfig,
@@ -431,6 +574,172 @@ public final class GpuRuntime {
                 classLoader,
                 fallbackDescriptors
         ));
+    }
+
+    private static void invokeWithOptionalBackendDevicePreflight(GpuKernelInvocation invocation) {
+        GpuRuntimeBackend activeBackend = backend();
+        if (!requiresAutomaticBackendDevicePreflight(activeBackend, invocation.compileOptions())) {
+            activeBackend.invoke(invocation);
+            return;
+        }
+
+        GpuRuntimeLifecycleEventBus lifecycleEventBus = automaticBackendDevicePreflightLifecycleEventBus();
+        publishAutomaticBackendDevicePreflightEvent(
+                lifecycleEventBus,
+                GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_STARTED,
+                invocation,
+                "started",
+                "automatic backend/device preflight started",
+                null
+        );
+        try (GpuRuntimeScope ignored = automaticBackendDevicePreflightScopeFactory.apply(
+                invocation.compileOptions(),
+                lifecycleEventBus
+        )) {
+            backend().invoke(invocation);
+        } catch (RuntimeException failure) {
+            publishAutomaticBackendDevicePreflightEvent(
+                    lifecycleEventBus,
+                    GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_COMPLETED,
+                    invocation,
+                    "failed",
+                    "automatic backend/device preflight failed",
+                    failure
+            );
+            throw failure;
+        }
+        publishAutomaticBackendDevicePreflightEvent(
+                lifecycleEventBus,
+                GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_COMPLETED,
+                invocation,
+                "success",
+                "automatic backend/device preflight completed",
+                null
+        );
+    }
+
+    private static GpuRuntimeLifecycleEventBus automaticBackendDevicePreflightLifecycleEventBus() {
+        GpuRuntimeLifecycleEventBus eventBus = automaticBackendDevicePreflightLifecycleEventBusFactory.get();
+        return eventBus == null ? GpuRuntimeLifecycleEventBus.empty() : eventBus;
+    }
+
+    private static void publishAutomaticBackendDevicePreflightEvent(
+            GpuRuntimeLifecycleEventBus lifecycleEventBus,
+            GpuRuntimeLifecycleEventKind kind,
+            GpuKernelInvocation invocation,
+            String status,
+            String message,
+            RuntimeException failure
+    ) {
+        GpuRuntimeCompileOptions compileOptions = invocation.compileOptions();
+        GpuBackendCompileOptions backendOptions = compileOptions.backendOptions();
+        LinkedHashMap<String, String> fields = GpuRuntimeLifecycleFields.descriptorCompileOptionsFields(
+                invocation.descriptor(),
+                compileOptions
+        );
+        fields.putAll(GpuRuntimeLifecycleFields.executionConfigFields(invocation.executionConfig()));
+        GpuRuntimeLifecycleFields.putStatus(fields, status);
+        GpuRuntimeLifecycleFields.putFailureFields(fields, failure);
+        GpuRuntimeArtifactProperties.putPortable(
+                fields,
+                "runtime.backendDevicePreflight",
+                "mode",
+                backendOptions.backendDevicePreflightMode()
+        );
+        GpuRuntimeArtifactProperties.putPortable(
+                fields,
+                "runtime.backendDevicePreflight",
+                "requested",
+                backendOptions.requestsStandardBackendDevicePreflight()
+        );
+        fields.put("pipeline", "runtime-backend-device-preflight");
+        fields.put("trigger", "compile-options");
+        fields.put("status", status);
+        fields.put("backendDevicePreflight.mode", backendOptions.backendDevicePreflightMode());
+        fields.put("backendDevicePreflight.requested", Boolean.toString(
+                backendOptions.requestsStandardBackendDevicePreflight()
+        ));
+        fields.put("kernel.name", invocation.descriptor().kernelName());
+        fields.put("execution.dimensions", Integer.toString(invocation.executionConfig().dimensions()));
+        fields.put("execution.globalShape", invocation.executionConfig().globalShape());
+        if (failure != null) {
+            fields.put("error.type", failure.getClass().getName());
+            fields.put("error.message", failure.getMessage() == null ? "" : failure.getMessage());
+        }
+        lifecycleEventBus.publish(new GpuRuntimeLifecycleEvent(
+                kind,
+                compileOptions.backendTarget(),
+                invocation.descriptor().kernelResource(),
+                compileOptions.optimizationProfile(),
+                message,
+                fields
+        ));
+    }
+
+    private static boolean requiresAutomaticBackendDevicePreflight(
+            GpuRuntimeBackend activeBackend,
+            GpuRuntimeCompileOptions compileOptions
+    ) {
+        return activeBackend == DEFAULT_BACKEND
+                && compileOptions != null
+                && compileOptions.backendOptions().requestsStandardBackendDevicePreflight();
+    }
+
+    static void setAutomaticBackendDevicePreflightScopeFactoryForTesting(
+            Function<GpuRuntimeCompileOptions, GpuRuntimeScope> scopeFactory
+    ) {
+        Function<GpuRuntimeCompileOptions, GpuRuntimeScope> factory = Objects.requireNonNull(
+                scopeFactory,
+                "scopeFactory"
+        );
+        automaticBackendDevicePreflightScopeFactory = (options, ignoredEventBus) -> factory.apply(options);
+    }
+
+    static void setAutomaticBackendDevicePreflightScopeFactoryForTesting(
+            BiFunction<GpuRuntimeCompileOptions, GpuRuntimeLifecycleEventBus, GpuRuntimeScope> scopeFactory
+    ) {
+        automaticBackendDevicePreflightScopeFactory = Objects.requireNonNull(scopeFactory, "scopeFactory");
+    }
+
+    static void resetAutomaticBackendDevicePreflightScopeFactoryForTesting() {
+        automaticBackendDevicePreflightScopeFactory = GpuRuntime::selectAndUseStandardBackendDevice;
+    }
+
+    static void setAutomaticBackendDevicePreflightLifecycleEventBusFactoryForTesting(
+            Supplier<GpuRuntimeLifecycleEventBus> eventBusFactory
+    ) {
+        automaticBackendDevicePreflightLifecycleEventBusFactory = Objects.requireNonNull(
+                eventBusFactory,
+                "eventBusFactory"
+        );
+    }
+
+    static void resetAutomaticBackendDevicePreflightLifecycleEventBusFactoryForTesting() {
+        automaticBackendDevicePreflightLifecycleEventBusFactory = GpuRuntimeLifecycleEventBus::loadFromServiceLoader;
+    }
+
+    static void setStandardBackendDeviceScopeFactoryForTesting(
+            Function<GpuRuntimeCompileOptions, GpuRuntimeScope> scopeFactory
+    ) {
+        standardBackendDeviceScopeFactory = Objects.requireNonNull(scopeFactory, "scopeFactory");
+    }
+
+    static void resetStandardBackendDeviceScopeFactoryForTesting() {
+        standardBackendDeviceScopeFactory = GpuRuntime::selectAndUseStandardBackendDevice;
+    }
+
+    private static GpuRuntimeScope selectAndUseStandardBackendDevice(GpuRuntimeCompileOptions compileOptions) {
+        return use(trySelectStandardBackendAndDevice(compileOptions));
+    }
+
+    private static GpuRuntimeScope selectAndUseStandardBackendDevice(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuRuntimeLifecycleEventBus lifecycleEventBus
+    ) {
+        GpuRuntimeBackendPolicy policy = GpuRuntimeBackendPolicy.builder()
+                .preferStandardBackendsWithPlannedDiagnostics()
+                .build();
+        return use(trySelectStandardBackendAndDevice(policy, compileOptions, lifecycleEventBus));
     }
 
     private static GpuKernelInvocation withLauncherClassLoader(
@@ -448,13 +757,4 @@ public final class GpuRuntime {
         return new GpuRuntimeScope(previousBackend, newBackend, closeInstalledBackend);
     }
 
-    private static void closeCandidateQuietly(GpuRuntimeBackend candidate) {
-        if (candidate instanceof AutoCloseable closeable) {
-            try {
-                closeable.close();
-            } catch (Exception ignored) {
-                // Best effort cleanup for rejected candidates.
-            }
-        }
-    }
 }

@@ -1,34 +1,30 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
-import java.util.ArrayList;
-import java.util.List;
+import net.sixik.ga_utils.javatogpu.runtime.launch.GpuLauncherNamingSupport;
 
+/**
+ * Compatibility facade for generated GPU launcher naming.
+ *
+ * <p>New launch/descriptor code should prefer
+ * {@link net.sixik.ga_utils.javatogpu.runtime.launch.GpuLauncherNamingSupport}. This class keeps the original root
+ * runtime API stable for generated code, tests, and existing users.</p>
+ */
 public final class GpuLauncherNaming {
 
     private GpuLauncherNaming() {
     }
 
+    /**
+     * Returns the generated launcher class name for an owner method.
+     */
     public static String launcherClassName(Class<?> ownerClass, String methodName) {
-        String packageName = ownerClass.getPackageName();
-        String generatedPackage = packageName.isEmpty() ? "generated" : packageName + ".generated";
-
-        List<String> ownerNames = new ArrayList<>();
-        Class<?> current = ownerClass;
-        while (current != null) {
-            ownerNames.add(0, current.getSimpleName());
-            current = current.getEnclosingClass();
-        }
-        ownerNames.add(methodName);
-        ownerNames.add("GpuLauncher");
-        return generatedPackage + "." + String.join("_", ownerNames);
+        return GpuLauncherNamingSupport.launcherClassName(ownerClass, methodName);
     }
 
+    /**
+     * Returns the generated launcher JVM internal name for an owner method.
+     */
     public static String launcherInternalName(String ownerInternalName, String methodName) {
-        int packageSeparator = ownerInternalName.lastIndexOf('/');
-        String packageInternalName = packageSeparator >= 0 ? ownerInternalName.substring(0, packageSeparator) : "";
-        String ownerSimplePath = packageSeparator >= 0 ? ownerInternalName.substring(packageSeparator + 1) : ownerInternalName;
-        String generatedPackage = packageInternalName.isEmpty() ? "generated" : packageInternalName + "/generated";
-        String flattenedOwnerName = ownerSimplePath.replace('$', '_');
-        return generatedPackage + "/" + flattenedOwnerName + "_" + methodName + "_GpuLauncher";
+        return GpuLauncherNamingSupport.launcherInternalName(ownerInternalName, methodName);
     }
 }

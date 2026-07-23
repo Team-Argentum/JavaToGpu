@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.*;
+
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionOutcome;
@@ -15,6 +17,7 @@ import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuExtensionParticipa
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuFeatureMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuLaunchMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodBody;
+import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuMethodTestVectorMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuModule;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuRegenerationMetadata;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuSourceLocation;
@@ -104,6 +107,62 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(participation.contains("entry.4.source=backend-compiler-feedback"));
         assertTrue(participation.contains("entry.4.extensionId=compiler-feedback:mock"));
         assertTrue(participation.contains("entry.4.outcome=FAILED_CONTINUED"));
+    }
+
+    @Test
+    void dumpsMethodTestEvidenceArtifactForValidationReports() {
+        IrGpuArtifact irGpuArtifact = artifact("body\n  return original\n")
+                .withMethodTestVectors(List.of(new IrGpuMethodTestVectorMetadata(
+                        "kernel",
+                        "jtg_kernel",
+                        "selection-smoke",
+                        List.of("fixtures/selection-smoke.inputs.json"),
+                        List.of("fixtures/selection-smoke.outputs.json"),
+                        "abs=1e-5",
+                        List.of("selection", "smoke"),
+                        true,
+                        "GPUTest"
+                )));
+        GpuRuntimeCompileRequest request = new GpuRuntimeCompileRequest(
+                descriptor(),
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(irGpuArtifact)
+        );
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                "__kernel void kernel(__global int* output) { output[0] = 1; }",
+                "javatogpu/sample/Demo/kernel.cl",
+                "test-lowerer-v1"
+        );
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                request,
+                request,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(request, backendArtifact, "method-test:evidence"),
+                GpuRuntimeCompileProvenance.from(request),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(irGpuArtifact))
+        ).withDeviceSelection(methodTestEvidenceDeviceSelection());
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(
+                snapshot,
+                GpuBackendCompilerFeedbackRegistry.of(List.of())
+        );
+
+        assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_METHOD_TEST_EVIDENCE_ARTIFACT));
+        String evidence = dump.artifact(GpuRuntimeCompileArtifactDumper.RUNTIME_METHOD_TEST_EVIDENCE_ARTIFACT);
+        assertTrue(evidence.contains("status=recorded"));
+        assertTrue(evidence.contains("backendResource=javatogpu/sample/Demo/kernel.cl"));
+        assertTrue(evidence.contains("metadata.status=recorded"));
+        assertTrue(evidence.contains("metadata.entryTestVector.count=1"));
+        assertTrue(evidence.contains("metadata.selectionProbe.count=1"));
+        assertTrue(evidence.contains("original.entryTestVector.0.testId=selection-smoke"));
+        assertTrue(evidence.contains("cacheEvidence.status=active"));
+        assertTrue(evidence.contains("cacheEvidence.mode=cache-only"));
+        assertTrue(evidence.contains("cacheEvidence.execution=cache-only"));
+        assertTrue(evidence.contains("cacheEvidence.candidate.count=1"));
+        assertTrue(evidence.contains("cacheEvidence.passed.count=1"));
+        assertTrue(evidence.contains("cacheEvidence.missing.count=0"));
+        assertTrue(evidence.contains("firstBlocker=none"));
     }
 
     @Test
@@ -503,6 +562,16 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("sourceSelection=descriptor"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("irGpuSourceRequested=false"));
         assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("productionSourceSwitching=disabled"));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
+                "runtime.backend.source.status=descriptor-default"
+        ));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
+                "runtime.backend.source.decision=compile-descriptor-source"
+        ));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains(
+                "runtime.backend.source.selection=descriptor"
+        ));
+        assertTrue(dump.artifact("backend-source-switching-decision.properties").contains("runtime.status=descriptor-default"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendTarget=OPENCL"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("backendResource=runtime/lowered/kernel.cl"));
         assertTrue(dump.artifact("backend-source-map.properties").contains("sourceLocation.count=1"));
@@ -532,6 +601,8 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendOption.target=OPENCL"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendOption.flag.0=-cl-fast-relaxed-math"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("backendOption.property.count=0"));
+        assertTrue(dump.artifact("compile-provenance.properties").contains("deviceOverride=automatic"));
+        assertTrue(dump.artifact("compile-provenance.properties").contains("devicePreference=automatic"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("optimizationProfile=fast"));
         assertTrue(dump.artifact("compile-provenance.properties").contains("fallbackDecision=none"));
         assertTrue(dump.hasArtifact(GpuRuntimeCompileArtifactDumper.RUNTIME_DEVICE_SELECTION_ARTIFACT));
@@ -579,10 +650,14 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("diagnostic.0=optimized IrGpu is selected for backend lowering after runtime optimizer passes"));
         assertTrue(dump.hasArtifact("runtime-production-mutation-safety.properties"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=disabled"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.status=disabled"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=false"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.enabled=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionGateStatus=not-requested"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.productionGateStatus=not-requested"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionProfileRequested=false"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=optimized"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.selectedStage=optimized"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedDiffersFromOriginal=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("fallbackDecision=none"));
@@ -1385,6 +1460,66 @@ class GpuRuntimeCompileArtifactDumperTest {
     }
 
     @Test
+    void dumpWritesCudaPreviewSourceForOriginalAndOptimizedIrGpuArtifacts() {
+        IrGpuArtifact original = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        IrGpuArtifact optimized = GpuRuntimeIrArtifactLoader.load(SIMPLE_IRGPU_SOURCE_RESOURCE, getClass().getClassLoader())
+                .orElseThrow();
+        GpuKernelDescriptor descriptor = simpleIrGpuSourceDescriptor();
+        GpuBackendModuleArtifact backendArtifact = GpuBackendModuleArtifact.openClSource(
+                descriptor.kernelSource(),
+                descriptor.kernelResource(),
+                "test-lowerer-v1",
+                "irgpu-backend-neutral-source",
+                "opencl-irgpu-source-compile"
+        );
+        GpuRuntimeCompileRequest originalRequest = new GpuRuntimeCompileRequest(
+                descriptor,
+                GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+                GpuRuntimeDeviceProfile.generic(GpuBackendTarget.OPENCL, "OpenCL"),
+                Optional.of(original)
+        );
+        GpuRuntimeCompileRequest optimizedRequest = originalRequest.withIrGpuArtifact(Optional.of(optimized));
+        GpuRuntimeCompileArtifactSnapshot snapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                originalRequest,
+                optimizedRequest,
+                backendArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(optimizedRequest, backendArtifact, "optimizer:test-v1"),
+                GpuRuntimeCompileProvenance.from(optimizedRequest),
+                GpuRuntimeIrOptimizationReport.empty(Optional.of(optimized))
+        );
+
+        GpuRuntimeCompileArtifactDump dump = GpuRuntimeCompileArtifactDumper.dump(snapshot);
+
+        assertTrue(dump.hasArtifact("cuda-source-preview.properties"));
+        String preview = dump.artifact("cuda-source-preview.properties");
+        assertTrue(preview.contains("backendTarget=CUDA"));
+        assertTrue(preview.contains("moduleFormat=cuda-c"));
+        assertTrue(preview.contains("previewOnly=true"));
+        assertTrue(preview.contains("hardwareRequired=false"));
+        assertTrue(preview.contains("runtimeExecutionEnabled=false"));
+        assertTrue(preview.contains("selectedStage=optimized"));
+        assertTrue(preview.contains("selectedPreviewArtifact=optimized.preview.backend.cuda-c"));
+        assertTrue(preview.contains("original.present=true"));
+        assertTrue(preview.contains("original.reconstructed=true"));
+        assertTrue(preview.contains("original.sourceAvailable=true"));
+        assertTrue(preview.contains("original.selectedSource=irgpu-cuda-source"));
+        assertTrue(preview.contains("original.runtimeLoadMode=cuda-c-source-preview"));
+        assertTrue(preview.contains("optimized.present=true"));
+        assertTrue(preview.contains("optimized.reconstructed=true"));
+        assertTrue(preview.contains("optimized.sourceAvailable=true"));
+        assertTrue(preview.contains("optimized.selectedSource=irgpu-cuda-source"));
+        assertTrue(preview.contains("optimized.runtimeLoadMode=cuda-c-source-preview"));
+        assertTrue(dump.hasArtifact("original.preview.backend.cuda-c"));
+        assertTrue(dump.hasArtifact("optimized.preview.backend.cuda-c"));
+        String cudaSource = dump.artifact("optimized.preview.backend.cuda-c");
+        assertTrue(cudaSource.contains("extern \"C\" __global__ void gpu_irgpu_entry"));
+        assertTrue(cudaSource.contains("blockIdx.x * blockDim.x + threadIdx.x"));
+        assertTrue(cudaSource.contains("const float* input"));
+        assertEquals(backendArtifact.source(), dump.artifact("backend.opencl-c"));
+    }
+
+    @Test
     void dumpRecordsPrivateArraySourceReconstructionAsReviewReadyWhenEvidencePasses() {
         String descriptorSource = """
                 __kernel void jtg_kernel(__global float* input, __global float* output) {
@@ -1892,9 +2027,13 @@ class GpuRuntimeCompileArtifactDumperTest {
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.accepted=true"));
         assertTrue(dump.artifact("runtime-ir-handoff.properties").contains("productionIrGate.decisionMode=production-enabled"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("status=enabled"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.status=enabled"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionMutationEnabled=true"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.enabled=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("productionGateStatus=accepted"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.productionGateStatus=accepted"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("selectedStage=optimized"));
+        assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("runtime.ir.productionMutation.selectedStage=optimized"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("optimizedSelected=true"));
         assertTrue(dump.artifact("runtime-production-mutation-safety.properties").contains("diagnostic.0=production runtime IR mutation is enabled because all production optimizer gates passed"));
         assertTrue(dump.artifact("i3-readiness-summary.properties").contains("status=production-enabled"));
@@ -4017,6 +4156,42 @@ class GpuRuntimeCompileArtifactDumperTest {
                 false,
                 "none",
                 List.of("synthetic device-selection execution for participation artifact test")
+        );
+    }
+
+    private static GpuRuntimeDeviceSelection methodTestEvidenceDeviceSelection() {
+        String deviceKey = "OPENCL:opencl-1";
+        GpuRuntimeDevicePolicyDecision decision = new GpuRuntimeDevicePolicyDecision(
+                GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_ID,
+                GpuRuntimeMethodTestGpuProbeEvidencePolicy.POLICY_VERSION,
+                Map.of(deviceKey, 1_600_000_000),
+                java.util.Set.of(),
+                Map.ofEntries(
+                        Map.entry("methodTestProbeEvidence.status", "active"),
+                        Map.entry("methodTestProbeEvidence.mode", "cache-only"),
+                        Map.entry("methodTestProbeEvidence.execution", "cache-only"),
+                        Map.entry("methodTestProbeEvidence.cache.persistent", "true"),
+                        Map.entry("methodTestProbeEvidence.cache.path", ".javatogpu/method-test-probes"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.status", "passed"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.passed.count", "1"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.failed.count", "0"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.missing.count", "0"),
+                        Map.entry(deviceKey + ".methodTestProbeEvidence.blocked.count", "0")
+                ),
+                List.of(),
+                true,
+                List.of(),
+                List.of(deviceKey + ": cached method-test GPU probe evidence passed")
+        );
+        return new GpuRuntimeDeviceSelection(
+                Optional.empty(),
+                List.of(),
+                List.of(decision),
+                List.of(),
+                true,
+                false,
+                "none",
+                List.of("synthetic method-test evidence policy decision")
         );
     }
 

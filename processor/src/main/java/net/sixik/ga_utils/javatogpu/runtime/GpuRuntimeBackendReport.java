@@ -86,4 +86,25 @@ public record GpuRuntimeBackendReport(
     public boolean supports(GpuRuntimeFeature feature) {
         return features.contains(feature);
     }
+
+    public Set<GpuRuntimeCapability> runtimeCapabilities() {
+        EnumSet<GpuRuntimeCapability> capabilities = EnumSet.noneOf(GpuRuntimeCapability.class);
+        for (GpuRuntimeFeature feature : features) {
+            GpuRuntimeCapability.fromFeature(feature).ifPresent(capabilities::add);
+        }
+        if (apiVersion != null || (apiVersionText != null && !apiVersionText.isBlank())) {
+            capabilities.add(GpuRuntimeCapability.RUNTIME_VERSION);
+        }
+        if (localMemoryBytes != null && localMemoryBytes > 0L) {
+            capabilities.add(GpuRuntimeCapability.LOCAL_MEMORY);
+        }
+        if (maxWorkGroupSize != null && maxWorkGroupSize > 0L) {
+            capabilities.add(GpuRuntimeCapability.MAX_WORK_GROUP_SIZE);
+        }
+        return capabilities.isEmpty() ? Set.of() : Collections.unmodifiableSet(capabilities);
+    }
+
+    public boolean supports(GpuRuntimeCapability capability) {
+        return capability != null && runtimeCapabilities().contains(capability);
+    }
 }

@@ -8,21 +8,21 @@ import dev.denismasterherobrine.packager.opencl.core.OpenClDevices;
 import dev.denismasterherobrine.packager.opencl.core.OpenClException;
 import dev.denismasterherobrine.packager.opencl.core.OpenClKernel;
 import dev.denismasterherobrine.packager.opencl.core.OpenClProgram;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DBufferWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image1DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DArrayWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DMipmappedWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image2DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DReadOnly;
-import net.sixik.ga_utils.javatogpu.api.Image3DWriteOnly;
-import net.sixik.ga_utils.javatogpu.api.Sampler;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DBufferWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image1DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DArrayWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DMipmappedWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image2DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DReadOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
+import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendModuleArtifact;
@@ -57,6 +57,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
     private static final Pattern OPENCL_VERSION_PATTERN = Pattern.compile("OpenCL\\s+(\\d+)\\.(\\d+)");
     private static final int CL_DEPTH = 0x10BD;
     private static final int CL_DEVICE_HOST_UNIFIED_MEMORY = 0x1035;
+    private static final int CL_DEVICE_OPENCL_C_VERSION = 0x103D;
 
     private final OpenClDevice device;
     private final OpenClContext context;
@@ -104,10 +105,23 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             GpuRuntimeCompileOptions compileOptions,
             Optional<IrGpuArtifact> irGpuArtifact
     ) {
+        return createDefault(devicePolicyRegistry, descriptor, compileOptions, irGpuArtifact, Optional.empty());
+    }
+
+    public static OpenClRuntimeSession createDefault(
+            GpuRuntimeDevicePolicyRegistry devicePolicyRegistry,
+            GpuKernelDescriptor descriptor,
+            GpuRuntimeCompileOptions compileOptions,
+            Optional<IrGpuArtifact> irGpuArtifact,
+            Optional<GpuRuntimeDeviceSelection> preselectedDeviceSelection
+    ) {
         Objects.requireNonNull(devicePolicyRegistry, "devicePolicyRegistry");
         GpuRuntimeCompileOptions resolvedCompileOptions = compileOptions == null
                 ? GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL)
                 : compileOptions;
+        Optional<GpuRuntimeDeviceSelection> resolvedPreselection = preselectedDeviceSelection == null
+                ? Optional.empty()
+                : preselectedDeviceSelection;
         List<OpenClDevice> devices = OpenClDevices.list(CL10.CL_DEVICE_TYPE_ALL);
         if (devices.isEmpty()) {
             throw new IllegalStateException("No OpenCL device found");
@@ -118,13 +132,13 @@ public final class OpenClRuntimeSession implements AutoCloseable {
             profiles.add(deviceProfile(devices.get(index), index));
         }
         prepareDeviceSelfTests(devicePolicyRegistry, devices, profiles, resolvedCompileOptions);
-        GpuRuntimeDeviceSelection selection = selectDevice(
+        GpuRuntimeDeviceSelection selection = resolvedPreselection.orElseGet(() -> selectDevice(
                 devicePolicyRegistry,
                 profiles,
                 descriptor,
                 resolvedCompileOptions,
                 irGpuArtifact
-        );
+        ));
         int selectedIndex = selectedDeviceIndex(profiles, selection);
         OpenClDevice device = devices.get(selectedIndex);
 
@@ -349,6 +363,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 deviceInfo.vendor(),
                 deviceInfo.driverVersion(),
                 deviceInfo.deviceVersion(),
+                deviceInfo.compilerVersion(),
                 deviceInfo.supportsDoublePrecision(),
                 deviceInfo.supportsImages(),
                 deviceInfo.supportsImage3dWrites(),
@@ -356,6 +371,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 deviceInfo.maxWorkGroupSize(),
                 deviceInfo.computeUnits(),
                 deviceInfo.preferredVectorWidthFloat(),
+                deviceInfo.supportsAtomics(),
                 deviceInfo.supportsSubgroups()
         );
     }
@@ -382,6 +398,9 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 deviceInfo.vendor(),
                 deviceInfo.driverVersion(),
                 deviceInfo.deviceVersion(),
+                deviceInfo.compilerVersion(),
+                deviceInfo.platformName(),
+                deviceInfo.platformVersion(),
                 classifyDevice(device, unifiedMemory),
                 deviceInfo.computeUnits(),
                 device.globalMemoryBytes(),
@@ -391,6 +410,8 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 unifiedMemory,
                 deviceInfo.supportsDoublePrecision(),
                 deviceInfo.supportsImages(),
+                deviceInfo.supportsImage3dWrites(),
+                deviceInfo.supportsAtomics(),
                 deviceInfo.supportsSubgroups()
         );
     }
@@ -415,6 +436,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 queryStringDeviceInfo(deviceHandle, CL10.CL_DEVICE_VENDOR),
                 queryStringDeviceInfo(deviceHandle, CL10.CL_DRIVER_VERSION),
                 deviceVersion,
+                safeQueryStringDeviceInfo(deviceHandle, CL_DEVICE_OPENCL_C_VERSION),
                 platformHandle == 0L ? "unknown" : queryStringPlatformInfo(platformHandle, CL10.CL_PLATFORM_NAME),
                 platformHandle == 0L ? "unknown" : queryStringPlatformInfo(platformHandle, CL10.CL_PLATFORM_VERSION),
                 supportsDoublePrecision(extensions),
@@ -424,6 +446,7 @@ public final class OpenClRuntimeSession implements AutoCloseable {
                 device.maxWorkGroupSize(),
                 safeQueryIntDeviceInfo(deviceHandle, CL10.CL_DEVICE_MAX_COMPUTE_UNITS),
                 safeQueryIntDeviceInfo(deviceHandle, CL10.CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT),
+                supportsAtomics(extensions, deviceVersion),
                 supportsSubgroups(extensions)
         );
     }
@@ -1124,6 +1147,14 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         }
     }
 
+    private static String safeQueryStringDeviceInfo(long deviceHandle, int paramName) {
+        try {
+            return queryStringDeviceInfo(deviceHandle, paramName);
+        } catch (RuntimeException ignored) {
+            return "unknown";
+        }
+    }
+
     private static String queryStringPlatformInfo(long platformHandle, int paramName) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             PointerBuffer sizeBuffer = stack.mallocPointer(1);
@@ -1163,6 +1194,20 @@ public final class OpenClRuntimeSession implements AutoCloseable {
         int major = Integer.parseInt(matcher.group(1));
         int minor = Integer.parseInt(matcher.group(2));
         return major > 1 || (major == 1 && minor >= 2);
+    }
+
+    private static boolean supportsAtomics(String extensions, String deviceVersion) {
+        if (containsExtension(extensions, "cl_khr_global_int32_base_atomics")
+                && containsExtension(extensions, "cl_khr_global_int32_extended_atomics")) {
+            return true;
+        }
+        Matcher matcher = OPENCL_VERSION_PATTERN.matcher(deviceVersion == null ? "" : deviceVersion);
+        if (!matcher.find()) {
+            return false;
+        }
+        int major = Integer.parseInt(matcher.group(1));
+        int minor = Integer.parseInt(matcher.group(2));
+        return major > 1 || (major == 1 && minor >= 1);
     }
 
     private static boolean supportsSubgroups(String extensions) {

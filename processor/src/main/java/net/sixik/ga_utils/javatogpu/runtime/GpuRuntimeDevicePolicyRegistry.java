@@ -1,5 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.runtime.methodtest.*;
+
 import net.sixik.ga_utils.javatogpu.extension.GpuExtension;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionCapability;
 import net.sixik.ga_utils.javatogpu.extension.GpuExtensionExecutionReport;
@@ -58,9 +60,11 @@ public final class GpuRuntimeDevicePolicyRegistry {
         loaded.add(new GpuRuntimeBackendCompatibilityDevicePolicy());
         loaded.add(new GpuRuntimeExplicitDeviceOverridePolicy());
         loaded.add(new GpuRuntimeMethodDeviceConstraintPolicy());
+        loaded.add(new GpuRuntimeDevicePreferencePolicy());
         loaded.add(new GpuRuntimeDeviceSelfTestPolicy(
                 Objects.requireNonNull(selfTestCache, "selfTestCache")
         ));
+        loaded.add(new GpuRuntimeMethodTestGpuProbeEvidencePolicy());
         ServiceLoader.load(GpuRuntimeDevicePolicy.class, GpuRuntimeDevicePolicy.class.getClassLoader())
                 .forEach(loaded::add);
         loaded.sort(Comparator

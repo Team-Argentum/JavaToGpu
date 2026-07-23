@@ -2,29 +2,65 @@
 
 This page gives a practical map of the JavaToGpu API for normal application code.
 
+If you are writing an application, the usual import path is small: `api.JavaToGpu` for runtime scopes, `api.GPU` for kernel builtins, `api.annotations.*` for kernel metadata, and grouped data wrappers only when arrays are not enough. Use the lower-level `runtime` package when you need explicit selection policy, descriptors, dynamic launcher invocation, or extension/SPI work.
+
 ## Packages You Will Use
 
-- `net.sixik.ga_utils.javatogpu.api` - kernel-facing helpers such as `GPU`, vectors, pointer views, image wrappers, samplers, and unsigned aliases.
+- `net.sixik.ga_utils.javatogpu.api` - thin user-facing root facade: `JavaToGpu`, `GpuScope`, kernel-facing `GPU`, and backend/device target selectors.
 - `net.sixik.ga_utils.javatogpu.api.annotations` - annotations for marking kernels, parameters, structs, helpers, intrinsics, attributes, and qualifiers.
-- `net.sixik.ga_utils.javatogpu.runtime` - runtime scopes, backend selection, launch configs, descriptors, compile options, and invocation helpers.
+- `net.sixik.ga_utils.javatogpu.api.types.*` - unsigned scalar aliases and vector wrappers grouped by primitive family.
+- `net.sixik.ga_utils.javatogpu.api.pointers.*` - helper pointers and address-space pointer views.
+- `net.sixik.ga_utils.javatogpu.api.images` - image wrappers and samplers.
+- `net.sixik.ga_utils.javatogpu.runtime` - lower-level runtime scopes, backend selection, launch configs, descriptors, compile options, and invocation helpers for advanced users and extensions.
+- `net.sixik.ga_utils.javatogpu.runtime.selection` - domain entry points for advanced backend/device discovery, policy selection, and preflight diagnostics.
 
-## Kernel Annotations
+Current alpha note: `JavaToGpu` is the preferred user-facing runtime facade for common application flows. `net.sixik.ga_utils.javatogpu.runtime.GpuRuntime` remains supported as the lower-level compatibility entry point for current users, generated launchers, advanced configuration, and extension modules.
+
+For advanced backend/device diagnostics, prefer `runtime.selection.GpuRuntimeSelection` over adding new code directly to the root `runtime` package. It delegates to the compatibility runtime APIs today and gives selection-focused code a stable package home while the large root runtime package is split gradually.
+
+Run the facade example without launching a kernel:
+
+```powershell
+.\gradlew.bat :examples-app:runRuntimeFacadeExample --console=plain
+```
+
+## Source Annotations
 
 Use these in source code that should compile to GPU code.
 
+### Entry Points And Helpers
+
 - `@GPU` marks a static Java method as a GPU kernel entry point.
+- `@CCode` marks a reusable helper method that should be emitted as GPU helper code.
+- `@CCodeLibrary` groups reusable helper methods.
+- `@GPUIntrinsic` maps a Java method to a backend intrinsic instead of a normal helper call.
+
+### Memory And Data Layout
+
 - `@GPUGlobal`, `@GPUConstant`, and `@GPULocal` choose the OpenCL address space for array or pointer-like parameters.
+- `@GPUStruct` marks a Java class as a value type that can be marshalled to OpenCL struct layout.
+- `@GPUConstantData` and `@GPUExternConstantData` describe generated or external constant data metadata.
+
+### Portable Codegen Hints
+
 - `@GPUWorkGroupSize` declares a portable required work-group size for the kernel.
 - `@GPUWorkGroupSizeHint` declares a portable preferred work-group size hint for backends that support it.
 - `@GPUVectorTypeHint` declares a portable preferred vector type hint for backend lowerers that use it.
 - `@GPUPacked`, `@GPUAligned`, and `@GPUAlwaysInline` cover common layout and helper emission metadata without raw backend strings.
-- `@GPUOptimize` records method-level optimizer policy such as enablement/profile hints, `fastMath`, family toggles, journal/dump hints, production intent, vendor adaptation, vectorization preference, and resource-shaping intent; the default remains strict and fail-closed.
+
+### Runtime Selection And Tests
+
 - `@GPUDeviceConstraint` restricts a method to supported backends, vendors, device classes, and required runtime features.
 - `@GPUFallbackVariant` groups ABI-compatible implementations that runtime may choose for different devices.
-- `@GPUStruct` marks a Java class as a value type that can be marshalled to OpenCL struct layout.
-- `@CCode` marks a reusable helper method that should be emitted as GPU helper code.
-- `@CCodeLibrary` groups reusable helper methods.
-- `@GPUIntrinsic` maps a Java method to a backend intrinsic instead of a normal helper call.
+- `@GPUTest` and `@GPUTests` attach fixture-based method-test metadata used by manual probes today and future runtime evidence.
+
+### Optimizer Policy
+
+- `@GPUOptimize` records method-level optimizer policy such as enablement/profile hints, `fastMath`, family toggles, journal/dump hints, production intent, vendor adaptation, vectorization preference, and resource-shaping intent; the default remains strict and fail-closed.
+
+### Extension Metadata And Escape Hatches
+
+- `@GPUIntrinsicLibrary`, `@GPUVectorType`, `@GPUScalarAliasType`, `@GPUPointerType`, `@GPUPointerAddressSpace`, `@GPUPointerOperator`, and `@GPUVectorOperator` are mostly for built-in wrappers and extension libraries.
 - `@GPUAttribute` is the backend-aware raw escape hatch for metadata JavaToGpu does not model portably yet.
 - `@OpenCLAttributes` and `@OpenCLQualifiers` remain OpenCL-only compatibility annotations for existing code.
 
@@ -154,13 +190,36 @@ Common groups:
 
 Prefer `GPU.*` over ordinary Java library calls inside kernels.
 
+## Package Layout
+
+Keep application imports split by intent:
+
+- `net.sixik.ga_utils.javatogpu.api` is the thin root facade: `GPU`, `JavaToGpu`, `GpuScope`, and backend/device target selectors.
+- `net.sixik.ga_utils.javatogpu.api.annotations` contains source annotations such as `@GPU`, `@GPUGlobal`, `@GPUStruct`, and `@GPUTest`.
+- `net.sixik.ga_utils.javatogpu.api.types.*` contains scalar aliases and vector wrappers grouped by primitive family.
+- `net.sixik.ga_utils.javatogpu.api.pointers.*` contains helper pointers and address-space pointer views.
+- `net.sixik.ga_utils.javatogpu.api.images` contains image and sampler wrappers.
+
+Do not import vectors, unsigned aliases, pointers, images, or samplers from the root `api` package. They intentionally live in grouped subpackages so the public API stays navigable.
+
+`GpuAnnotationSupport` is public for processor/runtime compatibility, but normal user code should import concrete annotations from `api.annotations` instead.
+
 ## Data Types
+
+Public data wrappers are grouped by purpose:
+
+- `net.sixik.ga_utils.javatogpu.api.types.*` for scalar aliases and vectors.
+- `net.sixik.ga_utils.javatogpu.api.pointers.*` for private and address-space pointer wrappers.
+- `net.sixik.ga_utils.javatogpu.api.images` for image and sampler wrappers.
+- `net.sixik.ga_utils.javatogpu.api.annotations` for kernel, address-space, struct, test, and optimizer annotations.
 
 ### Scalars
 
 Supported scalar shapes include the common Java primitives used by the current subset: `byte`, `short`, `int`, `long`, `float`, `double`, and `char`.
 
 Unsigned aliases include `UByte`, `UShort`, `UInt`, and `ULong`.
+
+Import unsigned aliases from the matching family package, for example `api.types.bytes.UByte`, `api.types.shorts.UShort`, `api.types.integers.UInt`, and `api.types.longs.ULong`.
 
 ### Vectors
 
@@ -172,6 +231,8 @@ OpenCL-style vector wrapper families include:
 - `Double2`, `Double3`, `Double4`
 
 Vectors can be locals, helper parameters/returns, kernel parameters, and buffer element types where supported.
+
+Import vector wrappers from the matching family package, for example `api.types.floats.Float4`, `api.types.integers.Int2`, or `api.types.doubles.Double4`.
 
 ### Structs
 
@@ -196,26 +257,148 @@ Examples:
 
 Use these only when simple typed arrays are not enough.
 
+Import helper pointers from `api.pointers`, global views from `api.pointers.global`, constant views from `api.pointers.constant`, and local views from `api.pointers.local`.
+
 ### Images And Samplers
 
 Image wrappers model OpenCL image parameters. Typical shapes include read-only images, write-only images, and `Sampler` arguments.
+
+Import image and sampler wrappers from `net.sixik.ga_utils.javatogpu.api.images`.
 
 Use image APIs when you need OpenCL image memory, filtering, channel metadata, or pixel read/write operations.
 
 ## Runtime API
 
-The usual runtime entry point is `GpuRuntime`.
+The usual runtime entry point for application code is `JavaToGpu`.
 
 Common calls:
 
-- `GpuRuntime.useOpenCl()` for a simple scoped OpenCL runtime.
-- `GpuRuntime.useOpenClSharedCache()` for repeated calls with a warm session and compile cache.
-- `GpuRuntime.use(policy)` for custom fallback policies.
-- `GpuRuntime.trySelect(policy)` for prechecking whether a GPU path is available.
-- `GpuRuntime.invoke(...)` for descriptor-based direct invocation.
-- `GpuExecutionConfig.oneDimensional(...)`, `twoDimensional(...)`, and `threeDimensional(...)` for explicit launch sizes.
+- `JavaToGpu.useOpenCl()` for a simple scoped OpenCL runtime.
+- `JavaToGpu.useOpenClSharedCache()` for repeated calls with a warm session and compile cache.
+- `JavaToGpu.shutdownOpenClSharedCache()` to release the process-wide shared OpenCL cache.
+- `JavaToGpu.useStandardBackendAndDevice()` for the default backend/device selection path.
+- `JavaToGpu.explainStandardBackendAndDevice()` for setup diagnostics without installing a runtime backend.
+- `JavaToGpu.launch1D(...)`, `launch2D(...)`, and `launch3D(...)` for explicit launch sizes.
 - Generated launcher methods for normal `@GPU` calls.
 - Automatic method-variant selection for generated launchers that declare `@GPUFallbackVariant`.
+
+### Generated Launchers
+
+Normal application code should call the generated launcher directly when the kernel is known at compile time. Generated launcher source is intentionally readable: comments mark the generated boundary, embedded descriptor/source constants, fallback descriptors, default launch overloads, explicit launch overloads, standard backend/device preflight helpers, return-first convenience metadata, and output-length validation.
+
+```java
+DemoKernel_transform_GpuLauncher.invokeWithStandardBackendAndDevice(
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+        input,
+        output
+);
+```
+
+Use `GpuGeneratedLauncherInvoker` when a framework, plugin, test harness, or dynamic loader only has the owner class and method name at runtime:
+
+```java
+GpuGeneratedLauncherInvoker.GeneratedLauncher launcher =
+        GpuGeneratedLauncherInvoker.launcher(DemoKernel.class, "transform");
+
+launcher.invokeWithGlobalWorkSizeAndStandardBackendAndDevice(
+        itemCount,
+        GpuRuntimeCompileOptions.defaults(GpuBackendTarget.OPENCL),
+        input,
+        output
+);
+```
+
+Keep the cached `GeneratedLauncher` handle for repeated dynamic calls. It resolves the generated launcher class, descriptor, and return-first metadata once, while still invoking generated overloads so fallback variant routing and standard backend/device preflight stay intact.
+
+Return-first helpers are a narrow convenience over the real `void + output buffer` ABI. They are generated only for kernels with exactly one primitive read-write output array. Check `RETURN_VALUE_CONVENIENCE_*` on the generated class, or `launcher.returnValueConvenience()`, when you need to explain why the helper exists or was skipped.
+
+Most applications should stop there. Treat `net.sixik.ga_utils.javatogpu.runtime` as an advanced compatibility layer, not as the first package to browse.
+
+Runtime package map:
+
+- `runtime.selection` - backend/device discovery, ranking, policy, and preflight diagnostics.
+- `runtime.launch` - descriptor-based launches and generated-launcher support.
+- `runtime.observability` - lifecycle events, logging, journals, and service harnesses.
+- `runtime.optimization` - IR optimization/review support and optimizer extension points.
+- `runtime.memory` - native-memory provider bridge used by LWJGL today and future Panama providers.
+- `runtime.spi` and `runtime.hooks` - backend providers, stage hooks, and ServiceLoader extension contracts.
+- `runtime.validation` - maintainer and CI harnesses, not normal application flow.
+- `runtime.opencl` and `runtime.cuda` - backend implementation details.
+
+Selection/launch compatibility facades:
+
+| Existing root import | Prefer for new code | Why |
+| --- | --- | --- |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDeviceDiscovery` | `net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeSelection` / `net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeDeviceDiscoverySupport` | Backend/device discovery snapshots. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendSelectionOrchestrator` | `net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeSelection` / `net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeBackendSelectionSupport` | Backend selection and backend/device preflight. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeWorkloadHintInference` | `net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeWorkloadHintInference` | Read-only workload-hint inference. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeWorkloadHintBackendScoreContributor` | `net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeWorkloadHintBackendScoreContributor` | Caller-provided workload-hint backend scoring. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeInferredWorkloadHintBackendScoreContributor` | `net.sixik.ga_utils.javatogpu.runtime.selection.GpuRuntimeInferredWorkloadHintBackendScoreContributor` | Inferred workload-hint backend scoring. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbackScoreContributor` | `net.sixik.ga_utils.javatogpu.runtime.selection.GpuBackendCompilerFeedbackScoreContributor` | Compiler-feedback backend scoring. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuLauncherNaming` | `net.sixik.ga_utils.javatogpu.runtime.launch.GpuLauncherNamingSupport` | Generated-launcher naming rules. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileRequestFactory` | `net.sixik.ga_utils.javatogpu.runtime.launch.GpuRuntimeCompileRequestSupport` | Runtime compile-request construction. |
+
+Diagnostics compatibility facades:
+
+| Existing root import | Prefer for new code | Why |
+| --- | --- | --- |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilerFeedbackRegistry` | `net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuBackendCompilerFeedbackRegistry` | Backend compiler-feedback inspection. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuBackendSourcePromotionBlockerClassifier` | `net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuBackendSourcePromotionBlockerClassifier` | Backend-source promotion blocker classification. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuProductionPromotionExplainabilityFormatter` | `net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuProductionPromotionExplainabilityFormatter` | Production-promotion explainability formatting. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuPromotionArtifactRegistry` | `net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuPromotionArtifactRegistry` | Promotion artifact filename registry. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileArtifactDumper` | `net.sixik.ga_utils.javatogpu.runtime.diagnostics.GpuRuntimeCompileArtifactDumper` | Runtime compile artifact dumping. |
+
+Optimization compatibility facades:
+
+| Existing root import | Prefer for new code | Why |
+| --- | --- | --- |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrPeepholePass` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholePass` | Built-in typed-IR peephole optimization pass. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrPeepholeRuleRegistry` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeRuleRegistry` | Typed-IR peephole rule discovery and analysis. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrPeepholeTypedRewriteVisitor` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrPeepholeTypedRewriteVisitor` | Typed peephole rewrite visitor preflight. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeIrTypedNodeGraph` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeIrTypedNodeGraphSupport` | Typed-node graph helper used by peephole optimization. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCommonSubexpressionReviewPass` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeCommonSubexpressionReviewPass` | Review-only common-subexpression optimizer-family lane. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeRegisterPressureAnalysisPass` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeRegisterPressureAnalysisPass` | Built-in register-pressure analysis pass. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeRegisterPressureAnalyzer` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeRegisterPressureAnalyzer` | Advisory typed-IR register-pressure analysis. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeClampPeepholeRule` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeClampPeepholeRule` | Built-in clamp peephole rule. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeDotPeepholeRule` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeDotPeepholeRule` | Built-in dot peephole rule. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMadFmaPeepholeRule` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeMadFmaPeepholeRule` | Built-in mad/fma peephole rule. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMixPeepholeRule` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeMixPeepholeRule` | Built-in mix peephole rule. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeStepPeepholeRule` | `net.sixik.ga_utils.javatogpu.runtime.optimization.GpuRuntimeStepPeepholeRule` | Built-in step peephole rule. |
+
+Memory compatibility facades:
+
+| Existing root import | Prefer for new code | Why |
+| --- | --- | --- |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeNativeMemoryServiceRegistry` | `net.sixik.ga_utils.javatogpu.runtime.memory.GpuRuntimeNativeMemoryServiceRegistry` | Native host-memory service discovery. |
+
+Observability compatibility facades:
+
+| Existing root import | Prefer for new code | Why |
+| --- | --- | --- |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventBus` | `net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLifecycleEventBus` | Runtime lifecycle event dispatch. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleFields` | `net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLifecycleFields` | Runtime lifecycle field vocabulary helpers. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleFileJournalListener` | `net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLifecycleFileJournalListener` | Built-in file-backed lifecycle journal service. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleLoggingService` | `net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLifecycleLoggingService` | Built-in lifecycle-to-log bridge. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLogBus` | `net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeLogBus` | Runtime log dispatch. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeSystemStreamLogService` | `net.sixik.ga_utils.javatogpu.runtime.observability.GpuRuntimeSystemStreamLogService` | Built-in system stream log sink. |
+
+Variant compatibility facades:
+
+| Existing root import | Prefer for new code | Why |
+| --- | --- | --- |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantRegistry` | `net.sixik.ga_utils.javatogpu.runtime.variants.GpuRuntimeMethodVariantRegistry` | Runtime method-variant discovery. |
+| `net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeMethodVariantSelector` | `net.sixik.ga_utils.javatogpu.runtime.variants.GpuRuntimeMethodVariantSelector` | Runtime method-variant selection. |
+
+Public value/report records such as optimizer reports, proof artifacts, register-pressure reports, compiler-feedback reports, and runtime exceptions intentionally remain root runtime contracts for now. Moving implementation helpers is safer than moving value shapes used in generated artifacts, tests, and extension APIs.
+
+The root imports remain supported for compatibility. New advanced code should prefer the domain package unless it is deliberately preserving an old public import.
+
+Lower-level runtime calls remain available under `net.sixik.ga_utils.javatogpu.runtime` for advanced configuration, custom policies, direct descriptor invocation, generated launcher internals, and extension modules:
+
+- `GpuRuntime.use(policy)` for custom fallback policies.
+- `GpuRuntime.trySelect(policy)` for prechecking whether a custom GPU path is available.
+- `GpuRuntime.invoke(...)` for descriptor-based direct invocation.
+- `GpuExecutionConfig.oneDimensional(...)`, `twoDimensional(...)`, and `threeDimensional(...)` when code already works directly with runtime types.
 - `GpuRuntimeCompileOptions.withDeviceSelfTestMode(...)` for `AUTO`, `DISABLED`, or strict `REQUIRED` startup correctness evidence.
 - `GpuRuntimeCompileOptions.openClIrGpuSourceReview(...)` for opt-in reconstructed-`IrGpu` source smoke/review runs without changing the production default source path.
 - `GpuProductionPromotionOperatorAcceptance` for identity-bound operator approval of a reviewed production source-switching context. The binding includes backend, device vendor/label, driver, optimization profile, kernel resource, and production decision mode.
@@ -227,7 +410,7 @@ Common calls:
 Runtime failures share the public `GpuRuntimeException` base type. Catch a specific subtype when recovery depends on the phase, or catch the base type for a general CPU/backend fallback:
 
 ```java
-try (GpuRuntimeScope ignored = GpuRuntime.useOpenClSharedCache()) {
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
     DemoKernel.transform(input, output);
 } catch (GpuRuntimeDeviceSelectionException exception) {
     CpuFallback.transform(input, output);

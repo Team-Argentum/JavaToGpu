@@ -61,6 +61,39 @@ class GpuProductionActivationTokenTest {
     }
 
     @Test
+    void loadsPortableActivationGateArtifactWithoutLegacyFieldNames() throws Exception {
+        String artifactWithMirrors = GpuBackendSourcePromotionActivationGate.from(
+                GpuBackendSourcePromotionActivationGateTest.properties(GpuBackendSourcePromotionManifestTest.candidateText()),
+                GpuBackendSourcePromotionActivationGateTest.properties(
+                        GpuBackendSourcePromotionActivationGateTest.manifestValidationText()
+                ),
+                GpuBackendSourcePromotionActivationGateTest.properties(
+                        GpuBackendSourcePromotionActivationGateTest.controlledSourceSwitchingText(
+                                "kernel-a.cl",
+                                "kernel-b.cl"
+                        )
+                )
+        ).toPropertiesText();
+        String artifact = portableActivationGateOnly(artifactWithMirrors);
+        byte[] bytes = artifact.getBytes(StandardCharsets.UTF_8);
+        Path path = Files.createTempFile("javatogpu-production-activation-portable", ".properties");
+        Files.write(path, bytes);
+
+        GpuProductionActivationToken token = GpuProductionActivationToken.fromArtifact(
+                path,
+                GpuProductionActivationToken.sha256(bytes)
+        );
+
+        assertEquals("approval:test", token.approvalId());
+        assertEquals("ac3ba1f681666fc215f4113e5e2a4c66ef63999f", token.candidateGitSha());
+        assertEquals(GpuBackendTarget.OPENCL, token.backendTarget());
+        assertEquals("NVIDIA Corporation", token.deviceVendor());
+        assertEquals("NVIDIA CUDA / NVIDIA GeForce RTX 5070", token.deviceLabel());
+        assertEquals("595.97", token.driverVersion());
+        assertEquals(List.of("kernel-a.cl", "kernel-b.cl"), token.kernelResources());
+    }
+
+    @Test
     void blocksDifferentDeviceAndUnapprovedKernel() {
         GpuRuntimeDeviceProfile approvedDevice = deviceProfile();
         GpuProductionActivationToken token = GpuProductionActivationTokenTestFixtures.token(
@@ -116,5 +149,16 @@ class GpuProductionActivationTokenTest {
 
     private static GpuKernelDescriptor descriptor(String resource) {
         return new GpuKernelDescriptor("gpu_kernel", resource, "", List.of());
+    }
+
+    private static String portableActivationGateOnly(String artifact) {
+        StringBuilder builder = new StringBuilder("formatVersion=1\n");
+        for (String line : artifact.split("\\R")) {
+            if (line.startsWith("runtime.production.activationGate.")
+                    || line.contains(".runtime.production.activationGate.")) {
+                builder.append(line).append('\n');
+            }
+        }
+        return builder.toString();
     }
 }

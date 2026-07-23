@@ -60,12 +60,18 @@ public record GpuRuntimeLifecycleEvent(
         artifactFields.put(safePrefix + ".message", message);
         artifactFields.put(safePrefix + ".field.count", Integer.toString(fields.size()));
         int index = 0;
+        int runtimeFieldCount = 0;
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             String entryPrefix = safePrefix + ".field." + index;
             artifactFields.put(entryPrefix + ".key", entry.getKey());
             artifactFields.put(entryPrefix + ".value", entry.getValue());
+            if (entry.getKey().startsWith("runtime.")) {
+                artifactFields.put(safePrefix + "." + entry.getKey(), entry.getValue());
+                runtimeFieldCount++;
+            }
             index++;
         }
+        artifactFields.put(safePrefix + ".runtimeField.count", Integer.toString(runtimeFieldCount));
         return Collections.unmodifiableMap(artifactFields);
     }
 

@@ -3,6 +3,7 @@ package net.sixik.ga_utils.javatogpu.runtime;
 import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,6 +30,43 @@ class GpuBackendSourcePromotionActivationGateTest {
         assertTrue(gate.toPropertiesText().contains("defaultRuntimeActivation=false"));
         assertTrue(gate.toPropertiesText().contains("defaultProductionSourceSwitching=disabled"));
         assertTrue(gate.toPropertiesText().contains("productionMutation=disabled"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.status=controlled-activation-ready"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.ready=true"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.scope=controlled-opt-in-only"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.backendTarget=OPENCL"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.defaultRuntimeActivation=false"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.defaultProductionSourceSwitching=disabled"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.productionMutation=disabled"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.controlledCoverage.all=true"));
+        assertTrue(gate.toPropertiesText().contains("runtime.production.activationGate.operatorAcceptance.accepted.all=true"));
+        assertTrue(gate.toPropertiesText().contains("kernel.0.runtime.production.activationGate.resource=kernel-a.cl"));
+        assertTrue(gate.toPropertiesText().contains("kernel.0.runtime.production.activationGate.ready=true"));
+    }
+
+    @Test
+    void acceptsPortableOnlyCandidateAndManifestValidationArtifacts() throws Exception {
+        String candidate = GpuBackendSourcePromotionManifestTest.portableOnlyCandidateText();
+        byte[] candidateBytes = candidate.getBytes(StandardCharsets.UTF_8);
+        GpuBackendSourcePromotionManifest.Validation validation = GpuBackendSourcePromotionManifest.validate(
+                properties(candidate),
+                candidateBytes,
+                properties(GpuBackendSourcePromotionManifestTest.approvedManifest(candidateBytes)),
+                GpuBackendSourcePromotionManifestTest.GIT_SHA
+        );
+        String portableValidation = GpuBackendSourcePromotionManifestTest.portableOnly(
+                validation.toPropertiesText(),
+                GpuBackendSourcePromotionManifest.PORTABLE_PREFIX
+        );
+
+        GpuBackendSourcePromotionActivationGate gate = GpuBackendSourcePromotionActivationGate.from(
+                properties(candidate),
+                properties(portableValidation),
+                properties(controlledSourceSwitchingText("kernel-a.cl", "kernel-b.cl"))
+        );
+
+        assertTrue(gate.activationReady());
+        assertEquals("controlled-activation-ready", gate.status());
+        assertTrue(gate.blockers().isEmpty());
     }
 
     @Test
