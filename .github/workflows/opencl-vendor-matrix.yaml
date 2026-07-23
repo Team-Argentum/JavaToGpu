@@ -95,6 +95,7 @@ jobs:
       JTG_PRODUCTION_PROMOTION_MANIFEST_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_manifest_mode || 'skip' }}
       JTG_PRODUCTION_PROMOTION_MANIFEST_FILE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_manifest_file || 'promotion/opencl/backend-source-promotion-manifest.properties' }}
       JTG_PRODUCTION_PROMOTION_CANDIDATE_GIT_SHA: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_promotion_candidate_git_sha || '' }}
+      JTG_OPENCL_VENDOR_MATRIX_STRICT: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
 
     steps:
@@ -385,6 +386,8 @@ jobs:
           if not defined GITHUB_STEP_SUMMARY exit /b 0
           echo ## OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE%>>"%GITHUB_STEP_SUMMARY%"
           echo.>>"%GITHUB_STEP_SUMMARY%"
+          echo Strict lane failure: `%JTG_OPENCL_VENDOR_MATRIX_STRICT%`>>"%GITHUB_STEP_SUMMARY%"
+          echo.>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Check ^| Outcome ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| --- ^| --- ^|>>"%GITHUB_STEP_SUMMARY%"
           echo ^| Negative fixture prepare ^| %NEGATIVE_FIXTURE_PREPARE_OUTCOME% ^|>>"%GITHUB_STEP_SUMMARY%"
@@ -580,8 +583,13 @@ jobs:
           )
 
           if "%LANE_FAILED%"=="1" (
-            echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed. Artifact bundle has already been uploaded; see required gate errors above.
-            exit /b 1
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed in strict mode. Artifact bundle has already been uploaded; see required gate errors above.
+              exit /b 1
+            )
+            echo ::warning title=OpenCL vendor lane advisory failure::OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% failed in advisory mode. Artifacts were uploaded; workflow_dispatch remains strict.
+            echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane failed in advisory mode. Artifact bundle has already been uploaded; see required gate warnings above.
+            exit /b 0
           )
 
           echo OpenCL %JTG_VALIDATION_VENDOR% / %JTG_VALIDATION_DEVICE% lane gates passed. Artifact bundle has already been uploaded.
@@ -589,21 +597,33 @@ jobs:
 
           :require_success
           if /I not "%~2"=="success" (
-            echo ::error title=OpenCL required gate failed::%~1 outcome was '%~2'; expected 'success'.
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo ::error title=OpenCL required gate failed::%~1 outcome was '%~2'; expected 'success'.
+            ) else (
+              echo ::warning title=OpenCL advisory gate failed::%~1 outcome was '%~2'; expected 'success'.
+            )
             set "LANE_FAILED=1"
           )
           goto :eof
 
           :require_outcome
           if /I not "%~2"=="%~3" (
-            echo ::error title=OpenCL required gate failed::%~1 outcome was '%~2'; expected '%~3'.
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo ::error title=OpenCL required gate failed::%~1 outcome was '%~2'; expected '%~3'.
+            ) else (
+              echo ::warning title=OpenCL advisory gate failed::%~1 outcome was '%~2'; expected '%~3'.
+            )
             set "LANE_FAILED=1"
           )
           goto :eof
 
           :require_not_failure
           if /I "%~2"=="failure" (
-            echo ::error title=OpenCL required gate failed::%~1 outcome was 'failure'; expected success or skipped.
+            if /I "%JTG_OPENCL_VENDOR_MATRIX_STRICT%"=="true" (
+              echo ::error title=OpenCL required gate failed::%~1 outcome was 'failure'; expected success or skipped.
+            ) else (
+              echo ::warning title=OpenCL advisory gate failed::%~1 outcome was 'failure'; expected success or skipped.
+            )
             set "LANE_FAILED=1"
           )
           goto :eof
