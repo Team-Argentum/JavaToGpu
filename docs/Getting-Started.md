@@ -7,9 +7,13 @@ This guide gets you from an ordinary Java method to a GPU-backed OpenCL call. If
 Add JavaToGpu as both a dependency and an annotation processor:
 
 ```groovy
+repositories {
+    mavenCentral()
+}
+
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
 }
 ```
 
@@ -102,7 +106,7 @@ The optional IR validation module gives stricter compiler diagnostics and CI-fri
 
 ```groovy
 dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.2'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.3'
 }
 
 tasks.withType(JavaCompile).configureEach {

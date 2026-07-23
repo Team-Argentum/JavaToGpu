@@ -9,9 +9,13 @@ Use this page when you want to answer one question: "Can I write a Java GPU kern
 Add JavaToGpu as both a dependency and an annotation processor:
 
 ```groovy
+repositories {
+    mavenCentral()
+}
+
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.2'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.3'
 }
 ```
 
