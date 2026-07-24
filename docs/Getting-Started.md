@@ -12,10 +12,30 @@ repositories {
 }
 
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
 }
 ```
+
+Add the bytecode rewrite task so direct calls to `@GPU` methods are replaced with generated JavaToGpu launcher calls
+after compilation:
+
+```groovy
+tasks.register('rewriteGpuMethods', JavaExec) {
+    dependsOn tasks.named('compileJava')
+    dependsOn tasks.named('processResources')
+    classpath = files(layout.buildDirectory.dir('classes/java/main')) + configurations.annotationProcessor + configurations.compileClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuMethodBodyRewriter'
+    args layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
+}
+
+tasks.named('classes') {
+    dependsOn tasks.named('rewriteGpuMethods')
+}
+```
+
+The annotation processor produces GPU metadata and launcher resources; `rewriteGpuMethods` patches compiled class files
+so a normal call such as `DemoKernel.transform(input, output)` enters the runtime path.
 
 You need a JDK compatible with the project and a working OpenCL runtime for GPU execution. Many compiler tests can run without a GPU, but real kernel execution needs OpenCL drivers and hardware.
 
@@ -106,7 +126,7 @@ The optional IR validation module gives stricter compiler diagnostics and CI-fri
 
 ```groovy
 dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.4'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.5'
 }
 
 tasks.withType(JavaCompile).configureEach {

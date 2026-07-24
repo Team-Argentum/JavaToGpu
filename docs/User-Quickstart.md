@@ -14,10 +14,29 @@ repositories {
 }
 
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
 }
 ```
+
+Then add the bytecode rewrite task. This is the step that makes ordinary calls to `@GPU` methods route through the
+generated JavaToGpu launcher:
+
+```groovy
+tasks.register('rewriteGpuMethods', JavaExec) {
+    dependsOn tasks.named('compileJava')
+    dependsOn tasks.named('processResources')
+    classpath = files(layout.buildDirectory.dir('classes/java/main')) + configurations.annotationProcessor + configurations.compileClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuMethodBodyRewriter'
+    args layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
+}
+
+tasks.named('classes') {
+    dependsOn tasks.named('rewriteGpuMethods')
+}
+```
+
+Without this task the annotation processor still runs, but compiled application classes are not rewritten automatically.
 
 You also need a working OpenCL runtime and driver for real GPU execution.
 

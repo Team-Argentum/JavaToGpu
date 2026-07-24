@@ -33,16 +33,36 @@ repositories {
 }
 
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
 }
 ```
+
+To let JavaToGpu replace direct calls to `@GPU` methods with generated runtime launchers, add the bytecode rewrite task
+to the same `build.gradle`:
+
+```groovy
+tasks.register('rewriteGpuMethods', JavaExec) {
+    dependsOn tasks.named('compileJava')
+    dependsOn tasks.named('processResources')
+    classpath = files(layout.buildDirectory.dir('classes/java/main')) + configurations.annotationProcessor + configurations.compileClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuMethodBodyRewriter'
+    args layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
+}
+
+tasks.named('classes') {
+    dependsOn tasks.named('rewriteGpuMethods')
+}
+```
+
+The annotation processor generates GPU metadata and launcher resources. `rewriteGpuMethods` runs after `compileJava` and
+updates compiled class files so normal calls such as `DemoKernel.transform(input, output)` go through JavaToGpu.
 
 Optional stricter IR validation:
 
 ```groovy
 dependencies {
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.4'
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.5'
 }
 
 tasks.withType(JavaCompile).configureEach {

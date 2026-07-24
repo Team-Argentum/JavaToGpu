@@ -12,7 +12,7 @@ All published artifacts share the same release version:
 
 ```text
 groupId: io.github.deussixik
-version: 0.1.0-alpha.4
+version: 0.1.0-alpha.5
 ```
 
 Published modules:
@@ -87,13 +87,13 @@ The root build exposes convenience tasks for the full artifact set:
 .\gradlew.bat validateJavaToGpuMavenCentralReleaseReadiness --console=plain
 .\gradlew.bat publishJavaToGpuToLocalStaging --console=plain
 .\gradlew.bat publishJavaToGpuSnapshotsToCentral -Pjavatogpu.version=0.1.0-SNAPSHOT --console=plain
-.\gradlew.bat publishJavaToGpuReleasesToCentral -Pjavatogpu.version=0.1.0-alpha.4 --console=plain
+.\gradlew.bat publishJavaToGpuReleasesToCentral -Pjavatogpu.version=0.1.0-alpha.5 --console=plain
 ```
 
 PowerShell users can quote the Gradle property if the shell splits `-P` incorrectly:
 
 ```powershell
-.\gradlew.bat "publishJavaToGpuReleasesToCentral" "-Pjavatogpu.version=0.1.0-alpha.4" --console=plain
+.\gradlew.bat "publishJavaToGpuReleasesToCentral" "-Pjavatogpu.version=0.1.0-alpha.5" --console=plain
 ```
 
 ## Per-Module Commands
@@ -166,7 +166,7 @@ ir-vendor-optimizer/build/publications/mavenJava/pom-default.xml
 6. Publish the release:
 
 ```powershell
-.\gradlew.bat publishJavaToGpuReleasesToCentral -Pjavatogpu.version=0.1.0-alpha.4 --console=plain
+.\gradlew.bat publishJavaToGpuReleasesToCentral -Pjavatogpu.version=0.1.0-alpha.5 --console=plain
 ```
 
 After upload, complete the release from the Maven Central / Sonatype portal if the deployment lands in a staging flow that requires manual close/release. Release all JavaToGpu artifacts with the same version.
@@ -179,14 +179,14 @@ repositories {
 }
 
 dependencies {
-    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
-    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.4'
+    implementation 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
+    annotationProcessor 'io.github.deussixik:javatogpu:0.1.0-alpha.5'
 
-    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.4' // optional strict IR checks
+    annotationProcessor 'io.github.deussixik:javatogpu-ir-validation:0.1.0-alpha.5' // optional strict IR checks
 
     // Optional optimizer proposal providers.
-    implementation 'io.github.deussixik:javatogpu-ir-optimizer:0.1.0-alpha.4'
-    implementation 'io.github.deussixik:javatogpu-ir-vendor-optimizer:0.1.0-alpha.4'
+    implementation 'io.github.deussixik:javatogpu-ir-optimizer:0.1.0-alpha.5'
+    implementation 'io.github.deussixik:javatogpu-ir-vendor-optimizer:0.1.0-alpha.5'
 
     runtimeOnly 'org.lwjgl:lwjgl::natives-windows'
 }

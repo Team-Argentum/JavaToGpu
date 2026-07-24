@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'io.github.deussixik'
-version = findProperty('javatogpu.version') ?: '0.1.0-alpha.4'
+version = findProperty('javatogpu.version') ?: '0.1.0-alpha.5'
 
 ext.javatogpuPublishedArtifacts = [
         ':processor'           : 'javatogpu',

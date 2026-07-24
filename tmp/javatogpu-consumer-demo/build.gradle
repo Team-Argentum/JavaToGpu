@@ -7,7 +7,7 @@ import java.util.Locale
 group = 'demo'
 version = '1.0-SNAPSHOT'
 
-def javaToGpuVersion = '0.1.0-alpha.4'
+def javaToGpuVersion = '0.1.0-alpha.5'
 def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
 def lwjglNatives = osName.contains('win')
         ? 'natives-windows'
@@ -32,4 +32,16 @@ dependencies {
 
 application {
     mainClass = 'demo.Main'
+}
+
+tasks.register('rewriteGpuMethods', JavaExec) {
+    dependsOn tasks.named('compileJava')
+    dependsOn tasks.named('processResources')
+    classpath = files(layout.buildDirectory.dir('classes/java/main')) + configurations.annotationProcessor + configurations.compileClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.GpuMethodBodyRewriter'
+    args layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath
+}
+
+tasks.named('classes') {
+    dependsOn tasks.named('rewriteGpuMethods')
 }
