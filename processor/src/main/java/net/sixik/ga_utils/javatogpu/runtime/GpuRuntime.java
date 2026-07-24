@@ -2,6 +2,7 @@ package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
+import net.sixik.ga_utils.javatogpu.api.observability.GpuPreparedInvocationTimings;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend;
 
 import java.util.ArrayList;
@@ -725,6 +726,36 @@ public final class GpuRuntime {
         @Override
         public void invokeWithConfig(GpuExecutionConfig executionConfig, Object... arguments) {
             delegate.invokeWithConfig(executionConfig, arguments);
+        }
+
+        @Override
+        public List<String> dynamicArgumentNames() {
+            return delegate.dynamicArgumentNames();
+        }
+
+        @Override
+        public List<String> staticArgumentNames() {
+            return delegate.staticArgumentNames();
+        }
+
+        @Override
+        public GpuPreparedInvocationTimings lastInvocationTimings() {
+            return delegate.lastInvocationTimings();
+        }
+
+        @Override
+        public GpuPreparedLauncher withStaticArguments(int... argumentIndexes) {
+            return new ScopedPreparedLauncher(delegate.withStaticArguments(argumentIndexes), scope);
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostUploadArguments(int... argumentIndexes) {
+            return new ScopedPreparedLauncher(delegate.withoutHostUploadArguments(argumentIndexes), scope);
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostReadbackArguments(int... argumentIndexes) {
+            return new ScopedPreparedLauncher(delegate.withoutHostReadbackArguments(argumentIndexes), scope);
         }
 
         @Override

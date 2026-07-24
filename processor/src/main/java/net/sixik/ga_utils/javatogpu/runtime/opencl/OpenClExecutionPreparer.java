@@ -3,7 +3,9 @@ package net.sixik.ga_utils.javatogpu.runtime.opencl;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendKernelPreparer;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class OpenClExecutionPreparer implements GpuBackendKernelPreparer<
         OpenClCompiledKernel,
@@ -26,13 +28,14 @@ public final class OpenClExecutionPreparer implements GpuBackendKernelPreparer<
         List<OpenClPreparedBufferBinding> preparedBuffers = plan.bufferBindings().stream()
                 .map(binding -> new OpenClPreparedBufferBinding(binding, registry.acquire(binding)))
                 .toList();
-        java.util.Map<String, OpenClPreparedBufferBinding> preparedBufferByHandle = preparedBuffers.stream()
-                .collect(java.util.stream.Collectors.toMap(binding -> binding.handle().handleId(), binding -> binding));
+        Map<OpenClBufferBinding, OpenClPreparedBufferBinding> preparedBufferByBinding = new LinkedHashMap<>();
+        for (OpenClPreparedBufferBinding preparedBuffer : preparedBuffers) {
+            preparedBufferByBinding.put(preparedBuffer.binding(), preparedBuffer);
+        }
         List<OpenClPreparedArgumentBinding> preparedArguments = plan.argumentBindings().stream()
                 .map(binding -> {
                     if (binding.bufferBinding() != null) {
-                        String handleId = registry.acquire(binding.bufferBinding()).handleId();
-                        OpenClPreparedBufferBinding preparedBuffer = preparedBufferByHandle.get(handleId);
+                        OpenClPreparedBufferBinding preparedBuffer = preparedBufferByBinding.get(binding.bufferBinding());
                         return OpenClPreparedArgumentBinding.forBuffer(binding.parameterIndex(), preparedBuffer);
                     }
                     if (binding.localBinding() != null) {

@@ -61,8 +61,92 @@ try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
 ```
 
 Keep the runtime scope open while the prepared launcher is used. The current alpha prepared path reuses the selected
-descriptor and compiled kernel; it still rebuilds lightweight argument bindings per call so scalars and buffer objects
-can change safely.
+descriptor and compiled kernel. It also reuses the prepared OpenCL execution when the same Java array objects are passed
+again, so tight loops should prefer stable input/output buffers and mutate their contents instead of allocating new
+arrays for every call. If argument shape changes, the launcher falls back to a safe binding rebuild.
+
+### Static Payload Arguments
+
+If a hot loop has many payload arguments that do not change, freeze them after `prepare(...)`. The returned launcher
+accepts only the remaining dynamic arguments in the original method-parameter order.
+
+```java
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
+    GpuPreparedLauncher launcher = JavaToGpu.prepare(
+            NoiseKernel.class,
+            "evaluate",
+            coords,
+            opcodes,
+            arg0,
+            value0,
+            output,
+            scratch
+    ).withStaticArgumentNames("opcodes", "arg0", "value0");
+
+    for (int i = 0; i < batches; i++) {
+        // Only coords, output, and scratch are dynamic here.
+        launcher.invoke(coords, output, scratch);
+    }
+}
+```
+
+OpenCL currently accepts static `READ_ONLY` buffers plus immutable boxed scalar values and image/sampler handles. It
+rejects `READ_WRITE` buffers, outputs, and scratch buffers as static arguments because skipping upload/readback for those
+would be incorrect. Static `READ_ONLY` buffers are uploaded and bound once; later launches keep them out of repeated
+host-side transfer and argument-binding work.
+
+For dynamic buffers that are not true inputs, add explicit transfer hints:
+
+```java
+GpuPreparedLauncher launcher = JavaToGpu.prepare(
+        NoiseKernel.class,
+        "evaluate",
+        blockX,
+        blockY,
+        blockZ,
+        opcodes,
+        arg0,
+        value0,
+        output,
+        scratch
+).withStaticArgumentNames("opcodes", "arg0", "value0")
+        // output is fully produced by the kernel, so Java does not need to upload its old contents.
+        .withoutHostUploadArgumentNames("output")
+        // scratch is device-only temporary storage: no host upload and no host readback.
+        .withoutHostUploadArgumentNames("scratch")
+        .withoutHostReadbackArgumentNames("scratch");
+
+launcher.invoke(blockX, blockY, blockZ, output, scratch);
+```
+
+Only use these transfer hints when the contract is true. `withoutHostUploadArgumentNames(...)` means the kernel does not
+need the previous Java-side contents. `withoutHostReadbackArgumentNames(...)` means Java will not observe the updated
+contents after the launch.
+
+To profile a prepared hot loop, read the timing receipt after an invoke:
+
+Import `net.sixik.ga_utils.javatogpu.api.observability.GpuPreparedInvocationTimings` when you want to keep the receipt
+as a named local type.
+
+```java
+launcher.invoke(blockX, blockY, blockZ, output, scratch);
+
+GpuPreparedInvocationTimings timings = launcher.lastInvocationTimings();
+System.out.println("upload ns = " + timings.uploadNanos());
+System.out.println("upload bytes = " + timings.uploadBytes());
+System.out.println("skipped upload bytes = " + timings.skippedUploadBytes());
+System.out.println("readback ns = " + timings.readbackNanos());
+System.out.println("kernel wait ns = " + timings.enqueueWaitNanos());
+```
+
+The receipt is host-side diagnostic data for the last prepared invocation. It separates buffer allocate/reuse, dynamic
+upload, skipped upload, argument binding, kernel submit/wait/finish, and readback. Treat it as a bottleneck locator, not
+as a cross-machine benchmark contract.
+
+For debug dumps, call `launcher.dynamicArgumentNames()` and `launcher.staticArgumentNames()` after deriving the launcher.
+If a hot invoke passes the wrong number of dynamic arguments, the exception lists the expected dynamic names and the
+static names that were removed from the call. Native OpenCL buffers are owned by the runtime scope/backend and are
+released when that scope/backend is closed.
 
 ## Runtime Selection
 

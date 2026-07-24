@@ -35,6 +35,11 @@ configurations {
     benchmarkRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
+tasks.named('compileBenchmarkJava') {
+    dependsOn tasks.named('classes')
+    options.annotationProcessorPath = sourceSets.main.output + configurations.runtimeClasspath
+}
+
 def secretValue = { String gradlePropertyName, String environmentVariableName ->
     providers.gradleProperty(gradlePropertyName)
             .orElse(providers.environmentVariable(environmentVariableName))
@@ -1425,7 +1430,21 @@ tasks.register('benchmarkTest', Test) {
     useJUnitPlatform()
     testClassesDirs = sourceSets.benchmark.output.classesDirs
     classpath = sourceSets.benchmark.runtimeClasspath
+    systemProperty 'javatogpu.preparedLauncherBenchmark.points', providers.gradleProperty('javatogpu.preparedLauncherBenchmark.points').getOrElse('128,512,2048,8192,32768')
+    systemProperty 'javatogpu.preparedLauncherBenchmark.warmup', providers.gradleProperty('javatogpu.preparedLauncherBenchmark.warmup').getOrElse('32')
+    systemProperty 'javatogpu.preparedLauncherBenchmark.iterations', providers.gradleProperty('javatogpu.preparedLauncherBenchmark.iterations').getOrElse('256')
     attachBucketStatusRecording(it)
+}
+
+tasks.register('runPreparedLauncherBenchmark', JavaExec) {
+    group = 'verification'
+    description = 'Runs the real OpenCL prepared-launcher benchmark with configurable points, warmup, and iteration counts.'
+    dependsOn tasks.named('benchmarkClasses')
+    classpath = sourceSets.benchmark.runtimeClasspath
+    mainClass = 'net.sixik.ga_utils.javatogpu.runtime.opencl.JavaToGpuPreparedLauncherBenchmarkTest'
+    args '--points=' + providers.gradleProperty('javatogpu.preparedLauncherBenchmark.points').getOrElse('128,512,2048,8192,32768')
+    args '--warmup=' + providers.gradleProperty('javatogpu.preparedLauncherBenchmark.warmup').getOrElse('32')
+    args '--iterations=' + providers.gradleProperty('javatogpu.preparedLauncherBenchmark.iterations').getOrElse('256')
 }
 
 private static Properties loadPropertiesFile(File file) {

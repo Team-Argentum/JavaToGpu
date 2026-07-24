@@ -19,6 +19,7 @@ import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
+import net.sixik.ga_utils.javatogpu.api.observability.GpuPreparedInvocationTimings;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
@@ -870,6 +871,288 @@ class OpenClGpuRuntimeBackendTest {
         assertArrayEquals(new int[]{1}, first);
         assertArrayEquals(new int[]{2}, second);
         assertEquals(intOutputDescriptor().kernelName(), launcher.descriptor().kernelName());
+    }
+
+    @Test
+    void preparedOpenClLauncherReusesPreparedExecutionForStableArgumentIdentity() {
+        AtomicReference<OpenClPreparedExecution> firstExecution = new AtomicReference<>();
+        AtomicReference<OpenClPreparedExecution> secondExecution = new AtomicReference<>();
+        AtomicInteger executeCalls = new AtomicInteger();
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(
+                        compileRequest.descriptor(),
+                        "compiled:prepared-stable",
+                        GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact),
+                        null,
+                        null
+                );
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                if (executeCalls.incrementAndGet() == 1) {
+                    firstExecution.set(execution);
+                } else {
+                    secondExecution.set(execution);
+                }
+            }
+        };
+        int[] output = new int[]{0};
+
+        GpuPreparedLauncher launcher = backend.prepare(new GpuKernelInvocation(
+                intOutputDescriptor(),
+                new Object[]{output}
+        ));
+
+        launcher.invoke(output);
+        launcher.invoke(output);
+
+        assertEquals(2, executeCalls.get());
+        assertSame(firstExecution.get(), secondExecution.get());
+    }
+
+    @Test
+    void preparedOpenClLauncherCanSuppressOutputUploadAndScratchTransfers() {
+        int[] input = new int[]{1, 2, 3, 4};
+        int[] output = new int[]{0, 0, 0, 0};
+        int[] scratch = new int[]{0, 0, 0, 0};
+        AtomicInteger inputUploads = new AtomicInteger();
+        AtomicInteger outputUploads = new AtomicInteger();
+        AtomicInteger scratchUploads = new AtomicInteger();
+        AtomicInteger outputReadbacks = new AtomicInteger();
+        AtomicInteger scratchReadbacks = new AtomicInteger();
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "inline://test/transfer-policy.cl",
+                "__kernel void kernel(__global const int* input, __global int* output, __global int* scratch) { "
+                        + "int id = get_global_id(0); scratch[id] = input[id]; output[id] = scratch[id]; }",
+                List.of(
+                        new GpuKernelParameterDescriptor("input", "int[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE),
+                        new GpuKernelParameterDescriptor("scratch", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(
+                        compileRequest.descriptor(),
+                        "compiled:prepared-transfer-policy",
+                        GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact),
+                        null,
+                        null
+                );
+            }
+
+            @Override
+            protected Object createDeviceBuffer(OpenClBufferBinding binding) {
+                return new Object();
+            }
+
+            @Override
+            protected void uploadToDeviceBuffer(Object nativeBuffer, OpenClBufferBinding binding) {
+                if (binding.sourceArray() == input) {
+                    inputUploads.incrementAndGet();
+                } else if (binding.sourceArray() == output) {
+                    outputUploads.incrementAndGet();
+                } else if (binding.sourceArray() == scratch) {
+                    scratchUploads.incrementAndGet();
+                }
+            }
+
+            @Override
+            protected void bindBufferArgument(OpenClCompiledKernel compiledKernel, int parameterIndex, Object nativeBuffer) {
+                // no-op: this test uses mock handles rather than native OpenCL buffers.
+            }
+
+            @Override
+            protected void enqueueKernel(OpenClCompiledKernel compiledKernel, GpuExecutionConfig executionConfig) {
+                // no-op: this test verifies host-side transfer policy only.
+            }
+
+            @Override
+            protected void readBackFromDeviceBuffer(Object nativeBuffer, OpenClBufferBinding binding) {
+                if (binding.sourceArray() == output) {
+                    outputReadbacks.incrementAndGet();
+                } else if (binding.sourceArray() == scratch) {
+                    scratchReadbacks.incrementAndGet();
+                }
+            }
+        };
+
+        GpuPreparedLauncher launcher = backend.prepare(new GpuKernelInvocation(
+                descriptor,
+                new Object[]{input, output, scratch},
+                GpuExecutionConfig.oneDimensional(output.length)
+        )).withoutHostUploadArgumentNames("output", "scratch")
+                .withoutHostReadbackArgumentNames("scratch");
+
+        launcher.invoke(input, output, scratch);
+
+        assertEquals(1, inputUploads.get());
+        assertEquals(0, outputUploads.get());
+        assertEquals(0, scratchUploads.get());
+        assertEquals(1, outputReadbacks.get());
+        assertEquals(0, scratchReadbacks.get());
+
+        GpuPreparedInvocationTimings timings = launcher.lastInvocationTimings();
+        assertTrue(timings.totalNanos() > 0L);
+        assertEquals(3, timings.bufferAllocateCount());
+        assertEquals(4, timings.bufferReuseCount());
+        assertEquals(1, timings.uploadCount());
+        assertEquals(16L, timings.uploadBytes());
+        assertEquals(2, timings.skippedUploadCount());
+        assertEquals(32L, timings.skippedUploadBytes());
+        assertEquals(3, timings.bindCount());
+        assertEquals(1, timings.readbackCount());
+        assertEquals(16L, timings.readbackBytes());
+        assertEquals("16", timings.artifactFields("test.hot").get("test.hot.upload.bytes"));
+    }
+
+    @Test
+    void preparedOpenClLauncherKeepsStaticReadOnlyBuffersOutOfRepeatedHotWork() {
+        int[] constants = new int[]{3, 5, 7, 11};
+        int[] firstOutput = new int[]{0, 0, 0, 0};
+        int[] secondOutput = new int[]{0, 0, 0, 0};
+        AtomicInteger constantUploads = new AtomicInteger();
+        AtomicInteger outputUploads = new AtomicInteger();
+        AtomicInteger constantBinds = new AtomicInteger();
+        AtomicInteger outputBinds = new AtomicInteger();
+        GpuKernelDescriptor descriptor = new GpuKernelDescriptor(
+                "kernel",
+                "inline://test/static-payload.cl",
+                "__kernel void kernel(__global const int* constants, __global int* output) { output[get_global_id(0)] = constants[0]; }",
+                List.of(
+                        new GpuKernelParameterDescriptor("constants", "int[]", GpuKernelParameterAccess.READ_ONLY),
+                        new GpuKernelParameterDescriptor("output", "int[]", GpuKernelParameterAccess.READ_WRITE)
+                )
+        );
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(
+                        compileRequest.descriptor(),
+                        "compiled:static-payload",
+                        GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact),
+                        null,
+                        null
+                );
+            }
+
+            @Override
+            protected Object createDeviceBuffer(OpenClBufferBinding binding) {
+                return new Object();
+            }
+
+            @Override
+            protected void uploadToDeviceBuffer(Object nativeBuffer, OpenClBufferBinding binding) {
+                if (binding.sourceArray() == constants) {
+                    constantUploads.incrementAndGet();
+                } else if (binding.sourceArray() == firstOutput || binding.sourceArray() == secondOutput) {
+                    outputUploads.incrementAndGet();
+                }
+            }
+
+            @Override
+            protected void bindBufferArgument(OpenClCompiledKernel compiledKernel, int parameterIndex, Object nativeBuffer) {
+                if (parameterIndex == 0) {
+                    constantBinds.incrementAndGet();
+                } else if (parameterIndex == 1) {
+                    outputBinds.incrementAndGet();
+                }
+            }
+
+            @Override
+            protected void enqueueKernel(OpenClCompiledKernel compiledKernel, GpuExecutionConfig executionConfig) {
+                // no-op: this test verifies host-side static argument work, not native execution.
+            }
+
+            @Override
+            protected void readBackFromDeviceBuffer(Object nativeBuffer, OpenClBufferBinding binding) {
+                // no-op: this test verifies repeated uploads/binds.
+            }
+        };
+
+        GpuPreparedLauncher launcher = backend.prepare(new GpuKernelInvocation(
+                descriptor,
+                new Object[]{constants, firstOutput},
+                GpuExecutionConfig.oneDimensional(firstOutput.length)
+        )).withStaticArgumentNames("constants");
+
+        assertEquals(List.of("output"), launcher.dynamicArgumentNames());
+        assertEquals(List.of("constants"), launcher.staticArgumentNames());
+        IllegalArgumentException countException = assertThrows(IllegalArgumentException.class, launcher::invoke);
+        assertTrue(countException.getMessage().contains("dynamic argument(s) [output]"));
+        assertTrue(countException.getMessage().contains("static arguments are [constants]"));
+
+        launcher.invoke(firstOutput);
+        launcher.invoke(secondOutput);
+
+        assertEquals(1, constantUploads.get());
+        assertEquals(2, outputUploads.get());
+        assertEquals(1, constantBinds.get());
+        assertEquals(2, outputBinds.get());
+    }
+
+    @Test
+    void preparedOpenClLauncherRejectsStaticWritableBuffers() {
+        int[] output = new int[]{0};
+        GpuPreparedLauncher launcher = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(
+                        compileRequest.descriptor(),
+                        "compiled:reject-static-writable",
+                        GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact),
+                        null,
+                        null
+                );
+            }
+        }.prepare(new GpuKernelInvocation(
+                intOutputDescriptor(),
+                new Object[]{output},
+                GpuExecutionConfig.oneDimensional(output.length)
+        ));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> launcher.withStaticArguments(0)
+        );
+        assertTrue(exception.getMessage().contains("READ_ONLY"));
     }
 
     @Test

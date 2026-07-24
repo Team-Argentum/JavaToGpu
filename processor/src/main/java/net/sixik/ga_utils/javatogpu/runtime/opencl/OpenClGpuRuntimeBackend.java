@@ -21,6 +21,7 @@ import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
+import net.sixik.ga_utils.javatogpu.api.observability.GpuPreparedInvocationTimings;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilationResult;
@@ -53,6 +54,7 @@ import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEvent;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventBus;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeLifecycleEventKind;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeFeature;
+import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterAccess;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelParameterDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelDescriptor;
 import net.sixik.ga_utils.javatogpu.runtime.GpuKernelInvocation;
@@ -107,6 +109,7 @@ import java.util.Objects;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.lang.reflect.Method;
@@ -179,6 +182,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
     private final GpuRuntimeLifecycleEventBus lifecycleEventBus;
     private final GpuBackendHookRegistry backendHookRegistry;
     private final ThreadLocal<OpenClSessionSelectionRequest> sessionSelectionRequest = new ThreadLocal<>();
+    private final ThreadLocal<OpenClPreparedInvocationTimingBuilder> activePreparedInvocationTiming = new ThreadLocal<>();
+    private final ThreadLocal<GpuPreparedInvocationTimings> completedPreparedInvocationTiming = new ThreadLocal<>();
     private final Map<String, Object> nativeBuffers = new ConcurrentHashMap<>();
     private final AtomicLong invocationCount = new AtomicLong();
     private final AtomicLong compileCount = new AtomicLong();
@@ -977,31 +982,39 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                 selectedContext
         );
         dumpRuntimeCompileArtifacts(compiledKernel.artifactSnapshot());
-        validatePreparedLaunch(compiledKernel, plan, selectedInvocation.executionConfig(), selectedContext);
+        OpenClPreparedExecution initialExecution = validatePreparedLaunch(
+                compiledKernel,
+                plan,
+                selectedInvocation.executionConfig(),
+                selectedContext
+        );
         return new OpenClPreparedHotLauncher(
                 compiledKernel,
                 requestCompileOptions,
                 selectedInvocation.executionConfig(),
-                selectedContext
+                selectedContext,
+                selectedInvocation.arguments(),
+                initialExecution
         );
     }
 
-    private void validatePreparedLaunch(
+    private OpenClPreparedExecution validatePreparedLaunch(
             OpenClCompiledKernel compiledKernel,
             OpenClExecutionPlan plan,
             GpuExecutionConfig executionConfig,
             GpuRuntimeDiagnosticContext diagnosticContext
     ) {
         OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
-        if (executionConfig != null) {
-            execution = withExecutionConfig(execution, executionConfig);
-        }
-        GpuExecutionConfig resolvedExecutionConfig = resolveExecutionConfig(execution);
+        OpenClPreparedExecution configuredExecution = executionConfig == null
+                ? execution
+                : withExecutionConfig(execution, executionConfig);
+        GpuExecutionConfig resolvedExecutionConfig = resolveExecutionConfig(configuredExecution);
         OpenClKernelLaunchAdvisory launchAdvisory = OpenClKernelLaunchAdvisory.evaluate(
-                execution.compiledKernel(),
+                configuredExecution.compiledKernel(),
                 resolvedExecutionConfig
         );
-        validateKernelWorkGroupSize(execution, diagnosticContext, launchAdvisory);
+        validateKernelWorkGroupSize(configuredExecution, diagnosticContext, launchAdvisory);
+        return execution;
     }
 
     private OpenClPreparedExecution prepareHotExecution(
@@ -1019,19 +1032,19 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                 new GpuKernelInvocation(compiledKernel.descriptor(), safeArguments, executionConfig),
                 plan
         );
-        OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
-        return executionConfig == null ? execution : withExecutionConfig(execution, executionConfig);
+        return executionPreparer.prepare(compiledKernel, plan);
     }
 
-    private void invokePreparedHot(
-            OpenClCompiledKernel compiledKernel,
+    private GpuPreparedInvocationTimings invokePreparedHot(
+            OpenClPreparedExecution execution,
             GpuExecutionConfig executionConfig,
-            GpuRuntimeDiagnosticContext diagnosticContext,
-            Object[] arguments
+            GpuRuntimeDiagnosticContext diagnosticContext
     ) {
         invocationCount.incrementAndGet();
+        completedPreparedInvocationTiming.remove();
         try {
-            kernelInvoker().invoke(prepareHotExecution(compiledKernel, executionConfig, arguments), null);
+            kernelInvoker().invoke(execution, executionConfig);
+            return consumeCompletedPreparedInvocationTiming();
         } catch (RuntimeException exception) {
             if (exception instanceof GpuRuntimeException runtimeException) {
                 throw runtimeException;
@@ -1044,19 +1057,30 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
         }
     }
 
+    private GpuPreparedInvocationTimings consumeCompletedPreparedInvocationTiming() {
+        GpuPreparedInvocationTimings timings = completedPreparedInvocationTiming.get();
+        completedPreparedInvocationTiming.remove();
+        return timings == null ? GpuPreparedInvocationTimings.empty() : timings;
+    }
+
     private final class OpenClPreparedHotLauncher implements GpuPreparedLauncher {
 
         private final OpenClCompiledKernel compiledKernel;
         private final GpuRuntimeCompileOptions compileOptions;
         private final GpuExecutionConfig defaultExecutionConfig;
         private final GpuRuntimeDiagnosticContext diagnosticContext;
+        private Object[] cachedArguments;
+        private OpenClPreparedExecution cachedExecution;
+        private GpuPreparedInvocationTimings lastInvocationTimings = GpuPreparedInvocationTimings.empty();
         private boolean closed;
 
         private OpenClPreparedHotLauncher(
                 OpenClCompiledKernel compiledKernel,
                 GpuRuntimeCompileOptions compileOptions,
                 GpuExecutionConfig defaultExecutionConfig,
-                GpuRuntimeDiagnosticContext diagnosticContext
+                GpuRuntimeDiagnosticContext diagnosticContext,
+                Object[] initialArguments,
+                OpenClPreparedExecution initialExecution
         ) {
             this.compiledKernel = Objects.requireNonNull(compiledKernel, "compiledKernel");
             this.compileOptions = compileOptions == null
@@ -1066,6 +1090,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
             this.diagnosticContext = diagnosticContext == null
                     ? GpuRuntimeDiagnosticContext.fromSnapshot(compiledKernel.descriptor(), compiledKernel.artifactSnapshot())
                     : diagnosticContext;
+            this.cachedArguments = snapshotArguments(initialArguments);
+            this.cachedExecution = Objects.requireNonNull(initialExecution, "initialExecution");
         }
 
         @Override
@@ -1086,17 +1112,52 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
         @Override
         public void invoke(Object... arguments) {
             ensureOpen();
-            invokePreparedHot(compiledKernel, defaultExecutionConfig, diagnosticContext, arguments);
+            recordInvocationTimings(invokePreparedHot(
+                    resolveHotExecution(defaultExecutionConfig, arguments),
+                    defaultExecutionConfig,
+                    diagnosticContext
+            ));
         }
 
         @Override
         public void invokeWithConfig(GpuExecutionConfig executionConfig, Object... arguments) {
             ensureOpen();
-            invokePreparedHot(
-                    compiledKernel,
-                    Objects.requireNonNull(executionConfig, "executionConfig"),
-                    diagnosticContext,
-                    arguments
+            GpuExecutionConfig requestedConfig = Objects.requireNonNull(executionConfig, "executionConfig");
+            recordInvocationTimings(invokePreparedHot(
+                    resolveHotExecution(requestedConfig, arguments),
+                    requestedConfig,
+                    diagnosticContext
+            ));
+        }
+
+        @Override
+        public GpuPreparedInvocationTimings lastInvocationTimings() {
+            return lastInvocationTimings;
+        }
+
+        @Override
+        public GpuPreparedLauncher withStaticArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClStaticArgumentPreparedLauncher(this, argumentIndexes);
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostUploadArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClTransferPolicyPreparedLauncher(
+                    this,
+                    transferPolicyMask(this, argumentIndexes, true, false),
+                    emptyTransferPolicyMask(descriptor())
+            );
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostReadbackArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClTransferPolicyPreparedLauncher(
+                    this,
+                    emptyTransferPolicyMask(descriptor()),
+                    transferPolicyMask(this, argumentIndexes, false, true)
             );
         }
 
@@ -1110,6 +1171,753 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                 throw new IllegalStateException("OpenCL prepared launcher is already closed");
             }
         }
+
+        private OpenClPreparedExecution resolveHotExecution(GpuExecutionConfig executionConfig, Object[] arguments) {
+            Object[] safeArguments = arguments == null ? new Object[0] : arguments;
+            if (cachedExecution != null && reusablePreparedExecution(cachedArguments, safeArguments)) {
+                return cachedExecution;
+            }
+
+            OpenClPreparedExecution execution = prepareHotExecution(compiledKernel, executionConfig, safeArguments);
+            cachedArguments = snapshotArguments(safeArguments);
+            cachedExecution = execution;
+            return execution;
+        }
+
+        private void recordInvocationTimings(GpuPreparedInvocationTimings timings) {
+            lastInvocationTimings = timings == null ? GpuPreparedInvocationTimings.empty() : timings;
+        }
+    }
+
+    private final class OpenClTransferPolicyPreparedLauncher implements GpuPreparedLauncher {
+
+        private final OpenClPreparedHotLauncher parent;
+        private final boolean[] suppressUploadMask;
+        private final boolean[] suppressReadbackMask;
+        private boolean closed;
+
+        private OpenClTransferPolicyPreparedLauncher(
+                OpenClPreparedHotLauncher parent,
+                boolean[] suppressUploadMask,
+                boolean[] suppressReadbackMask
+        ) {
+            this.parent = Objects.requireNonNull(parent, "parent");
+            this.suppressUploadMask = normalizedTransferPolicyMask(parent.descriptor(), suppressUploadMask);
+            this.suppressReadbackMask = normalizedTransferPolicyMask(parent.descriptor(), suppressReadbackMask);
+        }
+
+        @Override
+        public GpuKernelDescriptor descriptor() {
+            return parent.descriptor();
+        }
+
+        @Override
+        public GpuRuntimeCompileOptions compileOptions() {
+            return parent.compileOptions();
+        }
+
+        @Override
+        public GpuExecutionConfig defaultExecutionConfig() {
+            return parent.defaultExecutionConfig();
+        }
+
+        @Override
+        public GpuPreparedInvocationTimings lastInvocationTimings() {
+            return parent.lastInvocationTimings();
+        }
+
+        @Override
+        public void invoke(Object... arguments) {
+            ensureOpen();
+            invokeWithPolicy(defaultExecutionConfig(), arguments);
+        }
+
+        @Override
+        public void invokeWithConfig(GpuExecutionConfig executionConfig, Object... arguments) {
+            ensureOpen();
+            invokeWithPolicy(Objects.requireNonNull(executionConfig, "executionConfig"), arguments);
+        }
+
+        @Override
+        public GpuPreparedLauncher withStaticArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClStaticArgumentPreparedLauncher(
+                    parent,
+                    argumentIndexes,
+                    suppressUploadMask,
+                    suppressReadbackMask
+            );
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostUploadArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClTransferPolicyPreparedLauncher(
+                    parent,
+                    mergeTransferPolicyMasks(
+                            suppressUploadMask,
+                            transferPolicyMask(parent, argumentIndexes, true, false)
+                    ),
+                    suppressReadbackMask
+            );
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostReadbackArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClTransferPolicyPreparedLauncher(
+                    parent,
+                    suppressUploadMask,
+                    mergeTransferPolicyMasks(
+                            suppressReadbackMask,
+                            transferPolicyMask(parent, argumentIndexes, false, true)
+                    )
+            );
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private void invokeWithPolicy(GpuExecutionConfig executionConfig, Object[] arguments) {
+            OpenClPreparedExecution execution = parent.resolveHotExecution(executionConfig, arguments);
+            parent.recordInvocationTimings(invokePreparedHot(
+                    withTransferPolicy(execution, suppressUploadMask, suppressReadbackMask),
+                    executionConfig,
+                    parent.diagnosticContext
+            ));
+        }
+
+        private void ensureOpen() {
+            if (closed) {
+                throw new IllegalStateException("OpenCL transfer-policy prepared launcher is already closed");
+            }
+            parent.ensureOpen();
+        }
+    }
+
+    private final class OpenClStaticArgumentPreparedLauncher implements GpuPreparedLauncher {
+
+        private final OpenClPreparedHotLauncher parent;
+        private final boolean[] staticArgumentMask;
+        private final boolean[] suppressUploadMask;
+        private final boolean[] suppressReadbackMask;
+        private final int[] dynamicArgumentIndexes;
+        private final Object[] fullArguments;
+        private OpenClPreparedExecution lastFullExecution;
+        private OpenClPreparedExecution lastStaticExecution;
+        private boolean closed;
+
+        private OpenClStaticArgumentPreparedLauncher(OpenClPreparedHotLauncher parent, int[] staticArgumentIndexes) {
+            this(parent, staticArgumentIndexes, emptyTransferPolicyMask(parent.descriptor()), emptyTransferPolicyMask(parent.descriptor()));
+        }
+
+        private OpenClStaticArgumentPreparedLauncher(
+                OpenClPreparedHotLauncher parent,
+                int[] staticArgumentIndexes,
+                boolean[] suppressUploadMask,
+                boolean[] suppressReadbackMask
+        ) {
+            this.parent = Objects.requireNonNull(parent, "parent");
+            this.staticArgumentMask = staticArgumentMask(parent, staticArgumentIndexes);
+            this.suppressUploadMask = validateTransferPolicyDoesNotTargetStatic(
+                    parent.descriptor(),
+                    normalizedTransferPolicyMask(parent.descriptor(), suppressUploadMask),
+                    this.staticArgumentMask,
+                    "host upload"
+            );
+            this.suppressReadbackMask = validateTransferPolicyDoesNotTargetStatic(
+                    parent.descriptor(),
+                    normalizedTransferPolicyMask(parent.descriptor(), suppressReadbackMask),
+                    this.staticArgumentMask,
+                    "host readback"
+            );
+            this.dynamicArgumentIndexes = dynamicArgumentIndexes(staticArgumentMask);
+            this.fullArguments = snapshotArguments(parent.cachedArguments);
+            primeStaticArguments(parent.cachedExecution, staticArgumentMask);
+            this.lastFullExecution = parent.cachedExecution;
+            this.lastStaticExecution = withTransferPolicy(
+                    withoutStaticArgumentWork(parent.cachedExecution, staticArgumentMask),
+                    this.suppressUploadMask,
+                    this.suppressReadbackMask
+            );
+        }
+
+        @Override
+        public GpuKernelDescriptor descriptor() {
+            return parent.descriptor();
+        }
+
+        @Override
+        public GpuRuntimeCompileOptions compileOptions() {
+            return parent.compileOptions();
+        }
+
+        @Override
+        public GpuExecutionConfig defaultExecutionConfig() {
+            return parent.defaultExecutionConfig();
+        }
+
+        @Override
+        public GpuPreparedInvocationTimings lastInvocationTimings() {
+            return parent.lastInvocationTimings();
+        }
+
+        @Override
+        public List<String> dynamicArgumentNames() {
+            return parameterNames(descriptor(), dynamicArgumentIndexes);
+        }
+
+        @Override
+        public List<String> staticArgumentNames() {
+            return parameterNames(descriptor(), staticArgumentIndexes(staticArgumentMask));
+        }
+
+        @Override
+        public void invoke(Object... arguments) {
+            ensureOpen();
+            invokeStatic(defaultExecutionConfig(), arguments);
+        }
+
+        @Override
+        public void invokeWithConfig(GpuExecutionConfig executionConfig, Object... arguments) {
+            ensureOpen();
+            invokeStatic(Objects.requireNonNull(executionConfig, "executionConfig"), arguments);
+        }
+
+        @Override
+        public GpuPreparedLauncher withStaticArguments(int... argumentIndexes) {
+            ensureOpen();
+            boolean[] merged = staticArgumentMask.clone();
+            for (int argumentIndex : Objects.requireNonNull(argumentIndexes, "argumentIndexes")) {
+                if (argumentIndex < 0 || argumentIndex >= merged.length) {
+                    throw new IllegalArgumentException("Static argument index out of range: " + argumentIndex);
+                }
+                if (!merged[argumentIndex]) {
+                    validateStaticArgument(parent, argumentIndex);
+                    merged[argumentIndex] = true;
+                }
+            }
+            return new OpenClStaticArgumentPreparedLauncher(
+                    parent,
+                    staticArgumentIndexes(merged),
+                    suppressUploadMask,
+                    suppressReadbackMask
+            );
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostUploadArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClStaticArgumentPreparedLauncher(
+                    parent,
+                    staticArgumentIndexes(staticArgumentMask),
+                    mergeTransferPolicyMasks(
+                            suppressUploadMask,
+                            transferPolicyMask(parent, argumentIndexes, true, false)
+                    ),
+                    suppressReadbackMask
+            );
+        }
+
+        @Override
+        public GpuPreparedLauncher withoutHostReadbackArguments(int... argumentIndexes) {
+            ensureOpen();
+            return new OpenClStaticArgumentPreparedLauncher(
+                    parent,
+                    staticArgumentIndexes(staticArgumentMask),
+                    suppressUploadMask,
+                    mergeTransferPolicyMasks(
+                            suppressReadbackMask,
+                            transferPolicyMask(parent, argumentIndexes, false, true)
+                    )
+            );
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private void invokeStatic(GpuExecutionConfig executionConfig, Object[] dynamicArguments) {
+            Object[] safeDynamicArguments = dynamicArguments == null ? new Object[0] : dynamicArguments;
+            if (safeDynamicArguments.length != dynamicArgumentIndexes.length) {
+                throw new IllegalArgumentException(
+                        "Static prepared launcher expected "
+                                + dynamicArgumentIndexes.length
+                                + " dynamic argument(s) "
+                                + dynamicArgumentNames()
+                                + " but got "
+                                + safeDynamicArguments.length
+                                + " "
+                                + argumentValuesSummary(safeDynamicArguments)
+                                + "; static arguments are "
+                                + staticArgumentNames()
+                                + "; dynamic descriptor indexes are "
+                                + Arrays.toString(dynamicArgumentIndexes)
+                );
+            }
+            for (int index = 0; index < dynamicArgumentIndexes.length; index++) {
+                fullArguments[dynamicArgumentIndexes[index]] = safeDynamicArguments[index];
+            }
+
+            OpenClPreparedExecution fullExecution = parent.resolveHotExecution(executionConfig, fullArguments);
+            OpenClPreparedExecution staticExecution = staticExecutionFor(fullExecution);
+            parent.recordInvocationTimings(invokePreparedHot(staticExecution, executionConfig, parent.diagnosticContext));
+        }
+
+        private OpenClPreparedExecution staticExecutionFor(OpenClPreparedExecution fullExecution) {
+            if (fullExecution == lastFullExecution && lastStaticExecution != null) {
+                return lastStaticExecution;
+            }
+            lastFullExecution = fullExecution;
+            lastStaticExecution = withTransferPolicy(
+                    withoutStaticArgumentWork(fullExecution, staticArgumentMask),
+                    suppressUploadMask,
+                    suppressReadbackMask
+            );
+            return lastStaticExecution;
+        }
+
+        private void ensureOpen() {
+            if (closed) {
+                throw new IllegalStateException("OpenCL static prepared launcher is already closed");
+            }
+            parent.ensureOpen();
+        }
+    }
+
+    private void primeStaticArguments(OpenClPreparedExecution execution, boolean[] staticArgumentMask) {
+        for (OpenClPreparedArgumentBinding binding : execution.argumentBindings()) {
+            if (!staticArgumentMask[binding.parameterIndex()]) {
+                continue;
+            }
+            if (binding.bufferBinding() != null) {
+                Object nativeBuffer = resolveNativeBuffer(binding.bufferBinding());
+                if (binding.bufferBinding().binding().uploadRequired()) {
+                    uploadToDeviceBuffer(nativeBuffer, binding.bufferBinding().binding());
+                }
+                bindBufferArgument(execution.compiledKernel(), binding.parameterIndex(), nativeBuffer);
+                continue;
+            }
+            if (binding.localBinding() != null) {
+                bindLocalArgument(execution.compiledKernel(), binding.parameterIndex(), binding.localBinding());
+                continue;
+            }
+            bindScalarArgument(execution.compiledKernel(), binding.parameterIndex(), binding.scalarBinding());
+        }
+    }
+
+    private static OpenClPreparedExecution withoutStaticArgumentWork(
+            OpenClPreparedExecution execution,
+            boolean[] staticArgumentMask
+    ) {
+        Map<OpenClPreparedBufferBinding, OpenClPreparedBufferBinding> staticBufferReplacements = new IdentityHashMap<>();
+        for (OpenClPreparedArgumentBinding argumentBinding : execution.argumentBindings()) {
+            if (staticArgumentMask[argumentBinding.parameterIndex()] && argumentBinding.bufferBinding() != null) {
+                staticBufferReplacements.put(
+                        argumentBinding.bufferBinding(),
+                        withoutRepeatedTransfer(argumentBinding.bufferBinding())
+                );
+            }
+        }
+
+        List<OpenClPreparedBufferBinding> bufferBindings = execution.bufferBindings().stream()
+                .map(binding -> staticBufferReplacements.getOrDefault(binding, binding))
+                .toList();
+        List<OpenClPreparedArgumentBinding> argumentBindings = execution.argumentBindings().stream()
+                .filter(binding -> !staticArgumentMask[binding.parameterIndex()])
+                .map(binding -> {
+                    if (binding.bufferBinding() == null) {
+                        return binding;
+                    }
+                    OpenClPreparedBufferBinding replacement = staticBufferReplacements.get(binding.bufferBinding());
+                    return replacement == null
+                            ? binding
+                            : OpenClPreparedArgumentBinding.forBuffer(binding.parameterIndex(), replacement);
+                })
+                .toList();
+
+        return new OpenClPreparedExecution(
+                execution.compiledKernel(),
+                bufferBindings,
+                execution.localBindings(),
+                execution.scalarBindings(),
+                argumentBindings,
+                execution.explicitExecutionConfig()
+        );
+    }
+
+    private static OpenClPreparedExecution withTransferPolicy(
+            OpenClPreparedExecution execution,
+            boolean[] suppressUploadMask,
+            boolean[] suppressReadbackMask
+    ) {
+        Map<OpenClPreparedBufferBinding, OpenClPreparedBufferBinding> replacements = new IdentityHashMap<>();
+        for (OpenClPreparedArgumentBinding argumentBinding : execution.argumentBindings()) {
+            if (argumentBinding.bufferBinding() == null) {
+                continue;
+            }
+            int parameterIndex = argumentBinding.parameterIndex();
+            boolean suppressUpload = isMaskEnabled(suppressUploadMask, parameterIndex);
+            boolean suppressReadback = isMaskEnabled(suppressReadbackMask, parameterIndex);
+            if (suppressUpload || suppressReadback) {
+                replacements.put(
+                        argumentBinding.bufferBinding(),
+                        withTransferPolicy(argumentBinding.bufferBinding(), suppressUpload, suppressReadback)
+                );
+            }
+        }
+        if (replacements.isEmpty()) {
+            return execution;
+        }
+
+        List<OpenClPreparedBufferBinding> bufferBindings = execution.bufferBindings().stream()
+                .map(binding -> replacements.getOrDefault(binding, binding))
+                .toList();
+        List<OpenClPreparedArgumentBinding> argumentBindings = execution.argumentBindings().stream()
+                .map(binding -> {
+                    if (binding.bufferBinding() == null) {
+                        return binding;
+                    }
+                    OpenClPreparedBufferBinding replacement = replacements.get(binding.bufferBinding());
+                    return replacement == null
+                            ? binding
+                            : OpenClPreparedArgumentBinding.forBuffer(binding.parameterIndex(), replacement);
+                })
+                .toList();
+
+        return new OpenClPreparedExecution(
+                execution.compiledKernel(),
+                bufferBindings,
+                execution.localBindings(),
+                execution.scalarBindings(),
+                argumentBindings,
+                execution.explicitExecutionConfig()
+        );
+    }
+
+    private static OpenClPreparedBufferBinding withTransferPolicy(
+            OpenClPreparedBufferBinding binding,
+            boolean suppressUpload,
+            boolean suppressReadback
+    ) {
+        OpenClBufferBinding original = binding.binding();
+        return new OpenClPreparedBufferBinding(
+                new OpenClBufferBinding(
+                        original.kind(),
+                        original.access(),
+                        original.sourceArray(),
+                        original.length(),
+                        original.uploadRequired() && !suppressUpload,
+                        original.readbackRequired() && !suppressReadback
+                ),
+                binding.handle()
+        );
+    }
+
+    private static boolean isMaskEnabled(boolean[] mask, int index) {
+        return mask != null && index >= 0 && index < mask.length && mask[index];
+    }
+
+    private static OpenClPreparedBufferBinding withoutRepeatedTransfer(OpenClPreparedBufferBinding binding) {
+        OpenClBufferBinding original = binding.binding();
+        return new OpenClPreparedBufferBinding(
+                new OpenClBufferBinding(
+                        original.kind(),
+                        original.access(),
+                        original.sourceArray(),
+                        original.length(),
+                        false,
+                        false
+                ),
+                binding.handle()
+        );
+    }
+
+    private static boolean[] staticArgumentMask(OpenClPreparedHotLauncher launcher, int[] staticArgumentIndexes) {
+        Objects.requireNonNull(staticArgumentIndexes, "staticArgumentIndexes");
+        int parameterCount = launcher.descriptor().parameterDescriptors().size();
+        boolean[] mask = new boolean[parameterCount];
+        for (int argumentIndex : staticArgumentIndexes) {
+            if (argumentIndex < 0 || argumentIndex >= parameterCount) {
+                throw new IllegalArgumentException("Static argument index out of range: " + argumentIndex);
+            }
+            if (mask[argumentIndex]) {
+                throw new IllegalArgumentException("Duplicate static argument index: " + argumentIndex);
+            }
+            validateStaticArgument(launcher, argumentIndex);
+            mask[argumentIndex] = true;
+        }
+        return mask;
+    }
+
+    private static boolean[] transferPolicyMask(
+            OpenClPreparedHotLauncher launcher,
+            int[] argumentIndexes,
+            boolean suppressUpload,
+            boolean suppressReadback
+    ) {
+        Objects.requireNonNull(argumentIndexes, "argumentIndexes");
+        int parameterCount = launcher.descriptor().parameterDescriptors().size();
+        boolean[] mask = new boolean[parameterCount];
+        for (int argumentIndex : argumentIndexes) {
+            if (argumentIndex < 0 || argumentIndex >= parameterCount) {
+                throw new IllegalArgumentException("Transfer-policy argument index out of range: " + argumentIndex);
+            }
+            validateTransferPolicyArgument(launcher, argumentIndex, suppressUpload, suppressReadback);
+            mask[argumentIndex] = true;
+        }
+        return mask;
+    }
+
+    private static void validateTransferPolicyArgument(
+            OpenClPreparedHotLauncher launcher,
+            int argumentIndex,
+            boolean suppressUpload,
+            boolean suppressReadback
+    ) {
+        GpuKernelParameterDescriptor descriptor = launcher.descriptor().parameterDescriptors().get(argumentIndex);
+        Object argument = launcher.cachedArguments[argumentIndex];
+        if (!isBufferLikeArgument(argument)) {
+            throw new IllegalArgumentException(
+                    "Transfer policy argument '"
+                            + descriptor.name()
+                            + "' must be a global host buffer; actual type="
+                            + (argument == null ? "null" : argument.getClass().getName())
+            );
+        }
+        if (descriptor.access() != GpuKernelParameterAccess.READ_ONLY
+                && descriptor.access() != GpuKernelParameterAccess.READ_WRITE) {
+            throw new IllegalArgumentException(
+                    "Transfer policy argument '"
+                            + descriptor.name()
+                            + "' must be READ_ONLY or READ_WRITE; actual access="
+                            + descriptor.access()
+            );
+        }
+        if (suppressReadback && descriptor.access() != GpuKernelParameterAccess.READ_WRITE) {
+            throw new IllegalArgumentException(
+                    "Host readback suppression argument '"
+                            + descriptor.name()
+                            + "' must be READ_WRITE because READ_ONLY buffers have no readback"
+            );
+        }
+        if (!suppressUpload && !suppressReadback) {
+            throw new IllegalArgumentException("Transfer policy must suppress upload and/or readback");
+        }
+    }
+
+    private static boolean[] emptyTransferPolicyMask(GpuKernelDescriptor descriptor) {
+        return new boolean[descriptor.parameterDescriptors().size()];
+    }
+
+    private static boolean[] normalizedTransferPolicyMask(GpuKernelDescriptor descriptor, boolean[] mask) {
+        int parameterCount = descriptor.parameterDescriptors().size();
+        if (mask == null) {
+            return new boolean[parameterCount];
+        }
+        if (mask.length != parameterCount) {
+            throw new IllegalArgumentException(
+                    "Transfer policy mask length " + mask.length + " does not match descriptor parameter count " + parameterCount
+            );
+        }
+        return mask.clone();
+    }
+
+    private static boolean[] mergeTransferPolicyMasks(boolean[] first, boolean[] second) {
+        if (first == null || first.length == 0) {
+            return second == null ? new boolean[0] : second.clone();
+        }
+        if (second == null || second.length == 0) {
+            return first.clone();
+        }
+        if (first.length != second.length) {
+            throw new IllegalArgumentException("Transfer policy masks have different lengths");
+        }
+        boolean[] merged = first.clone();
+        for (int index = 0; index < second.length; index++) {
+            merged[index] = merged[index] || second[index];
+        }
+        return merged;
+    }
+
+    private static boolean[] validateTransferPolicyDoesNotTargetStatic(
+            GpuKernelDescriptor descriptor,
+            boolean[] transferMask,
+            boolean[] staticMask,
+            String policyName
+    ) {
+        List<GpuKernelParameterDescriptor> parameters = descriptor.parameterDescriptors();
+        for (int index = 0; index < transferMask.length; index++) {
+            if (transferMask[index] && staticMask[index]) {
+                throw new IllegalArgumentException(
+                        "Cannot suppress "
+                                + policyName
+                                + " for static argument '"
+                                + parameters.get(index).name()
+                                + "'; static arguments already manage their own one-time transfer"
+                );
+            }
+        }
+        return transferMask;
+    }
+
+    private static void validateStaticArgument(OpenClPreparedHotLauncher launcher, int argumentIndex) {
+        Object argument = launcher.cachedArguments[argumentIndex];
+        GpuKernelParameterDescriptor descriptor = launcher.descriptor().parameterDescriptors().get(argumentIndex);
+        if (argument == null) {
+            throw new IllegalArgumentException("Static argument '" + descriptor.name() + "' must not be null");
+        }
+        if (isBufferLikeArgument(argument)) {
+            if (descriptor.access() != GpuKernelParameterAccess.READ_ONLY) {
+                throw new IllegalArgumentException(
+                        "Static buffer argument '"
+                                + descriptor.name()
+                                + "' must be READ_ONLY; actual access="
+                                + descriptor.access()
+                                + ". Keep outputs, scratch, and READ_WRITE buffers dynamic."
+                );
+            }
+            return;
+        }
+        if (isImmutableScalarArgument(argument) || isImageOrSamplerArgument(argument)) {
+            return;
+        }
+        throw new IllegalArgumentException(
+                "Static argument '"
+                        + descriptor.name()
+                        + "' has unsupported mutable type "
+                        + argument.getClass().getName()
+                        + "; only READ_ONLY buffers, immutable boxed scalars, and image/sampler handles can be static"
+        );
+    }
+
+    private static int[] dynamicArgumentIndexes(boolean[] staticArgumentMask) {
+        int count = 0;
+        for (boolean staticArgument : staticArgumentMask) {
+            if (!staticArgument) {
+                count++;
+            }
+        }
+        int[] indexes = new int[count];
+        int outputIndex = 0;
+        for (int index = 0; index < staticArgumentMask.length; index++) {
+            if (!staticArgumentMask[index]) {
+                indexes[outputIndex++] = index;
+            }
+        }
+        return indexes;
+    }
+
+    private static List<String> parameterNames(GpuKernelDescriptor descriptor, int[] indexes) {
+        List<GpuKernelParameterDescriptor> parameters = descriptor.parameterDescriptors();
+        List<String> names = new ArrayList<>(indexes.length);
+        for (int index : indexes) {
+            names.add(parameters.get(index).name());
+        }
+        return List.copyOf(names);
+    }
+
+    private static String argumentValuesSummary(Object[] arguments) {
+        List<String> descriptions = new ArrayList<>(arguments.length);
+        for (Object argument : arguments) {
+            descriptions.add(argumentValueSummary(argument));
+        }
+        return descriptions.toString();
+    }
+
+    private static String argumentValueSummary(Object argument) {
+        if (argument == null) {
+            return "null";
+        }
+        Class<?> type = argument.getClass();
+        if (type.isArray()) {
+            Class<?> componentType = type.getComponentType();
+            String componentName = componentType == null ? "array" : componentType.getSimpleName();
+            return componentName
+                    + "["
+                    + java.lang.reflect.Array.getLength(argument)
+                    + "]@"
+                    + Integer.toHexString(System.identityHashCode(argument));
+        }
+        return type.getSimpleName() + "(" + argument + ")";
+    }
+
+    private static int[] staticArgumentIndexes(boolean[] staticArgumentMask) {
+        int count = 0;
+        for (boolean staticArgument : staticArgumentMask) {
+            if (staticArgument) {
+                count++;
+            }
+        }
+        int[] indexes = new int[count];
+        int outputIndex = 0;
+        for (int index = 0; index < staticArgumentMask.length; index++) {
+            if (staticArgumentMask[index]) {
+                indexes[outputIndex++] = index;
+            }
+        }
+        return indexes;
+    }
+
+    private static Object[] snapshotArguments(Object[] arguments) {
+        return arguments == null ? new Object[0] : arguments.clone();
+    }
+
+    private static boolean reusablePreparedExecution(Object[] cachedArguments, Object[] currentArguments) {
+        if (cachedArguments == null || currentArguments == null || cachedArguments.length != currentArguments.length) {
+            return false;
+        }
+        for (int index = 0; index < cachedArguments.length; index++) {
+            if (!reusablePreparedArgument(cachedArguments[index], currentArguments[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean reusablePreparedArgument(Object cachedArgument, Object currentArgument) {
+        if (cachedArgument == null || currentArgument == null) {
+            return false;
+        }
+        if (isBufferLikeArgument(cachedArgument) || isBufferLikeArgument(currentArgument)) {
+            return cachedArgument == currentArgument
+                    && cachedArgument.getClass() == currentArgument.getClass()
+                    && java.lang.reflect.Array.getLength(cachedArgument) == java.lang.reflect.Array.getLength(currentArgument);
+        }
+        if (isImmutableScalarArgument(cachedArgument) && isImmutableScalarArgument(currentArgument)) {
+            return cachedArgument.getClass() == currentArgument.getClass()
+                    && Objects.equals(cachedArgument, currentArgument);
+        }
+        if (isImageOrSamplerArgument(cachedArgument) || isImageOrSamplerArgument(currentArgument)) {
+            return cachedArgument == currentArgument && cachedArgument.getClass() == currentArgument.getClass();
+        }
+        return false;
+    }
+
+    private static boolean isBufferLikeArgument(Object argument) {
+        return argument != null
+                && argument.getClass().isArray()
+                && (argument.getClass().getComponentType().isPrimitive()
+                || OpenClValuePacker.isStructArrayInstance(argument)
+                || OpenClValuePacker.isVectorArrayInstance(argument));
+    }
+
+    private static boolean isImmutableScalarArgument(Object argument) {
+        return argument instanceof Byte
+                || argument instanceof Short
+                || argument instanceof Character
+                || argument instanceof Integer
+                || argument instanceof Long
+                || argument instanceof Float
+                || argument instanceof Double;
+    }
+
+    private static boolean isImageOrSamplerArgument(Object argument) {
+        return argument instanceof Sampler
+                || argument != null && argument.getClass().getName().startsWith("net.sixik.ga_utils.javatogpu.api.images.");
     }
 
     private GpuBackendExecutionPipelineResult<OpenClCompiledKernel, OpenClPreparedExecution> executeProductionPipeline(
@@ -3370,37 +4178,149 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
     }
 
     protected void executeKernel(OpenClPreparedExecution execution) {
-        for (OpenClPreparedBufferBinding binding : execution.bufferBindings()) {
-            Object nativeBuffer = resolveNativeBuffer(binding);
-            if (binding.binding().uploadRequired()) {
-                uploadToDeviceBuffer(nativeBuffer, binding.binding());
+        OpenClPreparedInvocationTimingBuilder timings = new OpenClPreparedInvocationTimingBuilder();
+        long totalStart = System.nanoTime();
+        activePreparedInvocationTiming.set(timings);
+        try {
+            for (OpenClPreparedBufferBinding binding : execution.bufferBindings()) {
+                Object nativeBuffer = resolveNativeBuffer(binding);
+                long bytes = bytesFor(binding.binding());
+                if (binding.binding().uploadRequired()) {
+                    long startedAt = System.nanoTime();
+                    uploadToDeviceBuffer(nativeBuffer, binding.binding());
+                    timings.recordUpload(System.nanoTime() - startedAt, bytes);
+                } else {
+                    timings.recordSkippedUpload(bytes);
+                }
             }
+
+            for (OpenClPreparedArgumentBinding binding : execution.argumentBindings()) {
+                long startedAt = System.nanoTime();
+                if (binding.bufferBinding() != null) {
+                    bindBufferArgument(
+                            execution.compiledKernel(),
+                            binding.parameterIndex(),
+                            resolveNativeBuffer(binding.bufferBinding())
+                    );
+                    timings.recordBind(System.nanoTime() - startedAt);
+                    continue;
+                }
+
+                if (binding.localBinding() != null) {
+                    bindLocalArgument(execution.compiledKernel(), binding.parameterIndex(), binding.localBinding());
+                    timings.recordBind(System.nanoTime() - startedAt);
+                    continue;
+                }
+
+                bindScalarArgument(execution.compiledKernel(), binding.parameterIndex(), binding.scalarBinding());
+                timings.recordBind(System.nanoTime() - startedAt);
+            }
+
+            enqueueKernel(execution.compiledKernel(), resolveExecutionConfig(execution));
+
+            for (OpenClPreparedBufferBinding binding : execution.bufferBindings()) {
+                if (binding.binding().readbackRequired()) {
+                    long startedAt = System.nanoTime();
+                    readBackFromDeviceBuffer(resolveNativeBuffer(binding), binding.binding());
+                    timings.recordReadback(System.nanoTime() - startedAt, bytesFor(binding.binding()));
+                }
+            }
+        } finally {
+            activePreparedInvocationTiming.remove();
+            timings.recordTotal(System.nanoTime() - totalStart);
+            completedPreparedInvocationTiming.set(timings.build());
+        }
+    }
+
+    private static final class OpenClPreparedInvocationTimingBuilder {
+        private long totalNanos;
+        private long bufferAllocateNanos;
+        private int bufferAllocateCount;
+        private long bufferReuseNanos;
+        private int bufferReuseCount;
+        private long uploadNanos;
+        private int uploadCount;
+        private long uploadBytes;
+        private int skippedUploadCount;
+        private long skippedUploadBytes;
+        private long bindNanos;
+        private int bindCount;
+        private long enqueueSubmitNanos;
+        private long enqueueWaitNanos;
+        private long queueFinishNanos;
+        private long readbackNanos;
+        private int readbackCount;
+        private long readbackBytes;
+
+        private void recordTotal(long nanos) {
+            totalNanos += Math.max(0L, nanos);
         }
 
-        for (OpenClPreparedArgumentBinding binding : execution.argumentBindings()) {
-            if (binding.bufferBinding() != null) {
-                bindBufferArgument(
-                        execution.compiledKernel(),
-                        binding.parameterIndex(),
-                        resolveNativeBuffer(binding.bufferBinding())
-                );
-                continue;
-            }
-
-            if (binding.localBinding() != null) {
-                bindLocalArgument(execution.compiledKernel(), binding.parameterIndex(), binding.localBinding());
-                continue;
-            }
-
-            bindScalarArgument(execution.compiledKernel(), binding.parameterIndex(), binding.scalarBinding());
+        private void recordBufferAllocate(long nanos) {
+            bufferAllocateNanos += Math.max(0L, nanos);
+            bufferAllocateCount++;
         }
 
-        enqueueKernel(execution.compiledKernel(), resolveExecutionConfig(execution));
+        private void recordBufferReuse(long nanos) {
+            bufferReuseNanos += Math.max(0L, nanos);
+            bufferReuseCount++;
+        }
 
-        for (OpenClPreparedBufferBinding binding : execution.bufferBindings()) {
-            if (binding.binding().readbackRequired()) {
-                readBackFromDeviceBuffer(resolveNativeBuffer(binding), binding.binding());
-            }
+        private void recordUpload(long nanos, long bytes) {
+            uploadNanos += Math.max(0L, nanos);
+            uploadCount++;
+            uploadBytes += Math.max(0L, bytes);
+        }
+
+        private void recordSkippedUpload(long bytes) {
+            skippedUploadCount++;
+            skippedUploadBytes += Math.max(0L, bytes);
+        }
+
+        private void recordBind(long nanos) {
+            bindNanos += Math.max(0L, nanos);
+            bindCount++;
+        }
+
+        private void recordEnqueueSubmit(long nanos) {
+            enqueueSubmitNanos += Math.max(0L, nanos);
+        }
+
+        private void recordEnqueueWait(long nanos) {
+            enqueueWaitNanos += Math.max(0L, nanos);
+        }
+
+        private void recordQueueFinish(long nanos) {
+            queueFinishNanos += Math.max(0L, nanos);
+        }
+
+        private void recordReadback(long nanos, long bytes) {
+            readbackNanos += Math.max(0L, nanos);
+            readbackCount++;
+            readbackBytes += Math.max(0L, bytes);
+        }
+
+        private GpuPreparedInvocationTimings build() {
+            return new GpuPreparedInvocationTimings(
+                    totalNanos,
+                    bufferAllocateNanos,
+                    bufferAllocateCount,
+                    bufferReuseNanos,
+                    bufferReuseCount,
+                    uploadNanos,
+                    uploadCount,
+                    uploadBytes,
+                    skippedUploadCount,
+                    skippedUploadBytes,
+                    bindNanos,
+                    bindCount,
+                    enqueueSubmitNanos,
+                    enqueueWaitNanos,
+                    queueFinishNanos,
+                    readbackNanos,
+                    readbackCount,
+                    readbackBytes
+            );
         }
     }
 
@@ -4083,7 +5003,9 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
     }
 
     protected void enqueueKernel(OpenClCompiledKernel compiledKernel, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig) {
+        OpenClPreparedInvocationTimingBuilder timings = activePreparedInvocationTiming.get();
         long event;
+        long submitStartedAt = System.nanoTime();
         if (executionConfig.dimensions() == 3) {
             event = enqueue3D(compiledKernel, executionConfig);
         } else if (executionConfig.dimensions() == 2) {
@@ -4103,12 +5025,23 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                     null
             );
         }
+        if (timings != null) {
+            timings.recordEnqueueSubmit(System.nanoTime() - submitStartedAt);
+        }
         try {
+            long waitStartedAt = System.nanoTime();
             OpenClEvents.waitFor(event);
+            if (timings != null) {
+                timings.recordEnqueueWait(System.nanoTime() - waitStartedAt);
+            }
         } finally {
             OpenClEvents.release(event);
         }
+        long finishStartedAt = System.nanoTime();
         session().queue().finish();
+        if (timings != null) {
+            timings.recordQueueFinish(System.nanoTime() - finishStartedAt);
+        }
     }
 
     private long enqueue3D(OpenClCompiledKernel compiledKernel, net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig) {
@@ -4350,18 +5283,32 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
     }
 
     private Object resolveNativeBuffer(OpenClPreparedBufferBinding binding) {
+        OpenClPreparedInvocationTimingBuilder timings = activePreparedInvocationTiming.get();
+        long startedAt = System.nanoTime();
         Object existing = nativeBuffers.get(binding.handle().handleId());
         if (existing != null) {
+            if (timings != null) {
+                timings.recordBufferReuse(System.nanoTime() - startedAt);
+            }
             return existing;
         }
 
-        return nativeBuffers.computeIfAbsent(
-                binding.handle().handleId(),
-                ignored -> {
-                    deviceBufferCreationCount.incrementAndGet();
-                    return createDeviceBuffer(binding.binding());
+        synchronized (nativeBuffers) {
+            existing = nativeBuffers.get(binding.handle().handleId());
+            if (existing != null) {
+                if (timings != null) {
+                    timings.recordBufferReuse(System.nanoTime() - startedAt);
                 }
-        );
+                return existing;
+            }
+            Object created = createDeviceBuffer(binding.binding());
+            nativeBuffers.put(binding.handle().handleId(), created);
+            deviceBufferCreationCount.incrementAndGet();
+            if (timings != null) {
+                timings.recordBufferAllocate(System.nanoTime() - startedAt);
+            }
+            return created;
+        }
     }
 
     private void validateInvocationPreconditions(GpuKernelInvocation invocation, OpenClExecutionPlan plan) {
@@ -4889,6 +5836,7 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
             GpuRuntimeDiagnosticContext diagnosticContext
     ) {
         GpuExecutionConfig executionConfig = null;
+        completedPreparedInvocationTiming.remove();
         try {
             executionConfig = resolveExecutionConfig(execution);
             publishLifecycleEvent(
@@ -4932,6 +5880,8 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                     failureContext,
                     exception
             );
+        } finally {
+            completedPreparedInvocationTiming.remove();
         }
     }
 
