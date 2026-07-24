@@ -10,6 +10,7 @@ The short version: GPU execution usually pays off when you run the same simple p
 | --- | --- | --- |
 | Cold startup | OpenCL platform/device discovery, context setup, and first compile. | Use `JavaToGpu.useOpenClSharedCache()` for repeated calls. |
 | Kernel compile | OpenCL compiler turns generated source into a device program. | Reuse the shared cache and avoid changing compile options per call. |
+| Runtime wrapper overhead | Full generated calls may re-enter descriptor selection, diagnostics, source-selection gates, and artifact decisions. | Use `JavaToGpu.prepare(...)` once, then call `GpuPreparedLauncher.invoke(...)` inside hot loops. |
 | Launch overhead | Submitting a kernel has a fixed host-side cost. | Batch work into fewer, larger launches. |
 | Marshalling | Java arrays/structs/vectors/images must be packed, uploaded, and read back. | Keep data layouts simple and avoid unnecessary readback. |
 | Driver variance | Different vendors and driver versions optimize differently. | Validate on the target hardware and check `Device-Quirks.md`. |
@@ -43,7 +44,21 @@ try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
 }
 ```
 
-Use `JavaToGpu.useOpenCl()` when you need a short one-off scope. Prefer the shared cache for application loops, services, demos, and performance checks. The lower-level `GpuRuntime` API remains available for advanced runtime configuration.
+For tight loops, prepare once and invoke the prepared handle:
+
+```java
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
+    GpuPreparedLauncher launcher = JavaToGpu.prepare(MyKernel.class, "step", input, output);
+
+    for (int i = 0; i < iterations; i++) {
+        launcher.invoke(input, output);
+    }
+} finally {
+    JavaToGpu.shutdownOpenClSharedCache();
+}
+```
+
+Use `JavaToGpu.useOpenCl()` when you need a short one-off scope. Prefer the shared cache for application loops, services, demos, and performance checks. Prefer `GpuPreparedLauncher` when the same kernel is called repeatedly from a hot path. The lower-level `GpuRuntime` API remains available for advanced runtime configuration.
 
 ## How To Check Performance Locally
 
@@ -68,6 +83,7 @@ Start with correctness, then performance.
 
 - Do not benchmark the first cold call as the steady-state result.
 - Prefer warm-cache measurements for application-like workloads.
+- For hot loops, compare normal generated calls against a prepared launcher before blaming OpenCL or the driver.
 - Keep output buffers explicit so readback cost is visible.
 - Test representative data sizes, not only the smallest example.
 - Treat vendor/device results as facts for that machine, not universal claims.

@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.api;
 
 import net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig;
+import net.sixik.ga_utils.javatogpu.runtime.GpuGeneratedLauncherInvoker;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntime;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeBackendDeviceSelection;
 import net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions;
@@ -82,6 +83,73 @@ public final class JavaToGpu {
             GpuRuntimeCompileOptions compileOptions
     ) {
         return GpuRuntime.trySelectStandardBackendAndDevice(Objects.requireNonNull(compileOptions, "compileOptions"));
+    }
+
+    /**
+     * Prepares a generated GPU method for repeated hot-loop calls.
+     *
+     * <p>Use this when a kernel is called often with the same descriptor shape. The first call performs the normal cold
+     * runtime checks and compilation; later calls through the returned handle avoid the full production path.</p>
+     */
+    public static GpuPreparedLauncher prepare(Class<?> ownerClass, String methodName, Object... arguments) {
+        return GpuGeneratedLauncherInvoker.prepare(
+                Objects.requireNonNull(ownerClass, "ownerClass"),
+                Objects.requireNonNull(methodName, "methodName"),
+                arguments
+        );
+    }
+
+    /**
+     * Prepares a generated GPU method with an explicit default launch shape.
+     */
+    public static GpuPreparedLauncher prepareWithConfig(
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            Object... arguments
+    ) {
+        return GpuGeneratedLauncherInvoker.prepareWithConfig(
+                Objects.requireNonNull(ownerClass, "ownerClass"),
+                Objects.requireNonNull(methodName, "methodName"),
+                Objects.requireNonNull(executionConfig, "executionConfig"),
+                arguments
+        );
+    }
+
+    /**
+     * Prepares a generated GPU method with runtime compile options.
+     */
+    public static GpuPreparedLauncher prepareWithCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        return GpuGeneratedLauncherInvoker.prepareWithCompileOptions(
+                Objects.requireNonNull(ownerClass, "ownerClass"),
+                Objects.requireNonNull(methodName, "methodName"),
+                Objects.requireNonNull(compileOptions, "compileOptions"),
+                arguments
+        );
+    }
+
+    /**
+     * Prepares a generated GPU method with both an explicit launch shape and runtime compile options.
+     */
+    public static GpuPreparedLauncher prepareWithConfigAndCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        return GpuGeneratedLauncherInvoker.prepareWithConfigAndCompileOptions(
+                Objects.requireNonNull(ownerClass, "ownerClass"),
+                Objects.requireNonNull(methodName, "methodName"),
+                Objects.requireNonNull(executionConfig, "executionConfig"),
+                Objects.requireNonNull(compileOptions, "compileOptions"),
+                arguments
+        );
     }
 
     /**

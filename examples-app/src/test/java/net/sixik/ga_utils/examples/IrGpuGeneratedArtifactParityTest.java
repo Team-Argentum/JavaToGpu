@@ -26,7 +26,7 @@ class IrGpuGeneratedArtifactParityTest {
         List<Path> classpathRoots = javatogpuClasspathRoots();
         List<Path> manifests = generatedIrGpuManifests(classpathRoots);
 
-        assertEquals(33, manifests.size(), "examples-app should keep all showcase IrGpu artifacts under parity coverage");
+        assertEquals(34, manifests.size(), "examples-app should keep all showcase IrGpu artifacts under parity coverage");
 
         ArrayList<String> failures = new ArrayList<>();
         for (Path manifestPath : manifests) {

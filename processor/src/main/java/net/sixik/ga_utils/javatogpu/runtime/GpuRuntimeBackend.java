@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
 
 /**
  * Runtime backend contract for executing generated GPU kernel invocations.
@@ -48,4 +49,18 @@ public interface GpuRuntimeBackend {
      * @param invocation descriptor and launch arguments for the generated kernel call
      */
     void invoke(GpuKernelInvocation invocation);
+
+    /**
+     * Prepares a reusable launcher for repeated calls of the same generated kernel.
+     *
+     * <p>The default implementation is fail-closed. Backends should override this only when they can separate the cold
+     * validation/compile path from the hot argument update/enqueue/readback path without weakening normal invocation
+     * checks.</p>
+     */
+    default GpuPreparedLauncher prepare(GpuKernelInvocation invocation) {
+        throw new UnsupportedOperationException(
+                "Prepared GPU launchers are not implemented for backend " + backendTarget()
+                        + " and kernel " + invocation.descriptor().kernelName()
+        );
+    }
 }

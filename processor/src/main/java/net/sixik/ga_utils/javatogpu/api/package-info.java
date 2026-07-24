@@ -20,8 +20,9 @@
  * <p>Main building blocks:
  *
  * <ul>
- *     <li>{@link net.sixik.ga_utils.javatogpu.api.JavaToGpu} - the user-facing runtime facade for common OpenCL scopes, shared-cache shutdown, launch shapes, and setup diagnostics.</li>
+ *     <li>{@link net.sixik.ga_utils.javatogpu.api.JavaToGpu} - the user-facing runtime facade for common OpenCL scopes, shared-cache shutdown, prepared hot-loop launchers, launch shapes, and setup diagnostics.</li>
  *     <li>{@link net.sixik.ga_utils.javatogpu.api.GpuScope} - try-with-resources handle returned by the runtime facade.</li>
+ *     <li>{@link net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher} - reusable handle for tight loops after one cold validation/compile step.</li>
  *     <li>{@link net.sixik.ga_utils.javatogpu.api.GPU} - the single OpenCL-style built-in facade available from Java.</li>
  *     <li>{@link net.sixik.ga_utils.javatogpu.api.GpuBackendTarget}, {@link net.sixik.ga_utils.javatogpu.api.GpuVendorTarget}, and {@link net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget} - stable selectors used by public annotations and backend/device metadata.</li>
  *     <li>Pointer wrappers such as {@link net.sixik.ga_utils.javatogpu.api.pointers.FloatPtr} - scalar-by-reference helpers for {@code @CCode} methods.</li>

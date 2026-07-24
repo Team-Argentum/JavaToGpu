@@ -1,0 +1,20 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        // Temporary for this in-repository smoke project while alpha.4 is syncing to Maven Central.
+        // In a normal external project, remove this repository and keep only mavenCentral().
+        maven {
+            url = uri('../../processor/build/maven-staging')
+        }
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'javatogpu-consumer-demo'

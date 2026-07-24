@@ -276,6 +276,7 @@ Common calls:
 - `JavaToGpu.useOpenCl()` for a simple scoped OpenCL runtime.
 - `JavaToGpu.useOpenClSharedCache()` for repeated calls with a warm session and compile cache.
 - `JavaToGpu.shutdownOpenClSharedCache()` to release the process-wide shared OpenCL cache.
+- `JavaToGpu.prepare(...)` for hot loops where one kernel is called many times after one cold validation/compile step.
 - `JavaToGpu.useStandardBackendAndDevice()` for the default backend/device selection path.
 - `JavaToGpu.explainStandardBackendAndDevice()` for setup diagnostics without installing a runtime backend.
 - `JavaToGpu.launch1D(...)`, `launch2D(...)`, and `launch3D(...)` for explicit launch sizes.
@@ -284,7 +285,7 @@ Common calls:
 
 ### Generated Launchers
 
-Normal application code should call the generated launcher directly when the kernel is known at compile time. Generated launcher source is intentionally readable: comments mark the generated boundary, embedded descriptor/source constants, fallback descriptors, default launch overloads, explicit launch overloads, standard backend/device preflight helpers, return-first convenience metadata, and output-length validation.
+Normal application code should call the generated launcher directly when the kernel is known at compile time. Generated launcher source is intentionally readable: comments mark the generated boundary, embedded descriptor/source constants, fallback descriptors, default launch overloads, explicit launch overloads, prepared hot-loop helpers, standard backend/device preflight helpers, return-first convenience metadata, and output-length validation.
 
 ```java
 DemoKernel_transform_GpuLauncher.invokeWithStandardBackendAndDevice(

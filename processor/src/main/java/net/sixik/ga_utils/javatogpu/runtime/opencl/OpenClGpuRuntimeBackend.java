@@ -20,6 +20,7 @@ import net.sixik.ga_utils.javatogpu.api.images.Image3DWriteOnly;
 import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactIdentity;
 import net.sixik.ga_utils.javatogpu.runtime.GpuBackendCompilationResult;
@@ -681,6 +682,434 @@ public class OpenClGpuRuntimeBackend implements GpuRuntimeBackend, GpuRuntimeBac
                 selectedInvocation.executionConfig(),
                 selectedContext
         );
+    }
+
+    @Override
+    public final GpuPreparedLauncher prepare(GpuKernelInvocation invocation) {
+        Objects.requireNonNull(invocation, "invocation");
+        GpuRuntimeCompileOptions requestCompileOptions = invocation.compileOptions() == null
+                ? GpuRuntimeCompileOptions.defaults(backendTarget())
+                : invocation.compileOptions();
+        Optional<IrGpuArtifact> primaryIrGpuArtifact = loadRuntimeIrArtifact(
+                invocation.descriptor(),
+                invocation.artifactClassLoader(),
+                requestCompileOptions,
+                "primary"
+        );
+        GpuRuntimeDiagnosticContext primaryContext = diagnosticContext(
+                invocation.descriptor(),
+                primaryIrGpuArtifact,
+                requestCompileOptions
+        );
+        primaryContext = primaryContext.withCallSite(GpuRuntimeCallSiteResolverSupport.resolve(
+                invocation.artifactClassLoader(),
+                primaryContext.sourceLocation()
+        ));
+        publishLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.VALIDATION_STARTED,
+                invocation.descriptor(),
+                requestCompileOptions,
+                "OpenCL prepared launcher compile option validation started",
+                validationFields("prepared-launcher-compile-options", "started", null)
+        );
+        try {
+            validateCompileOptions(requestCompileOptions);
+            publishLifecycleEvent(
+                    GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                    invocation.descriptor(),
+                    requestCompileOptions,
+                    "OpenCL prepared launcher compile option validation completed",
+                    validationFields("prepared-launcher-compile-options", "succeeded", null)
+            );
+        } catch (RuntimeException exception) {
+            publishLifecycleEvent(
+                    GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                    invocation.descriptor(),
+                    requestCompileOptions,
+                    "OpenCL prepared launcher compile option validation failed",
+                    validationFields("prepared-launcher-compile-options", "failed", exception)
+            );
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new GpuRuntimeCompileOptionsException(
+                    "OpenCL compile options are invalid: " + OpenClFailureFormatter.rootMessage(exception),
+                    primaryContext,
+                    exception
+            );
+        }
+
+        publishLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.DESCRIPTOR_DISCOVERY_STARTED,
+                invocation.descriptor(),
+                requestCompileOptions,
+                "OpenCL prepared launcher method variant descriptor selection started",
+                descriptorSelectionFields(invocation, Optional.empty(), invocation.descriptor(), "started", null)
+        );
+        Optional<GpuRuntimeMethodVariantSelection> methodVariantSelection;
+        try {
+            methodVariantSelection = selectMethodVariant(invocation, requestCompileOptions);
+        } catch (RuntimeException exception) {
+            publishLifecycleEvent(
+                    GpuRuntimeLifecycleEventKind.DESCRIPTOR_DISCOVERY_COMPLETED,
+                    invocation.descriptor(),
+                    requestCompileOptions,
+                    "OpenCL prepared launcher method variant descriptor selection failed",
+                    descriptorSelectionFields(invocation, Optional.empty(), invocation.descriptor(), "failed", exception)
+            );
+            throw exception;
+        }
+        GpuKernelInvocation selectedInvocation = methodVariantSelection
+                .map(selection -> invocation.withSelectedDescriptor(selection.selectedDescriptor()))
+                .orElse(invocation);
+        publishLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.DESCRIPTOR_DISCOVERY_COMPLETED,
+                selectedInvocation.descriptor(),
+                requestCompileOptions,
+                "OpenCL prepared launcher method variant descriptor selection completed",
+                descriptorSelectionFields(invocation, methodVariantSelection, selectedInvocation.descriptor(), "succeeded", null)
+        );
+        Optional<IrGpuArtifact> loadedIrGpuArtifact = methodVariantSelection
+                .flatMap(GpuRuntimeMethodVariantSelection::selectedArtifact)
+                .or(() -> sameDescriptor(invocation.descriptor(), selectedInvocation.descriptor())
+                        ? primaryIrGpuArtifact
+                        : loadRuntimeIrArtifact(
+                        selectedInvocation.descriptor(),
+                        selectedInvocation.artifactClassLoader(),
+                        requestCompileOptions,
+                        "selected-variant"
+                ));
+        GpuRuntimeDiagnosticContext selectedContextBase = diagnosticContext(
+                selectedInvocation.descriptor(),
+                loadedIrGpuArtifact,
+                requestCompileOptions
+        );
+        GpuRuntimeDiagnosticContext selectedContext = selectedContextBase.withCallSite(GpuRuntimeCallSiteResolverSupport.resolve(
+                selectedInvocation.artifactClassLoader(),
+                selectedContextBase.sourceLocation()
+        ));
+        OpenClKernelArguments arguments;
+        OpenClExecutionPlan plan;
+        publishLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.VALIDATION_STARTED,
+                selectedInvocation.descriptor(),
+                requestCompileOptions,
+                "OpenCL prepared launcher precondition validation started",
+                validationFields("prepared-launcher-preconditions", "started", null)
+        );
+        try {
+            arguments = OpenClArgumentMarshaller.marshall(
+                    selectedInvocation.descriptor(),
+                    selectedInvocation.arguments()
+            );
+            plan = OpenClExecutionPlanner.plan(arguments);
+            validateInvocationPreconditions(selectedInvocation, plan);
+            publishLifecycleEvent(
+                    GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                    selectedInvocation.descriptor(),
+                    requestCompileOptions,
+                    "OpenCL prepared launcher precondition validation completed",
+                    validationFields("prepared-launcher-preconditions", "succeeded", null)
+            );
+        } catch (RuntimeException exception) {
+            publishLifecycleEvent(
+                    GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                    selectedInvocation.descriptor(),
+                    requestCompileOptions,
+                    "OpenCL prepared launcher precondition validation failed",
+                    validationFields("prepared-launcher-preconditions", "failed", exception)
+            );
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new GpuRuntimeInvocationException(
+                    "OpenCL prepared launcher setup failed: " + OpenClFailureFormatter.contextualMessage(exception),
+                    selectedContext,
+                    exception
+            );
+        }
+
+        GpuRuntimeCompileRequest compileRequest;
+        OpenClSessionSelectionRequest previousSessionRequest = sessionSelectionRequest.get();
+        sessionSelectionRequest.set(new OpenClSessionSelectionRequest(
+                selectedInvocation.descriptor(),
+                requestCompileOptions,
+                loadedIrGpuArtifact,
+                selectedContext
+        ));
+        try {
+            publishLifecycleEvent(
+                    GpuRuntimeLifecycleEventKind.VALIDATION_STARTED,
+                    selectedInvocation.descriptor(),
+                    requestCompileOptions,
+                    "OpenCL prepared launcher runtime capability validation started",
+                    validationFields("prepared-launcher-runtime-capabilities", "started", null)
+            );
+            try {
+                validateActiveSessionSelection(selectedInvocation.descriptor(), requestCompileOptions, loadedIrGpuArtifact);
+                validateCapabilitySupport(selectedInvocation.descriptor(), plan);
+                publishLifecycleEvent(
+                        GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                        selectedInvocation.descriptor(),
+                        requestCompileOptions,
+                        "OpenCL prepared launcher runtime capability validation completed",
+                        validationFields("prepared-launcher-runtime-capabilities", "succeeded", null)
+                );
+            } catch (RuntimeException exception) {
+                publishLifecycleEvent(
+                        GpuRuntimeLifecycleEventKind.VALIDATION_COMPLETED,
+                        selectedInvocation.descriptor(),
+                        requestCompileOptions,
+                        "OpenCL prepared launcher runtime capability validation failed",
+                        validationFields("prepared-launcher-runtime-capabilities", "failed", exception)
+                );
+                if (exception instanceof GpuRuntimeException runtimeException) {
+                    throw runtimeException;
+                }
+                throw new GpuRuntimeCapabilityException(
+                        OpenClFailureFormatter.rootMessage(exception),
+                        selectedContext,
+                        exception
+                );
+            }
+            compileRequest = buildCompileRequest(selectedInvocation)
+                    .withIrGpuArtifact(loadedIrGpuArtifact);
+        } finally {
+            if (previousSessionRequest == null) {
+                sessionSelectionRequest.remove();
+            } else {
+                sessionSelectionRequest.set(previousSessionRequest);
+            }
+        }
+
+        compileRequest = applyProductionPromotionDecision(compileRequest);
+        GpuRuntimeIrOptimizationResult optimizationResult = optimizeRuntimeIrWithReport(compileRequest);
+        GpuRuntimeCompileRequest optimizedCompileRequest = optimizationResult.compileRequest();
+        GpuBackendModuleArtifact originalModuleArtifact = runtimeCompileArtifactsConfigured()
+                ? lowerBackendModuleChecked(compileRequest, "prepared-launcher-original-artifact-dump")
+                : null;
+        GpuBackendModuleArtifact optimizedModuleArtifact = runtimeCompileArtifactsConfigured()
+                || runtimeIrOptimizerExperimentalApplyRequested(optimizedCompileRequest)
+                ? lowerOptimizedReviewModuleChecked(optimizedCompileRequest, optimizationResult.report(), "prepared-launcher-optimized-review")
+                : lowerBackendModuleChecked(optimizedCompileRequest, "prepared-launcher-optimized-selected");
+        GpuRuntimeEquivalenceEvidence runtimeEquivalenceEvidence = executeRuntimeEquivalence(new GpuRuntimeEquivalenceRequest(
+                compileRequest,
+                optimizedCompileRequest,
+                optimizedModuleArtifact,
+                optimizationResult.report(),
+                selectedInvocation.arguments(),
+                selectedInvocation.executionConfig()
+        ));
+        GpuRuntimeCompileArtifactSnapshot selectionSnapshot = GpuRuntimeCompileArtifactSnapshot.from(
+                compileRequest,
+                optimizedCompileRequest,
+                optimizedModuleArtifact,
+                GpuRuntimeCompileInvalidationStamp.from(
+                        optimizedCompileRequest,
+                        optimizedModuleArtifact,
+                        optimizerPipelineVersion()
+                ),
+                GpuRuntimeCompileProvenance.from(optimizedCompileRequest),
+                optimizationResult.report(),
+                runtimeEquivalenceEvidence
+        );
+        GpuRuntimeIrSelection runtimeIrSelection = selectionSnapshot.runtimeIrSelection();
+        GpuRuntimeCompileRequest selectedCompileRequest = optimizedCompileRequest.withIrGpuArtifact(
+                runtimeIrSelection.selectedArtifact()
+        );
+        publishLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.FALLBACK_OR_ROLLBACK_SELECTED,
+                selectedCompileRequest,
+                "OpenCL prepared launcher runtime IR fallback/rollback selection decided",
+                fallbackOrRollbackSelectionFields(runtimeIrSelection, selectionSnapshot.fallbackEvidence())
+        );
+        GpuBackendModuleArtifact moduleArtifact = sameSelectedIr(optimizedCompileRequest, selectedCompileRequest)
+                ? optimizedModuleArtifact
+                : sameSelectedIr(compileRequest, selectedCompileRequest) && originalModuleArtifact != null
+                ? originalModuleArtifact
+                : lowerBackendModuleChecked(selectedCompileRequest, "prepared-launcher-runtime-ir-selection");
+        GpuRuntimeCompileInvalidationStamp invalidationStamp = GpuRuntimeCompileInvalidationStamp.from(
+                selectedCompileRequest,
+                moduleArtifact,
+                optimizerPipelineVersion()
+        );
+        GpuRuntimeCompileArtifactSnapshot artifactSnapshotBase = GpuRuntimeCompileArtifactSnapshot.from(
+                compileRequest,
+                optimizedCompileRequest,
+                moduleArtifact,
+                invalidationStamp,
+                GpuRuntimeCompileProvenance.from(selectedCompileRequest),
+                optimizationResult.report(),
+                runtimeEquivalenceEvidence
+        ).withBackendStageModuleArtifacts(originalModuleArtifact, optimizedModuleArtifact);
+        GpuBackendSourcePromotionGate sourcePromotionGate = backendSourcePromotionGate(
+                selectedCompileRequest,
+                moduleArtifact,
+                runtimeEquivalenceEvidence,
+                artifactSnapshotBase.fallbackEvidence()
+        );
+        GpuBackendSourceSwitchingDecision sourceSwitchingDecision = backendSourceSwitchingDecision(
+                selectedCompileRequest,
+                moduleArtifact,
+                sourcePromotionGate
+        );
+        publishLifecycleEvent(
+                GpuRuntimeLifecycleEventKind.SOURCE_SELECTION_DECIDED,
+                selectedCompileRequest,
+                "OpenCL prepared launcher backend source selection decided",
+                sourceSelectionFields(moduleArtifact, sourcePromotionGate, sourceSwitchingDecision, runtimeIrSelection)
+        );
+        GpuRuntimeCompileArtifactSnapshot artifactSnapshot = withRuntimeDeviceSelection(
+                artifactSnapshotBase.withBackendSourceState(sourcePromotionGate, sourceSwitchingDecision),
+                methodVariantSelection
+        );
+        dumpBackendSourcePromotionWorkloadGate(artifactSnapshot);
+        GpuRuntimeCompileCacheKey compileCacheKey = GpuRuntimeCompileCacheKey.from(
+                selectedCompileRequest,
+                moduleArtifact,
+                invalidationStamp
+        );
+        OpenClCompiledKernel compiledKernel = compileKernelFromProductionCache(
+                selectedCompileRequest,
+                moduleArtifact,
+                compileCacheKey,
+                artifactSnapshot,
+                selectedContext
+        );
+        dumpRuntimeCompileArtifacts(compiledKernel.artifactSnapshot());
+        validatePreparedLaunch(compiledKernel, plan, selectedInvocation.executionConfig(), selectedContext);
+        return new OpenClPreparedHotLauncher(
+                compiledKernel,
+                requestCompileOptions,
+                selectedInvocation.executionConfig(),
+                selectedContext
+        );
+    }
+
+    private void validatePreparedLaunch(
+            OpenClCompiledKernel compiledKernel,
+            OpenClExecutionPlan plan,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeDiagnosticContext diagnosticContext
+    ) {
+        OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
+        if (executionConfig != null) {
+            execution = withExecutionConfig(execution, executionConfig);
+        }
+        GpuExecutionConfig resolvedExecutionConfig = resolveExecutionConfig(execution);
+        OpenClKernelLaunchAdvisory launchAdvisory = OpenClKernelLaunchAdvisory.evaluate(
+                execution.compiledKernel(),
+                resolvedExecutionConfig
+        );
+        validateKernelWorkGroupSize(execution, diagnosticContext, launchAdvisory);
+    }
+
+    private OpenClPreparedExecution prepareHotExecution(
+            OpenClCompiledKernel compiledKernel,
+            GpuExecutionConfig executionConfig,
+            Object[] arguments
+    ) {
+        Object[] safeArguments = arguments == null ? new Object[0] : arguments;
+        OpenClKernelArguments marshalledArguments = OpenClArgumentMarshaller.marshall(
+                compiledKernel.descriptor(),
+                safeArguments
+        );
+        OpenClExecutionPlan plan = OpenClExecutionPlanner.plan(marshalledArguments);
+        validateInvocationPreconditions(
+                new GpuKernelInvocation(compiledKernel.descriptor(), safeArguments, executionConfig),
+                plan
+        );
+        OpenClPreparedExecution execution = executionPreparer.prepare(compiledKernel, plan);
+        return executionConfig == null ? execution : withExecutionConfig(execution, executionConfig);
+    }
+
+    private void invokePreparedHot(
+            OpenClCompiledKernel compiledKernel,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeDiagnosticContext diagnosticContext,
+            Object[] arguments
+    ) {
+        invocationCount.incrementAndGet();
+        try {
+            kernelInvoker().invoke(prepareHotExecution(compiledKernel, executionConfig, arguments), null);
+        } catch (RuntimeException exception) {
+            if (exception instanceof GpuRuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new GpuRuntimeInvocationException(
+                    "OpenCL prepared launcher invocation failed: " + OpenClFailureFormatter.contextualMessage(exception),
+                    diagnosticContext,
+                    exception
+            );
+        }
+    }
+
+    private final class OpenClPreparedHotLauncher implements GpuPreparedLauncher {
+
+        private final OpenClCompiledKernel compiledKernel;
+        private final GpuRuntimeCompileOptions compileOptions;
+        private final GpuExecutionConfig defaultExecutionConfig;
+        private final GpuRuntimeDiagnosticContext diagnosticContext;
+        private boolean closed;
+
+        private OpenClPreparedHotLauncher(
+                OpenClCompiledKernel compiledKernel,
+                GpuRuntimeCompileOptions compileOptions,
+                GpuExecutionConfig defaultExecutionConfig,
+                GpuRuntimeDiagnosticContext diagnosticContext
+        ) {
+            this.compiledKernel = Objects.requireNonNull(compiledKernel, "compiledKernel");
+            this.compileOptions = compileOptions == null
+                    ? GpuRuntimeCompileOptions.defaults(backendTarget())
+                    : compileOptions;
+            this.defaultExecutionConfig = defaultExecutionConfig;
+            this.diagnosticContext = diagnosticContext == null
+                    ? GpuRuntimeDiagnosticContext.fromSnapshot(compiledKernel.descriptor(), compiledKernel.artifactSnapshot())
+                    : diagnosticContext;
+        }
+
+        @Override
+        public GpuKernelDescriptor descriptor() {
+            return compiledKernel.descriptor();
+        }
+
+        @Override
+        public GpuRuntimeCompileOptions compileOptions() {
+            return compileOptions;
+        }
+
+        @Override
+        public GpuExecutionConfig defaultExecutionConfig() {
+            return defaultExecutionConfig;
+        }
+
+        @Override
+        public void invoke(Object... arguments) {
+            ensureOpen();
+            invokePreparedHot(compiledKernel, defaultExecutionConfig, diagnosticContext, arguments);
+        }
+
+        @Override
+        public void invokeWithConfig(GpuExecutionConfig executionConfig, Object... arguments) {
+            ensureOpen();
+            invokePreparedHot(
+                    compiledKernel,
+                    Objects.requireNonNull(executionConfig, "executionConfig"),
+                    diagnosticContext,
+                    arguments
+            );
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private void ensureOpen() {
+            if (closed) {
+                throw new IllegalStateException("OpenCL prepared launcher is already closed");
+            }
+        }
     }
 
     private GpuBackendExecutionPipelineResult<OpenClCompiledKernel, OpenClPreparedExecution> executeProductionPipeline(

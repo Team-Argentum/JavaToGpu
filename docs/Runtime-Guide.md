@@ -29,7 +29,7 @@ try (GpuScope ignored = JavaToGpu.useOpenCl()) {
 
 ### Shared OpenCL Cache
 
-Use this for hot paths and repeated calls:
+Use this when you want repeated calls to share the OpenCL session and compiled-kernel cache:
 
 ```java
 try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
@@ -41,6 +41,28 @@ try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
 ```
 
 The shared cache keeps the OpenCL session and compiled kernels warm across calls.
+
+### Prepared Launcher Hot Path
+
+Use this when the same kernel is called inside a tight loop. The first `prepare(...)` call runs the normal cold path:
+descriptor validation, backend/device selection, source selection, optimizer gates, capability checks, and compilation.
+Calls through the returned handle skip that production setup and go straight to argument update, enqueue, and readback.
+
+```java
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
+    GpuPreparedLauncher launcher = JavaToGpu.prepare(DemoKernel.class, "transform", input, output);
+
+    for (int i = 0; i < 1000; i++) {
+        launcher.invoke(input, output);
+    }
+} finally {
+    JavaToGpu.shutdownOpenClSharedCache();
+}
+```
+
+Keep the runtime scope open while the prepared launcher is used. The current alpha prepared path reuses the selected
+descriptor and compiled kernel; it still rebuilds lightweight argument bindings per call so scalars and buffer objects
+can change safely.
 
 ## Runtime Selection
 

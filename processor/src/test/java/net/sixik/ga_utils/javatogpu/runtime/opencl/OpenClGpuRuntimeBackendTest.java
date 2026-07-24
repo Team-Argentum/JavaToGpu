@@ -18,6 +18,7 @@ import net.sixik.ga_utils.javatogpu.api.types.floats.Float2;
 import net.sixik.ga_utils.javatogpu.api.images.Sampler;
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
 import net.sixik.ga_utils.javatogpu.api.GpuDeviceClassTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
 import net.sixik.ga_utils.javatogpu.api.annotations.GPUStruct;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifact;
 import net.sixik.ga_utils.javatogpu.frontend.ir.artifact.IrGpuArtifactHeader;
@@ -814,6 +815,61 @@ class OpenClGpuRuntimeBackendTest {
         assertEquals(1, invokeCalls.get());
         assertEquals("compiled:adapter-spi", compiledViaAdapter.cacheKey());
         assertEquals("opencl-c", compiledViaAdapter.moduleArtifact().format());
+    }
+
+    @Test
+    void preparedOpenClLauncherCompilesOnceAndReusesHotPath() {
+        AtomicInteger compileCalls = new AtomicInteger();
+        AtomicInteger executeCalls = new AtomicInteger();
+        OpenClGpuRuntimeBackend backend = new OpenClGpuRuntimeBackend() {
+            @Override
+            protected OpenClRuntimeCapabilities runtimeCapabilities() {
+                return new OpenClRuntimeCapabilities("Mock GPU", "OpenCL 3.0 Mock", true, true, true, 32_768L, 256L);
+            }
+
+            @Override
+            protected OpenClCompiledKernel compileKernel(
+                    GpuRuntimeCompileRequest compileRequest,
+                    GpuBackendModuleArtifact moduleArtifact
+            ) {
+                return new OpenClCompiledKernel(
+                        compileRequest.descriptor(),
+                        "compiled:prepared:" + compileCalls.incrementAndGet(),
+                        GpuRuntimeCompileArtifactSnapshot.from(compileRequest, compileRequest, moduleArtifact),
+                        null,
+                        null
+                );
+            }
+
+            @Override
+            protected void executeKernel(OpenClPreparedExecution execution) {
+                assertEquals("compiled:prepared:1", execution.compiledKernel().cacheKey());
+                int invocationIndex = executeCalls.incrementAndGet();
+                for (OpenClPreparedBufferBinding binding : execution.bufferBindings()) {
+                    if (binding.binding().sourceArray() instanceof int[] values && values.length > 0) {
+                        values[0] = invocationIndex;
+                    }
+                }
+            }
+        };
+
+        GpuPreparedLauncher launcher = backend.prepare(new GpuKernelInvocation(
+                intOutputDescriptor(),
+                new Object[]{new int[]{0}}
+        ));
+        int compileCountAfterPrepare = compileCalls.get();
+        int[] first = new int[]{0};
+        int[] second = new int[]{0};
+
+        launcher.invoke(first);
+        launcher.invoke(second);
+
+        assertEquals(1, compileCountAfterPrepare);
+        assertEquals(compileCountAfterPrepare, compileCalls.get());
+        assertEquals(2, executeCalls.get());
+        assertArrayEquals(new int[]{1}, first);
+        assertArrayEquals(new int[]{2}, second);
+        assertEquals(intOutputDescriptor().kernelName(), launcher.descriptor().kernelName());
     }
 
     @Test

@@ -21,6 +21,7 @@ Use this page when a kernel does not compile, does not launch, or behaves differ
 | Unsupported code shape | The kernel body uses normal Java runtime features. | Remove allocation, exceptions, recursion, virtual dispatch, monitors, and unsupported library calls. |
 | Output is unchanged | The method wrote to the wrong buffer or launch size was zero/smaller than expected. | Test with 1, 2, 3, and 17 elements and compare every output with a CPU reference. |
 | First call is slow | Cold OpenCL startup and compile cost are included. | Use `JavaToGpu.useOpenClSharedCache()` and measure repeated warm calls. |
+| Every call is slow | The app is still using the full diagnostic/production path in a hot loop. | Prepare once with `JavaToGpu.prepare(...)`, then call `GpuPreparedLauncher.invoke(...)` inside the loop. |
 
 If a first-run error is not obvious, keep the generated OpenCL source and start with `processor/build/reports/opencl/validation-report.md` when it exists.
 

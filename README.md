@@ -76,6 +76,7 @@ Run it through the OpenCL runtime:
 
 ```java
 import net.sixik.ga_utils.javatogpu.api.GpuScope;
+import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
 import net.sixik.ga_utils.javatogpu.api.JavaToGpu;
 
 try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
@@ -85,7 +86,21 @@ try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
 }
 ```
 
-Use `JavaToGpu.useOpenCl()` for one-off calls. Use `JavaToGpu.useOpenClSharedCache()` for repeated calls so the OpenCL session and compile cache stay warm. The lower-level `runtime.GpuRuntime` entrypoint remains available for advanced runtime configuration and compatibility.
+Use `JavaToGpu.useOpenCl()` for one-off calls. Use `JavaToGpu.useOpenClSharedCache()` for repeated calls so the OpenCL session and compile cache stay warm. For tight loops, prepare the generated method once and call the prepared handle:
+
+```java
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
+    GpuPreparedLauncher launcher = JavaToGpu.prepare(DemoKernel.class, "transform", input, output);
+
+    for (int i = 0; i < 1000; i++) {
+        launcher.invoke(input, output);
+    }
+} finally {
+    JavaToGpu.shutdownOpenClSharedCache();
+}
+```
+
+The lower-level `runtime.GpuRuntime` entrypoint remains available for advanced runtime configuration and compatibility.
 
 ## Important Alpha Limits
 

@@ -1,11 +1,13 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
+import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
 import net.sixik.ga_utils.javatogpu.runtime.launch.GpuLauncherNamingSupport;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Reflection-based helper for invoking generated GPU launcher classes by owner class and method name.
@@ -29,6 +31,82 @@ public final class GpuGeneratedLauncherInvoker {
      */
     public static GeneratedLauncher launcher(Class<?> ownerClass, String methodName) {
         return new GeneratedLauncher(ownerClass, methodName, launcherBinding(ownerClass, methodName));
+    }
+
+    /**
+     * Prepares the generated launcher for repeated hot-loop calls.
+     */
+    public static GpuPreparedLauncher prepare(Class<?> ownerClass, String methodName, Object... arguments) {
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        return GpuRuntime.prepareVariantsFromGeneratedLauncher(
+                binding.launcherClass(),
+                null,
+                null,
+                binding.descriptor(),
+                binding.fallbackDescriptors(),
+                arguments
+        );
+    }
+
+    /**
+     * Prepares the generated launcher with an explicit default launch shape.
+     */
+    public static GpuPreparedLauncher prepareWithConfig(
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            Object... arguments
+    ) {
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        return GpuRuntime.prepareVariantsFromGeneratedLauncher(
+                binding.launcherClass(),
+                executionConfig,
+                null,
+                binding.descriptor(),
+                binding.fallbackDescriptors(),
+                arguments
+        );
+    }
+
+    /**
+     * Prepares the generated launcher with runtime compile options.
+     */
+    public static GpuPreparedLauncher prepareWithCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        return GpuRuntime.prepareVariantsFromGeneratedLauncher(
+                binding.launcherClass(),
+                null,
+                compileOptions,
+                binding.descriptor(),
+                binding.fallbackDescriptors(),
+                arguments
+        );
+    }
+
+    /**
+     * Prepares the generated launcher with an explicit default launch shape and runtime compile options.
+     */
+    public static GpuPreparedLauncher prepareWithConfigAndCompileOptions(
+            Class<?> ownerClass,
+            String methodName,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            Object... arguments
+    ) {
+        LauncherBinding binding = launcherBinding(ownerClass, methodName);
+        return GpuRuntime.prepareVariantsFromGeneratedLauncher(
+                binding.launcherClass(),
+                executionConfig,
+                compileOptions,
+                binding.descriptor(),
+                binding.fallbackDescriptors(),
+                arguments
+        );
     }
 
     /**
@@ -530,7 +608,8 @@ public final class GpuGeneratedLauncherInvoker {
             );
             return new LauncherBinding(
                     launcherClass,
-                    (GpuKernelDescriptor) launcherClass.getField("KERNEL_DESCRIPTOR").get(null)
+                    (GpuKernelDescriptor) launcherClass.getField("KERNEL_DESCRIPTOR").get(null),
+                    fallbackDescriptors(launcherClass)
             );
         } catch (ClassNotFoundException exception) {
             throw new IllegalArgumentException(
@@ -553,7 +632,32 @@ public final class GpuGeneratedLauncherInvoker {
         }
     }
 
-    private record LauncherBinding(Class<?> launcherClass, GpuKernelDescriptor descriptor) {
+    private static List<GpuKernelDescriptor> fallbackDescriptors(Class<?> launcherClass) {
+        try {
+            Object value = launcherClass.getField("KERNEL_FALLBACK_DESCRIPTORS").get(null);
+            if (value instanceof List<?> list) {
+                return list.stream()
+                        .filter(GpuKernelDescriptor.class::isInstance)
+                        .map(GpuKernelDescriptor.class::cast)
+                        .toList();
+            }
+            return List.of();
+        } catch (NoSuchFieldException exception) {
+            return List.of();
+        } catch (IllegalAccessException exception) {
+            throw new IllegalStateException(
+                    "Generated GPU launcher KERNEL_FALLBACK_DESCRIPTORS is not accessible for "
+                            + launcherClass.getName(),
+                    exception
+            );
+        }
+    }
+
+    private record LauncherBinding(
+            Class<?> launcherClass,
+            GpuKernelDescriptor descriptor,
+            List<GpuKernelDescriptor> fallbackDescriptors
+    ) {
     }
 
     public static final class GeneratedLauncher {
@@ -609,6 +713,38 @@ public final class GpuGeneratedLauncherInvoker {
          */
         public Class<?> launcherClass() {
             return binding.launcherClass();
+        }
+
+        /**
+         * Prepares this launcher for repeated hot-loop calls.
+         */
+        public GpuPreparedLauncher prepare(Object... arguments) {
+            return GpuGeneratedLauncherInvoker.prepare(ownerClass, methodName, arguments);
+        }
+
+        public GpuPreparedLauncher prepareWithConfig(GpuExecutionConfig executionConfig, Object... arguments) {
+            return GpuGeneratedLauncherInvoker.prepareWithConfig(ownerClass, methodName, executionConfig, arguments);
+        }
+
+        public GpuPreparedLauncher prepareWithCompileOptions(
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.prepareWithCompileOptions(ownerClass, methodName, compileOptions, arguments);
+        }
+
+        public GpuPreparedLauncher prepareWithConfigAndCompileOptions(
+                GpuExecutionConfig executionConfig,
+                GpuRuntimeCompileOptions compileOptions,
+                Object... arguments
+        ) {
+            return GpuGeneratedLauncherInvoker.prepareWithConfigAndCompileOptions(
+                    ownerClass,
+                    methodName,
+                    executionConfig,
+                    compileOptions,
+                    arguments
+            );
         }
 
         /**

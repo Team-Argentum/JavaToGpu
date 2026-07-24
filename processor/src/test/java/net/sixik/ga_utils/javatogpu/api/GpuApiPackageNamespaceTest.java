@@ -155,6 +155,7 @@ final class GpuApiPackageNamespaceTest {
                 "GpuAnnotationSupport.java",
                 "GpuBackendTarget.java",
                 "GpuDeviceClassTarget.java",
+                "GpuPreparedLauncher.java",
                 "GpuScope.java",
                 "GpuVendorTarget.java",
                 "JavaToGpu.java",

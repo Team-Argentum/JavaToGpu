@@ -1787,6 +1787,7 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + emitExplicitCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicitWorkSizeCompileOptionsLauncher(method, parameterSignature)
                 + emitExplicitExecutionConfigCompileOptionsLauncher(method, parameterSignature)
+                + emitPreparedLaunchers(method, parameterSignature)
                 + emitStandardBackendDeviceLaunchers(method, parameterSignature)
                 + emitExplicit3DWorkSizeLauncher(method, parameterSignature)
                 + emitReturnValueConvenienceLaunchers(method, returnValueConvenience)
@@ -2129,6 +2130,40 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
                 + "    /** Invokes with explicit execution configuration plus compile/runtime options. */\n"
                 + "    public static void invokeWithConfigAndCompileOptions(" + signature + ") {\n"
                 + emitLauncherInvokeBodyWithExecutionConfigAndCompileOptions(method)
+                + "    }\n";
+    }
+
+    private String emitPreparedLaunchers(ExecutableElement method, String parameterSignature) {
+        if (!"void".equals(method.getReturnType().toString())) {
+            return "";
+        }
+
+        String configSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, " + parameterSignature;
+        String compileOptionsSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+        String configCompileOptionsSignature = parameterSignature.isEmpty()
+                ? "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions"
+                : "net.sixik.ga_utils.javatogpu.runtime.GpuExecutionConfig executionConfig, net.sixik.ga_utils.javatogpu.runtime.GpuRuntimeCompileOptions compileOptions, " + parameterSignature;
+
+        return "\n"
+                + "    /** Prepares this generated launcher for repeated hot-loop calls. */\n"
+                + "    public static net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher prepare(" + parameterSignature + ") {\n"
+                + emitLauncherPrepareBody(method, "null", "null")
+                + "    }\n\n"
+                + "    /** Prepares this generated launcher with an explicit default execution configuration. */\n"
+                + "    public static net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher prepareWithConfig(" + configSignature + ") {\n"
+                + emitLauncherPrepareBody(method, "executionConfig", "null")
+                + "    }\n\n"
+                + "    /** Prepares this generated launcher with runtime compile options. */\n"
+                + "    public static net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher prepareWithCompileOptions(" + compileOptionsSignature + ") {\n"
+                + emitLauncherPrepareBody(method, "null", "compileOptions")
+                + "    }\n\n"
+                + "    /** Prepares this generated launcher with an explicit execution configuration and compile options. */\n"
+                + "    public static net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher prepareWithConfigAndCompileOptions(" + configCompileOptionsSignature + ") {\n"
+                + emitLauncherPrepareBody(method, "executionConfig", "compileOptions")
                 + "    }\n";
     }
 
@@ -2487,6 +2522,25 @@ public final class GpuCompilerProcessor extends AbstractProcessor {
         return "        net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.invokeVariantsFromGeneratedLauncher("
                 + buildLauncherClassName(method)
                 + ".class, executionConfig, compileOptions, KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
+                + (arguments.isEmpty() ? "" : ", " + arguments)
+                + ");\n";
+    }
+
+    private String emitLauncherPrepareBody(
+            ExecutableElement method,
+            String executionConfigExpression,
+            String compileOptionsExpression
+    ) {
+        String arguments = method.getParameters().stream()
+                .map(parameter -> parameter.getSimpleName().toString())
+                .collect(Collectors.joining(", "));
+        return "        return net.sixik.ga_utils.javatogpu.runtime.GpuRuntime.prepareVariantsFromGeneratedLauncher("
+                + buildLauncherClassName(method)
+                + ".class, "
+                + executionConfigExpression
+                + ", "
+                + compileOptionsExpression
+                + ", KERNEL_DESCRIPTOR, KERNEL_FALLBACK_DESCRIPTORS"
                 + (arguments.isEmpty() ? "" : ", " + arguments)
                 + ");\n";
     }

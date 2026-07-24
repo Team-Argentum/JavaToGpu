@@ -1,6 +1,7 @@
 package net.sixik.ga_utils.javatogpu.runtime;
 
 import net.sixik.ga_utils.javatogpu.api.GpuBackendTarget;
+import net.sixik.ga_utils.javatogpu.api.GpuPreparedLauncher;
 import net.sixik.ga_utils.javatogpu.runtime.opencl.OpenClGpuRuntimeBackend;
 
 import java.util.ArrayList;
@@ -574,6 +575,179 @@ public final class GpuRuntime {
                 classLoader,
                 fallbackDescriptors
         ));
+    }
+
+    /**
+     * Prepares a reusable launcher through the currently configured backend.
+     *
+     * <p>This is the low-level runtime entry point for hot loops. It performs the backend's cold prepare path once and
+     * returns a handle whose later invocations should avoid descriptor selection, source diagnostics, capability
+     * discovery, artifact dumping, and kernel compilation.</p>
+     */
+    public static GpuPreparedLauncher prepare(GpuKernelDescriptor descriptor, Object... arguments) {
+        return backend.prepare(new GpuKernelInvocation(descriptor, arguments));
+    }
+
+    /**
+     * Prepares a reusable launcher with an explicit default execution config.
+     */
+    public static GpuPreparedLauncher prepare(
+            GpuExecutionConfig executionConfig,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        return backend.prepare(new GpuKernelInvocation(descriptor, arguments, executionConfig));
+    }
+
+    /**
+     * Prepares a reusable launcher with compile options.
+     */
+    public static GpuPreparedLauncher prepareWithCompileOptions(
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        return prepareWithOptionalBackendDevicePreflight(new GpuKernelInvocation(descriptor, arguments, compileOptions));
+    }
+
+    /**
+     * Prepares a reusable launcher with compile options and an explicit default execution config.
+     */
+    public static GpuPreparedLauncher prepareWithCompileOptions(
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            Object... arguments
+    ) {
+        return prepareWithOptionalBackendDevicePreflight(new GpuKernelInvocation(
+                descriptor,
+                arguments,
+                executionConfig,
+                compileOptions
+        ));
+    }
+
+    /**
+     * Prepares one generated method with its deterministic runtime fallback variants.
+     */
+    public static GpuPreparedLauncher prepareVariantsFromGeneratedLauncher(
+            Class<?> launcherClass,
+            GpuExecutionConfig executionConfig,
+            GpuRuntimeCompileOptions compileOptions,
+            GpuKernelDescriptor descriptor,
+            List<GpuKernelDescriptor> fallbackDescriptors,
+            Object... arguments
+    ) {
+        ClassLoader classLoader = launcherClass == null ? null : launcherClass.getClassLoader();
+        return prepareWithOptionalBackendDevicePreflight(new GpuKernelInvocation(
+                descriptor,
+                arguments,
+                executionConfig,
+                compileOptions,
+                classLoader,
+                fallbackDescriptors
+        ));
+    }
+
+    private static GpuPreparedLauncher prepareWithOptionalBackendDevicePreflight(GpuKernelInvocation invocation) {
+        GpuRuntimeBackend activeBackend = backend();
+        if (!requiresAutomaticBackendDevicePreflight(activeBackend, invocation.compileOptions())) {
+            return activeBackend.prepare(invocation);
+        }
+
+        GpuRuntimeLifecycleEventBus lifecycleEventBus = automaticBackendDevicePreflightLifecycleEventBus();
+        publishAutomaticBackendDevicePreflightEvent(
+                lifecycleEventBus,
+                GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_STARTED,
+                invocation,
+                "started",
+                "automatic backend/device preflight started",
+                null
+        );
+        try {
+            GpuRuntimeScope scope = automaticBackendDevicePreflightScopeFactory.apply(
+                    invocation.compileOptions(),
+                    lifecycleEventBus
+            );
+            GpuPreparedLauncher preparedLauncher = backend().prepare(invocation);
+            publishAutomaticBackendDevicePreflightEvent(
+                    lifecycleEventBus,
+                    GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_COMPLETED,
+                    invocation,
+                    "success",
+                    "automatic backend/device preflight completed",
+                    null
+            );
+            return new ScopedPreparedLauncher(preparedLauncher, scope);
+        } catch (RuntimeException failure) {
+            publishAutomaticBackendDevicePreflightEvent(
+                    lifecycleEventBus,
+                    GpuRuntimeLifecycleEventKind.BACKEND_DEVICE_PREFLIGHT_COMPLETED,
+                    invocation,
+                    "failed",
+                    "automatic backend/device preflight failed",
+                    failure
+            );
+            throw failure;
+        }
+    }
+
+    private record ScopedPreparedLauncher(
+            GpuPreparedLauncher delegate,
+            GpuRuntimeScope scope
+    ) implements GpuPreparedLauncher {
+
+        private ScopedPreparedLauncher {
+            delegate = Objects.requireNonNull(delegate, "delegate");
+            scope = Objects.requireNonNull(scope, "scope");
+        }
+
+        @Override
+        public GpuKernelDescriptor descriptor() {
+            return delegate.descriptor();
+        }
+
+        @Override
+        public GpuRuntimeCompileOptions compileOptions() {
+            return delegate.compileOptions();
+        }
+
+        @Override
+        public GpuExecutionConfig defaultExecutionConfig() {
+            return delegate.defaultExecutionConfig();
+        }
+
+        @Override
+        public void invoke(Object... arguments) {
+            delegate.invoke(arguments);
+        }
+
+        @Override
+        public void invokeWithConfig(GpuExecutionConfig executionConfig, Object... arguments) {
+            delegate.invokeWithConfig(executionConfig, arguments);
+        }
+
+        @Override
+        public void close() {
+            RuntimeException failure = null;
+            try {
+                delegate.close();
+            } catch (RuntimeException exception) {
+                failure = exception;
+            }
+            try {
+                scope.close();
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
     }
 
     private static void invokeWithOptionalBackendDevicePreflight(GpuKernelInvocation invocation) {

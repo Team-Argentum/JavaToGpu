@@ -27,7 +27,7 @@ class BackendSelectionExampleTest {
         assertTrue(catalog.contains("VULKAN (`VULKAN`)"));
         assertTrue(catalog.contains("METAL (`METAL`)"));
         assertTrue(catalog.contains("moduleFormats: opencl-c"));
-        assertTrue(catalog.contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(catalog.contains("moduleFormats: cubin,cuda-c,fatbin,ptx"));
         assertTrue(catalog.contains("capabilityVocabulary: compute-capability"));
         assertTrue(catalog.contains("Runtime backend adapter is not implemented for CUDA"));
     }
@@ -41,7 +41,7 @@ class BackendSelectionExampleTest {
         assertTrue(diagnostic.contains("CUDA: Runtime backend adapter is not implemented for CUDA"));
         assertTrue(diagnostic.contains("score: preference=1000000"));
         assertTrue(diagnostic.contains("rejected=true"));
-        assertTrue(diagnostic.contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(diagnostic.contains("moduleFormats: cubin,cuda-c,fatbin,ptx"));
         assertTrue(diagnostic.contains("executionPipeline: available=true"));
     }
 
@@ -56,7 +56,7 @@ class BackendSelectionExampleTest {
         assertTrue(availability.contains("sharedRunner=true"));
         assertTrue(availability.contains("moduleFormats: opencl-c"));
         assertTrue(availability.contains("CUDA: status=execution-pipeline-available"));
-        assertTrue(availability.contains("moduleFormats: cuda-c,ptx"));
+        assertTrue(availability.contains("moduleFormats: cubin,cuda-c,fatbin,ptx"));
         assertTrue(availability.contains("VULKAN: status=execution-unavailable"));
         assertTrue(availability.contains("METAL: status=execution-unavailable"));
         assertTrue(availability.contains("sharedRunner=false"));

@@ -1,0 +1,35 @@
+plugins {
+    id 'application'
+}
+
+import java.util.Locale
+
+group = 'demo'
+version = '1.0-SNAPSHOT'
+
+def javaToGpuVersion = '0.1.0-alpha.4'
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def lwjglNatives = osName.contains('win')
+        ? 'natives-windows'
+        : (osName.contains('mac') ? 'natives-macos' : 'natives-linux')
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    // Needed at compile/runtime so your app can import JavaToGpu API and runtime facade.
+    implementation "io.github.deussixik:javatogpu:${javaToGpuVersion}"
+
+    // Needed at compile time so @GPU methods get generated launchers/resources.
+    annotationProcessor "io.github.deussixik:javatogpu:${javaToGpuVersion}"
+
+    // JavaToGpu intentionally does not publish a platform-specific LWJGL native classifier.
+    // The application must choose the native package for the OS it runs on.
+    runtimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
+}
+
+application {
+    mainClass = 'demo.Main'
+}

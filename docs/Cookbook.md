@@ -15,6 +15,25 @@ try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
 }
 ```
 
+## Prepare A Kernel For A Hot Loop
+
+Use this when the same generated kernel is called many times per frame, tick, or batch:
+
+```java
+try (GpuScope ignored = JavaToGpu.useOpenClSharedCache()) {
+    GpuPreparedLauncher launcher = JavaToGpu.prepare(DemoKernel.class, "transform", input, output);
+
+    for (int pass = 0; pass < 1000; pass++) {
+        launcher.invoke(input, output);
+    }
+} finally {
+    JavaToGpu.shutdownOpenClSharedCache();
+}
+```
+
+`prepare(...)` pays the cold runtime path once. Later `invoke(...)` calls reuse the selected descriptor and compiled
+kernel and avoid method-variant selection, production source selection, artifact dumps, and capability discovery.
+
 ## Run One Call With Backend/Device Preflight
 
 Use this when you want the generated launcher to select and install the standard backend/device scope for a single call:
