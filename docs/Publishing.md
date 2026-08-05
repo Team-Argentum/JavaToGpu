@@ -63,6 +63,8 @@ Recommended properties:
 ```properties
 mavenCentralUsername=<central-token-username>
 mavenCentralPassword=<central-token-password>
+mavenCentralNamespace=io.github.deussixik
+mavenCentralPublishingType=automatic
 signingInMemoryKey=<ascii-armored-private-key>
 signingInMemoryKeyPassword=<private-key-password>
 ```
@@ -72,9 +74,13 @@ Equivalent environment variables are also supported:
 ```text
 MAVEN_CENTRAL_USERNAME
 MAVEN_CENTRAL_PASSWORD
+MAVEN_CENTRAL_NAMESPACE
+MAVEN_CENTRAL_PUBLISHING_TYPE
 SIGNING_IN_MEMORY_KEY
 SIGNING_IN_MEMORY_KEY_PASSWORD
 ```
+
+`mavenCentralNamespace` defaults to the Gradle `group` (`io.github.deussixik`). `mavenCentralPublishingType` defaults to `automatic`, which asks Maven Central to publish the uploaded deployment after validation. Use `user_managed` only when you want to inspect and publish manually from the Central Portal.
 
 The local `gradle.properties` file in this repository root is ignored by Git as an extra safety net, but the preferred location is still `~/.gradle/gradle.properties`.
 
@@ -169,7 +175,31 @@ ir-vendor-optimizer/build/publications/mavenJava/pom-default.xml
 .\gradlew.bat publishJavaToGpuReleasesToCentral -Pjavatogpu.version=0.1.0-alpha.5 --console=plain
 ```
 
-After upload, complete the release from the Maven Central / Sonatype portal if the deployment lands in a staging flow that requires manual close/release. Release all JavaToGpu artifacts with the same version.
+The aggregate release task uploads all Maven artifacts to the OSSRH staging API, then calls the Central Portal manual upload endpoint for the default namespace repository. With the default `mavenCentralPublishingType=automatic`, Maven Central publishes the deployment after its validation passes. If `user_managed` is selected, complete the release manually from the Maven Central / Sonatype portal. Release all JavaToGpu artifacts with the same version.
+
+Once the release is visible in Maven Central, external consumers do not need Maven Central credentials or repository tokens. They should keep only `mavenCentral()` in `repositories`.
+
+## JitPack Builds
+
+JitPack is configured through the root `jitpack.yml`. Its install step publishes the four Gradle `mavenJava` publications to Maven Local with the requested JitPack version:
+
+```text
+./gradlew publishToMavenLocal -x test -Pjavatogpu.version=$VERSION --no-daemon --console=plain
+```
+
+Use a Git tag or commit that contains `jitpack.yml`. The main processor artifact remains `javatogpu`:
+
+```groovy
+repositories {
+    maven { url = uri('https://jitpack.io') }
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.github.Team-Argentum.JavaToGpu:javatogpu:<tag-or-commit>'
+    annotationProcessor 'com.github.Team-Argentum.JavaToGpu:javatogpu:<tag-or-commit>'
+}
+```
 
 ## Consumer Example
 

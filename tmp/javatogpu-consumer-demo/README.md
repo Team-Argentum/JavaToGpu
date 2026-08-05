@@ -1,22 +1,24 @@
 # JavaToGpu Consumer Demo
 
-Минимальный внешний Gradle-проект, который показывает не только `@GPU` annotation, но и полный runtime-путь:
+Minimal external Gradle project that consumes JavaToGpu from public Maven Central.
 
-- `implementation io.github.deussixik:javatogpu` для API/runtime;
-- `annotationProcessor io.github.deussixik:javatogpu` для генерации launcher/source artifacts;
-- `runtimeOnly org.lwjgl:lwjgl::<native-classifier>` для OpenCL/LWJGL native library;
-- `JavaToGpu.useOpenClSharedCache()` вокруг GPU-вызова;
-- explicit global work size через generated launcher.
+It demonstrates the full user path:
+
+- `implementation io.github.deussixik:javatogpu` for the API/runtime facade.
+- `annotationProcessor io.github.deussixik:javatogpu` for generated launcher/resources.
+- `runtimeOnly org.lwjgl:lwjgl::<native-classifier>` for the OpenCL/LWJGL native library.
+- `JavaToGpu.useOpenClSharedCache()` around the GPU call.
+- Explicit global work size through the generated launcher.
 
 ## Run
 
-Из корня основного репозитория:
+From the repository root:
 
 ```powershell
 .\gradlew.bat -p tmp\javatogpu-consumer-demo clean run --console=plain --no-daemon
 ```
 
-Ожидаемый результат:
+Expected output:
 
 ```text
 input  = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
@@ -25,13 +27,7 @@ output = [3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0]
 
 ## Maven Central
 
-В `settings.gradle` временно добавлен local staging repository:
-
-```groovy
-maven { url = uri('../../processor/build/maven-staging') }
-```
-
-Он нужен только пока свежая `0.1.0-alpha.5` синхронизируется в публичный Maven Central. В обычном проекте оставь только:
+This demo intentionally uses only public Maven Central:
 
 ```groovy
 repositories {
@@ -39,12 +35,14 @@ repositories {
 }
 ```
 
+No Maven Central credentials or private repository tokens are required for consumers.
+
 ## Why Generated Launcher
 
-Прямой вызов `Kernels.scaleAndBias(input, output)` использует default launch config. Для массива в текущей alpha лучше явно указать размер работы:
+A direct call such as `Kernels.scaleAndBias(input, output)` uses the default launch config. For array workloads in this alpha, prefer an explicit global size:
 
 ```java
 Main_Kernels_scaleAndBias_GpuLauncher.invokeWithGlobalWorkSize(input.length, input, output);
 ```
 
-Если указать `@GPUWorkGroupSize(x = 64)`, то global size должен быть совместим с local size. Для первого smoke-примера local size не фиксируется, и драйвер выбирает его сам.
+If `@GPUWorkGroupSize(x = 64)` is set, the global size must be compatible with the local size. This smoke example does not fix a local size, so the driver chooses it.

@@ -38,6 +38,20 @@ dependencies {
 }
 ```
 
+JitPack is also configured for builds from Git tags or commits. Use a tag or commit that contains `jitpack.yml`:
+
+```groovy
+repositories {
+    maven { url = uri('https://jitpack.io') }
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.github.Team-Argentum.JavaToGpu:javatogpu:<tag-or-commit>'
+    annotationProcessor 'com.github.Team-Argentum.JavaToGpu:javatogpu:<tag-or-commit>'
+}
+```
+
 To let JavaToGpu replace direct calls to `@GPU` methods with generated runtime launchers, add the bytecode rewrite task
 to the same `build.gradle`:
 

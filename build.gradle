@@ -5,6 +5,18 @@ plugins {
 group = 'io.github.deussixik'
 version = findProperty('javatogpu.version') ?: '0.1.0-alpha.5'
 
+def secretValue = { String gradlePropertyName, String environmentVariableName ->
+    providers.gradleProperty(gradlePropertyName)
+            .orElse(providers.environmentVariable(environmentVariableName))
+}
+
+def centralUsernameProvider = secretValue('mavenCentralUsername', 'MAVEN_CENTRAL_USERNAME')
+def centralPasswordProvider = secretValue('mavenCentralPassword', 'MAVEN_CENTRAL_PASSWORD')
+def centralNamespaceProvider = secretValue('mavenCentralNamespace', 'MAVEN_CENTRAL_NAMESPACE')
+        .orElse(providers.provider { rootProject.group.toString() })
+def centralPublishingTypeProvider = secretValue('mavenCentralPublishingType', 'MAVEN_CENTRAL_PUBLISHING_TYPE')
+        .orElse('automatic')
+
 ext.javatogpuPublishedArtifacts = [
         ':processor'           : 'javatogpu',
         ':ir-validation'       : 'javatogpu-ir-validation',
@@ -66,13 +78,57 @@ tasks.register('publishJavaToGpuSnapshotsToCentral') {
 
 tasks.register('publishJavaToGpuReleasesToCentral') {
     group = 'publishing'
-    description = 'Publishes all JavaToGpu Maven artifacts to the Maven Central release staging endpoint.'
+    description = 'Publishes all JavaToGpu Maven artifacts to Maven Central and transfers the release to the Publisher Portal.'
     dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
         "${projectPath}:publishMavenJavaPublicationToCentralReleasesRepository"
     }
     doFirst {
         if (rootProject.version.toString().endsWith('-SNAPSHOT')) {
             throw new GradleException('Release publishing requires a non-SNAPSHOT javatogpu.version')
+        }
+    }
+    doLast {
+        String username = centralUsernameProvider.orNull
+        String password = centralPasswordProvider.orNull
+        String namespace = centralNamespaceProvider.get()
+        String publishingType = centralPublishingTypeProvider.get()
+
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            throw new GradleException('Maven Central release transfer requires mavenCentralUsername/mavenCentralPassword or MAVEN_CENTRAL_USERNAME/MAVEN_CENTRAL_PASSWORD')
+        }
+        if (namespace == null || namespace.isBlank()) {
+            throw new GradleException('Maven Central release transfer requires a non-empty mavenCentralNamespace or MAVEN_CENTRAL_NAMESPACE')
+        }
+        if (!['user_managed', 'automatic', 'portal_api'].contains(publishingType)) {
+            throw new GradleException('Unsupported mavenCentralPublishingType: ' + publishingType
+                    + '. Use user_managed, automatic, or portal_api.')
+        }
+
+        String encodedNamespace = java.net.URLEncoder.encode(namespace, 'UTF-8')
+        String encodedPublishingType = java.net.URLEncoder.encode(publishingType, 'UTF-8')
+        URL uploadUrl = new URL('https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/'
+                + encodedNamespace + '?publishing_type=' + encodedPublishingType)
+        HttpURLConnection connection = (HttpURLConnection) uploadUrl.openConnection()
+        connection.setRequestMethod('POST')
+        connection.setRequestProperty('Accept', 'application/json')
+        connection.setRequestProperty('Authorization', 'Bearer ' + java.util.Base64.encoder.encodeToString(
+                (username + ':' + password).getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        ))
+        connection.setConnectTimeout(30_000)
+        connection.setReadTimeout(120_000)
+        connection.setDoOutput(true)
+        connection.outputStream.close()
+
+        int responseCode = connection.responseCode
+        InputStream responseStream = responseCode >= 400 ? connection.errorStream : connection.inputStream
+        String responseBody = responseStream == null ? '' : responseStream.getText('UTF-8')
+        if (responseCode >= 400) {
+            throw new GradleException('Maven Central Portal transfer failed with HTTP ' + responseCode + ': ' + responseBody)
+        }
+
+        println 'Maven Central Portal transfer requested for namespace ' + namespace + ' with publishing_type=' + publishingType
+        if (!responseBody.isBlank()) {
+            println responseBody
         }
     }
 }
