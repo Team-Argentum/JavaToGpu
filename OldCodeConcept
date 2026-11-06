@@ -1,0 +1,143 @@
+package com.sixik.gpu.examples;
+
+import com.sixik.gpu.api.Gpu;
+import com.sixik.gpu.api.annotations.*;
+import com.sixik.gpu.api.enums.Backend;
+import com.sixik.gpu.api.enums.InlinePolicy;
+import com.sixik.gpu.api.types.Float2;
+import com.sixik.gpu.api.types.FloatPtr;
+
+public final class MyGpuModule {
+
+    // Структура данных (пакуется в struct / uniform block)
+    @Struct(alignment = 16)
+    public static class GamePos {
+        public float x;
+        public float y;
+        public float z;
+
+        public GamePos() {}
+
+        public GamePos(float x, float y, float z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+    }
+
+    // Точка входа (Kernel / __kernel / __global__)
+    @Kernel
+    @WorkGroup(x = 256, y = 1, z = 1)
+    public static void computeSine(
+        @Global float[] input,
+        @Global float[] output
+    ) {
+        int id = Gpu.getGlobalId(0);
+        output[id] = Gpu.sin(input[id]) + 2.0f;
+    }
+
+    // Kernel с явными директивами кодогенерации
+    @Kernel(inline = InlinePolicy.ALWAYS, optLevel = 0, workgroup = 32, required = {"SIMD"}, fallback = "processStepsSimple")
+    public static void processSteps(
+        @Global int[] input,
+        @Global int[] output,
+        @Global(constant=true) int a;
+    ) {
+        int id = Gpu.getGlobalId(0);
+        int value = input[id];
+        int step = 0;
+
+        do {
+            value = Gpu.max(value, step) + a;
+            step++;
+        } while (step < 2);
+
+        output[id] = value;
+    }
+
+    // Мульти-бэкенд нативная вставка с @Repeatable
+    @GpuNative(backend = Backend.OPENCL, code = """
+        return a + b;
+    """, fallback = "simpleMethod")
+    @GpuNative(backend = Backend.CUDA, code = """
+        return a + b;
+    """, fallback = "simpleMethod")
+    public static native int nativeAddByBackend(int a, int b);
+
+    @GpuNative(backend = Backend.ANY, code = """
+        return a + b;
+    """)
+    public static native int nativeAddUniversal(int a, int b);
+
+    @GpuFallback("simpleMethod")
+    @DeviceFunction
+    public static float simpleMethod(int a, int b) {
+        return a + b;
+    }
+
+
+    private static final float LIMIT = 32.0f;
+
+    // Вспомогательная функция (__device__ / inline)
+    @DeviceFunction
+    public static float lerp(float a, float b, float t) {
+        return a + (b - a) * t;
+    }
+
+    // Работа с мутабельным скаляром / указателем
+    @DeviceFunction
+    public static void clamp(FloatPtr ptr) {
+        if (ptr.value > LIMIT) {
+            ptr.value = LIMIT;
+        }
+    }
+
+    // Библиотека переиспользуемых функций / констант
+    public static final class MathLibrary {
+
+        @Constant
+        public static final float VALUE = 32.0f;
+
+        @DeviceFunction
+        public static Float2 add(Float2 left, Float2 right) {
+            return new Float2(left.x + right.x, left.y + right.y);
+        }
+    }
+
+    @Kernel
+    @AutoTune(
+        warmup = 5,               // Количество прогревочных запусков
+        iterations = 20,           // Замеров для усреднения
+        metric = Metric.LATENCY,  // Критерий выбора: минимальное время выполнения
+        candidates = {            // Варианты рабочих групп, которые рантайм протестирует
+            @WorkGroup(x = 64),
+            @WorkGroup(x = 128),
+            @WorkGroup(x = 256),
+            @WorkGroup(x = 512),
+            @WorkGroup(x = 1024)
+        },
+        verifyWithCpu = false,     // Опционально: сверять результат с Java CPU-реализацией
+
+        /*
+            Формат типа
+            "tunedKernel" : {
+                "input" : {1f, 2f, 3f, 4f},
+                "output" : "null",
+                "results" : [
+                    {
+                        "field" : "output",
+                        "result" : { 0.0174f, 0.0348f, 0.0523f, 0.0697f }
+                    }
+                ]
+            }
+        */
+        testParameters= "path/to_file.json",
+    )
+    public static void tunedKernel(
+        @Global float[] input,
+        @Global float[] output
+    ) {
+        int id = Gpu.getGlobalId(0);
+        output[id] = Gpu.sin(input[id]) + 2.0f;
+    }
+}

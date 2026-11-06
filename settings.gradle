@@ -1,7 +1,14 @@
-rootProject.name = 'JavaToGpu'
-include 'test-app'
-include 'examples-app'
-include 'processor'
-include 'ir-validation'
-include 'ir-optimizer'
-include 'ir-vendor-optimizer'
+// Модули и их допустимые зависимости описаны в REWORK_ARCHITECTURE.md, раздел 11.
+// Граф проверяется задачей verifyModuleBoundaries (см. build.gradle).
+rootProject.name = 'gpu'
+
+include 'api'              // аннотации, типы, builtins (генерируются). Без нативов.
+include 'ir'               // плоский IR (SoA), типы, сериализация, валидатор. 0 зависимостей.
+include 'ir-interpreter'   // эталонный CPU-интерпретатор IR (для тестов и конформанса).
+include 'codegen-opencl'   // IR -> OpenCL C. Чистая функция.
+include 'runtime'          // GpuContext, устройства, буферы, кэш, запуск, JVM-fallback. FFM (Panama).
+include 'frontend-java'    // javac Tree API + annotation processor -> пишет IR.
+include 'weaver'           // подмена тела @Kernel-метода (ASM, post-compile).
+include 'gradle-plugin'    // тонкая обёртка над weaver для Gradle.
+include 'test-support'     // JUnit 5/6: GpuAssert, @GPUTest, KernelSample.
+include 'tools'            // дампы IR, CI-отчёты. Не входит в production-артефакт.

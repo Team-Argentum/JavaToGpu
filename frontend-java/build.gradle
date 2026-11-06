@@ -1,0 +1,6 @@
+description = 'Java-фронтенд: annotation processor на javac Tree API, пишет IR.'
+
+dependencies {
+    implementation project(':api')
+    implementation project(':ir')
+}

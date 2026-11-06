@@ -1,0 +1,8 @@
+description = 'Дамперы IR и CI-отчёты. Не входит в production-артефакт.'
+
+dependencies {
+    implementation project(':ir')
+    implementation project(':codegen-opencl')
+    implementation project(':ir-interpreter')
+    implementation project(':runtime')
+}

@@ -1,0 +1,6 @@
+description = 'Подмена тела @Kernel-метода в байткоде (ASM): оригинал уходит в <name>$jvm, метод становится делегатом.'
+
+dependencies {
+    implementation 'org.ow2.asm:asm:9.11.1'
+    implementation 'org.ow2.asm:asm-tree:9.11.1'
+}

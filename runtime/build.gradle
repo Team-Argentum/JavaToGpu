@@ -1,0 +1,7 @@
+description = 'GpuContext, устройства (FFM к libOpenCL), GpuBuffer, кэш, запуск, JVM-fallback.'
+
+dependencies {
+    api project(':api')
+    api project(':ir')
+    implementation project(':codegen-opencl')
+}

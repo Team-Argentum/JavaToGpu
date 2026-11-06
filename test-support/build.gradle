@@ -1,0 +1,10 @@
+description = 'JUnit-библиотека: GpuAssert, @GPUTest, KernelSample (JVM <-> IR-интерпретатор <-> GPU).'
+
+dependencies {
+    api project(':api')
+    api project(':ir')
+    api project(':ir-interpreter')
+    api project(':runtime')
+    api platform('org.junit:junit-bom:6.1.3')
+    api 'org.junit.jupiter:junit-jupiter-api'
+}

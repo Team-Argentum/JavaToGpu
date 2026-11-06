@@ -1,0 +1,9 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+description = 'Gradle-плагин: подключает зависимости, annotation processor и weave-шаг.'
+
+dependencies {
+    implementation project(':weaver')
+}

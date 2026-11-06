@@ -1,0 +1,5 @@
+description = 'Кодген IR -> OpenCL C. Чистая функция emit(IrModule, Target).'
+
+dependencies {
+    api project(':ir')
+}

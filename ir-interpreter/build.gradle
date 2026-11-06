@@ -1,0 +1,5 @@
+description = 'Эталонный CPU-интерпретатор IR для дифференциальных тестов.'
+
+dependencies {
+    api project(':ir')
+}

@@ -1,136 +1,149 @@
 plugins {
-    id 'java'
+    id 'base'
 }
 
+// Новое поколение проекта (см. REWORK_ARCHITECTURE.md). Прежний код — в теге legacy-alpha5.
 group = 'io.github.deussixik'
-version = findProperty('javatogpu.version') ?: '0.1.0-alpha.5'
+version = '0.2.0-SNAPSHOT'
 
-def secretValue = { String gradlePropertyName, String environmentVariableName ->
-    providers.gradleProperty(gradlePropertyName)
-            .orElse(providers.environmentVariable(environmentVariableName))
-}
+def JAVA_VERSION = 25
+def JUNIT_BOM = 'org.junit:junit-bom:6.1.3'
 
-def centralUsernameProvider = secretValue('mavenCentralUsername', 'MAVEN_CENTRAL_USERNAME')
-def centralPasswordProvider = secretValue('mavenCentralPassword', 'MAVEN_CENTRAL_PASSWORD')
-def centralNamespaceProvider = secretValue('mavenCentralNamespace', 'MAVEN_CENTRAL_NAMESPACE')
-        .orElse(providers.provider { rootProject.group.toString() })
-def centralPublishingTypeProvider = secretValue('mavenCentralPublishingType', 'MAVEN_CENTRAL_PUBLISHING_TYPE')
-        .orElse('automatic')
+subprojects {
+    apply plugin: 'java-library'
 
-ext.javatogpuPublishedArtifacts = [
-        ':processor'           : 'javatogpu',
-        ':ir-validation'       : 'javatogpu-ir-validation',
-        ':ir-optimizer'        : 'javatogpu-ir-optimizer',
-        ':ir-vendor-optimizer' : 'javatogpu-ir-vendor-optimizer'
-]
-
-allprojects {
     group = rootProject.group
     version = rootProject.version
 
     repositories {
         mavenCentral()
     }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(JAVA_VERSION)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = JAVA_VERSION
+        options.compilerArgs += ['-parameters', '-Xlint:all']
+    }
+
+    tasks.withType(Javadoc).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
+    dependencies {
+        testImplementation platform(JUNIT_BOM)
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        // FFM (java.lang.foreign) в runtime требует доступа к нативному коду.
+        jvmArgs '--enable-native-access=ALL-UNNAMED'
+    }
 }
 
-test {
-    useJUnitPlatform()
-}
+// ---------------------------------------------------------------------------------------------
+// Границы модулей (REWORK_ARCHITECTURE.md, разделы 4 и 11).
+// 1) Допустимые зависимости между модулями; 2) допустимые внешние библиотеки;
+// 3) запрещённые импорты JDK/чужих модулей в исходниках ядра.
+// Нарушение = сборка (check) падает.
+// ---------------------------------------------------------------------------------------------
+def allowedProjectDeps = [
+        'api'           : [],
+        'ir'            : [],
+        'ir-interpreter': ['ir'],
+        'codegen-opencl': ['ir'],
+        'runtime'       : ['api', 'ir', 'codegen-opencl'],
+        'frontend-java' : ['api', 'ir'],
+        'weaver'        : [],
+        'gradle-plugin' : ['weaver'],
+        'test-support'  : ['api', 'ir', 'ir-interpreter', 'runtime'],
+        'tools'         : ['ir', 'codegen-opencl', 'ir-interpreter', 'runtime'],
+]
 
-tasks.register('printJavaToGpuPublicationCoordinates') {
-    group = 'publishing'
-    description = 'Prints the JavaToGpu Maven coordinates prepared for publication.'
+// Внешние библиотеки (production-конфигурации). Всё остальное запрещено.
+def allowedExternalGroups = [
+        'weaver'       : ['org.ow2.asm'],
+        'test-support' : ['org.junit'],
+]
+
+// Модули «чистого ядра»: данные и чистые функции, без файлового ввода-вывода и нативов.
+def pureCore = ['ir', 'codegen-opencl']
+def coreModules = ['api', 'ir', 'ir-interpreter', 'codegen-opencl']
+
+def forbiddenInCore = [
+        'java.lang.foreign', 'javax.annotation.processing', 'javax.lang.model', 'javax.tools',
+        'com.sun.', 'org.objectweb.', 'org.lwjgl.',
+        'com.sixik.gpu.runtime', 'com.sixik.gpu.frontend', 'com.sixik.gpu.weaver', 'com.sixik.gpu.tools',
+]
+def forbiddenInPureCore = ['java.nio.file', 'java.io.File', 'java.net.']
+
+tasks.register('verifyModuleBoundaries') {
+    group = 'verification'
+    description = 'Проверяет граф зависимостей модулей и запрещённые импорты (REWORK_ARCHITECTURE.md, разд. 4, 11).'
     doLast {
-        javatogpuPublishedArtifacts.each { projectPath, artifactId ->
-            println "${projectPath} -> ${rootProject.group}:${artifactId}:${rootProject.version}"
+        def violations = []
+        def productionConfigs = ['api', 'implementation', 'compileOnly', 'runtimeOnly', 'annotationProcessor']
+
+        rootProject.subprojects.each { sp ->
+            def name = sp.name
+            if (!allowedProjectDeps.containsKey(name)) {
+                violations << "модуль '${name}' не описан в allowedProjectDeps (build.gradle)"
+                return
+            }
+            productionConfigs.each { cfgName ->
+                def cfg = sp.configurations.findByName(cfgName)
+                if (cfg == null) return
+                cfg.dependencies.each { dep ->
+                    if (dep instanceof ProjectDependency) {
+                        def target = dep.path.substring(dep.path.lastIndexOf(':') + 1)
+                        if (!allowedProjectDeps[name].contains(target)) {
+                            violations << "${name}: запрещённая зависимость от модуля '${target}' (конфигурация ${cfgName})"
+                        }
+                    } else {
+                        def group = dep.group ?: ''
+                        def ok = (allowedExternalGroups[name] ?: []).any { group.startsWith(it) }
+                        if (!ok) {
+                            violations << "${name}: запрещённая внешняя зависимость ${group}:${dep.name} (конфигурация ${cfgName})"
+                        }
+                    }
+                }
+            }
+
+            // Импорты в исходниках.
+            def forbidden = []
+            if (coreModules.contains(name)) forbidden += forbiddenInCore
+            if (pureCore.contains(name)) forbidden += forbiddenInPureCore
+            if (!forbidden.isEmpty()) {
+                sp.fileTree('src/main/java').matching { include '**/*.java' }.each { f ->
+                    f.eachLine { line, idx ->
+                        def m = (line =~ /^\s*import\s+(?:static\s+)?([\w.]+)/)
+                        if (m.find()) {
+                            def imported = m.group(1)
+                            forbidden.each { prefix ->
+                                if (imported.startsWith(prefix)) {
+                                    violations << "${name}: ${sp.relativePath(f)}:${idx} запрещённый импорт ${imported}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("Нарушены границы модулей:\n  - " + violations.join('\n  - '))
+        }
+        println "Границы модулей: ${rootProject.subprojects.size()} модулей, нарушений нет"
     }
 }
 
-tasks.register('validateJavaToGpuMavenCentralReleaseReadiness') {
-    group = 'publishing'
-    description = 'Runs Maven Central release-readiness guards for all published JavaToGpu artifacts.'
-    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
-        "${projectPath}:validateMavenCentralReleaseReadiness"
-    }
+tasks.named('check') {
+    dependsOn 'verifyModuleBoundaries'
 }
-
-tasks.register('publishJavaToGpuToLocalStaging') {
-    group = 'publishing'
-    description = 'Publishes all JavaToGpu Maven artifacts to their local staging repositories.'
-    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
-        "${projectPath}:publishMavenJavaPublicationToLocalStagingRepository"
-    }
-}
-
-tasks.register('publishJavaToGpuSnapshotsToCentral') {
-    group = 'publishing'
-    description = 'Publishes all JavaToGpu Maven artifacts to the Maven Central snapshot repository.'
-    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
-        "${projectPath}:publishMavenJavaPublicationToCentralSnapshotsRepository"
-    }
-    doFirst {
-        if (!rootProject.version.toString().endsWith('-SNAPSHOT')) {
-            throw new GradleException('Snapshot publishing requires -Pjavatogpu.version=<version>-SNAPSHOT')
-        }
-    }
-}
-
-tasks.register('publishJavaToGpuReleasesToCentral') {
-    group = 'publishing'
-    description = 'Publishes all JavaToGpu Maven artifacts to Maven Central and transfers the release to the Publisher Portal.'
-    dependsOn javatogpuPublishedArtifacts.keySet().collect { projectPath ->
-        "${projectPath}:publishMavenJavaPublicationToCentralReleasesRepository"
-    }
-    doFirst {
-        if (rootProject.version.toString().endsWith('-SNAPSHOT')) {
-            throw new GradleException('Release publishing requires a non-SNAPSHOT javatogpu.version')
-        }
-    }
-    doLast {
-        String username = centralUsernameProvider.orNull
-        String password = centralPasswordProvider.orNull
-        String namespace = centralNamespaceProvider.get()
-        String publishingType = centralPublishingTypeProvider.get()
-
-        if (username == null || username.isBlank() || password == null || password.isBlank()) {
-            throw new GradleException('Maven Central release transfer requires mavenCentralUsername/mavenCentralPassword or MAVEN_CENTRAL_USERNAME/MAVEN_CENTRAL_PASSWORD')
-        }
-        if (namespace == null || namespace.isBlank()) {
-            throw new GradleException('Maven Central release transfer requires a non-empty mavenCentralNamespace or MAVEN_CENTRAL_NAMESPACE')
-        }
-        if (!['user_managed', 'automatic', 'portal_api'].contains(publishingType)) {
-            throw new GradleException('Unsupported mavenCentralPublishingType: ' + publishingType
-                    + '. Use user_managed, automatic, or portal_api.')
-        }
-
-        String encodedNamespace = java.net.URLEncoder.encode(namespace, 'UTF-8')
-        String encodedPublishingType = java.net.URLEncoder.encode(publishingType, 'UTF-8')
-        URL uploadUrl = new URL('https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/'
-                + encodedNamespace + '?publishing_type=' + encodedPublishingType)
-        HttpURLConnection connection = (HttpURLConnection) uploadUrl.openConnection()
-        connection.setRequestMethod('POST')
-        connection.setRequestProperty('Accept', 'application/json')
-        connection.setRequestProperty('Authorization', 'Bearer ' + java.util.Base64.encoder.encodeToString(
-                (username + ':' + password).getBytes(java.nio.charset.StandardCharsets.UTF_8)
-        ))
-        connection.setConnectTimeout(30_000)
-        connection.setReadTimeout(120_000)
-        connection.setDoOutput(true)
-        connection.outputStream.close()
-
-        int responseCode = connection.responseCode
-        InputStream responseStream = responseCode >= 400 ? connection.errorStream : connection.inputStream
-        String responseBody = responseStream == null ? '' : responseStream.getText('UTF-8')
-        if (responseCode >= 400) {
-            throw new GradleException('Maven Central Portal transfer failed with HTTP ' + responseCode + ': ' + responseBody)
-        }
-
-        println 'Maven Central Portal transfer requested for namespace ' + namespace + ' with publishing_type=' + publishingType
-        if (!responseBody.isBlank()) {
-            println responseBody
-        }
-    }
-}
-
-apply from: 'gradle/ir-validation-dogfooding.gradle'

@@ -1,8 +1,0 @@
-package net.sixik.ga_utils.javatogpu.frontend.model;
-
-public enum GpuAddressSpace {
-    GLOBAL,
-    CONSTANT,
-    LOCAL,
-    PRIVATE
-}
