@@ -1,0 +1,45 @@
+// JMH-бенчмарки модуля: отдельный source set src/jmh/java, не входит в production-артефакт
+// (REWORK_ARCHITECTURE.md, разд. 13; ROADMAP.md, Definition of Done).
+//
+// Подключение:   apply from: rootProject.file('gradle/jmh.gradle')
+// Запуск:        ./gradlew :ir:jmh                       - все бенчмарки модуля
+//                ./gradlew :ir:jmh -PjmhArgs="Build -f 1 -wi 1 -i 2"   - фильтр по имени и параметры JMH
+//
+// Зависимости jmh* не попадают в production-конфигурации, поэтому verifyModuleBoundaries их не видит.
+
+sourceSets {
+    jmh {
+        java.srcDir 'src/jmh/java'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    jmhImplementation.extendsFrom implementation
+    jmhRuntimeOnly.extendsFrom runtimeOnly
+}
+
+dependencies {
+    jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
+    jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+}
+
+tasks.register('jmh', JavaExec) {
+    group = 'verification'
+    description = 'Запускает JMH-бенчмарки модуля (source set jmh).'
+    dependsOn 'jmhClasses'
+    classpath = sourceSets.jmh.runtimeClasspath
+    mainClass = 'org.openjdk.jmh.Main'
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+    def extra = findProperty('jmhArgs')
+    if (extra != null) {
+        args extra.toString().split(' ')
+    }
+}
+
+// Бенчмарки должны оставаться компилируемыми: иначе они незаметно сгниют.
+tasks.named('check') {
+    dependsOn 'jmhClasses'
+}

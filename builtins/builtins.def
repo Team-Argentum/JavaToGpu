@@ -1,0 +1,49 @@
+# Декларативная таблица builtins - единственный источник истины (REWORK_ARCHITECTURE.md, 5.7, O1).
+#
+# Файл читается в рантайме модулем `ir` (класс Builtins) и, начиная с M2, служит входом генератора
+# `Gpu.java` и типов в модуле `api`. Руками сгенерированные из него файлы не правятся.
+#
+# Формат строки:   <id> <name> <flags> <ret> (<args>)
+#   id     - стабильное число; НЕ переиспользуется и не меняется (на него ссылается бинарный IR)
+#   name   - имя в Java-API (camelCase)
+#   flags  - через запятую: pure | effect | reads | div | uniform | atomic | ulp=<N>
+#              pure    - без побочных эффектов, результат зависит только от аргументов и work-item
+#              effect  - имеет побочный эффект (разрешён только в позиции значения стейтмента, IR-E01)
+#              reads   - читает память (узел «открытый», IR-E02)
+#              div     - результат различается у work-item'ов группы (источник для IR-B01)
+#              uniform - результат считается одинаковым внутри группы (снимает taint, IR-B01)
+#              atomic  - атомарная операция (INT64_ATOMICS для 64-битных)
+#              ulp=N   - допустимая погрешность в ULP для дифференциальных тестов (8.3)
+#   типы   - void bool i32 u32 i64 u64 f32 f64 (+ i8 u8 i16 u16 как типы хранения);
+#            T:<класс> - связывает T с первым аргументом, класс: genf (float/double и векторы),
+#                        geni (i32/u32/i64/u64 и векторы), genn (genf или geni);
+#            T         - тот же тип, что связан ранее;
+#            ptr<T:geni> - указатель (global или local) на скалярное целое, связывает T с pointee.
+#
+# ВНИМАНИЕ: значения ulp предварительные (по спецификации OpenCL C для full profile) и будут
+# сверены в M2 вместе с JVM-реализациями builtins.
+
+version 1
+
+# --- индексы work-item ---------------------------------------------------------------------------
+0   getGlobalId     pure,div        i32 (i32)
+1   getLocalId      pure,div        i32 (i32)
+2   getGroupId      pure,uniform    i32 (i32)
+3   getGlobalSize   pure,uniform    i32 (i32)
+4   getLocalSize    pure,uniform    i32 (i32)
+5   getNumGroups    pure,uniform    i32 (i32)
+6   getWorkDim      pure,uniform    i32 ()
+
+# --- математика ----------------------------------------------------------------------------------
+7   sin             pure,ulp=4      T (T:genf)
+8   cos             pure,ulp=4      T (T:genf)
+9   sqrt            pure,ulp=3      T (T:genf)
+10  fma             pure,ulp=0      T (T:genf, T, T)
+11  max             pure            T (T:genn, T)
+12  min             pure            T (T:genn, T)
+
+# --- управление taint-анализом барьеров ----------------------------------------------------------
+13  assumeUniform   pure,uniform    T (T:genn)
+
+# --- атомики -------------------------------------------------------------------------------------
+14  atomicAdd       effect,reads,atomic   T (ptr<T:geni>, T)

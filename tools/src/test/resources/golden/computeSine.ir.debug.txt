@@ -1,0 +1,24 @@
+module format=1 builtins=1 nodes=15 functions=1
+type t16 = array<global,f32>
+type t17 = ptr<global,f32>
+func f0 "computeSine" kernel ret=void reqd_wg=(256,1,1) features=- group_sync=no
+  param p0 "input" : array<global,f32>  access=READ
+  param p1 "output" : array<global,f32>  access=WRITE
+  local l0 "id" : i32
+  body = n14
+nodes:
+  n0 const_int i32 0
+  n1 intrinsic i32 getGlobalId[n0]
+  n2 local_decl void l0 = n1
+  n3 param array<global,f32> p0
+  n4 local_get i32 l0
+  n5 elem_ptr ptr<global,f32> n3[n4]
+  n6 load f32 n5
+  n7 intrinsic f32 sin[n6]
+  n8 const_float f32 2.0f
+  n9 add f32 n7 n8
+  n10 param array<global,f32> p1
+  n11 local_get i32 l0
+  n12 elem_ptr ptr<global,f32> n10[n11]
+  n13 store void n12 = n9  @3:5
+  n14 block void [n2, n13]

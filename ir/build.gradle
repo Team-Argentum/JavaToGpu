@@ -1,1 +1,21 @@
+plugins {
+    // Фикстуры (эталонные модули IR) переиспользуются тестами ir-interpreter, codegen-opencl, tools.
+    id 'java-test-fixtures'
+}
+
 description = 'Плоский IR (SoA на примитивных массивах), типы, бинарная сериализация, валидатор. Ноль зависимостей.'
+
+// Таблица builtins лежит в корне репозитория (builtins/builtins.def) и упаковывается как ресурс модуля.
+// Тот же файл на M2 будет входом генератора Gpu.java в модуле api (REWORK_ARCHITECTURE.md, 5.7, O1).
+processResources {
+    from(rootProject.file('builtins')) {
+        include 'builtins.def'
+        into 'com/sixik/gpu/ir'
+    }
+}
+
+apply from: rootProject.file('gradle/jmh.gradle')
+
+// Бенчмаркам нужны эталонные модули из testFixtures.
+sourceSets.jmh.compileClasspath += sourceSets.testFixtures.output
+sourceSets.jmh.runtimeClasspath += sourceSets.testFixtures.output

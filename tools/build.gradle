@@ -5,4 +5,7 @@ dependencies {
     implementation project(':codegen-opencl')
     implementation project(':ir-interpreter')
     implementation project(':runtime')
+
+    // Эталонные модули IR из тестовых фикстур ir (computeSine, rich) для golden-тестов дампа.
+    testImplementation testFixtures(project(':ir'))
 }
