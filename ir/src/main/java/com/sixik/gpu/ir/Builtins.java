@@ -44,6 +44,7 @@ public final class Builtins {
     private static final String[] NAMES;
     private static final int[] FLAGS;
     private static final int[] ULP;
+    private static final int[] ULP64;
     private static final int[][] RET;
     private static final int[][] ARGS;
     private static final int COUNT;
@@ -65,6 +66,10 @@ public final class Builtins {
                     version = Integer.parseInt(line.substring("version".length()).strip());
                     continue;
                 }
+                if (!Character.isDigit(line.charAt(0))) {
+                    // директивы генератора api (doc/jvm/vectors/pointers): модулю ir они не нужны
+                    continue;
+                }
                 rows.add(line.split("\\s+", 4));
             }
         } catch (IOException e) {
@@ -83,6 +88,7 @@ public final class Builtins {
         NAMES = new String[COUNT];
         FLAGS = new int[COUNT];
         ULP = new int[COUNT];
+        ULP64 = new int[COUNT];
         RET = new int[COUNT][];
         ARGS = new int[COUNT][];
         for (String[] r : rows) {
@@ -93,15 +99,19 @@ public final class Builtins {
             NAMES[id] = r[1];
             int flags = 0;
             int ulp = -1;
+            int ulp64 = -2;
             for (String f : r[2].split(",")) {
                 if (f.startsWith("ulp=")) {
                     ulp = Integer.parseInt(f.substring(4));
+                } else if (f.startsWith("ulp64=")) {
+                    ulp64 = Integer.parseInt(f.substring(6));
                 } else {
                     flags |= flagBit(f, id);
                 }
             }
             FLAGS[id] = flags;
             ULP[id] = ulp;
+            ULP64[id] = ulp64 == -2 ? ulp : ulp64;
             String sig = r[3].strip();
             int open = sig.indexOf('(');
             int close = sig.lastIndexOf(')');
@@ -215,13 +225,25 @@ public final class Builtins {
     }
 
     /**
-     * Допустимая погрешность результата в ULP для дифференциальных тестов (REWORK_ARCHITECTURE.md, 8.3).
+     * Допустимая погрешность результата {@code f32} в ULP для дифференциальных тестов (REWORK_ARCHITECTURE.md, 8.3).
      *
      * @param id id builtin
      * @return число ULP либо {@code -1}, если погрешность не задана (сравнивать точно)
      */
     public static int ulp(int id) {
         return ULP[id];
+    }
+
+    /**
+     * Допустимая погрешность результата {@code f64} в ULP. Отличается от {@link #ulp(int)}, когда спецификация
+     * OpenCL C требует для double большей точности (например, {@code sqrt}: 3 ULP для float, корректное
+     * округление для double).
+     *
+     * @param id id builtin
+     * @return число ULP; если в таблице нет {@code ulp64=}, то значение {@link #ulp(int)}
+     */
+    public static int ulp64(int id) {
+        return ULP64[id];
     }
 
     /**

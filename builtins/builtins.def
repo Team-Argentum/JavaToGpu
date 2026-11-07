@@ -1,49 +1,105 @@
 # Декларативная таблица builtins - единственный источник истины (REWORK_ARCHITECTURE.md, 5.7, O1).
 #
-# Файл читается в рантайме модулем `ir` (класс Builtins) и, начиная с M2, служит входом генератора
-# `Gpu.java` и типов в модуле `api`. Руками сгенерированные из него файлы не правятся.
+# Файл читают две стороны, и руками сгенерированные из него файлы не правятся:
+#   * модуль `ir` (класс Builtins) - в рантайме: сигнатуры, флаги, допуски в ULP;
+#   * генератор модуля `api` (задача generateApi) - при сборке: Gpu.java, векторные и pointer-типы.
+# Строки-директивы (doc/jvm/vectors/pointers) модуль `ir` пропускает: ему нужны только строки с id.
 #
-# Формат строки:   <id> <name> <flags> <ret> (<args>)
+# Формат строки builtin:   <id> <name> <flags> <ret> (<args>)
 #   id     - стабильное число; НЕ переиспользуется и не меняется (на него ссылается бинарный IR)
 #   name   - имя в Java-API (camelCase)
-#   flags  - через запятую: pure | effect | reads | div | uniform | atomic | ulp=<N>
+#   flags  - через запятую: pure | effect | reads | div | uniform | atomic | ulp=<N> | ulp64=<N>
 #              pure    - без побочных эффектов, результат зависит только от аргументов и work-item
 #              effect  - имеет побочный эффект (разрешён только в позиции значения стейтмента, IR-E01)
 #              reads   - читает память (узел «открытый», IR-E02)
 #              div     - результат различается у work-item'ов группы (источник для IR-B01)
 #              uniform - результат считается одинаковым внутри группы (снимает taint, IR-B01)
 #              atomic  - атомарная операция (INT64_ATOMICS для 64-битных)
-#              ulp=N   - допустимая погрешность в ULP для дифференциальных тестов (8.3)
+#              ulp=N   - допустимая погрешность в ULP для f32 (дифференциальные тесты, 8.3)
+#              ulp64=N - то же для f64; если не задано, равно ulp
 #   типы   - void bool i32 u32 i64 u64 f32 f64 (+ i8 u8 i16 u16 как типы хранения);
 #            T:<класс> - связывает T с первым аргументом, класс: genf (float/double и векторы),
 #                        geni (i32/u32/i64/u64 и векторы), genn (genf или geni);
 #            T         - тот же тип, что связан ранее;
 #            ptr<T:geni> - указатель (global или local) на скалярное целое, связывает T с pointee.
 #
-# ВНИМАНИЕ: значения ulp предварительные (по спецификации OpenCL C для full profile) и будут
-# сверены в M2 вместе с JVM-реализациями builtins.
+# Директивы, относящиеся к последней строке builtin (их читает только генератор api):
+#   doc <текст>                  - Javadoc-описание (русский, допускает {@code ...})
+#   jvm <типы> = <выражение>     - JVM-реализация (fallback и эталон тестов). <типы> - список скаляров через
+#                                  запятую (f32,f64,i32,i64) для обобщённых builtin; для необобщённых
+#                                  <типы> опускается. Параметры в выражении называются a, b, c.
+#                                  Векторные перегрузки строятся автоматически покомпонентно.
+#
+# Глобальные директивы (читает только генератор api):
+#   vectors <скаляры> : <lanes>  - векторные типы Float2..Float16 и т.п. (lanes из {2,3,4,8,16}, как в IR)
+#   pointers <скаляры>           - классы-ссылки на скаляр FloatPtr, IntPtr, ... (поле value)
+#
+# builtin, у которого в сигнатуре есть тип без Java-представления (указатели ptr<...> до M9, u32/u64
+# и типы хранения), в Java-API пока не генерируется; генератор перечисляет такие builtins в Gpu.java.
+#
+# Значения ulp - минимальная точность функций по спецификации OpenCL C (full profile, раздел
+# «Relative Error as ULPs»): sin/cos 4 ULP; sqrt 3 ULP для float и корректное округление для double;
+# fma - корректное округление; max/min - точные.
 
 version 1
 
+vectors f32 f64 i32 i64 : 2 3 4 8 16
+pointers f32 f64 i32 i64
+
 # --- индексы work-item ---------------------------------------------------------------------------
+# Вне запуска (JVM-реализация) значения берутся из контекста work-item (WorkItem, O6).
 0   getGlobalId     pure,div        i32 (i32)
+doc Индекс текущего work-item по оси {@code a} во всём NDRange; для оси вне {@code getWorkDim()} - 0.
+jvm = WorkItem.globalId(a)
 1   getLocalId      pure,div        i32 (i32)
+doc Индекс текущего work-item по оси {@code a} внутри его work-group; для оси вне {@code getWorkDim()} - 0.
+jvm = WorkItem.localId(a)
 2   getGroupId      pure,uniform    i32 (i32)
+doc Индекс work-group текущего work-item по оси {@code a}; для оси вне {@code getWorkDim()} - 0.
+jvm = WorkItem.groupId(a)
 3   getGlobalSize   pure,uniform    i32 (i32)
+doc Размер NDRange по оси {@code a}; для оси вне {@code getWorkDim()} - 1.
+jvm = WorkItem.globalSize(a)
 4   getLocalSize    pure,uniform    i32 (i32)
+doc Размер work-group по оси {@code a}; для оси вне {@code getWorkDim()} - 1.
+jvm = WorkItem.localSize(a)
 5   getNumGroups    pure,uniform    i32 (i32)
+doc Число work-group по оси {@code a}; для оси вне {@code getWorkDim()} - 1.
+jvm = WorkItem.numGroups(a)
 6   getWorkDim      pure,uniform    i32 ()
+doc Размерность запуска: 1, 2 или 3.
+jvm = WorkItem.workDim()
 
 # --- математика ----------------------------------------------------------------------------------
 7   sin             pure,ulp=4      T (T:genf)
+doc Синус угла {@code a}, заданного в радианах (покомпонентно для векторов).
+jvm f32 = (float) StrictMath.sin(a)
+jvm f64 = StrictMath.sin(a)
 8   cos             pure,ulp=4      T (T:genf)
-9   sqrt            pure,ulp=3      T (T:genf)
+doc Косинус угла {@code a}, заданного в радианах (покомпонентно для векторов).
+jvm f32 = (float) StrictMath.cos(a)
+jvm f64 = StrictMath.cos(a)
+9   sqrt            pure,ulp=3,ulp64=0  T (T:genf)
+doc Квадратный корень из {@code a}; для отрицательного аргумента - NaN (покомпонентно для векторов).
+jvm f32 = (float) Math.sqrt(a)
+jvm f64 = Math.sqrt(a)
 10  fma             pure,ulp=0      T (T:genf, T, T)
+doc Слитное умножение-сложение {@code a * b + c} с единственным округлением (покомпонентно для векторов).
+jvm f32 = Math.fma(a, b, c)
+jvm f64 = Math.fma(a, b, c)
 11  max             pure            T (T:genn, T)
+doc Наибольшее из {@code a} и {@code b}; для чисел с плавающей точкой - семантика {@code Math.max} (покомпонентно для векторов).
+jvm f32,f64,i32,i64 = Math.max(a, b)
 12  min             pure            T (T:genn, T)
+doc Наименьшее из {@code a} и {@code b}; для чисел с плавающей точкой - семантика {@code Math.min} (покомпонентно для векторов).
+jvm f32,f64,i32,i64 = Math.min(a, b)
 
 # --- управление taint-анализом барьеров ----------------------------------------------------------
 13  assumeUniform   pure,uniform    T (T:genn)
+doc Утверждает, что значение {@code a} одинаково у всех work-item группы (снимает предупреждение IR-B01); возвращает {@code a}.
+jvm f32,f64,i32,i64 = a
 
 # --- атомики -------------------------------------------------------------------------------------
+# Java-представления нет до появления pointer-типов (M9, M10).
 14  atomicAdd       effect,reads,atomic   T (ptr<T:geni>, T)
+doc Атомарно прибавляет {@code b} к значению по указателю {@code a} и возвращает прежнее значение.

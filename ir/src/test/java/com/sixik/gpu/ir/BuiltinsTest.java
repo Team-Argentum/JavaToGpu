@@ -58,6 +58,29 @@ class BuiltinsTest {
     }
 
     @Test
+    void ulp64DefaultsToUlpAndCanDiffer() {
+        int sin = Builtins.idOf("sin");
+        assertEquals(Builtins.ulp(sin), Builtins.ulp64(sin), "без ulp64= допуск double равен допуску float");
+        int sqrt = Builtins.idOf("sqrt");
+        assertEquals(3, Builtins.ulp(sqrt), "sqrt float: 3 ULP");
+        assertEquals(0, Builtins.ulp64(sqrt), "sqrt double: корректное округление");
+        assertEquals(-1, Builtins.ulp64(Builtins.idOf("max")));
+    }
+
+    @Test
+    void generatorDirectivesDoNotCreateBuiltins() {
+        // doc/jvm/vectors/pointers относятся к генератору api: ir видит только строки с id
+        int occupied = 0;
+        for (int id = 0; id < Builtins.count(); id++) {
+            if (Builtins.isValid(id)) {
+                occupied++;
+            }
+        }
+        assertEquals(15, occupied);
+        assertEquals(15, Builtins.count());
+    }
+
+    @Test
     void concreteSignature() {
         assertEquals(Types.I32, result("getGlobalId", Types.I32));
         assertEquals(-1, result("getGlobalId", Types.F32), "аргумент должен быть i32");

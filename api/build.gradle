@@ -1,1 +1,38 @@
 description = 'Аннотации, типы (vec/ptr/struct) и builtins GPU-кода. Без нативных зависимостей.'
+
+// Gpu.java и типы (векторы, ссылки) генерируются из builtins/builtins.def при сборке и руками не правятся
+// (REWORK_ARCHITECTURE.md, 5.7, O1). Генератор — отдельный source set: он не входит в jar модуля, но доступен
+// тестам, чтобы они читали таблицу допусков тем же парсером.
+sourceSets {
+    generator {
+        java.srcDir 'src/generator/java'
+    }
+}
+
+def builtinsDef = rootProject.file('builtins/builtins.def')
+def generatedDir = layout.buildDirectory.dir('generated/sources/api/java')
+
+def generateApi = tasks.register('generateApi', JavaExec) {
+    group = 'build'
+    description = 'Генерирует Gpu.java и типы api из builtins/builtins.def.'
+    inputs.file(builtinsDef).withPropertyName('builtinsDef')
+    inputs.files(sourceSets.generator.runtimeClasspath).withPropertyName('generatorClasspath')
+    outputs.dir(generatedDir).withPropertyName('generatedSources')
+    classpath = sourceSets.generator.runtimeClasspath
+    mainClass = 'com.sixik.gpu.apigen.GenerateApi'
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+    args builtinsDef.absolutePath, generatedDir.get().asFile.absolutePath
+}
+
+sourceSets.main.java.srcDir(generateApi)
+
+// Тестам нужны парсер таблицы и сам файл таблицы (сверка допусков ULP с JVM-реализациями).
+sourceSets.test.compileClasspath += sourceSets.generator.output
+sourceSets.test.runtimeClasspath += sourceSets.generator.output
+
+tasks.named('test') {
+    inputs.file(builtinsDef).withPropertyName('builtinsDef')
+    systemProperty 'builtins.def', builtinsDef.absolutePath
+}
+
+apply from: rootProject.file('gradle/jmh.gradle')

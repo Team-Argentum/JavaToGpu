@@ -563,7 +563,56 @@ func f5 "nativeAddByBackend" device native { OPENCL: "return a + b;", CUDA: "ret
 
 **Builtins в M1 (O1, часть).** Файл `builtins/builtins.def` (корень репозитория) упаковывается в ресурсы `ir` и разбирается
 классом `Builtins` при загрузке; числовые id стабильны и не переиспользуются. Генерация `Gpu.java` и типов из того же файла —
-задача M2 (`api`).
+сделана в M2 (5.14).
+
+### 5.14 Уточнения по результатам реализации M2  **[DECIDED]**
+
+**Один файл — две стороны (O1, закрыт).** `builtins/builtins.def` читают `ir` (в рантайме: сигнатуры, флаги, допуски) и генератор
+`api` (при сборке). Помимо строк builtin файл содержит директивы, которые `ir` пропускает: `doc` (Javadoc), `jvm [типы] = выражение`
+(JVM-реализация; параметры называются `a b c`; векторные перегрузки строятся покомпонентно автоматически), `vectors <скаляры> : <lanes>`,
+`pointers <скаляры>`; флаг `ulp64=N` — допуск для `f64`, если он отличается от `ulp` (`sqrt`: 3 ULP для float, корректное округление
+для double). Парсер генератора строгий: ошибка формата ломает сборку с номером строки.
+
+**Генерация.** Генератор — отдельный source set `generator` внутри модуля `api` (не входит в jar); задача `generateApi` пишет
+`api/build/generated/sources/api/java` (`Gpu`, векторы, классы-ссылки), каталог принадлежит генератору и очищается перед записью.
+Сгенерированное не коммитится, поэтому разойтись с таблицей не может (критерий «сгенерированное = закоммиченному» заменён
+генерацией в сборке). Тесты `api` используют тот же парсер для сверки допусков.
+
+**Java-типы API.** Векторы `Float|Double|Int|Long × {2,3,4,8,16}` — неизменяемые final-классы с публичными final-полями (`x y z w`
+для ≤4 компонент, `s0..s9,sA..sF` для 8 и 16), равенство побитовое (как `Float.equals`). Беззнаковых и `char/short`-векторов в API нет
+(в Java нет беззнаковых примитивов; `I8..U16` — типы хранения, 5.1). Операции над векторами (`add/sub/mul`, `splat`, `shuffle`) — M8.
+Классы-ссылки `FloatPtr/DoublePtr/IntPtr/LongPtr` — изменяемое поле `value`, сравнение по ссылке.
+
+**builtins с указателями без Java-представления.** `atomicAdd` (сигнатура `ptr<...>`) в `Gpu` пока не генерируется: pointer-типы
+появляются в M9, atomics — в M10. Генератор перечисляет пропущенные builtins в Javadoc `Gpu`, тест фиксирует список (`[atomicAdd]`).
+
+**JVM-реализации.** `sin/cos` — `StrictMath` (fdlibm: одинаковый результат на всех платформах), `sqrt` — `Math.sqrt` (корректное
+округление по IEEE 754), `fma` — `Math.fma`. **`max/min` для float — семантика `Math.max/min`** (NaN распространяется, `-0 < +0`).
+Это **расходится** с OpenCL: `fmax/fmin` возвращают не-NaN аргумент, а `max/min` при NaN не определены. Следствие для M5: кодген
+обязан выдавать для float `max/min` код с Java-семантикой (иначе нарушается «JVM ≡ GPU»); проверять device-тестом на NaN и `±0`.
+
+**Допуски ULP.** `sin/cos` 4/4, `sqrt` 3/0, `fma` 0/0 (f32/f64), `max/min/assumeUniform` — точно. Значения соответствуют таблице
+«Relative Error as ULPs» спецификации OpenCL C (full profile); в M2 они подтверждены сторонней выпиской и знанием спецификации, но не
+прочитаны из первоисточника — **сверить с текстом спецификации в M5** (там же проверка по драйверам). Тесты `api` сравнивают JVM-реализации
+с независимыми эталонами (`Math.*`, точная арифметика `BigDecimal`) на крайних значениях: подмена функции или ошибка в реализации
+роняет тест (мутационно проверено).
+
+**Контекст work-item (O6, закрыт).** `WorkItem.run(ctx, body)` привязывает `WorkItemContext` к потоку через `ScopedValue` (Java 25):
+привязка снимается сама, в том числе при исключении, вложенный запуск временно заменяет внешний, другие потоки её не наследуют. Чтение
+вне запуска — `IllegalStateException` (молчаливое значение по умолчанию скрыло бы вызов device-кода вне ядра). `WorkItemContext` —
+плоские `int[3]` на величину, `setGlobalId(x,y,z)` пересчитывает `groupId = globalId / localSize`, `localId = globalId % localSize`;
+оси вне `workDim` — как в OpenCL (индексы 0, размеры 1); `globalSize` обязан делиться на `localSize`. Накладные расходы (JMH, короткий
+прогон): ≈ 8 нс на work-item сверх прямого цикла, привязка контекста — ≈ 15 нс на запуск.
+
+**Аннотации.** Retention `CLASS` (weaver читает их из байткода). `@Kernel(inline, optLevel, workgroup, required, fallback)`;
+`workgroup` — сокращение `@WorkGroup(x=…)`, их совместное использование — ошибка фронтенда. `InlinePolicy {DEFAULT, ALWAYS, NEVER}` —
+порядок совпадает с `INLINE_*` в IR. Строки `required` — имена `Features` IR (`FP64`, `INT64_ATOMICS`, …); `"SIMD"` из концепта
+возможностью IR не является — фронтенд (M3) обязан дать диагностику на неизвестное имя. `@GpuNative`, `@GpuFallback`, `@AutoTune`,
+`Backend`, `Metric` не созданы (не v1, 3.B): концепт компилируется без них (`ConceptSample` в тестах `api`, выполняется на JVM).
+`@Local` (`LOCAL_VARIABLE` и `PARAMETER`, Retention `CLASS`) — локальная память work-group: локальная переменная-массив в теле
+ядра (`@Local float[] tile = new float[256]` → `local_array_decl`, IR-M02) и `__local`-параметр ядра (IR-M04, размер из launch-конфига,
+8.2). Ядра с `@Local` имеют `uses_group_sync` и не уходят в JVM-fallback (3.5). Фронтенд читает аннотацию локальной переменной из
+исходника (javac не пишет такие аннотации в class-файл). Pointer-типы `Local*Ptr` — M9, `barrier` — M10.
 
 ## 6. DOD-модель данных ядра  `[IN PROGRESS]`
 
@@ -874,17 +923,17 @@ tokens, evidence/preflight-отчёты, `*Cli` в production-артефакте
 графом зависимостей (черновик):
 
 ```
-api            — аннотации, типы (vec/ptr/struct), GPU builtins. Без LWJGL.
+api            — аннотации, типы (vec/ptr/struct), GPU builtins. Без нативных зависимостей.
 ir             — плоский IR (арена + регионы), типы, сериализация, валидатор. 0 зависимостей.
 codegen-opencl — IR -> OpenCL C. Чистая функция. Зависит только от ir.
-runtime        — устройства, память, кэш, launch, JVM-fallback. LWJGL — только здесь.
-frontend-java  — JavaParser + annotation processor -> пишет IR. Зависит от api, ir.
+runtime        — устройства (FFM, 9.2), память, кэш, launch, JVM-fallback.
+frontend-java  — javac Tree API + annotation processor -> пишет IR. Зависит от api, ir.
 tools          — dump/inspect IR, CI-отчёты. Не в production-артефакте.
 (later) optimizer-egraph, frontend-asm, codegen-cuda, codegen-spirv — отдельные модули поверх ir.
 ```
 
-Правило: стрелки зависимостей идут только вниз к `ir`; `ir` и `codegen-*` не импортируют `runtime`, `frontend-*`, LWJGL,
-JavaParser, ASM.
+Правило: стрелки зависимостей идут только вниз к `ir`; `ir` и `codegen-*` не импортируют `runtime`, `frontend-*`, FFM,
+javac API, ASM.
 
 *Открытые вопросы:* где живёт общий ABI-layout (struct/vector) — в `ir` или отдельным `abi`; куда уходит JVM-fallback;
 как собирается публикуемый «fat»-артефакт для пользователя.
@@ -969,9 +1018,8 @@ master удаляется.**
 
 **Пронумерованные (используются в `ROADMAP.md`):**
 
-- **O1** Формат и место декларативного файла builtins + генератор. Предложение: файл в корне репозитория (`builtins/`),
-  генерация Java-кода в `ir` (таблица для валидатора/кодгена/интерпретатора) и в `api` (`Gpu.java`, типы) задачей Gradle
-  без внешних зависимостей. Нужно, т.к. `api` не зависит от `ir` и наоборот.
+- ~~**O1**~~ **[CLOSED, M1+M2]** Формат и место декларативного файла builtins + генератор. Файл `builtins/builtins.def` в корне
+  репозитория; `ir` читает его как ресурс в рантайме, `api` генерирует из него `Gpu.java` и типы задачей `generateApi` — см. 5.13, 5.14.
 - **O2** Имя хост-фасада (запуск, контекст, `use(ctx)`, `launch`). `Gpu` занят builtins внутри ядра (`Gpu.getGlobalId`);
   в 3.4/3.7 в тексте использовались `Gpu.launch`/`JavaToGpu.use` как рабочие обозначения.
 - **O3** Хост-представление `@Struct` (массив Java-объектов vs генерируемые плоские буферы-аксессоры над `GpuBuffer`).
@@ -979,8 +1027,8 @@ master удаляется.**
 - ~~**O4**~~ **[CLOSED, M1]** Где живёт ABI-layout (offset/align/size, раскрытие `Array` → `ptr + len`). Предложение: чистая функция в `ir` (
   общая для `codegen-opencl` и `runtime`).
 - **O5** Имя и расположение IR-ресурса в jar/classes (ключ `kernelId = hash(IR)`).
-- **O6** JVM-реализация id-builtins (`getGlobalId` и т.п.): контекст work-item (thread-local, живёт в `api`,
-  выставляется fallback-раннером и тестовой обвязкой).
+- ~~**O6**~~ **[CLOSED, M2]** JVM-реализация id-builtins (`getGlobalId` и т.п.): контекст work-item в `api`
+  (`WorkItem.run` + `ScopedValue`), выставляется fallback-раннером и тестовой обвязкой — см. 5.14.
 - ~~**O7**~~ **[CLOSED, M1]** Таблица «операция × тип» (T02) и коды диагностик `IR-*` — см. 5.13.
 - **O8** Публикация (Maven-координаты, группа) — до M14.
 
