@@ -3,4 +3,26 @@ description = 'Java-фронтенд: annotation processor на javac Tree API, 
 dependencies {
     implementation project(':api')
     implementation project(':ir')
+
+    // Эталонные модули IR (Fixtures) для сравнения вывода фронтенда с модулями, собранными вручную.
+    testImplementation testFixtures(project(':ir'))
+    // Текстовый дамп IR для golden-тестов. Только тесты: в production-артефакт tools не входит.
+    testImplementation project(':tools')
+}
+
+// Таблица диагностик GPU#### лежит в корне репозитория (diagnostics/diagnostics.def) и упаковывается как ресурс модуля:
+// это данные, общие для будущих фронтендов (REWORK_ARCHITECTURE.md, 3.3).
+processResources {
+    from(rootProject.file('diagnostics')) {
+        include 'diagnostics.def'
+        into 'com/sixik/gpu/frontend/java'
+    }
+}
+
+tasks.named('test') {
+    inputs.dir(rootProject.file('diagnostics')).withPropertyName('diagnostics')
+    // Тесты компилируют образцы javac in-process: classpath задаём явно, а не полагаемся на java.class.path воркера.
+    systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
+    // Исходники фронтенда: тест сверяет коды GPU#### в коде с таблицей диагностик.
+    systemProperty 'frontend.src', file('src/main/java').absolutePath
 }

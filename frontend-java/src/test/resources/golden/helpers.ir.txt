@@ -1,0 +1,139 @@
+=== helpers ===
+module format=1 builtins=1 nodes=56 functions=5
+type t16 = array<global,f32>
+type t17 = ptr<global,f32>
+func f0 "lerp" device ret=f32 features=- group_sync=no
+  param p0 "a" : f32  access=NONE
+  param p1 "b" : f32  access=NONE
+  param p2 "t" : f32  access=NONE
+  body = n8
+func f1 "twice" device ret=f32 features=- group_sync=no
+  param p0 "v" : f32  access=NONE
+  body = n16
+func f2 "put" device ret=void features=- group_sync=no
+  param p0 "out" : array<global,f32>  access=WRITE
+  param p1 "i" : i32  access=NONE
+  param p2 "v" : f32  access=NONE
+  body = n22
+func f3 "clampi" device ret=i32 features=- group_sync=no
+  param p0 "v" : i32  access=NONE
+  param p1 "lo" : i32  access=NONE
+  param p2 "hi" : i32  access=NONE
+  body = n29
+func f4 "helpers" kernel ret=void features=- group_sync=no
+  param p0 "in" : array<global,f32>  access=READ
+  param p1 "out" : array<global,f32>  access=WRITE
+  local l0 "id" : i32
+  local l1 "x" : f32
+  body = n55
+nodes:
+  n0 param f32 p0  @11:16
+  n1 param f32 p1  @11:21
+  n2 param f32 p0  @11:25
+  n3 sub f32 n1 n2  @11:20
+  n4 param f32 p2  @11:30
+  n5 mul f32 n3 n4  @11:20
+  n6 add f32 n0 n5  @11:16
+  n7 return void n6  @11:9
+  n8 block void [n7]
+  n9 param f32 p0  @26:21
+  n10 param f32 p0  @26:24
+  n11 const_float f32 2.0f  @26:27
+  n12 call f32 f0[n9, n10, n11]  @26:16
+  n13 const_float f32 2.0f  @26:35
+  n14 mul f32 n12 n13  @26:16
+  n15 return void n14  @26:9
+  n16 block void [n15]
+  n17 param f32 p2  @21:18
+  n18 param array<global,f32> p0  @21:9
+  n19 param i32 p1  @21:13
+  n20 elem_ptr ptr<global,f32> n18[n19]
+  n21 store void n20 = n17  @21:9
+  n22 block void [n21]
+  n23 param i32 p0  @16:32
+  n24 param i32 p1  @16:35
+  n25 intrinsic i32 max[n23, n24]  @16:24
+  n26 param i32 p2  @16:40
+  n27 intrinsic i32 min[n25, n26]  @16:16
+  n28 return void n27  @16:9
+  n29 block void [n28]
+  n30 const_int i32 0  @31:34
+  n31 intrinsic i32 getGlobalId[n30]  @31:18
+  n32 local_decl void l0 = n31  @31:9
+  n33 param array<global,f32> p0  @32:24
+  n34 local_get i32 l0  @32:27
+  n35 elem_ptr ptr<global,f32> n33[n34]
+  n36 load f32 n35  @32:24
+  n37 const_float f32 1.0f  @32:32
+  n38 const_float f32 0.5f  @32:38
+  n39 call f32 f0[n36, n37, n38]  @32:19
+  n40 param array<global,f32> p0  @32:52
+  n41 local_get i32 l0  @32:55
+  n42 elem_ptr ptr<global,f32> n40[n41]
+  n43 load f32 n42  @32:52
+  n44 call f32 f1[n43]  @32:46
+  n45 add f32 n39 n44  @32:19
+  n46 local_decl void l1 = n45  @32:9
+  n47 param array<global,f32> p1  @33:13
+  n48 local_get i32 l0  @33:25
+  n49 const_int i32 0  @33:29
+  n50 const_int i32 9  @33:32
+  n51 call i32 f3[n48, n49, n50]  @33:18
+  n52 local_get f32 l1  @33:36
+  n53 call void f2[n47, n51, n52]
+  n54 expr_stmt void n53  @33:9
+  n55 block void [n32, n46, n54]
+
+=== privateArray ===
+module format=1 builtins=1 nodes=39 functions=1
+type t16 = array<global,i32>
+type t17 = array<private,i32>
+type t18 = ptr<private,i32>
+type t19 = ptr<global,i32>
+func f0 "privateArray" kernel ret=void features=- group_sync=no
+  param p0 "out" : array<global,i32>  access=WRITE
+  local l0 "tmp" : array<private,i32>
+  local l1 "id" : i32
+  local l2 "i" : i32
+  body = n38
+nodes:
+  n0 const_int i32 4
+  n1 private_array_decl void l0 len n0  @38:9
+  n2 const_int i32 0  @39:34
+  n3 intrinsic i32 getGlobalId[n2]  @39:18
+  n4 local_decl void l1 = n3  @39:9
+  n5 const_int i32 0  @40:22
+  n6 local_decl void l2 = n5  @40:14
+  n7 local_get i32 l2  @40:25
+  n8 local_get array<private,i32> l0  @40:29
+  n9 array_len i32 n8  @40:29
+  n10 lt bool n7 n9  @40:25
+  n11 local_get i32 l1  @41:22
+  n12 local_get i32 l2  @41:27
+  n13 mul i32 n11 n12  @41:22
+  n14 local_get array<private,i32> l0  @41:13
+  n15 local_get i32 l2  @41:17
+  n16 elem_ptr ptr<private,i32> n14[n15]
+  n17 store void n16 = n13  @41:13
+  n18 block void [n17]  @40:46
+  n19 local_get i32 l2
+  n20 const_int i32 1
+  n21 add i32 n19 n20
+  n22 local_set void l2 = n21  @40:41
+  n23 loop void cond n10 body n18 update n22  @40:9
+  n24 block void [n6, n23]  @40:9
+  n25 local_get array<private,i32> l0  @43:19
+  n26 const_int i32 0  @43:23
+  n27 elem_ptr ptr<private,i32> n25[n26]
+  n28 load i32 n27  @43:19
+  n29 local_get array<private,i32> l0  @43:28
+  n30 const_int i32 3  @43:32
+  n31 elem_ptr ptr<private,i32> n29[n30]
+  n32 load i32 n31  @43:28
+  n33 add i32 n28 n32  @43:19
+  n34 param array<global,i32> p0  @43:9
+  n35 local_get i32 l1  @43:13
+  n36 elem_ptr ptr<global,i32> n34[n35]
+  n37 store void n36 = n33  @43:9
+  n38 block void [n1, n4, n24, n37]
+

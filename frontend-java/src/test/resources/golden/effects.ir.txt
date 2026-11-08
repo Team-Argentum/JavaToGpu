@@ -1,0 +1,423 @@
+=== assignAsValue ===
+module format=1 builtins=1 nodes=35 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "assignAsValue" kernel ret=void features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=WRITE
+  local l0 "i" : i32
+  local l1 "j" : i32
+  local l2 "k" : i32
+  local l3 : i32
+  body = n34
+nodes:
+  n0 const_int i32 0  @58:17
+  n1 local_decl void l0 = n0  @58:9
+  n2 const_int i32 3  @59:22
+  n3 local_set void l0 = n2  @59:18
+  n4 local_get i32 l0  @59:17
+  n5 const_int i32 1  @59:27
+  n6 add i32 n4 n5  @59:17
+  n7 local_decl void l1 = n6  @59:9
+  n8 const_int i32 0  @60:11
+  n9 const_int i32 5  @60:20
+  n10 local_set void l1 = n9  @60:16
+  n11 local_get i32 l1  @60:16
+  n12 param array<global,i32> p0  @60:9
+  n13 elem_ptr ptr<global,i32> n12[n8]
+  n14 store void n13 = n11  @60:9
+  n15 local_get i32 l0
+  n16 local_decl void l3 = n15
+  n17 local_get i32 l3
+  n18 const_int i32 1
+  n19 add i32 n17 n18
+  n20 local_set void l0 = n19  @61:17
+  n21 local_get i32 l3  @61:17
+  n22 local_get i32 l0
+  n23 const_int i32 1
+  n24 add i32 n22 n23
+  n25 local_set void l0 = n24  @61:23
+  n26 local_get i32 l0  @61:23
+  n27 add i32 n21 n26  @61:17
+  n28 local_decl void l2 = n27  @61:9
+  n29 local_get i32 l2  @62:16
+  n30 param array<global,i32> p0  @62:9
+  n31 const_int i32 1  @62:11
+  n32 elem_ptr ptr<global,i32> n30[n31]
+  n33 store void n32 = n29  @62:9
+  n34 block void [n1, n3, n7, n10, n14, n16, n20, n25, n28, n33]
+
+=== calls ===
+module format=1 builtins=1 nodes=47 functions=2
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "bump" device ret=i32 features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=READ_WRITE
+  param p1 "i" : i32  access=NONE
+  body = n15
+func f1 "calls" kernel ret=void features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=READ_WRITE
+  local l0 "s" : i32
+  local l1 : i32
+  local l2 : i32
+  local l3 "t" : i32
+  local l4 : i32
+  body = n46
+nodes:
+  n0 param array<global,i32> p0  @10:9
+  n1 param i32 p1  @10:11
+  n2 elem_ptr ptr<global,i32> n0[n1]
+  n3 load i32 n2
+  n4 const_int i32 1  @10:17
+  n5 add i32 n3 n4
+  n6 param array<global,i32> p0  @10:9
+  n7 param i32 p1  @10:11
+  n8 elem_ptr ptr<global,i32> n6[n7]
+  n9 store void n8 = n5  @10:9
+  n10 param array<global,i32> p0  @11:16
+  n11 param i32 p1  @11:18
+  n12 elem_ptr ptr<global,i32> n10[n11]
+  n13 load i32 n12  @11:16
+  n14 return void n13  @11:9
+  n15 block void [n9, n14]
+  n16 param array<global,i32> p0  @51:22
+  n17 const_int i32 0  @51:25
+  n18 call i32 f0[n16, n17]
+  n19 local_decl void l1 = n18  @51:17
+  n20 local_get i32 l1  @51:17
+  n21 param array<global,i32> p0  @51:35
+  n22 const_int i32 1  @51:38
+  n23 call i32 f0[n21, n22]
+  n24 local_decl void l2 = n23  @51:30
+  n25 local_get i32 l2  @51:30
+  n26 add i32 n20 n25  @51:17
+  n27 local_decl void l0 = n26  @51:9
+  n28 param array<global,i32> p0  @52:22
+  n29 const_int i32 2  @52:25
+  n30 call i32 f0[n28, n29]
+  n31 local_decl void l4 = n30  @52:17
+  n32 local_get i32 l4  @52:17
+  n33 param array<global,i32> p0  @52:30
+  n34 const_int i32 2  @52:32
+  n35 elem_ptr ptr<global,i32> n33[n34]
+  n36 load i32 n35  @52:30
+  n37 mul i32 n32 n36  @52:17
+  n38 local_decl void l3 = n37  @52:9
+  n39 local_get i32 l0  @53:16
+  n40 local_get i32 l3  @53:20
+  n41 add i32 n39 n40  @53:16
+  n42 param array<global,i32> p0  @53:9
+  n43 const_int i32 3  @53:11
+  n44 elem_ptr ptr<global,i32> n42[n43]
+  n45 store void n44 = n41  @53:9
+  n46 block void [n19, n24, n27, n31, n38, n45]
+
+=== compound ===
+module format=1 builtins=1 nodes=23 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "compound" kernel ret=void features=- group_sync=no
+  param p0 "b" : array<global,i32>  access=READ_WRITE
+  local l0 "i" : i32
+  local l1 : i32
+  local l2 : i32
+  local l3 : i32
+  body = n22
+nodes:
+  n0 const_int i32 1  @29:17
+  n1 local_decl void l0 = n0  @29:9
+  n2 local_get i32 l0  @30:11
+  n3 local_decl void l1 = n2
+  n4 param array<global,i32> p0  @30:9
+  n5 local_get i32 l1
+  n6 elem_ptr ptr<global,i32> n4[n5]
+  n7 load i32 n6
+  n8 local_get i32 l0
+  n9 local_decl void l2 = n8
+  n10 local_get i32 l2
+  n11 const_int i32 1
+  n12 add i32 n10 n11
+  n13 local_set void l0 = n12  @30:17
+  n14 local_get i32 l2  @30:17
+  n15 local_decl void l3 = n7
+  n16 local_get i32 l3
+  n17 add i32 n16 n14
+  n18 param array<global,i32> p0  @30:9
+  n19 local_get i32 l1
+  n20 elem_ptr ptr<global,i32> n18[n19]
+  n21 store void n20 = n17  @30:9
+  n22 block void [n1, n3, n15, n9, n13, n21]
+
+=== loopsWithEffects ===
+module format=1 builtins=1 nodes=61 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "loopsWithEffects" kernel ret=void features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=READ_WRITE
+  param p1 "n" : i32  access=NONE
+  local l0 "i" : i32
+  local l1 : i32
+  local l2 : bool
+  body = n60
+nodes:
+  n0 const_int i32 0  @67:17
+  n1 local_decl void l0 = n0  @67:9
+  n2 local_get i32 l0
+  n3 local_decl void l1 = n2
+  n4 local_get i32 l1
+  n5 const_int i32 1
+  n6 add i32 n4 n5
+  n7 local_set void l0 = n6  @68:16
+  n8 local_get i32 l1  @68:16
+  n9 param i32 p1  @68:22
+  n10 lt bool n8 n9  @68:15
+  n11 local_get i32 l0  @69:20
+  n12 param array<global,i32> p0  @69:13
+  n13 local_get i32 l0  @69:15
+  n14 elem_ptr ptr<global,i32> n12[n13]
+  n15 store void n14 = n11  @69:13
+  n16 block void [n15]  @68:25
+  n17 not bool n10
+  n18 break void 
+  n19 block void [n18]
+  n20 if void n17 then n19
+  n21 const_bool bool true
+  n22 block void [n3, n7, n20, n16]
+  n23 loop void cond n21 body n22  @68:9
+  n24 param array<global,i32> p0  @72:13
+  n25 const_int i32 0  @72:15
+  n26 elem_ptr ptr<global,i32> n24[n25]
+  n27 load i32 n26
+  n28 const_int i32 1  @72:21
+  n29 add i32 n27 n28
+  n30 param array<global,i32> p0  @72:13
+  n31 const_int i32 0  @72:15
+  n32 elem_ptr ptr<global,i32> n30[n31]
+  n33 store void n32 = n29  @72:13
+  n34 block void [n33]  @71:12
+  n35 param array<global,i32> p0  @73:18
+  n36 local_get i32 l0
+  n37 const_int i32 1
+  n38 sub i32 n36 n37
+  n39 local_set void l0 = n38  @73:20
+  n40 local_get i32 l0  @73:20
+  n41 elem_ptr ptr<global,i32> n35[n40]
+  n42 load i32 n41  @73:18
+  n43 const_int i32 0  @73:27
+  n44 gt bool n42 n43  @73:17
+  n45 const_bool bool true
+  n46 local_decl void l2 = n45
+  n47 not bool n44
+  n48 break void 
+  n49 block void [n48]
+  n50 if void n47 then n49
+  n51 local_get bool l2
+  n52 not bool n51
+  n53 block void [n39, n50]
+  n54 if void n52 then n53
+  n55 const_bool bool false
+  n56 local_set void l2 = n55
+  n57 const_bool bool true
+  n58 block void [n54, n56, n34]
+  n59 loop void cond n57 body n58  @71:9
+  n60 block void [n1, n23, n46, n59]
+
+=== postfixIndex ===
+module format=1 builtins=1 nodes=14 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "postfixIndex" kernel ret=void features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=WRITE
+  local l0 "i" : i32
+  local l1 : i32
+  body = n13
+nodes:
+  n0 const_int i32 0  @16:17
+  n1 local_decl void l0 = n0  @16:9
+  n2 local_get i32 l0
+  n3 local_decl void l1 = n2
+  n4 local_get i32 l1
+  n5 const_int i32 1
+  n6 add i32 n4 n5
+  n7 local_set void l0 = n6  @17:11
+  n8 local_get i32 l1  @17:11
+  n9 local_get i32 l0  @17:18
+  n10 param array<global,i32> p0  @17:9
+  n11 elem_ptr ptr<global,i32> n10[n8]
+  n12 store void n11 = n9  @17:9
+  n13 block void [n1, n3, n7, n12]
+
+=== readThenWrite ===
+module format=1 builtins=1 nodes=26 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "readThenWrite" kernel ret=void features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=READ_WRITE
+  local l0 "i" : i32
+  local l1 "j" : i32
+  local l2 : i32
+  local l3 : i32
+  body = n25
+nodes:
+  n0 const_int i32 0  @22:17
+  n1 local_decl void l0 = n0  @22:9
+  n2 param array<global,i32> p0  @23:17
+  n3 local_get i32 l0  @23:19
+  n4 elem_ptr ptr<global,i32> n2[n3]
+  n5 load i32 n4  @23:17
+  n6 param array<global,i32> p0  @23:24
+  n7 local_get i32 l0
+  n8 local_decl void l2 = n7
+  n9 local_get i32 l2
+  n10 const_int i32 1
+  n11 add i32 n9 n10
+  n12 local_set void l0 = n11  @23:26
+  n13 local_get i32 l2  @23:26
+  n14 elem_ptr ptr<global,i32> n6[n13]
+  n15 load i32 n14  @23:24
+  n16 local_decl void l3 = n5
+  n17 local_get i32 l3
+  n18 add i32 n17 n15  @23:17
+  n19 local_decl void l1 = n18  @23:9
+  n20 local_get i32 l1  @24:16
+  n21 param array<global,i32> p0  @24:9
+  n22 const_int i32 0  @24:11
+  n23 elem_ptr ptr<global,i32> n21[n22]
+  n24 store void n23 = n20  @24:9
+  n25 block void [n1, n16, n8, n12, n19, n24]
+
+=== shortCircuit ===
+module format=1 builtins=1 nodes=64 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "shortCircuit" kernel ret=void features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=READ_WRITE
+  param p1 "n" : i32  access=NONE
+  local l0 "i" : i32
+  local l1 "ok" : bool
+  local l2 : i32
+  local l3 : bool
+  local l4 "ok2" : bool
+  local l5 : i32
+  local l6 : bool
+  body = n63
+nodes:
+  n0 const_int i32 0  @35:17
+  n1 local_decl void l0 = n0  @35:9
+  n2 local_get i32 l0  @36:22
+  n3 param i32 p1  @36:26
+  n4 lt bool n2 n3  @36:22
+  n5 param array<global,i32> p0  @36:31
+  n6 local_get i32 l0
+  n7 local_decl void l2 = n6
+  n8 local_get i32 l2
+  n9 const_int i32 1
+  n10 add i32 n8 n9
+  n11 local_set void l0 = n10  @36:33
+  n12 local_get i32 l2  @36:33
+  n13 elem_ptr ptr<global,i32> n5[n12]
+  n14 load i32 n13  @36:31
+  n15 const_int i32 3  @36:40
+  n16 gt bool n14 n15  @36:31
+  n17 local_decl void l3 = n4
+  n18 local_get bool l3
+  n19 local_set void l3 = n16
+  n20 block void [n7, n11, n19]
+  n21 if void n18 then n20  @36:22
+  n22 local_get bool l3  @36:22
+  n23 local_decl void l1 = n22  @36:9
+  n24 local_get i32 l0  @37:23
+  n25 const_int i32 0  @37:27
+  n26 gt bool n24 n25  @37:23
+  n27 param array<global,i32> p0  @37:32
+  n28 local_get i32 l0
+  n29 local_decl void l5 = n28
+  n30 local_get i32 l5
+  n31 const_int i32 1
+  n32 add i32 n30 n31
+  n33 local_set void l0 = n32  @37:34
+  n34 local_get i32 l5  @37:34
+  n35 elem_ptr ptr<global,i32> n27[n34]
+  n36 load i32 n35  @37:32
+  n37 const_int i32 1  @37:41
+  n38 gt bool n36 n37  @37:32
+  n39 local_decl void l6 = n26
+  n40 local_get bool l6
+  n41 not bool n40
+  n42 local_set void l6 = n38
+  n43 block void [n29, n33, n42]
+  n44 if void n41 then n43  @37:23
+  n45 local_get bool l6  @37:23
+  n46 local_decl void l4 = n45  @37:9
+  n47 local_get bool l1  @38:16
+  n48 const_int i32 1  @38:21
+  n49 const_int i32 0  @38:25
+  n50 select i32 n47 ? n48 : n49  @38:16
+  n51 param array<global,i32> p0  @38:9
+  n52 const_int i32 0  @38:11
+  n53 elem_ptr ptr<global,i32> n51[n52]
+  n54 store void n53 = n50  @38:9
+  n55 local_get bool l4  @39:16
+  n56 const_int i32 1  @39:22
+  n57 const_int i32 0  @39:26
+  n58 select i32 n55 ? n56 : n57  @39:16
+  n59 param array<global,i32> p0  @39:9
+  n60 const_int i32 1  @39:11
+  n61 elem_ptr ptr<global,i32> n59[n60]
+  n62 store void n61 = n58  @39:9
+  n63 block void [n1, n17, n21, n23, n39, n44, n46, n54, n62]
+
+=== ternaryEffects ===
+module format=1 builtins=1 nodes=40 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "ternaryEffects" kernel ret=void features=- group_sync=no
+  param p0 "a" : array<global,i32>  access=READ_WRITE
+  param p1 "n" : i32  access=NONE
+  local l0 "i" : i32
+  local l1 "v" : i32
+  local l2 : i32
+  local l3 : i32
+  local l4 : i32
+  body = n39
+nodes:
+  n0 const_int i32 0  @44:17
+  n1 local_decl void l0 = n0  @44:9
+  n2 param i32 p1  @45:17
+  n3 const_int i32 0  @45:21
+  n4 gt bool n2 n3  @45:17
+  n5 param array<global,i32> p0  @45:25
+  n6 local_get i32 l0
+  n7 local_decl void l2 = n6
+  n8 local_get i32 l2
+  n9 const_int i32 1
+  n10 add i32 n8 n9
+  n11 local_set void l0 = n10  @45:27
+  n12 local_get i32 l2  @45:27
+  n13 elem_ptr ptr<global,i32> n5[n12]
+  n14 load i32 n13  @45:25
+  n15 param array<global,i32> p0  @45:34
+  n16 local_get i32 l0
+  n17 local_decl void l3 = n16
+  n18 local_get i32 l3
+  n19 const_int i32 1
+  n20 sub i32 n18 n19
+  n21 local_set void l0 = n20  @45:36
+  n22 local_get i32 l3  @45:36
+  n23 elem_ptr ptr<global,i32> n15[n22]
+  n24 load i32 n23  @45:34
+  n25 const_int i32 0
+  n26 local_decl void l4 = n25
+  n27 local_set void l4 = n14
+  n28 local_set void l4 = n24
+  n29 block void [n7, n11, n27]
+  n30 block void [n17, n21, n28]
+  n31 if void n4 then n29 else n30  @45:17
+  n32 local_get i32 l4  @45:17
+  n33 local_decl void l1 = n32  @45:9
+  n34 local_get i32 l1  @46:16
+  n35 param array<global,i32> p0  @46:9
+  n36 const_int i32 0  @46:11
+  n37 elem_ptr ptr<global,i32> n35[n36]
+  n38 store void n37 = n34  @46:9
+  n39 block void [n1, n26, n31, n33, n38]
+

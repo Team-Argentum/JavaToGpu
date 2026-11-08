@@ -1,0 +1,177 @@
+=== localArray ===
+module format=1 builtins=1 nodes=24 functions=1
+type t16 = array<global,f32>
+type t17 = array<local,f32>
+type t18 = ptr<global,f32>
+type t19 = ptr<local,f32>
+func f0 "localArray" kernel ret=void features=- group_sync=yes
+  param p0 "in" : array<global,f32>  access=READ
+  param p1 "out" : array<global,f32>  access=WRITE
+  local l0 "tile" : array<local,f32>
+  local l1 "l" : i32
+  body = n23
+nodes:
+  n0 const_int i32 64
+  n1 local_array_decl void l0 len n0  @42:9
+  n2 const_int i32 0  @43:32
+  n3 intrinsic i32 getLocalId[n2]  @43:17
+  n4 local_decl void l1 = n3  @43:9
+  n5 param array<global,f32> p0  @44:19
+  n6 const_int i32 0  @44:38
+  n7 intrinsic i32 getGlobalId[n6]  @44:22
+  n8 elem_ptr ptr<global,f32> n5[n7]
+  n9 load f32 n8  @44:19
+  n10 local_get array<local,f32> l0  @44:9
+  n11 local_get i32 l1  @44:14
+  n12 elem_ptr ptr<local,f32> n10[n11]
+  n13 store void n12 = n9  @44:9
+  n14 local_get array<local,f32> l0  @45:35
+  n15 local_get i32 l1  @45:40
+  n16 elem_ptr ptr<local,f32> n14[n15]
+  n17 load f32 n16  @45:35
+  n18 param array<global,f32> p1  @45:9
+  n19 const_int i32 0  @45:29
+  n20 intrinsic i32 getGlobalId[n19]  @45:13
+  n21 elem_ptr ptr<global,f32> n18[n20]
+  n22 store void n21 = n17  @45:9
+  n23 block void [n1, n4, n13, n22]
+
+=== processSteps ===
+module format=1 builtins=1 nodes=51 functions=2
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "processStepsSimple" kernel ret=void features=- group_sync=no
+  param p0 "input" : array<global,i32>  access=READ
+  param p1 "output" : array<global,i32>  access=WRITE
+  param p2 "a" : i32  access=NONE
+  local l0 "id" : i32
+  body = n19
+func f1 "processSteps" kernel ret=void reqd_wg=(32,1,1) inline=always opt=2 required=[FP64,INT64_ATOMICS] fallback=f0 features=- group_sync=no
+  param p0 "input" : array<global,i32>  access=READ
+  param p1 "output" : array<global,i32>  access=WRITE
+  param p2 "a" : i32  access=NONE
+  local l0 "id" : i32
+  local l1 "value" : i32
+  local l2 "step" : i32
+  body = n50
+nodes:
+  n0 const_int i32 0  @27:34
+  n1 intrinsic i32 getGlobalId[n0]  @27:18
+  n2 local_decl void l0 = n1  @27:9
+  n3 param array<global,i32> p0  @28:38
+  n4 local_get i32 l0  @28:44
+  n5 elem_ptr ptr<global,i32> n3[n4]
+  n6 load i32 n5  @28:38
+  n7 const_int i32 0  @28:49
+  n8 intrinsic i32 max[n6, n7]  @28:30
+  n9 param i32 p2  @28:54
+  n10 add i32 n8 n9  @28:30
+  n11 const_int i32 1  @28:57
+  n12 intrinsic i32 max[n10, n11]  @28:22
+  n13 param i32 p2  @28:62
+  n14 add i32 n12 n13  @28:22
+  n15 param array<global,i32> p1  @28:9
+  n16 local_get i32 l0  @28:16
+  n17 elem_ptr ptr<global,i32> n15[n16]
+  n18 store void n17 = n14  @28:9
+  n19 block void [n2, n18]
+  n20 const_int i32 0  @14:34
+  n21 intrinsic i32 getGlobalId[n20]  @14:18
+  n22 local_decl void l0 = n21  @14:9
+  n23 param array<global,i32> p0  @15:21
+  n24 local_get i32 l0  @15:27
+  n25 elem_ptr ptr<global,i32> n23[n24]
+  n26 load i32 n25  @15:21
+  n27 local_decl void l1 = n26  @15:9
+  n28 const_int i32 0  @16:20
+  n29 local_decl void l2 = n28  @16:9
+  n30 local_get i32 l1  @18:29
+  n31 local_get i32 l2  @18:36
+  n32 intrinsic i32 max[n30, n31]  @18:21
+  n33 param i32 p2  @18:44
+  n34 add i32 n32 n33  @18:21
+  n35 local_set void l1 = n34  @18:13
+  n36 local_get i32 l2
+  n37 const_int i32 1
+  n38 add i32 n36 n37
+  n39 local_set void l2 = n38  @19:13
+  n40 block void [n35, n39]  @17:12
+  n41 local_get i32 l2  @20:18
+  n42 const_int i32 2  @20:25
+  n43 lt bool n41 n42  @20:17
+  n44 do_while void body n40 cond n43  @17:9
+  n45 local_get i32 l1  @21:22
+  n46 param array<global,i32> p1  @21:9
+  n47 local_get i32 l0  @21:16
+  n48 elem_ptr ptr<global,i32> n46[n47]
+  n49 store void n48 = n45  @21:9
+  n50 block void [n22, n27, n29, n44, n49]
+
+=== processStepsSimple ===
+module format=1 builtins=1 nodes=20 functions=1
+type t16 = array<global,i32>
+type t17 = ptr<global,i32>
+func f0 "processStepsSimple" kernel ret=void features=- group_sync=no
+  param p0 "input" : array<global,i32>  access=READ
+  param p1 "output" : array<global,i32>  access=WRITE
+  param p2 "a" : i32  access=NONE
+  local l0 "id" : i32
+  body = n19
+nodes:
+  n0 const_int i32 0  @27:34
+  n1 intrinsic i32 getGlobalId[n0]  @27:18
+  n2 local_decl void l0 = n1  @27:9
+  n3 param array<global,i32> p0  @28:38
+  n4 local_get i32 l0  @28:44
+  n5 elem_ptr ptr<global,i32> n3[n4]
+  n6 load i32 n5  @28:38
+  n7 const_int i32 0  @28:49
+  n8 intrinsic i32 max[n6, n7]  @28:30
+  n9 param i32 p2  @28:54
+  n10 add i32 n8 n9  @28:30
+  n11 const_int i32 1  @28:57
+  n12 intrinsic i32 max[n10, n11]  @28:22
+  n13 param i32 p2  @28:62
+  n14 add i32 n12 n13  @28:22
+  n15 param array<global,i32> p1  @28:9
+  n16 local_get i32 l0  @28:16
+  n17 elem_ptr ptr<global,i32> n15[n16]
+  n18 store void n17 = n14  @28:9
+  n19 block void [n2, n18]
+
+=== spaces ===
+module format=1 builtins=1 nodes=20 functions=1
+type t16 = array<constant,f32>
+type t17 = array<local,f32>
+type t18 = array<global,f32>
+type t19 = ptr<constant,f32>
+type t20 = ptr<local,f32>
+type t21 = ptr<global,f32>
+func f0 "spaces" kernel ret=void reqd_wg=(8,4,2) features=- group_sync=yes
+  param p0 "table" : array<constant,f32>  access=READ
+  param p1 "scratch" : array<local,f32>  access=READ_WRITE
+  param p2 "out" : array<global,f32>  access=WRITE
+  local l0 "id" : i32
+  body = n19
+nodes:
+  n0 const_int i32 0  @35:34
+  n1 intrinsic i32 getGlobalId[n0]  @35:18
+  n2 local_decl void l0 = n1  @35:9
+  n3 param array<constant,f32> p0  @36:22
+  n4 local_get i32 l0  @36:28
+  n5 elem_ptr ptr<constant,f32> n3[n4]
+  n6 load f32 n5  @36:22
+  n7 param array<local,f32> p1  @36:9
+  n8 const_int i32 0  @36:17
+  n9 elem_ptr ptr<local,f32> n7[n8]
+  n10 store void n9 = n6  @36:9
+  n11 param array<local,f32> p1  @37:19
+  n12 const_int i32 0  @37:27
+  n13 elem_ptr ptr<local,f32> n11[n12]
+  n14 load f32 n13  @37:19
+  n15 param array<global,f32> p2  @37:9
+  n16 local_get i32 l0  @37:13
+  n17 elem_ptr ptr<global,f32> n15[n16]
+  n18 store void n17 = n14  @37:9
+  n19 block void [n2, n10, n18]
+

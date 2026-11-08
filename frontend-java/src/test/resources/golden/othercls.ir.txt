@@ -1,0 +1,36 @@
+=== useLib ===
+module format=1 builtins=1 nodes=22 functions=2
+type t16 = array<global,f32>
+type t17 = ptr<global,f32>
+func f0 "sq" device ret=f32 features=- group_sync=no
+  param p0 "x" : f32  access=NONE
+  body = n6
+func f1 "useLib" kernel ret=void features=- group_sync=no
+  param p0 "in" : array<global,f32>  access=READ
+  param p1 "out" : array<global,f32>  access=WRITE
+  local l0 "id" : i32
+  body = n21
+nodes:
+  n0 param f32 p0  @21:16
+  n1 param f32 p0  @21:20
+  n2 mul f32 n0 n1  @21:16
+  n3 const_float f32 4.0f  @21:24
+  n4 mul f32 n2 n3  @21:16
+  n5 return void n4  @21:9
+  n6 block void [n5]
+  n7 const_int i32 0  @10:34
+  n8 intrinsic i32 getGlobalId[n7]  @10:18
+  n9 local_decl void l0 = n8  @10:9
+  n10 local_get i32 l0  @11:13
+  n11 param array<global,f32> p0  @11:30
+  n12 local_get i32 l0  @11:33
+  n13 elem_ptr ptr<global,f32> n11[n12]
+  n14 load f32 n13  @11:30
+  n15 call f32 f0[n14]  @11:19
+  n16 const_float f32 4.0f  @11:40
+  n17 add f32 n15 n16  @11:19
+  n18 param array<global,f32> p1  @11:9
+  n19 elem_ptr ptr<global,f32> n18[n10]
+  n20 store void n19 = n17  @11:9
+  n21 block void [n9, n20]
+
