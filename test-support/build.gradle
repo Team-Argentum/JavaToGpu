@@ -7,4 +7,41 @@ dependencies {
     api project(':runtime')
     api platform('org.junit:junit-bom:6.1.3')
     api 'org.junit.jupiter:junit-jupiter-api'
+
+    // Только тесты (production-граф проверяет verifyModuleBoundaries и этих связей не видит):
+    //  * образцы-ядра ir-interpreter (настоящие @Kernel-методы, собранные процессором) - материал для @GPUTest;
+    //  * фейковый DeviceApi runtime - проверка ветви устройства без железа;
+    //  * frontend-java + weaver - сборка и подмена ядра в самом тесте: проверка выбора <имя>$jvm.
+    testImplementation testFixtures(project(':ir-interpreter'))
+    testImplementation testFixtures(project(':ir'))
+    testImplementation testFixtures(project(':runtime'))
+    testImplementation project(':frontend-java')
+    testImplementation project(':weaver')
+    testImplementation testFixtures(project(':weaver'))
+}
+
+tasks.withType(Test).configureEach {
+    // KernelCompiler компилирует образцы javac in-process: classpath задаём явно.
+    systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'device' // сверка на реальном драйвере - отдельной задачей deviceTest
+    }
+}
+
+// Сверка всех образцов с реальным устройством. Без драйвера ветвь DEVICE пропускается.
+tasks.register('deviceTest', Test) {
+    group = 'verification'
+    description = 'Тесты test-support на реальном OpenCL-устройстве (тег device).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'device'
+    }
+    testLogging {
+        showStandardStreams = true
+    }
+    shouldRunAfter tasks.named('test')
 }

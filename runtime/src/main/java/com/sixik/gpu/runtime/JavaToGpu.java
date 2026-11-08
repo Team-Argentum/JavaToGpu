@@ -296,6 +296,20 @@ public final class JavaToGpu {
     }
 
     /**
+     * IR-модуль {@code @Kernel}-метода, записанный процессором {@code frontend-java} в ресурсы класса. Нужен тестам и
+     * инструментам, которые исполняют то же ядро другими средствами (интерпретатор, {@code GpuAssert}); результат
+     * кэшируется по классу.
+     *
+     * @param owner  класс с ядром
+     * @param method имя ядра (перегрузок у ядер нет)
+     * @return модуль ({@code ядро - последняя функция})
+     * @throws GpuException если ядро не найдено в индексе или ресурс повреждён ({@code RT-F02})
+     */
+    public static IrModule loadModule(Class<?> owner, String method) {
+        return module(owner, kernelId(owner, method));
+    }
+
+    /**
      * Находит идентификатор ядра по классу и имени в индексах {@code META-INF/gpu/kernels.idx} загрузчика класса
      * (строки {@code класс TAB метод TAB дескриптор TAB id}).
      */

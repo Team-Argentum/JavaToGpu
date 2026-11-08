@@ -289,6 +289,7 @@ class JavaToGpuTest {
             List<GpuEvent> fallbacks = events.stream().filter(e -> e.kind() == GpuEvent.Kind.FALLBACK).toList();
             assertEquals(1, fallbacks.size(), "одно предупреждение на ядро");
             assertTrue(fallbacks.get(0).detail().contains("RT-C01"), fallbacks.get(0).detail());
+            assertTrue(fallbacks.get(0).detail().contains("строка 3:1: no"), "в предупреждении разобранный журнал сборки драйвера: " + fallbacks.get(0).detail());
         } finally {
             holder[0].close();
         }
