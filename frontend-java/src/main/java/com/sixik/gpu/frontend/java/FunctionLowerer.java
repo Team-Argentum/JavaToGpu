@@ -29,6 +29,7 @@ import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
@@ -57,6 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.IntSupplier;
+import java.util.function.IntUnaryOperator;
 
 /**
  * Построение функции IR из метода Java (REWORK_ARCHITECTURE.md, 5.4, 5.8, 5.12): один экземпляр на функцию.
@@ -109,12 +111,14 @@ final class FunctionLowerer {
      * @param open     значение может измениться последующими эффектами (читает изменяемую локаль или память), поэтому
      *                 его надо сохранить во временную локаль до таких эффектов; временные локали пишутся один раз и
      *                 «открытыми» не считаются
+     * @param ir       тип IR вектора или struct ({@link JavaTypes#K_AGG}); для массива векторов/struct - тип элемента;
+     *                 иначе -1
      */
-    private record V(int node, int kind, int elemKind, int space, boolean open) {
+    private record V(int node, int kind, int elemKind, int space, boolean open, int ir) {
     }
 
     /** Переменная Java в функции IR: параметр или локаль. */
-    private record Var(boolean param, int index, int kind, int elemKind, int space) {
+    private record Var(boolean param, int index, int kind, int elemKind, int space, int ir) {
     }
 
     private static final int MODE_STMT = 0;
@@ -124,6 +128,7 @@ final class FunctionLowerer {
     private final Trees trees;
     private final Reporter rep;
     private final IrBuilder b;
+    private final Aggregates aggs;
     private final Map<ExecutableElement, FnInfo> fns;
     private final TreePath methodPath;
     private final ExecutableElement method;
@@ -137,11 +142,12 @@ final class FunctionLowerer {
     private boolean effects;
     private FnSig sig;
 
-    private FunctionLowerer(Trees trees, Reporter rep, IrBuilder b, Map<ExecutableElement, FnInfo> fns, TreePath methodPath,
-                            ExecutableElement method, KernelAttrs attrs, int fallbackIndex) {
+    private FunctionLowerer(Trees trees, Reporter rep, IrBuilder b, Aggregates aggs, Map<ExecutableElement, FnInfo> fns,
+                            TreePath methodPath, ExecutableElement method, KernelAttrs attrs, int fallbackIndex) {
         this.trees = trees;
         this.rep = rep;
         this.b = b;
+        this.aggs = aggs;
         this.fns = fns;
         this.methodPath = methodPath;
         this.method = method;
@@ -158,6 +164,7 @@ final class FunctionLowerer {
      * @param trees         API деревьев
      * @param rep           приёмник диагностик (используется для проверки адресных пространств аргументов)
      * @param b             builder модуля
+     * @param aggs          типы IR векторов и struct модуля
      * @param fns           уже построенные функции модуля (вызываемые должны быть в ней)
      * @param methodPath    путь к {@link MethodTree}
      * @param method        элемент метода
@@ -165,9 +172,9 @@ final class FunctionLowerer {
      * @param fallbackIndex индекс функции-варианта ядра либо -1
      * @return сведения о построенной функции
      */
-    static FnInfo lower(Trees trees, Reporter rep, IrBuilder b, Map<ExecutableElement, FnInfo> fns, TreePath methodPath,
-                        ExecutableElement method, KernelAttrs attrs, int fallbackIndex) {
-        return new FunctionLowerer(trees, rep, b, fns, methodPath, method, attrs, fallbackIndex).run();
+    static FnInfo lower(Trees trees, Reporter rep, IrBuilder b, Aggregates aggs, Map<ExecutableElement, FnInfo> fns,
+                        TreePath methodPath, ExecutableElement method, KernelAttrs attrs, int fallbackIndex) {
+        return new FunctionLowerer(trees, rep, b, aggs, fns, methodPath, method, attrs, fallbackIndex).run();
     }
 
     // =============================================================================================
@@ -181,12 +188,18 @@ final class FunctionLowerer {
         int[] ptypes = new int[n];
         String[] pnames = new String[n];
         for (int i = 0; i < n; i++) {
-            ptypes[i] = sig.paramKinds()[i] == JavaTypes.K_ARRAY
-                    ? b.array(sig.spaces()[i], JavaTypes.storageType(sig.elemKinds()[i]))
-                    : JavaTypes.irType(sig.paramKinds()[i]);
+            int pk = sig.paramKinds()[i];
+            if (pk == JavaTypes.K_ARRAY) {
+                int elem = sig.elemKinds()[i] == JavaTypes.K_AGG ? aggs.irType(sig.aggs()[i])
+                        : JavaTypes.storageType(sig.elemKinds()[i]);
+                ptypes[i] = b.array(sig.spaces()[i], elem);
+            } else {
+                ptypes[i] = pk == JavaTypes.K_AGG ? aggs.irType(sig.aggs()[i]) : JavaTypes.irType(pk);
+            }
             pnames[i] = method.getParameters().get(i).getSimpleName().toString();
         }
-        int ret = sig.retKind() == JavaTypes.K_VOID ? Types.VOID : JavaTypes.irType(sig.retKind());
+        int ret = sig.retKind() == JavaTypes.K_VOID ? Types.VOID
+                : sig.retKind() == JavaTypes.K_AGG ? aggs.irType(sig.retAgg()) : JavaTypes.irType(sig.retKind());
         boolean kernel = attrs != null;
         int f = b.beginFunction(kernel ? IrModule.KERNEL : IrModule.DEVICE, ret, ptypes);
         FnInfo info = new FnInfo(f, sig);
@@ -201,14 +214,15 @@ final class FunctionLowerer {
         for (int i = 0; i < n; i++) {
             VariableElement pe = method.getParameters().get(i);
             int k = sig.paramKinds()[i];
+            int pir = sig.aggs()[i] == null ? -1 : aggs.irType(sig.aggs()[i]);
             if (k != JavaTypes.K_ARRAY && assigned.contains(pe)) {
                 // параметры в IR неизменяемы: изменяемый параметр Java становится локалью с начальным значением
-                int l = b.declareLocal(JavaTypes.irType(k));
+                int l = b.declareLocal(ptypes[i]);
                 b.nameLocal(l, pnames[i]);
                 out.add(b.localDecl(l, b.param(i)));
-                vars.put(pe, new Var(false, l, k, -1, -1));
+                vars.put(pe, new Var(false, l, k, -1, -1, pir));
             } else {
-                vars.put(pe, new Var(true, i, k, sig.elemKinds()[i], sig.spaces()[i]));
+                vars.put(pe, new Var(true, i, k, sig.elemKinds()[i], sig.spaces()[i], pir));
             }
         }
         TreePath bodyPath = new TreePath(methodPath, mt.getBody());
@@ -313,7 +327,37 @@ final class FunctionLowerer {
     }
 
     private static V sv(int node, int kind, boolean open) {
-        return new V(node, kind, -1, -1, open);
+        return new V(node, kind, -1, -1, open, -1);
+    }
+
+    /** Значение-агрегат (вектор или struct) типа IR {@code ir}. */
+    private static V sva(int node, int ir, boolean open) {
+        return new V(node, JavaTypes.K_AGG, -1, -1, open, ir);
+    }
+
+    /** Значение вида {@code kind}: для агрегата - с типом IR {@code ir}. */
+    private static V mk(int node, int kind, int ir, boolean open) {
+        return kind == JavaTypes.K_AGG ? sva(node, ir, open) : sv(node, kind, open);
+    }
+
+    /** Тип IR локали или результата вида {@code kind}. */
+    private int irOf(int kind, int ir) {
+        return kind == JavaTypes.K_AGG ? ir : JavaTypes.irType(kind);
+    }
+
+    /** Нулевое значение агрегата: вектор из нулей либо struct из нулевых полей (рекурсивно). */
+    private int zeroAgg(int ir) {
+        Aggregates.Vec vec = aggs.vecOf(ir);
+        if (vec != null) {
+            return b.splat(ir, zero(Aggregates.kindOfScalar(vec.scalar())));
+        }
+        TypeMirror[] fts = aggs.fieldTypes(ir);
+        int[] fields = new int[fts.length];
+        for (int i = 0; i < fields.length; i++) {
+            int fk = JavaTypes.kindOf(fts[i]);
+            fields[i] = fk == JavaTypes.K_AGG ? zeroAgg(aggs.irType(fts[i])) : zero(fk);
+        }
+        return b.structBuild(ir, fields);
     }
 
     private int zero(int kind) {
@@ -424,14 +468,15 @@ final class FunctionLowerer {
             localArray(p, vt, el);
             return;
         }
-        int l = b.declareLocal(JavaTypes.irType(kind));
+        int ir = kind == JavaTypes.K_AGG ? aggs.irType(el.asType()) : -1;
+        int l = b.declareLocal(irOf(kind, ir));
         b.nameLocal(l, vt.getName().toString());
-        vars.put(el, new Var(false, l, kind, -1, -1));
+        vars.put(el, new Var(false, l, kind, -1, -1, ir));
         int init;
         if (vt.getInitializer() != null) {
             init = coerce(expr(child(p, vt.getInitializer())), kind).node();
         } else {
-            init = zero(kind);
+            init = kind == JavaTypes.K_AGG ? zeroAgg(ir) : zero(kind);
         }
         out.add(at(vt, b.localDecl(l, init)));
     }
@@ -443,7 +488,7 @@ final class FunctionLowerer {
         int space = Ann.onVariable(trees, p, Local.class.getName()) ? AddressSpace.LOCAL : AddressSpace.PRIVATE;
         int l = b.declareLocal(b.array(space, JavaTypes.storageType(elemKind)));
         b.nameLocal(l, vt.getName().toString());
-        vars.put(el, new Var(false, l, JavaTypes.K_ARRAY, elemKind, space));
+        vars.put(el, new Var(false, l, JavaTypes.K_ARRAY, elemKind, space, -1));
         Long len = ConstEval.evalIntegral(trees, child(np, na.getDimensions().get(0)));
         if (len == null) {
             throw new IllegalStateException("размер массива не константа");
@@ -666,6 +711,9 @@ final class FunctionLowerer {
             case TYPE_CAST -> {
                 return cast(p);
             }
+            case NEW_CLASS -> {
+                return newObject(p);
+            }
             case MULTIPLY, DIVIDE, REMAINDER, PLUS, MINUS, LEFT_SHIFT, RIGHT_SHIFT, UNSIGNED_RIGHT_SHIFT, LESS_THAN,
                  GREATER_THAN, LESS_THAN_EQUAL, GREATER_THAN_EQUAL, EQUAL_TO, NOT_EQUAL_TO, AND, XOR, OR -> {
                 BinaryTree bt = (BinaryTree) t;
@@ -697,7 +745,7 @@ final class FunctionLowerer {
                     if (w.open() && w.kind() != JavaTypes.K_ARRAY) {
                         int l = b.declareLocal(b.typeOf(w.node()));
                         out.add(insertAt++, b.localDecl(l, w.node()));
-                        vals.set(j, sv(b.localGet(l), w.kind(), false));
+                        vals.set(j, new V(b.localGet(l), w.kind(), w.elemKind(), w.space(), false, w.ir()));
                     }
                 }
             }
@@ -712,7 +760,10 @@ final class FunctionLowerer {
         if (var != null) {
             if (var.kind() == JavaTypes.K_ARRAY) {
                 int node = var.param() ? b.param(var.index()) : b.localGet(var.index());
-                return new V(node, JavaTypes.K_ARRAY, var.elemKind(), var.space(), false);
+                return new V(node, JavaTypes.K_ARRAY, var.elemKind(), var.space(), false, var.ir());
+            }
+            if (var.kind() == JavaTypes.K_AGG) {
+                return sva(var.param() ? b.param(var.index()) : b.localGet(var.index()), var.ir(), !var.param());
             }
             return var.param() ? sv(b.param(var.index()), var.kind(), false)
                     : sv(b.localGet(var.index()), var.kind(), true);
@@ -733,6 +784,13 @@ final class FunctionLowerer {
             }
         }
         Element el = trees.getElement(p);
+        if (el instanceof VariableElement fe && fe.getKind() == javax.lang.model.element.ElementKind.FIELD
+                && !fe.getModifiers().contains(javax.lang.model.element.Modifier.STATIC)) {
+            TypeMirror qt = Aggregates.typeOf(trees, child(p, ms.getExpression()));
+            if (qt != null && Aggregates.isAggregate(qt)) {
+                return fieldRead(p, ms, qt, fe);
+            }
+        }
         if (el instanceof VariableElement ve && ve.getConstantValue() != null) {
             return constant(ve.getConstantValue());
         }
@@ -748,15 +806,15 @@ final class FunctionLowerer {
         V arr = expr(child(p, aa.getExpression()));
         V idx = expr(child(p, aa.getIndex()));
         int ptr = b.elemPtr(arr.node(), indexNode(idx));
-        return loadElem(ptr, arr.elemKind());
+        return loadElem(ptr, arr.elemKind(), arr.ir());
     }
 
-    private V loadElem(int ptr, int elemKind) {
+    private V loadElem(int ptr, int elemKind, int ir) {
         int n = b.load(ptr);
         if (elemKind == JavaTypes.K_BOOLEAN) {
             n = b.convert(Types.BOOL, n);
         }
-        return sv(n, elemKind, true);
+        return mk(n, elemKind, ir, true);
     }
 
     private int storeElem(int ptr, V value, int elemKind) {
@@ -773,6 +831,10 @@ final class FunctionLowerer {
     private V call(TreePath p, boolean asStatement) {
         MethodInvocationTree mit = (MethodInvocationTree) p.getLeaf();
         ExecutableElement callee = (ExecutableElement) trees.getElement(child(p, mit.getMethodSelect()));
+        if (callee.getEnclosingElement() instanceof TypeElement owner && Aggregates.isAggregate(owner.asType())) {
+            V r = aggregateCall(p, mit, callee, owner);
+            return asStatement ? null : r;
+        }
         FnSig csig = FnSig.of(callee);
         List<TreePath> ps = new ArrayList<>();
         for (ExpressionTree a : mit.getArguments()) {
@@ -819,16 +881,186 @@ final class FunctionLowerer {
             effects = true;
         }
         int retKind = csig.retKind();
+        int retIr = retKind == JavaTypes.K_AGG ? aggs.irType(csig.retAgg()) : -1;
         if (asStatement) {
             out.add(at(mit, b.exprStmt(node)));
             return null;
         }
         if (effectful) {
-            int l = b.declareLocal(JavaTypes.irType(retKind));
+            int l = b.declareLocal(irOf(retKind, retIr));
             out.add(at(mit, b.localDecl(l, node)));
-            return sv(b.localGet(l), retKind, false);
+            return mk(b.localGet(l), retKind, retIr, false);
         }
-        return sv(node, retKind, open);
+        return mk(node, retKind, retIr, open);
+    }
+
+
+    // ---- векторы и struct ------------------------------------------------------------------------
+
+    /** {@code new Float4(...)} - {@code build}; {@code new P(поля)} - {@code struct_build}. */
+    private V newObject(TreePath p) {
+        NewClassTree nt = (NewClassTree) p.getLeaf();
+        TypeMirror type = Aggregates.typeOf(trees, p);
+        int ir = aggs.irType(type);
+        List<TreePath> ps = new ArrayList<>();
+        for (ExpressionTree a : nt.getArguments()) {
+            ps.add(child(p, a));
+        }
+        List<V> vs = operands(ps);
+        int[] nodes = new int[vs.size()];
+        boolean open = false;
+        Aggregates.Vec vec = Aggregates.vector(type);
+        TypeMirror[] fts = vec == null ? aggs.fieldTypes(ir) : null;
+        for (int i = 0; i < nodes.length; i++) {
+            int fk = vec != null ? Aggregates.kindOfScalar(vec.scalar()) : JavaTypes.kindOf(fts[i]);
+            V c = fk == JavaTypes.K_AGG ? vs.get(i) : coerce(vs.get(i), fk);
+            nodes[i] = c.node();
+            open |= c.open();
+        }
+        return sva(vec != null ? b.build(ir, nodes) : b.structBuild(ir, nodes), ir, open);
+    }
+
+    /** Чтение поля: компонента вектора ({@code extract}) либо поле struct ({@code field_get}). */
+    private V fieldRead(TreePath p, MemberSelectTree ms, TypeMirror qualifierType, VariableElement field) {
+        V base = expr(child(p, ms.getExpression()));
+        Aggregates.Vec vec = Aggregates.vector(qualifierType);
+        String name = ms.getIdentifier().toString();
+        if (vec != null) {
+            return sv(b.extract(base.node(), Aggregates.laneIndex(vec, name)), Aggregates.kindOfScalar(vec.scalar()), base.open());
+        }
+        int node = b.fieldGet(base.node(), Aggregates.fieldIndex(qualifierType, name));
+        int fk = JavaTypes.kindOf(field.asType());
+        return mk(node, fk, fk == JavaTypes.K_AGG ? aggs.irType(field.asType()) : -1, base.open());
+    }
+
+    private static final Map<String, Integer> BINARY_METHODS = Map.ofEntries(
+            Map.entry("add", Op.ADD), Map.entry("sub", Op.SUB), Map.entry("mul", Op.MUL), Map.entry("div", Op.DIV),
+            Map.entry("rem", Op.REM), Map.entry("and", Op.AND), Map.entry("or", Op.OR), Map.entry("xor", Op.XOR),
+            Map.entry("shl", Op.SHL), Map.entry("shr", Op.SHR), Map.entry("ushr", Op.USHR));
+
+    /**
+     * Методы вектора ({@code add ... shuffle, splat, withX}) и {@code copy()} struct. Скаляр-операнд размножается
+     * ({@code splat}); {@code copy()} - само значение (значения IR неизменяемы).
+     */
+    private V aggregateCall(TreePath p, MethodInvocationTree mit, ExecutableElement callee, TypeElement owner) {
+        String name = callee.getSimpleName().toString();
+        Aggregates.Vec vec = Aggregates.vector(owner.asType());
+        boolean isStatic = callee.getModifiers().contains(javax.lang.model.element.Modifier.STATIC);
+        List<TreePath> ps = new ArrayList<>();
+        if (!isStatic) {
+            ps.add(child(p, ((MemberSelectTree) mit.getMethodSelect()).getExpression()));
+        }
+        for (ExpressionTree a : mit.getArguments()) {
+            ps.add(child(p, a));
+        }
+        if (vec == null) {
+            return operands(ps).get(0);
+        }
+        int vecIr = aggs.irType(owner.asType());
+        int lk = Aggregates.kindOfScalar(vec.scalar());
+        // индексы shuffle - константы времени компиляции: как выражения они не вычисляются (узлы остались бы недостижимыми)
+        List<V> vs = operands(name.equals("shuffle") ? ps.subList(0, 1) : ps);
+        boolean open = false;
+        for (V v : vs) {
+            open |= v.open();
+        }
+        int node;
+        if (name.equals("splat")) {
+            node = b.splat(vecIr, coerce(vs.get(0), lk).node());
+        } else if (name.startsWith("with")) {
+            String suffix = name.substring(4);
+            String lane = Character.toLowerCase(suffix.charAt(0)) + suffix.substring(1);
+            node = b.insert(vs.get(0).node(), Aggregates.laneIndex(vec, lane), coerce(vs.get(1), lk).node());
+        } else if (name.equals("shuffle")) {
+            int[] idx = new int[mit.getArguments().size()];
+            for (int i = 0; i < idx.length; i++) {
+                idx[i] = (int) (long) ConstEval.evalIntegral(trees, ps.get(i + 1));
+            }
+            node = b.shuffle(vs.get(0).node(), idx);
+        } else if (name.equals("neg")) {
+            node = b.neg(vs.get(0).node());
+        } else if (name.equals("not")) {
+            node = b.not(vs.get(0).node());
+        } else {
+            V other = vs.get(1);
+            int rhs = other.kind() == JavaTypes.K_AGG ? other.node() : b.splat(vecIr, coerce(other, lk).node());
+            node = b.binary(BINARY_METHODS.get(name), vs.get(0).node(), rhs);
+        }
+        return sva(node, b.typeOf(node), open);
+    }
+
+    /** Запись в поле struct с путём вида {@code a.b.c}: чтение корня, цепочка {@code field_set}, запись корня. */
+    private record FieldRef(Target target, int kind, int ir) {
+    }
+
+    private FieldRef fieldRef(TreePath tp, TreePath rhsPath) {
+        java.util.ArrayDeque<Integer> chain = new java.util.ArrayDeque<>();
+        TreePath cur = tp;
+        while (cur.getLeaf() instanceof MemberSelectTree ms) {
+            TreePath qp = unparen(child(cur, ms.getExpression()));
+            chain.addFirst(Aggregates.fieldIndex(Aggregates.typeOf(trees, qp), ms.getIdentifier().toString()));
+            cur = qp;
+        }
+        final TreePath root = cur;
+        final int[] path = chain.stream().mapToInt(Integer::intValue).toArray();
+        VariableElement last = (VariableElement) trees.getElement(tp);
+        int fk = JavaTypes.kindOf(last.asType());
+        int fir = fk == JavaTypes.K_AGG ? aggs.irType(last.asType()) : -1;
+
+        IntSupplier rootRead;
+        IntUnaryOperator rootWrite;
+        if (root.getLeaf() instanceof IdentifierTree) {
+            Var var = vars.get(trees.getElement(root));
+            rootRead = () -> b.localGet(var.index());
+            rootWrite = n -> b.localSet(var.index(), n);
+        } else {
+            ArrayAccessTree aa = (ArrayAccessTree) root.getLeaf();
+            TreePath arrPath = child(root, aa.getExpression());
+            TreePath idxPath = child(root, aa.getIndex());
+            IntSupplier idx;
+            if (isPure(idxPath) && (rhsPath == null || isPure(rhsPath))) {
+                idx = () -> indexNode(expr(idxPath));
+            } else {
+                int tmp = b.declareLocal(Types.I32);
+                out.add(b.localDecl(tmp, indexNode(expr(idxPath))));
+                idx = () -> b.localGet(tmp);
+            }
+            rootRead = () -> b.load(b.elemPtr(expr(arrPath).node(), idx.getAsInt()));
+            rootWrite = n -> b.store(b.elemPtr(expr(arrPath).node(), idx.getAsInt()), n);
+        }
+        Target target = new Target() {
+            @Override
+            public V read() {
+                int n = rootRead.getAsInt();
+                for (int f : path) {
+                    n = b.fieldGet(n, f);
+                }
+                return mk(n, fk, fir, true);
+            }
+
+            @Override
+            public int write(V value) {
+                int node = value.node();
+                for (int k = path.length - 1; k >= 0; k--) {
+                    int base = rootRead.getAsInt();
+                    for (int i = 0; i < k; i++) {
+                        base = b.fieldGet(base, path[i]);
+                    }
+                    node = b.fieldSet(base, path[k], node);
+                }
+                effects = true;
+                return rootWrite.applyAsInt(node);
+            }
+        };
+        return new FieldRef(target, fk, fir);
+    }
+
+    private V assignField(TreePath p, AssignmentTree at, TreePath target, TreePath rhsPath, boolean needValue) {
+        FieldRef fr = fieldRef(target, rhsPath);
+        V rhs = expr(rhsPath);
+        V value = fr.kind() == JavaTypes.K_AGG ? rhs : coerce(rhs, fr.kind());
+        out.add(at(at, fr.target().write(value)));
+        return needValue ? fr.target().read() : null;
     }
 
     // ---- унарные, приведения, бинарные ----------------------------------------------------------
@@ -921,22 +1153,24 @@ final class FunctionLowerer {
 
     private V conditional(TreePath p) {
         ConditionalExpressionTree ct = (ConditionalExpressionTree) p.getLeaf();
-        int rk = JavaTypes.kindOf(trees.getTypeMirror(p));
+        TypeMirror ctype = trees.getTypeMirror(p);
+        int rk = JavaTypes.kindOf(ctype);
+        int rir = rk == JavaTypes.K_AGG ? aggs.irType(ctype) : -1;
         V c = expr(child(p, ct.getCondition()));
         V[] a = new V[1];
         V[] e = new V[1];
         List<Integer> la = collect(() -> a[0] = coerce(expr(child(p, ct.getTrueExpression())), rk));
         List<Integer> le = collect(() -> e[0] = coerce(expr(child(p, ct.getFalseExpression())), rk));
         if (la.isEmpty() && le.isEmpty()) {
-            return sv(b.select(c.node(), a[0].node(), e[0].node()), rk, c.open() || a[0].open() || e[0].open());
+            return mk(b.select(c.node(), a[0].node(), e[0].node()), rk, rir, c.open() || a[0].open() || e[0].open());
         }
         // в ветках есть эффекты: select ленив, но эффекты в нём запрещены - строим if со временной локалью
-        int tmp = b.declareLocal(JavaTypes.irType(rk));
-        out.add(b.localDecl(tmp, zero(rk)));
+        int tmp = b.declareLocal(irOf(rk, rir));
+        out.add(b.localDecl(tmp, rk == JavaTypes.K_AGG ? zeroAgg(rir) : zero(rk)));
         la.add(b.localSet(tmp, a[0].node()));
         le.add(b.localSet(tmp, e[0].node()));
         out.add(at(ct, b.ifStmt(c.node(), b.block(toArray(la)), b.block(toArray(le)))));
-        return sv(b.localGet(tmp), rk, false);
+        return mk(b.localGet(tmp), rk, rir, false);
     }
 
     private V shortCircuit(TreePath p) {
@@ -975,7 +1209,10 @@ final class FunctionLowerer {
             Var var = vars.get(trees.getElement(target));
             V rhs = coerce(expr(rhsPath), var.kind());
             out.add(at(at, b.localSet(var.index(), rhs.node())));
-            return needValue ? sv(b.localGet(var.index()), var.kind(), true) : null;
+            return needValue ? mk(b.localGet(var.index()), var.kind(), var.ir(), true) : null;
+        }
+        if (target.getLeaf() instanceof MemberSelectTree) {
+            return assignField(p, at, target, rhsPath, needValue);
         }
         ArrayAccessTree aa = (ArrayAccessTree) target.getLeaf();
         TreePath arrPath = child(target, aa.getExpression());
@@ -997,11 +1234,11 @@ final class FunctionLowerer {
         int ek = arr.elemKind();
         V value = coerce(rhs, ek);
         if (needValue) {
-            int tmp = b.declareLocal(JavaTypes.irType(ek));
+            int tmp = b.declareLocal(irOf(ek, arr.ir()));
             out.add(b.localDecl(tmp, value.node()));
-            value = sv(b.localGet(tmp), ek, false);
+            value = mk(b.localGet(tmp), ek, arr.ir(), false);
             out.add(at(at, storeElem(b.elemPtr(arr.node(), indexNode(idx)), value, ek)));
-            return sv(b.localGet(tmp), ek, false);
+            return mk(b.localGet(tmp), ek, arr.ir(), false);
         }
         out.add(at(at, storeElem(b.elemPtr(arr.node(), indexNode(idx)), value, ek)));
         return null;
@@ -1061,6 +1298,10 @@ final class FunctionLowerer {
                     return b.localSet(l, value.node());
                 }
             };
+        } else if (tp.getLeaf() instanceof MemberSelectTree) {
+            FieldRef fr = fieldRef(tp, rhsPath);
+            t = fr.target();
+            tk = fr.kind();
         } else {
             ArrayAccessTree aa = (ArrayAccessTree) tp.getLeaf();
             TreePath arrPath = child(tp, aa.getExpression());
@@ -1079,7 +1320,7 @@ final class FunctionLowerer {
                 @Override
                 public V read() {
                     V arr = expr(arrPath);
-                    return loadElem(b.elemPtr(arr.node(), idx.getAsInt()), arr.elemKind());
+                    return loadElem(b.elemPtr(arr.node(), idx.getAsInt()), arr.elemKind(), arr.ir());
                 }
 
                 @Override
@@ -1149,6 +1390,9 @@ final class FunctionLowerer {
                         && te.getQualifiedName().contentEquals(Gpu.class.getName())) {
                     int id = Builtins.idOf(ee.getSimpleName().toString());
                     pureBuiltin = id >= 0 && Builtins.has(id, Builtins.PURE);
+                } else if (el instanceof ExecutableElement ee && ee.getEnclosingElement() instanceof TypeElement te
+                        && Aggregates.isAggregate(te.asType())) {
+                    pureBuiltin = true; // методы вектора и copy() struct не имеют эффектов
                 }
                 if (!pureBuiltin) {
                     pure[0] = false;

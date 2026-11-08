@@ -174,8 +174,79 @@ final class Differential {
             for (int i = 0; i < e.length; i++) {
                 assertEquals(e[i], a[i], name + " arg" + arg + "[" + i + "]");
             }
+        } else if (expected instanceof Object[] e) {
+            Object[] a = (Object[]) actual;
+            assertEquals(e.length, a.length);
+            for (int i = 0; i < e.length; i++) {
+                String why = objectDifference(e[i], a[i], ulps);
+                if (why != null) {
+                    fail(name + " arg" + arg + "[" + i + "]: " + why + " (JVM=" + describeObject(e[i]) + ", IR="
+                            + describeObject(a[i]) + ")");
+                }
+            }
         }
         // скалярные аргументы не изменяются
+    }
+
+    /**
+     * Поэлементное сравнение объектов хоста (векторы и struct) по открытым полям в порядке объявления; вещественные
+     * - в ULP, остальное точно.
+     *
+     * @return причина расхождения либо {@code null}
+     */
+    static String objectDifference(Object e, Object a, int ulps) {
+        if (e == null || a == null) {
+            return e == a ? null : "null против значения";
+        }
+        if (e.getClass() != a.getClass()) {
+            return "разные классы";
+        }
+        for (java.lang.reflect.Field f : e.getClass().getDeclaredFields()) {
+            int mod = f.getModifiers();
+            if (!java.lang.reflect.Modifier.isPublic(mod) || java.lang.reflect.Modifier.isStatic(mod)) {
+                continue;
+            }
+            try {
+                Object x = f.get(e);
+                Object y = f.get(a);
+                String why;
+                if (x instanceof Float fx) {
+                    why = sameFloat(fx, (Float) y, ulps) ? null : "поле " + f.getName();
+                } else if (x instanceof Double dx) {
+                    why = sameDouble(dx, (Double) y, ulps) ? null : "поле " + f.getName();
+                } else if (x == null || x.getClass().isPrimitive() || x instanceof Number || x instanceof Boolean
+                        || x instanceof Character) {
+                    why = java.util.Objects.equals(x, y) ? null : "поле " + f.getName();
+                } else {
+                    String inner = objectDifference(x, y, ulps);
+                    why = inner == null ? null : "поле " + f.getName() + ": " + inner;
+                }
+                if (why != null) {
+                    return why;
+                }
+            } catch (IllegalAccessException ex) {
+                throw new AssertionError(ex);
+            }
+        }
+        return null;
+    }
+
+    private static String describeObject(Object o) {
+        if (o == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(o.getClass().getSimpleName()).append('{');
+        for (java.lang.reflect.Field f : o.getClass().getDeclaredFields()) {
+            int mod = f.getModifiers();
+            if (java.lang.reflect.Modifier.isPublic(mod) && !java.lang.reflect.Modifier.isStatic(mod)) {
+                try {
+                    sb.append(f.getName()).append('=').append(f.get(o)).append(' ');
+                } catch (IllegalAccessException ex) {
+                    sb.append(f.getName()).append("=?");
+                }
+            }
+        }
+        return sb.append('}').toString();
     }
 
     private static Byte[] box(byte[] a) {

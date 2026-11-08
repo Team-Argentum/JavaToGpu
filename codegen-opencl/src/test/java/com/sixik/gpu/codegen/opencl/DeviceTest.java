@@ -58,7 +58,8 @@ class DeviceTest {
     // =============================================================================================
 
     static Stream<String> sampleNames() {
-        return SampleKernels.all().stream().map(SampleKernels.Kernel::label).filter(l -> !SampleArgs.notComparableOnDevice(l));
+        return SampleKernels.all().stream().map(SampleKernels.Kernel::label).filter(l -> !SampleArgs.notComparableOnDevice(l))
+                .filter(l -> SampleKernels.all().stream().noneMatch(k -> k.label().equals(l) && SampleArgs.hasObjectArguments(k)));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -278,6 +279,51 @@ class DeviceTest {
             return new Object[]{in, new float[256]};
         }, 4);
         assertTrue(rnd != null);
+    }
+
+    // =============================================================================================
+    // векторы и struct (M8)
+    // =============================================================================================
+
+    @Test
+    void vectorsOfFloat() {
+        float[] in = {1.5f, -2f, 3.25f, 0f, 4f, 0.5f, -8f, 2f};
+        check("vectors_f32", HandModules.vectorsF32(), NdRange.of1D(1), () -> new Object[]{
+                in.clone(), new float[HandModules.VECTORS_F32_OUT], new int[HandModules.VECTORS_F32_OUTI]}, 4);
+        float[] edge = {Float.NaN, -0f, Float.POSITIVE_INFINITY, 1e30f, 0f, Float.NEGATIVE_INFINITY, 3e9f, -3e9f};
+        check("vectors_f32(edge)", HandModules.vectorsF32(), NdRange.of1D(1), () -> new Object[]{
+                edge.clone(), new float[HandModules.VECTORS_F32_OUT], new int[HandModules.VECTORS_F32_OUTI]}, 4);
+    }
+
+    @Test
+    void vectorsOfInteger() {
+        int[][] inputs = {
+                {Integer.MAX_VALUE, Integer.MIN_VALUE, 7, -7, 1, -1, 2, 3},
+                {100, -100, 31, 33, 5, 5, 31, 32},
+                {Integer.MIN_VALUE, 0, -1, 1, -1, 3, -33, 64}};
+        long[][] longs = {{Long.MAX_VALUE, -1, 3, 65}, {Long.MIN_VALUE, 7, -1, 2}, {5, -5, 2, 130}};
+        for (int i = 0; i < inputs.length; i++) {
+            final int[] in = inputs[i];
+            final long[] inl = longs[i];
+            check("vectors_i32[" + i + "]", HandModules.vectorsI32(), NdRange.of1D(1), () -> new Object[]{
+                    in.clone(), new int[HandModules.VECTORS_I32_OUT], inl.clone(), new long[HandModules.VECTORS_I32_OUTL],
+                    new float[4]}, 0);
+        }
+    }
+
+    @Test
+    void vectorsOfDouble() {
+        double[] in = {1.5, -2, 3.25, 0, 4, 0.5, -8, 2};
+        check("vectors_f64", HandModules.vectorsF64(), NdRange.of1D(1), () -> new Object[]{
+                in.clone(), new double[HandModules.VECTORS_F64_OUT], new float[2]}, 4);
+    }
+
+    @Test
+    void structValues() {
+        for (float x : new float[]{1.5f, -3f, 0f}) {
+            check("structs(" + x + ")", HandModules.structs(), NdRange.of1D(1), () -> new Object[]{
+                    new float[]{x, 2f, 3f, 4f, 5f, 6f}, new float[HandModules.STRUCTS_OUT]}, 0);
+        }
     }
 
     // =============================================================================================

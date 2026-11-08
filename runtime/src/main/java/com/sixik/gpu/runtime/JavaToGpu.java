@@ -289,7 +289,7 @@ public final class JavaToGpu {
 
     private static LaunchConfig primaryArrayConfig(Object[] args) {
         for (Object a : args) {
-            if (a != null && a.getClass().isArray() && Marshal.elementTypeOf(a) >= 0) {
+            if (a != null && a.getClass().isArray()) {
                 int n = Marshal.length(a);
                 if (n > 0) {
                     return LaunchConfig.of1D(n);

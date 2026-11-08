@@ -95,13 +95,14 @@ public final class OpenClEmitter {
         }
 
         Helpers helpers = new Helpers();
+        Layouts layouts = new Layouts(m, Support.usedTypes(m, reach), options.debug(), global);
         StringBuilder bodies = new StringBuilder();
         List<KernelArg> args = new ArrayList<>();
         for (int f = 0; f < funcNames.length; f++) {
             if (!reach[f]) {
                 continue;
             }
-            FunctionEmitter fe = new FunctionEmitter(m, f, options, helpers, funcNames, global);
+            FunctionEmitter fe = new FunctionEmitter(m, f, options, helpers, layouts, funcNames, global);
             if (f == kernel) {
                 kernelArgs(m, f, fe, args);
             }
@@ -126,6 +127,9 @@ public final class OpenClEmitter {
             src.append("#pragma OPENCL EXTENSION cl_khr_fp16 : enable\n");
         }
         src.append('\n');
+        if (layouts.hasStructs()) {
+            src.append(layouts.typedefs()).append('\n');
+        }
         if (helpers.any()) {
             helpers.appendTo(src);
             src.append('\n');

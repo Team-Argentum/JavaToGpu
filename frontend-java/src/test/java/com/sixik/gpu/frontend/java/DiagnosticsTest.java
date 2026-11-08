@@ -199,7 +199,42 @@ class DiagnosticsTest {
                     }
                     """),
             new Case("GPU0190", """
-                    @Kernel public static void k(Float2 v) { } // <-
+                    @Kernel public static void k(FloatPtr p) { } // <-
+                    """),
+            new Case("GPU0191", """
+                    @Struct public static final class Bad { public final int x = 1; public Bad() { } }
+                    @Kernel public static void k(@Global Bad[] a) { } // <-
+                    """),
+            new Case("GPU0192", """
+                    @Struct public static final class P { public int x; public P() { } public P(int x) { this.x = x; } }
+                    @Kernel public static void k(@Global int[] a) {
+                        P p = new P(); // <-
+                    }
+                    """),
+            new Case("GPU0193", """
+                    @Struct public static final class P { public int x; public P() { } public P(int x) { this.x = x; } }
+                    @Kernel public static void k(@Global int[] a) {
+                        P p = new P(1);
+                        P q = p; // <-
+                    }
+                    """),
+            new Case("GPU0194", """
+                    @Struct public static final class P { public int x; public P() { } public P(int x) { this.x = x; } }
+                    @DeviceFunction static void f(P p) {
+                        p.x = 2; // <-
+                    }
+                    """),
+            new Case("GPU0195", """
+                    @Kernel public static void k(@Global float[] a, int i) {
+                        Float4 v = new Float4(1, 2, 3, 4);
+                        Float2 w = v.shuffle(i, 0); // <-
+                    }
+                    """),
+            new Case("GPU0196", """
+                    @Kernel public static void k(@Global int[] a) {
+                        Float4 v = new Float4(1, 2, 3, 4);
+                        boolean same = v == v; // <-
+                    }
                     """)
     );
 

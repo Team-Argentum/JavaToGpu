@@ -38,6 +38,8 @@ final class JavaTypes {
     static final int K_ARRAY = 9;
     /** Вид: любой другой тип (объект и т.п.), в GPU-коде не поддерживается. */
     static final int K_OTHER = 10;
+    /** Вид: значение-агрегат - вектор {@code api.types.*} либо класс {@code @Struct} ({@link Aggregates}). */
+    static final int K_AGG = 11;
 
     private JavaTypes() {
     }
@@ -58,6 +60,7 @@ final class JavaTypes {
             case FLOAT -> K_FLOAT;
             case DOUBLE -> K_DOUBLE;
             case ARRAY -> K_ARRAY;
+            case DECLARED -> Aggregates.isAggregate(t) ? K_AGG : K_OTHER;
             default -> K_OTHER;
         };
     }

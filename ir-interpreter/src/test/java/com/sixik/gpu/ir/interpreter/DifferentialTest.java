@@ -1,5 +1,13 @@
 package com.sixik.gpu.ir.interpreter;
 
+import com.sixik.gpu.api.types.Double2;
+import com.sixik.gpu.api.types.Double4;
+import com.sixik.gpu.api.types.Float4;
+import com.sixik.gpu.api.types.Int2;
+import com.sixik.gpu.api.types.Int4;
+import com.sixik.gpu.api.types.Long2;
+import com.sixik.gpu.ir.interpreter.samples.StructKernels;
+import com.sixik.gpu.ir.interpreter.samples.VectorKernels;
 import com.sixik.gpu.ir.interpreter.samples.ControlKernels;
 import com.sixik.gpu.ir.interpreter.samples.FloatKernels;
 import com.sixik.gpu.ir.interpreter.samples.IndexKernels;
@@ -245,6 +253,142 @@ class DifferentialTest {
             }
             return new Object[]{in, new int[n]};
         });
+    }
+
+
+    // ---- векторы и struct (M8) --------------------------------------------------------------------
+
+    private static Float4[] floats4(int n, long seed, boolean edges) {
+        java.util.Random r = new java.util.Random(seed);
+        Float4[] a = new Float4[n];
+        for (int i = 0; i < n; i++) {
+            float[] v = new float[4];
+            for (int k = 0; k < 4; k++) {
+                v[k] = (r.nextFloat() - 0.5f) * 30f;
+                if (edges && r.nextInt(5) == 0) {
+                    v[k] = new float[]{0f, -0f, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY, 1e30f}[r.nextInt(6)];
+                }
+            }
+            a[i] = new Float4(v[0], v[1], v[2], v[3]);
+        }
+        return a;
+    }
+
+    private static Float4[] zeros4(int n) {
+        Float4[] a = new Float4[n];
+        java.util.Arrays.fill(a, new Float4(0, 0, 0, 0));
+        return a;
+    }
+
+    @Test
+    void floatVectorOperations() {
+        for (boolean edges : new boolean[]{false, true}) {
+            int n = 10;
+            Differential.check(VectorKernels.class, "floatOps", NdRange.of1D(n), () -> new Object[]{
+                    floats4(n, 3, edges), zeros4(n * VectorKernels.FLOAT_WIDTH)});
+        }
+    }
+
+    @Test
+    void integerVectorOperations() {
+        int n = 9;
+        Differential.check(VectorKernels.class, "intOps", NdRange.of1D(n), () -> {
+            java.util.Random r = new java.util.Random(11);
+            Int4[] in = new Int4[n];
+            int[] edge = {Integer.MIN_VALUE, Integer.MAX_VALUE, -1, 1, 31, 32, 33, -33, 100, -100};
+            for (int i = 0; i < n; i++) {
+                int[] v = new int[4];
+                for (int k = 0; k < 4; k++) {
+                    v[k] = r.nextBoolean() ? edge[r.nextInt(edge.length)] : r.nextInt(2001) - 1000;
+                    if (v[k] == 0) {
+                        v[k] = 5;
+                    }
+                }
+                in[i] = new Int4(v[0], v[1], v[2], v[3]);
+            }
+            Int4[] out = new Int4[n * VectorKernels.INT_WIDTH];
+            java.util.Arrays.fill(out, new Int4(0, 0, 0, 0));
+            return new Object[]{in, out};
+        });
+    }
+
+    @Test
+    void doubleAndLongVectors() {
+        int n = 6;
+        Differential.check(VectorKernels.class, "wide", NdRange.of1D(n), () -> {
+            Double2[] d = new Double2[n];
+            Long2[] l = new Long2[n];
+            for (int i = 0; i < n; i++) {
+                d[i] = new Double2(i * 1.5 - 3, 2 - i * 0.25);
+                l[i] = new Long2(Long.MAX_VALUE - i, i - 3L);
+            }
+            Double4[] outD = new Double4[n];
+            Long2[] outL = new Long2[n];
+            java.util.Arrays.fill(outD, new Double4(0, 0, 0, 0));
+            java.util.Arrays.fill(outL, new Long2(0, 0));
+            return new Object[]{d, l, outD, outL};
+        });
+    }
+
+    @Test
+    void vectorParametersByValue() {
+        int n = 5;
+        Differential.check(VectorKernels.class, "byValue", NdRange.of1D(n), () -> new Object[]{
+                zeros4(n), new Float4(1, -2, 0.5f, 4), new Int2(3, -4), 7});
+    }
+
+    @Test
+    void vectorsBuiltFromScalars() {
+        int n = 7;
+        Differential.check(VectorKernels.class, "fromScalars", NdRange.of1D(n), () -> {
+            float[] in = new float[n];
+            for (int i = 0; i < n; i++) {
+                in[i] = i * 0.75f - 2;
+            }
+            return new Object[]{in, new float[n * 4]};
+        });
+    }
+
+    private static StructKernels.Particle[] particles(int n) {
+        StructKernels.Particle[] ps = new StructKernels.Particle[n];
+        for (int i = 0; i < n; i++) {
+            ps[i] = new StructKernels.Particle(i * 1.5f, -i, new Float4(i + 1, 2 * i, -3, 0.5f), 100 + i);
+        }
+        return ps;
+    }
+
+    @Test
+    void structFieldsAreUpdatedInPlace() {
+        int n = 8;
+        Differential.check(StructKernels.class, "step", NdRange.of1D(n), () -> new Object[]{particles(n), 0.25f});
+    }
+
+    @Test
+    void structLocalsCopiesAndNestedFields() {
+        int n = 6;
+        Differential.check(StructKernels.class, "locals", NdRange.of1D(n), () -> new Object[]{
+                particles(n), new float[n * 8]});
+    }
+
+    @Test
+    void nestedStructArraysAndMixedTypes() {
+        int n = 5;
+        Differential.check(StructKernels.class, "bodies", NdRange.of1D(n), () -> {
+            StructKernels.Body[] bs = new StructKernels.Body[n];
+            StructKernels.Pair[] pairs = new StructKernels.Pair[n];
+            for (int i = 0; i < n; i++) {
+                bs[i] = new StructKernels.Body(new StructKernels.Particle(i, i * 2, new Float4(1, 2, 3, 4), i), 10.0 * i);
+                pairs[i] = new StructKernels.Pair(i - 2, Long.MAX_VALUE - i);
+            }
+            return new Object[]{bs, pairs};
+        });
+    }
+
+    @Test
+    void structParameterByValue() {
+        int n = 4;
+        Differential.check(StructKernels.class, "withParameter", NdRange.of1D(n), () -> new Object[]{
+                new float[n * 3], new StructKernels.Particle(2, 3, new Float4(0, 1, 2, 3), 9), new Float4(1, 2, 3, 4)});
     }
 
     // ---- память и функции ------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.TypeMirror;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -13,12 +14,15 @@ import java.util.List;
  * @param paramKinds вид каждого параметра ({@link JavaTypes#K_ARRAY} для массивов)
  * @param elemKinds  вид элемента для массивов, иначе {@code -1}
  * @param spaces     адресное пространство для массивов, иначе {@code -1}
+ * @param retAgg     тип Java результата, если он вектор или struct ({@link JavaTypes#K_AGG}), иначе {@code null}
+ * @param aggs       по параметру: тип Java значения-агрегата (параметр-вектор/struct либо элемент массива векторов/struct),
+ *                   иначе {@code null}
  */
-record FnSig(int retKind, int[] paramKinds, int[] elemKinds, int[] spaces) {
+record FnSig(int retKind, int[] paramKinds, int[] elemKinds, int[] spaces, TypeMirror retAgg, TypeMirror[] aggs) {
 
     /**
      * Строит сигнатуру по элементу метода. Метод должен был пройти проверку сигнатуры
-     * ({@link SubsetChecker}): типы параметров - примитивы либо одномерные массивы примитивов.
+     * ({@link SubsetChecker}): типы параметров - примитивы, векторы, struct либо одномерные массивы таких типов.
      *
      * @param e элемент метода
      * @return сигнатура
@@ -29,27 +33,45 @@ record FnSig(int retKind, int[] paramKinds, int[] elemKinds, int[] spaces) {
         int[] kinds = new int[n];
         int[] elems = new int[n];
         int[] spaces = new int[n];
+        TypeMirror[] aggs = new TypeMirror[n];
         for (int i = 0; i < n; i++) {
             TypeMirror t = ps.get(i).asType();
             int k = JavaTypes.kindOf(t);
             kinds[i] = k;
             if (k == JavaTypes.K_ARRAY) {
-                elems[i] = JavaTypes.kindOf(((ArrayType) t).getComponentType());
+                TypeMirror comp = ((ArrayType) t).getComponentType();
+                elems[i] = JavaTypes.kindOf(comp);
                 spaces[i] = Ann.paramSpace(ps.get(i));
+                if (elems[i] == JavaTypes.K_AGG) {
+                    aggs[i] = comp;
+                }
             } else {
                 elems[i] = -1;
                 spaces[i] = -1;
+                if (k == JavaTypes.K_AGG) {
+                    aggs[i] = t;
+                }
             }
         }
-        return new FnSig(JavaTypes.kindOf(e.getReturnType()), kinds, elems, spaces);
+        int ret = JavaTypes.kindOf(e.getReturnType());
+        return new FnSig(ret, kinds, elems, spaces, ret == JavaTypes.K_AGG ? e.getReturnType() : null, aggs);
     }
 
     /**
      * @param other другая сигнатура
-     * @return {@code true}, если результат, виды параметров, виды элементов и адресные пространства совпадают
+     * @return {@code true}, если результат, виды параметров, виды элементов, типы агрегатов и адресные пространства совпадают
      */
     boolean sameAs(FnSig other) {
-        return retKind == other.retKind && java.util.Arrays.equals(paramKinds, other.paramKinds)
-                && java.util.Arrays.equals(elemKinds, other.elemKinds) && java.util.Arrays.equals(spaces, other.spaces);
+        if (retKind != other.retKind || !Arrays.equals(paramKinds, other.paramKinds)
+                || !Arrays.equals(elemKinds, other.elemKinds) || !Arrays.equals(spaces, other.spaces)
+                || !String.valueOf(retAgg).equals(String.valueOf(other.retAgg))) {
+            return false;
+        }
+        for (int i = 0; i < aggs.length; i++) {
+            if (!String.valueOf(aggs[i]).equals(String.valueOf(other.aggs[i]))) {
+                return false;
+            }
+        }
+        return true;
     }
 }

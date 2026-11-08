@@ -95,9 +95,7 @@ final class Support {
             case Op.BARRIER, Op.LOCAL_ARRAY_DECL ->
                     out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": local memory и barrier - веха M10"));
             case Op.LOCAL_ADDR, Op.FIELD_PTR ->
-                    out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": указатели на локали и поля - вехи M8/M9"));
-            case Op.SPLAT, Op.EXTRACT, Op.INSERT, Op.SHUFFLE, Op.BUILD, Op.STRUCT_BUILD, Op.FIELD_GET, Op.FIELD_SET ->
-                    out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": векторы и struct - веха M8"));
+                    out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": указатели на локали и поля - веха M9"));
             case Op.INTRINSIC -> {
                 if (!Machine.supportsBuiltin(m.a(n))) {
                     out.add(unsupported(f, n, "builtin #" + m.a(n) + " не поддерживается интерпретатором"));
@@ -116,12 +114,6 @@ final class Support {
     /** @return причина, по которой тип не поддерживается, либо {@code null} */
     private static String unsupportedType(IrModule m, int t) {
         int kind = m.typeKind(t);
-        if (kind == Types.KIND_VEC) {
-            return "векторные типы - веха M8";
-        }
-        if (kind == Types.KIND_STRUCT) {
-            return "struct - веха M8";
-        }
         if (kind == Types.KIND_IMAGE || kind == Types.KIND_SAMPLER) {
             return "images и samplers не входят в v1";
         }

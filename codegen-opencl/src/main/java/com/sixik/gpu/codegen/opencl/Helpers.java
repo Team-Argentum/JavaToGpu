@@ -2,6 +2,10 @@ package com.sixik.gpu.codegen.opencl;
 
 import com.sixik.gpu.ir.Types;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Supplier;
+
 /**
  * Вспомогательные функции преамбулы, которые нельзя выразить одним оператором C без расхождения с Java
  * (REWORK_ARCHITECTURE.md, 8.A). В текст попадают только использованные, всегда в одном порядке.
@@ -71,6 +75,8 @@ final class Helpers {
     }
 
     private final boolean[] used = new boolean[COUNT];
+    /** Функции над агрегатами ({@link Layouts}): имя -> определение; порядок вставки = порядок зависимостей. */
+    private final Map<String, String> dynamic = new LinkedHashMap<>();
 
     /**
      * Отмечает функцию как использованную и возвращает её имя.
@@ -110,7 +116,23 @@ final class Helpers {
                 return true;
             }
         }
-        return false;
+        return !dynamic.isEmpty();
+    }
+
+    /**
+     * Регистрирует функцию над агрегатом. Определение строится один раз; функции, которые оно использует, регистрируются
+     * внутри {@code text} и потому попадают в вывод раньше (порядок вставки).
+     *
+     * @param name имя функции
+     * @param text источник определения
+     * @return имя функции
+     */
+    String dynamic(String name, Supplier<String> text) {
+        if (!dynamic.containsKey(name)) {
+            String body = text.get();
+            dynamic.put(name, body);
+        }
+        return name;
     }
 
     /**
@@ -123,6 +145,9 @@ final class Helpers {
             if (used[i]) {
                 out.append(TEXT[i]).append('\n');
             }
+        }
+        for (String text : dynamic.values()) {
+            out.append(text).append('\n');
         }
     }
 }

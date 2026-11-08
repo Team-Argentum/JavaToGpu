@@ -170,8 +170,123 @@ public final class ApiGenerator {
                 sb.append(" + \", \"");
             }
         }
-        sb.append(" + \")\";\n    }\n}\n");
+        sb.append(" + \")\";\n    }\n");
+        genVectorOps(sb, sc, scalar, name, lanes);
+        sb.append("}\n");
         return sb.toString();
+    }
+
+    /** Размеры векторов результата {@code shuffle}. */
+    private static final int[] SHUFFLE_LANES = {2, 3, 4, 8, 16};
+
+    /**
+     * Операции вектора (REWORK_ARCHITECTURE.md, 5.20): на JVM это обычные методы, во фронтенде каждый из них
+     * соответствует узлу IR ({@code splat, insert, shuffle, add ...}). Java не умеет перегружать операторы, поэтому
+     * арифметика - методы; все они покомпонентные и повторяют скалярную семантику Java.
+     */
+    private static void genVectorOps(StringBuilder sb, Scalar sc, String scalar, String name, int lanes) {
+        String t = sc.java();
+        boolean integer = scalar.startsWith("i");
+
+        sb.append("\n    /**\n     * Вектор, все компоненты которого равны {@code v} (IR: {@code splat}).\n     *\n")
+                .append("     * @param v значение компонент\n     * @return вектор\n     */\n")
+                .append("    public static ").append(name).append(" splat(").append(t).append(" v) {\n        return new ")
+                .append(name).append('(');
+        for (int i = 0; i < lanes; i++) {
+            sb.append(i == 0 ? "" : ", ").append('v');
+        }
+        sb.append(");\n    }\n");
+
+        sb.append("\n    private ").append(t).append(" lane(int i) {\n        switch (i) {\n");
+        for (int i = 0; i < lanes; i++) {
+            sb.append("            case ").append(i).append(": return ").append(laneName(lanes, i)).append(";\n");
+        }
+        sb.append("            default: throw new IndexOutOfBoundsException(\"компонента \" + i + \" вне 0..").append(lanes - 1)
+                .append("\");\n        }\n    }\n");
+
+        for (int k = 0; k < lanes; k++) {
+            String lane = laneName(lanes, k);
+            String method = "with" + Character.toUpperCase(lane.charAt(0)) + lane.substring(1);
+            sb.append("\n    /**\n     * Копия вектора с изменённой компонентой {@code ").append(lane)
+                    .append("} (IR: {@code insert}); сам вектор неизменяем.\n     *\n")
+                    .append("     * @param v новое значение компоненты\n     * @return новый вектор\n     */\n")
+                    .append("    public ").append(name).append(' ').append(method).append('(').append(t)
+                    .append(" v) {\n        return new ").append(name).append('(');
+            for (int i = 0; i < lanes; i++) {
+                sb.append(i == 0 ? "" : ", ").append(i == k ? "v" : laneName(lanes, i));
+            }
+            sb.append(");\n    }\n");
+        }
+
+        for (int n : SHUFFLE_LANES) {
+            String result = vectorName(scalar, n);
+            sb.append("\n    /**\n     * Перестановка компонент (IR: {@code shuffle}): компонента позиции {@code k} результата - компонента ")
+                    .append("{@code ik} исходного вектора. Номера обязаны быть константами в пределах 0..").append(lanes - 1)
+                    .append(".\n     *\n");
+            for (int i = 0; i < n; i++) {
+                sb.append("     * @param i").append(i).append(" номер компоненты для позиции ").append(i).append('\n');
+            }
+            sb.append("     * @return вектор из ").append(n).append(" компонент\n     */\n    public ").append(result)
+                    .append(" shuffle(");
+            for (int i = 0; i < n; i++) {
+                sb.append(i == 0 ? "" : ", ").append("int i").append(i);
+            }
+            sb.append(") {\n        return new ").append(result).append('(');
+            for (int i = 0; i < n; i++) {
+                sb.append(i == 0 ? "" : ", ").append("lane(i").append(i).append(')');
+            }
+            sb.append(");\n    }\n");
+        }
+
+        String[][] arith = {{"add", "+", "сумма"}, {"sub", "-", "разность"}, {"mul", "*", "произведение"},
+                {"div", "/", "частное"}, {"rem", "%", "остаток"}};
+        for (String[] op : arith) {
+            binary(sb, name, t, lanes, op[0], op[1], op[2]);
+        }
+        if (integer) {
+            String[][] bits = {{"and", "&", "побитовое И"}, {"or", "|", "побитовое ИЛИ"},
+                    {"xor", "^", "побитовое исключающее ИЛИ"},
+                    {"shl", "<<", "сдвиг влево (счётчик маскируется шириной, как в Java)"},
+                    {"shr", ">>", "арифметический сдвиг вправо"}, {"ushr", ">>>", "логический сдвиг вправо"}};
+            for (String[] op : bits) {
+                binary(sb, name, t, lanes, op[0], op[1], op[2]);
+            }
+        }
+        sb.append("\n    /**\n     * Покомпонентное отрицание (IR: {@code neg}).\n     *\n     * @return новый вектор\n     */\n")
+                .append("    public ").append(name).append(" neg() {\n        return new ").append(name).append('(');
+        for (int i = 0; i < lanes; i++) {
+            sb.append(i == 0 ? "" : ", ").append('-').append(laneName(lanes, i));
+        }
+        sb.append(");\n    }\n");
+        if (integer) {
+            sb.append("\n    /**\n     * Покомпонентное побитовое НЕ (IR: {@code not}).\n     *\n     * @return новый вектор\n     */\n")
+                    .append("    public ").append(name).append(" not() {\n        return new ").append(name).append('(');
+            for (int i = 0; i < lanes; i++) {
+                sb.append(i == 0 ? "" : ", ").append('~').append(laneName(lanes, i));
+            }
+            sb.append(");\n    }\n");
+        }
+    }
+
+    /** Покомпонентная бинарная операция: с вектором и со скаляром (скаляр размножается, IR: {@code splat}). */
+    private static void binary(StringBuilder sb, String name, String t, int lanes, String method, String op, String what) {
+        sb.append("\n    /**\n     * Покомпонентно: ").append(what).append(" (IR: {@code ").append(method).append("}).\n     *\n")
+                .append("     * @param o второй операнд\n     * @return новый вектор\n     */\n")
+                .append("    public ").append(name).append(' ').append(method).append('(').append(name)
+                .append(" o) {\n        return new ").append(name).append('(');
+        for (int i = 0; i < lanes; i++) {
+            String f = laneName(lanes, i);
+            sb.append(i == 0 ? "" : ", ").append(f).append(' ').append(op).append(" o.").append(f);
+        }
+        sb.append(");\n    }\n");
+        sb.append("\n    /**\n     * То же со скаляром: он размножается по всем компонентам (IR: {@code splat}).\n     *\n")
+                .append("     * @param s второй операнд\n     * @return новый вектор\n     */\n")
+                .append("    public ").append(name).append(' ').append(method).append('(').append(t)
+                .append(" s) {\n        return new ").append(name).append('(');
+        for (int i = 0; i < lanes; i++) {
+            sb.append(i == 0 ? "" : ", ").append(laneName(lanes, i)).append(' ').append(op).append(" s");
+        }
+        sb.append(");\n    }\n");
     }
 
     private static String genPointer(String scalar) {

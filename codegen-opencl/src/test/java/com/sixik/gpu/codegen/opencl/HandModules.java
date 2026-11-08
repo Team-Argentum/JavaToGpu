@@ -49,6 +49,10 @@ final class HandModules {
         m.put("builtins", builtins());
         m.put("atomics", atomics());
         m.put("work_group_attr", workGroupAttribute());
+        m.put("vectors_f32", vectorsF32());
+        m.put("vectors_i32", vectorsI32());
+        m.put("vectors_f64", vectorsF64());
+        m.put("structs", structs());
         return m;
     }
 
@@ -635,6 +639,221 @@ final class HandModules {
                 b.select(b.binary(Op.GE, b.localGet(old), b.constI32(0)), b.constI32(1), b.constI32(0))));
         return k.finish();
     }
+
+
+    // ---------------------------------------------------------------------------------------------
+    // векторы и struct (M8)
+    // ---------------------------------------------------------------------------------------------
+
+    /** Записывает {@code lanes} компонент вектора в {@code param[idx..]}; {@code vec} строит свежий узел на каждую компоненту. */
+    private static int storeLanes(K k, int param, int idx, java.util.function.IntSupplier vec, int lanes) {
+        for (int i = 0; i < lanes; i++) {
+            k.put(param, idx++, k.b.extract(vec.getAsInt(), i));
+        }
+        return idx;
+    }
+
+    /** Вектор из четырёх значений {@code in[from..from+3]}. */
+    private static int load4(K k, int vec, int param, int from) {
+        return k.b.build(vec, k.get(param, from), k.get(param, from + 1), k.get(param, from + 2), k.get(param, from + 3));
+    }
+
+    /**
+     * Вектор {@code float4}: сборка, {@code splat}, {@code insert}, {@code shuffle} (буквенные и {@code s}-обозначения),
+     * арифметика, builtins, {@code select}, преобразование в {@code int4} и {@code bitcast}. Вход - 8 значений.
+     */
+    static IrModule vectorsF32() {
+        K k = new K();
+        IrBuilder b = k.b;
+        int v2 = b.vec(Types.F32, 2);
+        int v4 = b.vec(Types.F32, 4);
+        int i4 = b.vec(Types.I32, 4);
+        int af = b.array(AddressSpace.GLOBAL, Types.F32);
+        int ai = b.array(AddressSpace.GLOBAL, Types.I32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, af, af, ai);
+        b.nameFunction("vectors_f32");
+        b.nameParams("in", "out", "outi");
+        int la = k.local(v4, "a", load4(k, v4, 0, 0));
+        int lb = k.local(v4, "b", load4(k, v4, 0, 4));
+        int idx = 0;
+        idx = storeLanes(k, 1, idx, () -> b.binary(Op.ADD, b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.binary(Op.SUB, b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.binary(Op.MUL, b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.binary(Op.DIV, b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.binary(Op.REM, b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.neg(b.localGet(la)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.splat(v4, k.get(0, 3)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.insert(b.localGet(la), 1, k.get(0, 7)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.shuffle(b.localGet(la), 3, 2, 1, 0), 4);
+        idx = storeLanes(k, 1, idx, () -> b.shuffle(b.localGet(la), 1, 1), 2);
+        idx = storeLanes(k, 1, idx, () -> b.shuffle(b.localGet(la), 0, 2, 3), 3);
+        idx = storeLanes(k, 1, idx, () -> b.shuffle(b.localGet(la), 0, 0, 1, 1, 2, 2, 3, 3), 8);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("sin"), b.localGet(la)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("sqrt"), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("fma"), b.localGet(la), b.localGet(lb), b.localGet(la)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("max"), b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("min"), b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.select(b.binary(Op.LT, k.get(0, 0), k.get(0, 4)), b.localGet(la), b.localGet(lb)), 4);
+        storeLanes(k, 1, idx, () -> b.binary(Op.MUL, b.shuffle(b.localGet(la), 0, 1), b.splat(v2, k.get(0, 6))), 2);
+        int io = 0;
+        io = storeLanes(k, 2, io, () -> b.convert(i4, b.localGet(la)), 4);
+        io = storeLanes(k, 2, io, () -> b.bitcast(i4, b.localGet(lb)), 4);
+        storeLanes(k, 2, io, () -> b.convert(i4, b.binary(Op.MUL, b.localGet(la), b.splat(v4, b.constF32(1.0e10f)))), 4);
+        return k.finish();
+    }
+
+    /** Результатов {@link #vectorsF32()} в {@code out} и {@code outi}. */
+    static final int VECTORS_F32_OUT = 4 * 6 + 4 + 4 + 4 + 2 + 3 + 8 + 4 * 6 + 2 + 4 + 2;
+    /** Результатов {@link #vectorsF32()} в {@code outi}. */
+    static final int VECTORS_F32_OUTI = 12;
+
+    /** Целочисленные векторы {@code int4/long2}: арифметика с оборотом, деление, битовые операции и сдвиги с маской. */
+    static IrModule vectorsI32() {
+        K k = new K();
+        IrBuilder b = k.b;
+        int i4 = b.vec(Types.I32, 4);
+        int l2 = b.vec(Types.I64, 2);
+        int f4 = b.vec(Types.F32, 4);
+        int ai = b.array(AddressSpace.GLOBAL, Types.I32);
+        int al = b.array(AddressSpace.GLOBAL, Types.I64);
+        int af = b.array(AddressSpace.GLOBAL, Types.F32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, ai, ai, al, al, af);
+        b.nameFunction("vectors_i32");
+        b.nameParams("in", "out", "inl", "outl", "outf");
+        int la = k.local(i4, "a", load4(k, i4, 0, 0));
+        int lb = k.local(i4, "b", load4(k, i4, 0, 4));
+        int idx = 0;
+        for (int op : new int[]{Op.ADD, Op.SUB, Op.MUL, Op.DIV, Op.REM, Op.AND, Op.OR, Op.XOR, Op.SHL, Op.SHR, Op.USHR}) {
+            final int o = op;
+            idx = storeLanes(k, 1, idx, () -> b.binary(o, b.localGet(la), b.localGet(lb)), 4);
+        }
+        idx = storeLanes(k, 1, idx, () -> b.neg(b.localGet(la)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.not(b.localGet(la)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.binary(Op.SHL, b.localGet(la), b.splat(i4, b.constI32(33))), 4);
+        idx = storeLanes(k, 1, idx, () -> b.binary(Op.ADD, b.localGet(la), b.splat(i4, b.constI32(1))), 4);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("max"), b.localGet(la), b.localGet(lb)), 4);
+        storeLanes(k, 1, idx, () -> b.shuffle(b.localGet(la), 3, 0), 2);
+        int lc = k.local(l2, "c", b.build(l2, k.get(2, 0), k.get(2, 1)));
+        int ld = k.local(l2, "d", b.build(l2, k.get(2, 2), k.get(2, 3)));
+        int jl = 0;
+        for (int op : new int[]{Op.ADD, Op.SUB, Op.MUL, Op.DIV, Op.REM, Op.SHL, Op.SHR, Op.USHR, Op.XOR}) {
+            final int o = op;
+            jl = storeLanes(k, 3, jl, () -> b.binary(o, b.localGet(lc), b.localGet(ld)), 2);
+        }
+        storeLanes(k, 3, jl, () -> b.neg(b.localGet(lc)), 2);
+        storeLanes(k, 4, 0, () -> b.convert(f4, b.localGet(la)), 4);
+        return k.finish();
+    }
+
+    /** Результатов {@link #vectorsI32()} в {@code out}. */
+    static final int VECTORS_I32_OUT = 4 * 11 + 4 * 4 + 4 + 2;
+    /** Результатов {@link #vectorsI32()} в {@code outl}. */
+    static final int VECTORS_I32_OUTL = 2 * 10;
+
+    /** Двойная точность: {@code double4} - арифметика, builtins, {@code shuffle}. */
+    static IrModule vectorsF64() {
+        K k = new K();
+        IrBuilder b = k.b;
+        int d2 = b.vec(Types.F64, 2);
+        int d4 = b.vec(Types.F64, 4);
+        int f2 = b.vec(Types.F32, 2);
+        int ad = b.array(AddressSpace.GLOBAL, Types.F64);
+        int af = b.array(AddressSpace.GLOBAL, Types.F32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, ad, ad, af);
+        b.nameFunction("vectors_f64");
+        b.nameParams("in", "out", "outf");
+        int la = k.local(d4, "a", load4(k, d4, 0, 0));
+        int lb = k.local(d4, "b", load4(k, d4, 0, 4));
+        int idx = 0;
+        for (int op : new int[]{Op.ADD, Op.SUB, Op.MUL, Op.DIV, Op.REM}) {
+            final int o = op;
+            idx = storeLanes(k, 1, idx, () -> b.binary(o, b.localGet(la), b.localGet(lb)), 4);
+        }
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("sin"), b.localGet(la)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("max"), b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.intrinsic(Builtins.idOf("min"), b.localGet(la), b.localGet(lb)), 4);
+        idx = storeLanes(k, 1, idx, () -> b.shuffle(b.localGet(lb), 2, 3), 2);
+        storeLanes(k, 1, idx, () -> b.splat(d2, k.get(0, 0)), 2);
+        storeLanes(k, 2, 0, () -> b.convert(f2, b.shuffle(b.localGet(la), 0, 1)), 2);
+        return k.finish();
+    }
+
+    /** Результатов {@link #vectorsF64()} в {@code out}. */
+    static final int VECTORS_F64_OUT = 4 * 8 + 2 + 2;
+
+    /**
+     * Struct: сборка, поля, вложенный struct, обновление поля цепочкой {@code field_set}, device-функция со struct в
+     * аргументе и результате, private-массив struct и вектора (нулевое начальное значение), {@code select}.
+     * Вход - 6 значений.
+     */
+    static IrModule structs() {
+        IrBuilder b = new IrBuilder();
+        int v4 = b.vec(Types.F32, 4);
+        int s = b.struct(new int[]{Types.F32, Types.F32, v4, Types.I32}, 0);
+        b.nameStruct(s, "Particle", "x", "y", "v", "id");
+        int outer = b.struct(new int[]{s, Types.F64}, 0);
+        b.nameStruct(outer, "Body", "p", "mass");
+        int af = b.array(AddressSpace.GLOBAL, Types.F32);
+        int privS = b.array(AddressSpace.PRIVATE, s);
+        int privV = b.array(AddressSpace.PRIVATE, v4);
+
+        // device: Particle bump(Particle p, float d) { p.x += d; return p; }
+        int bump = b.beginFunction(IrModule.DEVICE, s, s, Types.F32);
+        b.nameFunction("bump");
+        b.nameParams("p", "d");
+        b.endFunction(b.block(b.returnStmt(b.fieldSet(b.param(0), 0,
+                b.binary(Op.ADD, b.fieldGet(b.param(0), 0), b.param(1))))));
+
+        b.beginFunction(IrModule.KERNEL, Types.VOID, af, af);
+        b.nameFunction("structs");
+        b.nameParams("in", "out");
+        int ls = b.declareLocal(s);
+        int lo = b.declareLocal(outer);
+        int lp = b.declareLocal(privS);
+        int lv = b.declareLocal(privV);
+        b.nameLocal(ls, "p");
+        b.nameLocal(lo, "body");
+        b.nameLocal(lp, "ps");
+        b.nameLocal(lv, "vs");
+        java.util.List<Integer> st = new java.util.ArrayList<>();
+        st.add(b.localDecl(ls, b.structBuild(s, b.load(b.elemPtr(b.param(0), b.constI32(0))),
+                b.load(b.elemPtr(b.param(0), b.constI32(1))),
+                b.build(v4, b.load(b.elemPtr(b.param(0), b.constI32(2))), b.load(b.elemPtr(b.param(0), b.constI32(3))),
+                        b.load(b.elemPtr(b.param(0), b.constI32(4))), b.load(b.elemPtr(b.param(0), b.constI32(5)))),
+                b.constI32(7))));
+        st.add(b.localDecl(lo, b.structBuild(outer, b.call(bump, b.localGet(ls), b.constF32(0.5f)), b.constF64(2.5))));
+        int o = 0;
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.fieldGet(b.localGet(ls), 0)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.fieldGet(b.localGet(ls), 1)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.extract(b.fieldGet(b.localGet(ls), 2), 3)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.convert(Types.F32, b.fieldGet(b.localGet(ls), 3))));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.fieldGet(b.fieldGet(b.localGet(lo), 0), 0)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.convert(Types.F32, b.fieldGet(b.localGet(lo), 1))));
+        // p.v = p.v с изменённой компонентой; вложенный field_set
+        st.add(b.localSet(ls, b.fieldSet(b.localGet(ls), 2, b.insert(b.fieldGet(b.localGet(ls), 2), 1, b.constF32(42f)))));
+        st.add(b.localSet(lo, b.fieldSet(b.localGet(lo), 0, b.fieldSet(b.fieldGet(b.localGet(lo), 0), 3, b.constI32(99)))));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.extract(b.fieldGet(b.localGet(ls), 2), 1)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.convert(Types.F32, b.fieldGet(b.fieldGet(b.localGet(lo), 0), 3))));
+        // private-массивы агрегатов: нулевое начальное значение и запись/чтение элемента
+        st.add(b.privateArrayDecl(lp, b.constI32(3)));
+        st.add(b.privateArrayDecl(lv, b.constI32(2)));
+        st.add(b.store(b.elemPtr(b.localGet(lp), b.constI32(1)), b.localGet(ls)));
+        st.add(b.store(b.elemPtr(b.localGet(lv), b.constI32(1)), b.fieldGet(b.localGet(ls), 2)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.fieldGet(b.load(b.elemPtr(b.localGet(lp), b.constI32(0))), 0)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.fieldGet(b.load(b.elemPtr(b.localGet(lp), b.constI32(1))), 1)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.extract(b.load(b.elemPtr(b.localGet(lv), b.constI32(0))), 2)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.extract(b.load(b.elemPtr(b.localGet(lv), b.constI32(1))), 1)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o++)), b.convert(Types.F32, b.arrayLen(b.localGet(lp)))));
+        // select между struct
+        int pick = b.select(b.binary(Op.GT, b.load(b.elemPtr(b.param(0), b.constI32(0))), b.constF32(0f)),
+                b.localGet(ls), b.call(bump, b.localGet(ls), b.constF32(100f)));
+        st.add(b.store(b.elemPtr(b.param(1), b.constI32(o)), b.fieldGet(pick, 0)));
+        b.endFunction(b.block(st.stream().mapToInt(Integer::intValue).toArray()));
+        return b.build();
+    }
+
+    /** Результатов {@link #structs()}. */
+    static final int STRUCTS_OUT = 14;
 
     /** Ядро с обязательным размером work-group и device-функцией с {@code fallback}-соседом. */
     static IrModule workGroupAttribute() {

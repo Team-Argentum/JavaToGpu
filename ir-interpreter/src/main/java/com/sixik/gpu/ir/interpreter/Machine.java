@@ -2,6 +2,7 @@ package com.sixik.gpu.ir.interpreter;
 
 import com.sixik.gpu.ir.Builtins;
 import com.sixik.gpu.ir.Diagnostic;
+import com.sixik.gpu.ir.HostObjects;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Op;
 import com.sixik.gpu.ir.Types;
@@ -99,13 +100,18 @@ final class Machine {
 
     // ---- модуль и предвычисленные таблицы ---------------------------------------------------------
     private final IrModule m;
-    private final int[] localOff;      // по функции: число параметров (смещение локалей в кадре)
+    private final int[][] paramSlot;   // по функции: смещение параметра в кадре (агрегат занимает несколько ячеек)
+    private final int[][] localSlot;   // по функции: смещение локали в кадре
     private final int[] frameSize;     // по функции: параметры + локали
     private final int[][] arrayLocals; // по функции: индексы локалей типа Array
+    private final int[] typeSlots;     // по типу: число ячеек значения (скаляр 1, вектор - лейны, struct - сумма листьев)
+    private final boolean[] typeAgg;   // по типу: вектор или struct
+    private final int[][] fieldSlot;   // по struct-типу: смещение поля в ячейках
 
     // ---- состояние исполнения ---------------------------------------------------------------------
     private long[] stack = new long[256];
     private long[][] bufs;
+    private int[] bufElem;            // по буферу: ячеек на элемент (1 для скаляров)
     private int bufCount;
     private final int hostCount;
     private int top;
@@ -114,6 +120,7 @@ final class Machine {
     private long steps;
     private final long limit;
     private long ret;
+    private long[] retAgg;
 
     // ---- геометрия запуска ------------------------------------------------------------------------
     private final int workDim;
@@ -138,24 +145,51 @@ final class Machine {
      * @param local     размеры work-group по трём осям (уже разрешённые, делят {@code global})
      * @param maxSteps  бюджет шагов на весь запуск либо {@code 0} - без ограничения
      */
-    Machine(IrModule m, long[][] hostBufs, int workDim, int[] global, int[] local, long maxSteps) {
+    Machine(IrModule m, long[][] hostBufs, int[] hostElem, int workDim, int[] global, int[] local, long maxSteps) {
         this.m = m;
+        int tc = m.typeCount();
+        this.typeSlots = new int[tc];
+        this.typeAgg = new boolean[tc];
+        this.fieldSlot = new int[tc][];
+        for (int t = 0; t < tc; t++) {
+            int kind = m.typeKind(t);
+            if (kind == Types.KIND_ARRAY || kind == Types.KIND_PTR) {
+                typeSlots[t] = 1;
+            } else {
+                typeSlots[t] = HostObjects.slots(m, t);
+            }
+            typeAgg[t] = HostObjects.isAggregate(m, t);
+            if (kind == Types.KIND_STRUCT) {
+                int[] off = new int[m.structFieldCount(t)];
+                for (int i = 0; i < off.length; i++) {
+                    off[i] = HostObjects.slotOffset(m, t, i);
+                }
+                fieldSlot[t] = off;
+            }
+        }
         int fc = m.functionCount();
-        this.localOff = new int[fc];
+        this.paramSlot = new int[fc][];
+        this.localSlot = new int[fc][];
         this.frameSize = new int[fc];
         this.arrayLocals = new int[fc][];
         for (int f = 0; f < fc; f++) {
-            localOff[f] = m.fParamCount(f);
-            frameSize[f] = m.fParamCount(f) + m.fLocalCount(f);
+            int[] ps = paramOffsets(m, f);
+            paramSlot[f] = ps;
+            int at = frameSlots(m, f, ps);
+            int[] ls = new int[m.fLocalCount(f)];
             int cnt = 0;
-            for (int l = 0; l < m.fLocalCount(f); l++) {
+            for (int l = 0; l < ls.length; l++) {
+                ls[l] = at;
+                at += Math.max(1, typeSlots[m.fLocalType(f, l)]);
                 if (m.typeKind(m.fLocalType(f, l)) == Types.KIND_ARRAY) {
                     cnt++;
                 }
             }
+            localSlot[f] = ls;
+            frameSize[f] = at;
             int[] arrs = new int[cnt];
             int k = 0;
-            for (int l = 0; l < m.fLocalCount(f); l++) {
+            for (int l = 0; l < ls.length; l++) {
                 if (m.typeKind(m.fLocalType(f, l)) == Types.KIND_ARRAY) {
                     arrs[k++] = l;
                 }
@@ -164,6 +198,9 @@ final class Machine {
         }
         this.hostCount = hostBufs.length;
         this.bufs = Arrays.copyOf(hostBufs, Math.max(16, hostBufs.length + 8));
+        this.bufElem = new int[bufs.length];
+        Arrays.fill(bufElem, 1);
+        System.arraycopy(hostElem, 0, bufElem, 0, hostElem.length);
         this.bufCount = hostCount;
         this.workDim = workDim;
         for (int d = 0; d < 3; d++) {
@@ -172,6 +209,38 @@ final class Machine {
             ngr[d] = global[d] / local[d];
         }
         this.limit = maxSteps > 0 ? maxSteps : Long.MAX_VALUE;
+    }
+
+    /**
+     * Смещения параметров функции в кадре: скаляр и массив занимают ячейку, вектор и struct - по числу листьев.
+     *
+     * @param m модуль
+     * @param f функция
+     * @return смещение каждого параметра
+     */
+    static int[] paramOffsets(IrModule m, int f) {
+        int[] ps = new int[m.fParamCount(f)];
+        int at = 0;
+        for (int i = 0; i < ps.length; i++) {
+            ps[i] = at;
+            at += paramWidth(m, m.fParamType(f, i));
+        }
+        return ps;
+    }
+
+    /**
+     * @param m  модуль
+     * @param f  функция
+     * @param ps результат {@link #paramOffsets}
+     * @return число ячеек, занятых параметрами
+     */
+    static int frameSlots(IrModule m, int f, int[] ps) {
+        int n = m.fParamCount(f);
+        return n == 0 ? 0 : ps[n - 1] + paramWidth(m, m.fParamType(f, n - 1));
+    }
+
+    private static int paramWidth(IrModule m, int t) {
+        return HostObjects.isAggregate(m, t) ? HostObjects.slots(m, t) : 1;
     }
 
     /** @return число выполненных стейтментов */
@@ -246,12 +315,12 @@ final class Machine {
     private void initArrayLocals(int f, int frameBase) {
         int[] arrs = arrayLocals[f];
         for (int l : arrs) {
-            stack[frameBase + localOff[f] + l] = -1;
+            stack[frameBase + localSlot[f][l]] = -1;
         }
     }
 
     private int slot(int local) {
-        return base + localOff[cur] + local;
+        return base + localSlot[cur][local];
     }
 
     // =============================================================================================
@@ -277,6 +346,14 @@ final class Machine {
             }
             case Op.LOCAL_DECL:
             case Op.LOCAL_SET: {
+                if (typeAgg[m.fLocalType(cur, m.a(n))]) {
+                    long[] v = evalAgg(m.b(n));
+                    if (faulted()) {
+                        return FAULT;
+                    }
+                    System.arraycopy(v, 0, stack, slot(m.a(n)), v.length);
+                    return NORMAL;
+                }
                 long v = eval(m.b(n));
                 if (faulted()) {
                     return FAULT;
@@ -286,6 +363,13 @@ final class Machine {
             }
             case Op.STORE: {
                 long p = eval(m.a(n));
+                if (typeAgg[m.type(m.b(n))]) {
+                    long[] v = evalAgg(m.b(n));
+                    if (faulted()) {
+                        return FAULT;
+                    }
+                    return storeAgg(n, p, v) ? NORMAL : FAULT;
+                }
                 long v = eval(m.b(n));
                 if (faulted()) {
                     return FAULT;
@@ -318,7 +402,11 @@ final class Machine {
                 return CONTINUE;
             case Op.RETURN: {
                 int value = m.a(n);
-                ret = value >= 0 ? eval(value) : 0;
+                if (value >= 0 && typeAgg[m.type(value)]) {
+                    retAgg = evalAgg(value);
+                } else {
+                    ret = value >= 0 ? eval(value) : 0;
+                }
                 return faulted() ? FAULT : RETURN;
             }
             case Op.PRIVATE_ARRAY_DECL:
@@ -430,14 +518,17 @@ final class Machine {
             return false;
         }
         int s = slot(m.a(n));
+        int k = Math.max(1, typeSlots[m.typeB(m.fLocalType(cur, m.a(n)))]);
         long id = stack[s];
-        if (id >= 0 && bufs[(int) id].length == len) {
+        if (id >= 0 && bufs[(int) id].length == len * k) {
             Arrays.fill(bufs[(int) id], 0);
         } else {
             if (bufCount == bufs.length) {
                 bufs = Arrays.copyOf(bufs, bufs.length * 2);
+                bufElem = Arrays.copyOf(bufElem, bufs.length);
             }
-            bufs[bufCount] = new long[(int) len];
+            bufs[bufCount] = new long[(int) len * k];
+            bufElem[bufCount] = k;
             stack[s] = bufCount++;
         }
         return true;
@@ -450,25 +541,47 @@ final class Machine {
     private boolean store(int n, long p, long v) {
         int buf = (int) (p >>> 32);
         int idx = (int) p;
-        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= bufs[buf].length) {
+        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
             fault("IN-R01", n, "запись за границами: индекс " + idx + ", длина " + lengthOf(buf));
             return false;
         }
-        bufs[buf][idx] = v;
+        bufs[buf][idx * bufElem[buf]] = v;
         return true;
     }
 
     private long load(int n, long p) {
         int buf = (int) (p >>> 32);
         int idx = (int) p;
-        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= bufs[buf].length) {
+        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
             return fault("IN-R01", n, "чтение за границами: индекс " + idx + ", длина " + lengthOf(buf));
         }
-        return bufs[buf][idx];
+        return bufs[buf][idx * bufElem[buf]];
     }
 
+    private boolean storeAgg(int n, long p, long[] v) {
+        int buf = (int) (p >>> 32);
+        int idx = (int) p;
+        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
+            fault("IN-R01", n, "запись за границами: индекс " + idx + ", длина " + lengthOf(buf));
+            return false;
+        }
+        System.arraycopy(v, 0, bufs[buf], idx * bufElem[buf], v.length);
+        return true;
+    }
+
+    private long[] loadAgg(int n, long p, int slots) {
+        int buf = (int) (p >>> 32);
+        int idx = (int) p;
+        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
+            fault("IN-R01", n, "чтение за границами: индекс " + idx + ", длина " + lengthOf(buf));
+            return new long[slots];
+        }
+        return Arrays.copyOfRange(bufs[buf], idx * bufElem[buf], idx * bufElem[buf] + slots);
+    }
+
+    /** Длина буфера в элементах (а не в ячейках). */
     private int lengthOf(int buf) {
-        return buf >= 0 && buf < bufCount ? bufs[buf].length : -1;
+        return buf >= 0 && buf < bufCount ? bufs[buf].length / bufElem[buf] : -1;
     }
 
     // =============================================================================================
@@ -487,9 +600,13 @@ final class Machine {
             case Op.CONST_BOOL:
                 return m.a(n);
             case Op.PARAM:
-                return stack[base + m.a(n)];
+                return stack[base + paramSlot[cur][m.a(n)]];
             case Op.LOCAL_GET:
                 return stack[slot(m.a(n))];
+            case Op.EXTRACT:
+                return evalAgg(m.a(n))[m.b(n)];
+            case Op.FIELD_GET:
+                return evalAgg(m.a(n))[fieldSlot[m.type(m.a(n))][m.b(n)]];
             case Op.ADD:
             case Op.SUB:
             case Op.MUL:
@@ -547,7 +664,7 @@ final class Machine {
                 return load(n, eval(m.a(n)));
             case Op.ARRAY_LEN: {
                 long id = eval(m.a(n));
-                return id >= 0 && id < bufCount ? bufs[(int) id].length : fault("IN-R01", n, "длина неинициализированного массива");
+                return id >= 0 && id < bufCount ? lengthOf((int) id) : fault("IN-R01", n, "длина неинициализированного массива");
             }
             case Op.CALL:
                 return call(n);
@@ -558,6 +675,183 @@ final class Machine {
         }
     }
 
+
+    // =============================================================================================
+    // агрегаты: векторы и struct (значение - несколько ячеек подряд)
+    // =============================================================================================
+
+    /** Скалярный тип компоненты вектора либо сам тип. */
+    private int laneType(int t) {
+        return m.typeKind(t) == Types.KIND_VEC ? m.typeA(t) : t;
+    }
+
+    /**
+     * Вычисляет выражение типа вектор/struct в новый массив листьев. Значения неизменяемы, поэтому результат -
+     * всегда свежая копия, которую вызывающий вправе менять.
+     */
+    private long[] evalAgg(int n) {
+        int t = m.type(n);
+        int k = typeSlots[t];
+        int op = m.op(n);
+        switch (op) {
+            case Op.PARAM: {
+                int at = base + paramSlot[cur][m.a(n)];
+                return Arrays.copyOfRange(stack, at, at + k);
+            }
+            case Op.LOCAL_GET: {
+                int at = slot(m.a(n));
+                return Arrays.copyOfRange(stack, at, at + k);
+            }
+            case Op.LOAD:
+                return loadAgg(n, eval(m.a(n)), k);
+            case Op.SELECT:
+                return eval(m.a(n)) != 0 ? evalAgg(m.b(n)) : evalAgg(m.c(n));
+            case Op.CALL: {
+                call(n);
+                return retAgg == null || faulted() ? new long[k] : retAgg;
+            }
+            case Op.BUILD: {
+                long[] out = new long[k];
+                for (int i = 0; i < k; i++) {
+                    out[i] = eval(m.list(m.a(n) + i));
+                }
+                return out;
+            }
+            case Op.SPLAT: {
+                long[] out = new long[k];
+                Arrays.fill(out, eval(m.a(n)));
+                return out;
+            }
+            case Op.INSERT: {
+                long[] out = evalAgg(m.a(n));
+                out[m.b(n)] = eval(m.c(n));
+                return out;
+            }
+            case Op.SHUFFLE: {
+                long[] src = evalAgg(m.a(n));
+                long[] out = new long[k];
+                for (int i = 0; i < k; i++) {
+                    out[i] = src[m.list(m.b(n) + i)];
+                }
+                return out;
+            }
+            case Op.STRUCT_BUILD: {
+                long[] out = new long[k];
+                int at = 0;
+                for (int i = 0; i < m.b(n); i++) {
+                    int field = m.list(m.a(n) + i);
+                    if (typeAgg[m.type(field)]) {
+                        long[] sub = evalAgg(field);
+                        System.arraycopy(sub, 0, out, at, sub.length);
+                        at += sub.length;
+                    } else {
+                        out[at++] = eval(field);
+                    }
+                }
+                return out;
+            }
+            case Op.FIELD_GET: {
+                long[] src = evalAgg(m.a(n));
+                int at = fieldSlot[m.type(m.a(n))][m.b(n)];
+                return Arrays.copyOfRange(src, at, at + k);
+            }
+            case Op.FIELD_SET: {
+                long[] out = evalAgg(m.a(n));
+                int at = fieldSlot[t][m.b(n)];
+                int value = m.c(n);
+                if (typeAgg[m.type(value)]) {
+                    long[] sub = evalAgg(value);
+                    System.arraycopy(sub, 0, out, at, sub.length);
+                } else {
+                    out[at] = eval(value);
+                }
+                return out;
+            }
+            case Op.ADD:
+            case Op.SUB:
+            case Op.MUL:
+            case Op.DIV:
+            case Op.REM:
+            case Op.AND:
+            case Op.OR:
+            case Op.XOR:
+            case Op.SHL:
+            case Op.SHR:
+            case Op.USHR:
+                return laneWise2(n, op, laneType(t), k);
+            case Op.NEG:
+            case Op.NOT: {
+                long[] a = evalAgg(m.a(n));
+                int st = laneType(t);
+                for (int i = 0; i < k; i++) {
+                    a[i] = op == Op.NEG ? Alu.neg(st, a[i]) : Alu.not(st, a[i]);
+                }
+                return a;
+            }
+            case Op.CONVERT: {
+                long[] a = evalAgg(m.a(n));
+                int from = laneType(m.type(m.a(n)));
+                int to = laneType(t);
+                for (int i = 0; i < k; i++) {
+                    a[i] = Alu.convert(from, to, a[i]);
+                }
+                return a;
+            }
+            case Op.BITCAST: {
+                long[] a = evalAgg(m.a(n));
+                int to = laneType(t);
+                for (int i = 0; i < k; i++) {
+                    a[i] = Alu.bitcast(to, a[i]);
+                }
+                return a;
+            }
+            case Op.INTRINSIC:
+                return vectorIntrinsic(n, laneType(t), k);
+            default:
+                fault("IN-U01", n, "узел " + Op.nameOf(op) + " с агрегатным результатом не поддерживается интерпретатором");
+                return new long[k];
+        }
+    }
+
+    private long[] laneWise2(int n, int op, int st, int k) {
+        long[] a = evalAgg(m.a(n));
+        long[] b = evalAgg(m.b(n));
+        boolean division = op == Op.DIV || op == Op.REM;
+        for (int i = 0; i < k; i++) {
+            if (division && Alu.divisorIsZero(st, b[i])) {
+                fault("IN-R02", n, "целочисленное деление на ноль в компоненте " + i);
+                return a;
+            }
+            switch (op) {
+                case Op.AND, Op.OR, Op.XOR -> a[i] = Alu.bitwise(op, a[i], b[i]);
+                case Op.SHL, Op.SHR, Op.USHR -> a[i] = Alu.shift(op, st, a[i], b[i]);
+                default -> a[i] = Alu.arith(op, st, a[i], b[i]);
+            }
+        }
+        return a;
+    }
+
+    /** Математические builtins над векторами: покомпонентно скалярной реализацией. */
+    private long[] vectorIntrinsic(int n, int st, int k) {
+        int code = BUILTIN_CODE[m.a(n)];
+        int off = m.b(n);
+        int argc = m.c(n);
+        if (code != B_SIN && code != B_COS && code != B_SQRT && code != B_FMA && code != B_MAX && code != B_MIN
+                && code != B_ASSUME_UNIFORM) {
+            fault("IN-U01", n, "builtin " + Builtins.name(m.a(n)) + " над векторами не поддерживается интерпретатором");
+            return new long[k];
+        }
+        long[][] args = new long[argc][];
+        for (int i = 0; i < argc; i++) {
+            args[i] = evalAgg(m.list(off + i));
+        }
+        long[] out = new long[k];
+        for (int i = 0; i < k; i++) {
+            out[i] = lane(code, st, args[0][i], argc > 1 ? args[1][i] : 0, argc > 2 ? args[2][i] : 0);
+        }
+        return out;
+    }
+
     private long call(int n) {
         int f = m.a(n);
         int off = m.b(n);
@@ -566,8 +860,16 @@ final class Machine {
         top = nb + frameSize[f];
         ensureStack(top);
         for (int k = 0; k < argc; k++) {
-            long v = eval(m.list(off + k));
-            stack[nb + k] = v;
+            int arg = m.list(off + k);
+            if (typeAgg[m.type(arg)]) {
+                long[] v = evalAgg(arg);
+                if (!faulted()) {
+                    System.arraycopy(v, 0, stack, nb + paramSlot[f][k], v.length);
+                }
+            } else {
+                long v = eval(arg);
+                stack[nb + paramSlot[f][k]] = v;
+            }
         }
         if (faulted()) {
             top = nb;
@@ -655,6 +957,30 @@ final class Machine {
             }
             default:
                 return fault("IN-U01", n, "builtin " + Builtins.name(id) + " не поддерживается интерпретатором (аргументов: " + argc + ")");
+        }
+    }
+
+    /**
+     * Покомпонентное применение математического builtin к скалярам типа {@code st}.
+     */
+    private static long lane(int code, int st, long a, long b, long c) {
+        switch (code) {
+            case B_SIN:
+            case B_COS:
+            case B_SQRT:
+                return st == Types.F32 ? math32(code, a) : math64(code, a);
+            case B_FMA:
+                if (st == Types.F32) {
+                    return Float.floatToRawIntBits(Math.fma(Float.intBitsToFloat((int) a),
+                            Float.intBitsToFloat((int) b), Float.intBitsToFloat((int) c)));
+                }
+                return Double.doubleToRawLongBits(Math.fma(Double.longBitsToDouble(a),
+                        Double.longBitsToDouble(b), Double.longBitsToDouble(c)));
+            case B_MAX:
+            case B_MIN:
+                return minMax(code == B_MAX, st, a, b);
+            default:
+                return a; // assumeUniform
         }
     }
 

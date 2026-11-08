@@ -9,6 +9,9 @@ import com.sixik.gpu.ir.Builtins;
 import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.AssertTree;
 import com.sun.source.tree.AssignmentTree;
+import com.sun.source.tree.BinaryTree;
+import com.sun.source.tree.ConditionalExpressionTree;
+import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.BreakTree;
 import com.sun.source.tree.CaseLabelTree;
@@ -56,7 +59,9 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Валидатор подмножества Java для GPU-кода (REWORK_ARCHITECTURE.md, 3.3): проверяет сигнатуру и тело одного метода
@@ -82,13 +87,21 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
 
     private final Trees trees;
     private final Reporter rep;
+    /** Методы вектора, допустимые в GPU-коде (все остальные - {@code GPU0112}). */
+    private static final Set<String> VECTOR_METHODS = Set.of("splat", "add", "sub", "mul", "div", "rem", "neg", "and",
+            "or", "xor", "not", "shl", "shr", "ushr", "shuffle");
+
     private final List<CallSite> callSites = new ArrayList<>();
+    private final Aggregates agg;
+    private final Set<String> checkedStructs = new HashSet<>();
     private TreePath methodPath;
+    private ExecutableElement method;
     private boolean kernel;
 
     SubsetChecker(Trees trees, Reporter rep) {
         this.trees = trees;
         this.rep = rep;
+        this.agg = new Aggregates(trees, null);
     }
 
     /**
@@ -101,6 +114,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
     boolean check(TreePath path, ExecutableElement e) {
         callSites.clear();
         methodPath = path;
+        method = e;
         kernel = e.getAnnotation(Kernel.class) != null;
         int before = rep.errorCount();
         MethodTree mt = (MethodTree) path.getLeaf();
@@ -136,6 +150,8 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             if (ret != JavaTypes.K_VOID) {
                 rep.report(path, "GPU0002", name);
             }
+        } else if (ret == JavaTypes.K_AGG) {
+            checkAggType(path, e.getReturnType());
         } else if (!(ret == JavaTypes.K_VOID || ret == JavaTypes.K_BOOLEAN || ret == JavaTypes.K_INT
                 || ret == JavaTypes.K_LONG || ret == JavaTypes.K_FLOAT || ret == JavaTypes.K_DOUBLE)) {
             if (isFutureType(e.getReturnType())) {
@@ -159,12 +175,15 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         switch (k) {
             case JavaTypes.K_INT, JavaTypes.K_LONG, JavaTypes.K_FLOAT, JavaTypes.K_DOUBLE -> {
             }
+            case JavaTypes.K_AGG -> checkAggType(pp, t);
             case JavaTypes.K_BOOLEAN -> rep.report(pp, "GPU0004", pname);
             case JavaTypes.K_ARRAY -> {
                 TypeMirror comp = ((ArrayType) t).getComponentType();
                 int ck = JavaTypes.kindOf(comp);
                 if (ck == JavaTypes.K_ARRAY) {
                     rep.report(pp, "GPU0005", pname);
+                } else if (ck == JavaTypes.K_AGG) {
+                    checkAggType(pp, comp);
                 } else if (!JavaTypes.isPrimitive(ck)) {
                     unsupportedType(pp, comp, pname);
                 }
@@ -181,16 +200,67 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         }
     }
 
-    /** Типы, которые языком задуманы, но фронтендом пока не поддержаны: векторы, ссылки, {@code @Struct}. */
+    /** Типы, которые языком задуманы, но фронтендом пока не поддержаны: ссылки {@code FloatPtr ...} (веха M9). */
     private static boolean isFutureType(TypeMirror t) {
         TypeMirror base = t;
         while (base.getKind() == TypeKind.ARRAY) {
             base = ((ArrayType) base).getComponentType();
         }
-        if (base instanceof DeclaredType dt && dt.asElement() instanceof TypeElement te) {
-            return te.getQualifiedName().toString().startsWith(VECTOR_PACKAGE) || te.getAnnotation(Struct.class) != null;
+        return Aggregates.isPointer(base);
+    }
+
+    /**
+     * Проверяет, что тип-агрегат пригоден: вектор всегда, struct - после проверки объявления (один раз на класс,
+     * вместе с вложенными struct). Нарушения - {@code GPU0191} в месте первого использования.
+     */
+    private void checkAggType(TreePath at, TypeMirror t) {
+        if (!Aggregates.isStruct(t) || !(((DeclaredType) t).asElement() instanceof TypeElement te)) {
+            return;
+        }
+        if (!checkedStructs.add(te.getQualifiedName().toString())) {
+            return;
+        }
+        for (String problem : agg.problems(te)) {
+            rep.report(at, "GPU0191", te.getSimpleName(), problem);
+        }
+        for (VariableElement f : Aggregates.fields(te)) {
+            if (Aggregates.isStruct(f.asType())) {
+                checkAggType(at, f.asType());
+            }
+        }
+    }
+
+    /**
+     * Значение struct обязано быть «свежим» (3.2): {@code new P(...)}, {@code x.copy()}, результат device-функции либо
+     * условное выражение из таких. Присваивание из переменной, параметра или элемента массива на JVM создало бы
+     * общую ссылку, а на GPU - копию.
+     */
+    private boolean isFresh(ExpressionTree e) {
+        ExpressionTree x = e;
+        while (x instanceof ParenthesizedTree pt) {
+            x = pt.getExpression();
+        }
+        if (x instanceof NewClassTree) {
+            return true;
+        }
+        if (x instanceof ConditionalExpressionTree ct) {
+            return isFresh(ct.getTrueExpression()) && isFresh(ct.getFalseExpression());
+        }
+        if (x instanceof MethodInvocationTree mit) {
+            Element el = trees.getElement(new TreePath(getCurrentPath() == null ? methodPath : getCurrentPath(), mit.getMethodSelect()));
+            if (el instanceof ExecutableElement callee) {
+                return callee.getSimpleName().contentEquals("copy") && Aggregates.isStruct(callee.getReturnType())
+                        || callee.getAnnotation(DeviceFunction.class) != null;
+            }
         }
         return false;
+    }
+
+    /** Требует свежее значение у выражения типа struct. */
+    private void requireFresh(TreePath at, ExpressionTree e, TypeMirror type) {
+        if (type != null && Aggregates.isStruct(type) && !isFresh(e)) {
+            rep.report(new TreePath(at, e), "GPU0193", type);
+        }
     }
 
     // =============================================================================================
@@ -263,8 +333,52 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
 
     @Override
     public Void visitNewClass(NewClassTree t, Void v) {
-        rep.report(getCurrentPath(), "GPU0107", "оператор new создаёт объект");
+        TreePath p = getCurrentPath();
+        TypeMirror type = Aggregates.typeOf(trees, p);
+        if (t.getClassBody() == null && type != null && Aggregates.isAggregate(type)) {
+            checkAggType(p, type);
+            if (Aggregates.isStruct(type) && t.getArguments().isEmpty()) {
+                rep.report(p, "GPU0192", type, "конструктор без аргументов оставил бы поля-объекты null; перечислите все поля");
+            }
+            List<VariableElement> fields = Aggregates.isStruct(type) ? Aggregates.fields((TypeElement) ((DeclaredType) type).asElement()) : List.of();
+            for (int i = 0; i < t.getArguments().size(); i++) {
+                ExpressionTree a = t.getArguments().get(i);
+                if (i < fields.size()) {
+                    // поле-struct хранит ссылку, поэтому и аргумент обязан быть свежим значением
+                    requireFresh(p, a, fields.get(i).asType());
+                }
+                scan(a, v);
+            }
+            return null;
+        }
+        if (t.getClassBody() != null) {
+            rep.report(p, "GPU0108");
+        } else {
+            rep.report(p, "GPU0107", "оператор new создаёт объект");
+        }
         return null;
+    }
+
+    @Override
+    public Void visitBinary(BinaryTree t, Void v) {
+        TreePath p = getCurrentPath();
+        if (t.getKind() == Tree.Kind.EQUAL_TO || t.getKind() == Tree.Kind.NOT_EQUAL_TO) {
+            TypeMirror l = Aggregates.typeOf(trees, new TreePath(p, t.getLeftOperand()));
+            TypeMirror r = Aggregates.typeOf(trees, new TreePath(p, t.getRightOperand()));
+            if ((l != null && Aggregates.isAggregate(l)) || (r != null && Aggregates.isAggregate(r))) {
+                rep.report(p, "GPU0196", l);
+            }
+        }
+        return super.visitBinary(t, v);
+    }
+
+    @Override
+    public Void visitReturn(ReturnTree t, Void v) {
+        TreePath p = getCurrentPath();
+        if (t.getExpression() != null && method != null) {
+            requireFresh(p, t.getExpression(), method.getReturnType());
+        }
+        return super.visitReturn(t, v);
     }
 
     @Override
@@ -360,6 +474,14 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
                 }
             } else if (k == JavaTypes.K_ARRAY) {
                 checkLocalArray(p, vt, (ArrayType) t, isLocalAnnotated);
+            } else if (k == JavaTypes.K_AGG) {
+                checkAggType(p, t);
+                if (isLocalAnnotated) {
+                    rep.report(p, "GPU0120");
+                }
+                if (vt.getInitializer() != null) {
+                    requireFresh(p, vt.getInitializer(), t);
+                }
             } else if (isFutureType(t)) {
                 rep.report(p, "GPU0190", "Тип " + t);
             } else if (k != JavaTypes.K_VOID) {
@@ -379,6 +501,10 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         int ck = JavaTypes.kindOf(comp);
         if (ck == JavaTypes.K_ARRAY) {
             rep.report(p, "GPU0005", vt.getName());
+            return;
+        }
+        if (ck == JavaTypes.K_AGG) {
+            rep.report(p, "GPU0117", "локальный массив объектов " + comp + ": на JVM его элементы null, а на GPU нули");
             return;
         }
         if (!JavaTypes.isPrimitive(ck)) {
@@ -498,6 +624,13 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             // выбор метода: имя метода проверяет visitMethodInvocation, а квалификатор (например, "x" в "x".length()) - здесь
             return scan(ms.getExpression(), v);
         }
+        if (el instanceof VariableElement fe && fe.getKind() == ElementKind.FIELD && !fe.getModifiers().contains(Modifier.STATIC)) {
+            TypeMirror qt = Aggregates.typeOf(trees, new TreePath(p, ms.getExpression()));
+            if (qt != null && Aggregates.isAggregate(qt)) {
+                checkAggType(p, qt);
+                return scan(ms.getExpression(), v);
+            }
+        }
         if (el instanceof VariableElement ve) {
             if (ve.getKind() == ElementKind.ENUM_CONSTANT) {
                 rep.report(p, "GPU0107", "константа перечисления " + name);
@@ -518,6 +651,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         TreePath p = getCurrentPath();
         checkTarget(p, t.getVariable());
         scanTarget(t.getVariable(), v);
+        requireFresh(p, t.getExpression(), Aggregates.typeOf(trees, new TreePath(p, t.getVariable())));
         return scan(t.getExpression(), v);
     }
 
@@ -571,8 +705,38 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             } else {
                 rep.report(tp, "GPU0115", id.getName());
             }
+        } else if (t instanceof MemberSelectTree ms) {
+            checkFieldTarget(tp, stripped, ms);
         } else if (!(t instanceof ArrayAccessTree)) {
             rep.report(tp, "GPU0115", t);
+        }
+    }
+
+    /**
+     * Запись в поле struct: цепочка {@code a.b.c} должна начинаться с локальной переменной-struct или элемента массива
+     * struct. Параметр-struct на GPU передаётся копией, а на JVM - ссылкой, поэтому его поля менять нельзя (3.2).
+     */
+    private void checkFieldTarget(TreePath shown, TreePath stripped, MemberSelectTree ms) {
+        ExpressionTree root = ms;
+        while (root instanceof MemberSelectTree m) {
+            TypeMirror qt = Aggregates.typeOf(trees, new TreePath(stripped, m.getExpression()));
+            if (qt == null || !Aggregates.isStruct(qt)) {
+                rep.report(shown, "GPU0194", ms.getIdentifier(), "поле можно менять только у struct (векторы неизменяемы)");
+                return;
+            }
+            root = m.getExpression();
+            while (root instanceof ParenthesizedTree pt) {
+                root = pt.getExpression();
+            }
+        }
+        if (root instanceof IdentifierTree id) {
+            Element el = trees.getElement(new TreePath(stripped, id));
+            if (el == null || el.getKind() != ElementKind.LOCAL_VARIABLE) {
+                rep.report(shown, "GPU0194", ms.getIdentifier(),
+                        "изменять поля можно у локальной переменной-struct и у элемента массива struct, но не у параметра");
+            }
+        } else if (!(root instanceof ArrayAccessTree)) {
+            rep.report(shown, "GPU0194", ms.getIdentifier(), "цель записи должна быть локальной переменной или элементом массива");
         }
     }
 
@@ -582,7 +746,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         while (t instanceof ParenthesizedTree pt) {
             t = pt.getExpression();
         }
-        if (t instanceof ArrayAccessTree) {
+        if (t instanceof ArrayAccessTree || t instanceof MemberSelectTree) {
             scan(target, v);
         }
     }
@@ -605,8 +769,41 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         return null;
     }
 
+    /** Методы вектора ({@code add, withX, shuffle ...}) и {@code copy()} struct. */
+    private void checkAggregateMethod(TreePath p, ExecutableElement callee, TypeElement owner) {
+        String name = callee.getSimpleName().toString();
+        String shown = owner.getSimpleName() + "." + name;
+        Aggregates.Vec vec = Aggregates.vector(owner.asType());
+        if (vec == null) {
+            if (!(name.equals("copy") && callee.getParameters().isEmpty())) {
+                rep.report(p, "GPU0112", shown);
+            } else {
+                checkAggType(p, owner.asType());
+            }
+            return;
+        }
+        boolean with = name.startsWith("with") && name.length() > 4;
+        if (!VECTOR_METHODS.contains(name) && !with) {
+            rep.report(p, "GPU0112", shown);
+            return;
+        }
+        if (name.equals("shuffle")) {
+            MethodInvocationTree mit = (MethodInvocationTree) p.getLeaf();
+            for (ExpressionTree a : mit.getArguments()) {
+                Long idx = ConstEval.evalIntegral(trees, new TreePath(p, a));
+                if (idx == null || idx < 0 || idx >= vec.lanes()) {
+                    rep.report(new TreePath(p, a), "GPU0195", vec.lanes() - 1);
+                }
+            }
+        }
+    }
+
     private void checkCallee(TreePath p, ExecutableElement callee) {
         Element owner = callee.getEnclosingElement();
+        if (owner instanceof TypeElement ote && Aggregates.isAggregate(ote.asType())) {
+            checkAggregateMethod(p, callee, ote);
+            return;
+        }
         String ownerName = owner instanceof TypeElement te ? te.getQualifiedName().toString() : "";
         String shown = ownerName.isEmpty() ? callee.getSimpleName().toString()
                 : ((TypeElement) owner).getSimpleName() + "." + callee.getSimpleName();

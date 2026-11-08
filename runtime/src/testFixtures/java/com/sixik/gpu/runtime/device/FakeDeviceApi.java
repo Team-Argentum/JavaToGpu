@@ -96,6 +96,11 @@ public final class FakeDeviceApi implements DeviceApi {
             return ByteBuffer.wrap(owner.bufferData.get((Long) args[i])).order(ByteOrder.LITTLE_ENDIAN);
         }
 
+        /** @param i номер аргумента @return байты аргумента-значения (вектор или struct), little-endian */
+        public ByteBuffer bytesArg(int i) {
+            return ByteBuffer.wrap((byte[]) args[i]).order(ByteOrder.LITTLE_ENDIAN);
+        }
+
         /** @param i номер аргумента @return скаляр как {@code int} */
         public int intArg(int i) {
             return (int) (long) (Long) args[i];
@@ -433,6 +438,14 @@ public final class FakeDeviceApi implements DeviceApi {
     public void setArgScalar(long kernel, int index, int size, long bits) {
         call("setArgScalar");
         kernelArgs.get(kernel)[index] = size == 4 ? (long) (int) bits : bits;
+    }
+
+    @Override
+    public void setArgBytes(long kernel, int index, MemorySegment value, long size) {
+        call("setArgBytes");
+        byte[] copy = new byte[(int) size];
+        MemorySegment.copy(value, ValueLayout.JAVA_BYTE, 0, copy, 0, (int) size);
+        kernelArgs.get(kernel)[index] = copy;
     }
 
     @Override

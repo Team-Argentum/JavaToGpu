@@ -215,6 +215,16 @@ public interface DeviceApi extends AutoCloseable {
     void setArgScalar(long kernel, int index, int size, long bits);
 
     /**
+     * Аргумент по значению произвольного размера: вектор или struct, уже упакованные по раскладке ABI.
+     *
+     * @param kernel ядро
+     * @param index  номер аргумента
+     * @param value  байты значения (память хоста, не короче {@code size})
+     * @param size   размер значения в байтах
+     */
+    void setArgBytes(long kernel, int index, MemorySegment value, long size);
+
+    /**
      * Ставит ядро в очередь (не ждёт завершения).
      *
      * @param queue  очередь

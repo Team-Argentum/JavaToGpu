@@ -1,5 +1,7 @@
 package com.sixik.gpu.ir.interpreter;
 
+import com.sixik.gpu.ir.HostObjects;
+import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Types;
 
 /**
@@ -44,6 +46,85 @@ final class Host {
             case Types.F64 -> a instanceof double[];
             default -> false;
         };
+    }
+
+    /**
+     * Принимает ли параметр-массив с элементом {@code elem} этот объект; для вектора и struct - массив объектов
+     * ({@code Object[]}) класса, поля которого соответствуют типу ({@link HostObjects#mismatch}).
+     *
+     * @param m    модуль
+     * @param elem тип элемента массива IR
+     * @param a    хостовый объект
+     * @return {@code true}, если подходит
+     */
+    static boolean arrayMatches(IrModule m, int elem, Object a) {
+        if (!HostObjects.isAggregate(m, elem)) {
+            return arrayMatches(elem, a);
+        }
+        return a instanceof Object[] arr && HostObjects.mismatch(m, elem, arr.getClass().getComponentType()).isEmpty();
+    }
+
+    /**
+     * @param m    модуль
+     * @param elem тип элемента
+     * @param a    переданный объект (для пояснения причины)
+     * @return описание ожидаемого массива для сообщения об ошибке
+     */
+    static String arrayName(IrModule m, int elem, Object a) {
+        if (!HostObjects.isAggregate(m, elem)) {
+            return arrayName(elem);
+        }
+        if (a instanceof Object[] arr) {
+            return "массив объектов, подходящий типу элемента: " + HostObjects.mismatch(m, elem, arr.getClass().getComponentType());
+        }
+        return "массив объектов (Object[]) с " + HostObjects.slots(m, elem) + " скалярными листьями в элементе";
+    }
+
+    /**
+     * Копирует массив хоста в буфер: скаляры - по ячейке на элемент, вектор и struct - по {@code slots} ячеек.
+     *
+     * @param m    модуль
+     * @param elem тип элемента (массив уже проверен {@link #arrayMatches(IrModule, int, Object)})
+     * @param a    хостовый массив
+     * @return буфер
+     * @throws IllegalArgumentException если элемент массива объектов равен {@code null}
+     */
+    static long[] toBuffer(IrModule m, int elem, Object a) {
+        if (!HostObjects.isAggregate(m, elem)) {
+            return toBuffer(elem, a);
+        }
+        Object[] arr = (Object[]) a;
+        int k = HostObjects.slots(m, elem);
+        long[] buf = new long[arr.length * k];
+        for (int i = 0; i < arr.length; i++) {
+            try {
+                HostObjects.flatten(m, elem, arr[i], buf, i * k);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("элемент " + i + ": " + e.getMessage());
+            }
+        }
+        return buf;
+    }
+
+    /**
+     * Записывает буфер обратно в массив хоста: struct обновляются на месте, векторы заменяются новыми объектами.
+     *
+     * @param m    модуль
+     * @param elem тип элемента
+     * @param buf  буфер
+     * @param a    хостовый массив
+     */
+    static void fromBuffer(IrModule m, int elem, long[] buf, Object a) {
+        if (!HostObjects.isAggregate(m, elem)) {
+            fromBuffer(buf, a);
+            return;
+        }
+        Object[] arr = (Object[]) a;
+        int k = HostObjects.slots(m, elem);
+        Class<?> cls = arr.getClass().getComponentType();
+        for (int i = 0; i < arr.length; i++) {
+            arr[i] = HostObjects.rebuild(m, elem, cls, arr[i], buf, i * k);
+        }
     }
 
     /**

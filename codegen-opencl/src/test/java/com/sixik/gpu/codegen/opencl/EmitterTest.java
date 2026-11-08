@@ -418,17 +418,68 @@ class EmitterTest {
     }
 
     @Test
-    void vectorsAreMilestoneM8() {
+    void pointersToLocalsAreMilestoneM9() {
         IrBuilder b = new IrBuilder();
-        int v4 = b.vec(Types.F32, 4);
         int arr = b.array(AddressSpace.GLOBAL, Types.F32);
         b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
-        int v = b.declareLocal(v4);
-        b.endFunction(b.block(b.localDecl(v, b.splat(v4, b.constF32(1f))),
-                b.store(b.elemPtr(b.param(0), b.constI32(0)), b.extract(b.localGet(v), 0))));
+        int l = b.declareLocal(Types.F32);
+        int p = b.declareLocal(b.ptr(AddressSpace.PRIVATE, Types.F32));
+        b.endFunction(b.block(b.localDecl(l, b.constF32(1f)), b.localDecl(p, b.localAddr(l))));
         Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
         assertEquals("CG-U01", code(r));
-        assertTrue(r.diagnostics().toString().contains("M8"), r.diagnostics().toString());
+        assertTrue(r.diagnostics().toString().contains("M9"), r.diagnostics().toString());
+    }
+
+    @Test
+    void vectorsOfSmallElementsAreNotSupported() {
+        IrBuilder b = new IrBuilder();
+        int v = b.vec(Types.I8, 4);
+        int arr = b.array(AddressSpace.GLOBAL, Types.I8);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        int l = b.declareLocal(v);
+        b.endFunction(b.block(b.localDecl(l, b.splat(v, b.constInt(Types.I8, 1)))));
+        assertEquals("CG-U01", code(OpenClEmitter.emit(b.build(), Target.GENERIC)));
+    }
+
+    @Test
+    void vectorsAndStructsAreEmittedAsOpenClTypes() {
+        String vec = emit(HandModules.vectorsF32(), EmitOptions.RELEASE).source();
+        assertTrue(vec.contains("float4 v0 = (float4)(p0[0], p0[1], p0[2], p0[3]);"), vec);
+        assertTrue(vec.contains(".wzyx"), "swizzle буквами для float4");
+        assertTrue(vec.contains(".s00112233"), "s-обозначение для результата из 8 компонент");
+        assertTrue(vec.contains("gpu_set_float4_1("), "замена компоненты - функция");
+        assertTrue(vec.contains("gpu_max_float4("), "max/min float-векторов с семантикой Java");
+        assertTrue(vec.contains("gpu_conv_float4_int4("), "float -> int над вектором насыщающее, с NaN -> 0");
+        assertTrue(vec.contains("as_int4("), "bitcast вектора");
+
+        String ints = emit(HandModules.vectorsI32(), EmitOptions.RELEASE).source();
+        assertTrue(ints.contains("as_int4(as_uint4("), "знаковая арифметика векторов - в беззнаковом типе: " + ints);
+        assertTrue(ints.contains("gpu_div_int4(") && ints.contains("gpu_rem_long2("), "деление - покомпонентно через функцию");
+
+        String structs = emit(HandModules.structs(), EmitOptions.DEBUG).source();
+        assertTrue(structs.contains("typedef struct {\n    float x;\n    float y;\n    float4 v;\n    int id;\n} Particle;"), structs);
+        assertTrue(structs.indexOf("} Particle;") < structs.indexOf("} Body;"), "вложенный тип определён раньше");
+        assertTrue(structs.contains("Particle ps[3];"), "массив struct объявлен без {0}");
+        assertTrue(structs.contains("gpu_zero_Particle()"), structs);
+    }
+
+    @Test
+    void aggregateKernelArgumentsKeepTheirIrType() {
+        IrBuilder b = new IrBuilder();
+        int v4 = b.vec(Types.F32, 4);
+        int arr = b.array(AddressSpace.GLOBAL, v4);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr, v4);
+        b.nameParams("items", "scale");
+        int g = b.declareLocal(Types.I32);
+        b.endFunction(b.block(
+                b.localDecl(g, b.intrinsic(Builtins.idOf("getGlobalId"), b.constI32(0))),
+                b.store(b.elemPtr(b.param(0), b.localGet(g)), b.binary(Op.MUL, b.load(b.elemPtr(b.param(0), b.localGet(g))), b.param(1)))));
+        Artifact a = emit(b.build(), EmitOptions.DEBUG);
+        assertEquals(KernelArg.ARRAY_PTR, a.args().get(0).kind());
+        assertEquals(v4, a.args().get(0).type(), "элемент массива - вектор");
+        assertEquals(KernelArg.SCALAR, a.args().get(2).kind());
+        assertEquals(v4, a.args().get(2).type(), "вектор по значению");
+        assertTrue(a.source().contains("__global float4* items, int items_len, float4 scale"), a.source());
     }
 
     @Test

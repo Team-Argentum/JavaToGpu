@@ -92,7 +92,7 @@ final class KernelResources {
     }
 
     /**
-     * JVM-дескриптор метода ядра. Параметры ядра - примитивы и одномерные массивы примитивов, результат - void.
+     * JVM-дескриптор метода ядра. Параметры ядра - примитивы, векторы, struct и одномерные массивы таких типов, результат - void.
      *
      * @param e метод, прошедший проверку сигнатуры
      * @return дескриптор вида {@code ([F[F)V}
@@ -117,7 +117,17 @@ final class KernelResources {
             case FLOAT -> "F";
             case DOUBLE -> "D";
             case ARRAY -> "[" + typeDescriptor(((ArrayType) t).getComponentType());
+            case DECLARED -> "L" + binaryName((javax.lang.model.element.TypeElement) ((javax.lang.model.type.DeclaredType) t).asElement()).replace('.', '/') + ";";
             default -> throw new IllegalArgumentException("тип " + t + " не имеет дескриптора ядра");
         };
+    }
+
+    /** Двоичное имя класса: вложенные классы разделяются {@code $}. */
+    private static String binaryName(javax.lang.model.element.TypeElement te) {
+        javax.lang.model.element.Element owner = te.getEnclosingElement();
+        if (owner instanceof javax.lang.model.element.TypeElement outer) {
+            return binaryName(outer) + "$" + te.getSimpleName();
+        }
+        return te.getQualifiedName().toString();
     }
 }

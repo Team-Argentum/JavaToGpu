@@ -265,12 +265,11 @@ class GpuContextTest {
     @Test
     void codegenErrorsPassThrough() {
         IrBuilder b = new IrBuilder();
-        int v4 = b.vec(Types.F32, 4);
         int arr = b.array(AddressSpace.GLOBAL, Types.F32);
         b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
-        int v = b.declareLocal(v4);
-        b.endFunction(b.block(b.localDecl(v, b.splat(v4, b.constF32(1f))),
-                b.store(b.elemPtr(b.param(0), b.constI32(0)), b.extract(b.localGet(v), 0))));
+        int l = b.declareLocal(Types.F32);
+        int p = b.declareLocal(b.ptr(AddressSpace.PRIVATE, Types.F32));
+        b.endFunction(b.block(b.localDecl(l, b.constF32(1f)), b.localDecl(p, b.localAddr(l))));
         try (GpuContext ctx = open(FakeDeviceApi.withGpu())) {
             assertEquals("CG-U01", code(ctx.compile(b.build())));
         }

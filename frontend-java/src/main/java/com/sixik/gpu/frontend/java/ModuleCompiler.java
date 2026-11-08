@@ -107,13 +107,14 @@ final class ModuleCompiler {
             return null;
         }
         IrBuilder b = new IrBuilder();
+        Aggregates aggs = new Aggregates(trees, b);
         Map<ExecutableElement, FnInfo> fns = new HashMap<>();
         int errorsBefore = rep.errorCount();
         for (ExecutableElement e : order) {
             Checked c = cache.get(e);
             ExecutableElement fb = fallbacks.get(e);
             int fbIndex = fb == null ? -1 : fns.get(fb).index;
-            FunctionLowerer.lower(trees, rep, b, fns, c.path(), e, c.attrs(), fbIndex);
+            FunctionLowerer.lower(trees, rep, b, aggs, fns, c.path(), e, c.attrs(), fbIndex);
         }
         if (rep.errorCount() > errorsBefore) {
             return null;

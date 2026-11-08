@@ -440,7 +440,7 @@ class InterpreterTest {
     }
 
     @Test
-    void barrierAndVectorsAreReportedAsNotSupportedYet() {
+    void barrierAndPointersToLocalsAreReportedAsNotSupportedYet() {
         IrBuilder b = new IrBuilder();
         b.beginFunction(IrModule.KERNEL, Types.VOID);
         int st = b.barrier(1);
@@ -450,14 +450,15 @@ class InterpreterTest {
         assertTrue(r.diagnostics().get(0).message().contains("M10"), r.diagnostics().get(0).message());
 
         IrBuilder v = new IrBuilder();
-        int vec4 = v.vec(Types.F32, 4);
         v.beginFunction(IrModule.KERNEL, Types.VOID);
-        int l = v.declareLocal(vec4);
-        int decl = v.localDecl(l, v.splat(vec4, v.constF32(1f)));
-        v.endFunction(v.block(decl));
+        int l = v.declareLocal(Types.F32);
+        int p = v.declareLocal(v.ptr(AddressSpace.PRIVATE, Types.F32));
+        int decl = v.localDecl(l, v.constF32(1f));
+        int ptr = v.localDecl(p, v.localAddr(l));
+        v.endFunction(v.block(decl, ptr));
         Result<?> rv = run(v.build(), NdRange.of1D(1));
         assertCode(rv, "IN-U01");
-        assertTrue(rv.diagnostics().stream().anyMatch(d -> d.message().contains("M8")), rv.diagnostics().toString());
+        assertTrue(rv.diagnostics().stream().anyMatch(d -> d.message().contains("M9")), rv.diagnostics().toString());
     }
 
     @Test

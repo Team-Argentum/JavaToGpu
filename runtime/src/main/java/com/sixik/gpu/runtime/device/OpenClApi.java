@@ -371,6 +371,15 @@ public final class OpenClApi implements DeviceApi {
     }
 
     @Override
+    public void setArgBytes(long kernel, int index, MemorySegment value, long size) {
+        try {
+            check((int) setKernelArg.invoke(handle(kernel), index, size, value), "clSetKernelArg");
+        } catch (Throwable t) {
+            throw unexpected("clSetKernelArg", t);
+        }
+    }
+
+    @Override
     public void enqueue(long queue, long kernel, int dim, long[] global, long[] local) {
         try (Arena a = Arena.ofConfined()) {
             MemorySegment gs = a.allocate(8L * dim);

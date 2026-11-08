@@ -1,5 +1,8 @@
 package com.sixik.gpu.runtime;
 
+import com.sixik.gpu.ir.AbiLayout;
+import com.sixik.gpu.ir.HostObjects;
+import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Types;
 
 import java.lang.foreign.Arena;
@@ -187,6 +190,113 @@ final class Marshal {
             case double[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_DOUBLE, 0, x, 0, n);
             default -> throw new IllegalArgumentException("неподдержанный массив " + array.getClass());
         }
+    }
+
+    // ---- объекты: векторы и struct ------------------------------------------------------------------
+
+    /**
+     * Принимает ли параметр-массив с элементом-агрегатом этот объект: массив объектов ({@code Object[]}) класса, поля
+     * которого соответствуют типу ({@link HostObjects#mismatch}).
+     *
+     * @param m    модуль
+     * @param elem тип элемента (вектор или struct)
+     * @param a    значение
+     * @return пустая строка, если подходит; иначе причина
+     */
+    static String objectArrayProblem(IrModule m, int elem, Object a) {
+        if (!(a instanceof Object[] arr)) {
+            return "ожидается массив объектов (Object[]), передано " + describe(a);
+        }
+        String why = HostObjects.mismatch(m, elem, arr.getClass().getComponentType());
+        if (!why.isEmpty()) {
+            return why;
+        }
+        for (int i = 0; i < arr.length; i++) {
+            if (arr[i] == null) {
+                return "элемент " + i + " равен null (на устройстве у него нет значения «нет объекта»)";
+            }
+        }
+        return "";
+    }
+
+    /** @return размер массива объектов в памяти устройства по раскладке ABI */
+    static long byteSize(IrModule m, int elem, Object[] a) {
+        return (long) a.length * AbiLayout.sizeOf(m, elem);
+    }
+
+    /**
+     * Упаковывает массив объектов по раскладке ABI ({@link AbiLayout}).
+     *
+     * @param arena владелец памяти
+     * @param m     модуль
+     * @param elem  тип элемента
+     * @param a     массив непустых объектов
+     * @return память по смещениям листьев, нулевые байты в выравнивающих промежутках
+     */
+    static MemorySegment toNative(Arena arena, IrModule m, int elem, Object[] a) {
+        int stride = AbiLayout.sizeOf(m, elem);
+        int[] types = HostObjects.leafTypes(m, elem);
+        int[] offsets = HostObjects.leafOffsets(m, elem);
+        MemorySegment seg = arena.allocate(Math.max((long) a.length * stride, 8), 8);
+        long[] leaves = new long[types.length];
+        for (int i = 0; i < a.length; i++) {
+            HostObjects.flatten(m, elem, a[i], leaves, 0);
+            for (int k = 0; k < leaves.length; k++) {
+                putLeaf(seg, (long) i * stride + offsets[k], types[k], leaves[k]);
+            }
+        }
+        return seg;
+    }
+
+    /** Обратная операция: обновляет struct на месте, заменяет векторы новыми объектами. */
+    static void fromNative(MemorySegment seg, IrModule m, int elem, Object[] a) {
+        int stride = AbiLayout.sizeOf(m, elem);
+        int[] types = HostObjects.leafTypes(m, elem);
+        int[] offsets = HostObjects.leafOffsets(m, elem);
+        long[] leaves = new long[types.length];
+        Class<?> cls = a.getClass().getComponentType();
+        for (int i = 0; i < a.length; i++) {
+            for (int k = 0; k < leaves.length; k++) {
+                leaves[k] = getLeaf(seg, (long) i * stride + offsets[k], types[k]);
+            }
+            a[i] = HostObjects.rebuild(m, elem, cls, a[i], leaves, 0);
+        }
+    }
+
+    /**
+     * Упаковывает один агрегат (аргумент ядра по значению).
+     *
+     * @return память размером {@code AbiLayout.sizeOf}
+     */
+    static MemorySegment valueToNative(Arena arena, IrModule m, int type, Object value) {
+        MemorySegment seg = arena.allocate(Math.max(AbiLayout.sizeOf(m, type), 8), 8);
+        int[] types = HostObjects.leafTypes(m, type);
+        int[] offsets = HostObjects.leafOffsets(m, type);
+        long[] leaves = new long[types.length];
+        HostObjects.flatten(m, type, value, leaves, 0);
+        for (int k = 0; k < leaves.length; k++) {
+            putLeaf(seg, offsets[k], types[k], leaves[k]);
+        }
+        return seg;
+    }
+
+    private static void putLeaf(MemorySegment seg, long offset, int type, long canon) {
+        switch (Types.bits(type) == 0 ? 8 : Types.bits(type)) {
+            case 8 -> seg.set(ValueLayout.JAVA_BYTE, offset, (byte) canon);
+            case 16 -> seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, (short) canon);
+            case 32 -> seg.set(ValueLayout.JAVA_INT_UNALIGNED, offset, (int) canon);
+            default -> seg.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, canon);
+        }
+    }
+
+    private static long getLeaf(MemorySegment seg, long offset, int type) {
+        long bits = switch (Types.bits(type) == 0 ? 8 : Types.bits(type)) {
+            case 8 -> seg.get(ValueLayout.JAVA_BYTE, offset);
+            case 16 -> seg.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);
+            case 32 -> seg.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
+            default -> seg.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+        };
+        return HostObjects.canon(type, bits);
     }
 
     /**

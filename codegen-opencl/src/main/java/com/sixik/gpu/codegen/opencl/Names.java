@@ -29,9 +29,24 @@ final class Names {
             "volatile", "while", "bool", "true", "false", "half", "uchar", "ushort", "uint", "ulong", "size_t",
             "ptrdiff_t", "intptr_t", "uintptr_t", "kernel", "global", "local", "constant", "private", "image2d_t",
             "image3d_t", "sampler_t", "event_t", "NULL",
-            // функции и макросы, которые вызывает сгенерированный код
-            "sin", "cos", "sqrt", "fma", "fmod", "max", "min", "isnan", "signbit", "barrier",
-            "NAN", "INFINITY", "INT_MIN", "INT_MAX", "LONG_MIN", "LONG_MAX"));
+            // макросы, которые использует сгенерированный код
+            "NAN", "INFINITY", "INT_MIN", "INT_MAX", "LONG_MIN", "LONG_MAX", "M_PI", "M_E", "FLT_MAX", "FLT_MIN",
+            "DBL_MAX", "DBL_MIN", "CHAR_BIT", "SCHAR_MAX", "UCHAR_MAX", "SHRT_MAX", "USHRT_MAX", "UINT_MAX",
+            "ULONG_MAX", "MAXFLOAT", "HUGE_VALF", "HUGE_VAL",
+            // встроенные функции OpenCL C: пользовательская функция с таким именем переопределила бы встроенную
+            // (clang требует для этого overloadable), а локаль скрыла бы вызов, который делает сам кодген
+            "acos", "acosh", "acospi", "asin", "asinh", "asinpi", "atan", "atan2", "atanh", "atanpi", "atan2pi", "cbrt",
+            "ceil", "copysign", "cos", "cosh", "cospi", "erfc", "erf", "exp", "exp2", "exp10", "expm1", "fabs", "fdim",
+            "floor", "fma", "fmax", "fmin", "fmod", "fract", "frexp", "hypot", "ilogb", "ldexp", "lgamma", "lgamma_r",
+            "log", "log2", "log10", "log1p", "logb", "mad", "maxmag", "minmag", "modf", "nan", "nextafter", "pow", "pown",
+            "powr", "remainder", "remquo", "rint", "rootn", "round", "rsqrt", "sin", "sincos", "sinh", "sinpi", "sqrt",
+            "tan", "tanh", "tanpi", "tgamma", "trunc", "abs", "abs_diff", "add_sat", "hadd", "rhadd", "clamp", "clz",
+            "mad_hi", "mad_sat", "max", "min", "mul_hi", "rotate", "sub_sat", "upsample", "popcount", "mad24", "mul24",
+            "degrees", "mix", "radians", "step", "smoothstep", "sign", "cross", "dot", "distance", "length", "normalize",
+            "isequal", "isnotequal", "isgreater", "isgreaterequal", "isless", "islessequal", "islessgreater", "isfinite",
+            "isinf", "isnan", "isnormal", "isordered", "isunordered", "signbit", "any", "all", "bitselect", "select",
+            "shuffle", "shuffle2", "barrier", "mem_fence", "async_work_group_copy", "wait_group_events", "prefetch",
+            "printf", "fdim", "nan"));
 
     private static final Pattern VECTOR_TYPE = Pattern.compile(
             "(char|uchar|short|ushort|int|uint|long|ulong|float|double|half)(2|3|4|8|16)");
@@ -88,7 +103,10 @@ final class Names {
                 || VECTOR_TYPE.matcher(name).matches()
                 || name.startsWith("as_") || name.startsWith("convert_") || name.startsWith("get_")
                 || name.startsWith("atomic_") || name.startsWith("atom_") || name.startsWith("gpu_")
-                || name.startsWith("cont_") || name.startsWith("CLK_") || name.startsWith("cl_");
+                || name.startsWith("cont_") || name.startsWith("CLK_") || name.startsWith("cl_")
+                || name.startsWith("half_") || name.startsWith("native_") || name.startsWith("vload")
+                || name.startsWith("vstore") || name.startsWith("read_") || name.startsWith("write_")
+                || name.startsWith("fast_") || name.startsWith("sub_group_") || name.startsWith("work_group_");
     }
 
     /**

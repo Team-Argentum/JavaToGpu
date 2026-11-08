@@ -13,10 +13,10 @@ import java.util.List;
 /**
  * Проверка «этот модуль кодген умеет» до генерации текста и обход достижимых из ядра функций.
  *
- * <p>Эмиттер M5 покрывает baseline: скаляры, массивы {@code global/constant/private}, управление потоком, вызовы
- * функций, builtins. Всё, что относится к следующим вехам, отвергается диагностикой {@code CG-U01} - так же, как
- * интерпретатор отвечает {@code IN-U01}: векторы и struct (M8), {@code local_addr}, {@code field_ptr} и
- * pointer-параметры (M9), {@code barrier}, {@code local_array_decl} и {@code __local}-параметры (M10),
+ * <p>Эмиттер покрывает скаляры, векторы и struct (M8), массивы {@code global/constant/private}, управление потоком,
+ * вызовы функций, builtins. Всё, что относится к следующим вехам, отвергается диагностикой {@code CG-U01} - так же, как
+ * интерпретатор отвечает {@code IN-U01}: {@code local_addr}, {@code field_ptr} и pointer-параметры (M9),
+ * {@code barrier}, {@code local_array_decl} и {@code __local}-параметры (M10),
  * {@code spec_const} и нативные тела. Обход итеративный, каждый узел проверяется один раз.</p>
  */
 final class Support {
@@ -111,6 +111,66 @@ final class Support {
         return out;
     }
 
+    /**
+     * Типы, которые встречаются в достижимых функциях (параметры, локали, результаты и узлы), вместе с типами,
+     * из которых они составлены: поля struct, элементы массивов и указателей.
+     *
+     * @param m     модуль
+     * @param reach достижимые функции
+     * @return признак использования по id типа
+     */
+    static boolean[] usedTypes(IrModule m, boolean[] reach) {
+        boolean[] used = new boolean[m.typeCount()];
+        boolean[] seen = new boolean[Math.max(1, m.nodeCount())];
+        int[] stack = new int[Math.max(1, m.nodeCount())];
+        for (int f = 0; f < m.functionCount(); f++) {
+            if (!reach[f] || m.fBodyKind(f) != IrModule.BODY_IR) {
+                continue;
+            }
+            for (int i = 0; i < m.fParamCount(f); i++) {
+                mark(m, m.fParamType(f, i), used);
+            }
+            for (int l = 0; l < m.fLocalCount(f); l++) {
+                mark(m, m.fLocalType(f, l), used);
+            }
+            mark(m, m.fRet(f), used);
+            java.util.Arrays.fill(seen, false);
+            int sp = 0;
+            stack[sp++] = m.fBody(f);
+            seen[m.fBody(f)] = true;
+            while (sp > 0) {
+                int n = stack[--sp];
+                mark(m, m.type(n), used);
+                int count = Operands.count(m, n);
+                for (int k = 0; k < count; k++) {
+                    int c = Operands.get(m, n, k);
+                    if (!seen[c]) {
+                        seen[c] = true;
+                        stack[sp++] = c;
+                    }
+                }
+            }
+        }
+        return used;
+    }
+
+    private static void mark(IrModule m, int t, boolean[] used) {
+        if (t < 0 || t >= used.length || used[t]) {
+            return;
+        }
+        used[t] = true;
+        switch (m.typeKind(t)) {
+            case Types.KIND_STRUCT -> {
+                for (int i = 0; i < m.structFieldCount(t); i++) {
+                    mark(m, m.structFieldType(t, i), used);
+                }
+            }
+            case Types.KIND_ARRAY, Types.KIND_PTR -> mark(m, Types.elem(m, t), used);
+            default -> {
+            }
+        }
+    }
+
     private static void checkSignature(IrModule m, int f, boolean kernel, List<Diagnostic> out) {
         for (int i = 0; i < m.fParamCount(f); i++) {
             int t = m.fParamType(f, i);
@@ -126,20 +186,55 @@ final class Support {
             }
         }
         int ret = m.fRet(f);
-        if (ret != Types.VOID && !(Types.isScalar(ret))) {
+        if (ret != Types.VOID && !valueOk(m, ret)) {
             out.add(unsupported(f, -1, "тип результата t" + ret + " не поддержан"));
         }
     }
 
-    /** Допустимый тип параметра/локали: скаляр либо одномерный массив в global/constant/private. */
-    private static boolean storageOk(IrModule m, int t, boolean param) {
+    /**
+     * Тип значения, который кодген умеет: скаляр, вектор из 32/64-битных чисел, struct из таких полей
+     * (без {@code BOOL}, массивов и указателей внутри агрегатов).
+     */
+    private static boolean valueOk(IrModule m, int t) {
         if (Types.isScalar(t)) {
+            return true;
+        }
+        return aggregateOk(m, t);
+    }
+
+    private static boolean aggregateOk(IrModule m, int t) {
+        if (t < 0 || t >= m.typeCount()) {
+            return false;
+        }
+        switch (m.typeKind(t)) {
+            case Types.KIND_VEC: {
+                int e = m.typeA(t);
+                return Types.isArith(e);
+            }
+            case Types.KIND_STRUCT: {
+                for (int i = 0; i < m.structFieldCount(t); i++) {
+                    int ft = m.structFieldType(t, i);
+                    boolean ok = Types.isScalar(ft) ? ft != Types.BOOL : aggregateOk(m, ft);
+                    if (!ok) {
+                        return false;
+                    }
+                }
+                return m.structFieldCount(t) > 0;
+            }
+            default:
+                return false;
+        }
+    }
+
+    /** Допустимый тип параметра/локали: значение либо одномерный массив в global/constant/private. */
+    private static boolean storageOk(IrModule m, int t, boolean param) {
+        if (valueOk(m, t)) {
             return true;
         }
         if (m.typeKind(t) == Types.KIND_ARRAY) {
             int space = Types.space(m, t);
             int elem = Types.elem(m, t);
-            return Types.isScalar(elem) && (space == AddressSpace.GLOBAL || space == AddressSpace.CONSTANT
+            return valueOk(m, elem) && (space == AddressSpace.GLOBAL || space == AddressSpace.CONSTANT
                     || space == AddressSpace.PRIVATE || (param && space == AddressSpace.LOCAL));
         }
         return false;
@@ -152,13 +247,11 @@ final class Support {
             case Op.SPEC_CONST -> why = "spec_const не поддержана";
             case Op.LOCAL_ADDR, Op.FIELD_PTR -> why = Op.nameOf(op) + " - pointer-типы, веха M9";
             case Op.BARRIER, Op.LOCAL_ARRAY_DECL -> why = Op.nameOf(op) + " - local memory и barrier, веха M10";
-            case Op.SPLAT, Op.EXTRACT, Op.INSERT, Op.SHUFFLE, Op.BUILD, Op.STRUCT_BUILD, Op.FIELD_GET,
-                 Op.FIELD_SET -> why = Op.nameOf(op) + " - векторы и struct, веха M8";
             default -> {
                 int t = m.type(n);
-                boolean ok = t == Types.VOID || Types.isScalar(t)
+                boolean ok = t == Types.VOID || valueOk(m, t)
                         || (m.typeKind(t) == Types.KIND_ARRAY && storageOk(m, t, true))
-                        || (op == Op.ELEM_PTR && m.typeKind(t) == Types.KIND_PTR && Types.isScalar(Types.elem(m, t)));
+                        || (op == Op.ELEM_PTR && m.typeKind(t) == Types.KIND_PTR && valueOk(m, Types.elem(m, t)));
                 if (!ok) {
                     why = "значение типа t" + t + " не поддержано";
                 }

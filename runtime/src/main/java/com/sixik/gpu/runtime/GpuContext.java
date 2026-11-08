@@ -5,7 +5,9 @@ import com.sixik.gpu.codegen.opencl.EmitOptions;
 import com.sixik.gpu.codegen.opencl.KernelArg;
 import com.sixik.gpu.codegen.opencl.OpenClEmitter;
 import com.sixik.gpu.codegen.opencl.Target;
+import com.sixik.gpu.ir.AbiLayout;
 import com.sixik.gpu.ir.Diagnostic;
+import com.sixik.gpu.ir.HostObjects;
 import com.sixik.gpu.ir.Features;
 import com.sixik.gpu.ir.IrBinary;
 import com.sixik.gpu.ir.IrModule;
@@ -639,7 +641,17 @@ public final class GpuContext implements AutoCloseable {
             Object a = args[i];
             if (m.typeKind(t) == Types.KIND_ARRAY) {
                 int elem = Types.elem(m, t);
-                if (a instanceof GpuBuffer b) {
+                if (HostObjects.isAggregate(m, elem)) {
+                    if (a instanceof GpuBuffer) {
+                        out.add(error("RT-A02", "аргумент " + i + ": буферы GpuBuffer для массивов векторов и struct "
+                                + "пока не поддержаны, передайте массив объектов"));
+                    } else {
+                        String why = Marshal.objectArrayProblem(m, elem, a);
+                        if (!why.isEmpty()) {
+                            out.add(error("RT-A02", "аргумент " + i + ": " + why));
+                        }
+                    }
+                } else if (a instanceof GpuBuffer b) {
                     if (b.owner() != this) {
                         out.add(error("RT-A02", "аргумент " + i + ": буфер принадлежит другому контексту"));
                     } else if (b.isClosed()) {
@@ -653,6 +665,12 @@ public final class GpuContext implements AutoCloseable {
                 } else if (!Marshal.accepts(elem, a)) {
                     out.add(error("RT-A02", "аргумент " + i + ": параметру-массиву t" + elem + " не подходит "
                             + Marshal.describe(a)));
+                }
+            } else if (HostObjects.isAggregate(m, t)) {
+                String why = a == null ? "ожидается объект вектора или struct, передано null"
+                        : HostObjects.mismatch(m, t, a.getClass());
+                if (!why.isEmpty()) {
+                    out.add(error("RT-A02", "аргумент " + i + ": " + why));
                 }
             } else if (!Marshal.scalarMatches(t, a)) {
                 out.add(error("RT-A02", "аргумент " + i + ": скалярному параметру t" + t + " не подходит "
@@ -688,15 +706,18 @@ public final class GpuContext implements AutoCloseable {
                     continue;
                 }
                 long[] known = hostBuffers.get(a);
+                int elemType = Types.elem(m, m.fParamType(f, i));
+                boolean objects = HostObjects.isAggregate(m, elemType);
                 if (known == null) {
-                    long bytes = Marshal.byteSize(a);
+                    long bytes = objects ? Marshal.byteSize(m, elemType, (Object[]) a) : Marshal.byteSize(a);
                     long h = api.createBuffer(contextHandle, Math.max(bytes, 4));
                     temps.add(h);
                     if (bytes > 0) {
-                        api.writeBuffer(queue, h, 0, bytes, Marshal.toNative(arena, a));
+                        api.writeBuffer(queue, h, 0, bytes, objects ? Marshal.toNative(arena, m, elemType, (Object[]) a)
+                                : Marshal.toNative(arena, a));
                     }
                     up += bytes;
-                    known = new long[]{h, 0};
+                    known = new long[]{h, 0, elemType};
                     hostBuffers.put(a, known);
                 }
                 known[1] |= k.access(i);
@@ -709,8 +730,14 @@ public final class GpuContext implements AutoCloseable {
             for (int i = 0; i < k.artifact().args().size(); i++) {
                 KernelArg ka = k.artifact().args().get(i);
                 switch (ka.kind()) {
-                    case KernelArg.SCALAR -> api.setArgScalar(k.kernel, i, Marshal.scalarSize(ka.type()),
-                            Marshal.scalarBits(args[ka.param()]));
+                    case KernelArg.SCALAR -> {
+                        if (HostObjects.isAggregate(m, ka.type())) {
+                            int size = AbiLayout.sizeOf(m, ka.type());
+                            api.setArgBytes(k.kernel, i, Marshal.valueToNative(arena, m, ka.type(), args[ka.param()]), size);
+                        } else {
+                            api.setArgScalar(k.kernel, i, Marshal.scalarSize(ka.type()), Marshal.scalarBits(args[ka.param()]));
+                        }
+                    }
                     case KernelArg.ARRAY_PTR -> api.setArgBuffer(k.kernel, i, handles[ka.param()]);
                     default -> api.setArgScalar(k.kernel, i, 4, lengths[ka.param()]);
                 }
@@ -730,11 +757,17 @@ public final class GpuContext implements AutoCloseable {
                 if ((e.getValue()[1] & Validator.ACCESS_WRITE) == 0) {
                     continue;
                 }
-                long bytes = Marshal.byteSize(e.getKey());
+                int elemType = (int) e.getValue()[2];
+                boolean objects = HostObjects.isAggregate(m, elemType);
+                long bytes = objects ? Marshal.byteSize(m, elemType, (Object[]) e.getKey()) : Marshal.byteSize(e.getKey());
                 if (bytes > 0) {
                     MemorySegment dst = arena.allocate(Math.max(bytes, 8), 8);
                     api.readBuffer(queue, e.getValue()[0], 0, bytes, dst);
-                    Marshal.fromNative(dst, e.getKey());
+                    if (objects) {
+                        Marshal.fromNative(dst, m, elemType, (Object[]) e.getKey());
+                    } else {
+                        Marshal.fromNative(dst, e.getKey());
+                    }
                     down += bytes;
                 }
             }

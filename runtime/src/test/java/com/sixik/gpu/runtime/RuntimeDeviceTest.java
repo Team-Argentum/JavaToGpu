@@ -159,16 +159,13 @@ class RuntimeDeviceTest {
         boolean grouped = m.fReqWorkGroup(f, 0) > 0;
         NdRange range = grouped ? NdRange.of2D(8, 4) : NdRange.of1D(16);
         LaunchConfig config = grouped ? LaunchConfig.of2D(8, 4) : LaunchConfig.of1D(16, 1);
-        Supplier<Object[]> args = SampleArgs.random(m, f, 99);
+        Supplier<Object[]> args = SampleArgs.random(k, 99);
         Object[] expected = args.get();
         Object[] actual = args.get();
         Result<Interpreter.Execution> ref = Interpreter.run(m, range, expected);
         assertTrue(ref.isOk(), label + ": " + ref.diagnostics());
         ctx.run(m, config, actual);
-        boolean floats = false;
-        for (int i = 0; i < m.fParamCount(f); i++) {
-            floats |= Types.isFloat(SampleArgs.scalarOf(m, m.fParamType(f, i)));
-        }
+        boolean floats = SampleArgs.hasFloatingPoint(k);
         for (int i = 0; i < expected.length; i++) {
             compare(label + " arg" + i, expected[i], actual[i], floats ? 4 : 0);
         }
@@ -253,6 +250,11 @@ class RuntimeDeviceTest {
                 long dist = Math.abs((bx >= 0 ? bx : Long.MIN_VALUE - bx) - (by >= 0 ? by : Long.MIN_VALUE - by));
                 if (!nan && bx != by && (ulps == 0 || dx == 0d || dy == 0d || dist > ulps)) {
                     fail(name + "[" + i + "]: ожидалось " + dx + ", получено " + dy);
+                }
+            } else if (x != null && !x.getClass().getName().startsWith("java.")) {
+                String why = SampleArgs.objectDifference(x, y, ulps);
+                if (why != null) {
+                    fail(name + "[" + i + "]: " + why);
                 }
             } else {
                 assertEquals(x, y, name + "[" + i + "]");

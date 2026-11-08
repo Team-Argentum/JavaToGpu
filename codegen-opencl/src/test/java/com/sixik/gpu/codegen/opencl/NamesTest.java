@@ -28,7 +28,7 @@ class NamesTest {
     void reservedWords() {
         for (String w : new String[]{"int", "float", "double", "long", "if", "for", "while", "switch", "return",
                 "kernel", "global", "bool", "true", "false", "sin", "max", "isnan", "NAN", "INT_MIN", "float4", "uchar16",
-                "get_global_id", "as_int", "convert_int_sat", "atomic_add", "atom_add", "gpu_div_i32", "cont_1", "CLK_X"}) {
+                "dot", "length", "mix", "clamp", "cross", "native_sin", "half_cos", "vload4", "select", "get_global_id", "as_int", "convert_int_sat", "atomic_add", "atom_add", "gpu_div_i32", "cont_1", "CLK_X"}) {
             assertTrue(Names.isReserved(w), w);
         }
         for (String w : new String[]{"x", "id", "i", "sum", "floaty", "float5", "myint", "output", "p0", "v12"}) {

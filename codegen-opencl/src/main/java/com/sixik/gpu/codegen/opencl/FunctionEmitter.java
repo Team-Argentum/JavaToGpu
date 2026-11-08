@@ -62,6 +62,7 @@ final class FunctionEmitter {
     private final int f;
     private final EmitOptions opts;
     private final Helpers helpers;
+    private final Layouts lay;
     private final String[] funcNames;
     private final String[] paramNames;
     private final String[] lenNames;
@@ -78,14 +79,17 @@ final class FunctionEmitter {
      * @param f         индекс печатаемой функции
      * @param opts      параметры генерации
      * @param helpers   реестр вспомогательных функций (общий на модуль)
+     * @param layouts   имена векторных и struct-типов
      * @param funcNames имена функций по индексу
      * @param global    имена, уже занятые на уровне модуля (имена функций); копируется
      */
-    FunctionEmitter(IrModule m, int f, EmitOptions opts, Helpers helpers, String[] funcNames, Names global) {
+    FunctionEmitter(IrModule m, int f, EmitOptions opts, Helpers helpers, Layouts layouts, String[] funcNames,
+                    Names global) {
         this.m = m;
         this.f = f;
         this.opts = opts;
         this.helpers = helpers;
+        this.lay = layouts;
         this.funcNames = funcNames;
         Names names = global.copy();
         int pc = m.fParamCount(f);
@@ -158,15 +162,15 @@ final class FunctionEmitter {
         for (int i = 0; i < m.fParamCount(f); i++) {
             int t = m.fParamType(f, i);
             if (m.typeKind(t) == Types.KIND_ARRAY) {
-                params.add(CTypes.space(Types.space(m, t)) + " " + CTypes.scalar(Types.elem(m, t)) + "* "
+                params.add(CTypes.space(Types.space(m, t)) + " " + lay.type(Types.elem(m, t)) + "* "
                         + paramNames[i]);
                 params.add("int " + lenNames[i]);
             } else {
-                params.add(CTypes.scalar(t) + " " + paramNames[i]);
+                params.add(lay.type(t) + " " + paramNames[i]);
             }
         }
         int ret = m.fRet(f);
-        String head = (kernel ? "__kernel void " : (ret == Types.VOID ? "void " : CTypes.scalar(ret) + " "))
+        String head = (kernel ? "__kernel void " : (ret == Types.VOID ? "void " : lay.type(ret) + " "))
                 + funcNames[f] + "(";
         String joined = String.join(", ", params);
         if (head.length() + joined.length() + 1 <= 100) {
@@ -218,7 +222,7 @@ final class FunctionEmitter {
             }
             case Op.LOCAL_DECL -> {
                 int l = m.a(n);
-                line(CTypes.scalar(m.fLocalType(f, l)) + " " + localNames[l] + " = " + expr(m.b(n)).s() + ";");
+                line(lay.type(m.fLocalType(f, l)) + " " + localNames[l] + " = " + expr(m.b(n)).s() + ";");
             }
             case Op.LOCAL_SET -> line(localNames[m.a(n)] + " = " + expr(m.b(n)).s() + ";");
             case Op.STORE -> line(lvalue(m.a(n)) + " = " + expr(m.b(n)).s() + ";");
@@ -228,7 +232,15 @@ final class FunctionEmitter {
                 int len = m.a(m.b(n));
                 arrayLen[l] = len;
                 int elem = Types.elem(m, m.fLocalType(f, l));
-                line(CTypes.scalar(elem) + " " + localNames[l] + "[" + len + "] = {0};");
+                if (Types.isScalar(elem)) {
+                    line(lay.type(elem) + " " + localNames[l] + "[" + len + "] = {0};");
+                } else {
+                    // агрегаты обнуляются явно: {0} для массива векторов и struct зависит от компилятора
+                    line(lay.type(elem) + " " + localNames[l] + "[" + len + "];");
+                    line("for (int gpu_z = 0; gpu_z < " + len + "; gpu_z++) {");
+                    line("    " + localNames[l] + "[gpu_z] = " + lay.zero(helpers, elem) + "();");
+                    line("}");
+                }
             }
             case Op.IF -> ifStatement(n);
             case Op.LOOP -> loopStatement(n);
@@ -456,8 +468,40 @@ final class FunctionEmitter {
                 return convert(n);
             case Op.BITCAST: {
                 Ex a = expr(m.a(n));
-                return m.type(m.a(n)) == t ? a : new Ex(CTypes.asName(t) + "(" + a.s() + ")", P_ATOM);
+                String fn = lay.isVector(t) ? "as_" + lay.type(t) : CTypes.asName(t);
+                return m.type(m.a(n)) == t ? a : new Ex(fn + "(" + a.s() + ")", P_ATOM);
             }
+            case Op.BUILD: {
+                StringBuilder sb = new StringBuilder("(").append(lay.type(t)).append(")(");
+                for (int k = 0; k < m.b(n); k++) {
+                    sb.append(k > 0 ? ", " : "").append(expr(Operands.get(m, n, k)).s());
+                }
+                return new Ex(sb.append(')').toString(), P_UNARY);
+            }
+            case Op.SPLAT:
+                return new Ex("(" + lay.type(t) + ")(" + expr(m.a(n)).s() + ")", P_UNARY);
+            case Op.EXTRACT:
+                return new Ex(wrap(expr(m.a(n)), P_ATOM) + "." + Layouts.lane(lay.lanes(m.type(m.a(n))), m.b(n)), P_ATOM);
+            case Op.INSERT:
+                return new Ex(lay.insert(helpers, t, m.b(n)) + "(" + expr(m.a(n)).s() + ", " + expr(m.c(n)).s() + ")", P_ATOM);
+            case Op.SHUFFLE: {
+                int[] idx = new int[m.c(n)];
+                for (int k = 0; k < idx.length; k++) {
+                    idx[k] = m.list(m.b(n) + k);
+                }
+                return new Ex(wrap(expr(m.a(n)), P_ATOM) + "." + Layouts.swizzle(lay.lanes(m.type(m.a(n))), idx), P_ATOM);
+            }
+            case Op.STRUCT_BUILD: {
+                StringBuilder sb = new StringBuilder(lay.make(helpers, t)).append('(');
+                for (int k = 0; k < m.b(n); k++) {
+                    sb.append(k > 0 ? ", " : "").append(expr(Operands.get(m, n, k)).s());
+                }
+                return new Ex(sb.append(')').toString(), P_ATOM);
+            }
+            case Op.FIELD_GET:
+                return new Ex(wrap(expr(m.a(n)), P_ATOM) + "." + lay.field(m.type(m.a(n)), m.b(n)), P_ATOM);
+            case Op.FIELD_SET:
+                return new Ex(lay.with(helpers, t, m.b(n)) + "(" + expr(m.a(n)).s() + ", " + expr(m.c(n)).s() + ")", P_ATOM);
             case Op.ELEM_PTR:
                 return pointer(n);
             case Op.LOAD:
@@ -539,7 +583,7 @@ final class FunctionEmitter {
 
     /** Знаковая целая арифметика, которую считаем в беззнаковом типе (оборот без UB). */
     private boolean wrapsViaUnsigned(int node) {
-        int t = m.type(node);
+        int t = lay.elem(m.type(node));
         if (!Types.isInt32or64(t) || !Types.isSigned(t)) {
             return false;
         }
@@ -561,12 +605,15 @@ final class FunctionEmitter {
         if (wrapsViaUnsigned(node)) {
             return unsignedArith(node);
         }
+        if (lay.isVector(t)) {
+            return new Ex("as_" + CTypes.unsignedOf(lay.elem(t)) + lay.lanes(t) + "(" + expr(node).s() + ")", P_ATOM);
+        }
         return new Ex("(" + CTypes.unsignedOf(t) + ")" + wrap(expr(node), P_UNARY), P_UNARY);
     }
 
     private Ex unsignedArith(int n) {
         int op = m.op(n);
-        int t = m.type(n);
+        int t = lay.elem(m.type(n));
         if (op == Op.NEG) {
             Ex a = unsignedValue(Operands.get(m, n, 0));
             return new Ex("0" + (Types.bits(t) == 64 ? "UL" : "u") + " - " + wrap(a, P_UNARY), P_ADD);
@@ -578,7 +625,8 @@ final class FunctionEmitter {
     }
 
     private Ex arith(int n) {
-        int t = m.type(n);
+        int vt = m.type(n);
+        int t = lay.elem(vt);
         int an = Operands.get(m, n, 0);
         int bn = Operands.get(m, n, 1);
         int op = m.op(n);
@@ -594,12 +642,17 @@ final class FunctionEmitter {
         if (op == Op.DIV || op == Op.REM) {
             boolean wide = Types.bits(t) == 64;
             int h = op == Op.DIV ? (wide ? Helpers.DIV_I64 : Helpers.DIV_I32) : (wide ? Helpers.REM_I64 : Helpers.REM_I32);
-            return new Ex(helpers.use(h) + "(" + expr(an).s() + ", " + expr(bn).s() + ")", P_ATOM);
+            String scalar = helpers.use(h);
+            String fn = lay.isVector(vt) ? lay.laneBinary(helpers, op == Op.DIV ? "div" : "rem", vt, scalar) : scalar;
+            return new Ex(fn + "(" + expr(an).s() + ", " + expr(bn).s() + ")", P_ATOM);
         }
         return signedFromUnsigned(n);
     }
 
     private Ex signedFromUnsigned(int n) {
+        if (lay.isVector(m.type(n))) {
+            return new Ex("as_" + lay.type(m.type(n)) + "(" + unsignedArith(n).s() + ")", P_ATOM);
+        }
         return new Ex("(" + CTypes.scalar(m.type(n)) + ")" + wrap(unsignedArith(n), P_UNARY), P_UNARY);
     }
 
@@ -632,7 +685,7 @@ final class FunctionEmitter {
     }
 
     private Ex negate(int n) {
-        int t = m.type(n);
+        int t = lay.elem(m.type(n));
         int an = Operands.get(m, n, 0);
         if (Types.isFloat(t)) {
             String s = wrap(expr(an), P_UNARY);
@@ -646,7 +699,7 @@ final class FunctionEmitter {
 
     /** Счётчик сдвига, маскированный шириной значения (как в Java); константный счётчик маскируется при генерации. */
     private String shiftCount(int n) {
-        int mask = Types.bits(m.type(n)) - 1;
+        int mask = Types.bits(lay.elem(m.type(n))) - 1;
         int cn = Operands.get(m, n, 1);
         Long k = foldInt(cn);
         if (k != null) {
@@ -656,7 +709,8 @@ final class FunctionEmitter {
     }
 
     private Ex shift(int n) {
-        int t = m.type(n);
+        int vt = m.type(n);
+        int t = lay.elem(vt);
         int op = m.op(n);
         int vn = Operands.get(m, n, 0);
         String count = shiftCount(n);
@@ -669,15 +723,37 @@ final class FunctionEmitter {
         }
         if (op == Op.USHR && signed) {
             Ex shifted = new Ex(wrap(unsignedValue(vn), P_UNARY) + " >> " + count, P_SHIFT);
+            if (lay.isVector(vt)) {
+                return new Ex("as_" + lay.type(vt) + "(" + shifted.s() + ")", P_ATOM);
+            }
             return new Ex("(" + CTypes.scalar(t) + ")" + wrap(shifted, P_UNARY), P_UNARY);
         }
         return new Ex(wrap(expr(vn), P_UNARY) + " >> " + count, P_SHIFT);
+    }
+
+    private Ex convertVector(int n) {
+        int to = m.type(n);
+        int from = m.type(m.a(n));
+        Ex a = expr(m.a(n));
+        if (from == to) {
+            return a;
+        }
+        int fe = lay.elem(from);
+        int te = lay.elem(to);
+        if (Types.isFloat(fe) && Types.isInteger(te)) {
+            String scalar = helpers.use(Helpers.floatToInt(fe, te));
+            return new Ex(lay.laneConvert(helpers, from, to, scalar) + "(" + a.s() + ")", P_ATOM);
+        }
+        return new Ex("convert_" + lay.type(to) + "(" + a.s() + ")", P_ATOM);
     }
 
     private Ex convert(int n) {
         int to = m.type(n);
         int an = m.a(n);
         int from = m.type(an);
+        if (lay.isVector(to) || lay.isVector(from)) {
+            return convertVector(n);
+        }
         Long folded = foldInt(n);
         if (folded != null) {
             return new Ex(CTypes.integer(to, folded), P_ATOM);
@@ -814,11 +890,14 @@ final class FunctionEmitter {
             case "max", "min": {
                 String a = expr(Operands.get(m, n, 0)).s();
                 String b = expr(Operands.get(m, n, 1)).s();
-                if (Types.isFloat(t)) {
+                if (Types.isFloat(lay.elem(t))) {
                     boolean max = name.equals("max");
-                    int h = t == Types.F32 ? (max ? Helpers.MAX_F32 : Helpers.MIN_F32)
+                    int e = lay.elem(t);
+                    int h = e == Types.F32 ? (max ? Helpers.MAX_F32 : Helpers.MIN_F32)
                             : (max ? Helpers.MAX_F64 : Helpers.MIN_F64);
-                    return new Ex(helpers.use(h) + "(" + a + ", " + b + ")", P_ATOM);
+                    String scalar = helpers.use(h);
+                    String fn = lay.isVector(t) ? lay.laneBinary(helpers, name, t, scalar) : scalar;
+                    return new Ex(fn + "(" + a + ", " + b + ")", P_ATOM);
                 }
                 return new Ex(name + "(" + a + ", " + b + ")", P_ATOM);
             }

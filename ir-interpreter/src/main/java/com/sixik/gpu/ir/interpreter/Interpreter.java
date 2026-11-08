@@ -1,6 +1,7 @@
 package com.sixik.gpu.ir.interpreter;
 
 import com.sixik.gpu.ir.Diagnostic;
+import com.sixik.gpu.ir.HostObjects;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Result;
 import com.sixik.gpu.ir.Types;
@@ -110,17 +111,25 @@ public final class Interpreter {
         if (args.length != params) {
             return fail("IN-A01", function, "ядро принимает " + params + " аргументов, передано " + args.length);
         }
-        long[] argv = new long[params];
+        int[] offsets = Machine.paramOffsets(m, function);
+        long[] argv = new long[Machine.frameSlots(m, function, offsets)];
         long[][] hostBufs = new long[params][];
+        int[] hostElem = new int[params];
+        int[] hostType = new int[params];
         Object[] hostObjects = new Object[params];
-        int hostCount = bindArgs(m, function, args, argv, hostBufs, hostObjects);
+        int hostCount;
+        try {
+            hostCount = bindArgs(m, function, args, offsets, argv, hostBufs, hostElem, hostType, hostObjects);
+        } catch (IllegalArgumentException e) {
+            return fail("IN-A02", function, e.getMessage());
+        }
         if (hostCount < 0) {
             return Result.failed(argumentErrors(m, function, args));
         }
 
         int[] global = new int[]{range.global(0), range.global(1), range.global(2)};
-        Machine machine = new Machine(m, Arrays.copyOf(hostBufs, hostCount), range.dim(), global, local,
-                options.maxSteps());
+        Machine machine = new Machine(m, Arrays.copyOf(hostBufs, hostCount), Arrays.copyOf(hostElem, hostCount),
+                range.dim(), global, local, options.maxSteps());
         Diagnostic fault = machine.run(function, argv);
         if (fault != null) {
             return Result.failed(List.of(fault));
@@ -128,7 +137,7 @@ public final class Interpreter {
 
         // успех: записываем массивы обратно (одинаковый массив, переданный дважды, - один буфер)
         for (int b = 0; b < hostCount; b++) {
-            Host.fromBuffer(hostBufs[b], hostObjects[b]);
+            Host.fromBuffer(m, hostType[b], hostBufs[b], hostObjects[b]);
         }
         List<Diagnostic> warnings = new ArrayList<>(report.diagnostics());
         return new Result<>(new Execution(range.workItems(), machine.steps()), warnings);
@@ -182,14 +191,15 @@ public final class Interpreter {
      * @param hostObjects выход: исходные хостовые массивы по номерам буферов
      * @return число уникальных хостовых буферов либо {@code -1}, если какой-либо аргумент не подошёл
      */
-    private static int bindArgs(IrModule m, int f, Object[] args, long[] argv, long[][] hostBufs, Object[] hostObjects) {
+    private static int bindArgs(IrModule m, int f, Object[] args, int[] offsets, long[] argv, long[][] hostBufs,
+                                int[] hostElem, int[] hostType, Object[] hostObjects) {
         int count = 0;
         for (int i = 0; i < args.length; i++) {
             int t = m.fParamType(f, i);
             Object a = args[i];
             if (m.typeKind(t) == Types.KIND_ARRAY) {
                 int elem = m.typeB(t);
-                if (a == null || !Host.arrayMatches(elem, a)) {
+                if (a == null || !Host.arrayMatches(m, elem, a)) {
                     return -1;
                 }
                 int buffer = -1;
@@ -201,15 +211,22 @@ public final class Interpreter {
                 }
                 if (buffer < 0) {
                     buffer = count++;
-                    hostBufs[buffer] = Host.toBuffer(elem, a);
+                    hostBufs[buffer] = Host.toBuffer(m, elem, a);
+                    hostElem[buffer] = Math.max(1, HostObjects.slots(m, elem));
+                    hostType[buffer] = elem;
                     hostObjects[buffer] = a;
                 }
-                argv[i] = buffer;
+                argv[offsets[i]] = buffer;
             } else if (Types.isScalar(t)) {
                 if (a == null || !Host.scalarMatches(t, a)) {
                     return -1;
                 }
-                argv[i] = Host.toScalar(t, a);
+                argv[offsets[i]] = Host.toScalar(t, a);
+            } else if (HostObjects.isAggregate(m, t)) {
+                if (a == null || !HostObjects.mismatch(m, t, a.getClass()).isEmpty()) {
+                    return -1;
+                }
+                HostObjects.flatten(m, t, a, argv, offsets[i]);
             } else {
                 return -1;
             }
@@ -225,15 +242,21 @@ public final class Interpreter {
             Object a = args[i];
             String have = a == null ? "null" : a.getClass().getSimpleName();
             if (m.typeKind(t) == Types.KIND_ARRAY) {
-                if (a == null || !Host.arrayMatches(m.typeB(t), a)) {
-                    out.add(argError(f, i, "ожидается " + Host.arrayName(m.typeB(t)) + ", передано " + have));
+                if (a == null || !Host.arrayMatches(m, m.typeB(t), a)) {
+                    out.add(argError(f, i, "ожидается " + Host.arrayName(m, m.typeB(t), a) + ", передано " + have));
                 }
             } else if (Types.isScalar(t)) {
                 if (a == null || !Host.scalarMatches(t, a)) {
                     out.add(argError(f, i, "ожидается " + Host.scalarName(t) + ", передано " + have));
                 }
+            } else if (HostObjects.isAggregate(m, t)) {
+                if (a == null) {
+                    out.add(argError(f, i, "ожидается объект вектора или struct, передано null"));
+                } else if (!HostObjects.mismatch(m, t, a.getClass()).isEmpty()) {
+                    out.add(argError(f, i, HostObjects.mismatch(m, t, a.getClass())));
+                }
             } else {
-                out.add(argError(f, i, "параметры этого вида (pointer/vector/struct) интерпретатор пока не принимает"));
+                out.add(argError(f, i, "параметры-указатели интерпретатор пока не принимает"));
             }
         }
         return out;
